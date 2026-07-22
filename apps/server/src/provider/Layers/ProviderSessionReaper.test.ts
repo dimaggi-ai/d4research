@@ -109,6 +109,7 @@ function makeReadModel(
       hasActionableProposedPlan: false,
       latestTurn: null,
       messages: [],
+      queuedMessages: [],
       session: thread.session,
       backgroundLiveness: thread.backgroundLiveness ?? null,
       activities: [],

@@ -97,6 +97,7 @@ export function applyThreadDetailEvent(
           deletedAt: null,
           messages: [],
           queuedMessages: [],
+          pendingTurnStart: null,
           proposedPlans: [],
           activities: [],
           checkpoints: [],
@@ -254,6 +255,10 @@ export function applyThreadDetailEvent(
             : {}),
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
+          pendingTurnStart: {
+            messageId: event.payload.messageId,
+            requestedAt: event.payload.createdAt,
+          },
           updatedAt: event.occurredAt,
         },
       };
@@ -455,12 +460,25 @@ export function applyThreadDetailEvent(
               }
             : thread.latestTurn;
 
+      // Mirrors the server projections' pending-turn-start clearing: a
+      // running session with an active turn adopts it; terminal statuses
+      // abandon it.
+      const sessionStatus = event.payload.session.status;
+      const pendingTurnStart =
+        (sessionStatus === "running" && event.payload.session.activeTurnId !== null) ||
+        sessionStatus === "error" ||
+        sessionStatus === "stopped" ||
+        sessionStatus === "interrupted"
+          ? null
+          : thread.pendingTurnStart;
+
       return {
         kind: "updated",
         thread: {
           ...thread,
           session: event.payload.session,
           latestTurn,
+          pendingTurnStart,
           updatedAt: event.occurredAt,
         },
       };

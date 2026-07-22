@@ -1849,6 +1849,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 if (!row) {
                   continue;
                 }
+                updatedAt = maxIso(updatedAt, row.queuedAt);
                 const threadQueuedMessages = queuedMessagesByThread.get(row.threadId) ?? [];
                 threadQueuedMessages.push(mapQueuedMessageRow(row));
                 queuedMessagesByThread.set(row.threadId, threadQueuedMessages);

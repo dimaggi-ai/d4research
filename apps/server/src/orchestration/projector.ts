@@ -40,7 +40,6 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
-const MAX_THREAD_QUEUED_MESSAGES = 50;
 
 function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error") {
   if (status === "error") return "error" as const;
@@ -561,6 +560,9 @@ export function projectEvent(
             return nextBase;
           }
 
+          // No cap here: the decider refuses to emit `thread.message-queued`
+          // past its queue limit, so replaying the event stream stays in
+          // lockstep with the persisted projection.
           const queuedMessages = [
             ...thread.queuedMessages.filter((entry) => entry.messageId !== payload.messageId),
             {
@@ -575,7 +577,7 @@ export function projectEvent(
                 : {}),
               queuedAt: payload.queuedAt,
             },
-          ].slice(-MAX_THREAD_QUEUED_MESSAGES);
+          ];
 
           return {
             ...nextBase,

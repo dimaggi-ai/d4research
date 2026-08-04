@@ -53,19 +53,38 @@ describe("HTTP and MCP", () => {
   });
 
   test("creates a planned run through the installation API", async () => {
+    await request("/api/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "http-second-mock",
+        name: "HTTP second mock",
+        driver: "mock",
+        model: "deterministic-v1",
+        endpoint: "",
+        command: "",
+        enabled: true,
+      }),
+    });
     const response = await request("/api/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         title: "HTTP run",
-        question: "Does the installation flow work?",
+        question: "#deep-research [local-mock, http-second-mock] Does the installation flow work?",
         providerId: "local-mock",
         depth: "quick",
       }),
     });
     expect(response.status).toBe(201);
-    const run = (await response.json()) as { id: string };
-    expect(run).toMatchObject({ title: "HTTP run", status: "awaiting_approval" });
+    const run = (await response.json()) as { id: string; question: string; depth: string; providerChainIds: string[] };
+    expect(run).toMatchObject({
+      title: "HTTP run",
+      question: "Does the installation flow work?",
+      depth: "deep",
+      providerChainIds: ["local-mock", "http-second-mock"],
+      status: "awaiting_approval",
+    });
     const chat = await request(`/api/runs/${run.id}/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -77,5 +96,20 @@ describe("HTTP and MCP", () => {
     expect(detail.sources).toEqual([]);
     expect(detail.citations).toEqual([]);
     expect(detail.artifacts).toEqual([]);
+  });
+
+  test("rejects a disabled agent in a deep-research chain", async () => {
+    const response = await request("/api/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Invalid chain",
+        question: "#deep-research [local-mock, junie-local] This must not start partially",
+        providerId: "local-mock",
+        depth: "deep",
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Provider junie-local is disabled." });
   });
 });

@@ -42,10 +42,11 @@ fi
 grep -q '"status":"ok"' "$qa_tmp/health.json"
 curl --fail --silent --show-error --max-time 5 "$base_url/setup" | grep -q 'Create and plan'
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/api/providers/local-mock/probe" | grep -q '"ok":true'
+curl --fail --silent --show-error --max-time 5 -X POST "$base_url/api/providers" -H 'content-type: application/json' --data '{"id":"docker-second-mock","name":"Docker second mock","driver":"mock","model":"deterministic-v1","endpoint":"","command":"","enabled":true}' >/dev/null
 
 echo "[qa] creating and planning a deterministic research run"
-run_json="$(curl --fail --silent --show-error --max-time 10 -X POST "$base_url/api/runs" -H 'content-type: application/json' --data '{"title":"Docker QA","question":"Prove the installed research lifecycle works","providerId":"local-mock","depth":"deep"}')"
-run_id="$(node -e 'const value=JSON.parse(process.argv[1]); if(value.status!=="awaiting_approval") process.exit(2); process.stdout.write(value.id)' "$run_json")"
+run_json="$(curl --fail --silent --show-error --max-time 10 -X POST "$base_url/api/runs" -H 'content-type: application/json' --data '{"title":"Docker QA","question":"#deep-research [local-mock, docker-second-mock] Prove the installed research lifecycle works","providerId":"local-mock","depth":"quick"}')"
+run_id="$(node -e 'const value=JSON.parse(process.argv[1]); if(value.status!=="awaiting_approval" || value.depth!=="deep" || value.question.startsWith("#deep-research") || value.providerChainIds.join(",")!=="local-mock,docker-second-mock") process.exit(2); process.stdout.write(value.id)' "$run_json")"
 chat_json="$(curl --fail --silent --show-error --max-time 10 -X POST "$base_url/api/runs/$run_id/chat" -H 'content-type: application/json' --data '{"text":"Continue this run with shared context."}')"
 node -e 'const value=JSON.parse(process.argv[1]); if(value.assistant.text!=="Shared-context chat reply from the active provider.") process.exit(2)' "$chat_json"
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/api/runs/$run_id/execute" >/dev/null
@@ -62,9 +63,10 @@ done
 [[ "$completed" == "1" ]]
 node -e 'const value=JSON.parse(process.argv[1]); if(!value.run.report.includes("Research report")) process.exit(2); if(!value.events.some((event)=>event.type==="audit.completed")) process.exit(3)' "$detail"
 node -e 'const value=JSON.parse(process.argv[1]); if(value.sources.length<1 || value.citations.length<1) process.exit(4); const kinds=value.artifacts.map((item)=>item.kind); for(const kind of ["evidence","report","audit"]) if(!kinds.includes(kind)) process.exit(5)' "$detail"
+node -e 'const value=JSON.parse(process.argv[1]); const workers=value.events.filter((event)=>event.type==="worker.started").map((event)=>event.providerId); if(workers.join(",")!=="local-mock,docker-second-mock,local-mock" || value.events.filter((event)=>event.type==="task.handoff").length!==4) process.exit(6)' "$detail"
 curl --fail --silent --show-error --max-time 5 "$base_url/api/runs/$run_id/export" | grep -q "## Sources"
 
 echo "[qa] validating MCP discovery"
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/mcp" -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | grep -q 'research_chat'
 
-echo "[qa] PASS: UI, provider probe, shared chat, research lifecycle, persistence API, and MCP are working"
+echo "[qa] PASS: UI, provider probe, task-level agent handoff, shared chat, research lifecycle, persistence API, and MCP are working"

@@ -50,6 +50,7 @@ describe("ResearchDatabase", () => {
       providerId: "local-mock",
       depth: "deep",
     });
+    expect(run.providerChainIds).toEqual(["local-mock"]);
     database.remember({
       runId: run.id,
       kind: "evidence",

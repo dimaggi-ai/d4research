@@ -114,13 +114,36 @@ try {
     }, 50);
   })`, true);
 
+  const rotationSuffix = Date.now();
+  const rotationName = `Browser rotation ${rotationSuffix}`;
+  const rotationId = `browser-rotation-${rotationSuffix}`;
+  await evaluate(`(() => {
+    const form = document.querySelector('#provider-form');
+    form.elements.name.value = ${JSON.stringify(rotationName)};
+    form.elements.driver.value = 'mock';
+    form.elements.model.value = 'deterministic-v1';
+    form.requestSubmit();
+  })()`);
+  await evaluate(`new Promise((resolve, reject) => {
+    const deadline = Date.now() + 10000;
+    const timer = setInterval(() => {
+      const text = document.querySelector('#providers')?.textContent || '';
+      if (text.includes(${JSON.stringify(rotationName)})) { clearInterval(timer); resolve(true); }
+      else if (Date.now() > deadline) {
+        clearInterval(timer);
+        const notice = document.querySelector('#notice')?.textContent || '';
+        reject(new Error('Provider installation did not appear. notice=' + notice + ' providers=' + text.slice(0, 500)));
+      }
+    }, 50);
+  })`, true);
+
   const title = `Browser QA ${Date.now()}`;
   await evaluate(`(() => {
     const form = document.querySelector('#run-form');
     form.elements.title.value = ${JSON.stringify(title)};
     form.elements.providerId.value = 'local-mock';
     form.elements.depth.value = 'quick';
-    form.elements.question.value = 'Prove the browser installation workflow works.';
+    form.elements.question.value = ${JSON.stringify(`#deep-research [local-mock, ${rotationId}] Prove the browser installation workflow works.`)};
     form.requestSubmit();
   })()`);
   await evaluate(`new Promise((resolve, reject) => {
@@ -128,7 +151,7 @@ try {
     const timer = setInterval(() => {
       const detail = document.querySelector('#detail')?.innerText || '';
       const detailCard = document.querySelector('#detail-card');
-      if (!detailCard?.hidden && detail.includes(${JSON.stringify(title)}) && detail.includes('awaiting_approval')) { clearInterval(timer); resolve(true); }
+      if (!detailCard?.hidden && detail.includes(${JSON.stringify(title)}) && detail.includes('awaiting_approval') && detail.includes(${JSON.stringify(rotationId)})) { clearInterval(timer); resolve(true); }
       else if (Date.now() > deadline) { clearInterval(timer); reject(new Error('Research plan did not appear.')); }
     }, 50);
   })`, true);
@@ -151,7 +174,7 @@ try {
     const capture = await call("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
     writeFileSync(screenshotPath, Buffer.from(capture.data, "base64"));
   }
-  console.log(JSON.stringify({ ok: true, providerProbe: "ready", researchPlan: "awaiting_approval", chat: "completed", title }));
+  console.log(JSON.stringify({ ok: true, providerProbe: "ready", providerInstall: "saved", providerChain: ["local-mock", rotationId], researchPlan: "awaiting_approval", chat: "completed", title }));
   socket.close();
 } finally {
   chrome.kill("SIGTERM");

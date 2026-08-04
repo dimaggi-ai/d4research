@@ -1,4 +1,4 @@
-import type { ResearchPlan, ResearchRun } from "./contracts";
+import type { ProviderConfig, ResearchPlan, ResearchRun } from "./contracts";
 import { ResearchDatabase } from "./database";
 import { generate, probeProvider } from "./providers";
 
@@ -52,15 +52,65 @@ export class ResearchOrchestrator {
 
   constructor(private readonly database: ResearchDatabase) {}
 
+  private providerChain(run: ResearchRun): ProviderConfig[] {
+    return run.providerChainIds.map((providerId) => {
+      const provider = this.database.getProvider(providerId);
+      if (!provider) throw new Error(`Provider ${providerId} was not found.`);
+      if (!provider.enabled) throw new Error(`Provider ${providerId} is disabled.`);
+      return provider;
+    });
+  }
+
+  private async requireHealthyChain(run: ResearchRun): Promise<ProviderConfig[]> {
+    const providers = this.providerChain(run);
+    const health = await Promise.all(providers.map(async (provider) => ({
+      provider,
+      health: await probeProvider(provider),
+    })));
+    const unavailable = health.filter((entry) => !entry.health.ok);
+    if (unavailable.length) {
+      throw new Error(
+        `Provider chain is unavailable: ${unavailable.map((entry) => `${entry.provider.id}: ${entry.health.message}`).join("; ")}`,
+      );
+    }
+    return providers;
+  }
+
+  private taskHandoff(
+    runId: string,
+    fromProviderId: string,
+    toProvider: ProviderConfig,
+    stage: string,
+    task: string,
+  ): string {
+    const contextPacket = this.buildContextPacket(runId);
+    const metadata = { fromProviderId, toProviderId: toProvider.id, stage, task };
+    if (fromProviderId !== toProvider.id) {
+      this.database.remember({
+        runId,
+        kind: "handoff",
+        content: contextPacket,
+        metadata,
+      });
+      this.database.addEvent(runId, "task.handoff", toProvider.id, metadata);
+    } else {
+      this.database.addEvent(runId, "task.assigned", toProvider.id, { stage, task });
+    }
+    return contextPacket;
+  }
+
   async plan(runId: string): Promise<ResearchRun> {
     const run = this.database.requireRun(runId);
-    const provider = this.database.getProvider(run.activeProviderId);
-    if (!provider) throw new Error(`Provider ${run.activeProviderId} was not found.`);
-    const health = await probeProvider(provider);
-    if (!health.ok) throw new Error(`Provider is unavailable: ${health.message}`);
-    this.database.updateRun(runId, { status: "planning", error: null });
-    this.database.addEvent(runId, "planning.started", provider.id, { depth: run.depth });
+    let provider: ProviderConfig | null = null;
     try {
+      const providers = await this.requireHealthyChain(run);
+      provider = providers[0] ?? null;
+      if (!provider) throw new Error("Provider chain is empty.");
+      this.database.updateRun(runId, { status: "planning", activeProviderId: provider.id, error: null });
+      this.database.addEvent(runId, "planning.started", provider.id, {
+        depth: run.depth,
+        providerChainIds: providers.map((entry) => entry.id),
+      });
       const result = await generate(provider, {
         role: "planner",
         prompt: [
@@ -82,7 +132,7 @@ export class ResearchOrchestrator {
       return this.database.updateRun(runId, { status: "awaiting_approval", plan });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      this.database.addEvent(runId, "planning.failed", provider.id, { message });
+      this.database.addEvent(runId, "planning.failed", provider?.id ?? null, { message });
       return this.database.updateRun(runId, { status: "failed", error: message });
     }
   }
@@ -129,7 +179,10 @@ export class ResearchOrchestrator {
       fromProviderId: run.activeProviderId,
       toProviderId: targetProviderId,
     });
-    return this.database.updateRun(runId, { activeProviderId: targetProviderId });
+    return this.database.updateRun(runId, {
+      activeProviderId: targetProviderId,
+      providerChainIds: [targetProviderId, ...run.providerChainIds.filter((id) => id !== targetProviderId)],
+    });
   }
 
   buildContextPacket(runId: string): string {
@@ -143,6 +196,7 @@ export class ResearchOrchestrator {
       `RUN: ${run.id}`,
       `GOAL: ${run.question}`,
       `STATUS: ${run.status}`,
+      `PROVIDER CHAIN: ${run.providerChainIds.join(" -> ")}`,
       `PLAN: ${JSON.stringify(run.plan)}`,
       "SHARED MEMORY:",
       ...memories.map((memory) => `- [${memory.kind}] ${memory.content}`),
@@ -186,20 +240,29 @@ export class ResearchOrchestrator {
 
   private async executeInBackground(runId: string, signal: AbortSignal): Promise<void> {
     const initial = this.database.requireRun(runId);
-    const provider = this.database.getProvider(initial.activeProviderId);
-    if (!provider || !initial.plan) return;
+    if (!initial.plan) return;
+    let currentProviderId = initial.activeProviderId;
     try {
+      const providers = await this.requireHealthyChain(initial);
       this.database.updateRun(runId, { status: "researching", error: null });
-      this.database.addEvent(runId, "research.started", provider.id, {});
+      this.database.addEvent(runId, "research.started", providers[0]?.id ?? null, {
+        providerChainIds: providers.map((provider) => provider.id),
+      });
       const workerLimit = initial.depth === "quick" ? 2 : initial.depth === "deep" ? 4 : 6;
       const questions = initial.plan.questions.slice(0, workerLimit);
       const evidence = await Promise.all(
         questions.map(async (question, index) => {
           if (signal.aborted) throw new Error("Research was cancelled.");
+          const provider = providers[index % providers.length]!;
+          const previousProvider = index === 0
+            ? initial.activeProviderId
+            : providers[(index - 1) % providers.length]!.id;
+          const contextPacket = this.taskHandoff(runId, previousProvider, provider, "research", question);
           this.database.addEvent(runId, "worker.started", provider.id, { index, question });
           const result = await generate(provider, {
             role: "researcher",
             prompt: [
+              contextPacket,
               `Research run goal: ${initial.question}`,
               `Assigned line of inquiry: ${question}`,
               "Return a concise evidence memo. Include URLs or source identifiers for every material claim.",
@@ -232,11 +295,24 @@ export class ResearchOrchestrator {
         }),
       );
       if (signal.aborted) throw new Error("Research was cancelled.");
-      this.database.updateRun(runId, { status: "synthesizing" });
-      this.database.addEvent(runId, "synthesis.started", provider.id, {});
-      const synthesis = await generate(provider, {
+      const synthesisProvider = providers[questions.length % providers.length]!;
+      const previousWorkerProvider = questions.length
+        ? providers[(questions.length - 1) % providers.length]!.id
+        : initial.activeProviderId;
+      const synthesisContext = this.taskHandoff(
+        runId,
+        previousWorkerProvider,
+        synthesisProvider,
+        "synthesis",
+        initial.plan.objective,
+      );
+      currentProviderId = synthesisProvider.id;
+      this.database.updateRun(runId, { status: "synthesizing", activeProviderId: synthesisProvider.id });
+      this.database.addEvent(runId, "synthesis.started", synthesisProvider.id, {});
+      const synthesis = await generate(synthesisProvider, {
         role: "synthesizer",
         prompt: [
+          synthesisContext,
           `Question: ${initial.question}`,
           `Approved plan: ${JSON.stringify(initial.plan)}`,
           "Evidence memos:",
@@ -246,10 +322,24 @@ export class ResearchOrchestrator {
       });
       if (signal.aborted) throw new Error("Research was cancelled.");
       this.database.addArtifact(runId, "report", synthesis.text);
-      this.database.updateRun(runId, { status: "auditing", report: synthesis.text });
-      const audit = await generate(provider, {
+      const auditProvider = providers[(questions.length + 1) % providers.length]!;
+      const auditContext = this.taskHandoff(
+        runId,
+        synthesisProvider.id,
+        auditProvider,
+        "audit",
+        "Verify the synthesized report against all evidence.",
+      );
+      currentProviderId = auditProvider.id;
+      this.database.updateRun(runId, {
+        status: "auditing",
+        activeProviderId: auditProvider.id,
+        report: synthesis.text,
+      });
+      const audit = await generate(auditProvider, {
         role: "auditor",
         prompt: [
+          auditContext,
           "Audit this report against the evidence memos.",
           "Flag unsupported claims, missing citations, source conflicts, and overconfident conclusions.",
           synthesis.text,
@@ -260,15 +350,15 @@ export class ResearchOrchestrator {
         runId,
         kind: "decision",
         content: audit.text,
-        metadata: { stage: "citation-audit", providerId: provider.id },
+        metadata: { stage: "citation-audit", providerId: auditProvider.id },
       });
       this.database.addArtifact(runId, "audit", audit.text);
-      this.database.addEvent(runId, "audit.completed", provider.id, { audit: audit.text });
+      this.database.addEvent(runId, "audit.completed", auditProvider.id, { audit: audit.text });
       this.database.updateRun(runId, { status: "completed", report: synthesis.text });
     } catch (cause) {
       if (signal.aborted) return;
       const message = cause instanceof Error ? cause.message : String(cause);
-      this.database.addEvent(runId, "run.failed", provider.id, { message });
+      this.database.addEvent(runId, "run.failed", currentProviderId, { message });
       this.database.updateRun(runId, { status: "failed", error: message });
     }
   }

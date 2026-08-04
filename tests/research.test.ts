@@ -21,10 +21,20 @@ function setup() {
 describe("ResearchOrchestrator", () => {
   test("plans, executes parallel workers, synthesizes, and audits", async () => {
     const { database, orchestrator } = setup();
+    database.upsertProvider({
+      id: "second-mock",
+      name: "Second mock",
+      driver: "mock",
+      model: "deterministic-v1",
+      endpoint: "",
+      command: "",
+      enabled: true,
+    });
     const created = database.createRun({
       title: "Full lifecycle",
       question: "Can provider-neutral shared context support deep research?",
       providerId: "local-mock",
+      providerChainIds: ["local-mock", "second-mock"],
       depth: "deep",
     });
     const planned = await orchestrator.plan(created.id);
@@ -44,6 +54,14 @@ describe("ResearchOrchestrator", () => {
     const events = database.listEvents(created.id).map((event) => event.type);
     expect(events).toContain("research.started");
     expect(events).toContain("audit.completed");
+    expect(database.listEvents(created.id).filter((event) => event.type === "worker.started").map((event) => event.providerId)).toEqual([
+      "local-mock",
+      "second-mock",
+      "local-mock",
+    ]);
+    expect(events.filter((event) => event === "task.handoff")).toHaveLength(4);
+    expect(database.requireRun(created.id).activeProviderId).toBe("local-mock");
+    expect(database.searchMemory("PROVIDER CHAIN", created.id).some((item) => item.kind === "handoff")).toBeTrue();
     database.close();
   });
 

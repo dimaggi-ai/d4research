@@ -21,6 +21,7 @@ type RunRow = {
   question: string;
   status: ResearchRun["status"];
   active_provider_id: string;
+  provider_chain_json: string;
   depth: ResearchRun["depth"];
   plan_json: string | null;
   report: string | null;
@@ -53,12 +54,14 @@ function parseJson<T>(value: string | null, fallback: T): T {
 }
 
 function mapRun(row: RunRow): ResearchRun {
+  const providerChainIds = parseJson<string[]>(row.provider_chain_json, []);
   return {
     id: row.id,
     title: row.title,
     question: row.question,
     status: row.status,
     activeProviderId: row.active_provider_id,
+    providerChainIds: providerChainIds.length ? providerChainIds : [row.active_provider_id],
     depth: row.depth,
     plan: parseJson<ResearchPlan | null>(row.plan_json, null),
     report: row.report,
@@ -102,6 +105,7 @@ export class ResearchDatabase {
         question TEXT NOT NULL,
         status TEXT NOT NULL,
         active_provider_id TEXT NOT NULL REFERENCES providers(id),
+        provider_chain_json TEXT NOT NULL DEFAULT '[]',
         depth TEXT NOT NULL,
         plan_json TEXT,
         report TEXT,
@@ -179,6 +183,14 @@ export class ResearchDatabase {
         updated_at TEXT NOT NULL
       );
     `);
+    const runColumns = this.sqlite
+      .query<{ name: string }, []>("PRAGMA table_info(runs)")
+      .all()
+      .map((column) => column.name);
+    if (!runColumns.includes("provider_chain_json")) {
+      this.sqlite.exec("ALTER TABLE runs ADD COLUMN provider_chain_json TEXT NOT NULL DEFAULT '[]'");
+      this.sqlite.exec("UPDATE runs SET provider_chain_json = json_array(active_provider_id)");
+    }
     if (this.listMemoryConnectors().length === 0) {
       this.upsertMemoryConnector({ id: "local", name: "Local SQLite", kind: "sqlite", url: "", enabled: true });
       this.upsertMemoryConnector({ id: "memo", name: "Local Memo", kind: "memo", url: "http://host.docker.internal:8099", enabled: false });
@@ -276,6 +288,7 @@ export class ResearchDatabase {
     title: string;
     question: string;
     providerId: string;
+    providerChainIds?: string[];
     depth: ResearchRun["depth"];
   }): ResearchRun {
     const id = crypto.randomUUID();
@@ -283,10 +296,19 @@ export class ResearchDatabase {
     this.sqlite
       .query(`
         INSERT INTO runs
-          (id, title, question, status, active_provider_id, depth, created_at, updated_at)
-        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
+          (id, title, question, status, active_provider_id, provider_chain_json, depth, created_at, updated_at)
+        VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)
       `)
-      .run(id, input.title, input.question, input.providerId, input.depth, timestamp, timestamp);
+      .run(
+        id,
+        input.title,
+        input.question,
+        input.providerId,
+        JSON.stringify(input.providerChainIds?.length ? input.providerChainIds : [input.providerId]),
+        input.depth,
+        timestamp,
+        timestamp,
+      );
     this.addEvent(id, "run.created", input.providerId, input);
     return this.requireRun(id);
   }
@@ -311,18 +333,19 @@ export class ResearchDatabase {
 
   updateRun(
     id: string,
-    patch: Partial<Pick<ResearchRun, "status" | "activeProviderId" | "plan" | "report" | "error">>,
+    patch: Partial<Pick<ResearchRun, "status" | "activeProviderId" | "providerChainIds" | "plan" | "report" | "error">>,
   ): ResearchRun {
     const current = this.requireRun(id);
     const next = { ...current, ...patch, updatedAt: now() };
     this.sqlite
       .query(`
-        UPDATE runs SET status=?, active_provider_id=?, plan_json=?, report=?, error=?, updated_at=?
+        UPDATE runs SET status=?, active_provider_id=?, provider_chain_json=?, plan_json=?, report=?, error=?, updated_at=?
         WHERE id=?
       `)
       .run(
         next.status,
         next.activeProviderId,
+        JSON.stringify(next.providerChainIds),
         next.plan ? JSON.stringify(next.plan) : null,
         next.report,
         next.error,

@@ -34,6 +34,7 @@ export type ResearchRun = {
   question: string;
   status: RunStatus;
   activeProviderId: string;
+  providerChainIds: string[];
   depth: "quick" | "deep" | "max";
   plan: ResearchPlan | null;
   report: string | null;

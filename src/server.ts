@@ -4,6 +4,7 @@ import { probeProvider } from "./providers";
 import { ResearchOrchestrator } from "./research";
 import { INSTALL_UI } from "./ui";
 import { MemoryService } from "./memory";
+import { parseResearchDirective } from "./directives";
 
 const VERSION = "0.1.0";
 const host = process.env.T3RESEARCH_HOST?.trim() || "127.0.0.1";
@@ -58,6 +59,34 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   return value as Record<string, unknown>;
 }
 
+function providerIds(value: unknown, fallback: string): string[] {
+  if (!Array.isArray(value)) return [fallback];
+  const ids = [...new Set(value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean))];
+  return ids.length ? ids : [fallback];
+}
+
+function createRunInput(input: Record<string, unknown>) {
+  const providerId = requireString(input.providerId, "providerId");
+  const requestedDepth = (["quick", "deep", "max"].includes(String(input.depth)) ? input.depth : "deep") as ResearchRun["depth"];
+  const directive = parseResearchDirective(
+    requireString(input.question, "question"),
+    providerIds(input.providerIds, providerId),
+    requestedDepth,
+  );
+  for (const id of directive.providerIds) {
+    const provider = database.getProvider(id);
+    if (!provider) throw new Error(`Provider ${id} was not found.`);
+    if (!provider.enabled) throw new Error(`Provider ${id} is disabled.`);
+  }
+  return {
+    title: requireString(input.title, "title"),
+    question: directive.question,
+    providerId: directive.providerIds[0]!,
+    providerChainIds: directive.providerIds,
+    depth: directive.depth,
+  };
+}
+
 async function mcp(request: Request): Promise<Response> {
   const envelope = await body(request);
   const id = envelope.id ?? null;
@@ -80,7 +109,7 @@ async function mcp(request: Request): Promise<Response> {
       additionalProperties: false,
     });
     return ok({ tools: [
-      { name: "research_start", description: "Create and plan a durable research run.", inputSchema: schema({ title:{type:"string"}, question:{type:"string"}, providerId:{type:"string"}, depth:{enum:["quick","deep","max"]} }, ["title","question","providerId"]) },
+      { name: "research_start", description: "Create and plan a durable research run. Use providerIds or #deep-research [id, id] in the question for task-level agent rotation.", inputSchema: schema({ title:{type:"string"}, question:{type:"string"}, providerId:{type:"string"}, providerIds:{type:"array",items:{type:"string"}}, depth:{enum:["quick","deep","max"]} }, ["title","question","providerId"]) },
       { name: "research_status", description: "Read a research run and its event history.", inputSchema: schema({ runId:{type:"string"} }, ["runId"]) },
       { name: "research_execute", description: "Approve and execute a proposed research plan.", inputSchema: schema({ runId:{type:"string"} }, ["runId"]) },
       { name: "research_handoff", description: "Change provider while preserving shared run context.", inputSchema: schema({ runId:{type:"string"}, providerId:{type:"string"} }, ["runId","providerId"]) },
@@ -94,12 +123,7 @@ async function mcp(request: Request): Promise<Response> {
     const args = (params.arguments ?? {}) as Record<string, unknown>;
     let result: unknown;
     if (name === "research_start") {
-      const run = database.createRun({
-        title: requireString(args.title, "title"),
-        question: requireString(args.question, "question"),
-        providerId: requireString(args.providerId, "providerId"),
-        depth: (["quick", "deep", "max"].includes(String(args.depth)) ? args.depth : "deep") as ResearchRun["depth"],
-      });
+      const run = database.createRun(createRunInput(args));
       result = await orchestrator.plan(run.id);
     } else if (name === "research_status") {
       const runId = requireString(args.runId, "runId");
@@ -187,10 +211,7 @@ export async function handleRequest(request: Request): Promise<Response> {
     if (request.method === "GET" && url.pathname === "/api/runs") return json(database.listRuns());
     if (request.method === "POST" && url.pathname === "/api/runs") {
       const input = await body(request);
-      const providerId = requireString(input.providerId, "providerId");
-      if (!database.getProvider(providerId)) throw new Error("Provider not found.");
-      const depth = (["quick", "deep", "max"].includes(String(input.depth)) ? input.depth : "deep") as ResearchRun["depth"];
-      const run = database.createRun({ title: requireString(input.title, "title"), question: requireString(input.question, "question"), providerId, depth });
+      const run = database.createRun(createRunInput(input));
       return json(await orchestrator.plan(run.id), 201);
     }
     if (segments[0] === "api" && segments[1] === "runs" && segments[2]) {

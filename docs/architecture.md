@@ -2,12 +2,13 @@
 
 ## Durable run ownership
 
-`ResearchRun` owns the question, approved plan, status, selected provider, messages, evidence memories, report, and event history. Provider sessions are replaceable execution details. A handoff writes a context checkpoint and changes `activeProviderId`; it does not create another run or discard the original chat.
+`ResearchRun` owns the question, approved plan, status, ordered provider chain, selected provider, messages, evidence memories, report, and event history. Provider sessions are replaceable execution details. A handoff writes a context checkpoint and changes `activeProviderId`; it does not create another run or discard the original chat.
 
 ## Execution paths
 
 - Chat appends user and assistant messages to the run and records which provider produced each assistant turn.
-- Deep research moves through planning, approval, parallel evidence collection, synthesis, and audit.
+- Deep research moves through planning, approval, parallel evidence collection, synthesis, and audit. Evidence tasks rotate across `providerChainIds`; synthesis and audit continue the same rotation.
+- Crossing an agent boundary emits `task.handoff` and stores the bounded context packet as handoff memory. Parallel workers receive the approved plan and existing ledger context; synthesis receives all completed evidence memos explicitly.
 - Every stage emits persisted events. The UI polls the read model, while MCP clients use the same orchestration methods.
 - Cancellation is explicit. New provider work is bounded by adapter timeouts.
 

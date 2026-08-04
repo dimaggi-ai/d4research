@@ -24,12 +24,29 @@ import {
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
+  resolveProjectOpenInCwd,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+
+describe("resolveProjectOpenInCwd", () => {
+  it("prefers the Git root when it is available", () => {
+    expect(resolveProjectOpenInCwd("/workspace/repo", "/workspace")).toBe("/workspace/repo");
+  });
+
+  it("keeps project open actions available for non-Git projects", () => {
+    expect(resolveProjectOpenInCwd(null, "/workspace/plain-project")).toBe(
+      "/workspace/plain-project",
+    );
+  });
+
+  it("disables project open actions only when neither path exists", () => {
+    expect(resolveProjectOpenInCwd(null, null)).toBeNull();
+  });
+});
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");

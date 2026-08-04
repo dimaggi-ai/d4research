@@ -18,10 +18,33 @@ import {
   findSidebarProposedPlan,
   hasActionableProposedPlan,
   isLatestTurnSettled,
+  isWorkEntryTurnSettled,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
 } from "./session-logic";
+
+describe("isWorkEntryTurnSettled", () => {
+  it("settles an old tool row while a newer turn is running", () => {
+    expect(
+      isWorkEntryTurnSettled({
+        workEntryTurnId: TurnId.make("old-turn"),
+        latestTurnId: TurnId.make("active-turn"),
+        activeTurnInProgress: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a tool row active only for the running turn", () => {
+    expect(
+      isWorkEntryTurnSettled({
+        workEntryTurnId: TurnId.make("active-turn"),
+        latestTurnId: TurnId.make("active-turn"),
+        activeTurnInProgress: true,
+      }),
+    ).toBe(false);
+  });
+});
 
 let nextActivityId = 0;
 

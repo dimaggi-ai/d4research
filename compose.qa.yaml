@@ -1,0 +1,43 @@
+services:
+  t3code:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.qa
+    environment:
+      HOME: /home/node
+      T3CODE_DEPLOY_READY_TIMEOUT_SECONDS: "20"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "--max-time",
+          "2",
+          "http://127.0.0.1:3773/manifest.webmanifest",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+      start_period: 5s
+    volumes:
+      - t3code-qa-state:/state
+
+  caddy:
+    image: caddy:2.10-alpine
+    depends_on:
+      t3code:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${T3CODE_QA_PORT:-18080}:8080"
+    volumes:
+      - ./ops/docker/Caddyfile.qa:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/manifest.webmanifest"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  t3code-qa-state:

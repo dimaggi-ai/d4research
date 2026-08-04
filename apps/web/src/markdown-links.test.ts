@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  markdownFilePrimaryOpenAction,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
 } from "./markdown-links";
+
+describe("markdownFilePrimaryOpenAction", () => {
+  it("opens every workspace file in the T3 file surface, including browser-previewable files", () => {
+    expect(markdownFilePrimaryOpenAction("generated/report.html", true)).toBe("file-preview");
+    expect(markdownFilePrimaryOpenAction("generated/report.pdf", true)).toBe("file-preview");
+    expect(markdownFilePrimaryOpenAction("src/index.ts", true)).toBe("file-preview");
+  });
+
+  it("falls back to the editor without a workspace-relative thread target", () => {
+    expect(markdownFilePrimaryOpenAction(null, true)).toBe("editor");
+    expect(markdownFilePrimaryOpenAction("src/index.ts", false)).toBe("editor");
+  });
+});
 
 describe("rewriteMarkdownFileUriHref", () => {
   it("rewrites file uri hrefs into direct path hrefs", () => {

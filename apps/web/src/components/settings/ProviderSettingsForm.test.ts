@@ -37,6 +37,16 @@ describe("ProviderSettingsForm helpers", () => {
     });
   });
 
+  it("exposes Junie's ACP binary and default model settings", () => {
+    const junie = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("junie")];
+    expect(junie).toBeDefined();
+    expect(junie?.label).toBe("Junie");
+    expect(deriveProviderSettingsFields(junie!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "defaultModel",
+    ]);
+  });
+
   it("preserves unknown config keys while omitting empty configurable fields", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();

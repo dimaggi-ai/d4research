@@ -139,6 +139,7 @@ import {
   usePreviewMiniPlayerStore,
 } from "../previewMiniPlayerStore";
 import { RightPanelTabs } from "./RightPanelTabs";
+import { SystemPanel } from "./SystemPanel";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -165,7 +166,24 @@ import {
 } from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+  sortProviderInstanceEntries,
+} from "../providerInstances";
+import {
+  buildProviderHandoffPrompt,
+  buildProviderHandoffTitle,
+  buildProviderHandoffTranscript,
+} from "../providerHandoff";
+import {
+  DEEP_RESEARCH_TAG,
+  deriveResearchProviderCandidates,
+  expandDeepResearchPrompt,
+  isDeepResearchPrompt,
+} from "../researchMode";
+import { summarizeReplyForSpeech } from "../hooks/useVoiceConversation";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -226,6 +244,7 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import { ProviderHandoffDialog } from "./chat/ProviderHandoffDialog";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -270,6 +289,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveProjectOpenInCwd,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
@@ -1290,6 +1310,8 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const [providerHandoffOpen, setProviderHandoffOpen] = useState(false);
+  const [providerHandoffBusy, setProviderHandoffBusy] = useState(false);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -2042,6 +2064,17 @@ function ChatViewContent(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  const providerHandoffEntries = useMemo(
+    () =>
+      sortProviderInstanceEntries(
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+      ),
+    [providerStatuses, settings],
+  );
+  const researchProviderCandidates = useMemo(
+    () => deriveResearchProviderCandidates(providerHandoffEntries),
+    [providerHandoffEntries],
+  );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -4706,6 +4739,10 @@ function ChatViewContent(props: ChatViewProps) {
       messageTextWithPreviewAnnotations,
       composerReviewCommentsSnapshot,
     );
+    const researchMessageTextForSend = expandDeepResearchPrompt(
+      messageTextForSend,
+      researchProviderCandidates,
+    );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -4713,7 +4750,7 @@ function ChatViewContent(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      text: researchMessageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
     });
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
@@ -5459,6 +5496,135 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const onProviderHandoff = useCallback(
+    async (targetModelSelection: ModelSelection) => {
+      if (
+        routeKind !== "server" ||
+        !activeThread ||
+        !activeProject ||
+        providerHandoffBusy ||
+        isSendBusy ||
+        sendInFlightRef.current
+      ) {
+        return;
+      }
+
+      setProviderHandoffBusy(true);
+      sendInFlightRef.current = true;
+      const nextThreadId = newThreadId();
+      const createdAt = new Date().toISOString();
+      const nextThreadTitle = truncate(buildProviderHandoffTitle(activeThread.title));
+      let created = false;
+
+      try {
+        const transcript = buildProviderHandoffTranscript(
+          displayServerMessages.map((message) => ({
+            role: message.role,
+            text: message.text,
+          })),
+        );
+        const summary = await summarizeReplyForSpeech(
+          transcript || `Continue the work from ${activeThread.title}.`,
+        );
+        const handoffPrompt = buildProviderHandoffPrompt({
+          sourceThreadId: activeThread.id,
+          sourceThreadTitle: activeThread.title,
+          summary,
+          target: targetModelSelection,
+          project: activeProject.title,
+        });
+
+        const createResult = await createThread({
+          environmentId,
+          input: {
+            threadId: nextThreadId,
+            projectId: activeProject.id,
+            title: nextThreadTitle,
+            modelSelection: targetModelSelection,
+            runtimeMode,
+            interactionMode: "default",
+            branch: activeThreadBranch,
+            worktreePath: activeThread.worktreePath,
+            createdAt,
+          },
+        });
+        if (createResult._tag === "Failure") throw squashAtomCommandFailure(createResult);
+        created = true;
+
+        const startResult = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: nextThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: handoffPrompt,
+              attachments: [],
+            },
+            modelSelection: targetModelSelection,
+            titleSeed: nextThreadTitle,
+            runtimeMode,
+            interactionMode: "default",
+            createdAt,
+          },
+        });
+        if (startResult._tag === "Failure") throw squashAtomCommandFailure(startResult);
+
+        const startedResult = await settlePromise(() =>
+          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+        );
+        if (startedResult._tag === "Failure") throw squashAtomCommandFailure(startedResult);
+
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId: activeThread.environmentId, threadId: nextThreadId },
+        });
+        setProviderHandoffOpen(false);
+      } catch (error) {
+        if (created) {
+          await deleteThread({ environmentId, input: { threadId: nextThreadId } });
+        }
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not change provider",
+            description: error instanceof Error ? error.message : "The provider handoff failed.",
+          }),
+        );
+      } finally {
+        sendInFlightRef.current = false;
+        setProviderHandoffBusy(false);
+      }
+    },
+    [
+      activeProject,
+      activeThread,
+      activeThreadBranch,
+      createThread,
+      deleteThread,
+      displayServerMessages,
+      environmentId,
+      isSendBusy,
+      navigate,
+      providerHandoffBusy,
+      routeKind,
+      runtimeMode,
+      startThreadTurn,
+    ],
+  );
+
+  const onStartDeepResearch = useCallback(() => {
+    const currentPrompt = promptRef.current;
+    if (isDeepResearchPrompt(currentPrompt)) {
+      composerRef.current?.focusAtEnd();
+      return;
+    }
+    const nextPrompt = currentPrompt.trim()
+      ? `${DEEP_RESEARCH_TAG} ${currentPrompt.trimStart()}`
+      : `${DEEP_RESEARCH_TAG} `;
+    composerRef.current?.replacePrompt(nextPrompt);
+  }, [composerRef, promptRef]);
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -5637,7 +5803,11 @@ function ChatViewContent(props: ChatViewProps) {
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
+      systemMonitorOpen={rightPanelOpen && activeRightPanelKind === "system"}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
+      onOpenSystemMonitor={() => {
+        if (activeThreadRef) useRightPanelStore.getState().toggle(activeThreadRef, "system");
+      }}
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -5703,6 +5873,8 @@ function ChatViewContent(props: ChatViewProps) {
         timestampFormat={timestampFormat}
         mode="embedded"
       />
+    ) : activeRightPanelSurface?.kind === "system" ? (
+      <SystemPanel />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (
@@ -5762,7 +5934,7 @@ function ChatViewContent(props: ChatViewProps) {
             activeThreadTitle={activeThread.title}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
-            openInCwd={gitCwd}
+            openInCwd={resolveProjectOpenInCwd(gitCwd, activeProject?.workspaceRoot)}
             activeProjectScripts={activeProject?.scripts}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
@@ -5772,6 +5944,14 @@ function ChatViewContent(props: ChatViewProps) {
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
+            onOpenFiles={addFilesSurface}
+            {...(routeKind === "server" && activeProject
+              ? { onChangeProvider: () => setProviderHandoffOpen(true) }
+              : {})}
+            onStartDeepResearch={onStartDeepResearch}
+            changeProviderDisabled={
+              providerHandoffBusy || isSendBusy || isWorking || activeEnvironmentUnavailable
+            }
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
@@ -6041,6 +6221,19 @@ function ChatViewContent(props: ChatViewProps) {
                 threadRef={activeThreadRef}
                 tabId={activePreviewMiniPlayer.tabId}
                 bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
+              />
+            ) : null}
+
+            {routeKind === "server" ? (
+              <ProviderHandoffDialog
+                open={providerHandoffOpen}
+                sourceInstanceId={
+                  activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId
+                }
+                entries={providerHandoffEntries}
+                busy={providerHandoffBusy}
+                onOpenChange={setProviderHandoffOpen}
+                onConfirm={(selection) => void onProviderHandoff(selection)}
               />
             ) : null}
 

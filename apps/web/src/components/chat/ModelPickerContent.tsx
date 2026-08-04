@@ -10,6 +10,7 @@ import { ChevronRightIcon, SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import {
+  defaultExpandedLegacyInstanceIds,
   modelPickerLegacySectionKey,
   modelPickerModelKey,
   parseModelPickerLegacySectionKey,
@@ -116,15 +117,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       return favorites.length > 0 ? "favorites" : props.activeInstanceId;
     },
   );
-  const [expandedLegacyInstances, setExpandedLegacyInstances] = useState(
-    () =>
-      new Set<ProviderInstanceId>(
-        modelOptionsByInstance
-          .get(props.activeInstanceId)
-          ?.some((model) => model.slug === props.model && model.isLegacy)
-          ? [props.activeInstanceId]
-          : [],
-      ),
+  const [expandedLegacyInstances, setExpandedLegacyInstances] = useState(() =>
+    defaultExpandedLegacyInstanceIds(modelOptionsByInstance),
   );
   const keybindings = useMemo<ResolvedKeybindingsConfig>(
     () => providedKeybindings ?? [],

@@ -42,6 +42,8 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
+const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const GZIP_MIN_BYTES = 1024;
@@ -245,6 +247,37 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
       EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
     }),
   ),
+);
+
+export const missionControlSystemRouteLayer = HttpRouter.add(
+  "GET",
+  MISSION_CONTROL_SYSTEM_PATH,
+  Effect.gen(function* () {
+    const httpClient = yield* HttpClient.HttpClient;
+    return yield* httpClient.get(MISSION_CONTROL_SYSTEM_URL).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((response) => response.text),
+      Effect.map((body) =>
+        HttpServerResponse.text(body, {
+          headers: {
+            "cache-control": "no-store",
+            "content-type": "application/json",
+          },
+        }),
+      ),
+      Effect.timeout("4 seconds"),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Mission Control system monitor proxy failed", { cause }).pipe(
+          Effect.as(
+            HttpServerResponse.jsonUnsafe(
+              { error: "Mission Control is unavailable" },
+              { status: 502 },
+            ),
+          ),
+        ),
+      ),
+    );
+  }),
 );
 
 export const assetRouteLayer = HttpRouter.add(

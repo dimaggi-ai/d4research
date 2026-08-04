@@ -13,6 +13,7 @@
  * @module providerInstances
  */
 import {
+  DEFAULT_SERVER_SETTINGS,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
@@ -24,6 +25,7 @@ import {
   type ServerSettings,
   type ServerProviderState,
 } from "@t3tools/contracts";
+import * as Equal from "effect/Equal";
 
 import { formatProviderDriverKindLabel } from "./providerModels";
 
@@ -200,15 +202,80 @@ export function applyProviderInstanceSettings(
     Record<string, { readonly enabled?: boolean } | undefined>
   >;
 
-  return entries.map((entry) => {
+  const redundantInstanceIds = getRedundantProviderInstanceIds(settings);
+  return entries.flatMap((entry) => {
+    if (redundantInstanceIds.has(entry.instanceId)) return [];
     const explicitInstance = settings.providerInstances?.[entry.instanceId];
     const enabled = explicitInstance
       ? (explicitInstance.enabled ?? true)
       : entry.isDefault
         ? (legacyProviders[entry.driverKind]?.enabled ?? entry.enabled)
         : false;
-    return enabled === entry.enabled ? entry : { ...entry, enabled };
+    return [enabled === entry.enabled ? entry : { ...entry, enabled }];
   });
+}
+
+function configRecord(value: unknown): Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : {};
+}
+
+function effectiveProviderRuntimeConfig(
+  driver: ProviderDriverKind,
+  instance: {
+    readonly config?: unknown;
+    readonly environment?: unknown;
+    readonly enabled?: boolean;
+  },
+) {
+  const defaults = configRecord(
+    (DEFAULT_SERVER_SETTINGS.providers as Readonly<Record<string, unknown>>)[driver],
+  );
+  return {
+    driver,
+    enabled: instance.enabled ?? true,
+    environment: instance.environment ?? [],
+    config: { ...defaults, ...configRecord(instance.config) },
+  };
+}
+
+/** Find custom instances that add only presentation metadata to an existing runtime. */
+export function getRedundantProviderInstanceIds(
+  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+): ReadonlySet<ProviderInstanceId> {
+  const redundant = new Set<ProviderInstanceId>();
+  const instances = Object.entries(settings.providerInstances ?? {}).map(
+    ([id, instance]) => [ProviderInstanceId.make(id), instance] as const,
+  );
+  const drivers = new Set<ProviderDriverKind>([
+    ...(Object.keys(settings.providers) as ProviderDriverKind[]),
+    ...instances.map(([, instance]) => instance.driver),
+  ]);
+
+  for (const driver of drivers) {
+    const defaultId = defaultInstanceIdForDriver(driver);
+    const explicitDefault = settings.providerInstances?.[defaultId];
+    const legacyDefault = (settings.providers as Readonly<Record<string, unknown>>)[driver];
+    const defaultInstance = explicitDefault ?? {
+      driver,
+      enabled: (configRecord(legacyDefault).enabled as boolean | undefined) ?? true,
+      config: legacyDefault,
+    };
+    const signatures = [effectiveProviderRuntimeConfig(driver, defaultInstance)];
+
+    for (const [instanceId, instance] of instances) {
+      if (instance.driver !== driver || instanceId === defaultId) continue;
+      const signature = effectiveProviderRuntimeConfig(driver, instance);
+      if (signatures.some((candidate) => Equal.equals(candidate, signature))) {
+        redundant.add(instanceId);
+      } else {
+        signatures.push(signature);
+      }
+    }
+  }
+
+  return redundant;
 }
 
 /**

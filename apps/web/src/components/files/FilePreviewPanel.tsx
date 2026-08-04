@@ -802,6 +802,10 @@ export default function FilePreviewPanel({
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
 
   useEffect(() => {
+    if (relativePath && !isImage && revealRequestId > 0) file.refresh();
+  }, [file.refresh, isImage, relativePath, revealRequestId]);
+
+  useEffect(() => {
     const currentCrumb = breadcrumbRef.current?.querySelector<HTMLElement>(
       "[data-current-file-crumb='true']",
     );

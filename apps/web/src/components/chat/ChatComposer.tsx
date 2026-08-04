@@ -168,7 +168,7 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { toastManager } from "../ui/toast";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
@@ -204,6 +204,8 @@ import {
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useVoiceConversation } from "../../hooks/useVoiceConversation";
+import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const runtimeModeConfig: Record<
@@ -467,6 +469,7 @@ export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
+  replacePrompt: (text: string) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
@@ -1268,6 +1271,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     [composerDraftTarget, setComposerDraftPrompt],
   );
+
+  const reportVoiceError = useCallback((description: string) => {
+    toastManager.add(
+      stackedThreadToast({ type: "error", title: "Voice conversation", description }),
+    );
+  }, []);
+
+  const submitVoiceTranscript = useCallback(
+    (transcript: string) => {
+      if (promptRef.current.trim()) {
+        reportVoiceError("Send or clear the current draft before starting a voice turn.");
+        return false;
+      }
+      promptRef.current = transcript;
+      setComposerDraftPrompt(composerDraftTarget, transcript);
+      composerRef.current?.resetCursorState({ prompt: transcript, cursor: transcript.length });
+      onSend();
+      return true;
+    },
+    [composerDraftTarget, composerRef, onSend, promptRef, reportVoiceError, setComposerDraftPrompt],
+  );
+
+  const voiceConversation = useVoiceConversation({
+    messages: activeThread?.messages ?? [],
+    onTranscript: submitVoiceTranscript,
+    onError: reportVoiceError,
+  });
 
   const addComposerImage = useCallback(
     (image: ComposerImageAttachment) => {
@@ -2552,6 +2582,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         composerEditorRef.current?.focusAt(cursor);
       },
       insertTextAtEnd: insertComposerTextAtEnd,
+      replacePrompt: (text: string) => applyPromptReplacement(0, promptRef.current.length, text),
       openModelPicker: () => {
         setIsComposerModelPickerOpen(true);
       },
@@ -2840,6 +2871,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   : prompt.trim() ||
                     (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
               </button>
+              <VoiceConversationButton
+                active={voiceConversation.active}
+                status={voiceConversation.status}
+                disabled={
+                  isConnecting ||
+                  environmentUnavailable !== null ||
+                  noProviderAvailable ||
+                  projectSelectionRequired ||
+                  (!voiceConversation.active && voiceConversation.status !== "idle")
+                }
+                onToggle={voiceConversation.toggleConversation}
+              />
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/90 text-primary-foreground disabled:opacity-30"
@@ -3102,6 +3145,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
           </div>
 
+          <VoiceConversationBanner
+            active={voiceConversation.active}
+            status={voiceConversation.status}
+            hasOriginalReply={voiceConversation.hasOriginalReply}
+            onToggle={voiceConversation.toggleConversation}
+          />
+
           {/* Bottom toolbar */}
           {isComposerCollapsedMobile ? null : activePendingApproval ? (
             <div className="flex items-center justify-end gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
@@ -3205,6 +3255,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                <VoiceConversationButton
+                  active={voiceConversation.active}
+                  status={voiceConversation.status}
+                  disabled={
+                    isConnecting ||
+                    environmentUnavailable !== null ||
+                    noProviderAvailable ||
+                    projectSelectionRequired ||
+                    (!voiceConversation.active && voiceConversation.status !== "idle")
+                  }
+                  onToggle={voiceConversation.toggleConversation}
+                />
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}

@@ -4,6 +4,7 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
+  getRedundantProviderInstanceIds,
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
@@ -85,6 +86,65 @@ describe("isProviderInstancePickerVisible", () => {
 });
 
 describe("applyProviderInstanceSettings", () => {
+  it("collapses a presentation-only Agy duplicate into the canonical default", () => {
+    const defaultId = ProviderInstanceId.make("agy");
+    const duplicateId = ProviderInstanceId.make("agy_agy");
+    const settings = {
+      providers: { agy: {} } as never,
+      providerInstances: {
+        [defaultId]: {
+          driver: ProviderDriverKind.make("agy"),
+          enabled: true,
+          config: {
+            enabled: true,
+            binaryPath: "agy",
+            defaultModel: "gemini-3.6-flash-medium",
+            launchArgs: "",
+            customModels: [],
+          },
+        },
+        [duplicateId]: {
+          driver: ProviderDriverKind.make("agy"),
+          displayName: "Agy",
+          enabled: true,
+        },
+      },
+    };
+    const entries = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("agy"), instanceId: duplicateId }),
+      provider({ provider: ProviderDriverKind.make("agy"), instanceId: defaultId }),
+    ]);
+
+    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set([duplicateId]));
+    expect(
+      applyProviderInstanceSettings(entries, settings).map((entry) => entry.instanceId),
+    ).toEqual([defaultId]);
+  });
+
+  it("preserves Agy instances with distinct models or environments", () => {
+    const defaultId = ProviderInstanceId.make("agy");
+    const modelId = ProviderInstanceId.make("agy_pro");
+    const environmentId = ProviderInstanceId.make("agy_work");
+    const settings = {
+      providers: { agy: {} } as never,
+      providerInstances: {
+        [defaultId]: { driver: ProviderDriverKind.make("agy"), enabled: true },
+        [modelId]: {
+          driver: ProviderDriverKind.make("agy"),
+          enabled: true,
+          config: { defaultModel: "gemini-3.6-pro-high" },
+        },
+        [environmentId]: {
+          driver: ProviderDriverKind.make("agy"),
+          enabled: true,
+          environment: [{ name: "AGY_PROFILE", value: "work", sensitive: false }],
+        },
+      },
+    };
+
+    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
+  });
+
   it("uses settings when a streamed snapshot still reports a disabled default as enabled", () => {
     const entries = deriveProviderInstanceEntries([
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),

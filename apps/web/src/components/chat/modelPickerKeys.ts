@@ -45,3 +45,16 @@ export function parseModelPickerLegacySectionKey(key: string): ProviderInstanceI
     ? (key.slice(LEGACY_SECTION_KEY_PREFIX.length) as ProviderInstanceId)
     : null;
 }
+
+export function defaultExpandedLegacyInstanceIds(
+  modelOptionsByInstance: ReadonlyMap<
+    ProviderInstanceId,
+    ReadonlyArray<{ readonly isLegacy?: boolean | undefined }>
+  >,
+): Set<ProviderInstanceId> {
+  return new Set(
+    [...modelOptionsByInstance]
+      .filter(([, models]) => models.some((model) => model.isLegacy))
+      .map(([instanceId]) => instanceId),
+  );
+}

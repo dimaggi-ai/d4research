@@ -22,6 +22,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -211,6 +213,10 @@ const PreviewSnapshotRegistrationLive = Layer.effectDiscard(registerPreviewSnaps
   Layer.provide(PreviewSnapshotToolkitHandlersLive),
 );
 
+const MemoryToolkitRegistrationLive = McpServer.toolkit(MemoryToolkit).pipe(
+  Layer.provide(MemoryToolkitHandlersLive),
+);
+
 export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewStandardToolkitRegistrationLive,
   PreviewSnapshotRegistrationLive,
@@ -222,4 +228,7 @@ const McpTransportLive = McpServer.layerHttp({
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = PreviewToolkitRegistrationLive.pipe(
+  Layer.merge(MemoryToolkitRegistrationLive),
+  Layer.provideMerge(McpTransportLive),
+);

@@ -28,7 +28,10 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
-import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
+import {
+  ProjectionTurnRepository,
+  type ProjectionTurnState,
+} from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -42,6 +45,24 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
+
+export function shouldAppendRuntimeEventActivities(input: {
+  readonly eventType: ProviderRuntimeEvent["type"];
+  readonly conflictsWithActiveTurn: boolean;
+  readonly eventTurnState: ProjectionTurnState | undefined;
+}): boolean {
+  if (input.eventType !== "item.started" && input.eventType !== "item.updated") {
+    return true;
+  }
+  if (input.conflictsWithActiveTurn) {
+    return false;
+  }
+  return (
+    input.eventTurnState !== "completed" &&
+    input.eventTurnState !== "interrupted" &&
+    input.eventTurnState !== "error"
+  );
+}
 
 // Fallback when the in-memory description cache no longer has the task name
 // (server restart, session-exit sweep, TTL/capacity eviction): earlier
@@ -1765,7 +1786,23 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      const eventTurnState = eventTurnId
+        ? Option.getOrUndefined(
+            yield* projectionTurnRepository
+              .getByTurnId({
+                threadId: thread.id,
+                turnId: eventTurnId,
+              })
+              .pipe(Effect.map(Option.map((turn) => turn.state))),
+          )
+        : undefined;
+      const activities = shouldAppendRuntimeEventActivities({
+        eventType: event.type,
+        conflictsWithActiveTurn,
+        eventTurnState,
+      })
+        ? runtimeEventToActivities(event, taskTitle)
+        : [];
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

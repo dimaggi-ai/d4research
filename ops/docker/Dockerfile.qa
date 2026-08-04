@@ -1,0 +1,37 @@
+FROM node:24-bookworm AS builder
+
+RUN corepack enable
+WORKDIR /workspace
+ENV PATH="/workspace/node_modules/.bin:${PATH}"
+
+COPY . .
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+  && pnpm run prepare
+
+RUN T3CODE_DEPLOY_RESTART_MODE=build-only \
+  T3CODE_DEPLOY_REQUIRE_VOICE=0 \
+  bash scripts/deploy-local.sh --build-only
+
+RUN pnpm --filter t3 deploy --legacy --prod /runtime \
+  && rm -rf /runtime/dist \
+  && cp -a apps/server/dist /runtime/dist
+
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /runtime ./
+COPY ops/docker/entrypoint.sh /usr/local/bin/t3code-qa-entrypoint
+COPY ops/docker/mock-local-control.mjs /opt/t3-qa/mock-local-control.mjs
+COPY ops/docker/fake-agy.sh /opt/t3-qa/bin/agy
+
+RUN chmod 0755 /usr/local/bin/t3code-qa-entrypoint /opt/t3-qa/bin/agy \
+  && mkdir -p /state
+
+ENV PATH="/opt/t3-qa/bin:${PATH}"
+EXPOSE 3773 8093
+
+ENTRYPOINT ["/usr/local/bin/t3code-qa-entrypoint"]

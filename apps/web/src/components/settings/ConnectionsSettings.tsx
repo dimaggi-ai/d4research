@@ -39,6 +39,7 @@ import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
@@ -1725,6 +1726,8 @@ function CloudRemoteEnvironmentRows({
 }
 
 export function ConnectionsSettings() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -2995,6 +2998,71 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
+      <SettingsSection title="Memory connectors">
+        <SettingsRow
+          title="Local Memo"
+          description="On-device semantic memory. Memory stays on this environment; agents only read or write when they call a memory tool."
+          control={
+            <Switch
+              checked={settings.memory.localEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ memory: { localEnabled: Boolean(checked) } })
+              }
+              aria-label="Enable local Memo memory"
+            />
+          }
+        />
+        <SettingsRow
+          title="Local Memo URL"
+          description="Defaults to the local agent-memory service. T3CODE_LOCAL_MEMO_URL overrides this value on the server."
+          control={
+            <Input
+              className="w-full sm:w-72"
+              defaultValue={settings.memory.localBaseUrl}
+              disabled={!settings.memory.localEnabled}
+              aria-label="Local Memo URL"
+              onBlur={(event) => {
+                const localBaseUrl = event.currentTarget.value.trim();
+                if (localBaseUrl && localBaseUrl !== settings.memory.localBaseUrl) {
+                  updateSettings({ memory: { localBaseUrl } });
+                }
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          title="Hosted Meko"
+          description="Hosted semantic memory with deterministic readback after every write. Authorization is read only from T3CODE_MEKO_AUTHORIZATION on the server and is never saved in app settings."
+          control={
+            <Switch
+              checked={settings.memory.mekoEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ memory: { mekoEnabled: Boolean(checked) } })
+              }
+              aria-label="Enable hosted Meko memory"
+            />
+          }
+        />
+        <SettingsRow
+          title="Meko MCP URL"
+          description="Streamable HTTP MCP endpoint. T3CODE_MEKO_MCP_URL overrides this value on the server."
+          control={
+            <Input
+              className="w-full sm:w-72"
+              defaultValue={settings.memory.mekoMcpUrl}
+              disabled={!settings.memory.mekoEnabled}
+              aria-label="Meko MCP URL"
+              onBlur={(event) => {
+                const mekoMcpUrl = event.currentTarget.value.trim();
+                if (mekoMcpUrl && mekoMcpUrl !== settings.memory.mekoMcpUrl) {
+                  updateSettings({ memory: { mekoMcpUrl } });
+                }
+              }}
+            />
+          }
+        />
+      </SettingsSection>
+
       {canManageLocalBackend ? (
         <>
           <SettingsSection title="This environment">

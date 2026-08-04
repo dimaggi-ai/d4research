@@ -1,0 +1,10 @@
+.git
+.t3
+.repos
+node_modules
+apps/*/dist
+apps/*/dist-electron
+packages/*/dist
+userdata
+worktrees
+*.log

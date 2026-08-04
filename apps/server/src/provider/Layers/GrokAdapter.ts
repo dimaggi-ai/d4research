@@ -84,6 +84,8 @@ export interface GrokAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
+  /** ACP runtime override used by providers that share the standard ACP surface. */
+  readonly makeRuntime?: typeof makeGrokAcpRuntime;
 }
 
 interface PendingApproval {
@@ -570,7 +572,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-          const acp = yield* makeGrokAcpRuntime({
+          const acp = yield* (options?.makeRuntime ?? makeGrokAcpRuntime)({
             grokSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,

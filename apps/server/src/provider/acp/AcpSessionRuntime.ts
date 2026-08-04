@@ -68,7 +68,9 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  /** When omitted, authenticate with the first method advertised by the agent. */
+  readonly authMethodId?: string;
+  readonly safeRequestIds?: boolean;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
@@ -94,6 +96,13 @@ export interface AcpSessionRuntimeStartResult {
     | EffectAcpSchema.NewSessionResponse
     | EffectAcpSchema.ResumeSessionResponse;
   readonly modelConfigId: string | undefined;
+}
+
+export function resolveAcpAuthMethodId(
+  configured: string | undefined,
+  advertised: ReadonlyArray<{ readonly id: string }> | undefined,
+): string | undefined {
+  return configured?.trim() || advertised?.[0]?.id.trim() || undefined;
 }
 
 export class AcpSessionRuntime extends Context.Service<
@@ -353,8 +362,14 @@ export const make = (
         ),
       );
 
+    // ACP uses stdout for protocol messages, but real agents may emit verbose
+    // startup diagnostics on stderr. Leaving that pipe unread can fill its OS
+    // buffer and block the child before it answers `initialize`.
+    yield* child.stderr.pipe(Stream.runDrain, Effect.forkIn(runtimeScope));
+
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {
+        ...(options.safeRequestIds !== undefined ? { safeRequestIds: options.safeRequestIds } : {}),
         ...(options.protocolLogging?.logIncoming !== undefined
           ? { logIncoming: options.protocolLogging.logIncoming }
           : {}),
@@ -541,15 +556,21 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
-      const authenticatePayload = {
-        methodId: options.authMethodId,
-      } satisfies EffectAcpSchema.AuthenticateRequest;
-
-      yield* runLoggedRequest(
-        "authenticate",
-        authenticatePayload,
-        acp.agent.authenticate(authenticatePayload),
+      const authMethodId = resolveAcpAuthMethodId(
+        options.authMethodId,
+        initializeResult.authMethods,
       );
+      if (authMethodId !== undefined) {
+        const authenticatePayload = {
+          methodId: authMethodId,
+        } satisfies EffectAcpSchema.AuthenticateRequest;
+
+        yield* runLoggedRequest(
+          "authenticate",
+          authenticatePayload,
+          acp.agent.authenticate(authenticatePayload),
+        );
+      }
 
       let sessionId: string;
       let sessionSetupResult:

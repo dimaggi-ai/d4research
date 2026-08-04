@@ -44,7 +44,10 @@ import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityRes
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
-import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  ProviderRuntimeIngestionLive,
+  shouldAppendRuntimeEventActivities,
+} from "./ProviderRuntimeIngestion.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -62,6 +65,38 @@ const asEventId = (value: string): EventId => EventId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+describe("shouldAppendRuntimeEventActivities", () => {
+  it("rejects a late tool start for a different active turn", () => {
+    expect(
+      shouldAppendRuntimeEventActivities({
+        eventType: "item.started",
+        conflictsWithActiveTurn: true,
+        eventTurnState: "interrupted",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects nonterminal tool updates for an already-settled turn", () => {
+    expect(
+      shouldAppendRuntimeEventActivities({
+        eventType: "item.updated",
+        conflictsWithActiveTurn: false,
+        eventTurnState: "completed",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps terminal tool events so an earlier row can settle", () => {
+    expect(
+      shouldAppendRuntimeEventActivities({
+        eventType: "item.completed",
+        conflictsWithActiveTurn: true,
+        eventTurnState: "interrupted",
+      }),
+    ).toBe(true);
+  });
+});
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;

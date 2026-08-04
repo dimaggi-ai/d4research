@@ -43,6 +43,7 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { applyOllamaClaudePreset, isOllamaClaudePresetConfigured } from "./ollamaClaudePreset";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -351,6 +352,36 @@ interface ProviderInstanceCardProps {
   readonly isUpdating?: boolean | undefined;
 }
 
+export function ProviderDetailsButton({
+  instanceId,
+  displayName,
+  isExpanded,
+  onExpandedChange,
+}: {
+  readonly instanceId: ProviderInstanceId;
+  readonly displayName: string;
+  readonly isExpanded: boolean;
+  readonly onExpandedChange: (open: boolean) => void;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+      onClick={() => onExpandedChange(!isExpanded)}
+      aria-expanded={isExpanded}
+      aria-controls={`provider-details-${instanceId}`}
+      aria-label={`${isExpanded ? "Hide" : "Show"} ${displayName} details`}
+    >
+      <span>{isExpanded ? "Hide details" : "Details"}</span>
+      <ChevronDownIcon
+        className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
+      />
+    </Button>
+  );
+}
+
 /**
  * A single configured provider-instance row in the Providers settings
  * section. Used for every row — both the built-in default instance for a
@@ -451,6 +482,7 @@ export function ProviderInstanceCard({
     liveModels: liveProvider?.models,
     customModels,
   });
+  const ollamaClaudeConfigured = isOllamaClaudePresetConfigured(instance);
 
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -707,17 +739,12 @@ export function ProviderInstanceCard({
             {authRowNode}
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => onExpandedChange(!isExpanded)}
-              aria-label={`Toggle ${displayName} details`}
-            >
-              <ChevronDownIcon
-                className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
-              />
-            </Button>
+            <ProviderDetailsButton
+              instanceId={instanceId}
+              displayName={displayName}
+              isExpanded={isExpanded}
+              onExpandedChange={onExpandedChange}
+            />
             <Switch
               checked={enabled}
               onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
@@ -728,8 +755,34 @@ export function ProviderInstanceCard({
       </div>
 
       <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
-        <CollapsibleContent>
+        <CollapsibleContent id={`provider-details-${instanceId}`}>
           <div className="space-y-5 px-3 pb-4 pt-2 sm:px-4">
+            {driverKind === "claudeAgent" ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/25 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-foreground">Claude through Ollama</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {ollamaClaudeConfigured
+                      ? "Configured for local and Ollama Cloud models through the local Ollama service."
+                      : "Use Ollama's Anthropic-compatible API and recommended cloud coding models."}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                    Cloud models require: ollama signin
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={ollamaClaudeConfigured ? "outline" : "default"}
+                  className="shrink-0"
+                  disabled={ollamaClaudeConfigured}
+                  onClick={() => onUpdate(applyOllamaClaudePreset(instance))}
+                >
+                  {ollamaClaudeConfigured ? "Configured" : "Configure Ollama"}
+                </Button>
+              </div>
+            ) : null}
+
             <div>
               <label htmlFor={`provider-instance-${instanceId}-display-name`} className="block">
                 <span className="text-xs font-medium text-foreground">Display name</span>

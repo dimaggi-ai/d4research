@@ -26,6 +26,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
+  isWorkEntryTurnSettled,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
@@ -1961,7 +1962,11 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
       : "font-medium text-foreground/82";
-  const turnSettled = !activity.activeTurnInProgress;
+  const turnSettled = isWorkEntryTurnSettled({
+    workEntryTurnId: workEntry.turnId,
+    latestTurnId: activity.latestTurnId,
+    activeTurnInProgress: activity.activeTurnInProgress,
+  });
   const showNeutralIndicator = !turnSettled && workEntryIndicatesToolNeutralStatus(workEntry);
   const showSuccessIndicator =
     workEntryIndicatesToolSuccess(workEntry) ||

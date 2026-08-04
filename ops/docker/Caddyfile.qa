@@ -1,0 +1,11 @@
+:8080 {
+	encode gzip
+
+	handle /voice/* {
+		reverse_proxy t3code:8093
+	}
+
+	handle {
+		reverse_proxy t3code:3773
+	}
+}

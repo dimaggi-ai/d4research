@@ -130,6 +130,72 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.effect("launches Antigravity interactively in an installed Linux terminal", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-antigravity-" });
+    for (const command of ["agy", "konsole"]) {
+      const executablePath = path.join(binDir, command);
+      yield* fileSystem.writeFileString(executablePath, "#!/bin/sh\n");
+      yield* fileSystem.chmod(executablePath, 0o755);
+    }
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({ editor: "antigravity", cwd: "/workspace/project" });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: binDir },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.ok(spawned);
+    assert.equal(spawned.command, "konsole");
+    assert.deepEqual(spawned.args, ["-e", "agy"]);
+    assert.equal(spawned.options.cwd, "/workspace/project");
+    assert.equal(spawned.options.detached, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("opens Linux workspaces with gio when it is available", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-file-manager-" });
+    const gioPath = path.join(binDir, "gio");
+    yield* fileSystem.writeFileString(gioPath, "#!/bin/sh\n");
+    yield* fileSystem.chmod(gioPath, 0o755);
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({ editor: "file-manager", cwd: "/workspace/project" });
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          env: { PATH: binDir },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.ok(spawned);
+    assert.equal(spawned.command, "gio");
+    assert.deepEqual(spawned.args, ["open", "/workspace/project"]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("discovers editors through the service API", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

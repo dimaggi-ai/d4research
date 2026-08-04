@@ -1653,6 +1653,13 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.projectsReadFile,
             workspaceFileSystem.readFile(input).pipe(
+              Effect.tapError((cause) =>
+                Effect.logWarning("Workspace file read failed.", {
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  cause,
+                }),
+              ),
               Effect.mapError(
                 (cause) =>
                   new ProjectReadFileError({

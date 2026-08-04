@@ -1,13 +1,10 @@
 import { EditorId, type EnvironmentId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useMemo } from "react";
-import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
+import { isOpenFavoriteEditorShortcut } from "../../keybindings";
 import { usePreferredEditor } from "../../editorPreferences";
-import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
+import { FolderClosedIcon } from "lucide-react";
 import { Button } from "../ui/button";
-import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import {
-  AntigravityIcon,
   CursorIcon,
   Icon,
   KiroIcon,
@@ -42,7 +39,10 @@ type OpenInOption = {
   kind: "brand" | "generic";
 };
 
-const resolveOptions = (platform: string, availableEditors: ReadonlyArray<EditorId>) => {
+export const resolveOpenInOptions = (
+  platform: string,
+  availableEditors: ReadonlyArray<EditorId>,
+) => {
   const baseOptions: ReadonlyArray<OpenInOption> = [
     {
       label: "Cursor",
@@ -84,12 +84,6 @@ const resolveOptions = (platform: string, availableEditors: ReadonlyArray<Editor
       label: "Zed",
       Icon: Zed,
       value: "zed",
-      kind: "brand",
-    },
-    {
-      label: "Antigravity",
-      Icon: AntigravityIcon,
-      value: "antigravity",
       kind: "brand",
     },
     {
@@ -176,7 +170,9 @@ const resolveOptions = (platform: string, availableEditors: ReadonlyArray<Editor
     },
   ];
   const availableEditorSet = new Set(availableEditors);
-  return baseOptions.filter((option) => availableEditorSet.has(option.value));
+  return baseOptions.filter(
+    (option) => option.value === "file-manager" || availableEditorSet.has(option.value),
+  );
 };
 
 function getOpenInIconClass(kind: OpenInOption["kind"]) {
@@ -188,6 +184,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   keybindings,
   availableEditors,
   openInCwd,
+  onOpenFiles,
   compact = false,
   enableShortcut = true,
 }: {
@@ -195,15 +192,17 @@ export const OpenInPicker = memo(function OpenInPicker({
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
+  onOpenFiles?: () => void;
   compact?: boolean;
   enableShortcut?: boolean;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
-  const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableEditors);
   const options = useMemo(
-    () => resolveOptions(navigator.platform, availableEditors),
+    () => resolveOpenInOptions(navigator.platform, availableEditors),
     [availableEditors],
   );
+  const availableOpenTargets = useMemo(() => options.map((option) => option.value), [options]);
+  const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);
   const primaryOption = options.find(({ value }) => value === preferredEditor) ?? null;
 
   const openInEditor = useCallback(
@@ -211,6 +210,11 @@ export const OpenInPicker = memo(function OpenInPicker({
       if (!openInCwd) return;
       const editor = editorId ?? preferredEditor;
       if (!editor) return;
+      if (editor === "file-manager" && onOpenFiles) {
+        onOpenFiles();
+        setPreferredEditor(editor);
+        return;
+      }
       const result = openInEditorMutation({
         environmentId,
         input: {
@@ -221,12 +225,14 @@ export const OpenInPicker = memo(function OpenInPicker({
       setPreferredEditor(editor);
       return result;
     },
-    [environmentId, openInCwd, openInEditorMutation, preferredEditor, setPreferredEditor],
-  );
-
-  const openFavoriteEditorShortcutLabel = useMemo(
-    () => shortcutLabelForCommand(keybindings, "editor.openFavorite"),
-    [keybindings],
+    [
+      environmentId,
+      onOpenFiles,
+      openInCwd,
+      openInEditorMutation,
+      preferredEditor,
+      setPreferredEditor,
+    ],
   );
 
   useEffect(() => {
@@ -237,6 +243,10 @@ export const OpenInPicker = memo(function OpenInPicker({
       if (!preferredEditor) return;
 
       e.preventDefault();
+      if (preferredEditor === "file-manager" && onOpenFiles) {
+        onOpenFiles();
+        return;
+      }
       void openInEditorMutation({
         environmentId,
         input: {
@@ -251,62 +261,33 @@ export const OpenInPicker = memo(function OpenInPicker({
     enableShortcut,
     environmentId,
     keybindings,
+    onOpenFiles,
     openInCwd,
     openInEditorMutation,
     preferredEditor,
   ]);
 
   return (
-    <Group aria-label="Open in editor">
-      <Button
-        aria-label={compact ? "Open file in preferred editor" : undefined}
-        size="xs"
-        variant="outline"
-        disabled={!preferredEditor || !openInCwd}
-        onClick={() => openInEditor(preferredEditor)}
+    <Button
+      aria-label={compact ? "Open file in preferred editor" : "Open project with preferred app"}
+      size="xs"
+      variant="outline"
+      disabled={!preferredEditor || !openInCwd}
+      onClick={() => openInEditor(preferredEditor)}
+    >
+      {primaryOption?.Icon && (
+        <primaryOption.Icon
+          aria-hidden="true"
+          className={cn("size-3.5", getOpenInIconClass(primaryOption.kind))}
+        />
+      )}
+      <span
+        className={
+          compact ? "sr-only" : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
+        }
       >
-        {primaryOption?.Icon && (
-          <primaryOption.Icon
-            aria-hidden="true"
-            className={cn("size-3.5", getOpenInIconClass(primaryOption.kind))}
-          />
-        )}
-        <span
-          className={
-            compact
-              ? "sr-only"
-              : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
-          }
-        >
-          Open
-        </span>
-      </Button>
-      <GroupSeparator {...(!compact ? { className: "hidden @3xl/header-actions:block" } : {})} />
-      <Menu>
-        <MenuTrigger
-          render={
-            <Button
-              aria-label={compact ? "Choose editor" : "Copy options"}
-              size="icon-xs"
-              variant="outline"
-            />
-          }
-        >
-          <ChevronDownIcon aria-hidden="true" className="size-4" />
-        </MenuTrigger>
-        <MenuPopup align="end">
-          {options.length === 0 && <MenuItem disabled>No installed editors found</MenuItem>}
-          {options.map(({ label, Icon, value, kind }) => (
-            <MenuItem key={value} onClick={() => openInEditor(value)}>
-              <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
-              {label}
-              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
-                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
-              )}
-            </MenuItem>
-          ))}
-        </MenuPopup>
-      </Menu>
-    </Group>
+        Open
+      </span>
+    </Button>
   );
 });

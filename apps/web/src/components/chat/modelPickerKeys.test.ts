@@ -1,6 +1,7 @@
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
+  defaultExpandedLegacyInstanceIds,
   modelPickerLegacySectionKey,
   modelPickerModelKey,
   parseModelPickerLegacySectionKey,
@@ -27,5 +28,21 @@ describe("model picker item keys", () => {
     const key = modelPickerModelKey(instanceId, slug);
 
     expect(parseModelPickerModelKey(key)).toEqual({ instanceId, slug });
+  });
+
+  it("expands legacy models for every provider that has them", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const claude = ProviderInstanceId.make("claude");
+    const opencode = ProviderInstanceId.make("opencode");
+
+    expect(
+      defaultExpandedLegacyInstanceIds(
+        new Map([
+          [codex, [{ isLegacy: true }]],
+          [claude, [{ isLegacy: false }, { isLegacy: true }]],
+          [opencode, [{ isLegacy: false }]],
+        ]),
+      ),
+    ).toEqual(new Set([codex, claude]));
   });
 });

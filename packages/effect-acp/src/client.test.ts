@@ -420,7 +420,9 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();
       const scope = yield* Scope.make();
-      const acp = yield* AcpClient.make(stdio).pipe(Effect.provideService(Scope.Scope, scope));
+      const acp = yield* AcpClient.make(stdio, { safeRequestIds: true }).pipe(
+        Effect.provideService(Scope.Scope, scope),
+      );
 
       const initializeFiber = yield* acp.agent
         .initialize({
@@ -457,6 +459,8 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
         : yield* decodedExt(firstOutbound);
 
       assert.notEqual(initializeRequest.id, extRequest.id);
+      assert.isAtMost(Number(initializeRequest.id), 2_147_483_647);
+      assert.isAtMost(Number(extRequest.id), 2_147_483_647);
 
       yield* Queue.offer(
         input,

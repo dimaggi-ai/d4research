@@ -47,6 +47,7 @@ export interface AcpPatchedProtocolOptions {
   readonly serverRequestMethods: ReadonlySet<string>;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
+  readonly safeRequestIds?: boolean;
   readonly logger?: (event: AcpProtocolLogEvent) => Effect.Effect<void, never>;
   readonly onNotification?: (
     notification: AcpIncomingNotification,
@@ -71,6 +72,14 @@ interface AcpPendingRequest {
   readonly method: string;
 }
 
+type AcpEncodedMessage = RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded;
+
+interface WireRequestIdState {
+  readonly next: number;
+  readonly originalToWire: Map<string, number>;
+  readonly wireToOriginal: Map<string, string | number>;
+}
+
 const decodeSessionUpdate = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
 const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.ElicitationCompleteNotification,
@@ -87,6 +96,11 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const disconnects = yield* Queue.unbounded<number>();
   const outgoing = yield* Queue.unbounded<string | Uint8Array, Cause.Done<void>>();
   const nextRequestId = yield* Ref.make(1);
+  const wireRequestIds = yield* Ref.make<WireRequestIdState>({
+    next: 1,
+    originalToWire: new Map<string, number>(),
+    wireToOriginal: new Map<string, string | number>(),
+  });
   const terminationHandled = yield* Ref.make(false);
   const extPending = yield* Ref.make(new Map<string, AcpPendingRequest>());
 
@@ -106,22 +120,51 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const offerOutgoing = Effect.fn("offerOutgoing")(function* (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
   ) {
+    const wireMessage = options.safeRequestIds
+      ? yield* Ref.modify(
+          wireRequestIds,
+          (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
+            if (message._tag === "Request") {
+              const originalKey = String(message.id);
+              const existing = state.originalToWire.get(originalKey);
+              const wireId = existing ?? state.next;
+              if (existing !== undefined) return [{ ...message, id: wireId }, state] as const;
+              const originalToWire = new Map(state.originalToWire);
+              const wireToOriginal = new Map(state.wireToOriginal);
+              originalToWire.set(originalKey, wireId);
+              wireToOriginal.set(String(wireId), message.id);
+              return [
+                { ...message, id: wireId },
+                { next: wireId + 1, originalToWire, wireToOriginal },
+              ] as const;
+            }
+            if (message._tag === "Ack" || message._tag === "Interrupt") {
+              const wireId = state.originalToWire.get(String(message.requestId));
+              return [
+                wireId === undefined ? message : { ...message, requestId: wireId },
+                state,
+              ] as const;
+            }
+            return [message, state] as const;
+          },
+        )
+      : message;
     yield* logProtocol({
       direction: "outgoing",
       stage: "decoded",
-      payload: message,
+      payload: wireMessage,
     });
 
-    const method = message._tag === "Request" ? message.tag : undefined;
+    const method = wireMessage._tag === "Request" ? wireMessage.tag : undefined;
     const encodedRequestId =
-      message._tag === "Request"
-        ? message.id
-        : "requestId" in message
-          ? message.requestId
+      wireMessage._tag === "Request"
+        ? wireMessage.id
+        : "requestId" in wireMessage
+          ? wireMessage.requestId
           : undefined;
     const requestId = encodedRequestId === "" ? undefined : encodedRequestId;
     const encoded = yield* Effect.try({
-      try: () => parser.encode(message),
+      try: () => parser.encode(wireMessage),
       catch: (cause) => AcpError.AcpProtocolParseError.fromEncodingError(method, requestId, cause),
     });
 
@@ -406,6 +449,26 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     }
   };
 
+  const restoreIncomingRequestId = (
+    message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
+  ) =>
+    options.safeRequestIds
+      ? Ref.modify(wireRequestIds, (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
+          if (message._tag !== "Chunk" && message._tag !== "Exit") {
+            return [message, state] as const;
+          }
+          const originalId = state.wireToOriginal.get(String(message.requestId));
+          if (originalId === undefined) return [message, state] as const;
+          const restored = { ...message, requestId: originalId };
+          if (message._tag === "Chunk") return [restored, state] as const;
+          const originalToWire = new Map(state.originalToWire);
+          const wireToOriginal = new Map(state.wireToOriginal);
+          originalToWire.delete(String(originalId));
+          wireToOriginal.delete(String(message.requestId));
+          return [restored, { ...state, originalToWire, wireToOriginal }] as const;
+        })
+      : Effect.succeed(message);
+
   yield* options.stdio.stdin.pipe(
     Stream.runForEach((data) =>
       logProtocol({
@@ -450,9 +513,12 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
           }),
         ),
         Effect.flatMap((messages) =>
-          Effect.forEach(messages, routeDecodedMessage, {
-            discard: true,
-          }),
+          Effect.forEach(
+            messages,
+            (message) =>
+              restoreIncomingRequestId(message).pipe(Effect.flatMap(routeDecodedMessage)),
+            { discard: true },
+          ),
         ),
       ),
     ),

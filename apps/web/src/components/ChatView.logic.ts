@@ -28,6 +28,18 @@ export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
+/**
+ * Open-in actions are project actions, not Git-only actions. A repository root
+ * is preferable when available, but non-Git projects must still be able to
+ * open Files/Finder and embedded tools from their workspace root.
+ */
+export function resolveProjectOpenInCwd(
+  gitCwd: string | null | undefined,
+  workspaceRoot: string | null | undefined,
+): string | null {
+  return gitCwd?.trim() || workspaceRoot?.trim() || null;
+}
+
 export function startNewThreadForProject(
   projectRef: ScopedProjectRef | null,
   handleNewThread: (projectRef: ScopedProjectRef) => Promise<void>,

@@ -11,7 +11,10 @@ import {
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { normalizeProviderAccentColor } from "../../providerInstances";
+import {
+  getRedundantProviderInstanceIds,
+  normalizeProviderAccentColor,
+} from "../../providerInstances";
 import { Button } from "../ui/button";
 import { ACPRegistryIcon, Gemini, GithubCopilotIcon, PiAgentIcon, type Icon } from "../Icons";
 import {
@@ -203,6 +206,16 @@ export function AddProviderInstanceDialog({ open, onOpenChange }: AddProviderIns
       ...settings.providerInstances,
       [brandedId]: nextInstance,
     };
+    if (
+      getRedundantProviderInstanceIds({ ...settings, providerInstances: nextMap }).has(brandedId)
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Duplicate provider instance",
+        description: `${driverOption.label} already has an instance with the same runtime configuration.`,
+      });
+      return;
+    }
     try {
       updateSettings({ providerInstances: nextMap });
       toastManager.add({

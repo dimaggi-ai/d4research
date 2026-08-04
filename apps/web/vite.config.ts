@@ -1,4 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - Production build bootstrap stamps the emitted PWA worker before an Effect runtime exists.
 import tailwindcss from "@tailwindcss/vite";
+import { readFile, writeFile } from "node:fs/promises";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -10,6 +12,7 @@ import pkg from "./package.json" with { type: "json" };
 import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
+import { stampPwaServiceWorker } from "./src/pwaServiceWorkerBuild";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -37,6 +40,8 @@ const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.tr
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
+const pwaBuildId =
+  process.env.T3CODE_PWA_BUILD_ID?.trim() || `${configuredAppVersion}-${Date.now().toString(36)}`;
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -139,6 +144,16 @@ export default defineConfig(() => {
         presets: [reactCompilerPreset()],
       }),
       tailwindcss(),
+      {
+        name: "t3code-pwa-build-stamp",
+        apply: "build",
+        closeBundle: async () => {
+          const sourceUrl = new URL("./public/service-worker.js", import.meta.url);
+          const outputUrl = new URL("./dist/service-worker.js", import.meta.url);
+          const source = await readFile(sourceUrl, "utf8");
+          await writeFile(outputUrl, stampPwaServiceWorker(source, pwaBuildId), "utf8");
+        },
+      },
     ],
     optimizeDeps: {
       include: [

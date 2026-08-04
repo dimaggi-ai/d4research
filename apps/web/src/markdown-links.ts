@@ -48,6 +48,21 @@ export interface MarkdownFileLinkMeta {
   column?: number;
 }
 
+export type MarkdownFilePrimaryOpenAction = "file-preview" | "editor";
+
+/**
+ * A normal file-link click stays inside T3 whenever the path belongs to the
+ * active workspace. Browser preview remains an explicit secondary action so
+ * generated HTML/PDF files cannot unexpectedly replace the file surface with
+ * an asset URL (and a raw HTTP error when that URL is stale).
+ */
+export function markdownFilePrimaryOpenAction(
+  workspaceRelativePath: string | null,
+  hasThreadContext: boolean,
+): MarkdownFilePrimaryOpenAction {
+  return hasThreadContext && workspaceRelativePath ? "file-preview" : "editor";
+}
+
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);

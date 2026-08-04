@@ -122,6 +122,13 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.agy).toEqual({
+      enabled: true,
+      binaryPath: "agy",
+      defaultModel: "gemini-3.6-flash-medium",
+      launchArgs: "",
+      customModels: [],
+    });
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -176,6 +183,25 @@ describe("ServerSettings worktree defaults", () => {
     expect(
       decodeServerSettingsPatch({ newWorktreesStartFromOrigin: false }).newWorktreesStartFromOrigin,
     ).toBe(false);
+  });
+});
+
+describe("ServerSettings memory connectors", () => {
+  it("defaults local Memo on and hosted Meko off without persisting secrets", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.memory).toEqual({
+      localEnabled: true,
+      localBaseUrl: "http://127.0.0.1:8099",
+      mekoEnabled: false,
+      mekoMcpUrl: "https://mcp.mekodata.ai/mcp",
+    });
+    expect(settings.memory).not.toHaveProperty("authorization");
+  });
+
+  it("accepts partial memory connector patches", () => {
+    expect(decodeServerSettingsPatch({ memory: { mekoEnabled: true } }).memory).toEqual({
+      mekoEnabled: true,
+    });
   });
 });
 

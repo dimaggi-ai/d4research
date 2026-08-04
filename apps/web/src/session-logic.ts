@@ -51,6 +51,12 @@ export const PROVIDER_OPTIONS: Array<{
     available: true,
     pickerSidebarBadge: "new",
   },
+  {
+    value: ProviderDriverKind.make("junie"),
+    label: "Junie",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
 ];
 
 export type WorkLogToolLifecycleStatus =
@@ -78,6 +84,20 @@ export interface WorkLogEntry {
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   /** Originating orchestration activity kind (e.g. `user-input.requested`) for row chrome. */
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
+}
+
+export function isWorkEntryTurnSettled(input: {
+  readonly workEntryTurnId: TurnId | null | undefined;
+  readonly latestTurnId: TurnId | null;
+  readonly activeTurnInProgress: boolean;
+}): boolean {
+  if (!input.activeTurnInProgress) {
+    return true;
+  }
+  if (input.workEntryTurnId === null || input.workEntryTurnId === undefined) {
+    return false;
+  }
+  return input.workEntryTurnId !== input.latestTurnId;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {

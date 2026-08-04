@@ -262,6 +262,28 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("opens, collapses, and restores the system monitor", () => {
+    useRightPanelStore.getState().toggle(refA, "system");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("system");
+
+    useRightPanelStore.getState().toggle(refA, "system");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toContainEqual({ id: "system", kind: "system" });
+
+    useRightPanelStore.getState().toggle(refA, "system");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("system");
+  });
+
+  it("toggles the system monitor open and closed", () => {
+    useRightPanelStore.getState().toggle(refA, "system");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("system");
+
+    useRightPanelStore.getState().toggle(refA, "system");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+  });
+
   it("toggle to a different kind switches active", () => {
     useRightPanelStore.getState().toggle(refA, "preview");
     useRightPanelStore.getState().toggle(refA, "plan");

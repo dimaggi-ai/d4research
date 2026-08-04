@@ -173,8 +173,13 @@ export function useProjectFileQuery(
     ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
     : EMPTY_PROJECT_FILE_QUERY_ATOM;
   const result = useAtomValue(atom);
-  const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const refresh = useCallback(() => {
+    appAtomRegistry.refresh(atom);
+    void executeAtomQuery(appAtomRegistry, atom, {
+      reportDefect: false,
+      reportFailure: false,
+    });
+  }, [atom]);
   const data = Option.getOrNull(AsyncResult.value(result));
   const optimisticResult = useAtomValue(
     optimisticFileAtom(environmentId, cwd, relativePath ?? EMPTY_PROJECT_FILE_PATH),

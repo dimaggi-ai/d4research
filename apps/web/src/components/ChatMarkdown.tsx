@@ -67,6 +67,7 @@ import {
 } from "../markdown-clipboard";
 import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
 import {
+  markdownFilePrimaryOpenAction,
   normalizeMarkdownLinkDestination,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
@@ -1065,10 +1066,13 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   }, [onOpen, targetPath]);
 
   const handleOpenInFilePreview = useCallback(() => {
-    if (!threadRef || !workspaceRelativePath) {
+    if (
+      markdownFilePrimaryOpenAction(workspaceRelativePath, threadRef !== undefined) === "editor"
+    ) {
       handleOpenInEditor();
       return;
     }
+    if (!threadRef || !workspaceRelativePath) return;
     useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, line);
   }, [handleOpenInEditor, line, threadRef, workspaceRelativePath]);
 
@@ -1206,10 +1210,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              if (onOpenInBrowser) {
-                handleOpenInBrowser();
-                return;
-              }
               handleOpenInFilePreview();
             }}
             onContextMenu={handleContextMenu}
@@ -1450,7 +1450,15 @@ function ChatMarkdown({
       },
       a({ node, href, children, ...props }) {
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        // The precomputed map is an optimization, not the source of truth. Markdown
+        // destinations can be normalized by react-markdown (or contain syntax our
+        // lightweight extractor does not recognize). Falling back to the rendered
+        // href prevents a real filesystem path from becoming a normal browser link
+        // such as `/home/...`, which the web server correctly answers with 404.
+        const fileLinkMeta = normalizedHref
+          ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
+            resolveMarkdownFileLinkMeta(normalizedHref, cwd))
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;

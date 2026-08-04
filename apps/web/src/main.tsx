@@ -30,6 +30,19 @@ if (isElectron) {
   syncDocumentWindowControlsOverlayClass();
 }
 
+if ("serviceWorker" in navigator && (window.isSecureContext || location.hostname === "localhost")) {
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    location.reload();
+  });
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker
+      .register("/service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update());
+  });
+}
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 const app = <AppRoot router={router} />;

@@ -37,6 +37,7 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(function* (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  options?: { readonly makeRuntime?: typeof makeGrokAcpRuntime },
 ) {
   const crypto = yield* Crypto.Crypto;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -61,7 +62,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     Effect.gen(function* () {
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
       const outputRef = yield* Ref.make("");
-      const runtime = yield* makeGrokAcpRuntime({
+      const runtime = yield* (options?.makeRuntime ?? makeGrokAcpRuntime)({
         grokSettings,
         environment,
         childProcessSpawner: commandSpawner,

@@ -13,6 +13,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   defaultInstanceIdForDriver,
+  type EditorId,
   type BackgroundActivityProfile,
   type BackgroundActivitySettings,
   type DesktopUpdateChannel,
@@ -56,6 +57,7 @@ import {
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { resolveOpenInOptions } from "../chat/OpenInPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -74,10 +76,12 @@ import {
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  getRedundantProviderInstanceIds,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import {
+  primaryServerAvailableEditorsAtom,
   primaryServerObservabilityAtom,
   primaryServerProvidersAtom,
   serverEnvironment,
@@ -139,6 +143,7 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { usePreferredEditor } from "../../editorPreferences";
 
 const THEME_OPTIONS = [
   {
@@ -1122,6 +1127,16 @@ export function GeneralSettingsPanel() {
     readLastEnabledProjectGroupingMode(),
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
+  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const openInOptions = useMemo(
+    () => resolveOpenInOptions(navigator.platform, availableEditors),
+    [availableEditors],
+  );
+  const availableOpenTargets = useMemo(
+    () => openInOptions.map((option) => option.value),
+    [openInOptions],
+  );
+  const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
@@ -1170,6 +1185,31 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
+        <SettingsRow
+          title="Open project with"
+          description="Choose what the single Open button in the chat header launches."
+          control={
+            <Select
+              value={preferredEditor ?? undefined}
+              onValueChange={(value) => setPreferredEditor(value as EditorId)}
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Preferred project opener">
+                <SelectValue>
+                  {openInOptions.find((option) => option.value === preferredEditor)?.label ??
+                    "No app available"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {openInOptions.map((option) => (
+                  <SelectItem hideIndicator key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+
         <SettingsRow
           {...searchableSetting("project-grouping")}
           description="Combine matching repositories across environments."
@@ -1844,6 +1884,7 @@ export function ProviderSettingsPanel() {
   );
 
   const rows: InstanceRow[] = [];
+  const redundantInstanceIds = getRedundantProviderInstanceIds(settings);
   const visibleDriverKinds = new Set<ProviderDriverKind>(
     visibleProviderSettings.map((providerSettings) => providerSettings.provider),
   );
@@ -1877,13 +1918,14 @@ export function ProviderSettingsPanel() {
       isDirty,
     });
     for (const [id, instance] of instancesByDriver.get(providerSettings.provider) ?? []) {
-      if (id === defaultInstanceId) continue;
+      if (id === defaultInstanceId || redundantInstanceIds.has(id)) continue;
       rows.push({ instanceId: id, instance, driver: instance.driver, isDefault: false });
     }
   }
   for (const [driver, list] of instancesByDriver) {
     if (visibleDriverKinds.has(driver)) continue;
     for (const [id, instance] of list) {
+      if (redundantInstanceIds.has(id)) continue;
       rows.push({
         instanceId: id,
         instance,

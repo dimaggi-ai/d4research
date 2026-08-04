@@ -131,7 +131,9 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
+const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
+const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
 
@@ -151,7 +153,9 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
   [CURSOR_DRIVER_KIND]: "auto",
   [GROK_DRIVER_KIND]: "grok-build",
+  [JUNIE_DRIVER_KIND]: "default",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
+  [AGY_DRIVER_KIND]: "gemini-3.6-flash-medium",
 };
 
 /** Per-provider text generation model defaults. */
@@ -211,6 +215,8 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "opus-4.5": "claude-opus-4-5",
   },
   [OPENCODE_DRIVER_KIND]: {},
+  [AGY_DRIVER_KIND]: {},
+  [JUNIE_DRIVER_KIND]: {},
 };
 
 // ── Provider display names ────────────────────────────────────────────
@@ -220,5 +226,7 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
+  [JUNIE_DRIVER_KIND]: "Junie",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
+  [AGY_DRIVER_KIND]: "Antigravity",
 };

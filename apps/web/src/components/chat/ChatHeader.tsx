@@ -19,6 +19,7 @@ import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { cn } from "~/lib/utils";
+import { ArrowRightLeftIcon, TelescopeIcon } from "lucide-react";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -35,6 +36,10 @@ interface ChatHeaderProps {
   rightPanelOpen: boolean;
   gitCwd: string | null;
   onNewThreadInProject: () => void;
+  onOpenFiles: () => void;
+  onChangeProvider?: (() => void) | undefined;
+  changeProviderDisabled?: boolean | undefined;
+  onStartDeepResearch?: (() => void) | undefined;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -71,6 +76,10 @@ export const ChatHeader = memo(function ChatHeader({
   rightPanelOpen,
   gitCwd,
   onNewThreadInProject,
+  onOpenFiles,
+  onChangeProvider,
+  changeProviderDisabled = false,
+  onStartDeepResearch,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
@@ -137,9 +146,45 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
+          rightPanelOpen ? "pr-0" : "pr-36 sm:pr-44",
         )}
       >
+        {onStartDeepResearch ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Start deep research"
+                  onClick={onStartDeepResearch}
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                />
+              }
+            >
+              <TelescopeIcon className="size-3.5" />
+              <span className="hidden @4xl/header-actions:inline">Research</span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">Start #deep-research in this chat</TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {onChangeProvider ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Change provider"
+                  disabled={changeProviderDisabled}
+                  onClick={onChangeProvider}
+                  className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                />
+              }
+            >
+              <ArrowRightLeftIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Change provider with shared context</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
@@ -158,6 +203,7 @@ export const ChatHeader = memo(function ChatHeader({
             keybindings={keybindings}
             availableEditors={availableEditors}
             openInCwd={openInCwd}
+            onOpenFiles={onOpenFiles}
           />
         )}
         {activeProjectName && (

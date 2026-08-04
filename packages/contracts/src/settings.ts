@@ -292,6 +292,44 @@ export const ClaudeSettings = makeProviderSettingsSchema(
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
+export const AgySettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("agy").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Antigravity CLI used by this instance.",
+        providerSettingsForm: { placeholder: "agy", clearWhenEmpty: "omit" },
+      }),
+    ),
+    defaultModel: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("gemini-3.6-flash-medium")),
+      Schema.annotateKey({
+        title: "Default model",
+        description: "Model used when a thread does not select one explicitly.",
+        providerSettingsForm: { placeholder: "gemini-3.6-flash-medium" },
+      }),
+    ),
+    launchArgs: Schema.String.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Launch arguments",
+        description: "Additional arguments passed to AGY print-mode sessions.",
+        providerSettingsForm: { clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  { order: ["binaryPath", "defaultModel", "launchArgs"] },
+);
+export type AgySettings = typeof AgySettings.Type;
+
 export const CursorSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -350,6 +388,38 @@ export const GrokSettings = makeProviderSettingsSchema(
   },
 );
 export type GrokSettings = typeof GrokSettings.Type;
+
+export const JunieSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("junie").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the JetBrains Junie CLI binary.",
+        providerSettingsForm: { placeholder: "junie", clearWhenEmpty: "omit" },
+      }),
+    ),
+    defaultModel: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("custom:t3-local-ollama")),
+      Schema.annotateKey({
+        title: "Default model",
+        description: "Junie model or custom profile used for new sessions.",
+        providerSettingsForm: { placeholder: "custom:t3-local-ollama" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "defaultModel"],
+  },
+);
+export type JunieSettings = typeof JunieSettings.Type;
 
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
@@ -467,6 +537,49 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+// ── Memory connector settings ────────────────────────────────────────────
+// Secrets (Meko authorization token) live in the OS secret store or env;
+// only non-sensitive configuration is persisted here.
+export const MemoryConnectorSettings = Schema.Struct({
+  localEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+    Schema.annotateKey({
+      title: "Enable local Memo",
+      description: "Enable the on-device Memo REST memory server.",
+      providerSettingsForm: { control: "switch" },
+    }),
+  ),
+  localBaseUrl: TrimmedString.pipe(
+    Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:8099")),
+    Schema.annotateKey({
+      title: "Memo base URL",
+      description: "Base URL for the local Memo REST server.",
+      providerSettingsForm: { placeholder: "http://127.0.0.1:8099", clearWhenEmpty: "omit" },
+    }),
+  ),
+  mekoEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.annotateKey({
+      title: "Enable Meko",
+      description: "Enable the hosted Meko Streamable HTTP MCP memory service.",
+      providerSettingsForm: { control: "switch" },
+    }),
+  ),
+  mekoMcpUrl: TrimmedString.pipe(
+    Schema.withDecodingDefault(Effect.succeed("https://mcp.mekodata.ai/mcp")),
+    Schema.annotateKey({
+      title: "Meko MCP URL",
+      description: "Streamable HTTP MCP endpoint for the Meko memory service.",
+      providerSettingsForm: { placeholder: "https://mcp.mekodata.ai/mcp", clearWhenEmpty: "omit" },
+    }),
+  ),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type MemoryConnectorSettings = typeof MemoryConnectorSettings.Type;
+
+export const DEFAULT_MEMORY_CONNECTOR_SETTINGS: MemoryConnectorSettings = Schema.decodeSync(
+  MemoryConnectorSettings,
+)({});
+
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -517,8 +630,10 @@ export const ServerSettings = Schema.Struct({
   providers: Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    agy: AgySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    junie: JunieSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
@@ -530,6 +645,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  memory: MemoryConnectorSettings,
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -602,6 +718,14 @@ const ClaudeSettingsPatch = Schema.Struct({
   launchArgs: Schema.optionalKey(TrimmedString),
 });
 
+const AgySettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  defaultModel: Schema.optionalKey(TrimmedString),
+  launchArgs: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const CursorSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -612,6 +736,13 @@ const CursorSettingsPatch = Schema.Struct({
 const GrokSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
+const JunieSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  defaultModel: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
@@ -656,12 +787,22 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
+  memory: Schema.optionalKey(
+    Schema.Struct({
+      localEnabled: Schema.optionalKey(Schema.Boolean),
+      localBaseUrl: Schema.optionalKey(TrimmedString),
+      mekoEnabled: Schema.optionalKey(Schema.Boolean),
+      mekoMcpUrl: Schema.optionalKey(TrimmedString),
+    }),
+  ),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
+      agy: Schema.optionalKey(AgySettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
+      junie: Schema.optionalKey(JunieSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
     }),
   ),

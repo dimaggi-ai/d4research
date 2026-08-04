@@ -1,0 +1,15 @@
+[Unit]
+Description=Validate, build, restart, and verify the local T3 Code deployment
+After=network-online.target mission-control.service
+Wants=network-online.target mission-control.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/workspace/github/t3code
+Environment="PATH=%h/.vite-plus/bin:%h/.nvm/versions/node/v24.18.0/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=%h/workspace/github/t3code/scripts/deploy-local.sh
+# Individual steps enforce tighter limits and emit 10-second heartbeats. This
+# outer limit only prevents the complete validation/build/restart sequence from
+# surviving all of its own deadlines.
+TimeoutStartSec=6min
+Nice=5

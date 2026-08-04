@@ -49,6 +49,7 @@ interface EditorLaunch {
   readonly target: string;
   readonly command: string;
   readonly args: ReadonlyArray<string>;
+  readonly cwd?: string;
 }
 
 interface ProcessLaunch {
@@ -232,6 +233,41 @@ function fileManagerCommandForPlatform(platform: NodeJS.Platform): string {
   }
 }
 
+const LINUX_FILE_MANAGER_COMMANDS = ["gio", "xdg-open"] as const;
+const LINUX_TERMINAL_COMMANDS = [
+  "konsole",
+  "gnome-terminal",
+  "kgx",
+  "xfce4-terminal",
+  "x-terminal-emulator",
+] as const;
+
+function fileManagerArgs(command: string, target: string): ReadonlyArray<string> {
+  return command === "gio" ? ["open", target] : [target];
+}
+
+function terminalArgs(command: string, childCommand: string): ReadonlyArray<string> {
+  if (command === "gnome-terminal" || command === "kgx") return ["--", childCommand];
+  if (command === "xfce4-terminal") return ["--command", childCommand];
+  return ["-e", childCommand];
+}
+
+const resolveFileManagerCommand = Effect.fn("externalLauncher.resolveFileManagerCommand")(
+  function* (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
+    if (platform !== "linux") return fileManagerCommandForPlatform(platform);
+    return Option.getOrElse(yield* resolveAvailableCommand(LINUX_FILE_MANAGER_COMMANDS, env), () =>
+      fileManagerCommandForPlatform(platform),
+    );
+  },
+);
+
+const resolveAntigravityTerminal = Effect.fn("externalLauncher.resolveAntigravityTerminal")(
+  function* (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
+    if (platform !== "linux") return Option.none<string>();
+    return yield* resolveAvailableCommand(LINUX_TERMINAL_COMMANDS, env);
+  },
+);
+
 function buildBrowserLaunch(
   target: string,
   platform: NodeJS.Platform,
@@ -268,7 +304,7 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
 
   for (const editor of EDITORS) {
     if (editor.commands === null) {
-      const command = fileManagerCommandForPlatform(platform);
+      const command = yield* resolveFileManagerCommand(platform, env);
       if (yield* isCommandAvailable(command, { env })) {
         available.push(editor.id);
       }
@@ -276,7 +312,11 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
     }
 
     const command = yield* resolveAvailableCommand(editor.commands, env);
-    if (Option.isSome(command)) {
+    const hasRequiredTerminal =
+      editor.id !== "antigravity" ||
+      platform !== "linux" ||
+      Option.isSome(yield* resolveAntigravityTerminal(platform, env));
+    if (Option.isSome(command) && hasRequiredTerminal) {
       available.push(editor.id);
     }
   }
@@ -340,6 +380,19 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
       yield* resolveAvailableCommand(editorDef.commands, env),
       () => editorDef.commands[0],
     );
+    const terminal =
+      editorDef.id === "antigravity"
+        ? yield* resolveAntigravityTerminal(platform, env)
+        : Option.none<string>();
+    if (Option.isSome(terminal)) {
+      return {
+        editor: editorDef.id,
+        target: input.cwd,
+        command: terminal.value,
+        args: terminalArgs(terminal.value, command),
+        cwd: input.cwd,
+      };
+    }
     return {
       editor: editorDef.id,
       target: input.cwd,
@@ -352,11 +405,12 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
     return yield* new ExternalLauncherUnsupportedEditorError({ editor: input.editor });
   }
 
+  const command = yield* resolveFileManagerCommand(platform, env);
   return {
     editor: editorDef.id,
     target: input.cwd,
-    command: fileManagerCommandForPlatform(platform),
-    args: [input.cwd],
+    command,
+    args: fileManagerArgs(command, input.cwd),
   };
 });
 
@@ -412,6 +466,7 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
       command: spawnCommand.command,
       args: spawnCommand.args,
       options: {
+        cwd: launch.cwd,
         detached: true,
         shell: spawnCommand.shell,
         stdin: "ignore",

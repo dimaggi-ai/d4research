@@ -1,0 +1,18 @@
+# Dedicated root mount avoids breaking absolute /api and /mcp paths.
+# Keep the application on loopback; Caddy owns authenticated LAN/VPN access.
+cacheos.manx-tegus.ts.net:8447, 100.99.123.60:8447, 192.168.4.166:8447 {
+	tls internal
+	bind 0.0.0.0
+	handle /health {
+		reverse_proxy 127.0.0.1:7341
+	}
+
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:8445
+	}
+
+	handle {
+		import auth_gate
+		reverse_proxy 127.0.0.1:7341
+	}
+}

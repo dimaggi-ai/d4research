@@ -5,6 +5,7 @@ import { ResearchOrchestrator } from "./research";
 import { INSTALL_UI } from "./ui";
 import { MemoryService } from "./memory";
 import { parseResearchDirective } from "./directives";
+import { APP_ICON_SVG, WEB_MANIFEST } from "./assets";
 
 const VERSION = "0.1.0";
 const host = process.env.T3RESEARCH_HOST?.trim() || "127.0.0.1";
@@ -162,6 +163,12 @@ export async function handleRequest(request: Request): Promise<Response> {
   try {
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/setup")) {
       return new Response(INSTALL_UI, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+    }
+    if (request.method === "GET" && url.pathname === "/icon.svg") {
+      return new Response(APP_ICON_SVG, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
+    }
+    if (request.method === "GET" && url.pathname === "/manifest.webmanifest") {
+      return new Response(WEB_MANIFEST, { headers: { "content-type": "application/manifest+json", "cache-control": "public, max-age=3600" } });
     }
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ status: "ok", version: VERSION, database: "ready" });

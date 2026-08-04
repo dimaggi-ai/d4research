@@ -41,6 +41,9 @@ fi
 
 grep -q '"status":"ok"' "$qa_tmp/health.json"
 curl --fail --silent --show-error --max-time 5 "$base_url/setup" | grep -q 'Create and plan'
+curl --fail --silent --show-error --max-time 5 "$base_url/setup" | grep -q 'Insert #deep-research'
+curl --fail --silent --show-error --max-time 5 "$base_url/icon.svg" | grep -q 'T3 Research'
+curl --fail --silent --show-error --max-time 5 "$base_url/manifest.webmanifest" | grep -q '"display":"standalone"'
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/api/providers/local-mock/probe" | grep -q '"ok":true'
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/api/providers" -H 'content-type: application/json' --data '{"id":"docker-second-mock","name":"Docker second mock","driver":"mock","model":"deterministic-v1","endpoint":"","command":"","enabled":true}' >/dev/null
 

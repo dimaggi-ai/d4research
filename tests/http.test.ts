@@ -31,7 +31,14 @@ describe("HTTP and MCP", () => {
     expect(html).toContain("T3 Research");
     expect(html).toContain("Save provider");
     expect(html).toContain("Create and plan");
+    expect(html).toContain("Insert #deep-research");
+    expect(html).toContain('rel="manifest"');
     expect(html).toContain("@media(max-width:760px)");
+    expect((await request("/icon.svg")).headers.get("content-type")).toContain("image/svg+xml");
+    expect(await (await request("/manifest.webmanifest")).json()).toMatchObject({
+      name: "T3 Research",
+      display: "standalone",
+    });
   });
 
   test("lists MCP research and shared-memory tools", async () => {

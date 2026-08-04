@@ -114,6 +114,18 @@ try {
     }, 50);
   })`, true);
 
+  const generatedTag = await evaluate(`(() => {
+    const chip = [...document.querySelectorAll('#agent-suggestions button')].find((entry) => entry.textContent === 'Ollama local');
+    if (!chip) throw new Error('Suggested Ollama agent is missing.');
+    chip.click();
+    document.querySelector('#research-question').value = 'Verify guided syntax.';
+    document.querySelector('#deep-research-tag').click();
+    return document.querySelector('#research-question').value;
+  })()`);
+  if (generatedTag !== '#deep-research [ollama-local] Verify guided syntax.') {
+    throw new Error(`Unexpected generated tag: ${generatedTag}`);
+  }
+
   const rotationSuffix = Date.now();
   const rotationName = `Browser rotation ${rotationSuffix}`;
   const rotationId = `browser-rotation-${rotationSuffix}`;

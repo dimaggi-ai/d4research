@@ -12,6 +12,14 @@ docker compose up --build -d
 
 Open <http://127.0.0.1:7341/setup>. The installation screen discovers configured providers, runs bounded health checks, creates a plan, executes research, displays status, supports provider handoff, and exports the finished report with its source and audit appendix.
 
+On the configured host, Caddy provides passkey-protected HTTPS on LAN and Tailscale at port `8447`:
+
+- LAN: `https://192.168.4.166:8447/`
+- Tailscale IP: `https://100.99.123.60:8447/`
+- Tailscale DNS: `https://cacheos.manx-tegus.ts.net:8447/`
+
+The checked-in route is [`deploy/t3research.caddy`](deploy/t3research.caddy); the app remains bound to loopback so Caddy is the only network entry point. Devices must trust the host's existing Caddy local CA, as they do for the other internal HTTPS services.
+
 Use an ordered provider chain directly in a question:
 
 ```text

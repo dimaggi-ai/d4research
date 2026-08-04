@@ -4,12 +4,16 @@ export const INSTALL_UI = String.raw`<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#10131a" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <title>T3 Research</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background:#0b0d12; color:#f3f5f7; }
     * { box-sizing:border-box } body { margin:0; min-height:100vh; background:radial-gradient(circle at 80% 0,#18354a 0,transparent 32rem),#0b0d12; }
     main { width:min(1120px,calc(100% - 28px)); margin:auto; padding:32px 0 72px; }
     header { display:flex; justify-content:space-between; align-items:flex-end; gap:18px; margin-bottom:24px; }
+    .brand { display:flex; align-items:center; gap:16px; } .brand-icon { width:64px; height:64px; border-radius:16px; box-shadow:0 12px 35px #5aaeff26; }
     h1,h2,h3,p { margin-top:0 } h1 { font-size:clamp(2rem,6vw,4.2rem); letter-spacing:-.06em; margin-bottom:8px; }
     h2 { font-size:1rem; text-transform:uppercase; letter-spacing:.12em; color:#92a1b3; }
     .lede { color:#aeb8c5; max-width:680px; line-height:1.55; }
@@ -23,16 +27,17 @@ export const INSTALL_UI = String.raw`<!doctype html>
     button.secondary { background:#1a202a } button.danger { background:#792e39 } button:disabled { opacity:.5; cursor:wait }
     .fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
     .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .suggestions { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:10px; } .suggestions button { padding:6px 9px; font-size:.78rem; background:#171d27; } .suggestions button.selected { border-color:#63dcff; color:#8de6ff; background:#112b3a; }
     .list { display:grid; gap:9px; } .row { border:1px solid #282f3b; border-radius:12px; padding:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
     .row strong { display:block } .muted,.status { color:#96a2b1; font-size:.82rem; } .ok { color:#6de0a7 } .bad { color:#ff8792 }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; background:#080a0e; padding:14px; border-radius:12px; color:#cbd4df; }
     #notice { position:fixed; right:16px; bottom:16px; max-width:min(420px,calc(100% - 32px)); padding:12px 14px; background:#222b38; border:1px solid #3c4b5f; border-radius:12px; display:none; }
-    @media(max-width:760px){ .grid,.fields { grid-template-columns:1fr } .wide { grid-column:auto } header { align-items:flex-start; flex-direction:column } }
+    @media(max-width:760px){ .grid,.fields { grid-template-columns:1fr } .wide { grid-column:auto } header { align-items:flex-start; flex-direction:column } .brand-icon { width:52px; height:52px; } }
   </style>
 </head>
 <body>
 <main>
-  <header><div><h1>T3 Research</h1><p class="lede">One durable research context. Swap local models and coding agents without losing the plan, evidence, citations, or decisions.</p></div><span id="health" class="badge">Connecting…</span></header>
+  <header><div class="brand"><img class="brand-icon" src="/icon.svg" alt="T3 Research" /><div><h1>T3 Research</h1><p class="lede">One durable research context. Swap local models and coding agents without losing the plan, evidence, citations, or decisions.</p></div></div><span id="health" class="badge">Connecting…</span></header>
   <div class="grid">
     <section class="card"><h2>Installation</h2><p class="muted">Configure an agent, then test it from this machine.</p>
       <form id="provider-form"><div class="fields">
@@ -56,7 +61,7 @@ export const INSTALL_UI = String.raw`<!doctype html>
       <label>Title<input name="title" required placeholder="Competitive landscape" /></label>
       <label>Coordinator<select name="providerId" id="provider-select"></select></label>
       <label>Depth<select name="depth"><option>quick</option><option selected>deep</option><option>max</option></select></label>
-    </div><label style="margin-top:10px">Research question<textarea name="question" required placeholder="#deep-research [ollama-local, codex-local] What should we investigate?"></textarea></label><p class="muted">Task rotation syntax: <code>#deep-research [provider-id, provider-id] question</code>. Every listed agent must be enabled and pass its health check.</p><div class="actions"><button type="submit">Create and plan</button></div></form></section>
+    </div><label style="margin-top:10px">Research question<textarea name="question" id="research-question" required placeholder="What should we investigate?"></textarea></label><div class="suggestions"><span class="muted">Suggested agents:</span><span id="agent-suggestions"></span><button type="button" id="deep-research-tag">Insert #deep-research</button></div><p class="muted">Select agent names, then insert the tag. Every listed agent must be enabled and pass its health check before planning.</p><div class="actions"><button type="submit">Create and plan</button></div></form></section>
     <section class="card wide"><h2>Runs</h2><div id="runs" class="list"><span class="muted">No runs yet.</span></div></section>
     <section class="card wide" id="detail-card" hidden><h2>Run detail</h2><div id="run-actions" class="actions"></div><div id="messages" class="list" style="margin-top:14px"></div><form id="chat-form" class="actions"><input name="text" required placeholder="Continue this run with the active agent…" style="flex:1;min-width:220px" /><button type="submit">Send</button></form><pre id="detail"></pre></section>
   </div>
@@ -64,6 +69,7 @@ export const INSTALL_UI = String.raw`<!doctype html>
 <script type="module">
   const q = (s) => document.querySelector(s);
   let selectedRun = null;
+  const suggestedProviderIds = new Set();
   async function api(path, init) {
     const response = await fetch(path, { headers:{'content-type':'application/json'}, ...init });
     const body = await response.json().catch(() => ({}));
@@ -73,11 +79,12 @@ export const INSTALL_UI = String.raw`<!doctype html>
   function notice(message, bad=false) { const el=q('#notice'); el.textContent=message; el.className=bad?'bad':'ok'; el.style.display='block'; setTimeout(()=>el.style.display='none',5000); }
   async function loadHealth(){ try { const h=await api('/health'); q('#health').textContent=h.status+' · '+h.version; q('#health').classList.add('ok'); } catch(e){ q('#health').textContent='Offline'; q('#health').classList.add('bad'); } }
   async function loadProviders(){
-    const providers=await api('/api/providers'); const list=q('#providers'); const select=q('#provider-select'); list.replaceChildren(); select.replaceChildren();
+    const providers=await api('/api/providers'); const list=q('#providers'); const select=q('#provider-select'); const suggestions=q('#agent-suggestions'); list.replaceChildren(); select.replaceChildren(); suggestions.replaceChildren();
     for(const p of providers){
       const row=document.createElement('div'); row.className='row'; const info=document.createElement('div'); const title=document.createElement('strong'); title.textContent=p.name; const meta=document.createElement('span'); meta.className='muted'; meta.textContent=p.driver+(p.model?' · '+p.model:''); info.append(title,meta);
       const button=document.createElement('button'); button.className='secondary'; button.textContent='Test'; button.onclick=async()=>{ button.disabled=true; button.textContent='Testing…'; try{const h=await api('/api/providers/'+encodeURIComponent(p.id)+'/probe',{method:'POST'}); notice(p.name+': '+h.message,!h.ok); button.textContent=h.ok?'Ready':'Failed'; button.className=h.ok?'secondary ok':'secondary bad';}catch(e){notice(e.message,true);button.textContent='Failed'}finally{button.disabled=false}}; row.append(info,button); list.append(row);
       if(p.enabled){const option=document.createElement('option');option.value=p.id;option.textContent=p.name;select.append(option)}
+      if(p.enabled&&p.driver!=='mock'){const chip=document.createElement('button');chip.type='button';chip.textContent=p.name;chip.title=p.id;chip.className=suggestedProviderIds.has(p.id)?'selected':'';chip.onclick=()=>{suggestedProviderIds.has(p.id)?suggestedProviderIds.delete(p.id):suggestedProviderIds.add(p.id);chip.classList.toggle('selected',suggestedProviderIds.has(p.id));};suggestions.append(chip)}
     }
     const preferred=providers.find((p)=>p.enabled&&p.driver==='ollama')??providers.find((p)=>p.enabled&&p.driver==='mock');if(preferred)select.value=preferred.id;
   }
@@ -94,6 +101,7 @@ export const INSTALL_UI = String.raw`<!doctype html>
   q('#memory-form').onsubmit=async(e)=>{e.preventDefault();const form=e.currentTarget;const v=Object.fromEntries(new FormData(form));v.id=v.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');v.enabled=true;try{await api('/api/memory-connectors',{method:'POST',body:JSON.stringify(v)});notice('Memory connector saved');form.reset();await loadMemory()}catch(err){notice(err.message,true)}};
   q('#run-form').onsubmit=async(e)=>{e.preventDefault();const button=e.currentTarget.querySelector('button');button.disabled=true;const v=Object.fromEntries(new FormData(e.currentTarget));try{const run=await api('/api/runs',{method:'POST',body:JSON.stringify(v)});notice('Plan ready for review');selectedRun=run.id;await refresh()}catch(err){notice(err.message,true)}finally{button.disabled=false}};
   q('#chat-form').onsubmit=async(e)=>{e.preventDefault();if(!selectedRun)return;const input=e.currentTarget.elements.text;const text=input.value.trim();if(!text)return;const button=e.currentTarget.querySelector('button');button.disabled=true;try{await api('/api/runs/'+selectedRun+'/chat',{method:'POST',body:JSON.stringify({text})});input.value='';await showRun(selectedRun)}catch(err){notice(err.message,true)}finally{button.disabled=false}};
+  q('#deep-research-tag').onclick=()=>{const input=q('#research-question');const question=input.value.replace(/^\s*#deep-research(?:\s*\[[^\]]*\])?\s*/i,'').trim();const ids=[...suggestedProviderIds];if(!ids.length&&q('#provider-select').value)ids.push(q('#provider-select').value);input.value='#deep-research ['+ids.join(', ')+'] '+question;input.focus()};
   q('#refresh').onclick=refresh; refresh(); setInterval(()=>{loadRuns();if(selectedRun)showRun(selectedRun)},2000);
 </script>
 </body></html>`;

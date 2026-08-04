@@ -1,8 +1,6 @@
-# Dedicated root mount avoids breaking absolute /api and /mcp paths.
-# Keep the application on loopback; Caddy owns authenticated LAN/VPN access.
-cacheos.manx-tegus.ts.net:8447, 100.99.123.60:8447, 192.168.4.166:8447 {
-	tls internal
-	bind 0.0.0.0
+# Dedicated root mount avoids breaking absolute /api and /mcp paths. Keep the
+# application on loopback; Caddy owns authenticated LAN/VPN access.
+(t3research_proxy) {
 	handle /health {
 		reverse_proxy 127.0.0.1:7341
 	}
@@ -15,4 +13,12 @@ cacheos.manx-tegus.ts.net:8447, 100.99.123.60:8447, 192.168.4.166:8447 {
 		import auth_gate
 		reverse_proxy 127.0.0.1:7341
 	}
+}
+
+# Port-only address avoids a duplicate certificate automation policy with the
+# main :443 site while still serving its publicly trusted certificate.
+:8447 {
+	tls /etc/caddy/certs/cacheos.manx-tegus.ts.net.crt /etc/caddy/certs/cacheos.manx-tegus.ts.net.pem
+	bind 0.0.0.0
+	import t3research_proxy
 }

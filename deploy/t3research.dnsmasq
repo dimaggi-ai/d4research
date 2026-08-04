@@ -1,0 +1,2 @@
+# Split DNS for trusted HTTPS on the local Wi-Fi network.
+host-record=cacheos.manx-tegus.ts.net,192.168.4.166

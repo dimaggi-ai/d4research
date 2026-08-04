@@ -5,10 +5,13 @@ import { join } from "node:path";
 import type {
   MemoryConnectorConfig,
   MemoryRecord,
+  ArtifactRecord,
+  CitationRecord,
   ProviderConfig,
   ResearchPlan,
   ResearchRun,
   RunMessage,
+  SourceRecord,
   RunEvent,
 } from "./contracts";
 
@@ -124,6 +127,34 @@ export class ResearchDatabase {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS run_messages_run_id_created_at ON run_messages(run_id, created_at);
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        excerpt TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        UNIQUE(run_id, url)
+      );
+      CREATE TABLE IF NOT EXISTS citations (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+        claim TEXT NOT NULL,
+        locator TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS citations_run_id ON citations(run_id, created_at);
+      CREATE TABLE IF NOT EXISTS artifacts (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        content TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS artifacts_run_id ON artifacts(run_id, created_at);
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
         run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
@@ -365,6 +396,155 @@ export class ResearchDatabase {
         role: row.role,
         providerId: row.provider_id,
         text: row.text,
+        createdAt: row.created_at,
+      }));
+  }
+
+  addSource(input: Omit<SourceRecord, "id" | "contentHash" | "retrievedAt">): SourceRecord {
+    const existing = this.sqlite
+      .query<{
+        id: string;
+        run_id: string;
+        url: string;
+        title: string;
+        excerpt: string;
+        content_hash: string;
+        retrieved_at: string;
+      }, [string, string]>("SELECT * FROM sources WHERE run_id = ? AND url = ?")
+      .get(input.runId, input.url);
+    if (existing) {
+      return {
+        id: existing.id,
+        runId: existing.run_id,
+        url: existing.url,
+        title: existing.title,
+        excerpt: existing.excerpt,
+        contentHash: existing.content_hash,
+        retrievedAt: existing.retrieved_at,
+      };
+    }
+    const source: SourceRecord = {
+      ...input,
+      id: crypto.randomUUID(),
+      contentHash: new Bun.CryptoHasher("sha256").update(input.excerpt).digest("hex"),
+      retrievedAt: now(),
+    };
+    this.sqlite
+      .query("INSERT INTO sources (id, run_id, url, title, excerpt, content_hash, retrieved_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(
+        source.id,
+        source.runId,
+        source.url,
+        source.title,
+        source.excerpt,
+        source.contentHash,
+        source.retrievedAt,
+      );
+    return source;
+  }
+
+  listSources(runId: string): SourceRecord[] {
+    return this.sqlite
+      .query<{
+        id: string;
+        run_id: string;
+        url: string;
+        title: string;
+        excerpt: string;
+        content_hash: string;
+        retrieved_at: string;
+      }, [string]>("SELECT * FROM sources WHERE run_id = ? ORDER BY retrieved_at, id")
+      .all(runId)
+      .map((row) => ({
+        id: row.id,
+        runId: row.run_id,
+        url: row.url,
+        title: row.title,
+        excerpt: row.excerpt,
+        contentHash: row.content_hash,
+        retrievedAt: row.retrieved_at,
+      }));
+  }
+
+  addCitation(input: Omit<CitationRecord, "id" | "createdAt">): CitationRecord {
+    const citation: CitationRecord = { ...input, id: crypto.randomUUID(), createdAt: now() };
+    this.sqlite
+      .query("INSERT INTO citations (id, run_id, source_id, claim, locator, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(
+        citation.id,
+        citation.runId,
+        citation.sourceId,
+        citation.claim,
+        citation.locator,
+        citation.createdAt,
+      );
+    return citation;
+  }
+
+  listCitations(runId: string): CitationRecord[] {
+    return this.sqlite
+      .query<{
+        id: string;
+        run_id: string;
+        source_id: string;
+        claim: string;
+        locator: string;
+        created_at: string;
+      }, [string]>("SELECT * FROM citations WHERE run_id = ? ORDER BY created_at, id")
+      .all(runId)
+      .map((row) => ({
+        id: row.id,
+        runId: row.run_id,
+        sourceId: row.source_id,
+        claim: row.claim,
+        locator: row.locator,
+        createdAt: row.created_at,
+      }));
+  }
+
+  addArtifact(
+    runId: string,
+    kind: ArtifactRecord["kind"],
+    content: string,
+  ): ArtifactRecord {
+    const artifact: ArtifactRecord = {
+      id: crypto.randomUUID(),
+      runId,
+      kind,
+      content,
+      contentHash: new Bun.CryptoHasher("sha256").update(content).digest("hex"),
+      createdAt: now(),
+    };
+    this.sqlite
+      .query("INSERT INTO artifacts (id, run_id, kind, content, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(
+        artifact.id,
+        artifact.runId,
+        artifact.kind,
+        artifact.content,
+        artifact.contentHash,
+        artifact.createdAt,
+      );
+    return artifact;
+  }
+
+  listArtifacts(runId: string): ArtifactRecord[] {
+    return this.sqlite
+      .query<{
+        id: string;
+        run_id: string;
+        kind: ArtifactRecord["kind"];
+        content: string;
+        content_hash: string;
+        created_at: string;
+      }, [string]>("SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at, id")
+      .all(runId)
+      .map((row) => ({
+        id: row.id,
+        runId: row.run_id,
+        kind: row.kind,
+        content: row.content,
+        contentHash: row.content_hash,
         createdAt: row.created_at,
       }));
   }

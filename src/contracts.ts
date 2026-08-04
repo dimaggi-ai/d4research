@@ -66,6 +66,34 @@ export type RunMessage = {
   createdAt: string;
 };
 
+export type SourceRecord = {
+  id: string;
+  runId: string;
+  url: string;
+  title: string;
+  excerpt: string;
+  contentHash: string;
+  retrievedAt: string;
+};
+
+export type CitationRecord = {
+  id: string;
+  runId: string;
+  sourceId: string;
+  claim: string;
+  locator: string;
+  createdAt: string;
+};
+
+export type ArtifactRecord = {
+  id: string;
+  runId: string;
+  kind: "report" | "audit" | "evidence";
+  content: string;
+  contentHash: string;
+  createdAt: string;
+};
+
 export type MemoryRecord = {
   id: string;
   runId: string | null;

@@ -23,6 +23,35 @@ function requireString(value: unknown, field: string): string {
   return value.trim();
 }
 
+function runDetail(runId: string) {
+  return {
+    run: database.requireRun(runId),
+    events: database.listEvents(runId),
+    messages: database.listMessages(runId),
+    sources: database.listSources(runId),
+    citations: database.listCitations(runId),
+    artifacts: database.listArtifacts(runId),
+  };
+}
+
+function exportedReport(runId: string): Response {
+  const detail = runDetail(runId);
+  const report = detail.run.report || "Research has not produced a report yet.";
+  const sources = detail.sources.length
+    ? `\n\n## Sources\n\n${detail.sources.map((source, index) => `${index + 1}. [${source.title}](${source.url}) — SHA-256 \`${source.contentHash}\``).join("\n")}`
+    : "\n\n## Sources\n\nNo source URLs were recorded.";
+  const audit = [...detail.artifacts].reverse().find((artifact) => artifact.kind === "audit");
+  const content = `${report}${sources}${audit ? `\n\n## Audit\n\n${audit.content}` : ""}\n`;
+  const filename = `${detail.run.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "research"}.md`;
+  return new Response(content, {
+    headers: {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${filename}"`,
+      "cache-control": "no-store",
+    },
+  });
+}
+
 async function body(request: Request): Promise<Record<string, unknown>> {
   const value = (await request.json()) as unknown;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON object required.");
@@ -74,7 +103,7 @@ async function mcp(request: Request): Promise<Response> {
       result = await orchestrator.plan(run.id);
     } else if (name === "research_status") {
       const runId = requireString(args.runId, "runId");
-      result = { run: database.requireRun(runId), events: database.listEvents(runId) };
+      result = runDetail(runId);
     } else if (name === "research_execute") {
       orchestrator.execute(requireString(args.runId, "runId"));
       result = { accepted: true };
@@ -167,8 +196,9 @@ export async function handleRequest(request: Request): Promise<Response> {
     if (segments[0] === "api" && segments[1] === "runs" && segments[2]) {
       const runId = segments[2];
       if (request.method === "GET" && segments.length === 3) {
-        return json({ run: database.requireRun(runId), events: database.listEvents(runId), messages: database.listMessages(runId) });
+        return json(runDetail(runId));
       }
+      if (request.method === "GET" && segments[3] === "export") return exportedReport(runId);
       if (request.method === "POST" && segments[3] === "execute") {
         orchestrator.execute(runId); return json({ accepted: true }, 202);
       }

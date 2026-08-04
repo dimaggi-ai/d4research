@@ -18,7 +18,7 @@
 - Meko implements JSON-RPC `tools/call` over Streamable HTTP using `memory_add` and `memory_search`.
 - External credentials remain environment-only. `T3RESEARCH_MEKO_AUTHORIZATION` is never returned to the client or written to SQLite.
 
-Future vector indexing should augment SQLite search, not replace the durable text ledger. Source snapshots and report artifacts should use content-addressed files with their hashes referenced from SQLite.
+Future vector indexing should augment SQLite search, not replace the durable text ledger. Sources, citations, evidence, reports, and audits are recorded in SQLite with SHA-256 content hashes; larger source snapshots can later move to content-addressed files while keeping those hashes in the ledger.
 
 ## Provider policy
 

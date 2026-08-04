@@ -61,6 +61,8 @@ for attempt in $(seq 1 30); do
 done
 [[ "$completed" == "1" ]]
 node -e 'const value=JSON.parse(process.argv[1]); if(!value.run.report.includes("Research report")) process.exit(2); if(!value.events.some((event)=>event.type==="audit.completed")) process.exit(3)' "$detail"
+node -e 'const value=JSON.parse(process.argv[1]); if(value.sources.length<1 || value.citations.length<1) process.exit(4); const kinds=value.artifacts.map((item)=>item.kind); for(const kind of ["evidence","report","audit"]) if(!kinds.includes(kind)) process.exit(5)' "$detail"
+curl --fail --silent --show-error --max-time 5 "$base_url/api/runs/$run_id/export" | grep -q "## Sources"
 
 echo "[qa] validating MCP discovery"
 curl --fail --silent --show-error --max-time 5 -X POST "$base_url/mcp" -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | grep -q 'research_chat'

@@ -10,7 +10,7 @@ T3 Research keeps the run, plan, evidence, citations, decisions, and artifacts i
 docker compose up --build -d
 ```
 
-Open <http://127.0.0.1:7341/setup>. The installation screen discovers configured providers, runs bounded health checks, creates a plan, executes research, displays status, and supports provider handoff.
+Open <http://127.0.0.1:7341/setup>. The installation screen discovers configured providers, runs bounded health checks, creates a plan, executes research, displays status, supports provider handoff, and exports the finished report with its source and audit appendix.
 
 Ollama defaults to `host.docker.internal:11434`. CLI agents must be installed inside the container or exposed through a purpose-built remote adapter; the installation test reports them unavailable instead of claiming they work.
 
@@ -22,7 +22,7 @@ bun run typecheck
 bash scripts/docker-qa.sh
 ```
 
-The Docker QA script builds and starts an isolated deployment, verifies UI/API/MCP and a complete deterministic research lifecycle, then removes its containers, network, and volume on success, failure, or interruption.
+The Docker QA script builds and starts an isolated deployment, verifies UI/API/MCP, shared chat, provenance, export, and a complete deterministic research lifecycle, then removes its containers, network, and volume on success, failure, or interruption.
 
 ## MCP
 

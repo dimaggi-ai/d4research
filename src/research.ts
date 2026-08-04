@@ -2,6 +2,19 @@ import type { ResearchPlan, ResearchRun } from "./contracts";
 import { ResearchDatabase } from "./database";
 import { generate, probeProvider } from "./providers";
 
+const URL_PATTERN = /https?:\/\/[^\s)\]}>"']+/g;
+
+function sourceUrls(text: string): string[] {
+  const urls = (text.match(URL_PATTERN) ?? []).flatMap((candidate) => {
+    try {
+      return [new URL(candidate.replace(/[.,;:!?]+$/, "")).href];
+    } catch {
+      return [];
+    }
+  });
+  return [...new Set(urls)];
+}
+
 function parsePlan(text: string, question: string): ResearchPlan {
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (json) {
@@ -199,6 +212,21 @@ export class ResearchOrchestrator {
             content: result.text,
             metadata: { question, worker: index, providerId: provider.id },
           });
+          this.database.addArtifact(runId, "evidence", result.text);
+          for (const url of sourceUrls(result.text)) {
+            const source = this.database.addSource({
+              runId,
+              url,
+              title: new URL(url).hostname,
+              excerpt: result.text.slice(0, 1_000),
+            });
+            this.database.addCitation({
+              runId,
+              sourceId: source.id,
+              claim: question,
+              locator: url,
+            });
+          }
           this.database.addEvent(runId, "worker.completed", provider.id, { index, question });
           return result.text;
         }),
@@ -217,6 +245,7 @@ export class ResearchOrchestrator {
         ].join("\n"),
       });
       if (signal.aborted) throw new Error("Research was cancelled.");
+      this.database.addArtifact(runId, "report", synthesis.text);
       this.database.updateRun(runId, { status: "auditing", report: synthesis.text });
       const audit = await generate(provider, {
         role: "auditor",
@@ -233,6 +262,7 @@ export class ResearchOrchestrator {
         content: audit.text,
         metadata: { stage: "citation-audit", providerId: provider.id },
       });
+      this.database.addArtifact(runId, "audit", audit.text);
       this.database.addEvent(runId, "audit.completed", provider.id, { audit: audit.text });
       this.database.updateRun(runId, { status: "completed", report: synthesis.text });
     } catch (cause) {

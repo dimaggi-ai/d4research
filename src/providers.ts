@@ -147,7 +147,9 @@ function mockGenerate(input: GenerateInput): GenerateResult {
     return { text: "AUDIT PASS: structure, uncertainty, and citation placeholders are present." };
   }
   if (input.role === "researcher") {
-    return { text: `Evidence note generated from the assigned question.\n\n${input.prompt.slice(0, 500)}` };
+    return {
+      text: `Evidence note generated from the assigned question.\n\nQA provenance: https://example.test/evidence\n\n${input.prompt.slice(0, 500)}`,
+    };
   }
   if (input.role === "chat") {
     return { text: "Shared-context chat reply from the active provider." };

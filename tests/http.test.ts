@@ -72,7 +72,10 @@ describe("HTTP and MCP", () => {
       body: JSON.stringify({ text: "Continue in shared context" }),
     });
     expect(chat.status).toBe(201);
-    const detail = (await (await request(`/api/runs/${run.id}`)).json()) as { messages: unknown[] };
+    const detail = (await (await request(`/api/runs/${run.id}`)).json()) as { messages: unknown[]; sources: unknown[]; citations: unknown[]; artifacts: unknown[] };
     expect(detail.messages).toHaveLength(2);
+    expect(detail.sources).toEqual([]);
+    expect(detail.citations).toEqual([]);
+    expect(detail.artifacts).toEqual([]);
   });
 });

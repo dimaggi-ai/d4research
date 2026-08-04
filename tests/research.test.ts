@@ -35,6 +35,12 @@ describe("ResearchOrchestrator", () => {
     const completed = database.requireRun(created.id);
     expect(completed.status).toBe("completed");
     expect(completed.report).toContain("# Research report");
+    expect(database.listSources(created.id)).toHaveLength(1);
+    expect(database.listCitations(created.id).length).toBeGreaterThan(0);
+    const artifactKinds = database.listArtifacts(created.id).map((artifact) => artifact.kind);
+    expect(artifactKinds.filter((kind) => kind === "evidence").length).toBeGreaterThan(0);
+    expect(artifactKinds).toContain("report");
+    expect(artifactKinds).toContain("audit");
     const events = database.listEvents(created.id).map((event) => event.type);
     expect(events).toContain("research.started");
     expect(events).toContain("audit.completed");

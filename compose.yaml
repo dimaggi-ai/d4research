@@ -1,0 +1,17 @@
+services:
+  t3research:
+    build: .
+    ports:
+      - "127.0.0.1:${T3RESEARCH_PORT:-7341}:7341"
+    environment:
+      T3RESEARCH_HOST: 0.0.0.0
+      T3RESEARCH_PORT: 7341
+      T3RESEARCH_DATA_DIR: /data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - t3research-data:/data
+    restart: unless-stopped
+
+volumes:
+  t3research-data:

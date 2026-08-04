@@ -1,0 +1,76 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { ResearchDatabase } from "../src/database";
+import { ResearchOrchestrator } from "../src/research";
+
+const directories: string[] = [];
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function setup() {
+  const directory = mkdtempSync(join(tmpdir(), "t3research-run-"));
+  directories.push(directory);
+  const database = new ResearchDatabase(directory);
+  return { database, orchestrator: new ResearchOrchestrator(database) };
+}
+
+describe("ResearchOrchestrator", () => {
+  test("plans, executes parallel workers, synthesizes, and audits", async () => {
+    const { database, orchestrator } = setup();
+    const created = database.createRun({
+      title: "Full lifecycle",
+      question: "Can provider-neutral shared context support deep research?",
+      providerId: "local-mock",
+      depth: "deep",
+    });
+    const planned = await orchestrator.plan(created.id);
+    expect(planned.status).toBe("awaiting_approval");
+    expect(planned.plan?.questions.length).toBeGreaterThan(1);
+    orchestrator.execute(created.id);
+    await orchestrator.waitForCompletion(created.id);
+    const completed = database.requireRun(created.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.report).toContain("# Research report");
+    const events = database.listEvents(created.id).map((event) => event.type);
+    expect(events).toContain("research.started");
+    expect(events).toContain("audit.completed");
+    database.close();
+  });
+
+  test("chat can hand off providers while preserving one run and message history", async () => {
+    const { database, orchestrator } = setup();
+    const run = database.createRun({
+      title: "Handoff",
+      question: "Preserve shared context",
+      providerId: "local-mock",
+      depth: "quick",
+    });
+    await orchestrator.plan(run.id);
+    await orchestrator.chat(run.id, "First provider turn");
+    database.upsertProvider({
+      id: "second-mock",
+      name: "Second mock",
+      driver: "mock",
+      model: "deterministic-v1",
+      endpoint: "",
+      command: "",
+      enabled: true,
+    });
+    const handedOff = orchestrator.handoff(run.id, "second-mock");
+    expect(handedOff.id).toBe(run.id);
+    expect(handedOff.activeProviderId).toBe("second-mock");
+    await orchestrator.chat(run.id, "Continue with the shared context");
+    expect(database.listMessages(run.id).map((message) => message.providerId)).toEqual([
+      null,
+      "local-mock",
+      null,
+      "second-mock",
+    ]);
+    expect(database.searchMemory("Continue run", run.id).some((item) => item.kind === "handoff")).toBeTrue();
+    database.close();
+  });
+});

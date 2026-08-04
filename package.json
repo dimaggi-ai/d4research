@@ -1,0 +1,17 @@
+{
+  "name": "t3research",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "qa:docker": "bash scripts/docker-qa.sh"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.2"
+  }
+}

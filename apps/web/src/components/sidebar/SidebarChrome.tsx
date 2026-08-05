@@ -86,7 +86,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        d2research
+        Research
       </span>
     </Link>
   );

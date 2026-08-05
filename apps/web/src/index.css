@@ -96,7 +96,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --glass-saturation: 1.14;
   --desktop-window-right-resize-inset: 0px;
   --workspace-topbar-height: 52px;
+  /* Content-relative controls sit inside #root's safe-area padding. Fixed
+     controls need their own offset because they sit outside that padding. */
   --workspace-controls-top: 0px;
+  --workspace-fixed-controls-top: max(env(safe-area-inset-top), 0px);
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
   --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
   --workspace-native-controls-inset: 0px;
@@ -121,6 +124,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 .wco {
   --workspace-topbar-height: env(titlebar-area-height, 52px);
   --workspace-controls-top: env(titlebar-area-y, 0px);
+  --workspace-fixed-controls-top: env(titlebar-area-y, 0px);
   --workspace-controls-left: calc(env(titlebar-area-x, 0px) + 0.75rem);
   --workspace-controls-right: calc(
     100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem

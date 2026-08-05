@@ -32,6 +32,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../../keybindings";
+import { useIsMobile } from "~/hooks/useMediaQuery";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { TooltipProvider } from "../ui/tooltip";
@@ -102,6 +103,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     getModelDisabledReason,
     onInstanceModelChange,
   } = props;
+  const isMobileViewport = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -133,8 +135,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   });
 
   const focusSearchInput = useCallback(() => {
+    // On mobile/PWA the search field is hidden to avoid popping the OS
+    // keyboard when the picker opens.
+    if (isMobileViewport) return;
     searchInputRef.current?.focus({ preventScroll: true });
-  }, []);
+  }, [isMobileViewport]);
 
   const handleSelectInstance = useCallback(
     (instanceId: ProviderInstanceId | "favorites") => {
@@ -147,6 +152,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
 
   useLayoutEffect(() => {
+    if (isMobileViewport) return;
     focusSearchInput();
     const frame = window.requestAnimationFrame(() => {
       focusSearchInput();
@@ -158,7 +164,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [focusSearchInput]);
+  }, [focusSearchInput, isMobileViewport]);
 
   // Create a Set for efficient lookup. Favorites are keyed by
   // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
@@ -655,55 +661,57 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               showSidebar && "border-l border-border/70",
             )}
           >
-            {/* Search bar */}
-            <div className="px-2 pt-2">
-              <div className="border-b border-border/70 pb-2.5 transition-colors focus-within:border-ring">
-                <ComboboxInput
-                  ref={searchInputRef}
-                  className="[&_input]:h-6.5 [&_input]:font-sans [&_input]:leading-6.5"
-                  inputClassName="rounded-none bg-transparent text-sm"
-                  placeholder="Search models..."
-                  showTrigger={false}
-                  startAddon={
-                    <SearchIcon className="-translate-x-0.5 size-4 shrink-0 text-muted-foreground opacity-70" />
-                  }
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      props.onRequestClose?.();
-                      return;
+            {/* Search bar — hidden on mobile/PWA to avoid popping the on-screen keyboard */}
+            {!isMobileViewport ? (
+              <div className="px-2 pt-2">
+                <div className="border-b border-border/70 pb-2.5 transition-colors focus-within:border-ring">
+                  <ComboboxInput
+                    ref={searchInputRef}
+                    className="[&_input]:h-6.5 [&_input]:font-sans [&_input]:leading-6.5"
+                    inputClassName="rounded-none bg-transparent text-sm"
+                    placeholder="Search models..."
+                    showTrigger={false}
+                    startAddon={
+                      <SearchIcon className="-translate-x-0.5 size-4 shrink-0 text-muted-foreground opacity-70" />
                     }
-                    if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                      (
-                        e as typeof e & { preventBaseUIHandler?: () => void }
-                      ).preventBaseUIHandler?.();
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const legacyInstanceId = parseModelPickerLegacySectionKey(
-                        highlightedModelKeyRef.current,
-                      );
-                      if (legacyInstanceId) {
-                        toggleLegacySection(legacyInstanceId);
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        props.onRequestClose?.();
                         return;
                       }
-                      const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                      if (model) {
-                        handleModelSelect(model.slug, model.instanceId);
+                      if (e.key === "Enter" && highlightedModelKeyRef.current) {
+                        (
+                          e as typeof e & { preventBaseUIHandler?: () => void }
+                        ).preventBaseUIHandler?.();
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const legacyInstanceId = parseModelPickerLegacySectionKey(
+                          highlightedModelKeyRef.current,
+                        );
+                        if (legacyInstanceId) {
+                          toggleLegacySection(legacyInstanceId);
+                          return;
+                        }
+                        const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+                        if (model) {
+                          handleModelSelect(model.slug, model.instanceId);
+                        }
+                        return;
                       }
-                      return;
-                    }
-                    e.stopPropagation();
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  size="sm"
-                  unstyled
-                />
+                      e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    size="sm"
+                    unstyled
+                  />
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {/* Model list */}
             <div className="relative min-h-0 flex-1 overflow-hidden pr-px">

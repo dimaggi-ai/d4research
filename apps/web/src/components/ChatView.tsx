@@ -153,7 +153,7 @@ import {
   TriangleAlertIcon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
@@ -184,6 +184,11 @@ import {
   isDeepResearchPrompt,
 } from "../researchMode";
 import { summarizeReplyForSpeech } from "../hooks/useVoiceConversation";
+import {
+  canAutoDispatchQueuedRequest,
+  type QueuedChatRequest,
+  useRequestQueueStore,
+} from "../requestQueueStore";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -245,6 +250,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ProviderHandoffDialog } from "./chat/ProviderHandoffDialog";
+import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -481,6 +487,7 @@ function formatOutgoingPrompt(params: {
 }
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
+const EMPTY_QUEUED_REQUESTS: ReadonlyArray<QueuedChatRequest> = [];
 
 type ChatViewProps =
   | {
@@ -1179,6 +1186,17 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  const queuedRequests = useRequestQueueStore(
+    (state) => state.byThreadKey[routeThreadKey] ?? EMPTY_QUEUED_REQUESTS,
+  );
+  const enqueueRequest = useRequestQueueStore((state) => state.enqueue);
+  const removeQueuedRequest = useRequestQueueStore((state) => state.remove);
+  const queuedDispatchRef = useRef<QueuedChatRequest | null>(null);
+  const queuedDispatchFailedIdRef = useRef<string | null>(null);
+  const queuedDrainScheduledRef = useRef(false);
+  const onSendRef = useRef<(event?: { preventDefault: () => void }) => Promise<void>>(
+    async () => undefined,
+  );
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
@@ -4591,34 +4609,48 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
+    const queuedRequestForSend = queuedDispatchRef.current;
     if (
       !activeThread ||
       isSendBusy ||
       isConnecting ||
       threadDetailLoading ||
       activeEnvironmentUnavailable ||
-      sendInFlightRef.current
-    )
+      sendInFlightRef.current ||
+      (queuedRequestForSend !== null && phase === "running")
+    ) {
+      queuedDispatchRef.current = null;
       return;
+    }
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx?.providerAvailable) return;
+    if (!sendCtx?.providerAvailable) {
+      queuedDispatchRef.current = null;
+      return;
+    }
     const {
-      images: composerImages,
-      terminalContexts: composerTerminalContexts,
-      elementContexts: composerElementContexts,
-      previewAnnotations: composerPreviewAnnotations,
-      reviewComments: composerReviewComments,
+      images: currentComposerImages,
+      terminalContexts: currentComposerTerminalContexts,
+      elementContexts: currentComposerElementContexts,
+      previewAnnotations: currentComposerPreviewAnnotations,
+      reviewComments: currentComposerReviewComments,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    const promptForSend = promptRef.current;
+    const composerImages = queuedRequestForSend ? [] : currentComposerImages;
+    const composerTerminalContexts = queuedRequestForSend ? [] : currentComposerTerminalContexts;
+    const composerElementContexts = queuedRequestForSend ? [] : currentComposerElementContexts;
+    const composerPreviewAnnotations = queuedRequestForSend
+      ? []
+      : currentComposerPreviewAnnotations;
+    const composerReviewComments = queuedRequestForSend ? [] : currentComposerReviewComments;
+    const promptForSend = queuedRequestForSend?.text ?? promptRef.current;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -4684,6 +4716,46 @@ function ChatViewContent(props: ChatViewProps) {
           type: "warning",
           title: "Choose a project first",
           description: "This draft no longer points to an available project.",
+        }),
+      );
+      return;
+    }
+    if (phase === "running" && queuedRequestForSend === null) {
+      if (composerImages.length > 0) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Images remain in the composer",
+            description: "Queue text-only requests, or wait and send this request with its images.",
+          }),
+        );
+        return;
+      }
+      const queuedTextWithContexts = appendElementContextsToPrompt(
+        appendTerminalContextsToPrompt(promptForSend, sendableComposerTerminalContexts),
+        composerElementContexts,
+      );
+      const queuedTextWithAnnotations = composerPreviewAnnotations.reduce(
+        (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
+        queuedTextWithContexts,
+      );
+      const queuedText = appendReviewCommentsToPrompt(
+        queuedTextWithAnnotations,
+        composerReviewComments,
+      ).trim();
+      enqueueRequest(routeThreadKey, {
+        id: randomUUID(),
+        text: queuedText,
+        createdAt: new Date().toISOString(),
+      });
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: "Request queued",
+          description: "It will run automatically after the current turn finishes.",
         }),
       );
       return;
@@ -4810,9 +4882,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (queuedRequestForSend === null) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -4936,6 +5010,7 @@ function ChatViewContent(props: ChatViewProps) {
 
     if (failure !== null) {
       if (
+        queuedRequestForSend === null &&
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
@@ -4979,6 +5054,13 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     sendInFlightRef.current = false;
+    if (turnStartSucceeded && queuedRequestForSend !== null) {
+      removeQueuedRequest(routeThreadKey, queuedRequestForSend.id);
+      queuedDispatchFailedIdRef.current = null;
+    } else if (queuedRequestForSend !== null) {
+      queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
+    }
+    queuedDispatchRef.current = null;
     if (!turnStartSucceeded) {
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
@@ -4986,6 +5068,53 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+  onSendRef.current = onSend;
+
+  useEffect(() => {
+    const nextRequest = queuedRequests[0];
+    const blocked = Boolean(
+      isSendBusy ||
+      isConnecting ||
+      threadDetailLoading ||
+      activeEnvironmentUnavailable ||
+      activePendingProgress ||
+      showPlanFollowUpPrompt ||
+      queuedDispatchRef.current !== null ||
+      queuedDrainScheduledRef.current,
+    );
+    if (
+      !nextRequest ||
+      !canAutoDispatchQueuedRequest({
+        request: nextRequest,
+        running: phase === "running",
+        blocked,
+        failedRequestId: queuedDispatchFailedIdRef.current,
+      })
+    ) {
+      return;
+    }
+    queuedDrainScheduledRef.current = true;
+    const timer = window.setTimeout(() => {
+      queuedDrainScheduledRef.current = false;
+      if (queuedDispatchRef.current !== null) return;
+      queuedDispatchRef.current = nextRequest;
+      void onSendRef.current();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      queuedDrainScheduledRef.current = false;
+    };
+  }, [
+    activeEnvironmentUnavailable,
+    activePendingProgress,
+    isConnecting,
+    isSendBusy,
+    phase,
+    providerStatuses,
+    queuedRequests,
+    showPlanFollowUpPrompt,
+    threadDetailLoading,
+  ]);
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -6088,6 +6217,10 @@ function ChatViewContent(props: ChatViewProps) {
                       )}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                        <QueuedRequestsBanner
+                          requests={queuedRequests}
+                          onRemove={(requestId) => removeQueuedRequest(routeThreadKey, requestId)}
+                        />
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}

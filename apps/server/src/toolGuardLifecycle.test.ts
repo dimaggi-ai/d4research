@@ -11,6 +11,7 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "./config.ts";
 import {
   addManagedHook,
+  findToolGuardBinary,
   managedToolGuardPaths,
   managedToolGuardCommand,
   manageToolGuard,
@@ -44,6 +45,28 @@ describe("Tool Guard hook configuration", () => {
       'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\state\\tool-guard\\integration\\scripts\\t3research-tool-guard-hook.ps1"',
     );
   });
+});
+
+it.layer(NodeServices.layer)("Tool Guard Core discovery", (it) => {
+  it.effect("finds Core on PATH", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-tool-guard-path-test-")),
+      );
+      const binary = NodePath.join(root, process.platform === "win32" ? "tg.exe" : "tg");
+      yield* Effect.promise(() => NodeFSP.writeFile(binary, "", { mode: 0o755 }));
+      const previousPath = process.env.PATH;
+      process.env.PATH = `${root}${NodePath.delimiter}${previousPath ?? ""}`;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previousPath === undefined) delete process.env.PATH;
+          else process.env.PATH = previousPath;
+        }),
+      );
+
+      expect(yield* findToolGuardBinary()).toBe(binary);
+    }).pipe(Effect.scoped),
+  );
 });
 
 it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {

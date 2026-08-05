@@ -7,6 +7,7 @@ import {
   findToolGuardBinary,
   managedToolGuardPaths,
   readToolGuardManifest,
+  TOOL_GUARD_CORE_URL,
   TOOL_GUARD_MANAGED_MARKER,
 } from "./toolGuardLifecycle.ts";
 
@@ -95,7 +96,7 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
           ? "An external Tool Guard hook is active; d2research will not replace it."
           : integration === "available"
             ? "Tool Guard Core is available. Install the d2research integration to use it."
-            : "Tool Guard Core is not available on this machine.";
+            : `Tool Guard Core is not available. Download it from ${TOOL_GUARD_CORE_URL}/releases.`;
 
   return {
     available: binaryPath !== null,

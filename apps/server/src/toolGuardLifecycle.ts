@@ -8,6 +8,7 @@ import * as ServerConfig from "./config.ts";
 import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
 
 export const TOOL_GUARD_MANAGED_MARKER = "d2research-tool-guard-managed";
+export const TOOL_GUARD_CORE_URL = "https://github.com/dimaggi-ai/tool-guard-core";
 
 export const ToolGuardLifecycleAction = ["install", "enable", "disable", "uninstall"] as const;
 export type ToolGuardLifecycleAction = (typeof ToolGuardLifecycleAction)[number];
@@ -189,9 +190,16 @@ export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
   const path = yield* Path.Path;
   const home = toolGuardHome();
   const binaryName = process.platform === "win32" ? "tg.exe" : "tg";
+  const pathSeparator = process.platform === "win32" ? ";" : ":";
+  const pathCandidates = (process.env.PATH ?? "")
+    .split(pathSeparator)
+    .map((entry) => entry.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean)
+    .map((entry) => path.join(entry, binaryName));
   const candidates = [
     managedBinary,
     process.env.T3RESEARCH_TOOL_GUARD_BIN,
+    ...pathCandidates,
     home ? path.join(home, "workspace", "github", "tool-guard-core", "bin", binaryName) : undefined,
     home ? path.join(home, "tools", "tg-guard", binaryName) : undefined,
   ].filter((candidate): candidate is string => Boolean(candidate));
@@ -280,8 +288,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       if (!sourceBinary) {
         return {
           ok: false,
-          message:
-            "Tool Guard Core was not found. Install Core or set T3RESEARCH_TOOL_GUARD_BIN, then retry.",
+          message: `Tool Guard Core was not found. Install it from ${TOOL_GUARD_CORE_URL}/releases or set T3RESEARCH_TOOL_GUARD_BIN, then retry.`,
         };
       }
       const resources = yield* resolveResources();

@@ -40,10 +40,12 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import { readToolGuardStatus } from "./toolGuardStatus.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
 const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
+const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const GZIP_MIN_BYTES = 1024;
@@ -278,6 +280,24 @@ export const missionControlSystemRouteLayer = HttpRouter.add(
       ),
     );
   }),
+);
+
+export const toolGuardStatusRouteLayer = HttpRouter.add(
+  "GET",
+  TOOL_GUARD_STATUS_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const status = yield* readToolGuardStatus();
+    return HttpServerResponse.jsonUnsafe(status, {
+      headers: { "cache-control": "no-store" },
+    });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
 );
 
 export const assetRouteLayer = HttpRouter.add(

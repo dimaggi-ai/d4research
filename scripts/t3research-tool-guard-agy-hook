@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Antigravity protocol adapter for t3research-tool-guard-hook.
+set -u
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+input="$(cat)"
+
+fail_closed() {
+  printf '%s\n' '{"decision":"deny","reason":"Tool Guard could not evaluate this command and failed closed."}'
+  exit 0
+}
+
+command -v jq >/dev/null 2>&1 || fail_closed
+command="$(printf '%s' "$input" | jq -r '((.toolCall.args.CommandLine // .toolCall.args.command // .toolCall.args.cmd) // empty) | if type == "array" then map(tostring) | join(" ") else tostring end' 2>/dev/null)" || fail_closed
+if [ -z "$command" ]; then
+  printf '%s\n' '{"decision":"allow"}'
+  exit 0
+fi
+
+normalized="$(jq -nc --arg command "$command" '{tool_name:"Bash",tool_input:{command:$command}}')" || fail_closed
+guard_output="$(printf '%s' "$normalized" | "$script_dir/t3research-tool-guard-hook")" || fail_closed
+decision="$(printf '%s' "$guard_output" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)" || fail_closed
+reason="$(printf '%s' "$guard_output" | jq -r '.hookSpecificOutput.permissionDecisionReason // "Tool Guard policy decision"' 2>/dev/null)" || fail_closed
+
+case "$decision" in
+  deny|ask|allow) jq -nc --arg decision "$decision" --arg reason "$reason" '{decision:$decision,reason:$reason}' ;;
+  *) fail_closed ;;
+esac

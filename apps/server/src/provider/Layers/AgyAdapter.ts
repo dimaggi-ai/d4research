@@ -26,6 +26,7 @@ import {
   ProviderAdapterValidationError,
 } from "../Errors.ts";
 import type { AgyAdapterShape } from "../Services/AgyAdapter.ts";
+import { toolGuardEnvironment } from "../toolGuardRuntime.ts";
 import { decodeAgyStreamLine } from "./AgyStream.ts";
 
 const PROVIDER = ProviderDriverKind.make("agy");
@@ -206,14 +207,18 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
         let resultStatus: string | undefined;
         const stderrRef = yield* Ref.make("");
         const turnScope = yield* Scope.make();
+        const environment = toolGuardEnvironment(
+          options?.environment ?? process.env,
+          context.session.runtimeMode,
+        );
         const resolved = yield* resolveSpawnCommand(settings.binaryPath || "agy", args, {
-          env: options?.environment ?? process.env,
+          env: environment,
         });
         const handle = yield* spawner
           .spawn(
             ChildProcess.make(resolved.command, resolved.args, {
               cwd: context.session.cwd,
-              env: options?.environment ?? process.env,
+              env: environment,
               shell: resolved.shell,
             }),
           )

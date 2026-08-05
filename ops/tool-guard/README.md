@@ -1,0 +1,14 @@
+# T3Research Tool Guard Core integration
+
+T3Research keeps its per-thread access selector and passes the selected mode to
+provider hooks through `T3RESEARCH_RUNTIME_MODE`. The local wrapper maps the
+three guarded modes to Tool Guard `enforcement` and maps Full access to
+`shadow`, so Full access remains audited without pretending it is restricted.
+
+The server reports whether Core is unavailable, available, managed by this
+wrapper, or already managed by another local installation. It never replaces
+or duplicates an existing Tool Guard hook automatically.
+
+The wrappers are Core-only integrations. They do not run `tg-proxy`, use an
+Enterprise approval service, issue approver tokens, or expose an Enterprise
+management plane.

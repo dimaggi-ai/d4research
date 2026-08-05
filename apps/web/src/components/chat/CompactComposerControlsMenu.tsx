@@ -1,6 +1,6 @@
 import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon, ListTodoIcon } from "lucide-react";
+import { EllipsisIcon, ListTodoIcon, ShieldCheckIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -20,6 +20,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  toolGuardStatusMessage: string;
+  toolGuardStatusReady: boolean;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -61,7 +63,23 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
+        <div className="flex max-w-72 items-start gap-2 px-2 py-1.5">
+          <ShieldCheckIcon
+            className={
+              props.toolGuardStatusReady
+                ? "mt-0.5 size-4 shrink-0 text-emerald-500"
+                : "mt-0.5 size-4 shrink-0 text-amber-500"
+            }
+          />
+          <div className="min-w-0">
+            <div className="font-medium text-foreground text-xs">Tool Guard Core</div>
+            <div className="text-muted-foreground text-xs leading-4">
+              {props.toolGuardStatusMessage}
+            </div>
+          </div>
+        </div>
+        <MenuDivider />
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Policy mode</div>
         <MenuRadioGroup
           value={props.runtimeMode}
           onValueChange={(value) => {

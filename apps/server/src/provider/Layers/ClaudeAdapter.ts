@@ -70,6 +70,7 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { toolGuardEnvironment } from "../toolGuardRuntime.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -3543,7 +3544,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: toolGuardEnvironment(claudeEnvironment, input.runtimeMode),
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

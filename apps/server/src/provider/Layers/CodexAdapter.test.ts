@@ -276,16 +276,24 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
-        binaryPath: "codex",
-        cwd: process.cwd(),
-        launchArgs: "",
-        model: "gpt-5.3-codex",
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        serviceTier: "priority",
-        threadId: asThreadId("thread-1"),
-        runtimeMode: "full-access",
-      });
+      const runtimeOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0];
+      NodeAssert.deepStrictEqual(
+        { ...runtimeOptions, environment: undefined },
+        {
+          binaryPath: "codex",
+          cwd: process.cwd(),
+          environment: undefined,
+          launchArgs: "",
+          model: "gpt-5.3-codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          serviceTier: "priority",
+          threadId: asThreadId("thread-1"),
+          runtimeMode: "full-access",
+        },
+      );
+      NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_RUNTIME_MODE, "full-access");
+      NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_TOOL_GUARD_MODE, "shadow");
+      NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_TOOL_GUARD_PROFILE, "full-access");
     }),
   );
 });

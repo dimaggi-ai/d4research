@@ -1,0 +1,55 @@
+policy_id: t3research-local-coding-shadow
+name: T3Research local coding guard (audit only)
+version: 1
+status: approved
+mode: shadow
+
+scope:
+  tool_names: [bash, shell, run_command]
+  tool_groups: [shell]
+
+rules:
+  - rule_id: deny-recursive-delete-system-path
+    rule_type: regex
+    conditions:
+      and:
+        - field: parameters.command
+          operator: regex
+          value: '(^|[\s;&|(])(\S+/)?rm(\s|$)'
+        - field: parameters.command
+          operator: regex
+          value: "(--recursive|-[a-zA-Z]*[rR])"
+        - field: parameters.command
+          operator: regex
+          value: '(\s|["''=])(/\*?|/(bin|boot|dev|etc|home|lib|lib64|opt|proc|root|sbin|srv|sys|usr|var)/?|\$\{?HOME\}?|~)(\s|["'';&|]|$)'
+    effect: deny
+    citation:
+      excerpt: "Recursive deletion of a system or home path is never permitted."
+
+  - rule_id: review-recursive-or-forced-delete
+    rule_type: regex
+    conditions:
+      and:
+        - field: parameters.command
+          operator: regex
+          value: '(^|[\s;&|(])(\S+/)?rm(\s|$)'
+        - or:
+            - field: parameters.command
+              operator: regex
+              value: "(--recursive|-[a-zA-Z]*[rR])"
+            - field: parameters.command
+              operator: regex
+              value: "(--force|-[a-zA-Z]*f)"
+    effect: escalate
+    citation:
+      excerpt: "Recursive or forced deletion requires human review."
+
+  - rule_id: review-git-history-or-publish
+    rule_type: regex
+    conditions:
+      field: parameters.command
+      operator: regex
+      value: '\bgit\s+(push\b|reset\s+--hard|clean\b[^|;&]*\s-[a-zA-Z]*f|rebase\b|filter-repo|filter-branch|update-ref\s+-d|branch\s+-D)'
+    effect: escalate
+    citation:
+      excerpt: "Publishing or rewriting Git history requires human review."

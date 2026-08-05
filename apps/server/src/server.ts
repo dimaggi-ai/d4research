@@ -14,6 +14,7 @@ import * as HttpResponseCompression from "./httpCompression/HttpResponseCompress
 import {
   otlpTracesProxyRouteLayer,
   missionControlSystemRouteLayer,
+  toolGuardStatusRouteLayer,
   assetRouteLayer,
   serverEnvironmentHttpApiLayer,
   staticAndDevRouteLayer,
@@ -419,6 +420,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
     otlpTracesProxyRouteLayer,
     missionControlSystemRouteLayer,
+    toolGuardStatusRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,

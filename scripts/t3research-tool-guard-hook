@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Marker used by the T3Research status endpoint: t3research-tool-guard-hook
+set -u
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd "$script_dir/.." && pwd)"
+guard_mode="${T3RESEARCH_TOOL_GUARD_MODE:-enforcement}"
+data_dir="${T3RESEARCH_TOOL_GUARD_DATA_DIR:-${T3CODE_HOME:-$HOME/.t3}/userdata/tool-guard}"
+
+if [ -n "${T3RESEARCH_TOOL_GUARD_BIN:-}" ]; then
+  guard_bin="$T3RESEARCH_TOOL_GUARD_BIN"
+elif [ -x "$HOME/workspace/github/tool-guard-core/bin/tg" ]; then
+  guard_bin="$HOME/workspace/github/tool-guard-core/bin/tg"
+else
+  guard_bin="tg"
+fi
+
+case "$guard_mode" in
+  enforcement|shadow) ;;
+  *) guard_mode="enforcement" ;;
+esac
+
+default_profile="local-coding"
+if [ "$guard_mode" = "shadow" ]; then
+  default_profile="local-coding-shadow"
+fi
+policy_dir="${T3RESEARCH_TOOL_GUARD_POLICY_DIR:-$repo_dir/ops/tool-guard/profiles/$default_profile}"
+
+mkdir -p "$data_dir" 2>/dev/null || true
+exec "$guard_bin" hook \
+  -policy-dir "$policy_dir" \
+  -mode "$guard_mode" \
+  -agent-id "t3research-local" \
+  -audit-log "$data_dir/decisions.jsonl" \
+  -protect-self \
+  -fail-closed-tools bash,write,edit,notebookedit

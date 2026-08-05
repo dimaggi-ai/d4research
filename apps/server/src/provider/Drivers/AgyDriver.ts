@@ -10,7 +10,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeAgyTextGeneration } from "../../textGeneration/AgyTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAgyAdapter } from "../Layers/AgyAdapter.ts";
-import { buildInitialAgyProviderSnapshot, checkAgyProviderStatus } from "../Layers/AgyProvider.ts";
+import { checkAgyProviderStatus } from "../Layers/AgyProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -100,7 +100,14 @@ export const AgyDriver: ProviderDriver<AgySettings, AgyDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          buildInitialAgyProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
+          // Agy model discovery is short but essential: publishing the
+          // optimistic "Checking" snapshot first lets the registry cache it
+          // before the background refresh result arrives. Probe before this
+          // instance enters the registry so Settings gets a real status.
+          checkAgyProviderStatus(settings.provider, processEnv).pipe(
+            Effect.map(stampIdentity),
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
         checkProvider,
         enrichSnapshot: ({ snapshot: current, publishSnapshot }) => publishSnapshot(current),
       }).pipe(

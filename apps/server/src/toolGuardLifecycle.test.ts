@@ -12,6 +12,7 @@ import * as ServerConfig from "./config.ts";
 import {
   addManagedHook,
   managedToolGuardPaths,
+  managedToolGuardCommand,
   manageToolGuard,
   removeManagedHook,
   TOOL_GUARD_MANAGED_MARKER,
@@ -31,6 +32,17 @@ describe("Tool Guard hook configuration", () => {
 
     const removed = removeManagedHook(installed);
     expect(removed).toEqual(original);
+  });
+
+  it("builds native managed paths and hook commands for Windows", () => {
+    const paths = managedToolGuardPaths("C:\\state", NodePath.win32, "win32");
+    expect(paths.binary).toBe("C:\\state\\tool-guard\\integration\\bin\\tg.exe");
+    expect(paths.hook).toBe(
+      "C:\\state\\tool-guard\\integration\\scripts\\t3research-tool-guard-hook.ps1",
+    );
+    expect(managedToolGuardCommand(paths.hook, "win32")).toBe(
+      'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\state\\tool-guard\\integration\\scripts\\t3research-tool-guard-hook.ps1"',
+    );
   });
 });
 

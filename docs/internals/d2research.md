@@ -31,7 +31,7 @@ The visible transcript remains authoritative. Memo supplements it with a compact
 
 d2research does not replace provider permission modes. Native provider behavior is the default. Users may install a managed Tool Guard copy into a specific environment, then enable or disable its hooks for that server and uninstall it completely.
 
-The managed installation copies versioned binaries, wrappers, and profiles into the environment rather than depending on a developer checkout. Hooks are gated by the d2 server runtime and remain inert outside an enabled environment. The lifecycle is exposed in Settings and covered by focused server and web tests. Managed Windows installation is not currently supported.
+The managed installation copies versioned binaries, platform-native wrappers, and profiles into the environment rather than depending on a developer checkout. Hooks are gated by the d2 server runtime and remain inert outside an enabled environment. The lifecycle is exposed in Settings and covered by focused server and web tests on macOS, Linux, and Windows paths.
 
 ### Local environment integrations
 
@@ -55,7 +55,7 @@ Research changes must continue to account for:
 - Deep Research does not guarantee delegation and may use fewer roles when that is sufficient.
 - Memo-backed handoff depends on a configured local Memo service.
 - Voice and Mission Control require the matching local deployment services.
-- Tool Guard is optional, environment-scoped, and currently managed on supported non-Windows hosts.
+- Tool Guard is optional and environment-scoped on macOS, Linux, and Windows.
 - d2research is not a claim that all inherited T3 user documentation or compatibility identifiers have been renamed.
 
 ## Change checklist

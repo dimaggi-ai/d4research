@@ -50,7 +50,10 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   const managed = managedToolGuardPaths(config.stateDir, path);
   const manifest = yield* readToolGuardManifest(managed.manifest);
   const binaryPath = yield* findToolGuardBinary(managed.binary);
-  const home = process.env.HOME ?? "";
+  const home =
+    process.platform === "win32"
+      ? (process.env.USERPROFILE ?? process.env.HOME ?? "")
+      : (process.env.HOME ?? "");
   const hookConfigPaths = home
     ? [
         path.join(home, ".claude", "settings.json"),
@@ -73,7 +76,7 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   const installed = manifest !== null;
   const enabled = manifest?.enabled === true;
   const policyProfilesAvailable = yield* fileSystem.exists(managed.profiles);
-  const managementSupported = process.platform !== "win32";
+  const managementSupported = true;
   const integration = classifyToolGuardIntegration({
     binaryAvailable: binaryPath !== null,
     managedHookDetected,
@@ -81,9 +84,8 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
     installed,
     enabled,
   });
-  const message = !managementSupported
-    ? "Managed Tool Guard installation is not yet supported on Windows."
-    : integration === "managed"
+  const message =
+    integration === "managed"
       ? managedHookDetected
         ? "d2research Tool Guard is installed and enabled."
         : "d2research Tool Guard is enabled, but its provider hooks need repair."

@@ -1,6 +1,6 @@
 # d2research
 
-d2research is a private, research-focused fork of T3 Code. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The fork adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard.
+d2research is a private workspace for long-running research across coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The product adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard. Its application foundation is inherited from T3 Code.
 
 The T3 Code architecture and its compatibility names remain the foundation. Do not mechanically rename `t3`, `T3CODE_HOME`, package names, protocols, or inherited release documentation without checking their compatibility role.
 

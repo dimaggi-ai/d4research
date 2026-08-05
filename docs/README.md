@@ -1,6 +1,6 @@
 # d2research docs
 
-d2research is a private research-focused fork of T3 Code. Start with [why the fork exists and what it covers](./internals/d2research.md). Documentation for inherited behavior keeps the T3 Code name when that is the actual package, application, protocol, or release channel.
+d2research is a private workspace for long-running research across models and coding agents. Start with [why it exists and what it covers](./internals/d2research.md). Its application foundation comes from T3 Code; inherited documentation keeps that name when it refers to the actual package, protocol, or release channel.
 
 ## Using d2research
 
@@ -13,7 +13,7 @@ d2research is a private research-focused fork of T3 Code. Start with [why the fo
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Junie](./user/providers-junie.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 
@@ -27,6 +27,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Architecture overview](./internals/overview.md)
 - [d2research architecture and scope](./internals/d2research.md)
 - [Workspace layout](./internals/workspace-layout.md)
+- [Terminal renderers](./architecture/terminal-renderers.md)
 - [Glossary](./internals/glossary.md)
 - [Scripts](./internals/scripts.md)
 - [Connection runtime](./internals/connection-runtime.md)

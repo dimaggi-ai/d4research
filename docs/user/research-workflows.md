@@ -1,6 +1,6 @@
 # Research workflows
 
-d2research adds structured research and provider continuity to the normal T3 Code chat workflow.
+d2research is a research workspace for evidence-heavy work across models and providers. Its research mode structures an investigation, while provider handoff preserves one continuous chat when the active model changes.
 
 ## Start deep research
 

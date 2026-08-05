@@ -20,8 +20,16 @@ describe("Tool Guard release assets", () => {
       "mode: enforcement\n",
     );
     await Promise.all(
-      ["t3research-tool-guard-hook", "t3research-tool-guard-agy-hook"].map((script) =>
-        NodeFSP.writeFile(NodePath.join(root, "scripts", script), "#!/bin/sh\n"),
+      [
+        "t3research-tool-guard-hook",
+        "t3research-tool-guard-agy-hook",
+        "t3research-tool-guard-hook.ps1",
+        "t3research-tool-guard-agy-hook.ps1",
+      ].map((script) =>
+        NodeFSP.writeFile(
+          NodePath.join(root, "scripts", script),
+          script.endsWith(".ps1") ? '$ErrorActionPreference = "Stop"\n' : "#!/bin/sh\n",
+        ),
       ),
     );
 
@@ -33,6 +41,12 @@ describe("Tool Guard release assets", () => {
     await expect(
       NodeFSP.readFile(NodePath.join(destination, "scripts/t3research-tool-guard-hook"), "utf8"),
     ).resolves.toContain("#!/bin/sh");
+    await expect(
+      NodeFSP.readFile(
+        NodePath.join(destination, "scripts/t3research-tool-guard-hook.ps1"),
+        "utf8",
+      ),
+    ).resolves.toContain("ErrorActionPreference");
     await expect(
       NodeFSP.readFile(
         NodePath.join(destination, "scripts/t3research-tool-guard-agy-hook"),

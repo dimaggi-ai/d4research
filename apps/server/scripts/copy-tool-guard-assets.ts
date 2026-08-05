@@ -14,7 +14,12 @@ export async function copyToolGuardAssets(input: {
     NodePath.join(input.destination, "profiles"),
     { recursive: true },
   );
-  for (const script of ["t3research-tool-guard-hook", "t3research-tool-guard-agy-hook"]) {
+  for (const script of [
+    "t3research-tool-guard-hook",
+    "t3research-tool-guard-agy-hook",
+    "t3research-tool-guard-hook.ps1",
+    "t3research-tool-guard-agy-hook.ps1",
+  ]) {
     await NodeFSP.copyFile(
       NodePath.join(input.repositoryRoot, "scripts", script),
       NodePath.join(input.destination, "scripts", script),

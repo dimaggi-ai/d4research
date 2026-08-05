@@ -1,6 +1,6 @@
 # Workspace layout
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using d2research? See [docs/user](../user/).
 
 A pnpm workspace driven by [vite-plus](https://vite.plus) (`vp`). See [scripts.md](./scripts.md) for
 the task commands.
@@ -46,13 +46,31 @@ the task commands.
 
 ## Other top-level directories
 
-- `scripts/`: workspace tooling run through `vp run`. Dev runner, desktop artifact builds, release
-  helpers, mobile static checks and showcase capture, update-manifest merging.
-- `assets/`: brand and app icon sources per channel (`dev`, `nightly`, `prod`).
-- `patches/`: pnpm patches for pinned upstream dependencies.
-- `oxlint-plugin-t3code/`: repo-specific lint rules.
-- `experiments/`: throwaway prototypes. Not part of the shipped build.
-- `docs/`: this documentation tree.
+Every tracked top-level directory has a distinct owner. Do not delete one merely because it is not
+part of the web application.
+
+| Directory                         | Why it exists                                                                  | Shipping status           |
+| --------------------------------- | ------------------------------------------------------------------------------ | ------------------------- |
+| `.agents/`                        | Shared repository skills; `.claude/skills` points here                         | Development tooling       |
+| `.claude/`, `.codex/`, `.cursor/` | Provider-specific repository discovery and MCP/rule configuration              | Development tooling       |
+| `.devcontainer/`, `.vscode/`      | Reproducible editor and container setup                                        | Development tooling       |
+| `.github/`                        | CI, release workflows, issue templates, and repository automation              | Repository operations     |
+| `.macroscope/`                    | Static-review agent guidance                                                   | CI/development tooling    |
+| `.plans/`                         | Historical and active maintainability plans referenced during large migrations | Non-shipping records      |
+| `.repos/`                         | Gitignored, vendored reference sources used for implementation guidance        | Local development only    |
+| `.vite-hooks/`                    | Vite+ hook configuration                                                       | Development tooling       |
+| `assets/`                         | Brand and app-icon sources for development, nightly, and production channels   | Build input               |
+| `docs/`                           | User, internals, architecture, and operations documentation                    | Repository documentation  |
+| `experiments/`                    | Deliberately isolated prototypes, currently the Messages glass lab             | Non-shipping prototypes   |
+| `native/`                         | Rust/native libraries and resource-monitor binaries                            | Shipping build input      |
+| `ops/`                            | Deployment assets, services, and Tool Guard policies                           | Deployment/build input    |
+| `oxlint-plugin-t3code/`           | Repository-specific lint rules; compatibility name retained                    | Development tooling       |
+| `patches/`                        | pnpm patches required by pinned dependencies                                   | Install input             |
+| `scripts/`                        | Development, QA, branding, release, and deployment automation                  | Development/build tooling |
+
+Generated `node_modules/`, build output, worktree state, and `.repos/` contents are ignored and must
+not be committed. A tracked directory should be removed only with its owning workflow, references,
+and documentation in the same change.
 
 ## Import conventions
 

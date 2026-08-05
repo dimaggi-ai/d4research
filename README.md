@@ -1,6 +1,6 @@
 # d2research
 
-d2research is a private, research-focused fork of [T3 Code](https://github.com/pingdotgg/t3code). It keeps T3 Code's fast, remote-ready, multi-provider agent workspace and explores what is needed for long-running, evidence-heavy research: bounded multi-agent planning, continuity across providers, local shared memory, voice workflows, and an optional safety layer for tool access.
+d2research is a private workspace for long-running, evidence-heavy research across coding agents. It combines bounded multi-agent planning, continuity across providers, local shared memory, voice workflows, and an optional safety layer for tool access. The product is built from the [T3 Code](https://github.com/pingdotgg/t3code) foundation and retains its fast, remote-ready clients and provider runtime.
 
 ## Why this project exists
 

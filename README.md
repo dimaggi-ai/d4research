@@ -1,107 +1,80 @@
-# T3 Code
+# d2research
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+d2research is a private, research-focused fork of [T3 Code](https://github.com/pingdotgg/t3code). It keeps T3 Code's fast, remote-ready, multi-provider agent workspace and explores what is needed for long-running, evidence-heavy research: bounded multi-agent planning, continuity across providers, local shared memory, voice workflows, and an optional safety layer for tool access.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
+## Why this project exists
 
-## "Wait, what are you selling me?"
+Most agent harnesses are optimized for one provider completing one turn. Research work is different: it crosses many sources, benefits from specialized perspectives, outlives a provider session, and still needs a clear record of what actually happened. d2research is the working product used to test that lifecycle without turning the orchestration layer into an opaque autonomous swarm.
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+The design goals are:
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+- keep one durable thread while changing provider or model;
+- make delegated research bounded, inspectable, and evidence-oriented;
+- keep memory and optional voice processing local to the environment;
+- retain provider-native permissions by default;
+- make additional Tool Guard policy explicit, reversible, and environment-scoped;
+- preserve the performance, remote access, and multi-surface architecture inherited from T3 Code.
 
-## Installation
+## The difference
 
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+| Area                   | T3 Code baseline                | d2research exploration                                                            |
+| ---------------------- | ------------------------------- | --------------------------------------------------------------------------------- |
+| Primary workflow       | Run coding agents               | Run coding agents and structured research                                         |
+| Research orchestration | Normal provider turns           | `#deep-research` prompt expansion with bounded specialist roles                   |
+| Provider changes       | Select a provider for a session | Hand off within the same thread, with a compact transcript and local Memo context |
+| Continuity             | Durable T3 thread history       | Thread history plus local handoff memory and failure rollback                     |
+| Tool permissions       | Provider-native modes           | Native modes by default, with optional managed d2 Tool Guard                      |
+| Local operations       | Standard server and clients     | Optional voice gateway, system panel, and isolated Docker QA stack                |
 
-### Try it out (install-free)
+## What it covers today
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+- **Deep Research.** A prompt beginning with `#deep-research` receives a structured research-lead brief. It suggests Scout, Analyst, Challenger, and Synthesizer roles, advertises only ready providers, caps delegated work at three concurrent agents, and forbids recursive delegation. The provider remains responsible for deciding which roles are useful and must not claim work that was not performed.
+- **Same-thread provider handoff.** Changing the model during an active conversation can summarize a bounded recent transcript, store handoff context in local Memo, stop the previous session, and continue with the selected provider in the same chat. A failed handoff restores the prior selection.
+- **Local shared context.** Research agents are instructed to exchange durable findings through the local Memo connector, including sources, paths, commands, and uncertainty.
+- **Managed Tool Guard.** Settings can install, enable, disable, and uninstall d2 Tool Guard for an environment. It copies managed resources into that environment and gates provider tools only when enabled. Provider-native permissions remain the default. See [Tool Guard](./docs/user/tool-guard.md).
+- **Voice and operations experiments.** The web client can use local speech-to-text, summarization, and text-to-speech services. The system panel and Docker QA stack support the d2 deployment environment. These require local supporting services and are not part of a generic source checkout.
+- **The T3 foundation.** Web, Electron desktop, and mobile clients; remote connections; multiple provider adapters; terminals; source control; previews; and checkpoint-based diff/restore remain inherited capabilities.
 
-```bash
-npx t3@latest
-```
+See [Research workflows](./docs/user/research-workflows.md) for user behavior and [d2research architecture and scope](./docs/internals/d2research.md) for implementation boundaries.
 
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
+## Run from source
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
+This repository is private. Clone access and Node.js `^22.16 || ^23.11 || >=24.10` are required.
 
 ```bash
-brew install --cask t3-code
+git clone git@github.com:dimaggi-ai/d2research.git
+cd d2research
 ```
 
-#### Arch Linux (AUR)
-
-```bash
-yay -S t3code-bin
-```
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
+Install the Vite+ `vp` command if needed:
 
 ```bash
 curl -fsSL https://vite.plus | bash
 ```
 
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
+Then install and start the development server:
 
 ```bash
 vp i
+vp run dev
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+Install and authenticate at least one supported provider CLI before starting its sessions. The inherited provider setup is documented in [Install and first run](./docs/user/install.md).
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+There is not currently a separate public `npx d2research` package or d2 desktop release channel. The upstream `npx t3` package and T3 desktop releases install T3 Code, not this fork. `scripts/deploy-local.sh` rebuilds an existing local d2 deployment; it is not a fresh-machine installer.
+
+## Documentation
+
+- [Documentation index](./docs/README.md)
+- [Research workflows](./docs/user/research-workflows.md)
+- [Tool Guard lifecycle](./docs/user/tool-guard.md)
+- [d2research architecture and scope](./docs/internals/d2research.md)
+- [Docker QA stack](./docs/operations/docker-qa.md)
+- [Inherited T3 architecture](./docs/internals/overview.md)
+- [Contributor policy](./CONTRIBUTING.md) and [agent instructions](./AGENTS.md)
+
+## Project status and attribution
+
+d2research is a private product-research fork, not an upstream T3 Code release. Compatibility names such as `t3`, `T3CODE_HOME`, and some inherited documentation remain where changing them would break protocols, storage, packages, or deployment workflows.
+
+The underlying application and architecture come from T3 Code. d2research changes should preserve that attribution and keep upstream-compatible behavior unless the research product explicitly needs a different contract.

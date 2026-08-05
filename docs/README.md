@@ -1,7 +1,10 @@
-# T3 Code docs
+# d2research docs
 
-## Using T3 Code
+d2research is a private research-focused fork of T3 Code. Start with [why the fork exists and what it covers](./internals/d2research.md). Documentation for inherited behavior keeps the T3 Code name when that is the actual package, application, protocol, or release channel.
 
+## Using d2research
+
+- [Research workflows](./user/research-workflows.md)
 - [Install and first run](./user/install.md)
 - [Tool Guard](./user/tool-guard.md)
 - [Permission modes](./user/permission-modes.md)
@@ -16,12 +19,13 @@ Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 
 ---
 
-## Working on T3 Code
+## Working on d2research
 
 Everything below is for maintainers. Setup lives in the [root README](../README.md);
 policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../AGENTS.md).
 
 - [Architecture overview](./internals/overview.md)
+- [d2research architecture and scope](./internals/d2research.md)
 - [Workspace layout](./internals/workspace-layout.md)
 - [Glossary](./internals/glossary.md)
 - [Scripts](./internals/scripts.md)
@@ -36,6 +40,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 
 ### Runbooks
 
+- [Docker QA stack](./operations/docker-qa.md)
 - [Release](./operations/release.md)
 - [Observability](./operations/observability.md)
 - [Relay observability](./operations/relay-observability.md)

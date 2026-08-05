@@ -1,5 +1,8 @@
 # Install T3 Code
 
+> [!NOTE]
+> This page documents the upstream T3 Code distribution inherited by d2research. It is useful for provider and runtime setup, but `npx t3`, the T3 desktop releases, and package-manager entries install T3 Code, not the private d2research fork. To run d2research, clone the private repository and follow the [source instructions](../../README.md#run-from-source).
+
 T3 Code is a web and desktop GUI for running coding agents on your machine.
 
 ## Requirements

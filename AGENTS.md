@@ -1,10 +1,18 @@
-# T3 Code
+# d2research
 
-T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients.
+d2research is a private, research-focused fork of T3 Code. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The fork adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard.
 
-You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
+The T3 Code architecture and its compatibility names remain the foundation. Do not mechanically rename `t3`, `T3CODE_HOME`, package names, protocols, or inherited release documentation without checking their compatibility role.
 
-## What makes T3 Code special?
+## Research product contract
+
+- Keep the visible thread authoritative. Handoffs add compact local context; they do not replace or fork history.
+- Keep research delegation bounded and honest. Never imply suggested roles or providers actually ran, and do not introduce recursive delegation.
+- Keep local-first features local. Memo, voice, Mission Control, and Tool Guard integrations must not silently acquire undeclared hosted dependencies.
+- Keep provider-native permissions as the default. d2 Tool Guard must remain explicit, reversible, environment-scoped, and observable in Settings.
+- Preserve T3 Code's performance, remote readiness, multi-surface behavior, typed contracts, and provider boundaries.
+
+## What the fork inherits from T3 Code
 
 We have over 100,000 users who love T3 Code. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
 
@@ -30,7 +38,7 @@ T3 Code has 3 key app surfaces: **web**, **desktop**, and **mobile**.
 
 **Mobile** is a React Native app for both iOS and Android, available on the App Store and Google Play. The mobile app allows for connecting to any T3 Code server to control work remotely.
 
-## A note from Theo
+## Engineering approach
 
 I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
 
@@ -44,8 +52,8 @@ Of note: Most T3 Code contributions will come from T3 Code itself, often control
 
 We need to be on the same page with terminology. When communicating, use this language:
 
-- **you** means the agent reading this file and changing T3 Code.
-- **we, us, and maintainers** mean Theo, Julius and the people building T3 Code. These are who you are talking to now.
+- **you** means the agent reading this file and changing d2research.
+- **we, us, and maintainers** mean the people building and operating d2research.
 - **user** means the person using T3 Code to direct coding agents.
 - **agent** means the coding agent a user runs inside T3 Code. Depending on context, that may also include you.
 - **provider** means the agent runtime or harness T3 Code talks to, such as Codex, Claude, Cursor, or OpenCode.

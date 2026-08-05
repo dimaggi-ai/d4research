@@ -5,6 +5,21 @@ export interface ProviderHandoffMessage {
   readonly text: string;
 }
 
+export function shouldHandoffModelSelection(input: {
+  readonly hasStartedSession: boolean;
+  readonly currentInstanceId: ProviderInstanceId;
+  readonly nextInstanceId: ProviderInstanceId;
+  readonly modelChangeRequiresNewThread: boolean;
+  readonly providerChanged: boolean;
+}): boolean {
+  return (
+    input.hasStartedSession &&
+    (input.currentInstanceId !== input.nextInstanceId ||
+      input.modelChangeRequiresNewThread ||
+      input.providerChanged)
+  );
+}
+
 export function isProviderHandoffCandidate(
   entry: {
     readonly instanceId: ProviderInstanceId;
@@ -42,23 +57,62 @@ export function buildProviderHandoffPrompt(input: {
   readonly summary: string;
   readonly target: ModelSelection;
   readonly project?: string | undefined;
+  readonly targetLabel?: string | undefined;
 }): string {
   const project = input.project?.trim();
+  const targetLabel = input.targetLabel?.trim() || String(input.target.instanceId);
   return [
-    "Continue work from a linked T3Research provider handoff.",
+    `Handoff to ${targetLabel} / ${input.target.model}.`,
+    "Shared context was saved to local Memo before this agent started.",
     "",
     `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
     `Target model: ${input.target.instanceId} / ${input.target.model}`,
     "The source thread remains unchanged and is the authoritative original conversation.",
     "",
-    'First, call memory_remember with connector="local" and store the handoff summary below',
+    'Use memory_search with connector="local" whenever more shared context is needed',
     project ? `using project=\"${project}\".` : "for the current project.",
-    'Then use memory_search with connector="local" whenever more shared context is needed.',
-    "Do not claim the memory write succeeded unless the tool returns success.",
     "",
     "Handoff summary:",
     input.summary.trim(),
   ].join("\n");
+}
+
+export function buildProviderHandoffMemory(input: {
+  readonly sourceThreadId: ThreadId;
+  readonly sourceThreadTitle: string;
+  readonly summary: string;
+  readonly target: ModelSelection;
+}): string {
+  return [
+    `T3Research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
+    `Receiving agent: ${input.target.instanceId} / ${input.target.model}.`,
+    "Shared context:",
+    input.summary.trim(),
+  ].join("\n");
+}
+
+export async function persistProviderHandoffMemory(input: {
+  readonly text: string;
+  readonly project?: string | undefined;
+}): Promise<void> {
+  const response = await fetch("/api/memory/handoff", {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const result = (await response.json().catch(() => null)) as {
+    ok?: unknown;
+    message?: unknown;
+  } | null;
+  if (!response.ok || result?.ok !== true) {
+    throw new Error(
+      typeof result?.message === "string"
+        ? result.message
+        : "Local Memo could not store the handoff context.",
+    );
+  }
 }
 
 export function buildProviderHandoffTitle(sourceTitle: string): string {

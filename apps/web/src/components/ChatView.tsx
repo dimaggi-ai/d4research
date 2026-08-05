@@ -173,9 +173,12 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
+  buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
   buildProviderHandoffTitle,
   buildProviderHandoffTranscript,
+  persistProviderHandoffMemory,
+  shouldHandoffModelSelection,
 } from "../providerHandoff";
 import {
   DEEP_RESEARCH_TAG,
@@ -249,7 +252,6 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
-import { ProviderHandoffDialog } from "./chat/ProviderHandoffDialog";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -1327,7 +1329,6 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
-  const [providerHandoffOpen, setProviderHandoffOpen] = useState(false);
   const [providerHandoffBusy, setProviderHandoffBusy] = useState(false);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
@@ -5637,6 +5638,16 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
+      const targetEntry = providerHandoffEntries.find(
+        (entry) => entry.instanceId === targetModelSelection.instanceId,
+      );
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: `Handing off to ${targetEntry?.displayName ?? targetModelSelection.instanceId}`,
+          description: "Saving shared context to local Memo before the new agent starts.",
+        }),
+      );
       setProviderHandoffBusy(true);
       sendInFlightRef.current = true;
       const nextThreadId = newThreadId();
@@ -5654,12 +5665,22 @@ function ChatViewContent(props: ChatViewProps) {
         const summary = await summarizeReplyForSpeech(
           transcript || `Continue the work from ${activeThread.title}.`,
         );
+        await persistProviderHandoffMemory({
+          text: buildProviderHandoffMemory({
+            sourceThreadId: activeThread.id,
+            sourceThreadTitle: activeThread.title,
+            summary,
+            target: targetModelSelection,
+          }),
+          project: activeProject.title,
+        });
         const handoffPrompt = buildProviderHandoffPrompt({
           sourceThreadId: activeThread.id,
           sourceThreadTitle: activeThread.title,
           summary,
           target: targetModelSelection,
           project: activeProject.title,
+          targetLabel: targetEntry?.displayName,
         });
 
         const createResult = await createThread({
@@ -5707,7 +5728,6 @@ function ChatViewContent(props: ChatViewProps) {
           to: "/$environmentId/$threadId",
           params: { environmentId: activeThread.environmentId, threadId: nextThreadId },
         });
-        setProviderHandoffOpen(false);
       } catch (error) {
         if (created) {
           await deleteThread({ environmentId, input: { threadId: nextThreadId } });
@@ -5735,6 +5755,7 @@ function ChatViewContent(props: ChatViewProps) {
       isSendBusy,
       navigate,
       providerHandoffBusy,
+      providerHandoffEntries,
       routeKind,
       runtimeMode,
       startThreadTurn,
@@ -5754,20 +5775,8 @@ function ChatViewContent(props: ChatViewProps) {
   }, [composerRef, promptRef]);
 
   const getModelDisabledReason = useCallback(
-    (instanceId: ProviderInstanceId, model: string): string | null => {
-      if (!activeThread) {
-        return null;
-      }
-      const reason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection: { instanceId, model },
-      });
-      return reason ? `${reason.description} Start a new thread to use this model.` : null;
-    },
-    [activeThread, providerStatuses],
+    (): string | null => (providerHandoffBusy ? "Handoff in progress." : null),
+    [providerHandoffBusy],
   );
 
   const onProviderModelSelect = useCallback(
@@ -5778,27 +5787,6 @@ function ChatViewContent(props: ChatViewProps) {
       // are rejected by returning early; the server remains authoritative too.
       const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
       const resolvedDriverKind = entry?.driver ?? null;
-      if (
-        lockedProvider !== null &&
-        resolvedDriverKind !== null &&
-        resolvedDriverKind !== lockedProvider
-      ) {
-        scheduleComposerFocus();
-        return;
-      }
-      if (lockedProvider !== null && activeThread.session?.providerInstanceId) {
-        const currentEntry = providerStatuses.find(
-          (snapshot) => snapshot.instanceId === activeThread.session?.providerInstanceId,
-        );
-        if (
-          currentEntry?.continuation?.groupKey &&
-          entry?.continuation?.groupKey &&
-          currentEntry.continuation.groupKey !== entry.continuation.groupKey
-        ) {
-          scheduleComposerFocus();
-          return;
-        }
-      }
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
         settings,
@@ -5820,12 +5808,20 @@ function ChatViewContent(props: ChatViewProps) {
         currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
         nextModelSelection,
       });
-      if (modelChangeBlockReason) {
-        toastManager.add({
-          type: "warning",
-          title: modelChangeBlockReason.title,
-          description: modelChangeBlockReason.description,
-        });
+      const currentInstanceId =
+        activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
+      const requiresHandoff = shouldHandoffModelSelection({
+        hasStartedSession: activeThread.session !== null,
+        currentInstanceId,
+        nextInstanceId: instanceId,
+        modelChangeRequiresNewThread: modelChangeBlockReason !== null,
+        providerChanged:
+          lockedProvider !== null &&
+          resolvedDriverKind !== null &&
+          resolvedDriverKind !== lockedProvider,
+      });
+      if (requiresHandoff) {
+        void onProviderHandoff(nextModelSelection);
         scheduleComposerFocus();
         return;
       }
@@ -5839,6 +5835,7 @@ function ChatViewContent(props: ChatViewProps) {
     [
       activeThread,
       lockedProvider,
+      onProviderHandoff,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -6281,17 +6278,6 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             onProviderModelSelect={onProviderModelSelect}
                             onStartDeepResearch={onStartDeepResearch}
-                            onChangeProvider={
-                              routeKind === "server" && activeProject
-                                ? () => setProviderHandoffOpen(true)
-                                : undefined
-                            }
-                            changeProviderDisabled={
-                              providerHandoffBusy ||
-                              isSendBusy ||
-                              isWorking ||
-                              activeEnvironmentUnavailable
-                            }
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
@@ -6356,19 +6342,6 @@ function ChatViewContent(props: ChatViewProps) {
                 threadRef={activeThreadRef}
                 tabId={activePreviewMiniPlayer.tabId}
                 bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
-              />
-            ) : null}
-
-            {routeKind === "server" ? (
-              <ProviderHandoffDialog
-                open={providerHandoffOpen}
-                sourceInstanceId={
-                  activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId
-                }
-                entries={providerHandoffEntries}
-                busy={providerHandoffBusy}
-                onOpenChange={setProviderHandoffOpen}
-                onConfirm={(selection) => void onProviderHandoff(selection)}
               />
             ) : null}
 

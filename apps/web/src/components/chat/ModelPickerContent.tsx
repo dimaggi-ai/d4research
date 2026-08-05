@@ -6,7 +6,7 @@ import {
 import { resolveSelectableModel } from "@t3tools/shared/model";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { ArrowRightLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import {
@@ -25,7 +25,6 @@ import {
   ComboboxItem,
   ComboboxListVirtualized,
 } from "../ui/combobox";
-import { Button } from "../ui/button";
 import { ModelEsque } from "./providerIconUtils";
 import {
   modelPickerJumpCommandForIndex,
@@ -42,6 +41,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { shouldRestrictModelPickerToLockedProvider } from "../../modelPickerHandoff";
 
 type ModelPickerItem = {
   slug: string;
@@ -93,8 +93,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
-  onChangeProvider?: (() => void) | undefined;
-  changeProviderDisabled?: boolean | undefined;
+  allowCrossProviderSelection?: boolean | undefined;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -128,6 +127,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     [providedKeybindings],
   );
   const updateSettings = useUpdateClientSettings();
+  const restrictToLockedProvider = shouldRestrictModelPickerToLockedProvider({
+    lockedProvider: props.lockedProvider,
+    allowCrossProviderSelection: props.allowCrossProviderSelection === true,
+  });
 
   const focusSearchInput = useCallback(() => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -177,12 +180,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const matchesLockedProvider = useCallback(
     (entry: Pick<ProviderInstanceEntry, "driverKind" | "continuationGroupKey">): boolean => {
-      if (props.lockedProvider === null) return true;
+      if (!restrictToLockedProvider) return true;
       if (entry.driverKind !== props.lockedProvider) return false;
       if (!props.lockedContinuationGroupKey) return true;
       return entry.continuationGroupKey === props.lockedContinuationGroupKey;
     },
-    [props.lockedContinuationGroupKey, props.lockedProvider],
+    [props.lockedContinuationGroupKey, props.lockedProvider, restrictToLockedProvider],
   );
 
   const readyInstanceSet = useMemo(() => {
@@ -231,7 +234,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return out;
   }, [modelOptionsByInstance, entryByInstanceId, readyInstanceSet]);
 
-  const isLocked = props.lockedProvider !== null;
+  const isLocked = restrictToLockedProvider;
   const isSearching = searchQuery.trim().length > 0;
   const lockedDisabledInstanceIds = useMemo(() => {
     if (!isLocked) {
@@ -310,7 +313,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       // When searching, we only respect locked provider (by driver kind),
       // ignoring sidebar selection so account-scoped searches can find a
       // model before the user chooses a specific instance rail item.
-      if (props.lockedProvider !== null) {
+      if (restrictToLockedProvider) {
         const lockedProviderMatches: Array<(typeof rankedMatches)[number]> = [];
         for (const rankedModel of rankedMatches) {
           if (matchesLockedProvider(rankedModel.model)) {
@@ -345,7 +348,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         .map((rankedModel) => rankedModel.model);
     }
 
-    if (props.lockedProvider !== null) {
+    if (restrictToLockedProvider) {
       result = result.filter((m) => matchesLockedProvider(m));
       if (selectedInstanceId === "favorites") {
         result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
@@ -369,6 +372,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     instanceOrder,
     matchesLockedProvider,
     props.lockedProvider,
+    restrictToLockedProvider,
     searchQuery,
     selectedInstanceId,
   ]);
@@ -784,24 +788,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <ComboboxEmpty className="not-empty:py-6 empty:h-0 text-xs font-normal leading-snug">
               No models found
             </ComboboxEmpty>
-            {props.onChangeProvider ? (
-              <div className="shrink-0 border-t border-border/70 p-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-xs"
-                  disabled={props.changeProviderDisabled}
-                  onClick={() => {
-                    props.onRequestClose?.();
-                    props.onChangeProvider?.();
-                  }}
-                >
-                  <ArrowRightLeftIcon className="size-3.5" />
-                  Handoff to another provider
-                </Button>
-              </div>
-            ) : null}
           </div>
         </Combobox>
       </div>

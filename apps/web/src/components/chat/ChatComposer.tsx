@@ -178,7 +178,6 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
-  ShieldCheckIcon,
   SparklesIcon,
   TelescopeIcon,
   XIcon,
@@ -210,7 +209,6 @@ import { useVoiceConversation } from "../../hooks/useVoiceConversation";
 import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { TOOL_GUARD_MODE_PRESENTATION } from "../../toolGuardModes";
-import { useToolGuardStatus } from "../../hooks/useToolGuardStatus";
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -285,8 +283,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onTogglePlanSidebar: () => void;
-  toolGuardStatusMessage: string;
-  toolGuardStatusReady: boolean;
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
@@ -347,20 +343,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             <SelectValue>{runtimeModeOption.label}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            <div className="flex max-w-72 items-start gap-2 border-b border-border/70 px-2 py-2">
-              <ShieldCheckIcon
-                className={cn(
-                  "mt-0.5 size-4 shrink-0",
-                  props.toolGuardStatusReady ? "text-emerald-500" : "text-amber-500",
-                )}
-              />
-              <div className="min-w-0">
-                <div className="text-xs font-medium text-foreground">Tool Guard Core</div>
-                <div className="text-xs leading-4 text-muted-foreground">
-                  {props.toolGuardStatusMessage}
-                </div>
-              </div>
-            </div>
             {runtimeModeOptions.map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
@@ -625,8 +607,6 @@ export interface ChatComposerProps {
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
   onStartDeepResearch: () => void;
-  onChangeProvider?: (() => void) | undefined;
-  changeProviderDisabled: boolean;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -653,7 +633,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
-    isServerThread: _isServerThread,
+    isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
@@ -705,8 +685,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
     onStartDeepResearch,
-    onChangeProvider,
-    changeProviderDisabled,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -718,7 +696,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onExpandImage,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
-  const toolGuardStatus = useToolGuardStatus();
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -3231,8 +3208,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }}
                     getModelDisabledReason={getModelDisabledReason}
                     onInstanceModelChange={onProviderModelSelect}
-                    {...(onChangeProvider ? { onChangeProvider } : {})}
-                    changeProviderDisabled={changeProviderDisabled}
+                    allowCrossProviderSelection={isServerThread}
                   />
                 )}
 
@@ -3264,8 +3240,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     runtimeMode={runtimeMode}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
-                    toolGuardStatusMessage={toolGuardStatus.message}
-                    toolGuardStatusReady={toolGuardStatus.state === "ready"}
                     onToggleInteractionMode={toggleInteractionMode}
                     onTogglePlanSidebar={togglePlanSidebar}
                     onRuntimeModeChange={handleRuntimeModeChange}
@@ -3288,8 +3262,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                       onTogglePlanSidebar={togglePlanSidebar}
-                      toolGuardStatusMessage={toolGuardStatus.message}
-                      toolGuardStatusReady={toolGuardStatus.state === "ready"}
                     />
                   </>
                 )}

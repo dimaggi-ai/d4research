@@ -41,11 +41,17 @@ import {
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { readToolGuardStatus } from "./toolGuardStatus.ts";
+import {
+  DEFAULT_LOCAL_MEMO_BASE_URL,
+  makeLocalMemoConnector,
+} from "./mcp/toolkits/memory/connectors.ts";
+import { ServerSettingsService } from "./serverSettings.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
 const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
+const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const GZIP_MIN_BYTES = 1024;
@@ -291,6 +297,59 @@ export const toolGuardStatusRouteLayer = HttpRouter.add(
     return HttpServerResponse.jsonUnsafe(status, {
       headers: { "cache-control": "no-store" },
     });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const handoffMemoryRouteLayer = HttpRouter.add(
+  "POST",
+  HANDOFF_MEMORY_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<unknown, { text?: unknown; project?: unknown }>(yield* request.json);
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      const project = typeof body.project === "string" ? body.project.trim() : undefined;
+      if (!text || text.length > 20_000) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Handoff memory must contain 1–20,000 characters." },
+          { status: 400 },
+        );
+      }
+      const settingsService = yield* ServerSettingsService;
+      const settings = yield* settingsService.getSettings;
+      if (!settings.memory.localEnabled) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Local Memo is disabled in Settings → Connections." },
+          { status: 503 },
+        );
+      }
+      const connector = yield* makeLocalMemoConnector({
+        baseUrl:
+          process.env.T3CODE_LOCAL_MEMO_URL ??
+          settings.memory.localBaseUrl ??
+          DEFAULT_LOCAL_MEMO_BASE_URL,
+        timeoutMs: 5_000,
+      });
+      const result = yield* connector.add(text, "t3research-provider-handoff", project);
+      return HttpServerResponse.jsonUnsafe(
+        { ok: result.ok },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Local Memo could not store the handoff context." },
+          { status: 503 },
+        ),
+      ),
+    );
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,

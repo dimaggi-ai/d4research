@@ -6,6 +6,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
+  ShieldCheckIcon,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
@@ -144,6 +145,7 @@ import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePreferredEditor } from "../../editorPreferences";
+import { useToolGuardStatus } from "../../hooks/useToolGuardStatus";
 
 const THEME_OPTIONS = [
   {
@@ -1122,6 +1124,7 @@ export function AppearanceSettingsPanel() {
 export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const toolGuardStatus = useToolGuardStatus();
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1703,6 +1706,27 @@ export function GeneralSettingsPanel() {
                 }}
               />
             </div>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Tool Guard">
+        <SettingsRow
+          title="Global agent protection"
+          description="Tool Guard Core governs access modes for local coding agents."
+          control={
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheckIcon
+                className={toolGuardStatus.state === "ready" ? "size-4 text-emerald-500" : "size-4"}
+              />
+              {toolGuardStatus.integration === "external"
+                ? "Enabled externally"
+                : toolGuardStatus.integration === "managed"
+                  ? "Enabled"
+                  : toolGuardStatus.integration === "available"
+                    ? "Available"
+                    : "Unavailable"}
+            </span>
           }
         />
       </SettingsSection>

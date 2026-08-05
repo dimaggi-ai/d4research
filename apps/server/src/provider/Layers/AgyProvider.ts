@@ -81,7 +81,7 @@ export const buildInitialAgyProviderSnapshot = Effect.fn("buildInitialAgyProvide
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Agy is disabled in T3Research settings.",
+            message: "Agy is disabled in d2research settings.",
           },
     });
   },

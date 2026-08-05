@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { classifyToolGuardIntegration } from "./toolGuardStatus.ts";
 
 describe("Tool Guard integration status", () => {
-  it("prefers the T3Research-managed hook over an external hook", () => {
+  it("prefers the d2research-managed hook over an external hook", () => {
     expect(
       classifyToolGuardIntegration({
         binaryAvailable: true,

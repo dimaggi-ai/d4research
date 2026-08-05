@@ -84,7 +84,7 @@ export function buildProviderHandoffMemory(input: {
   readonly target: ModelSelection;
 }): string {
   return [
-    `T3Research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
+    `d2research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
     `Receiving agent: ${input.target.instanceId} / ${input.target.model}.`,
     "Shared context:",
     input.summary.trim(),

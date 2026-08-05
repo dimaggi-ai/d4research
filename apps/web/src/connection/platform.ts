@@ -117,7 +117,7 @@ function clientMetadata() {
   const desktop = window.desktopBridge !== undefined;
   const platform = navigator.platform.trim();
   return {
-    label: desktop ? "T3Research Desktop" : "T3Research Web",
+    label: desktop ? "d2research Desktop" : "d2research Web",
     deviceType: "desktop" as const,
     ...(platform === "" ? {} : { os: platform }),
   };

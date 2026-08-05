@@ -67,9 +67,9 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   });
   const message =
     integration === "managed"
-      ? "T3Research Tool Guard hooks are active."
+      ? "d2research Tool Guard hooks are active."
       : integration === "external"
-        ? "An existing Tool Guard hook is active; T3Research will not install a duplicate."
+        ? "An existing Tool Guard hook is active; d2research will not install a duplicate."
         : integration === "available"
           ? "Tool Guard Core is available and ready for local hook setup."
           : "Tool Guard Core is not available on this machine.";

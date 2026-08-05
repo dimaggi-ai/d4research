@@ -355,6 +355,44 @@ function getBuiltInClaudeModelsForVersion(
   });
 }
 
+const OLLAMA_LOCAL_BASE_URLS = new Set(["http://127.0.0.1:11434", "http://localhost:11434"]);
+
+/** Returns local model slugs from the tabular `ollama list` output. */
+export function parseOllamaModelList(output: string): ReadonlyArray<string> {
+  const seen = new Set<string>();
+  for (const line of output.split(/\r?\n/u).slice(1)) {
+    const slug = line.trim().split(/\s+/u, 1)[0];
+    if (slug) seen.add(slug);
+  }
+  return [...seen];
+}
+
+export function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
+  const baseUrl = environment.ANTHROPIC_BASE_URL?.replace(/\/$/u, "");
+  return baseUrl !== undefined && OLLAMA_LOCAL_BASE_URLS.has(baseUrl);
+}
+
+const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
+  Effect.gen(function* () {
+    if (!claudeUsesLocalOllama(environment)) return [] as ReadonlyArray<string>;
+    const resolved = yield* resolveSpawnCommand("ollama", ["list"], { env: environment });
+    const listed = yield* spawnAndCollect(
+      "ollama",
+      ChildProcess.make(resolved.command, resolved.args, {
+        env: environment,
+        shell: resolved.shell,
+      }),
+    ).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
+    if (
+      Result.isFailure(listed) ||
+      Option.isNone(listed.success) ||
+      listed.success.value.code !== 0
+    ) {
+      return [] as ReadonlyArray<string>;
+    }
+    return parseOllamaModelList(listed.success.value.stdout);
+  });
+
 function formatClaudeOpus5UpgradeMessage(version: string | null): string {
   const versionLabel = version ? `v${version}` : "the installed version";
   return `Claude Code ${versionLabel} is too old for Claude Opus 5. Upgrade to v${MINIMUM_CLAUDE_OPUS_5_VERSION} or newer to access it.`;
@@ -894,7 +932,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   const models = providerModelsFromSettings(
     getBuiltInClaudeModelsForVersion(parsedVersion),
-    claudeSettings.customModels,
+    [...claudeSettings.customModels, ...(yield* discoverLocalOllamaModels(resolvedEnvironment))],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const versionUpgradeMessage = supportsClaudeOpus5(parsedVersion)

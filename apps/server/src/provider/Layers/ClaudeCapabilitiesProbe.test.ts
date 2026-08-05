@@ -9,7 +9,9 @@ import * as Schema from "effect/Schema";
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
+  claudeUsesLocalOllama,
   isLegacyClaudeModel,
+  parseOllamaModelList,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
@@ -28,6 +30,17 @@ it("keeps only the Claude 5 family out of legacy models", () => {
       ["claude-opus-4-8", true],
     ],
   );
+});
+
+it("discovers locally installed Ollama models only for the local Ollama endpoint", () => {
+  assert.deepStrictEqual(
+    parseOllamaModelList(
+      "NAME ID SIZE MODIFIED\nqwen3.5:latest abc 4 GB today\ngemma3:27b def 17 GB yesterday\nqwen3.5:latest abc 4 GB today\n",
+    ),
+    ["qwen3.5:latest", "gemma3:27b"],
+  );
+  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11434" }), true);
+  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "https://ollama.example" }), false);
 });
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {

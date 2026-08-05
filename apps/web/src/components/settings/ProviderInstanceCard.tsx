@@ -43,7 +43,11 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { applyOllamaClaudePreset, isOllamaClaudePresetConfigured } from "./ollamaClaudePreset";
+import {
+  applyOllamaClaudePreset,
+  fetchLocalOllamaModelIds,
+  isOllamaClaudePresetConfigured,
+} from "./ollamaClaudePreset";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -483,6 +487,16 @@ export function ProviderInstanceCard({
     customModels,
   });
   const ollamaClaudeConfigured = isOllamaClaudePresetConfigured(instance);
+  const [ollamaDiscoveryPending, setOllamaDiscoveryPending] = useState(false);
+  const runOllamaClaudePreset = () => {
+    if (ollamaDiscoveryPending) return;
+    setOllamaDiscoveryPending(true);
+    void (async () => {
+      const local = await fetchLocalOllamaModelIds();
+      onUpdate(applyOllamaClaudePreset(instance, local));
+      setOllamaDiscoveryPending(false);
+    })();
+  };
 
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -775,10 +789,14 @@ export function ProviderInstanceCard({
                   size="sm"
                   variant={ollamaClaudeConfigured ? "outline" : "default"}
                   className="shrink-0"
-                  disabled={ollamaClaudeConfigured}
-                  onClick={() => onUpdate(applyOllamaClaudePreset(instance))}
+                  disabled={ollamaDiscoveryPending}
+                  onClick={runOllamaClaudePreset}
                 >
-                  {ollamaClaudeConfigured ? "Configured" : "Configure Ollama"}
+                  {ollamaDiscoveryPending
+                    ? "Discovering models..."
+                    : ollamaClaudeConfigured
+                      ? "Refresh Ollama models"
+                      : "Configure Ollama"}
                 </Button>
               </div>
             ) : null}

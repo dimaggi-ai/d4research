@@ -63,11 +63,12 @@ export function buildProviderHandoffPrompt(input: {
   const targetLabel = input.targetLabel?.trim() || String(input.target.instanceId);
   return [
     `Handoff to ${targetLabel} / ${input.target.model}.`,
-    "Shared context was saved to local Memo before this agent started.",
+    "📎 Context attached: local Memo (shared agent memory).",
+    "This provider handoff continues in the same d2research chat.",
     "",
     `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
     `Target model: ${input.target.instanceId} / ${input.target.model}`,
-    "The source thread remains unchanged and is the authoritative original conversation.",
+    "The transcript above remains the authoritative conversation history.",
     "",
     'Use memory_search with connector="local" whenever more shared context is needed',
     project ? `using project=\"${project}\".` : "for the current project.",
@@ -113,9 +114,4 @@ export async function persistProviderHandoffMemory(input: {
         : "Local Memo could not store the handoff context.",
     );
   }
-}
-
-export function buildProviderHandoffTitle(sourceTitle: string): string {
-  const trimmed = sourceTitle.trim() || "Untitled thread";
-  return `Handoff: ${trimmed}`;
 }

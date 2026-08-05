@@ -4,7 +4,6 @@ import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import {
   buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
-  buildProviderHandoffTitle,
   buildProviderHandoffTranscript,
   isProviderHandoffCandidate,
   shouldHandoffModelSelection,
@@ -31,11 +30,12 @@ describe("provider handoff", () => {
       target: { instanceId: ProviderInstanceId.make("claude"), model: "claude-sonnet" },
       project: "t3code",
     });
-    expect(prompt).toContain("Shared context was saved to local Memo");
+    expect(prompt).toContain("Context attached: local Memo");
+    expect(prompt).toContain("continues in the same d2research chat");
     expect(prompt).toContain('memory_search with connector="local"');
     expect(prompt).toContain('project="t3code"');
     expect(prompt).toContain("thread-source");
-    expect(prompt).toContain("source thread remains unchanged");
+    expect(prompt).toContain("authoritative conversation history");
   });
 
   it("builds a self-contained shared-memory handoff record", () => {
@@ -48,10 +48,6 @@ describe("provider handoff", () => {
     expect(memory).toContain("thread-source");
     expect(memory).toContain("claude / claude-sonnet");
     expect(memory).toContain("Voice is deployed and tests pass.");
-  });
-
-  it("labels the new chat as a handoff", () => {
-    expect(buildProviderHandoffTitle("Main chat")).toBe("Handoff: Main chat");
   });
 
   it("hands cross-agent model selections off after a session starts", () => {

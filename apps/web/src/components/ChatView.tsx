@@ -175,7 +175,6 @@ import {
 import {
   buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
-  buildProviderHandoffTitle,
   buildProviderHandoffTranscript,
   persistProviderHandoffMemory,
   shouldHandoffModelSelection,
@@ -1218,6 +1217,9 @@ function ChatViewContent(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
+    reportFailure: false,
+  });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
@@ -5645,15 +5647,13 @@ function ChatViewContent(props: ChatViewProps) {
         stackedThreadToast({
           type: "info",
           title: `Handing off to ${targetEntry?.displayName ?? targetModelSelection.instanceId}`,
-          description: "Saving shared context to local Memo before the new agent starts.",
+          description: "Saving context to local Memo, then continuing in this chat.",
         }),
       );
       setProviderHandoffBusy(true);
       sendInFlightRef.current = true;
-      const nextThreadId = newThreadId();
       const createdAt = new Date().toISOString();
-      const nextThreadTitle = truncate(buildProviderHandoffTitle(activeThread.title));
-      let created = false;
+      let modelUpdated = false;
 
       try {
         const transcript = buildProviderHandoffTranscript(
@@ -5683,27 +5683,28 @@ function ChatViewContent(props: ChatViewProps) {
           targetLabel: targetEntry?.displayName,
         });
 
-        const createResult = await createThread({
+        if (activeThread.session && activeThread.session.status !== "stopped") {
+          const stopResult = await stopThreadSession({
+            environmentId,
+            input: { threadId: activeThread.id, createdAt },
+          });
+          if (stopResult._tag === "Failure") throw squashAtomCommandFailure(stopResult);
+        }
+
+        const updateResult = await updateThreadMetadata({
           environmentId,
           input: {
-            threadId: nextThreadId,
-            projectId: activeProject.id,
-            title: nextThreadTitle,
+            threadId: activeThread.id,
             modelSelection: targetModelSelection,
-            runtimeMode,
-            interactionMode: "default",
-            branch: activeThreadBranch,
-            worktreePath: activeThread.worktreePath,
-            createdAt,
           },
         });
-        if (createResult._tag === "Failure") throw squashAtomCommandFailure(createResult);
-        created = true;
+        if (updateResult._tag === "Failure") throw squashAtomCommandFailure(updateResult);
+        modelUpdated = true;
 
         const startResult = await startThreadTurn({
           environmentId,
           input: {
-            threadId: nextThreadId,
+            threadId: activeThread.id,
             message: {
               messageId: newMessageId(),
               role: "user",
@@ -5711,26 +5712,18 @@ function ChatViewContent(props: ChatViewProps) {
               attachments: [],
             },
             modelSelection: targetModelSelection,
-            titleSeed: nextThreadTitle,
             runtimeMode,
             interactionMode: "default",
             createdAt,
           },
         });
         if (startResult._tag === "Failure") throw squashAtomCommandFailure(startResult);
-
-        const startedResult = await settlePromise(() =>
-          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
-        );
-        if (startedResult._tag === "Failure") throw squashAtomCommandFailure(startedResult);
-
-        await navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId: activeThread.environmentId, threadId: nextThreadId },
-        });
       } catch (error) {
-        if (created) {
-          await deleteThread({ environmentId, input: { threadId: nextThreadId } });
+        if (modelUpdated) {
+          await updateThreadMetadata({
+            environmentId,
+            input: { threadId: activeThread.id, modelSelection: activeThread.modelSelection },
+          });
         }
         toastManager.add(
           stackedThreadToast({
@@ -5747,18 +5740,16 @@ function ChatViewContent(props: ChatViewProps) {
     [
       activeProject,
       activeThread,
-      activeThreadBranch,
-      createThread,
-      deleteThread,
       displayServerMessages,
       environmentId,
       isSendBusy,
-      navigate,
       providerHandoffBusy,
       providerHandoffEntries,
       routeKind,
       runtimeMode,
       startThreadTurn,
+      stopThreadSession,
+      updateThreadMetadata,
     ],
   );
 
@@ -5929,11 +5920,14 @@ function ChatViewContent(props: ChatViewProps) {
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       systemMonitorOpen={rightPanelOpen && activeRightPanelKind === "system"}
+      tasksOpen={planSidebarOpen}
+      tasksLabel={planSidebarLabel}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       onOpenSystemMonitor={() => {
         if (activeThreadRef) useRightPanelStore.getState().toggle(activeThreadRef, "system");
       }}
       onOpenFiles={addFilesSurface}
+      onToggleTasks={togglePlanSidebar}
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />

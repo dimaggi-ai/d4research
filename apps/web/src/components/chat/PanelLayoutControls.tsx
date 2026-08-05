@@ -1,6 +1,7 @@
 import {
   ChevronDownIcon,
   FilesIcon,
+  ListTodoIcon,
   Maximize2Icon,
   Minimize2Icon,
   MonitorCogIcon,
@@ -21,9 +22,12 @@ interface PanelLayoutControlsProps {
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
   systemMonitorOpen: boolean;
+  tasksOpen: boolean;
+  tasksLabel: string;
   rightPanelShortcutLabel: string | null;
   onOpenSystemMonitor: () => void;
   onOpenFiles: () => void;
+  onToggleTasks: () => void;
   onToggleTerminal: () => void;
   onToggleRightPanel: () => void;
 }
@@ -31,6 +35,8 @@ interface PanelLayoutControlsProps {
 export function getLocalToolsMenuItems(input: {
   readonly systemMonitorOpen: boolean;
   readonly filesAvailable: boolean;
+  readonly tasksOpen: boolean;
+  readonly tasksLabel: string;
 }) {
   return [
     {
@@ -39,6 +45,11 @@ export function getLocalToolsMenuItems(input: {
       disabled: false,
     },
     { id: "files", label: "Files", disabled: !input.filesAvailable },
+    {
+      id: "tasks",
+      label: input.tasksOpen ? `Close ${input.tasksLabel}` : input.tasksLabel,
+      disabled: false,
+    },
   ] as const;
 }
 
@@ -49,15 +60,20 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelAvailable,
   rightPanelOpen,
   systemMonitorOpen,
+  tasksOpen,
+  tasksLabel,
   rightPanelShortcutLabel,
   onOpenSystemMonitor,
   onOpenFiles,
+  onToggleTasks,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  const [monitorItem, filesItem] = getLocalToolsMenuItems({
+  const [monitorItem, filesItem, tasksItem] = getLocalToolsMenuItems({
     systemMonitorOpen,
     filesAvailable: rightPanelAvailable,
+    tasksOpen,
+    tasksLabel,
   });
   return (
     <div
@@ -88,6 +104,10 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
               <FilesIcon className="size-4" />
               {filesItem.label}
+            </MenuItem>
+            <MenuItem onClick={onToggleTasks}>
+              <ListTodoIcon className="size-4" />
+              {tasksItem.label}
             </MenuItem>
           </MenuPopup>
         </Menu>

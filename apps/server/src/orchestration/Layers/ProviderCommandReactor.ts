@@ -509,7 +509,7 @@ const make = Effect.gen(function* () {
         createdAt,
       });
     }
-    if (thread.session !== null) {
+    if (activeThreadSession !== null) {
       yield* rejectStartedThreadModelChangeIfRequired({
         threadId,
         currentModelSelection:
@@ -524,7 +524,7 @@ const make = Effect.gen(function* () {
       });
     }
     if (
-      thread.session !== null &&
+      activeThreadSession !== null &&
       requestedModelSelection !== undefined &&
       requestedModelSelection.instanceId !== currentInstanceId
     ) {

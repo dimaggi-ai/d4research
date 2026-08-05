@@ -34,7 +34,7 @@ const PROBE_TIMEOUT_MS = 20_000;
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;?]*[A-Za-z]/gu;
 
-const quotePosixShellArgument = (value: string) => `'${value.replaceAll("'", "'\\\"'\\\"'")}'`;
+export const quotePosixShellArgument = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export function parseAgyModelsOutput(stdout: string): ReadonlyArray<{
   readonly slug: string;

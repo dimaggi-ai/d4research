@@ -9,7 +9,11 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { checkAgyProviderStatus, parseAgyModelsOutput } from "./AgyProvider.ts";
+import {
+  checkAgyProviderStatus,
+  parseAgyModelsOutput,
+  quotePosixShellArgument,
+} from "./AgyProvider.ts";
 
 const decodeSettings = Schema.decodeSync(AgySettings);
 
@@ -58,6 +62,49 @@ describe("parseAgyModelsOutput", () => {
   });
 });
 
+describe("quotePosixShellArgument", () => {
+  it("wraps a simple argument in single quotes", () => {
+    expect(quotePosixShellArgument("hello")).toBe("'hello'");
+  });
+
+  it("passes through arguments with spaces", () => {
+    expect(quotePosixShellArgument("hello world")).toBe("'hello world'");
+  });
+
+  it("escapes embedded single quotes via end-escape-reopen", () => {
+    expect(quotePosixShellArgument("it's")).toBe("'it'\\''s'");
+  });
+
+  it("escapes multiple single quotes", () => {
+    expect(quotePosixShellArgument("a'b'c")).toBe("'a'\\''b'\\''c'");
+  });
+
+  it("handles an argument that is just a single quote", () => {
+    expect(quotePosixShellArgument("'")).toBe("''\\'''");
+  });
+
+  it("preserves double quotes, backslashes, and special characters", () => {
+    expect(quotePosixShellArgument('a"b\\c$d')).toBe("'a\"b\\c$d'");
+  });
+});
+
+describe("PTY wrapping round-trip", () => {
+  it.skipIf(process.platform !== "linux")(
+    "quotePosixShellArgument produces shell-safe arguments for script -c",
+    async () => {
+      const { execFileSync } = await import("node:child_process");
+      const args = ["/usr/bin/echo", "hello world", "it's a test", 'say "hi"'];
+      const command = args.map(quotePosixShellArgument).join(" ");
+      const output = execFileSync("script", ["-q", "-e", "-c", command, "/dev/null"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+      const cleaned = output.replace(/\r\n/g, "\n").trim();
+      expect(cleaned).toBe('hello world it\'s a test say "hi"');
+    },
+  );
+});
+
 it.layer(NodeServices.layer)("Agy provider health", (it) => {
   it.effect("uses a PTY for model discovery when Agy requires one", () =>
     Effect.gen(function* () {
@@ -80,6 +127,68 @@ it.layer(NodeServices.layer)("Agy provider health", (it) => {
       );
       expect(snapshot.status).toBe("ready");
       expect(snapshot.models.map((model) => model.slug)).toContain("gemini-pty");
+    }),
+  );
+
+  it.effect("PTY wrapping handles binary paths with spaces", () =>
+    Effect.gen(function* () {
+      if (process.platform !== "linux") return;
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2 agy health ")),
+      );
+      const binary = NodePath.join(directory, "my agy");
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(
+          binary,
+          '#!/bin/sh\nif [ "$1" = "models" ]; then echo "gemini-space-path"; exit 0; fi\necho "agy 1.0.0"\n',
+          { mode: 0o755 },
+        ),
+      );
+
+      const snapshot = yield* checkAgyProviderStatus(
+        decodeSettings({ binaryPath: binary }),
+        process.env,
+      );
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.models.map((model) => model.slug)).toContain("gemini-space-path");
+    }),
+  );
+
+  it.effect("PTY wrapping handles realistic spinner + ANSI output", () =>
+    Effect.gen(function* () {
+      if (process.platform !== "linux") return;
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-agy-health-")),
+      );
+      const binary = NodePath.join(directory, "agy");
+      const CR = "\\r";
+      const ESC = "\\033";
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(
+          binary,
+          `#!/bin/sh
+if [ "$1" = "models" ]; then
+  printf "${CR}\\xe2\\xa0\\x8b Fetching available models..."
+  printf "${CR}\\xe2\\xa0\\x99 Fetching available models..."
+  printf "${CR}${ESC}[Kgemini-spinner-test     Gemini Spinner Test\\n"
+  printf "claude-spinner-test       Claude Spinner Test\\n"
+  exit 0
+fi
+echo "agy 1.0.0"
+`,
+          { mode: 0o755 },
+        ),
+      );
+
+      const snapshot = yield* checkAgyProviderStatus(
+        decodeSettings({ binaryPath: binary }),
+        process.env,
+      );
+      expect(snapshot.status).toBe("ready");
+      const slugs = snapshot.models.map((model) => model.slug);
+      expect(slugs).toContain("gemini-spinner-test");
+      expect(slugs).toContain("claude-spinner-test");
+      expect(slugs).not.toContain("Fetching");
     }),
   );
 

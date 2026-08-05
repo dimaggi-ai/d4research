@@ -176,6 +176,7 @@ import {
   buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
   buildProviderHandoffTranscript,
+  compressProviderHandoffContext,
   persistProviderHandoffMemory,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
@@ -5656,22 +5657,44 @@ function ChatViewContent(props: ChatViewProps) {
       let modelUpdated = false;
 
       try {
+        const compression = settings.handoff.contextCompression;
+        const compressionEnabled =
+          compression.enabled && !!compression.instanceId && !!compression.model;
         const transcript = buildProviderHandoffTranscript(
           displayServerMessages.map((message) => ({
             role: message.role,
             text: message.text,
           })),
+          compressionEnabled ? compression.maxInputCharacters : undefined,
         );
-        const summary = await summarizeReplyForSpeech(
-          transcript || `Continue the work from ${activeThread.title}.`,
-        );
+        let summary: string;
+        if (compressionEnabled) {
+          const compressed = await compressProviderHandoffContext(transcript);
+          summary =
+            compressed ??
+            (await summarizeReplyForSpeech(
+              transcript || `Continue the work from ${activeThread.title}.`,
+            ));
+        } else {
+          summary = await summarizeReplyForSpeech(
+            transcript || `Continue the work from ${activeThread.title}.`,
+          );
+        }
+        const fullMemoText = compressionEnabled
+          ? buildProviderHandoffMemory({
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              summary: transcript,
+              target: targetModelSelection,
+            })
+          : buildProviderHandoffMemory({
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              summary,
+              target: targetModelSelection,
+            });
         await persistProviderHandoffMemory({
-          text: buildProviderHandoffMemory({
-            sourceThreadId: activeThread.id,
-            sourceThreadTitle: activeThread.title,
-            summary,
-            target: targetModelSelection,
-          }),
+          text: fullMemoText,
           project: activeProject.title,
         });
         const handoffPrompt = buildProviderHandoffPrompt({
@@ -5747,6 +5770,7 @@ function ChatViewContent(props: ChatViewProps) {
       providerHandoffEntries,
       routeKind,
       runtimeMode,
+      settings,
       startThreadTurn,
       stopThreadSession,
       updateThreadMetadata,

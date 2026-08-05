@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics nodeBuiltinImport:off, globalConsoleInEffect:off, globalConsole:off, globalDateInEffect:off, schemaSyncInEffect:off, outdatedApi:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AgySettings,
@@ -67,7 +67,7 @@ const program =
     ? runAgy
     : provider === "junie"
       ? runJunie
-      : Effect.dieMessage("Usage: qa-local-provider-adapters.ts <agy|junie>");
+      : Effect.die(new Error("Usage: qa-local-provider-adapters.ts <agy|junie>"));
 
 Effect.runPromise(
   program.pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.provide(layer)),

@@ -13,7 +13,7 @@ d2research is a private workspace for long-running research across models and co
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Junie](./user/providers-junie.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 
@@ -32,6 +32,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Scripts](./internals/scripts.md)
 - [Connection runtime](./internals/connection-runtime.md)
 - [Providers](./internals/providers.md)
+- [Handoff compression](./internals/handoff-compression.md)
 - [Remote environments](./internals/remote.md)
 - [Server updates](./internals/server-updates.md)
 - [Resource telemetry](./internals/resource-telemetry.md)

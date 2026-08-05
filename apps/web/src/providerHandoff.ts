@@ -92,6 +92,28 @@ export function buildProviderHandoffMemory(input: {
   ].join("\n");
 }
 
+export async function compressProviderHandoffContext(transcript: string): Promise<string | null> {
+  try {
+    const response = await fetch("/api/handoff/compress", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ transcript }),
+    });
+    const result = (await response.json().catch(() => null)) as {
+      ok?: unknown;
+      compressed?: unknown;
+    } | null;
+    if (result?.ok === true && typeof result.compressed === "string") {
+      return result.compressed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function persistProviderHandoffMemory(input: {
   readonly text: string;
   readonly project?: string | undefined;

@@ -48,6 +48,7 @@ import {
 } from "./toolGuardLifecycle.ts";
 import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts";
 import type { ToolGuardPolicy } from "@t3tools/contracts";
+import { compressHandoffContext, HandoffCompressionError } from "./handoffCompression.ts";
 import {
   DEFAULT_LOCAL_MEMO_BASE_URL,
   makeLocalMemoConnector,
@@ -60,6 +61,7 @@ const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
 const TOOL_GUARD_POLICY_PATH = "/api/tool-guard/policy";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
+const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const GZIP_MIN_BYTES = 1024;
@@ -456,6 +458,76 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Local Memo could not store the handoff context." },
           { status: 503 },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const handoffCompressRouteLayer = HttpRouter.add(
+  "POST",
+  HANDOFF_COMPRESS_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<unknown, { transcript?: unknown }>(yield* request.json);
+      const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+      if (!transcript) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Transcript must be non-empty." },
+          { status: 400 },
+        );
+      }
+      const settingsService = yield* ServerSettingsService;
+      const settings = yield* settingsService.getSettings;
+      const compression = settings.handoff.contextCompression;
+      if (!compression.enabled || !compression.instanceId || !compression.model) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Handoff compression is not configured." },
+          { status: 400 },
+        );
+      }
+      const config = yield* ServerConfig.ServerConfig;
+      const compressed = yield* compressHandoffContext({
+        transcript: transcript.slice(0, compression.maxInputCharacters),
+        instanceId: compression.instanceId,
+        model: compression.model,
+        maxOutputCharacters: compression.maxOutputCharacters,
+        customPrompt: compression.customPrompt,
+        cwd: config.cwd,
+      });
+      return HttpServerResponse.jsonUnsafe(
+        { ok: true, compressed },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.catchTag("HandoffCompressionError", (error) =>
+        Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            { ok: false, message: error.detail },
+            { status: 502, headers: { "cache-control": "no-store" } },
+          ),
+        ),
+      ),
+      Effect.catchTag("ProviderUnsupportedError", (error) =>
+        Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            { ok: false, message: error.message },
+            { status: 502, headers: { "cache-control": "no-store" } },
+          ),
+        ),
+      ),
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Context compression failed." },
+          { status: 500, headers: { "cache-control": "no-store" } },
         ),
       ),
     );

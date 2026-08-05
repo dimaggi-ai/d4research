@@ -7,21 +7,68 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with five entries:
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with seven entries. All support
+multiple instances.
 
-| Driver kind   | Driver source                           |
-| ------------- | --------------------------------------- |
-| `codex`       | [`Drivers/CodexDriver.ts`][codex]       |
-| `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]     |
-| `cursor`      | [`Drivers/CursorDriver.ts`][cursor]     |
-| `grok`        | [`Drivers/GrokDriver.ts`][grok]         |
-| `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode] |
+| Driver kind   | Display name | Transport                     | Driver source                           |
+| ------------- | ------------ | ----------------------------- | --------------------------------------- |
+| `codex`       | Codex        | Codex app-server JSON-RPC     | [`Drivers/CodexDriver.ts`][codex]       |
+| `claudeAgent` | Claude       | Claude Agent SDK (`query()`)  | [`Drivers/ClaudeDriver.ts`][claude]     |
+| `agy`         | Agy          | NDJSON stream over stdio      | [`Drivers/AgyDriver.ts`][agy]           |
+| `cursor`      | Cursor       | ACP over stdio (`effect-acp`) | [`Drivers/CursorDriver.ts`][cursor]     |
+| `grok`        | Grok         | ACP over stdio (`effect-acp`) | [`Drivers/GrokDriver.ts`][grok]         |
+| `junie`       | Junie        | ACP over stdio (reuses Grok)  | [`Drivers/JunieDriver.ts`][junie]       |
+| `opencode`    | OpenCode     | OpenCode SDK over HTTP        | [`Drivers/OpenCodeDriver.ts`][opencode] |
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
 adapter in a child scope. Adapter implementations live beside them in
 `apps/server/src/provider/Layers/` (`CodexAdapter.ts`, `ClaudeAdapter.ts`, and so on) and conform to
 [`ProviderAdapter.ts`][adapter]. Read the driver plus its adapter to see how a specific agent's
 transport, config, and event shapes are mapped.
+
+### Transport protocols
+
+The seven drivers use four distinct transport protocols:
+
+- **Claude Agent SDK** — Claude only. Calls `@anthropic-ai/claude-agent-sdk`'s `query()` which
+  returns an `AsyncIterable<SDKMessage>`. Also discovers local **Ollama models** when
+  `ANTHROPIC_BASE_URL` points to `127.0.0.1:11434`.
+- **Codex app-server JSON-RPC** — Codex only. Spawns a Codex app-server child process and
+  communicates via the `effect-codex-app-server` RPC client.
+- **ACP over stdio** — Cursor, Grok, and Junie. Uses the `effect-acp` library. Junie reuses the
+  Grok adapter core (`makeGrokAdapter`) with a Junie-specific ACP runtime, so the orchestration
+  logic is shared.
+- **NDJSON stream over stdio** — Agy only. Spawns `agy --print` per turn and reads
+  newline-delimited JSON events (`init`, `step_update`, `result`). Requires a PTY wrapper on Linux
+  for model discovery.
+
+### Per-driver notes
+
+**Codex** — two instances with different `homePath`s run fully independent Codex app-server
+processes. Model discovery queries the app-server for account info and model list.
+
+**Claude** — model catalog is built-in with version-gated entries (e.g. Opus 5 requires SDK ≥
+2.1.219). When `ANTHROPIC_BASE_URL` points to a local Ollama server, the driver also runs
+`ollama list` to discover local models. Supports native updates via `claude update`.
+
+**Agy** — `agy models` hangs on plain pipes on Linux, so the provider wraps it in
+`script -q -e -c <command> /dev/null` for a pseudo-terminal. Cold starts can take up to 20 seconds.
+Each turn spawns a fresh `agy --print <text>` process; conversation continuity uses
+`--conversation <id>`. Model changes require a new thread. See
+[providers-agy.md](../user/providers-agy.md) for user-facing details.
+
+**Cursor** — discovers models via the ACP extension method `cursor/list_available_models`. Supports
+self-update via `cursor-agent update`.
+
+**Grok** — ships with a built-in `grok-build` model. Additional models are discovered via ACP
+session model state. Model changes require a new thread.
+
+**Junie** — reuses the Grok adapter and text generation with a Junie-specific ACP runtime. Ships
+with a `default` model. Supports custom Ollama models (e.g. `custom:t3-local-ollama`). Model
+changes require a new thread.
+
+**OpenCode** — spawns an OpenCode server process and communicates via the `@opencode-ai/sdk/v2`
+TypeScript client. Minimum version: 1.14.19. Supports native updates via `opencode upgrade`.
 
 ## Registry and routing
 
@@ -78,8 +125,10 @@ when a request opens (approval) or user input is requested, via
 [drivers]: ../../apps/server/src/provider/builtInDrivers.ts
 [codex]: ../../apps/server/src/provider/Drivers/CodexDriver.ts
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts
+[agy]: ../../apps/server/src/provider/Drivers/AgyDriver.ts
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
+[junie]: ../../apps/server/src/provider/Drivers/JunieDriver.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts

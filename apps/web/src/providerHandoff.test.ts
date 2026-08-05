@@ -5,6 +5,7 @@ import {
   buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
   buildProviderHandoffTranscript,
+  compressProviderHandoffContext,
   isProviderHandoffCandidate,
   shouldHandoffModelSelection,
 } from "./providerHandoff";
@@ -69,6 +70,56 @@ describe("provider handoff", () => {
         providerChanged: true,
       }),
     ).toBe(false);
+  });
+
+  it("accepts a custom maxCharacters for transcript building", () => {
+    const messages = [
+      { role: "user", text: "A".repeat(500) },
+      { role: "assistant", text: "B".repeat(500) },
+    ];
+    const small = buildProviderHandoffTranscript(messages, 200);
+    expect(small).toContain("Earlier messages omitted");
+    expect(small.length).toBeLessThanOrEqual(200 + "[Earlier messages omitted]\n\n".length);
+
+    const large = buildProviderHandoffTranscript(messages, 50_000);
+    expect(large).not.toContain("Earlier messages omitted");
+  });
+
+  it("compression client returns null on network failure", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new Error("offline"));
+    try {
+      const result = await compressProviderHandoffContext("test transcript");
+      expect(result).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("compression client returns null on non-ok response", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = () =>
+      Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 502 }));
+    try {
+      const result = await compressProviderHandoffContext("test transcript");
+      expect(result).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("compression client returns compressed text on success", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ok: true, compressed: "dense summary" }), { status: 200 }),
+      );
+    try {
+      const result = await compressProviderHandoffContext("long transcript");
+      expect(result).toBe("dense summary");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   it("never offers the source provider as a handoff target", () => {

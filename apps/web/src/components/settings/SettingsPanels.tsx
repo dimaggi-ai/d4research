@@ -1710,23 +1710,82 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Tool Guard">
+      <SettingsSection title="Agent permissions">
         <SettingsRow
-          title="Global agent protection"
-          description="Tool Guard Core governs access modes for local coding agents."
+          title="Native provider permissions"
+          description="The default. Access modes use each provider's built-in sandbox and approval behavior."
           control={
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ShieldCheckIcon
-                className={toolGuardStatus.state === "ready" ? "size-4 text-emerald-500" : "size-4"}
-              />
+              <ShieldCheckIcon className="size-4" />
               {toolGuardStatus.integration === "external"
-                ? "Enabled externally"
-                : toolGuardStatus.integration === "managed"
-                  ? "Enabled"
-                  : toolGuardStatus.integration === "available"
-                    ? "Available"
-                    : "Unavailable"}
+                ? "Overridden externally"
+                : toolGuardStatus.enabled
+                  ? "Replaced by Tool Guard"
+                  : "Active"}
             </span>
+          }
+        />
+        <SettingsRow
+          title="d2research Tool Guard"
+          description="Optional environment-local policy enforcement for Codex, Claude, and Antigravity."
+          status={toolGuardStatus.message}
+          control={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ShieldCheckIcon
+                  className={toolGuardStatus.enabled ? "size-4 text-emerald-500" : "size-4"}
+                />
+                {toolGuardStatus.integration === "external"
+                  ? "Externally managed"
+                  : toolGuardStatus.integration === "managed"
+                    ? "Enabled"
+                    : toolGuardStatus.integration === "disabled"
+                      ? "Disabled"
+                      : toolGuardStatus.integration === "available"
+                        ? "Available"
+                        : "Unavailable"}
+              </span>
+              {toolGuardStatus.canInstall ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={toolGuardStatus.action !== null}
+                  onClick={() => void toolGuardStatus.runAction("install")}
+                >
+                  Install
+                </Button>
+              ) : null}
+              {toolGuardStatus.canManage ? (
+                <>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={toolGuardStatus.action !== null}
+                    onClick={() =>
+                      void toolGuardStatus.runAction(toolGuardStatus.enabled ? "disable" : "enable")
+                    }
+                  >
+                    {toolGuardStatus.enabled ? "Disable" : "Enable"}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={toolGuardStatus.action !== null}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Uninstall the d2research Tool Guard integration from this environment?",
+                        )
+                      ) {
+                        void toolGuardStatus.runAction("uninstall");
+                      }
+                    }}
+                  >
+                    Uninstall
+                  </Button>
+                </>
+              ) : null}
+            </div>
           }
         />
       </SettingsSection>

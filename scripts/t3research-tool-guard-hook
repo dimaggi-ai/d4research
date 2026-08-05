@@ -4,11 +4,21 @@ set -u
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd "$script_dir/.." && pwd)"
+if [ -z "${T3RESEARCH_TOOL_GUARD_MODE:-}" ]; then
+  exit 0
+fi
 guard_mode="${T3RESEARCH_TOOL_GUARD_MODE:-enforcement}"
-data_dir="${T3RESEARCH_TOOL_GUARD_DATA_DIR:-${T3CODE_HOME:-$HOME/.t3}/userdata/tool-guard}"
+if [ -d "$script_dir/../profiles" ]; then
+  default_data_dir="$script_dir/../audit"
+else
+  default_data_dir="${T3CODE_HOME:-$HOME/.t3}/userdata/tool-guard"
+fi
+data_dir="${T3RESEARCH_TOOL_GUARD_DATA_DIR:-$default_data_dir}"
 
 if [ -n "${T3RESEARCH_TOOL_GUARD_BIN:-}" ]; then
   guard_bin="$T3RESEARCH_TOOL_GUARD_BIN"
+elif [ -x "$script_dir/../bin/tg" ]; then
+  guard_bin="$script_dir/../bin/tg"
 elif [ -x "$HOME/workspace/github/tool-guard-core/bin/tg" ]; then
   guard_bin="$HOME/workspace/github/tool-guard-core/bin/tg"
 else
@@ -24,7 +34,13 @@ default_profile="local-coding"
 if [ "$guard_mode" = "shadow" ]; then
   default_profile="local-coding-shadow"
 fi
-policy_dir="${T3RESEARCH_TOOL_GUARD_POLICY_DIR:-$repo_dir/ops/tool-guard/profiles/$default_profile}"
+bundled_policy_dir="$script_dir/../profiles/$default_profile"
+if [ -d "$bundled_policy_dir" ]; then
+  default_policy_dir="$bundled_policy_dir"
+else
+  default_policy_dir="$repo_dir/ops/tool-guard/profiles/$default_profile"
+fi
+policy_dir="${T3RESEARCH_TOOL_GUARD_POLICY_DIR:-$default_policy_dir}"
 
 mkdir -p "$data_dir" 2>/dev/null || true
 exec "$guard_bin" hook \

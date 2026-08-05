@@ -3,14 +3,14 @@ import { describe, expect, it } from "vite-plus/test";
 import { classifyToolGuardIntegration } from "./toolGuardStatus.ts";
 
 describe("Tool Guard integration status", () => {
-  it("prefers the d2research-managed hook over an external hook", () => {
+  it("does not claim lifecycle ownership without an installation manifest", () => {
     expect(
       classifyToolGuardIntegration({
         binaryAvailable: true,
         managedHookDetected: true,
         externalHookDetected: true,
       }),
-    ).toBe("managed");
+    ).toBe("external");
   });
 
   it("reports an external hook instead of installing a duplicate", () => {
@@ -34,9 +34,21 @@ describe("Tool Guard integration status", () => {
     expect(
       classifyToolGuardIntegration({
         binaryAvailable: false,
-        managedHookDetected: true,
+        managedHookDetected: false,
         externalHookDetected: true,
       }),
-    ).toBe("unavailable");
+    ).toBe("external");
+  });
+
+  it("distinguishes an installed but disabled integration", () => {
+    expect(
+      classifyToolGuardIntegration({
+        binaryAvailable: true,
+        managedHookDetected: false,
+        externalHookDetected: false,
+        installed: true,
+        enabled: false,
+      }),
+    ).toBe("disabled");
   });
 });

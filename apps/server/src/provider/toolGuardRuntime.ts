@@ -1,9 +1,16 @@
 import type { RuntimeMode } from "@t3tools/contracts";
 
+let toolGuardRuntimeEnabled = false;
+
+export function setToolGuardRuntimeEnabled(enabled: boolean): void {
+  toolGuardRuntimeEnabled = enabled;
+}
+
 export function toolGuardEnvironment(
   environment: NodeJS.ProcessEnv,
   runtimeMode: RuntimeMode,
 ): NodeJS.ProcessEnv {
+  if (!toolGuardRuntimeEnabled) return environment;
   return {
     ...environment,
     T3RESEARCH_RUNTIME_MODE: runtimeMode,

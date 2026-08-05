@@ -12,24 +12,24 @@ export const TOOL_GUARD_MODE_PRESENTATION: Record<RuntimeMode, ToolGuardModePres
     label: "Supervised",
     profile: "supervised",
     policyMode: "enforcement",
-    description: "Tool Guard asks before commands and file changes.",
+    description: "Ask before commands and file changes.",
   },
   "auto-accept-edits": {
     label: "Auto-accept edits",
     profile: "auto-accept-edits",
     policyMode: "enforcement",
-    description: "Tool Guard allows routine edits and asks before riskier actions.",
+    description: "Allow routine edits and ask before riskier actions.",
   },
   auto: {
     label: "Auto",
     profile: "auto",
     policyMode: "enforcement",
-    description: "Tool Guard enforces local policy and escalates risky actions.",
+    description: "Allow routine work and escalate risky actions.",
   },
   "full-access": {
     label: "Full access",
     profile: "full-access",
     policyMode: "shadow",
-    description: "Tool Guard audits in shadow mode without blocking provider actions.",
+    description: "Allow provider actions without approval prompts.",
   },
 };

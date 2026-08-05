@@ -332,7 +332,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             render={
               <ComposerSelectControl
                 className="font-medium"
-                aria-label={`Tool Guard access: ${runtimeModeOption.label}`}
+                aria-label={`Agent access: ${runtimeModeOption.label}`}
               />
             }
           >
@@ -341,7 +341,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
             <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-              Tool Guard access
+              Agent access
             </div>
             {runtimeModeOptions.map((mode) => {
               const option = runtimeModeConfig[mode];
@@ -365,7 +365,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          Tool Guard · {runtimeModeOption.label}: {runtimeModeOption.description}
+          Agent access · {runtimeModeOption.label}: {runtimeModeOption.description}
         </TooltipPopup>
       </Tooltip>
 

@@ -56,9 +56,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-          Tool Guard access
-        </div>
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Agent access</div>
         <MenuRadioGroup
           value={props.runtimeMode}
           onValueChange={(value) => {

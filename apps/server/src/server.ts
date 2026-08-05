@@ -10,10 +10,12 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
+import { initializeToolGuardRuntime } from "./toolGuardLifecycle.ts";
 import * as HttpResponseCompression from "./httpCompression/HttpResponseCompression.ts";
 import {
   otlpTracesProxyRouteLayer,
   missionControlSystemRouteLayer,
+  toolGuardLifecycleRouteLayer,
   toolGuardStatusRouteLayer,
   handoffMemoryRouteLayer,
   assetRouteLayer,
@@ -422,6 +424,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     missionControlSystemRouteLayer,
     toolGuardStatusRouteLayer,
+    toolGuardLifecycleRouteLayer,
     handoffMemoryRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,
@@ -448,6 +451,7 @@ export const makeServerLayer = Layer.unwrap(
     const routesReady = yield* Deferred.make<void>();
     const launcherLayer = ServiceLauncherClient.layer;
 
+    yield* initializeToolGuardRuntime();
     yield* fixPath();
 
     const httpListeningLayer = Layer.effectDiscard(

@@ -42,6 +42,11 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { readToolGuardStatus } from "./toolGuardStatus.ts";
 import {
+  manageToolGuard,
+  ToolGuardLifecycleAction,
+  type ToolGuardLifecycleAction as ToolGuardLifecycleActionType,
+} from "./toolGuardLifecycle.ts";
+import {
   DEFAULT_LOCAL_MEMO_BASE_URL,
   makeLocalMemoConnector,
 } from "./mcp/toolkits/memory/connectors.ts";
@@ -295,6 +300,36 @@ export const toolGuardStatusRouteLayer = HttpRouter.add(
     yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
     const status = yield* readToolGuardStatus();
     return HttpServerResponse.jsonUnsafe(status, {
+      headers: { "cache-control": "no-store" },
+    });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const toolGuardLifecycleRouteLayer = HttpRouter.add(
+  "POST",
+  TOOL_GUARD_STATUS_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const body = cast<unknown, { action?: unknown }>(yield* request.json);
+    if (
+      typeof body.action !== "string" ||
+      !ToolGuardLifecycleAction.includes(body.action as ToolGuardLifecycleActionType)
+    ) {
+      return HttpServerResponse.jsonUnsafe(
+        { ok: false, message: "Expected a Tool Guard lifecycle action." },
+        { status: 400 },
+      );
+    }
+    const result = yield* manageToolGuard(body.action as ToolGuardLifecycleActionType);
+    return HttpServerResponse.jsonUnsafe(result, {
+      status: result.ok ? 200 : 409,
       headers: { "cache-control": "no-store" },
     });
   }).pipe(

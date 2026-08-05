@@ -51,7 +51,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
   },
   {
     value: ProviderDriverKind.make("agy"),
-    label: "Antigravity",
+    label: "Agy",
     icon: Gemini,
     badgeLabel: "Early Access",
     settingsSchema: AgySettings,

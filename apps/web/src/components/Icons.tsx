@@ -647,6 +647,28 @@ export const AntigravityIcon: Icon = (props) => (
   </svg>
 );
 
+/** Product-facing provider name for the installed `agy` CLI. */
+export const AgyIcon = AntigravityIcon;
+
+export const JunieIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    viewBox="0 0 24 24"
+    fill="none"
+    className={cn("text-[#8b5cf6]", className)}
+    aria-hidden="true"
+  >
+    <path
+      d="M7 4.5h10v10.25A5.25 5.25 0 0 1 11.75 20H10a5 5 0 0 1-5-5"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M9 8h6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+
 export const OpenCodeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
     <g clipPath="url(#opencode__clip0_1311_94969)">

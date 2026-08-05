@@ -6,7 +6,7 @@ import {
 import { resolveSelectableModel } from "@t3tools/shared/model";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ArrowRightLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import {
@@ -25,6 +25,7 @@ import {
   ComboboxItem,
   ComboboxListVirtualized,
 } from "../ui/combobox";
+import { Button } from "../ui/button";
 import { ModelEsque } from "./providerIconUtils";
 import {
   modelPickerJumpCommandForIndex,
@@ -92,6 +93,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  onChangeProvider?: (() => void) | undefined;
+  changeProviderDisabled?: boolean | undefined;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -781,6 +784,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <ComboboxEmpty className="not-empty:py-6 empty:h-0 text-xs font-normal leading-snug">
               No models found
             </ComboboxEmpty>
+            {props.onChangeProvider ? (
+              <div className="shrink-0 border-t border-border/70 p-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-xs"
+                  disabled={props.changeProviderDisabled}
+                  onClick={() => {
+                    props.onRequestClose?.();
+                    props.onChangeProvider?.();
+                  }}
+                >
+                  <ArrowRightLeftIcon className="size-3.5" />
+                  Handoff to another provider
+                </Button>
+              </div>
+            ) : null}
           </div>
         </Combobox>
       </div>

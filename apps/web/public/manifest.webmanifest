@@ -1,7 +1,7 @@
 {
-  "name": "T3 Code",
-  "short_name": "T3 Code",
-  "description": "A local-first workspace for coding agents.",
+  "name": "T3Research",
+  "short_name": "T3Research",
+  "description": "A local-first workspace for research and coding agents.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

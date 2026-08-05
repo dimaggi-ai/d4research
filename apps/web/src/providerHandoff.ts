@@ -45,7 +45,7 @@ export function buildProviderHandoffPrompt(input: {
 }): string {
   const project = input.project?.trim();
   return [
-    "Continue work from a linked T3 Code provider handoff.",
+    "Continue work from a linked T3Research provider handoff.",
     "",
     `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
     `Target model: ${input.target.instanceId} / ${input.target.model}`,

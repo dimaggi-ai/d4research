@@ -228,5 +228,5 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [GROK_DRIVER_KIND]: "Grok",
   [JUNIE_DRIVER_KIND]: "Junie",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
-  [AGY_DRIVER_KIND]: "Antigravity",
+  [AGY_DRIVER_KIND]: "Agy",
 };

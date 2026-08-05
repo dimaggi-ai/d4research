@@ -21,7 +21,7 @@ import {
 } from "../providerSnapshot.ts";
 
 const PRESENTATION = {
-  displayName: "Antigravity",
+  displayName: "Agy",
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
   requiresNewThreadForModelChange: true,
@@ -74,14 +74,14 @@ export const buildInitialAgyProviderSnapshot = Effect.fn("buildInitialAgyProvide
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Checking Antigravity CLI availability...",
+            message: "Checking Agy CLI availability...",
           }
         : {
             installed: false,
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: "Antigravity is disabled in T3 Code settings.",
+            message: "Agy is disabled in T3Research settings.",
           },
     });
   },
@@ -120,8 +120,8 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
         status: "error",
         auth: { status: "unknown" },
         message: missing
-          ? "Antigravity CLI (`agy`) is not installed or not on PATH."
-          : "Failed to execute the Antigravity CLI health check.",
+          ? "Agy CLI (`agy`) is not installed or not on PATH."
+          : "Failed to execute the Agy CLI health check.",
       },
     });
   }
@@ -136,7 +136,7 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "Antigravity CLI health check timed out.",
+        message: "Agy CLI health check timed out.",
       },
     });
   }
@@ -153,10 +153,8 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
       installed: true,
       version: parseGenericCliVersion(`${version.stdout}\n${version.stderr}`),
       status: healthy ? "ready" : "error",
-      auth: healthy
-        ? { status: "authenticated", type: "Antigravity account" }
-        : { status: "unknown" },
-      ...(!healthy ? { message: "Antigravity model discovery failed; sign in with `agy`." } : {}),
+      auth: healthy ? { status: "authenticated", type: "Agy account" } : { status: "unknown" },
+      ...(!healthy ? { message: "Agy model discovery failed; sign in with `agy`." } : {}),
     },
   });
 });

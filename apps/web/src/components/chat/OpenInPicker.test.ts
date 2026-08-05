@@ -9,7 +9,7 @@ describe("resolveOpenInOptions", () => {
     ]);
   });
 
-  it("does not expose Antigravity as a header opener when agy is a provider", () => {
+  it("does not expose the Agy provider CLI as a project opener", () => {
     expect(
       resolveOpenInOptions("Linux", ["antigravity" as never]).map((option) => option.value),
     ).toEqual(["file-manager"]);

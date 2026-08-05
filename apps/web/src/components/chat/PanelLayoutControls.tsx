@@ -1,4 +1,6 @@
 import {
+  ChevronDownIcon,
+  FilesIcon,
   Maximize2Icon,
   Minimize2Icon,
   MonitorCogIcon,
@@ -7,6 +9,8 @@ import {
 } from "lucide-react";
 import { memo } from "react";
 
+import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -19,8 +23,23 @@ interface PanelLayoutControlsProps {
   systemMonitorOpen: boolean;
   rightPanelShortcutLabel: string | null;
   onOpenSystemMonitor: () => void;
+  onOpenFiles: () => void;
   onToggleTerminal: () => void;
   onToggleRightPanel: () => void;
+}
+
+export function getLocalToolsMenuItems(input: {
+  readonly systemMonitorOpen: boolean;
+  readonly filesAvailable: boolean;
+}) {
+  return [
+    {
+      id: "monitor",
+      label: input.systemMonitorOpen ? "Close Monitor" : "Monitor",
+      disabled: false,
+    },
+    { id: "files", label: "Files", disabled: !input.filesAvailable },
+  ] as const;
 }
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
@@ -32,33 +51,46 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   systemMonitorOpen,
   rightPanelShortcutLabel,
   onOpenSystemMonitor,
+  onOpenFiles,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  const [monitorItem, filesItem] = getLocalToolsMenuItems({
+    systemMonitorOpen,
+    filesAvailable: rightPanelAvailable,
+  });
   return (
     <div
       className="flex h-full shrink-0 items-center gap-3 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
       <div className="flex items-center gap-2" data-system-controls>
-        <Tooltip>
-          <TooltipTrigger
+        <Menu>
+          <MenuTrigger
             render={
-              <Toggle
+              <Button
                 className="shrink-0 gap-1.5 px-2 [-webkit-app-region:no-drag]"
-                pressed={systemMonitorOpen}
-                onPressedChange={onOpenSystemMonitor}
-                aria-label={systemMonitorOpen ? "Close system monitor" : "Open system monitor"}
+                aria-label="Open local tools"
                 variant="outline"
                 size="xs"
-              >
-                <MonitorCogIcon className="size-3.5" />
-                <span className="hidden sm:inline">Monitor</span>
-              </Toggle>
+              />
             }
-          />
-          <TooltipPopup side="bottom">CPU, GPU, memory, disk, and processes</TooltipPopup>
-        </Tooltip>
+          >
+            <MonitorCogIcon className="size-3.5" />
+            <span className="hidden sm:inline">Monitor</span>
+            <ChevronDownIcon className="size-3" />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem onClick={onOpenSystemMonitor}>
+              <MonitorCogIcon className="size-4" />
+              {monitorItem.label}
+            </MenuItem>
+            <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
+              <FilesIcon className="size-4" />
+              {filesItem.label}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
       </div>
       <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
       <div className="flex items-center gap-2" data-panel-toggle-controls>

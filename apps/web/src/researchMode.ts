@@ -66,7 +66,7 @@ export function expandDeepResearchPrompt(
   return [
     DEEP_RESEARCH_TAG,
     "",
-    "Act as the research lead for this T3 Code thread. The current thread and selected model remain authoritative.",
+    "Act as the research lead for this T3Research thread. The current thread and selected model remain authoritative.",
     "Use only the agents needed for the task; run at most three delegated agents concurrently and never recursively delegate.",
     "Post a short status after each research stage. Preserve links, file paths, commands, and uncertainty in the synthesis.",
     "Store compact shared findings with `memory_remember` using connector `local`, and retrieve them with `memory_search` before each handoff.",

@@ -295,7 +295,6 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
-  resolveProjectOpenInCwd,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
@@ -5937,6 +5936,7 @@ function ChatViewContent(props: ChatViewProps) {
       onOpenSystemMonitor={() => {
         if (activeThreadRef) useRightPanelStore.getState().toggle(activeThreadRef, "system");
       }}
+      onOpenFiles={addFilesSurface}
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -6063,24 +6063,14 @@ function ChatViewContent(props: ChatViewProps) {
             activeThreadTitle={activeThread.title}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
-            openInCwd={resolveProjectOpenInCwd(gitCwd, activeProject?.workspaceRoot)}
             activeProjectScripts={activeProject?.scripts}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
             }
             keybindings={keybindings}
-            availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
-            onOpenFiles={addFilesSurface}
-            {...(routeKind === "server" && activeProject
-              ? { onChangeProvider: () => setProviderHandoffOpen(true) }
-              : {})}
-            onStartDeepResearch={onStartDeepResearch}
-            changeProviderDisabled={
-              providerHandoffBusy || isSendBusy || isWorking || activeEnvironmentUnavailable
-            }
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
@@ -6290,6 +6280,18 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            onStartDeepResearch={onStartDeepResearch}
+                            onChangeProvider={
+                              routeKind === "server" && activeProject
+                                ? () => setProviderHandoffOpen(true)
+                                : undefined
+                            }
+                            changeProviderDisabled={
+                              providerHandoffBusy ||
+                              isSendBusy ||
+                              isWorking ||
+                              activeEnvironmentUnavailable
+                            }
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}

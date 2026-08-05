@@ -74,7 +74,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
       if (result.code !== 0) {
         return yield* new TextGenerationError({
           operation: input.operation,
-          detail: result.stderr.trim() || `Antigravity exited with code ${result.code}.`,
+          detail: result.stderr.trim() || `Agy exited with code ${result.code}.`,
         });
       }
       return result.stdout;
@@ -84,7 +84,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
           ? cause
           : new TextGenerationError({
               operation: input.operation,
-              detail: "Antigravity text generation failed.",
+              detail: "Agy text generation failed.",
               cause,
             }),
       ),
@@ -94,7 +94,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
           catch: (cause) =>
             new TextGenerationError({
               operation: input.operation,
-              detail: "Antigravity returned invalid JSON output.",
+              detail: "Agy returned invalid JSON output.",
               cause,
             }),
         }),
@@ -104,7 +104,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
           return Effect.fail(
             new TextGenerationError({
               operation: input.operation,
-              detail: `Antigravity returned status '${envelope.status}'.`,
+              detail: `Agy returned status '${envelope.status}'.`,
             }),
           );
         }
@@ -119,7 +119,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
             (cause) =>
               new TextGenerationError({
                 operation: input.operation,
-                detail: "Antigravity returned invalid structured output.",
+                detail: "Agy returned invalid structured output.",
                 cause,
               }),
           ),

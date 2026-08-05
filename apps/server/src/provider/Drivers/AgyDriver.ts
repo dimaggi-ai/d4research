@@ -61,7 +61,7 @@ const withIdentity =
 
 export const AgyDriver: ProviderDriver<AgySettings, AgyDriverEnv> = {
   driverKind: DRIVER_KIND,
-  metadata: { displayName: "Antigravity", supportsMultipleInstances: true },
+  metadata: { displayName: "Agy", supportsMultipleInstances: true },
   configSchema: AgySettings,
   defaultConfig: () => decodeSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
@@ -109,7 +109,7 @@ export const AgyDriver: ProviderDriver<AgySettings, AgyDriverEnv> = {
             new ProviderDriverError({
               driver: DRIVER_KIND,
               instanceId,
-              detail: `Failed to build Antigravity snapshot: ${cause.message ?? String(cause)}`,
+              detail: `Failed to build Agy snapshot: ${cause.message ?? String(cause)}`,
               cause,
             }),
         ),

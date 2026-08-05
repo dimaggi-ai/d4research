@@ -135,7 +135,7 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
           ...(yield* stamp),
           provider: PROVIDER,
           threadId: input.threadId,
-          payload: { state: "ready", reason: "Antigravity print session ready" },
+          payload: { state: "ready", reason: "Agy print session ready" },
         });
         yield* offer({
           type: "thread.started",
@@ -154,7 +154,7 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "sendTurn",
-            detail: "Antigravity already has a turn in progress for this thread.",
+            detail: "Agy already has a turn in progress for this thread.",
           });
         }
         const text = input.input?.trim();
@@ -162,7 +162,7 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
             operation: "sendTurn",
-            issue: "Antigravity currently requires non-empty text input.",
+            issue: "Agy currently requires non-empty text input.",
           });
         }
         const turnId = TurnId.make(`agy-turn-${eventSequence + 1}`);
@@ -334,14 +334,14 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
               ? { state: "completed", stopReason: "end_turn" }
               : {
                   state: "failed",
-                  errorMessage: stderr.trim() || `Antigravity exited with code ${exitCode}.`,
+                  errorMessage: stderr.trim() || `Agy exited with code ${exitCode}.`,
                 },
         });
         if (!interrupted && !succeeded) {
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "agy --print",
-            detail: stderr.trim() || `Antigravity exited with code ${exitCode}.`,
+            detail: stderr.trim() || `Agy exited with code ${exitCode}.`,
           });
         }
         return {
@@ -367,7 +367,7 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
       return yield* new ProviderAdapterRequestError({
         provider: PROVIDER,
         method,
-        detail: "Antigravity print mode does not expose interactive request callbacks.",
+        detail: "Agy print mode does not expose interactive request callbacks.",
       });
     });
     const stopSession: AgyAdapterShape["stopSession"] = (threadId) =>

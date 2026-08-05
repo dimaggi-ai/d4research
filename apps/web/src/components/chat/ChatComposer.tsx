@@ -179,6 +179,7 @@ import {
   LockOpenIcon,
   PenLineIcon,
   SparklesIcon,
+  TelescopeIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -608,6 +609,9 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onStartDeepResearch: () => void;
+  onChangeProvider?: (() => void) | undefined;
+  changeProviderDisabled: boolean;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -685,6 +689,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onStartDeepResearch,
+    onChangeProvider,
+    changeProviderDisabled,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -3208,8 +3215,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }}
                     getModelDisabledReason={getModelDisabledReason}
                     onInstanceModelChange={onProviderModelSelect}
+                    {...(onChangeProvider ? { onChangeProvider } : {})}
+                    changeProviderDisabled={changeProviderDisabled}
                   />
                 )}
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <ComposerControl
+                        type="button"
+                        className="shrink-0 gap-1.5 text-muted-foreground/70 hover:text-foreground/80"
+                        aria-label="Start deep research"
+                        onClick={onStartDeepResearch}
+                      />
+                    }
+                  >
+                    <ComposerControlIcon icon={TelescopeIcon} />
+                    <span className={isComposerFooterCompact ? "sr-only" : undefined}>
+                      Research
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">Start #deep-research in this chat</TooltipPopup>
+                </Tooltip>
 
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu

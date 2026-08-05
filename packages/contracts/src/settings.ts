@@ -403,11 +403,11 @@ export const JunieSettings = makeProviderSettingsSchema(
       }),
     ),
     defaultModel: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("custom:t3-local-ollama")),
+      Schema.withDecodingDefault(Effect.succeed("gpt-5.6-terra")),
       Schema.annotateKey({
         title: "Default model",
-        description: "Junie model or custom profile used for new sessions.",
-        providerSettingsForm: { placeholder: "custom:t3-local-ollama" },
+        description: "Junie model used for new sessions.",
+        providerSettingsForm: { placeholder: "gpt-5.6-terra" },
       }),
     ),
     customModels: Schema.Array(Schema.String).pipe(

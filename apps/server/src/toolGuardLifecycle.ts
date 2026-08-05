@@ -10,7 +10,13 @@ import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
 export const TOOL_GUARD_MANAGED_MARKER = "d2research-tool-guard-managed";
 export const TOOL_GUARD_CORE_URL = "https://github.com/dimaggi-ai/tool-guard-core";
 
-export const ToolGuardLifecycleAction = ["install", "enable", "disable", "uninstall"] as const;
+export const ToolGuardLifecycleAction = [
+  "install",
+  "replace-external",
+  "enable",
+  "disable",
+  "uninstall",
+] as const;
 export type ToolGuardLifecycleAction = (typeof ToolGuardLifecycleAction)[number];
 
 interface JsonObject {
@@ -110,6 +116,28 @@ export function removeManagedHook(config: unknown): JsonObject {
   return root;
 }
 
+const isExternalToolGuardEntry = (entry: unknown) => {
+  const serialized = JSON.stringify(entry);
+  return (
+    /tool[-_ ]?guard|tg-guard|[/\\]tg(?:\.exe)?\s+hook/iu.test(serialized) &&
+    !serialized.includes(TOOL_GUARD_MANAGED_MARKER)
+  );
+};
+
+export function removeExternalToolGuardHooks(config: unknown): JsonObject {
+  const root = { ...objectValue(config) };
+  const hooks = { ...objectValue(root.hooks) };
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (!Array.isArray(entries)) continue;
+    const remaining = entries.filter((entry) => !isExternalToolGuardEntry(entry));
+    if (remaining.length === 0) delete hooks[event];
+    else hooks[event] = remaining;
+  }
+  if (Object.keys(hooks).length === 0) delete root.hooks;
+  else root.hooks = hooks;
+  return root;
+}
+
 const parseJsonObject = (content: string): JsonObject => {
   return objectValue(JSON.parse(content));
 };
@@ -127,9 +155,14 @@ const writeJson = Effect.fn("writeToolGuardJson")(function* (filePath: string, v
   yield* fileSystem.writeFileString(filePath, `${JSON.stringify(value, null, 2)}\n`);
 });
 
-const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
+export const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
   path.join(home, ".claude", "settings.json"),
   path.join(home, ".codex", "hooks.json"),
+  path.join(home, ".gemini", "config", "hooks.json"),
+];
+
+export const externalToolGuardHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
+  ...providerHookPaths(home, path),
   path.join(home, ".gemini", "settings.json"),
 ];
 
@@ -138,13 +171,33 @@ const hasExternalToolGuardHook = Effect.fn("hasExternalToolGuardHook")(function*
   const path = yield* Path.Path;
   const home = toolGuardHome();
   if (!home) return false;
-  const contents = yield* Effect.forEach(providerHookPaths(home, path), (configPath) =>
+  const contents = yield* Effect.forEach(externalToolGuardHookPaths(home, path), (configPath) =>
     fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => "")),
   );
   return contents.some(
     (content) =>
       /tool[-_ ]?guard|tg-guard|\/tg hook/iu.test(content) &&
       !content.includes(TOOL_GUARD_MANAGED_MARKER),
+  );
+});
+
+const removeExternalToolGuardHooksFromConfigs = Effect.fn(
+  "removeExternalToolGuardHooksFromConfigs",
+)(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const home = toolGuardHome();
+  if (!home) return;
+  yield* Effect.forEach(
+    externalToolGuardHookPaths(home, path),
+    (configPath) =>
+      Effect.gen(function* () {
+        if (!(yield* fileSystem.exists(configPath))) return;
+        const current = yield* readJson(configPath);
+        const next = removeExternalToolGuardHooks(current);
+        if (JSON.stringify(current) !== JSON.stringify(next)) yield* writeJson(configPath, next);
+      }),
+    { discard: true },
   );
 });
 
@@ -180,7 +233,7 @@ const validateProviderHookConfigs = Effect.fn("validateProviderHookConfigs")(fun
   const path = yield* Path.Path;
   const home = toolGuardHome();
   if (!home) return;
-  yield* Effect.forEach(providerHookPaths(home, path), readJson, { discard: true });
+  yield* Effect.forEach(externalToolGuardHookPaths(home, path), readJson, { discard: true });
 });
 
 export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
@@ -275,9 +328,10 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
     const manifest = yield* readToolGuardManifest(managed.manifest);
     yield* validateProviderHookConfigs();
 
-    if (action === "install") {
+    if (action === "install" || action === "replace-external") {
       if (manifest) return { ok: true, message: "d2research Tool Guard is already installed." };
-      if (yield* hasExternalToolGuardHook()) {
+      const externalHookDetected = yield* hasExternalToolGuardHook();
+      if (action === "install" && externalHookDetected) {
         return {
           ok: false,
           message:
@@ -297,6 +351,9 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
           ok: false,
           message: "This d2research build does not contain Tool Guard resources.",
         };
+      }
+      if (action === "replace-external" && !externalHookDetected) {
+        return { ok: false, message: "No external Tool Guard hook was found to replace." };
       }
       yield* fileSystem.makeDirectory(path.dirname(managed.binary), { recursive: true });
       yield* fileSystem.makeDirectory(path.dirname(managed.hook), { recursive: true });
@@ -321,6 +378,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
         yield* fileSystem.chmod(managed.hook, 0o755);
         yield* fileSystem.chmod(managed.agyHook, 0o755);
       }
+      if (action === "replace-external") yield* removeExternalToolGuardHooksFromConfigs();
       const installedAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
       yield* writeJson(managed.manifest, {
         version: 1,

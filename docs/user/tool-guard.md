@@ -34,8 +34,11 @@ The source build writes the executable under `bin/`. If it is not on `PATH`, set
 
 After installation, the same settings section provides **Enable**, **Disable**, and **Uninstall**.
 Disabling or uninstalling Tool Guard returns the environment to native provider permissions. If an
-external Tool Guard hook already exists, d2research reports it as externally managed and does not
-replace it.
+external Tool Guard hook already exists, d2research lists the provider configuration files that own
+it and offers **Replace with d2research**. Replacement requires confirmation, removes only hook
+entries identified as Tool Guard, preserves unrelated provider hooks, and then installs the managed
+integration. Removed external Tool Guard entries are not restored by a later uninstall. After
+replacement, use **Disable**, **Enable**, and **Uninstall** normally.
 
 The d2research installation copies the detected Core executable, provider wrappers, and policy profiles
 into the environment's d2research data directory. Provider configuration files retain unrelated

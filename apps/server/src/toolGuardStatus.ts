@@ -5,6 +5,7 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "./config.ts";
 import {
   findToolGuardBinary,
+  externalToolGuardHookPaths,
   managedToolGuardPaths,
   readToolGuardManifest,
   TOOL_GUARD_CORE_URL,
@@ -25,9 +26,11 @@ export interface ToolGuardStatus {
   readonly enabled: boolean;
   readonly canInstall: boolean;
   readonly canManage: boolean;
+  readonly canReplaceExternal: boolean;
   readonly managementSupported: boolean;
   readonly binaryPath: string | null;
   readonly policyProfilesAvailable: boolean;
+  readonly externalHookConfigPaths: ReadonlyArray<string>;
   readonly message: string;
 }
 
@@ -55,14 +58,7 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
     process.platform === "win32"
       ? (process.env.USERPROFILE ?? process.env.HOME ?? "")
       : (process.env.HOME ?? "");
-  const hookConfigPaths = home
-    ? [
-        path.join(home, ".claude", "settings.json"),
-        path.join(home, ".codex", "hooks.json"),
-        path.join(home, ".gemini", "config", "hooks.json"),
-        path.join(home, ".gemini", "settings.json"),
-      ]
-    : [];
+  const hookConfigPaths = home ? externalToolGuardHookPaths(home, path) : [];
   const hookConfigs = yield* Effect.forEach(hookConfigPaths, (configPath) =>
     fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => "")),
   );
@@ -74,6 +70,13 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
       /tool[-_ ]?guard|tg-guard|\/tg hook/iu.test(content) &&
       !content.includes(TOOL_GUARD_MANAGED_MARKER),
   );
+  const externalHookConfigPaths = hookConfigPaths.filter((_, index) => {
+    const content = hookConfigs[index] ?? "";
+    return (
+      /tool[-_ ]?guard|tg-guard|[/\\]tg(?:\.exe)?\s+hook/iu.test(content) &&
+      !content.includes(TOOL_GUARD_MANAGED_MARKER)
+    );
+  });
   const installed = manifest !== null;
   const enabled = manifest?.enabled === true;
   const policyProfilesAvailable = yield* fileSystem.exists(managed.profiles);
@@ -93,7 +96,7 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
       : integration === "disabled"
         ? "d2research Tool Guard is installed but disabled; native provider permissions are active."
         : integration === "external"
-          ? "An external Tool Guard hook is active; d2research will not replace it."
+          ? `External Tool Guard hooks are active in ${externalHookConfigPaths.join(", ")}. Replace them to manage Tool Guard from d2research.`
           : integration === "available"
             ? "Tool Guard Core is available. Install the d2research integration to use it."
             : `Tool Guard Core is not available. Download it from ${TOOL_GUARD_CORE_URL}/releases.`;
@@ -105,9 +108,11 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
     enabled,
     canInstall: managementSupported && integration === "available",
     canManage: managementSupported && installed,
+    canReplaceExternal: managementSupported && integration === "external" && binaryPath !== null,
     managementSupported,
     binaryPath,
     policyProfilesAvailable,
+    externalHookConfigPaths,
     message,
   } satisfies ToolGuardStatus;
 });

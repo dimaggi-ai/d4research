@@ -1743,6 +1743,24 @@ export function GeneralSettingsPanel() {
                   Install
                 </Button>
               ) : null}
+              {toolGuardStatus.canReplaceExternal ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={toolGuardStatus.action !== null}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Replace external Tool Guard hooks with the d2research-managed integration?\n\nOnly Tool Guard hook entries will be removed. Other provider hooks remain unchanged. Removed external Tool Guard entries are not restored by Uninstall.\n\nDetected in:\n${toolGuardStatus.externalHookConfigPaths.join("\n")}`,
+                      )
+                    ) {
+                      void toolGuardStatus.runAction("replace-external");
+                    }
+                  }}
+                >
+                  Replace with d2research
+                </Button>
+              ) : null}
               {toolGuardStatus.canManage ? (
                 <>
                   <Button

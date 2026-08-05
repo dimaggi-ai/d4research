@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type ToolGuardLifecycleAction = "install" | "enable" | "disable" | "uninstall";
+export type ToolGuardLifecycleAction =
+  | "install"
+  | "replace-external"
+  | "enable"
+  | "disable"
+  | "uninstall";
 
 export async function requestToolGuardLifecycleAction(
   action: ToolGuardLifecycleAction,
@@ -26,6 +31,8 @@ export interface ToolGuardStatusState {
   readonly enabled: boolean;
   readonly canInstall: boolean;
   readonly canManage: boolean;
+  readonly canReplaceExternal: boolean;
+  readonly externalHookConfigPaths: ReadonlyArray<string>;
   readonly message: string;
   readonly action: ToolGuardLifecycleAction | null;
   readonly runAction: (action: ToolGuardLifecycleAction) => Promise<boolean>;
@@ -39,6 +46,8 @@ const INITIAL_STATUS = {
   enabled: false,
   canInstall: false,
   canManage: false,
+  canReplaceExternal: false,
+  externalHookConfigPaths: [],
   message: "Checking local Tool Guard Core…",
 } as const;
 
@@ -75,6 +84,12 @@ export function useToolGuardStatus(): ToolGuardStatusState {
           enabled: payload.enabled === true,
           canInstall: payload.canInstall === true,
           canManage: payload.canManage === true,
+          canReplaceExternal: payload.canReplaceExternal === true,
+          externalHookConfigPaths: Array.isArray(payload.externalHookConfigPaths)
+            ? payload.externalHookConfigPaths.filter(
+                (value): value is string => typeof value === "string",
+              )
+            : [],
           message:
             typeof payload.message === "string"
               ? payload.message

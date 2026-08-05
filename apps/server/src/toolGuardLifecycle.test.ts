@@ -16,6 +16,7 @@ import {
   managedToolGuardCommand,
   manageToolGuard,
   removeManagedHook,
+  removeExternalToolGuardHooks,
   TOOL_GUARD_MANAGED_MARKER,
 } from "./toolGuardLifecycle.ts";
 
@@ -44,6 +45,28 @@ describe("Tool Guard hook configuration", () => {
     expect(managedToolGuardCommand(paths.hook, "win32")).toBe(
       'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\state\\tool-guard\\integration\\scripts\\t3research-tool-guard-hook.ps1"',
     );
+  });
+
+  it("removes only external Tool Guard entries across hook events", () => {
+    const original = {
+      hooks: {
+        PreToolUse: [
+          { hooks: [{ command: "/tools/tg-guard/hook.sh" }] },
+          { hooks: [{ command: "python /hooks/secret-leak-guard.py" }] },
+        ],
+        PostToolUse: [{ hooks: [{ command: "/tools/tg-guard/hook-postresolve.sh" }] }],
+        SessionStart: [{ hooks: [{ command: "python /hooks/session-validator.py" }] }],
+      },
+      untouched: true,
+    };
+
+    expect(removeExternalToolGuardHooks(original)).toEqual({
+      hooks: {
+        PreToolUse: [{ hooks: [{ command: "python /hooks/secret-leak-guard.py" }] }],
+        SessionStart: [{ hooks: [{ command: "python /hooks/session-validator.py" }] }],
+      },
+      untouched: true,
+    });
   });
 });
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { requestToolGuardLifecycleAction } from "./useToolGuardStatus";
 
 describe("Tool Guard lifecycle client", () => {
-  it.each(["install", "enable", "disable", "uninstall"] as const)(
+  it.each(["install", "replace-external", "enable", "disable", "uninstall"] as const)(
     "sends the %s action to the environment server",
     async (action) => {
       const fetcher = vi.fn(async () => Response.json({ ok: true, message: `${action} complete` }));

@@ -537,6 +537,33 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+// ── Handoff settings ────────────────────────────────────────────────────
+export const DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS = 6_000;
+export const DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS = 2_000;
+
+export const HandoffContextCompressionSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  instanceId: Schema.optionalKey(ProviderInstanceId),
+  model: Schema.optionalKey(TrimmedNonEmptyString),
+  maxInputCharacters: Schema.Int.check(Schema.isGreaterThan(0)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS)),
+  ),
+  maxOutputCharacters: Schema.Int.check(Schema.isGreaterThan(0)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS)),
+  ),
+  customPrompt: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+export type HandoffContextCompressionSettings = typeof HandoffContextCompressionSettings.Type;
+
+export const HandoffSettings = Schema.Struct({
+  contextCompression: HandoffContextCompressionSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type HandoffSettings = typeof HandoffSettings.Type;
+
+export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = Schema.decodeSync(HandoffSettings)({});
+
 // ── Memory connector settings ────────────────────────────────────────────
 export const MemoryConnectorSettings = Schema.Struct({
   localEnabled: Schema.Boolean.pipe(
@@ -628,6 +655,7 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   memory: MemoryConnectorSettings,
+  handoff: HandoffSettings,
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -773,6 +801,20 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       localEnabled: Schema.optionalKey(Schema.Boolean),
       localBaseUrl: Schema.optionalKey(TrimmedString),
+    }),
+  ),
+  handoff: Schema.optionalKey(
+    Schema.Struct({
+      contextCompression: Schema.optionalKey(
+        Schema.Struct({
+          enabled: Schema.optionalKey(Schema.Boolean),
+          instanceId: Schema.optionalKey(ProviderInstanceId),
+          model: Schema.optionalKey(TrimmedNonEmptyString),
+          maxInputCharacters: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+          maxOutputCharacters: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+          customPrompt: Schema.optionalKey(TrimmedString),
+        }),
+      ),
     }),
   ),
   providers: Schema.optionalKey(

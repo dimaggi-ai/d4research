@@ -1,82 +1,159 @@
 # d2research
 
-d2research is a private workspace for long-running, evidence-heavy research across coding agents. It combines bounded multi-agent planning, continuity across providers, local shared memory, voice workflows, and an optional safety layer for tool access. The product is built from the [T3 Code](https://github.com/pingdotgg/t3code) foundation and retains its fast, remote-ready clients and provider runtime.
+A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation, and layer optional tool-safety policies on top.
 
-## Why this project exists
+## Installation
 
-Most agent harnesses are optimized for one provider completing one turn. Research work is different: it crosses many sources, benefits from specialized perspectives, outlives a provider session, and still needs a clear record of what actually happened. d2research is the working product used to test that lifecycle without turning the orchestration layer into an opaque autonomous swarm.
+d2research is a **source-only** private fork. There are no prebuilt binaries, desktop installers, npm packages, or Docker images. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
-The design goals are:
+### Requirements
 
-- keep one durable thread while changing provider or model;
-- make delegated research bounded, inspectable, and evidence-oriented;
-- keep memory and optional voice processing local to the environment;
-- retain provider-native permissions by default;
-- make additional Tool Guard policy explicit, reversible, and environment-scoped;
-- preserve the performance, remote access, and multi-surface architecture inherited from T3 Code.
+- Git clone access to [dimaggi-ai/d2research](https://github.com/dimaggi-ai/d2research)
+- Node.js `^22.16 || ^23.11 || >=24.10`
+- At least one provider CLI installed and authenticated (see [Providers](#supported-providers))
 
-## The difference
-
-| Area                   | T3 Code baseline                | d2research exploration                                                            |
-| ---------------------- | ------------------------------- | --------------------------------------------------------------------------------- |
-| Primary workflow       | Run coding agents               | Run coding agents and structured research                                         |
-| Research orchestration | Normal provider turns           | `#deep-research` prompt expansion with bounded specialist roles                   |
-| Provider changes       | Select a provider for a session | Hand off within the same thread, with a compact transcript and local Memo context |
-| Continuity             | Durable T3 thread history       | Thread history plus local handoff memory and failure rollback                     |
-| Tool permissions       | Provider-native modes           | Native modes by default, with optional managed d2 Tool Guard                      |
-| Local operations       | Standard server and clients     | Optional voice gateway, system panel, and isolated Docker QA stack                |
-
-## What it covers today
-
-- **Deep Research.** A prompt beginning with `#deep-research` receives a structured research-lead brief. It suggests Scout, Analyst, Challenger, and Synthesizer roles, advertises only ready providers, caps delegated work at three concurrent agents, and forbids recursive delegation. The provider remains responsible for deciding which roles are useful and must not claim work that was not performed.
-- **Same-thread provider handoff.** Changing the model during an active conversation can summarize a bounded recent transcript, store handoff context in local Memo, stop the previous session, and continue with the selected provider in the same chat. A failed handoff restores the prior selection.
-- **Local shared context.** Research agents are instructed to exchange durable findings through the local Memo connector, including sources, paths, commands, and uncertainty.
-- **Managed Tool Guard.** Settings can install, enable, disable, and uninstall the [Dimaggi Tool Guard Core](https://github.com/dimaggi-ai/tool-guard-core) integration for an environment. It copies managed resources into that environment and gates provider tools only when enabled. Provider-native permissions remain the default. See [Tool Guard](./docs/user/tool-guard.md).
-- **Voice and operations experiments.** The web client can use local speech-to-text, summarization, and text-to-speech services. The system panel and Docker QA stack support the d2 deployment environment. These require local supporting services and are not part of a generic source checkout.
-- **The T3 foundation.** Web, Electron desktop, and mobile clients; remote connections; multiple provider adapters; terminals; source control; previews; and checkpoint-based diff/restore remain inherited capabilities.
-
-See [Research workflows](./docs/user/research-workflows.md) for user behavior and [d2research architecture and scope](./docs/internals/d2research.md) for implementation boundaries.
-
-## Run from source
-
-This repository is private. Clone access and Node.js `^22.16 || ^23.11 || >=24.10` are required.
+### Setup
 
 ```bash
 git clone git@github.com:dimaggi-ai/d2research.git
 cd d2research
-```
 
-Install the Vite+ `vp` command if needed:
-
-```bash
+# Install the Vite+ build tool (one-time)
 curl -fsSL https://vite.plus | bash
-```
 
-Then install and start the development server:
-
-```bash
+# Install dependencies and start the dev server
 vp i
 vp run dev
 ```
 
-Install and authenticate at least one supported provider CLI before starting its sessions. The inherited provider setup is documented in [Install and first run](./docs/user/install.md).
+The web UI opens at `http://localhost:3773`. Connect from any browser, including remote devices via [Tailscale or relay](./docs/user/remote-access.md).
 
-There is not currently a separate public `npx d2research` package or d2 desktop release channel. The upstream `npx t3` package and T3 desktop releases install T3 Code, not this fork. `scripts/deploy-local.sh` rebuilds an existing local d2 deployment; it is not a fresh-machine installer.
+### Updating
+
+Pull the latest source and reinstall:
+
+```bash
+git pull
+vp i
+vp run dev
+```
+
+`scripts/deploy-local.sh` rebuilds an existing local deployment with systemd restart. It is not a fresh-machine installer.
+
+---
+
+## T3 Code Base Features
+
+Everything from the upstream T3 Code platform is available:
+
+- **Multi-surface clients** -- Web app, Electron desktop (macOS/Windows/Linux), and React Native mobile (iOS/Android)
+- **7 provider adapters** -- Codex, Claude, Cursor, Grok, Junie, OpenCode, Agy. Each runs in its own process with native auth
+- **Integrated terminals** -- Full PTY terminals alongside the chat, with provider tool access
+- **Source control** -- Git integration, diffs, checkpoints, branch management, commit message generation
+- **File previews** -- Syntax-highlighted code, images, PDFs, and Jupyter notebooks
+- **Checkpoint diff/restore** -- Roll back any provider change to a prior filesystem state
+- **Remote access** -- Connect from any device via Tailscale, SSH tunnel, or cloud relay
+- **Background service** -- Run headless on Linux as a systemd service
+- **Keyboard-driven** -- Configurable keybindings with chord support
+- **Provider instances** -- Multiple accounts per provider driver with separate auth and config
+- **Settings** -- General, appearance, keybindings, providers, source control, connections, and beta feature panels
+
+## d2research Additions
+
+Features layered on top of the T3 Code base:
+
+### Deep Research
+
+Prefix a prompt with `#deep-research` to activate structured multi-agent research. The system constructs a research-lead brief with Scout, Analyst, Challenger, and Synthesizer roles, advertises only currently ready providers, caps delegated work at three concurrent agents, and forbids recursive delegation.
+
+### Same-Thread Provider Handoff
+
+Switch models mid-conversation without losing context. The system summarizes a bounded transcript, stores handoff context in local Memo, stops the previous session, and continues with the new provider in the same thread. Failed handoffs roll back to the prior selection.
+
+**Context compression** (new) -- Optionally route the transcript through a separate provider for summarization before handing off. Configurable in Settings > General > Handoff: choose a compression model, set max input/output characters, and provide a custom compression prompt.
+
+### Local Shared Memory
+
+Providers exchange durable findings through a local [Memo](https://github.com/dimaggi-ai/meko-mcp-server) connector. Handoff context, evidence, file paths, commands, and uncertainty survive across provider switches and sessions.
+
+### Managed Tool Guard
+
+Install, enable, disable, and uninstall [Dimaggi Tool Guard Core](https://github.com/dimaggi-ai/tool-guard-core) per environment from Settings. Four permission modes:
+
+| Mode                  | Behavior                                                      |
+| --------------------- | ------------------------------------------------------------- |
+| **Supervised**        | Ask before commands and file changes (enforcement)            |
+| **Auto-accept edits** | Allow routine edits, ask before riskier actions (enforcement) |
+| **Auto**              | Allow routine work, escalate risky actions (enforcement)      |
+| **Full access**       | Audit-only shadow mode, no blocking                           |
+
+Provider-native permissions remain the default. Tool Guard is opt-in and environment-scoped.
+
+**Policy editor** (new) -- View and edit enforcement rules directly from Settings > General > Agent permissions > Manage Policies. Add, modify, or remove rules with per-rule effect selection (deny/escalate/allow), regex pattern matching, and scope configuration.
+
+### Voice Workflows
+
+Optional local speech-to-text, summarization, and text-to-speech for voice-driven research sessions. Requires local voice services (not included in a generic source checkout).
+
+### System Monitor
+
+Mission Control panel for environment health. Requires the local `sysmon` service.
+
+---
+
+## Supported Providers
+
+Install and authenticate each CLI before starting sessions. See [provider setup docs](./docs/user/install.md) for details.
+
+| Provider                                  | CLI            | Notes                   |
+| ----------------------------------------- | -------------- | ----------------------- |
+| [Codex](./docs/user/providers-codex.md)   | `codex`        | OpenAI Codex CLI        |
+| [Claude](./docs/user/providers-claude.md) | `claude`       | Anthropic Claude Code   |
+| Cursor                                    | `cursor-agent` | Cursor agent mode       |
+| Grok                                      | `grok`         | xAI Grok CLI            |
+| [Junie](./docs/user/providers-junie.md)   | `junie`        | JetBrains Junie CLI     |
+| OpenCode                                  | `opencode`     | OpenCode CLI            |
+| Agy                                       | `agy`          | Google Agy (Gemini) CLI |
+
+Multiple instances of the same provider can run with separate auth via Settings > Providers.
+
+## Project Structure
+
+```
+apps/
+  web/          Web client (React, Vite, TanStack Router)
+  desktop/      Electron desktop app (macOS, Windows, Linux)
+  mobile/       React Native mobile app (iOS, Android)
+  server/       Node.js WebSocket server (Effect-TS)
+  marketing/    Marketing site
+packages/
+  contracts/    Shared types, schemas, and wire protocol
+  shared/       Shared utilities (settings, model selection)
+  client-runtime/  Client-side state management
+  ssh/          SSH connection support
+  tailscale/    Tailscale integration
+ops/
+  tool-guard/   Tool Guard profiles and policy files
+scripts/        Build, release, deploy, and QA scripts
+docs/           User guides, internals, and runbooks
+```
 
 ## Documentation
 
 - [Documentation index](./docs/README.md)
 - [Research workflows](./docs/user/research-workflows.md)
 - [Tool Guard lifecycle](./docs/user/tool-guard.md)
-- [d2research architecture and scope](./docs/internals/d2research.md)
+- [Permission modes](./docs/user/permission-modes.md)
+- [Remote access](./docs/user/remote-access.md)
+- [Background service](./docs/user/background-service.md)
+- [Architecture overview](./docs/internals/overview.md)
+- [d2research scope](./docs/internals/d2research.md)
 - [Docker QA stack](./docs/operations/docker-qa.md)
-- [Inherited T3 architecture](./docs/internals/overview.md)
-- [Contributor policy](./CONTRIBUTING.md) and [agent instructions](./AGENTS.md)
 
-## Project status and attribution
+## Contributing
 
-d2research is a private product-research fork, not an upstream T3 Code release. Compatibility names such as `t3`, `T3CODE_HOME`, and some inherited documentation remain where changing them would break protocols, storage, packages, or deployment workflows.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for policy and [AGENTS.md](./AGENTS.md) for agent instructions.
 
-The d2research release line starts at `0.0.1`. It must use a d2-specific update channel: `0.0.1` is a new product version, not an upgrade over inherited T3 Code `0.0.31` installations.
+## Attribution
 
-The underlying application and architecture come from T3 Code. d2research changes should preserve that attribution and keep upstream-compatible behavior unless the research product explicitly needs a different contract.
+d2research is a private product-research fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping](https://ping.gg). The application architecture, event-sourced server, provider adapters, and multi-surface clients are inherited from T3 Code. Compatibility names (`t3`, `T3CODE_HOME`, package identifiers) are retained where changing them would break protocols, storage, or deployment workflows.

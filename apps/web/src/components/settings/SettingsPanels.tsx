@@ -143,6 +143,12 @@ import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePreferredEditor } from "../../editorPreferences";
 import { useToolGuardStatus } from "../../hooks/useToolGuardStatus";
+import { useToolGuardPolicy } from "../../hooks/useToolGuardPolicy";
+import { ToolGuardPolicyEditor } from "./ToolGuardPolicyEditor";
+import {
+  DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
+  DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
+} from "@t3tools/contracts/settings";
 
 const THEME_OPTIONS = [
   {
@@ -1122,6 +1128,8 @@ export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const toolGuardStatus = useToolGuardStatus();
+  const toolGuardPolicy = useToolGuardPolicy(toolGuardStatus.installed);
+  const [policyEditorOpen, setPolicyEditorOpen] = useState(false);
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1698,6 +1706,171 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
+      <SettingsSection title="Handoff" id="handoff">
+        <SettingsRow
+          id="handoff-context-compression"
+          title="Context compression"
+          description="Use a provider to summarize the conversation before handing off to another model. Reduces token cost and keeps the receiving provider focused."
+          control={
+            <Switch
+              checked={settings.handoff.contextCompression.enabled}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  handoff: {
+                    contextCompression: { enabled: Boolean(checked) },
+                  },
+                })
+              }
+              aria-label="Enable handoff context compression"
+            />
+          }
+        />
+
+        {settings.handoff.contextCompression.enabled ? (
+          <>
+            <SettingsRow
+              id="handoff-compression-provider"
+              title="Compression provider"
+              description="Choose a provider and model to compress the conversation context before handoff."
+              control={
+                <ProviderModelPicker
+                  activeInstanceId={
+                    settings.handoff.contextCompression.instanceId ?? textGenInstanceId
+                  }
+                  model={settings.handoff.contextCompression.model ?? textGenModel}
+                  lockedProvider={null}
+                  instanceEntries={textGenerationModelInstanceEntries}
+                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
+                  triggerVariant="outline"
+                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                  onInstanceModelChange={(instanceId, model) => {
+                    updateSettings({
+                      handoff: {
+                        contextCompression: { instanceId, model },
+                      },
+                    });
+                  }}
+                />
+              }
+            />
+
+            <SettingsRow
+              id="handoff-max-input"
+              title="Max input characters"
+              description="Maximum characters of conversation transcript sent to the compression provider."
+              resetAction={
+                settings.handoff.contextCompression.maxInputCharacters !==
+                DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS ? (
+                  <SettingResetButton
+                    label="max input characters"
+                    onClick={() =>
+                      updateSettings({
+                        handoff: {
+                          contextCompression: {
+                            maxInputCharacters: DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
+                          },
+                        },
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <NumberField
+                  value={settings.handoff.contextCompression.maxInputCharacters}
+                  min={500}
+                  step={500}
+                  size="sm"
+                  className="w-28"
+                  onValueChange={(value) => {
+                    if (value === null) return;
+                    updateSettings({
+                      handoff: {
+                        contextCompression: {
+                          maxInputCharacters: Math.max(500, Math.round(value)),
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <NumberFieldGroup>
+                    <NumberFieldDecrement aria-label="Decrease max input characters" />
+                    <NumberFieldInput aria-label="Max input characters" />
+                    <NumberFieldIncrement aria-label="Increase max input characters" />
+                  </NumberFieldGroup>
+                </NumberField>
+              }
+            />
+
+            <SettingsRow
+              id="handoff-max-output"
+              title="Max output characters"
+              description="Maximum characters the compression provider should produce."
+              resetAction={
+                settings.handoff.contextCompression.maxOutputCharacters !==
+                DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS ? (
+                  <SettingResetButton
+                    label="max output characters"
+                    onClick={() =>
+                      updateSettings({
+                        handoff: {
+                          contextCompression: {
+                            maxOutputCharacters: DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
+                          },
+                        },
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <NumberField
+                  value={settings.handoff.contextCompression.maxOutputCharacters}
+                  min={200}
+                  step={200}
+                  size="sm"
+                  className="w-28"
+                  onValueChange={(value) => {
+                    if (value === null) return;
+                    updateSettings({
+                      handoff: {
+                        contextCompression: {
+                          maxOutputCharacters: Math.max(200, Math.round(value)),
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <NumberFieldGroup>
+                    <NumberFieldDecrement aria-label="Decrease max output characters" />
+                    <NumberFieldInput aria-label="Max output characters" />
+                    <NumberFieldIncrement aria-label="Increase max output characters" />
+                  </NumberFieldGroup>
+                </NumberField>
+              }
+            />
+
+            <SettingsRow
+              id="handoff-custom-prompt"
+              title="Custom compression prompt"
+              description="Optional system prompt for the compression model. Leave blank to use the default summarization prompt."
+              control={
+                <DraftInput
+                  value={settings.handoff.contextCompression.customPrompt}
+                  onCommit={(value) =>
+                    updateSettings({
+                      handoff: { contextCompression: { customPrompt: value } },
+                    })
+                  }
+                  placeholder="Summarize the conversation context…"
+                  className="w-full max-w-xs text-xs"
+                />
+              }
+            />
+          </>
+        ) : null}
+      </SettingsSection>
+
       <SettingsSection title="Agent permissions">
         <SettingsRow
           title="Native provider permissions"
@@ -1794,7 +1967,38 @@ export function GeneralSettingsPanel() {
             </div>
           }
         />
+
+        {toolGuardStatus.installed ? (
+          <SettingsRow
+            id="tool-guard-policies"
+            title="Policy rules"
+            description={
+              toolGuardPolicy.state === "ready" && toolGuardPolicy.policy
+                ? `${toolGuardPolicy.policy.rules.length} rule${toolGuardPolicy.policy.rules.length === 1 ? "" : "s"} in ${toolGuardPolicy.policy.mode} mode.`
+                : "Manage the enforcement rules that guard tool invocations."
+            }
+            control={
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={toolGuardPolicy.state !== "ready"}
+                onClick={() => setPolicyEditorOpen(true)}
+              >
+                Manage Policies
+              </Button>
+            }
+          />
+        ) : null}
       </SettingsSection>
+
+      <ToolGuardPolicyEditor
+        open={policyEditorOpen}
+        onOpenChange={setPolicyEditorOpen}
+        policy={toolGuardPolicy.policy}
+        saving={toolGuardPolicy.saving}
+        error={toolGuardPolicy.error}
+        onSave={toolGuardPolicy.save}
+      />
 
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

@@ -122,6 +122,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "handoff",
+    title: "Handoff",
+    to: "/settings/general",
+  },
+  {
+    id: "handoff-context-compression",
+    title: "Context compression",
+    to: "/settings/general",
+    targetId: "handoff",
+  },
+  {
+    id: "tool-guard-policies",
+    title: "Tool Guard policies",
+    to: "/settings/general",
+  },
+  {
     id: "keybindings",
     title: "Keybindings",
     to: "/settings/keybindings",

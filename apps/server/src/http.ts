@@ -46,6 +46,8 @@ import {
   ToolGuardLifecycleAction,
   type ToolGuardLifecycleAction as ToolGuardLifecycleActionType,
 } from "./toolGuardLifecycle.ts";
+import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts";
+import type { ToolGuardPolicy } from "@t3tools/contracts";
 import {
   DEFAULT_LOCAL_MEMO_BASE_URL,
   makeLocalMemoConnector,
@@ -56,6 +58,7 @@ const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
 const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
+const TOOL_GUARD_POLICY_PATH = "/api/tool-guard/policy";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
@@ -332,6 +335,77 @@ export const toolGuardLifecycleRouteLayer = HttpRouter.add(
       status: result.ok ? 200 : 409,
       headers: { "cache-control": "no-store" },
     });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const toolGuardPolicyReadRouteLayer = HttpRouter.add(
+  "GET",
+  TOOL_GUARD_POLICY_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    return yield* Effect.gen(function* () {
+      const policy = yield* readToolGuardPolicy();
+      if (!policy) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "No active policy found." },
+          { status: 404, headers: { "cache-control": "no-store" } },
+        );
+      }
+      return HttpServerResponse.jsonUnsafe(
+        { ok: true, policy },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Could not read policy." },
+          { status: 500, headers: { "cache-control": "no-store" } },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const toolGuardPolicyWriteRouteLayer = HttpRouter.add(
+  "PUT",
+  TOOL_GUARD_POLICY_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<unknown, { policy?: unknown }>(yield* request.json);
+      const policy = body.policy as ToolGuardPolicy | undefined;
+      if (!policy || typeof policy.policy_id !== "string" || !Array.isArray(policy.rules)) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Invalid policy payload." },
+          { status: 400 },
+        );
+      }
+      yield* writeToolGuardPolicy(policy);
+      return HttpServerResponse.jsonUnsafe(
+        { ok: true, message: "Policy saved." },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Failed to save policy." },
+          { status: 500 },
+        ),
+      ),
+    );
   }).pipe(
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,

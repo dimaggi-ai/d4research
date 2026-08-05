@@ -187,20 +187,28 @@ describe("ServerSettings worktree defaults", () => {
 });
 
 describe("ServerSettings memory connectors", () => {
-  it("defaults local Memo on and hosted Meko off without persisting secrets", () => {
+  it("defaults local Memo on", () => {
     const settings = decodeServerSettings({});
     expect(settings.memory).toEqual({
       localEnabled: true,
       localBaseUrl: "http://127.0.0.1:8099",
-      mekoEnabled: false,
-      mekoMcpUrl: "https://mcp.mekodata.ai/mcp",
     });
-    expect(settings.memory).not.toHaveProperty("authorization");
   });
 
   it("accepts partial memory connector patches", () => {
-    expect(decodeServerSettingsPatch({ memory: { mekoEnabled: true } }).memory).toEqual({
-      mekoEnabled: true,
+    expect(decodeServerSettingsPatch({ memory: { localEnabled: false } }).memory).toEqual({
+      localEnabled: false,
+    });
+  });
+
+  it("ignores removed hosted Meko fields in persisted settings", () => {
+    expect(
+      decodeServerSettings({
+        memory: { mekoEnabled: true, mekoMcpUrl: "https://mcp.mekodata.ai/mcp" },
+      }).memory,
+    ).toEqual({
+      localEnabled: true,
+      localBaseUrl: "http://127.0.0.1:8099",
     });
   });
 });

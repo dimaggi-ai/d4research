@@ -77,4 +77,6 @@ There is not currently a separate public `npx d2research` package or d2 desktop 
 
 d2research is a private product-research fork, not an upstream T3 Code release. Compatibility names such as `t3`, `T3CODE_HOME`, and some inherited documentation remain where changing them would break protocols, storage, packages, or deployment workflows.
 
+The d2research release line starts at `0.0.1`. It must use a d2-specific update channel: `0.0.1` is a new product version, not an upgrade over inherited T3 Code `0.0.31` installations.
+
 The underlying application and architecture come from T3 Code. d2research changes should preserve that attribution and keep upstream-compatible behavior unless the research product explicitly needs a different contract.

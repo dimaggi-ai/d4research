@@ -122,11 +122,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "diagnostics",
-    title: "Diagnostics",
-    to: "/settings/general",
-  },
-  {
     id: "keybindings",
     title: "Keybindings",
     to: "/settings/keybindings",

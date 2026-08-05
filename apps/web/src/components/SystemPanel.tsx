@@ -1,11 +1,21 @@
-import { Activity, Cpu, HardDrive, MemoryStick, RefreshCw, Server } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  Activity,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "./ui/button";
 import { cn } from "~/lib/utils";
 
 export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
 const SYSTEM_MONITOR_URL = "/api/system-monitor";
+const TOOL_GUARD_STATUS_URL = "/api/tool-guard/status";
+const TOOL_GUARD_POLL_INTERVAL_MS = 30_000;
 
 export function startSystemMonitorPolling(
   refresh: () => void,
@@ -34,6 +44,44 @@ interface SystemSnapshot {
   procs: { pid: number; comm: string; cpu: number; mem: number; rss_mb: number; user: string }[];
   procsum: { total: number; running: number; threads: number };
   uptime: number;
+}
+
+interface ToolGuardSnapshot {
+  integration: "managed" | "disabled" | "external" | "available" | "unavailable";
+  installed: boolean;
+  enabled: boolean;
+  policyProfilesAvailable: boolean;
+  message: string;
+}
+
+function ToolGuardMonitor({ snapshot }: { snapshot: ToolGuardSnapshot | null }) {
+  return (
+    <section className="mb-5 rounded-lg border border-border/70 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2 text-xs font-medium">
+          <ShieldCheck className="size-3.5" /> Tool Guard
+        </span>
+        <span
+          className={cn(
+            "rounded-full px-2 py-1 text-xs",
+            snapshot?.enabled
+              ? "bg-emerald-500/10 text-emerald-600"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          {snapshot?.enabled ? "enforcing" : (snapshot?.integration ?? "checking")}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {snapshot?.message ?? "Checking environment policy status..."}
+      </p>
+      {snapshot?.installed ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Policy profiles {snapshot.policyProfilesAvailable ? "available" : "missing"}
+        </p>
+      ) : null}
+    </section>
+  );
 }
 
 function gib(kib: number): string {
@@ -73,8 +121,30 @@ export function SystemPanel() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [toolGuard, setToolGuard] = useState<ToolGuardSnapshot | null>(null);
+  const toolGuardReadAtRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const now = Date.now();
+    const toolGuardRequest =
+      now - toolGuardReadAtRef.current >= TOOL_GUARD_POLL_INTERVAL_MS
+        ? (() => {
+            toolGuardReadAtRef.current = now;
+            return fetch(TOOL_GUARD_STATUS_URL, {
+              signal: AbortSignal.timeout(3_000),
+              credentials: "include",
+              cache: "no-store",
+            })
+              .then((response) => {
+                if (!response.ok) {
+                  throw new Error(`Tool Guard status returned ${response.status}`);
+                }
+                return response.json() as Promise<ToolGuardSnapshot>;
+              })
+              .then(setToolGuard)
+              .catch(() => setToolGuard(null));
+          })()
+        : Promise.resolve();
     try {
       const response = await fetch(SYSTEM_MONITOR_URL, {
         signal: AbortSignal.timeout(3_000),
@@ -86,6 +156,7 @@ export function SystemPanel() {
     } catch {
       setError("Mission Control is unavailable. Check mission-control.service.");
     }
+    await toolGuardRequest;
   }, []);
 
   useEffect(() => {
@@ -94,14 +165,17 @@ export function SystemPanel() {
 
   if (!snapshot) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <Activity className="size-6 text-muted-foreground" />
-        <p className="max-w-sm text-sm text-muted-foreground">
-          {error ?? "Loading live system status..."}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw className="size-3.5" /> Refresh
-        </Button>
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <ToolGuardMonitor snapshot={toolGuard} />
+        <div className="flex flex-col items-center justify-center gap-3 text-center">
+          <Activity className="size-6 text-muted-foreground" />
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {error ?? "Loading live system status..."}
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
+            <RefreshCw className="size-3.5" /> Refresh
+          </Button>
+        </div>
       </div>
     );
   }
@@ -130,6 +204,8 @@ export function SystemPanel() {
       {error ? (
         <p className="mb-4 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600">{error}</p>
       ) : null}
+
+      <ToolGuardMonitor snapshot={toolGuard} />
 
       <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-border/70 p-3">

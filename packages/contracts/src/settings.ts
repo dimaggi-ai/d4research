@@ -538,8 +538,6 @@ export const BackgroundActivitySettings = Schema.Struct({
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 // ── Memory connector settings ────────────────────────────────────────────
-// Secrets (Meko authorization token) live in the OS secret store or env;
-// only non-sensitive configuration is persisted here.
 export const MemoryConnectorSettings = Schema.Struct({
   localEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
@@ -555,22 +553,6 @@ export const MemoryConnectorSettings = Schema.Struct({
       title: "Memo base URL",
       description: "Base URL for the local Memo REST server.",
       providerSettingsForm: { placeholder: "http://127.0.0.1:8099", clearWhenEmpty: "omit" },
-    }),
-  ),
-  mekoEnabled: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
-    Schema.annotateKey({
-      title: "Enable Meko",
-      description: "Enable the hosted Meko Streamable HTTP MCP memory service.",
-      providerSettingsForm: { control: "switch" },
-    }),
-  ),
-  mekoMcpUrl: TrimmedString.pipe(
-    Schema.withDecodingDefault(Effect.succeed("https://mcp.mekodata.ai/mcp")),
-    Schema.annotateKey({
-      title: "Meko MCP URL",
-      description: "Streamable HTTP MCP endpoint for the Meko memory service.",
-      providerSettingsForm: { placeholder: "https://mcp.mekodata.ai/mcp", clearWhenEmpty: "omit" },
     }),
   ),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
@@ -791,8 +773,6 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       localEnabled: Schema.optionalKey(Schema.Boolean),
       localBaseUrl: Schema.optionalKey(TrimmedString),
-      mekoEnabled: Schema.optionalKey(Schema.Boolean),
-      mekoMcpUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
   providers: Schema.optionalKey(

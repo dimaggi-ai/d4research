@@ -13,10 +13,8 @@ const dependencies = [
   ServerSettingsService,
 ];
 
-const Connector = Schema.Literals(["local", "meko"]).pipe(
-  Schema.annotate({
-    description: 'Memory backend: "local" for on-device Memo or "meko" for hosted Meko.',
-  }),
+const Connector = Schema.Literal("local").pipe(
+  Schema.annotate({ description: 'Memory backend. Currently only on-device Memo ("local").' }),
 );
 
 export const MemorySearchInput = Schema.Struct({
@@ -42,44 +40,32 @@ export const MemoryRememberInput = Schema.Struct({
   source: Schema.optional(Schema.String).pipe(
     Schema.annotate({ description: "Optional source label for local Memo." }),
   ),
-  metadata: Schema.optional(Schema.Unknown).pipe(
-    Schema.annotate({ description: "Optional structured metadata for hosted Meko." }),
-  ),
   project: Schema.optional(Schema.String).pipe(
     Schema.annotate({ description: "Optional project scope for local Memo." }),
   ),
 });
 export type MemoryRememberInput = typeof MemoryRememberInput.Type;
 
-export const MemoryGetInput = Schema.Struct({
-  connector: Connector,
-  id: Schema.String.pipe(Schema.annotate({ description: "Exact Meko memory id." })),
-});
-export type MemoryGetInput = typeof MemoryGetInput.Type;
-
 export const MemoryStatusInput = Schema.Struct({ connector: Connector });
 export type MemoryStatusInput = typeof MemoryStatusInput.Type;
 
 export const MemorySearchOutput = Schema.Struct({
-  connector: Schema.Literals(["local", "meko"]),
+  connector: Schema.Literal("local"),
   results: Schema.Array(MemoryEntry),
   count: Schema.Int,
 });
 export type MemorySearchOutput = typeof MemorySearchOutput.Type;
 
 export const MemoryRememberOutput = Schema.Struct({
-  connector: Schema.Literals(["local", "meko"]),
+  connector: Schema.Literal("local"),
   id: Schema.optional(Schema.String),
   hash: Schema.optional(Schema.String),
   ok: Schema.Boolean,
 });
 export type MemoryRememberOutput = typeof MemoryRememberOutput.Type;
 
-export const MemoryGetOutput = MemoryEntry;
-export type MemoryGetOutput = typeof MemoryGetOutput.Type;
-
 export const MemoryStatusOutput = Schema.Struct({
-  connector: Schema.Literals(["local", "meko"]),
+  connector: Schema.Literal("local"),
   count: Schema.optional(Schema.Number),
   backend: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
@@ -97,7 +83,7 @@ const readonlyMemoryTool = <T extends Tool.Any>(tool: T): T =>
 export const MemorySearchTool = readonlyMemoryTool(
   Tool.make("memory_search", {
     description:
-      "Search either local Memo or hosted Meko semantic memory. This is an explicit read and never writes memory.",
+      "Search local Memo semantic memory. This is an explicit read and never writes memory.",
     parameters: MemorySearchInput,
     success: MemorySearchOutput,
     failure: MemoryConnectorError,
@@ -106,8 +92,7 @@ export const MemorySearchTool = readonlyMemoryTool(
 );
 
 export const MemoryRememberTool = Tool.make("memory_remember", {
-  description:
-    "Explicitly store a self-contained memory in local Memo or hosted Meko. Hosted Meko writes are verified by keyed readback.",
+  description: "Explicitly store a self-contained memory in local Memo.",
   parameters: MemoryRememberInput,
   success: MemoryRememberOutput,
   failure: MemoryConnectorError,
@@ -119,21 +104,9 @@ export const MemoryRememberTool = Tool.make("memory_remember", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false);
 
-export const MemoryGetTool = readonlyMemoryTool(
-  Tool.make("memory_get", {
-    description:
-      "Retrieve one hosted Meko memory by exact id. Local Memo has no keyed-get endpoint and returns a clear error.",
-    parameters: MemoryGetInput,
-    success: MemoryGetOutput,
-    failure: MemoryConnectorError,
-    dependencies,
-  }).annotate(Tool.Title, "Get memory"),
-);
-
 export const MemoryStatusTool = readonlyMemoryTool(
   Tool.make("memory_status", {
-    description:
-      "Check reachability and current status for local Memo or hosted Meko before using that connector.",
+    description: "Check reachability and current status for local Memo.",
     parameters: MemoryStatusInput,
     success: MemoryStatusOutput,
     failure: MemoryConnectorError,
@@ -141,9 +114,4 @@ export const MemoryStatusTool = readonlyMemoryTool(
   }).annotate(Tool.Title, "Memory status"),
 );
 
-export const MemoryToolkit = Toolkit.make(
-  MemorySearchTool,
-  MemoryRememberTool,
-  MemoryGetTool,
-  MemoryStatusTool,
-);
+export const MemoryToolkit = Toolkit.make(MemorySearchTool, MemoryRememberTool, MemoryStatusTool);

@@ -99,13 +99,10 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
   const fallbackModels = modelsFromSlugs([settings.defaultModel], settings);
   if (!settings.enabled) return yield* buildInitialAgyProviderSnapshot(settings);
 
-  const probe = yield* Effect.all(
-    {
-      models: runAgy(settings, ["models"], environment),
-      version: runAgy(settings, ["changelog"], environment),
-    },
-    { concurrency: "unbounded" },
-  ).pipe(Effect.timeoutOption(PROBE_TIMEOUT_MS), Effect.result);
+  const probe = yield* runAgy(settings, ["models"], environment).pipe(
+    Effect.timeoutOption(PROBE_TIMEOUT_MS),
+    Effect.result,
+  );
 
   if (Result.isFailure(probe)) {
     const missing = isCommandMissingCause(probe.failure);
@@ -141,9 +138,22 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
     });
   }
 
-  const { models, version } = probe.success.value;
+  const models = probe.success.value;
   const discovered = models.code === 0 ? models.stdout.split(/\r?\n/u) : [];
   const healthy = models.code === 0 && discovered.some((slug) => slug.trim().length > 0);
+  const versionProbe = healthy
+    ? yield* runAgy(settings, ["--version"], environment).pipe(
+        Effect.timeoutOption(PROBE_TIMEOUT_MS),
+        Effect.result,
+      )
+    : null;
+  const version =
+    versionProbe && Result.isSuccess(versionProbe) && Option.isSome(versionProbe.success)
+      ? parseGenericCliVersion(
+          `${versionProbe.success.value.stdout}\n${versionProbe.success.value.stderr}`,
+        )
+      : null;
+  const failureDetail = models.stderr.trim().slice(0, 500);
   return buildServerProvider({
     presentation: PRESENTATION,
     enabled: true,
@@ -151,10 +161,16 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
     models: healthy ? modelsFromSlugs(discovered, settings) : fallbackModels,
     probe: {
       installed: true,
-      version: parseGenericCliVersion(`${version.stdout}\n${version.stderr}`),
+      version,
       status: healthy ? "ready" : "error",
       auth: healthy ? { status: "authenticated", type: "Agy account" } : { status: "unknown" },
-      ...(!healthy ? { message: "Agy model discovery failed; sign in with `agy`." } : {}),
+      ...(!healthy
+        ? {
+            message: failureDetail
+              ? `Agy model discovery failed: ${failureDetail}`
+              : `Agy model discovery exited with code ${models.code}. Run \`agy models\` to diagnose authentication or connector settings.`,
+          }
+        : {}),
     },
   });
 });

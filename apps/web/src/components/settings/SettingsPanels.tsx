@@ -8,7 +8,6 @@ import {
   SettingsIcon,
   ShieldCheckIcon,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -83,7 +82,6 @@ import {
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import {
   primaryServerAvailableEditorsAtom,
-  primaryServerObservabilityAtom,
   primaryServerProvidersAtom,
   serverEnvironment,
 } from "../../state/server";
@@ -126,7 +124,6 @@ import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
   backgroundActivitySharedPolicySettings,
   buildProviderInstanceUpdatePatch,
-  formatDiagnosticsDescription,
   hasChangedBackgroundActivitySettings,
   isProjectGroupingEnabled,
   projectGroupingModeFromToggle,
@@ -1129,7 +1126,6 @@ export function GeneralSettingsPanel() {
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
-  const observability = useAtomValue(primaryServerObservabilityAtom);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const openInOptions = useMemo(
     () => resolveOpenInOptions(navigator.platform, availableEditors),
@@ -1141,14 +1137,6 @@ export function GeneralSettingsPanel() {
   );
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const diagnosticsDescription = formatDiagnosticsDescription({
-    localTracingEnabled: observability?.localTracingEnabled ?? false,
-    otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
-    otlpTracesUrl: observability?.otlpTracesUrl,
-    otlpMetricsEnabled: observability?.otlpMetricsEnabled ?? false,
-    otlpMetricsUrl: observability?.otlpMetricsUrl,
-  });
-
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
   const textGenModel = textGenerationModelSelection.model;
@@ -1799,15 +1787,6 @@ export function GeneralSettingsPanel() {
             description="Current version of the application."
           />
         )}
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          description={diagnosticsDescription}
-          control={
-            <Button render={<Link to="/settings/diagnostics" />} size="xs" variant="outline">
-              View diagnostics
-            </Button>
-          }
-        />
       </SettingsSection>
     </SettingsPageContainer>
   );

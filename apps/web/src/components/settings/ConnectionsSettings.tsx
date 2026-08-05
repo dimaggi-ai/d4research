@@ -3030,37 +3030,6 @@ export function ConnectionsSettings() {
             />
           }
         />
-        <SettingsRow
-          title="Hosted Meko"
-          description="Hosted semantic memory with deterministic readback after every write. Authorization is read only from T3CODE_MEKO_AUTHORIZATION on the server and is never saved in app settings."
-          control={
-            <Switch
-              checked={settings.memory.mekoEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ memory: { mekoEnabled: Boolean(checked) } })
-              }
-              aria-label="Enable hosted Meko memory"
-            />
-          }
-        />
-        <SettingsRow
-          title="Meko MCP URL"
-          description="Streamable HTTP MCP endpoint. T3CODE_MEKO_MCP_URL overrides this value on the server."
-          control={
-            <Input
-              className="w-full sm:w-72"
-              defaultValue={settings.memory.mekoMcpUrl}
-              disabled={!settings.memory.mekoEnabled}
-              aria-label="Meko MCP URL"
-              onBlur={(event) => {
-                const mekoMcpUrl = event.currentTarget.value.trim();
-                if (mekoMcpUrl && mekoMcpUrl !== settings.memory.mekoMcpUrl) {
-                  updateSettings({ memory: { mekoMcpUrl } });
-                }
-              }}
-            />
-          }
-        />
       </SettingsSection>
 
       {canManageLocalBackend ? (

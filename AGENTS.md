@@ -11,6 +11,7 @@ The T3 Code architecture and its compatibility names remain the foundation. Do n
 - Keep local-first features local. Memo, voice, Mission Control, and Tool Guard integrations must not silently acquire undeclared hosted dependencies.
 - Keep provider-native permissions as the default. d2 Tool Guard must remain explicit, reversible, environment-scoped, and observable in Settings.
 - Preserve T3 Code's performance, remote readiness, multi-surface behavior, typed contracts, and provider boundaries.
+- Keep the d2research release line isolated from upstream T3 update channels. The d2 product starts at `0.0.1`; its lower semver is not an updater-compatible downgrade for existing T3 installations.
 
 ## What the fork inherits from T3 Code
 

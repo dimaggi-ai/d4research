@@ -90,14 +90,6 @@ try {
     await clickAndWaitForPath(page, label, pathname);
   }
 
-  await page.goto(`${baseUrl}/settings/diagnostics`, {
-    waitUntil: "domcontentloaded",
-    timeout: 15_000,
-  });
-  assert(new URL(page.url()).pathname === "/settings/diagnostics", "diagnostics route redirected");
-  await page.getByText("Live Processes", { exact: true }).waitFor({ timeout: 10_000 });
-  console.log("web-qa: PASS navigation /settings/diagnostics");
-
   await page.goto(`${baseUrl}/settings/providers`, {
     waitUntil: "domcontentloaded",
     timeout: 15_000,

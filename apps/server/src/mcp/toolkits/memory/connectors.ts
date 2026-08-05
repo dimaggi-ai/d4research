@@ -2,12 +2,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
-export type MemoryConnector = "local" | "meko";
+export type MemoryConnector = "local";
 
 export class MemoryConnectorError extends Schema.TaggedErrorClass<MemoryConnectorError>()(
   "MemoryConnectorError",
   {
-    connector: Schema.Literals(["local", "meko"]),
+    connector: Schema.Literal("local"),
     operation: Schema.String,
     message: Schema.String,
     cause: Schema.optional(Schema.Defect()),
@@ -41,7 +41,6 @@ export const MemoryAddResult = Schema.Struct({
 export type MemoryAddResult = typeof MemoryAddResult.Type;
 
 export const DEFAULT_LOCAL_MEMO_BASE_URL = "http://127.0.0.1:8099";
-export const DEFAULT_MEKO_MCP_URL = "https://mcp.mekodata.ai/mcp";
 export const DEFAULT_MEMORY_TIMEOUT_MS = 10_000;
 
 const asRecord = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
@@ -145,7 +144,6 @@ export interface LocalMemoConnector {
     k: number,
     project?: string,
   ) => Effect.Effect<MemorySearchResult, MemoryConnectorError>;
-  readonly getById: (id: string) => Effect.Effect<never, MemoryConnectorError>;
   readonly add: (
     text: string,
     source?: string,
@@ -185,14 +183,6 @@ export const makeLocalMemoConnector = Effect.fn("memory.makeLocalMemoConnector")
       get("search", "/search", { q: query, k, project: project ?? config.project }).pipe(
         Effect.map(normalizeSearch),
       ),
-    getById: () =>
-      Effect.fail(
-        new MemoryConnectorError({
-          connector: "local",
-          operation: "get",
-          message: "Local Memo does not support keyed retrieval. Use memory_search instead.",
-        }),
-      ),
     add: (text, source, project) =>
       requestJson(
         client,
@@ -209,139 +199,5 @@ export const makeLocalMemoConnector = Effect.fn("memory.makeLocalMemoConnector")
       ).pipe(Effect.map(normalizeAdd)),
     stats: () => get("stats", "/stats").pipe(Effect.map((value) => normalizeStats(value))),
     health: () => get("health", "/health").pipe(Effect.map((value) => normalizeStats(value))),
-  };
-});
-
-export interface MekoConfig {
-  readonly mcpUrl: string;
-  readonly authorization: string;
-  readonly conversationId: string;
-  readonly runId: string;
-  readonly agentId?: string | undefined;
-  readonly timeoutMs?: number | undefined;
-}
-
-export interface MekoConnector {
-  readonly search: (
-    query: string,
-    limit: number,
-  ) => Effect.Effect<MemorySearchResult, MemoryConnectorError>;
-  readonly getById: (id: string) => Effect.Effect<MemoryEntry, MemoryConnectorError>;
-  readonly add: (
-    text: string,
-    metadata?: unknown,
-  ) => Effect.Effect<MemoryAddResult, MemoryConnectorError>;
-  readonly status: () => Effect.Effect<MemoryStats, MemoryConnectorError>;
-}
-
-const decodeMcpText = (value: unknown) => {
-  const record = asRecord(value);
-  const structured = record?.structuredContent;
-  if (structured !== undefined) return Effect.succeed(structured);
-  const content = record?.content;
-  if (!Array.isArray(content)) return Effect.succeed(value);
-  const text = content
-    .map(asRecord)
-    .find((item) => item?.type === "text" && typeof item.text === "string")?.text;
-  return text === undefined
-    ? Effect.succeed(value)
-    : Schema.decodeUnknownEffect(Schema.UnknownFromJsonString)(text).pipe(
-        Effect.orElseSucceed(() => ({ text })),
-      );
-};
-
-export const makeMekoConnector = Effect.fn("memory.makeMekoConnector")(function* (
-  config: MekoConfig,
-): Effect.fn.Return<MekoConnector, never, HttpClient.HttpClient> {
-  const client = yield* HttpClient.HttpClient;
-  const timeoutMs = config.timeoutMs ?? DEFAULT_MEMORY_TIMEOUT_MS;
-  let requestId = 0;
-
-  const call = (operation: string, name: string, args: Readonly<Record<string, unknown>>) =>
-    requestJson(
-      client,
-      "meko",
-      operation,
-      HttpClientRequest.post(config.mcpUrl).pipe(
-        HttpClientRequest.setHeader("Authorization", config.authorization),
-        HttpClientRequest.setHeader("Accept", "application/json, text/event-stream"),
-        HttpClientRequest.bodyJson({
-          jsonrpc: "2.0",
-          id: ++requestId,
-          method: "tools/call",
-          params: { name, arguments: args },
-        }),
-      ),
-      timeoutMs,
-    ).pipe(
-      Effect.flatMap((raw) => {
-        const record = asRecord(raw);
-        const error = asRecord(record?.error);
-        if (!error) return decodeMcpText(record?.result ?? raw);
-        return Effect.fail(
-          new MemoryConnectorError({
-            connector: "meko",
-            operation,
-            message: stringField(error, "message") ?? "Meko returned a JSON-RPC error.",
-          }),
-        );
-      }),
-    );
-
-  const common = {
-    conversation_id: config.conversationId,
-    run_id: config.runId,
-    agent_id: config.agentId ?? "t3code",
-  };
-
-  const getById: MekoConnector["getById"] = (id) =>
-    call("get", "memory_get_by_id", { ...common, scope: "read", memory_id: id, id }).pipe(
-      Effect.flatMap((value) => {
-        const entry = normalizeEntry(asRecord(value)?.result ?? value);
-        return entry
-          ? Effect.succeed(entry)
-          : Effect.fail(
-              new MemoryConnectorError({
-                connector: "meko",
-                operation: "get",
-                message: `Meko did not return memory ${id}.`,
-              }),
-            );
-      }),
-    );
-
-  return {
-    search: (query, limit) =>
-      call("search", "memory_search", { ...common, scope: "read", query, limit }).pipe(
-        Effect.map(normalizeSearch),
-      ),
-    getById,
-    add: (text, metadata) =>
-      call("add", "memory_add", {
-        ...common,
-        scope: "write",
-        text,
-        ...(metadata === undefined ? {} : { metadata }),
-      }).pipe(
-        Effect.map(normalizeAdd),
-        Effect.flatMap((added) =>
-          added.id === undefined
-            ? Effect.fail(
-                new MemoryConnectorError({
-                  connector: "meko",
-                  operation: "verify_write",
-                  message: "Meko did not return an id for the stored memory.",
-                }),
-              )
-            : getById(added.id).pipe(Effect.as(added)),
-        ),
-      ),
-    status: () =>
-      call("status", "memory_search", {
-        ...common,
-        scope: "read",
-        query: "t3code connector health",
-        limit: 1,
-      }).pipe(Effect.map((value) => ({ status: "ok", extra: value }))),
   };
 });

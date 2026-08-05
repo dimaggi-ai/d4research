@@ -71,7 +71,7 @@ export function buildProviderHandoffPrompt(input: {
     "The transcript above remains the authoritative conversation history.",
     "",
     'Use memory_search with connector="local" whenever more shared context is needed',
-    project ? `using project=\"${project}\".` : "for the current project.",
+    project ? `using project="${project}".` : "for the current project.",
     "",
     "Handoff summary:",
     input.summary.trim(),

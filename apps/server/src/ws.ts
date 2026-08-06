@@ -73,6 +73,7 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionThreadTurnUsageRepository } from "./persistence/Services/ProjectionThreadTurnUsage.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -354,6 +355,7 @@ const makeWsRpcLayer = (
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+      const projectionThreadTurnUsageRepository = yield* ProjectionThreadTurnUsageRepository;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
@@ -1123,6 +1125,15 @@ const makeWsRpcLayer = (
                     cause,
                   }),
               ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.threadsGetTokenUsage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.threadsGetTokenUsage,
+            projectionThreadTurnUsageRepository.listByThreadId(input).pipe(
+              Effect.map((rows) => rows.map(({ threadId: _threadId, ...row }) => row)),
+              Effect.orDie,
             ),
             { "rpc.aggregate": "orchestration" },
           ),

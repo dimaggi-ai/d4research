@@ -6096,7 +6096,11 @@ function ChatViewContent(props: ChatViewProps) {
         mode="embedded"
       />
     ) : activeRightPanelSurface?.kind === "system" ? (
-      <SystemPanel tokenUsage={activeContextWindowForMonitor} />
+      <SystemPanel
+        environmentId={activeThreadRef?.environmentId ?? null}
+        threadId={activeThreadRef?.threadId ?? null}
+        tokenUsage={activeContextWindowForMonitor}
+      />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (

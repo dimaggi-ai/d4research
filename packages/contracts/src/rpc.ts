@@ -163,6 +163,7 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import { ThreadTurnUsageInput, ThreadTurnUsageRow } from "./threadTurnUsage.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -174,6 +175,9 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+
+  // Thread reads
+  threadsGetTokenUsage: "threads.getTokenUsage",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -373,6 +377,12 @@ export const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
     error: EnvironmentAuthorizationError,
   },
 );
+
+export const WsThreadsGetTokenUsageRpc = Rpc.make(WS_METHODS.threadsGetTokenUsage, {
+  payload: ThreadTurnUsageInput,
+  success: Schema.Array(ThreadTurnUsageRow),
+  error: EnvironmentAuthorizationError,
+});
 
 export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
   payload: Schema.Struct({}),
@@ -808,6 +818,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
+  WsThreadsGetTokenUsageRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,

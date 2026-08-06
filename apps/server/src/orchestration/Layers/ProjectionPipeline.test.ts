@@ -239,6 +239,176 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   );
 });
 
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-turn-usage-test-")))(
+  "OrchestrationProjectionPipeline turn usage",
+  (it) => {
+    it.effect("projects per-turn token usage and purges it when the thread is archived", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-turn-usage");
+        const turnId = TurnId.make("turn-turn-usage");
+        const createdAt = "2026-08-05T10:00:00.000Z";
+        const startedAt = "2026-08-05T10:00:01.000Z";
+        const updatedAt = "2026-08-05T10:00:02.000Z";
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-turn-usage-created"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-turn-usage-created"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-turn-usage-created"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-turn-usage"),
+            title: "Turn usage",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex-work"),
+              model: "gpt-5.6-sol",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make("evt-turn-usage-session"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: startedAt,
+          commandId: CommandId.make("cmd-turn-usage-session"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-turn-usage-session"),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "codex",
+              providerInstanceId: ProviderInstanceId.make("codex-work"),
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt: startedAt,
+            },
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make("evt-turn-usage-activity"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: updatedAt,
+          commandId: CommandId.make("cmd-turn-usage-activity"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-turn-usage-activity"),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make("activity-turn-usage"),
+              tone: "info",
+              kind: "context-window.updated",
+              summary: "Context window updated",
+              payload: {
+                usedTokens: 1_100,
+                maxTokens: 128_000,
+                totalProcessedTokens: 1_500,
+                inputTokens: 950,
+                cachedInputTokens: 350,
+                outputTokens: 150,
+                reasoningOutputTokens: 60,
+                toolUses: 3,
+                durationMs: 2_000,
+                totalCostUsd: 0.02,
+              },
+              turnId,
+              createdAt: updatedAt,
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const usageRows = yield* sql<{
+          readonly threadId: string;
+          readonly turnId: string;
+          readonly provider: string | null;
+          readonly instanceId: string | null;
+          readonly model: string | null;
+          readonly startedAt: string | null;
+          readonly updatedAt: string;
+          readonly inputTokens: number | null;
+          readonly totalCostUsd: number | null;
+        }>`
+          SELECT
+            thread_id AS "threadId",
+            turn_id AS "turnId",
+            provider,
+            instance_id AS "instanceId",
+            model,
+            started_at AS "startedAt",
+            updated_at AS "updatedAt",
+            input_tokens AS "inputTokens",
+            total_cost_usd AS "totalCostUsd"
+          FROM projection_thread_turn_usage
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepEqual(usageRows, [
+          {
+            threadId: "thread-turn-usage",
+            turnId: "turn-turn-usage",
+            provider: "codex",
+            instanceId: "codex-work",
+            model: "gpt-5.6-sol",
+            startedAt,
+            updatedAt,
+            inputTokens: 950,
+            totalCostUsd: 0.02,
+          },
+        ]);
+
+        yield* eventStore.append({
+          type: "thread.archived",
+          eventId: EventId.make("evt-turn-usage-archived"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-08-05T10:00:03.000Z",
+          commandId: CommandId.make("cmd-turn-usage-archived"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-turn-usage-archived"),
+          metadata: {},
+          payload: {
+            threadId,
+            archivedAt: "2026-08-05T10:00:03.000Z",
+            updatedAt: "2026-08-05T10:00:03.000Z",
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+
+        const archivedUsageRows = yield* sql`
+          SELECT turn_id
+          FROM projection_thread_turn_usage
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepEqual(archivedUsageRows, []);
+      }),
+    );
+  },
+);
+
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
   "OrchestrationProjectionPipeline",
   (it) => {

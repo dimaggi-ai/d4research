@@ -3,6 +3,7 @@ import {
   type ChatAttachment,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
+  ThreadTokenUsageSnapshot,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -10,6 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -20,6 +22,7 @@ import { ProjectionProjectRepository } from "../../persistence/Services/Projecti
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { type ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
+import { ProjectionThreadTurnUsageRepository } from "../../persistence/Services/ProjectionThreadTurnUsage.ts";
 import {
   type ProjectionThreadMessage,
   ProjectionThreadMessageRepository,
@@ -38,6 +41,7 @@ import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layer
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
+import { ProjectionThreadTurnUsageRepositoryLive } from "../../persistence/Layers/ProjectionThreadTurnUsage.ts";
 import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/Layers/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/ProjectionThreadSessions.ts";
@@ -61,6 +65,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadMessages: "projection.thread-messages",
   threadProposedPlans: "projection.thread-proposed-plans",
   threadActivities: "projection.thread-activities",
+  threadTurnUsage: "projection.thread-turn-usage",
   threadSessions: "projection.thread-sessions",
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
@@ -110,6 +115,8 @@ const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsFor
   (input: { readonly attachments: ReadonlyArray<ChatAttachment> }) =>
     Effect.succeed(input.attachments.length === 0 ? [] : input.attachments),
 );
+
+const decodeThreadTokenUsageSnapshot = Schema.decodeUnknownOption(ThreadTokenUsageSnapshot);
 
 function extractActivityRequestId(payload: unknown): ApprovalRequestId | null {
   if (typeof payload !== "object" || payload === null) {
@@ -477,6 +484,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
     const projectionThreadProposedPlanRepository = yield* ProjectionThreadProposedPlanRepository;
     const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
+    const projectionThreadTurnUsageRepository = yield* ProjectionThreadTurnUsageRepository;
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
@@ -1098,6 +1106,73 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    const applyThreadTurnUsageProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyThreadTurnUsageProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "thread.archived":
+        case "thread.deleted":
+          yield* projectionThreadTurnUsageRepository.deleteByThreadId({
+            threadId: event.payload.threadId,
+          });
+          return;
+
+        case "thread.activity-appended": {
+          const { activity } = event.payload;
+          if (activity.kind !== "context-window.updated" || activity.turnId === null) {
+            return;
+          }
+
+          const usage = decodeThreadTokenUsageSnapshot(activity.payload);
+          if (Option.isNone(usage)) {
+            return;
+          }
+
+          const [thread, turn, session] = yield* Effect.all([
+            projectionThreadRepository.getById({ threadId: event.payload.threadId }),
+            projectionTurnRepository.getByTurnId({
+              threadId: event.payload.threadId,
+              turnId: activity.turnId,
+            }),
+            projectionThreadSessionRepository.getByThreadId({
+              threadId: event.payload.threadId,
+            }),
+          ]);
+          if (
+            Option.isNone(thread) ||
+            thread.value.archivedAt !== null ||
+            thread.value.deletedAt !== null
+          ) {
+            return;
+          }
+
+          yield* projectionThreadTurnUsageRepository.upsert({
+            threadId: event.payload.threadId,
+            turnId: activity.turnId,
+            provider: Option.isSome(session) ? session.value.providerName : null,
+            instanceId: thread.value.modelSelection.instanceId,
+            model: thread.value.modelSelection.model,
+            startedAt: Option.isSome(turn) ? turn.value.startedAt : null,
+            updatedAt: activity.createdAt,
+            usedTokens: usage.value.usedTokens,
+            maxTokens: usage.value.maxTokens ?? null,
+            totalProcessedTokens: usage.value.totalProcessedTokens ?? null,
+            inputTokens: usage.value.inputTokens ?? null,
+            cachedInputTokens: usage.value.cachedInputTokens ?? null,
+            outputTokens: usage.value.outputTokens ?? null,
+            reasoningOutputTokens: usage.value.reasoningOutputTokens ?? null,
+            toolUses: usage.value.toolUses ?? null,
+            durationMs: usage.value.durationMs ?? null,
+            totalCostUsd: usage.value.totalCostUsd ?? null,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
     const applyThreadSessionsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadSessionsProjection",
     )(function* (event, _attachmentSideEffects) {
@@ -1614,6 +1689,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
         apply: applyThreadsProjection,
       },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.threadTurnUsage,
+        apply: applyThreadTurnUsageProjection,
+      },
     ];
 
     const runProjectorForEvent = Effect.fn("runProjectorForEvent")(function* (
@@ -1713,6 +1792,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadMessageRepositoryLive),
   Layer.provideMerge(ProjectionThreadProposedPlanRepositoryLive),
   Layer.provideMerge(ProjectionThreadActivityRepositoryLive),
+  Layer.provideMerge(ProjectionThreadTurnUsageRepositoryLive),
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),

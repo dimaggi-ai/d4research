@@ -9,6 +9,7 @@ import {
   ollamaDiscoveryOrigins,
   parseOllamaTagsPayload,
   pickOllamaAliasModel,
+  removeOllamaClaudePreset,
 } from "./ollamaClaudePreset";
 
 const claudeInstance = (
@@ -161,5 +162,64 @@ describe("Ollama tag discovery", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+describe("removeOllamaClaudePreset", () => {
+  it("round-trips an instance that had nothing configured before", () => {
+    const original = claudeInstance({ config: { binaryPath: "claude", customModels: [] } });
+    const applied = applyOllamaClaudePreset(original, ["glm-5.2:cloud"]);
+    expect(isOllamaClaudePresetConfigured(applied)).toBe(true);
+
+    const reverted = removeOllamaClaudePreset(applied, ["glm-5.2:cloud"]);
+    expect(isOllamaClaudePresetConfigured(reverted)).toBe(false);
+    expect(reverted).toEqual(original);
+  });
+
+  it("removes every variable the preset writes, including the blanked API key", () => {
+    const applied = applyOllamaClaudePreset(claudeInstance(), ["glm-5.2:cloud"]);
+    const reverted = removeOllamaClaudePreset(applied);
+    expect(reverted.environment).toBeUndefined();
+  });
+
+  it("keeps environment variables the user set themselves", () => {
+    const applied = applyOllamaClaudePreset(
+      claudeInstance({
+        environment: [{ name: "HTTPS_PROXY", value: "http://proxy:8080", sensitive: false }],
+      }),
+      ["glm-5.2:cloud"],
+    );
+    expect(removeOllamaClaudePreset(applied).environment).toEqual([
+      { name: "HTTPS_PROXY", value: "http://proxy:8080", sensitive: false },
+    ]);
+  });
+
+  it("strips the bundled roster written when the daemon was unreachable", () => {
+    const applied = applyOllamaClaudePreset(claudeInstance(), []);
+    expect(applied.config).toMatchObject({ customModels: [...OLLAMA_CLAUDE_CLOUD_MODELS] });
+    expect(removeOllamaClaudePreset(applied).config).toMatchObject({ customModels: [] });
+  });
+
+  it("removes locally pulled tags only when discovery reports them", () => {
+    const applied = applyOllamaClaudePreset(claudeInstance(), ["llama4:latest"]);
+    expect(removeOllamaClaudePreset(applied, ["llama4:latest"]).config).toMatchObject({
+      customModels: [],
+    });
+    expect(removeOllamaClaudePreset(applied, []).config).toMatchObject({
+      customModels: ["llama4:latest"],
+    });
+  });
+
+  it("preserves custom Anthropic models the user added", () => {
+    const original = claudeInstance({ config: { customModels: ["claude-opus-5[1m]"] } });
+    const applied = applyOllamaClaudePreset(original, ["glm-5.2:cloud"]);
+    expect(removeOllamaClaudePreset(applied, ["glm-5.2:cloud"]).config).toMatchObject({
+      customModels: ["claude-opus-5[1m]"],
+    });
+  });
+
+  it("is a no-op on an instance that never had the preset applied", () => {
+    const untouched = claudeInstance({ config: { customModels: ["claude-opus-5[1m]"] } });
+    expect(removeOllamaClaudePreset(untouched)).toEqual(untouched);
   });
 });

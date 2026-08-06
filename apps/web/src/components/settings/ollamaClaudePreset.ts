@@ -187,6 +187,67 @@ export async function fetchLocalOllamaModelIds(): Promise<ReadonlyArray<string>>
   return (await discoverOllamaModels()).models;
 }
 
+/**
+ * Every variable the preset writes. Reverting removes these outright rather
+ * than blanking them: an empty `ANTHROPIC_API_KEY` still shadows the key the
+ * server process carries, so a blanked one leaves Claude just as unusable as
+ * the preset did.
+ */
+const OLLAMA_MANAGED_VARIABLES: ReadonlyArray<string> = [
+  ...OLLAMA_ENVIRONMENT.map((variable) => variable.name),
+  ...OLLAMA_DEFAULT_MODEL_VARIABLES,
+];
+
+/**
+ * Whether a custom model came from the preset. The driver config schema is a
+ * closed struct, so the applied tags cannot be recorded alongside them — but
+ * Ollama tags are recognisable: they are either in the bundled roster or carry
+ * a `:cloud`/`-cloud` suffix, neither of which a hand-entered Anthropic model
+ * slug ever does.
+ */
+export function isOllamaPresetModel(model: string): boolean {
+  const id = model.trim();
+  return (
+    (OLLAMA_CLAUDE_CLOUD_MODELS as ReadonlyArray<string>).includes(id) ||
+    /:cloud$|-cloud$/u.test(id)
+  );
+}
+
+/**
+ * Undo {@link applyOllamaClaudePreset}, returning the instance to whatever it
+ * was before Ollama was switched on. Pass the models discovery currently
+ * reports so locally pulled tags (which carry no `:cloud` marker) are cleaned
+ * up too; without it only recognisable tags are removed and anything the user
+ * typed themselves is preserved either way.
+ */
+export function removeOllamaClaudePreset(
+  instance: ProviderInstanceConfig,
+  discoveredLocalModels: ReadonlyArray<string> = [],
+): ProviderInstanceConfig {
+  const discovered = new Set(discoveredLocalModels.map((id) => id.trim()).filter(Boolean));
+  const managed = new Set(OLLAMA_MANAGED_VARIABLES);
+  const environment = (instance.environment ?? []).filter(
+    (variable) => !managed.has(variable.name),
+  );
+  const config = configRecord(instance.config);
+  const existingModels = Array.isArray(config.customModels)
+    ? config.customModels.filter((model): model is string => typeof model === "string")
+    : [];
+  const customModels = existingModels.filter(
+    (model) => !isOllamaPresetModel(model) && !discovered.has(model.trim()),
+  );
+
+  const next: ProviderInstanceConfig = {
+    ...instance,
+    config: { ...config, customModels },
+  };
+  // An empty list is the schema default; keeping the key absent matches how an
+  // instance that never had the preset applied is persisted.
+  if (environment.length > 0) return { ...next, environment };
+  const { environment: _dropped, ...withoutEnvironment } = next;
+  return withoutEnvironment;
+}
+
 export function isOllamaClaudePresetConfigured(instance: ProviderInstanceConfig): boolean {
   const values = new Map((instance.environment ?? []).map(({ name, value }) => [name, value]));
   const baseUrl = values.get("ANTHROPIC_BASE_URL")?.trim().replace(/\/+$/u, "");

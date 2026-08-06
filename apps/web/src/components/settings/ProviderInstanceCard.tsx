@@ -47,6 +47,7 @@ import {
   applyOllamaClaudePreset,
   discoverOllamaModels,
   isOllamaClaudePresetConfigured,
+  removeOllamaClaudePreset,
 } from "./ollamaClaudePreset";
 import {
   getProviderVersionAdvisoryPresentation,
@@ -502,6 +503,18 @@ export function ProviderInstanceCard({
       setOllamaDiscoveryPending(false);
     })();
   };
+  const clearOllamaClaudePreset = () => {
+    if (ollamaDiscoveryPending) return;
+    setOllamaDiscoveryPending(true);
+    void (async () => {
+      // Ask the daemon what it serves so locally pulled tags — which carry no
+      // `:cloud` marker to recognise them by — are removed as well.
+      const { models } = await discoverOllamaModels();
+      onUpdate(removeOllamaClaudePreset(instance, models));
+      setOllamaDiscoveryResult(null);
+      setOllamaDiscoveryPending(false);
+    })();
+  };
   const ollamaHint = ollamaDiscoveryPending
     ? null
     : ollamaDiscoveryResult === null
@@ -808,21 +821,36 @@ export function ProviderInstanceCard({
                     Cloud models require: ollama signin
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={ollamaClaudeConfigured ? "outline" : "default"}
-                  className="shrink-0"
-                  data-testid="ollama-preset-button"
-                  disabled={ollamaDiscoveryPending}
-                  onClick={runOllamaClaudePreset}
-                >
-                  {ollamaDiscoveryPending
-                    ? "Discovering models..."
-                    : ollamaClaudeConfigured
-                      ? "Refresh Ollama models"
-                      : "Use Ollama models"}
-                </Button>
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={ollamaClaudeConfigured ? "outline" : "default"}
+                    className="shrink-0"
+                    data-testid="ollama-preset-button"
+                    disabled={ollamaDiscoveryPending}
+                    onClick={runOllamaClaudePreset}
+                  >
+                    {ollamaDiscoveryPending
+                      ? "Discovering models..."
+                      : ollamaClaudeConfigured
+                        ? "Refresh Ollama models"
+                        : "Use Ollama models"}
+                  </Button>
+                  {ollamaClaudeConfigured ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0"
+                      data-testid="ollama-preset-clear-button"
+                      disabled={ollamaDiscoveryPending}
+                      onClick={clearOllamaClaudePreset}
+                    >
+                      Stop using Ollama
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 

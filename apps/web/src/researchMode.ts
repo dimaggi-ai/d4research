@@ -25,6 +25,29 @@ export interface ResearchProviderCandidate {
   readonly models: ReadonlyArray<string>;
 }
 
+/**
+ * Stage names the research lead is asked to track as plan steps. Keeping them
+ * fixed lets the composer render deterministic progress instead of parsing
+ * free-form status prose.
+ */
+export const RESEARCH_STAGES = [
+  "Scope the question",
+  "Gather primary evidence",
+  "Test competing explanations",
+  "Challenge findings",
+  "Synthesize the answer",
+] as const;
+
+// Discovery can yield malformed slugs (a CLI's spinner frames captured as a
+// model name). They are unusable as `--model` arguments and would bloat the
+// prompt, so keep only well-formed identifiers.
+const MODEL_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+const MAX_MODELS_PER_PROVIDER = 6;
+
+export function sanitizeResearchModelSlugs(models: ReadonlyArray<string>): ReadonlyArray<string> {
+  return models.filter((model) => MODEL_SLUG_REGEX.test(model)).slice(0, MAX_MODELS_PER_PROVIDER);
+}
+
 export function isDeepResearchPrompt(prompt: string): boolean {
   return prompt.trimStart().toLowerCase().startsWith(DEEP_RESEARCH_TAG);
 }
@@ -40,8 +63,9 @@ export function deriveResearchProviderCandidates(
     .map((entry) => ({
       name: entry.displayName,
       cli: CLI_BY_DRIVER[entry.driverKind] ?? entry.driverKind,
-      models: entry.models.map((model) => model.slug),
-    }));
+      models: sanitizeResearchModelSlugs(entry.models.map((model) => model.slug)),
+    }))
+    .filter((provider) => provider.models.length > 0);
 }
 
 export function expandDeepResearchPrompt(
@@ -68,6 +92,8 @@ export function expandDeepResearchPrompt(
     "",
     "Act as the research lead for this d2research thread. The current thread and selected model remain authoritative.",
     "Use only the agents needed for the task; run at most three delegated agents concurrently and never recursively delegate.",
+    "Track progress in your plan/todo tool so the user can follow it without asking: create one step per stage before starting, mark exactly one step in progress at a time, and complete it before moving on.",
+    `Stages: ${RESEARCH_STAGES.join(" → ")}. Drop or add stages when the task warrants it, and name any delegated agent in the step it belongs to.`,
     "Post a short status after each research stage. Preserve links, file paths, commands, and uncertainty in the synthesis.",
     "Store compact shared findings with `memory_remember` using connector `local`, and retrieve them with `memory_search` before each handoff.",
     "When another provider is useful, use its installed CLI below or ask the user to use Change provider; do not claim a handoff ran unless it did.",

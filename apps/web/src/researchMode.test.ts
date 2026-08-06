@@ -5,6 +5,7 @@ import {
   deriveResearchProviderCandidates,
   expandDeepResearchPrompt,
   isDeepResearchPrompt,
+  sanitizeResearchModelSlugs,
 } from "./researchMode";
 
 describe("research mode", () => {
@@ -24,6 +25,25 @@ describe("research mode", () => {
     expect(prompt).toContain("Scout: find primary evidence");
     expect(prompt).toContain("Claude: CLI `claude`; models: sonnet");
     expect(prompt).toContain("Research task:\ncompare runtimes");
+  });
+
+  it("asks the lead to track stages as plan steps", () => {
+    const prompt = expandDeepResearchPrompt("#deep-research compare runtimes", []);
+    expect(prompt).toContain("Track progress in your plan/todo tool");
+    expect(prompt).toContain("Gather primary evidence");
+  });
+
+  it("drops malformed model slugs and caps the advertised list", () => {
+    expect(
+      sanitizeResearchModelSlugs([
+        "gemini-3.6-flash-high",
+        "⠋ Fetching available models...\r⠙ Fetching available models...",
+        "gemini-3.6-flash-medium   Gemini 3.6 Flash (Medium)",
+        "opencode/big-pickle",
+      ]),
+    ).toEqual(["gemini-3.6-flash-high", "opencode/big-pickle"]);
+
+    expect(sanitizeResearchModelSlugs(["a", "b", "c", "d", "e", "f", "g", "h"]).length).toBe(6);
   });
 
   it("only advertises ready enabled provider instances", () => {

@@ -256,6 +256,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
+import { ResearchProgressBanner } from "./chat/ResearchProgressBanner";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -2174,6 +2175,15 @@ function ChatViewContent(props: ChatViewProps) {
   const activePlan = useMemo(
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
+  );
+  // Deep research runs long and across delegated agents, so its stage plan is
+  // surfaced above the composer instead of only inside the plan sidebar.
+  const isResearchThread = useMemo(
+    () =>
+      (activeThread?.messages ?? []).some(
+        (message) => message.role === "user" && isDeepResearchPrompt(message.text ?? ""),
+      ),
+    [activeThread?.messages],
   );
   const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
@@ -6304,6 +6314,12 @@ function ChatViewContent(props: ChatViewProps) {
                       )}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                        {isResearchThread ? (
+                          <ResearchProgressBanner
+                            steps={activePlan?.steps ?? []}
+                            isRunning={phase === "running"}
+                          />
+                        ) : null}
                         <QueuedRequestsBanner
                           requests={queuedRequests}
                           onRemove={(requestId) => removeQueuedRequest(routeThreadKey, requestId)}

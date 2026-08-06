@@ -311,7 +311,7 @@ export function ToolGuardSettingsPanel() {
           }
         />
         <SettingsRow
-          title="d2research Tool Guard"
+          title="d4research Tool Guard"
           description="Optional environment-local policy enforcement for Codex, Claude, and Antigravity."
           status={toolGuardStatus.message}
           control={
@@ -348,14 +348,14 @@ export function ToolGuardSettingsPanel() {
                   onClick={() => {
                     if (
                       window.confirm(
-                        `Replace external Tool Guard hooks with the d2research-managed integration?\n\nOnly Tool Guard hook entries will be removed. Other provider hooks remain unchanged. Removed external Tool Guard entries are not restored by Uninstall.\n\nDetected in:\n${toolGuardStatus.externalHookConfigPaths.join("\n")}`,
+                        `Replace external Tool Guard hooks with the d4research-managed integration?\n\nOnly Tool Guard hook entries will be removed. Other provider hooks remain unchanged. Removed external Tool Guard entries are not restored by Uninstall.\n\nDetected in:\n${toolGuardStatus.externalHookConfigPaths.join("\n")}`,
                       )
                     ) {
                       void toolGuardStatus.runAction("replace-external");
                     }
                   }}
                 >
-                  Replace with d2research
+                  Replace with d4research
                 </Button>
               ) : null}
               {toolGuardStatus.canManage ? (
@@ -377,7 +377,7 @@ export function ToolGuardSettingsPanel() {
                     onClick={() => {
                       if (
                         window.confirm(
-                          "Uninstall the d2research Tool Guard integration from this environment?",
+                          "Uninstall the d4research Tool Guard integration from this environment?",
                         )
                       ) {
                         void toolGuardStatus.runAction("uninstall");
@@ -411,8 +411,8 @@ export function ToolGuardSettingsPanel() {
             {!canEditPolicy ? (
               <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
                 {toolGuardPolicy.source === "bundled"
-                  ? "Showing the bundled default policy. Install the d2research-managed integration above to edit rules; editing is disabled while Tool Guard hooks are managed externally."
-                  : "Policy editing is unavailable until the d2research-managed integration is installed."}
+                  ? "Showing the bundled default policy. Install the d4research-managed integration above to edit rules; editing is disabled while Tool Guard hooks are managed externally."
+                  : "Policy editing is unavailable until the d4research-managed integration is installed."}
               </p>
             ) : null}
             <div className="flex items-center justify-between px-1 py-2">

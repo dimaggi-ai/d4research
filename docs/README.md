@@ -1,8 +1,8 @@
-# d2research docs
+# d4research docs
 
-d2research is a private workspace for long-running research across models and coding agents. Start with [why it exists and what it covers](./internals/d2research.md). Its application foundation comes from T3 Code; inherited documentation keeps that name when it refers to the actual package, protocol, or release channel.
+d4research is a private workspace for long-running research across models and coding agents. Start with [why it exists and what it covers](./internals/d4research.md). Its application foundation comes from T3 Code; inherited documentation keeps that name when it refers to the actual package, protocol, or release channel.
 
-## Using d2research
+## Using d4research
 
 - [Research workflows](./user/research-workflows.md)
 - [Install and first run](./user/install.md)
@@ -23,13 +23,13 @@ Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 
 ---
 
-## Working on d2research
+## Working on d4research
 
 Everything below is for maintainers. Setup lives in the [root README](../README.md);
 policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../AGENTS.md).
 
 - [Architecture overview](./internals/overview.md)
-- [d2research architecture and scope](./internals/d2research.md)
+- [d4research architecture and scope](./internals/d4research.md)
 - [Workspace layout](./internals/workspace-layout.md)
 - [Terminal renderers](./architecture/terminal-renderers.md)
 - [Glossary](./internals/glossary.md)

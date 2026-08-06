@@ -1,6 +1,6 @@
 ---
 name: ui-test-playwright
-description: Drive the d2research web app in a real browser with Playwright — run the e2e suite, add specs, or explore the running UI interactively to verify a change or reproduce a bug. Use when asked to "test the UI", "check it in the browser", "add a UI test", "verify it renders", or when a change touches routes, panels, settings, or the composer.
+description: Drive the d4research web app in a real browser with Playwright — run the e2e suite, add specs, or explore the running UI interactively to verify a change or reproduce a bug. Use when asked to "test the UI", "check it in the browser", "add a UI test", "verify it renders", or when a change touches routes, panels, settings, or the composer.
 ---
 
 # Browser testing with Playwright

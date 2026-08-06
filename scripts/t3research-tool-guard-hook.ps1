@@ -29,7 +29,7 @@ $request = [Console]::In.ReadToEnd()
 $request | & $guardBinary hook `
   -policy-dir $policyDirectory `
   -mode $guardMode `
-  -agent-id "d2research-local" `
+  -agent-id "d4research-local" `
   -audit-log (Join-Path $dataDirectory "decisions.jsonl") `
   -protect-self `
   -fail-closed-tools "bash,write,edit,notebookedit"

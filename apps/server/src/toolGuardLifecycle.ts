@@ -8,7 +8,7 @@ import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hos
 import * as ServerConfig from "./config.ts";
 import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
 
-export const TOOL_GUARD_MANAGED_MARKER = "d2research-tool-guard-managed";
+export const TOOL_GUARD_MANAGED_MARKER = "d4research-tool-guard-managed";
 export const TOOL_GUARD_CORE_URL = "https://github.com/dimaggi-ai/tool-guard-core";
 
 export const ToolGuardLifecycleAction = [
@@ -276,15 +276,15 @@ const resolveResources = Effect.fn("resolveToolGuardResources")(function* () {
   const bundled = path.join(import.meta.dirname, "tool-guard");
   const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
   const profilesCandidates = [
-    environment.D2RESEARCH_TOOL_GUARD_RESOURCES
-      ? path.join(environment.D2RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
+    environment.D4RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(environment.D4RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
       : undefined,
     path.join(bundled, "profiles"),
     path.join(repositoryRoot, "ops", "tool-guard", "profiles"),
   ].filter((candidate): candidate is string => Boolean(candidate));
   const scriptsCandidates = [
-    environment.D2RESEARCH_TOOL_GUARD_RESOURCES
-      ? path.join(environment.D2RESEARCH_TOOL_GUARD_RESOURCES, "scripts")
+    environment.D4RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(environment.D4RESEARCH_TOOL_GUARD_RESOURCES, "scripts")
       : undefined,
     path.join(bundled, "scripts"),
     path.join(repositoryRoot, "scripts"),
@@ -339,13 +339,13 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
     yield* validateProviderHookConfigs();
 
     if (action === "install" || action === "replace-external") {
-      if (manifest) return { ok: true, message: "d2research Tool Guard is already installed." };
+      if (manifest) return { ok: true, message: "d4research Tool Guard is already installed." };
       const externalHookDetected = yield* hasExternalToolGuardHook();
       if (action === "install" && externalHookDetected) {
         return {
           ok: false,
           message:
-            "An external Tool Guard hook is already configured. Remove it before installing the d2research-managed integration.",
+            "An external Tool Guard hook is already configured. Remove it before installing the d4research-managed integration.",
         };
       }
       const sourceBinary = yield* findToolGuardBinary();
@@ -359,7 +359,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       if (!resources.profiles || !resources.scripts) {
         return {
           ok: false,
-          message: "This d2research build does not contain Tool Guard resources.",
+          message: "This d4research build does not contain Tool Guard resources.",
         };
       }
       if (action === "replace-external" && !externalHookDetected) {
@@ -397,16 +397,16 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
       setToolGuardRuntimeEnabled(true);
-      return { ok: true, message: "d2research Tool Guard was installed and enabled." };
+      return { ok: true, message: "d4research Tool Guard was installed and enabled." };
     }
 
-    if (!manifest) return { ok: false, message: "d2research Tool Guard is not installed." };
+    if (!manifest) return { ok: false, message: "d4research Tool Guard is not installed." };
 
     if (action === "enable") {
       yield* writeJson(managed.manifest, { ...manifest, version: 1, enabled: true });
       yield* setManagedHooksEnabled(true, managed.hook, managed.agyHook);
       setToolGuardRuntimeEnabled(true);
-      return { ok: true, message: "d2research Tool Guard is enabled." };
+      return { ok: true, message: "d4research Tool Guard is enabled." };
     }
 
     yield* setManagedHooksEnabled(false, managed.hook, managed.agyHook);
@@ -415,13 +415,13 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       setToolGuardRuntimeEnabled(false);
       return {
         ok: true,
-        message: "d2research Tool Guard is disabled; native provider permissions are active.",
+        message: "d4research Tool Guard is disabled; native provider permissions are active.",
       };
     }
 
     yield* fileSystem.remove(managed.root, { recursive: true, force: true });
     setToolGuardRuntimeEnabled(false);
-    return { ok: true, message: "d2research Tool Guard was uninstalled." };
+    return { ok: true, message: "d4research Tool Guard was uninstalled." };
   },
   Effect.catchCause((cause) =>
     Effect.succeed({

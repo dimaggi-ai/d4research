@@ -40,7 +40,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       headline: "Disabled",
       detail:
         provider.message ??
-        "This provider is installed but disabled for new sessions in d2research.",
+        "This provider is installed but disabled for new sessions in d4research.",
     };
   }
   if (!provider.installed) {

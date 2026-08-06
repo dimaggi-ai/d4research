@@ -96,7 +96,7 @@ function EmptyMobileClients() {
       <EmptyHeader>
         <EmptyTitle>No mobile clients</EmptyTitle>
         <EmptyDescription>
-          Sign in to d2research on your iPhone to register it for push notifications and Live
+          Sign in to d4research on your iPhone to register it for push notifications and Live
           Activities.
         </EmptyDescription>
       </EmptyHeader>

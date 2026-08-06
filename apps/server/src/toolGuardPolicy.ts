@@ -125,8 +125,8 @@ export interface ToolGuardPolicyReadResult {
  */
 const bundledProfilesDirCandidates = (path: Pick<Path.Path, "join" | "resolve">) =>
   [
-    process.env.D2RESEARCH_TOOL_GUARD_RESOURCES
-      ? path.join(process.env.D2RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
+    process.env.D4RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(process.env.D4RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
       : undefined,
     path.join(import.meta.dirname, "tool-guard", "profiles"),
     path.join(path.resolve(import.meta.dirname, "../../.."), "ops", "tool-guard", "profiles"),

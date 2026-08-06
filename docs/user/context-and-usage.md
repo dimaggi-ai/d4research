@@ -1,6 +1,6 @@
 # Context Window and Usage
 
-d2research surfaces three kinds of consumption data: the active thread's context window, the
+d4research surfaces three kinds of consumption data: the active thread's context window, the
 thread's token/cost totals, and your account-level provider usage limits.
 
 ## Context window meter

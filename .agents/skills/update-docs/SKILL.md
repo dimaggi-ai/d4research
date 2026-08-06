@@ -1,6 +1,6 @@
 ---
 name: update-docs
-description: Review the whole d2research codebase and bring docs/ plus the product contracts spec up to date. Use when asked to "update docs", "refresh documentation", "update product contracts", "update specs", or after landing a feature that changes architecture, providers, tool guard, handoff, or the contracts package.
+description: Review the whole d4research codebase and bring docs/ plus the product contracts spec up to date. Use when asked to "update docs", "refresh documentation", "update product contracts", "update specs", or after landing a feature that changes architecture, providers, tool guard, handoff, or the contracts package.
 ---
 
 # Update Project Documentation & Product Contracts

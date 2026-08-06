@@ -74,7 +74,7 @@ function ensureRelayClientAvailable(
     if (status.status === "available") return;
     if (status.status === "unsupported") {
       return yield* new CloudEnvironmentLinkError({
-        message: `d2research cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
+        message: `d4research cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
       });
     }
 
@@ -110,7 +110,7 @@ function ensureRelayClientAvailable(
       return yield* new CloudEnvironmentLinkError({
         message:
           installedStatus.status === "unsupported"
-            ? `d2research cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
+            ? `d4research cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
             : "The relay client is still unavailable after installation.",
       });
     }

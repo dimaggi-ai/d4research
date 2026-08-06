@@ -22,7 +22,7 @@ import {
 } from "./toolGuardLifecycle.ts";
 
 describe("Tool Guard hook configuration", () => {
-  it("adds and removes only the d2research-managed hook", () => {
+  it("adds and removes only the d4research-managed hook", () => {
     const original = {
       hooks: {
         PreToolUse: [{ matcher: "Existing", hooks: [{ command: "/external/hook" }] }],
@@ -144,18 +144,18 @@ it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {
 
       const previousHome = environment.HOME;
       const previousBinary = environment.T3RESEARCH_TOOL_GUARD_BIN;
-      const previousResources = environment.D2RESEARCH_TOOL_GUARD_RESOURCES;
+      const previousResources = environment.D4RESEARCH_TOOL_GUARD_RESOURCES;
       environment.HOME = home;
       environment.T3RESEARCH_TOOL_GUARD_BIN = binary;
-      environment.D2RESEARCH_TOOL_GUARD_RESOURCES = resources;
+      environment.D4RESEARCH_TOOL_GUARD_RESOURCES = resources;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           if (previousHome === undefined) delete environment.HOME;
           else environment.HOME = previousHome;
           if (previousBinary === undefined) delete environment.T3RESEARCH_TOOL_GUARD_BIN;
           else environment.T3RESEARCH_TOOL_GUARD_BIN = previousBinary;
-          if (previousResources === undefined) delete environment.D2RESEARCH_TOOL_GUARD_RESOURCES;
-          else environment.D2RESEARCH_TOOL_GUARD_RESOURCES = previousResources;
+          if (previousResources === undefined) delete environment.D4RESEARCH_TOOL_GUARD_RESOURCES;
+          else environment.D4RESEARCH_TOOL_GUARD_RESOURCES = previousResources;
         }),
       );
 

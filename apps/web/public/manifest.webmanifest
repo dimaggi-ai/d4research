@@ -1,6 +1,6 @@
 {
-  "name": "d2research",
-  "short_name": "d2research",
+  "name": "d4research",
+  "short_name": "d4research",
   "description": "A local-first workspace for research and coding agents.",
   "id": "/",
   "start_url": "/",

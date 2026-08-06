@@ -117,7 +117,7 @@ function ChatRouteGlobalShortcuts() {
             stackedThreadToast({
               type: "info",
               title: "Preview is desktop-only",
-              description: "Open d2research in the desktop app to use the in-app preview.",
+              description: "Open d4research in the desktop app to use the in-app preview.",
             }),
           );
           return;

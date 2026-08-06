@@ -90,7 +90,7 @@ export function expandDeepResearchPrompt(
   return [
     DEEP_RESEARCH_TAG,
     "",
-    "Act as the research lead for this d2research thread. The current thread and selected model remain authoritative.",
+    "Act as the research lead for this d4research thread. The current thread and selected model remain authoritative.",
     "Use only the agents needed for the task; run at most three delegated agents concurrently and never recursively delegate.",
     "Track progress in your plan/todo tool so the user can follow it without asking: create one step per stage before starting, mark exactly one step in progress at a time, and complete it before moving on.",
     `Stages: ${RESEARCH_STAGES.join(" → ")}. Drop or add stages when the task warrants it, and name any delegated agent in the step it belongs to.`,

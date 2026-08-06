@@ -1,6 +1,6 @@
 # Preview and In-App Browser
 
-d2research includes a collaborative browser surface for previewing the app you are building — you
+d4research includes a collaborative browser surface for previewing the app you are building — you
 and the agent share it.
 
 ## Opening a preview

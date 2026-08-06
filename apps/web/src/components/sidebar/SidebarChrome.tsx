@@ -79,7 +79,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <D2ResearchMark />
+      <D4ResearchMark />
       <span
         className={cn(
           "truncate text-sm font-medium tracking-tight",
@@ -92,17 +92,17 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   );
 }
 
-function D2ResearchMark() {
+function D4ResearchMark() {
   return (
     <svg
-      aria-label="d2research"
+      aria-label="d4research"
       className="size-5 shrink-0"
       viewBox="0 0 64 64"
       xmlns="http://www.w3.org/2000/svg"
     >
       <rect width="64" height="64" rx="16" fill="#171717" />
       <path
-        d="M30 14v36M30 28H20a11 11 0 1 0 0 22h10M39 27.5c1.2-5.3 13.5-5.4 13.5 2.2 0 4.7-4.2 7.2-13.5 15.8h14"
+        d="M30 14v36M30 28H20a11 11 0 1 0 0 22h10M49.5 45.5V22L38 38h16"
         fill="none"
         stroke="#fff"
         strokeLinecap="round"

@@ -1,4 +1,4 @@
-// Browser coverage for the surfaces d2research adds on top of upstream t3code.
+// Browser coverage for the surfaces d4research adds on top of upstream t3code.
 // Unit tests already cover their logic; these assert the wiring a user actually
 // touches — routes render, data reaches the DOM, and nothing throws in console.
 import * as NodeAssert from "node:assert/strict";
@@ -13,8 +13,8 @@ import {
 const specs = [];
 const spec = (name, run) => specs.push({ name, run });
 
-spec("app shell pairs and renders d2research branding", async ({ page }) => {
-  NodeAssert.equal(await page.locator('[aria-label="d2research"]').count(), 1);
+spec("app shell pairs and renders d4research branding", async ({ page }) => {
+  NodeAssert.equal(await page.locator('[aria-label="d4research"]').count(), 1);
   NodeAssert.ok((await page.getByRole("button").allTextContents()).length > 3);
 });
 

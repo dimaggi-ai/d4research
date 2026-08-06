@@ -59,7 +59,7 @@ describe("provider handoff", () => {
       project: "t3code",
     });
     expect(prompt).toContain("Context attached: local Memo");
-    expect(prompt).toContain("continues in the same d2research chat");
+    expect(prompt).toContain("continues in the same d4research chat");
     expect(prompt).toContain('memory_search with connector="local"');
     expect(prompt).toContain('project="t3code"');
     expect(prompt).toContain("thread-source");

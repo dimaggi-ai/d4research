@@ -94,14 +94,14 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   const message =
     integration === "managed"
       ? managedHookDetected
-        ? "d2research Tool Guard is installed and enabled."
-        : "d2research Tool Guard is enabled, but its provider hooks need repair."
+        ? "d4research Tool Guard is installed and enabled."
+        : "d4research Tool Guard is enabled, but its provider hooks need repair."
       : integration === "disabled"
-        ? "d2research Tool Guard is installed but disabled; native provider permissions are active."
+        ? "d4research Tool Guard is installed but disabled; native provider permissions are active."
         : integration === "external"
-          ? `External Tool Guard hooks are active in ${externalHookConfigPaths.join(", ")}. Replace them to manage Tool Guard from d2research.`
+          ? `External Tool Guard hooks are active in ${externalHookConfigPaths.join(", ")}. Replace them to manage Tool Guard from d4research.`
           : integration === "available"
-            ? "Tool Guard Core is available. Install the d2research integration to use it."
+            ? "Tool Guard Core is available. Install the d4research integration to use it."
             : `Tool Guard Core is not available. Download it from ${TOOL_GUARD_CORE_URL}/releases.`;
 
   return {

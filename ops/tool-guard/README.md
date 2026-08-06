@@ -2,7 +2,7 @@
 
 Core source, releases, and engine documentation live in the Dimaggi
 [tool-guard-core repository](https://github.com/dimaggi-ai/tool-guard-core). This directory contains
-only the d2research policy profiles used by the managed integration.
+only the d4research policy profiles used by the managed integration.
 
 T3Research keeps its per-thread access selector and passes the selected mode to
 provider hooks through `T3RESEARCH_RUNTIME_MODE`. The local wrapper maps the

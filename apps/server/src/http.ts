@@ -614,11 +614,11 @@ export function buildHandoffMemoryText(input: {
     const title = input.sourceThreadTitle || "untitled thread";
     lines.push(
       input.sourceThreadId
-        ? `d2research provider handoff from thread ${title} (${input.sourceThreadId}).`
-        : `d2research provider handoff from thread ${title}.`,
+        ? `d4research provider handoff from thread ${title} (${input.sourceThreadId}).`
+        : `d4research provider handoff from thread ${title}.`,
     );
   } else {
-    lines.push("d2research provider handoff.");
+    lines.push("d4research provider handoff.");
   }
   if (input.target) {
     lines.push(`Receiving agent: ${input.target.instanceId} / ${input.target.model}.`);

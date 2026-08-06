@@ -156,7 +156,7 @@ export function SkillsSettingsPanel() {
       <SettingsSection {...searchableSetting("skills-inventory")}>
         <p className="px-1 text-xs text-muted-foreground">
           Every skill and command the local agents can see, merged across each agent&rsquo;s skills
-          root. Share a skill to make it visible to another agent — d2research symlinks it into the
+          root. Share a skill to make it visible to another agent — d4research symlinks it into the
           target root, or copies it when symlinks are unavailable.
         </p>
         <div className="flex items-center gap-2 rounded-md border px-2 py-1.5">

@@ -1,13 +1,13 @@
 # Research workflows
 
-d2research is a research workspace for evidence-heavy work across models and providers. Its research
+d4research is a research workspace for evidence-heavy work across models and providers. Its research
 mode structures an investigation, while provider handoff preserves one continuous chat when the
 active model changes.
 
 ## Start deep research
 
 Type `#deep-research` at the very start of your prompt, or click the **telescope icon** in the
-composer footer. d2research expands the tag into a research-lead brief that asks the active provider
+composer footer. d4research expands the tag into a research-lead brief that asks the active provider
 to plan the investigation, delegate to specialist roles, preserve evidence, challenge weak
 conclusions, and synthesize the result.
 
@@ -24,7 +24,7 @@ it later in the text has no effect.
 When you send the message, `expandDeepResearchPrompt()` detects the tag, strips it, and injects a
 structured brief. The brief:
 
-1. Instructs the provider to act as "research lead for this d2research thread."
+1. Instructs the provider to act as "research lead for this d4research thread."
 2. Lists all ready provider CLIs with their available models so the lead can delegate.
 3. Suggests four roles, round-robin assigned to available providers.
 4. Caps concurrent delegation at three agents and forbids recursive delegation.
@@ -56,7 +56,7 @@ file paths, commands, and uncertainty) via `memory_remember` and retrieve shared
 
 ## Provider handoff
 
-Choose a different model while a provider session is active. d2research keeps the same thread and
+Choose a different model while a provider session is active. d4research keeps the same thread and
 transfers context to the new provider.
 
 ### When handoff triggers

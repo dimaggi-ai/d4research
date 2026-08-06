@@ -1,22 +1,22 @@
-# d2research
+# d4research
 
 A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation, and layer optional tool-safety policies on top.
 
 ## Installation
 
-d2research is a **source-only** private fork. There are no prebuilt binaries, desktop installers, npm packages, or Docker images. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
+d4research is a **source-only** private fork. There are no prebuilt binaries, desktop installers, npm packages, or Docker images. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
 ### Requirements
 
-- Git clone access to [dimaggi-ai/d2research](https://github.com/dimaggi-ai/d2research)
+- Git clone access to [dimaggi-ai/d4research](https://github.com/dimaggi-ai/d4research)
 - Node.js `^22.16 || ^23.11 || >=24.10`
 - At least one provider CLI installed and authenticated (see [Providers](#supported-providers))
 
 ### Setup
 
 ```bash
-git clone git@github.com:dimaggi-ai/d2research.git
-cd d2research
+git clone git@github.com:dimaggi-ai/d4research.git
+cd d4research
 
 # Install the Vite+ build tool (one-time)
 curl -fsSL https://vite.plus | bash
@@ -58,7 +58,7 @@ Everything from the upstream T3 Code platform is available:
 - **Provider instances** -- Multiple accounts per provider driver with separate auth and config
 - **Settings** -- General, appearance, keybindings, providers, source control, connections, and beta feature panels
 
-## d2research Additions
+## d4research Additions
 
 Features layered on top of the T3 Code base:
 
@@ -147,7 +147,7 @@ docs/           User guides, internals, and runbooks
 - [Remote access](./docs/user/remote-access.md)
 - [Background service](./docs/user/background-service.md)
 - [Architecture overview](./docs/internals/overview.md)
-- [d2research scope](./docs/internals/d2research.md)
+- [d4research scope](./docs/internals/d4research.md)
 - [Docker QA stack](./docs/operations/docker-qa.md)
 
 ## Contributing
@@ -156,4 +156,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for policy and [AGENTS.md](./AGENTS.md)
 
 ## Attribution
 
-d2research is a private product-research fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping](https://ping.gg). The application architecture, event-sourced server, provider adapters, and multi-surface clients are inherited from T3 Code. Compatibility names (`t3`, `T3CODE_HOME`, package identifiers) are retained where changing them would break protocols, storage, or deployment workflows.
+d4research is a private product-research fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping](https://ping.gg). The application architecture, event-sourced server, provider adapters, and multi-surface clients are inherited from T3 Code. Compatibility names (`t3`, `T3CODE_HOME`, package identifiers) are retained where changing them would break protocols, storage, or deployment workflows.

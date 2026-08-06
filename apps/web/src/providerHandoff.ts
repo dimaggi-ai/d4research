@@ -117,7 +117,7 @@ export function buildProviderHandoffPrompt(input: {
   return [
     `Handoff to ${targetLabel} / ${input.target.model}.`,
     "📎 Context attached: local Memo (shared agent memory).",
-    "This provider handoff continues in the same d2research chat.",
+    "This provider handoff continues in the same d4research chat.",
     "",
     `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
     `Target model: ${input.target.instanceId} / ${input.target.model}`,
@@ -138,7 +138,7 @@ export function buildProviderHandoffMemory(input: {
   readonly target: ModelSelection;
 }): string {
   return [
-    `d2research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
+    `d4research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
     `Receiving agent: ${input.target.instanceId} / ${input.target.model}.`,
     "Shared context:",
     input.summary.trim(),

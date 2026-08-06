@@ -1,4 +1,4 @@
-// Boots an isolated d2research stack and an authenticated browser context so UI
+// Boots an isolated d4research stack and an authenticated browser context so UI
 // specs never touch the developer's real ~/.t3 state or a running production
 // server. Everything here is disposable: temp base dir, its own ports, its own
 // pairing token.
@@ -108,7 +108,7 @@ export async function openAuthenticatedPage(app, label = "e2e") {
 
   await page.goto(createPairingUrl(app, label), { waitUntil: "domcontentloaded" });
   await page.waitForURL((url) => !url.href.includes("/pair"), { timeout: 30_000 });
-  await page.waitForSelector('[aria-label="d2research"]', { timeout: 30_000 });
+  await page.waitForSelector('[aria-label="d4research"]', { timeout: 30_000 });
 
   return { browser, context, page, consoleErrors };
 }

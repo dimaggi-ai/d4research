@@ -78,7 +78,7 @@ describe("handoff prepare", () => {
 
   it("still builds a memory record without thread metadata", () => {
     const text = buildHandoffMemoryText({ summary: "Just the summary." });
-    expect(text).toContain("d2research provider handoff.");
+    expect(text).toContain("d4research provider handoff.");
     expect(text).toContain("Just the summary.");
   });
 });

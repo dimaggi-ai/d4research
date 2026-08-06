@@ -1,6 +1,6 @@
-# d2research architecture and scope
+# d4research architecture and scope
 
-d2research is a private product-research fork of T3 Code. It asks a focused question: what must a fast coding-agent control surface add to support durable, multi-provider research without hiding execution or weakening permission boundaries?
+d4research is a private product-research fork of T3 Code. It asks a focused question: what must a fast coding-agent control surface add to support durable, multi-provider research without hiding execution or weakening permission boundaries?
 
 ## Product thesis
 
@@ -11,7 +11,7 @@ Research work differs from an ordinary agent turn in four ways:
 3. Its useful state includes evidence and uncertainty, not only chat text.
 4. Extra automation needs a visible, reversible safety boundary.
 
-d2research therefore extends the existing thread rather than inventing a second workflow engine. The provider still reasons and acts; the product supplies structured prompts, durable handoff context, readiness information, lifecycle controls, and focused local integrations.
+d4research therefore extends the existing thread rather than inventing a second workflow engine. The provider still reasons and acts; the product supplies structured prompts, durable handoff context, readiness information, lifecycle controls, and focused local integrations.
 
 ## Research additions
 
@@ -29,7 +29,7 @@ The visible transcript remains authoritative. Memo supplements it with a compact
 
 ### Tool Guard lifecycle
 
-d2research does not replace provider permission modes. Native provider behavior is the default. Users may install a managed Tool Guard copy into a specific environment, then enable or disable its hooks for that server and uninstall it completely.
+d4research does not replace provider permission modes. Native provider behavior is the default. Users may install a managed Tool Guard copy into a specific environment, then enable or disable its hooks for that server and uninstall it completely.
 
 The managed installation copies versioned binaries, platform-native wrappers, and profiles into the environment rather than depending on a developer checkout. Hooks are gated by the d2 server runtime and remain inert outside an enabled environment. The lifecycle is exposed in Settings, and a dedicated **Settings → Tool Guard** page shows the active policy — read-only from the bundled profile before installation, editable once managed. Both are covered by focused server and web tests on macOS, Linux, and Windows paths. See [tool-guard.md](./tool-guard.md).
 
@@ -58,12 +58,12 @@ Research changes must continue to account for:
 
 ## Current boundaries
 
-- The repository is private and installed from source; it has no public `d2research` npm package or desktop release channel.
+- The repository is private and installed from source; it has no public `d4research` npm package or desktop release channel.
 - Deep Research does not guarantee delegation and may use fewer roles when that is sufficient.
 - Memo-backed handoff depends on a configured local Memo service.
 - Voice and Mission Control require the matching local deployment services.
 - Tool Guard is optional and environment-scoped on macOS, Linux, and Windows.
-- d2research is not a claim that all inherited T3 user documentation or compatibility identifiers have been renamed.
+- d4research is not a claim that all inherited T3 user documentation or compatibility identifiers have been renamed.
 
 ## Change checklist
 

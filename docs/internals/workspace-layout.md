@@ -1,6 +1,6 @@
 # Workspace layout
 
-> For maintainers. Using d2research? See [docs/user](../user/).
+> For maintainers. Using d4research? See [docs/user](../user/).
 
 A pnpm workspace driven by [vite-plus](https://vite.plus) (`vp`). See [scripts.md](./scripts.md) for
 the task commands.

@@ -1,6 +1,6 @@
-# d2research
+# d4research
 
-d2research is a private workspace for long-running research across coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The product adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard. Its application foundation is inherited from T3 Code.
+d4research is a private workspace for long-running research across coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and serves web, desktop, and mobile clients. The product adds bounded deep-research workflows, same-thread provider handoffs backed by local Memo, local voice and operations integrations, and optional managed Tool Guard. Its application foundation is inherited from T3 Code.
 
 The T3 Code architecture and its compatibility names remain the foundation. Do not mechanically rename `t3`, `T3CODE_HOME`, package names, protocols, or inherited release documentation without checking their compatibility role.
 
@@ -11,7 +11,7 @@ The T3 Code architecture and its compatibility names remain the foundation. Do n
 - Keep local-first features local. Memo, voice, Mission Control, and Tool Guard integrations must not silently acquire undeclared hosted dependencies.
 - Keep provider-native permissions as the default. d2 Tool Guard must remain explicit, reversible, environment-scoped, and observable in Settings.
 - Preserve T3 Code's performance, remote readiness, multi-surface behavior, typed contracts, and provider boundaries.
-- Keep the d2research release line isolated from upstream T3 update channels. The d2 product starts at `0.0.1`; its lower semver is not an updater-compatible downgrade for existing T3 installations.
+- Keep the d4research release line isolated from upstream T3 update channels. The d2 product starts at `0.0.1`; its lower semver is not an updater-compatible downgrade for existing T3 installations.
 
 ## What the fork inherits from T3 Code
 
@@ -53,8 +53,8 @@ Of note: Most T3 Code contributions will come from T3 Code itself, often control
 
 We need to be on the same page with terminology. When communicating, use this language:
 
-- **you** means the agent reading this file and changing d2research.
-- **we, us, and maintainers** mean the people building and operating d2research.
+- **you** means the agent reading this file and changing d4research.
+- **we, us, and maintainers** mean the people building and operating d4research.
 - **user** means the person using T3 Code to direct coding agents.
 - **agent** means the coding agent a user runs inside T3 Code. Depending on context, that may also include you.
 - **provider** means the agent runtime or harness T3 Code talks to, such as Codex, Claude, Cursor, or OpenCode.

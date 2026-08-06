@@ -1623,7 +1623,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
-                spawnedCommands.push((command as { readonly command: string }).command);
+                // Other providers probe their own CLIs concurrently, and which
+                // ones exist differs per machine. This assertion is about codex
+                // re-probing, so record only the binaries under test.
+                const spawned = (command as { readonly command: string }).command;
+                if (spawned.startsWith("t3code_codex_")) spawnedCommands.push(spawned);
                 return spawner.spawn(command);
               }),
             ),
@@ -1826,6 +1830,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                       code: 0,
                     };
                   }
+                  // Agy discovers models through a PTY wrapper (`script -q -e -c
+                  // '<agy>' 'models'`). This test only cares that cursor stays
+                  // unprobed, so answer with an empty inventory.
+                  if (command === "script" || joined.endsWith("models")) {
+                    return { stdout: "", stderr: "", code: 0 };
+                  }
                   throw new Error(`Unexpected args: ${command} ${joined}`);
                 }),
               ),
@@ -1845,10 +1855,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               );
 
               assert.deepStrictEqual(providers.map((provider) => provider.instanceId).toSorted(), [
+                "agy",
                 "claudeAgent",
                 "codex",
                 "cursor",
                 "grok",
+                "junie",
                 "opencode",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);

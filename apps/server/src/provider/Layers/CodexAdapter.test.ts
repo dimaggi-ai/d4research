@@ -46,6 +46,7 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import { setToolGuardRuntimeEnabled } from "../toolGuardRuntime.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -265,6 +266,11 @@ validationLayer("CodexAdapterLive validation", (it) => {
   it.effect("maps codex model options before starting a session", () =>
     Effect.gen(function* () {
       validationRuntimeFactory.factory.mockClear();
+      // Tool Guard env injection is gated on a module-level flag that only a
+      // real managed install sets, so the assertions below need it enabled
+      // explicitly rather than inherited from whatever ran first.
+      setToolGuardRuntimeEnabled(true);
+      yield* Effect.addFinalizer(() => Effect.sync(() => setToolGuardRuntimeEnabled(false)));
       const adapter = yield* CodexAdapter;
 
       yield* adapter.startSession({

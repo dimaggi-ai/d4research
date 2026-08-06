@@ -12,7 +12,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="d2research" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- use-credentials: the PWA can sit behind a cookie-auth reverse proxy
+         (passkey gate); a credential-less manifest fetch would 302 to the
+         login page and fail manifest parsing. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>

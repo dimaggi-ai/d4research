@@ -641,6 +641,68 @@ export type HandoffSettings = typeof HandoffSettings.Type;
 
 export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = Schema.decodeSync(HandoffSettings)({});
 
+// ── Research settings ────────────────────────────────────────────────────
+export const RESEARCH_STAGE_MAX_COUNT = 12;
+
+/**
+ * One configurable deep-research stage. `suggestedInstanceId`/`suggestedModel`
+ * are suggestions the user may act on (e.g. via provider handoff) — nothing
+ * auto-runs them. Stages sharing a `parallelGroup` number are independent and
+ * may be worked concurrently.
+ */
+export const ResearchStageConfig = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  goal: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  suggestedInstanceId: Schema.optionalKey(ProviderInstanceId),
+  suggestedModel: Schema.optionalKey(TrimmedNonEmptyString),
+  parallelGroup: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type ResearchStageConfig = typeof ResearchStageConfig.Type;
+
+// The built-in five stages. This literal is the single source of truth for
+// the default research flow: settings decode to it when unset, and the web
+// research prompt falls back to it when every configured stage is disabled.
+const DEFAULT_RESEARCH_STAGES_INPUT = [
+  {
+    id: "scope",
+    title: "Scope the question",
+    goal: "Pin down the question, constraints, and what a complete answer looks like.",
+  },
+  {
+    id: "gather",
+    title: "Gather primary evidence",
+    goal: "Find primary sources, data, and implementation details.",
+  },
+  {
+    id: "test",
+    title: "Test competing explanations",
+    goal: "Weigh alternative explanations against the collected evidence.",
+  },
+  {
+    id: "challenge",
+    title: "Challenge findings",
+    goal: "Look for missing evidence, regressions, and false confidence.",
+  },
+  {
+    id: "synthesize",
+    title: "Synthesize the answer",
+    goal: "Merge cited findings into the final answer, preserving uncertainty.",
+  },
+];
+
+export const ResearchSettings = Schema.Struct({
+  stages: Schema.Array(ResearchStageConfig)
+    .check(Schema.isMaxLength(RESEARCH_STAGE_MAX_COUNT))
+    .pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RESEARCH_STAGES_INPUT))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type ResearchSettings = typeof ResearchSettings.Type;
+
+export const DEFAULT_RESEARCH_SETTINGS: ResearchSettings = Schema.decodeSync(ResearchSettings)({});
+export const DEFAULT_RESEARCH_STAGES: ReadonlyArray<ResearchStageConfig> =
+  DEFAULT_RESEARCH_SETTINGS.stages;
+
 // ── Memory connector settings ────────────────────────────────────────────
 export const MemoryConnectorSettings = Schema.Struct({
   localEnabled: Schema.Boolean.pipe(
@@ -740,6 +802,7 @@ export const ServerSettings = Schema.Struct({
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   memory: MemoryConnectorSettings,
   handoff: HandoffSettings,
+  research: ResearchSettings,
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -901,6 +964,16 @@ export const ServerSettingsPatch = Schema.Struct({
           maxOutputCharacters: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
           customPrompt: Schema.optionalKey(TrimmedString),
         }),
+      ),
+    }),
+  ),
+  research: Schema.optionalKey(
+    Schema.Struct({
+      // Whole-array replacement. Stage lists are small and ordered; per-index
+      // patches would risk half-merged reorders. The web UI sends the full
+      // list every time it edits stages.
+      stages: Schema.optionalKey(
+        Schema.Array(ResearchStageConfig).check(Schema.isMaxLength(RESEARCH_STAGE_MAX_COUNT)),
       ),
     }),
   ),

@@ -185,6 +185,7 @@ import {
   deriveResearchProviderCandidates,
   expandDeepResearchPrompt,
   isDeepResearchPrompt,
+  resolveResearchStages,
 } from "../researchMode";
 import {
   canAutoDispatchQueuedRequest,
@@ -253,7 +254,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
-import { ResearchProgressBanner } from "./chat/ResearchProgressBanner";
+import { deriveActiveStageSuggestion, ResearchProgressBanner } from "./chat/ResearchProgressBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -2102,6 +2103,10 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveResearchProviderCandidates(providerHandoffEntries),
     [providerHandoffEntries],
   );
+  const researchStages = useMemo(
+    () => resolveResearchStages(settings.research.stages),
+    [settings.research.stages],
+  );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -2187,6 +2192,37 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [activeThread?.messages],
   );
+  // The active stage may suggest a different provider/model (configured in
+  // Settings → Deep Research). This only surfaces a user-triggered affordance
+  // that reuses the normal handoff flow — nothing switches automatically.
+  const researchStageSuggestion = useMemo(() => {
+    if (!isResearchThread || !activeThread) return null;
+    const suggestion = deriveActiveStageSuggestion({
+      steps: activePlan?.steps ?? [],
+      stages: researchStages,
+      current: {
+        instanceId: String(activeThread.modelSelection.instanceId),
+        model: activeThread.modelSelection.model,
+      },
+    });
+    if (!suggestion) return null;
+    const entry = providerHandoffEntries.find(
+      (candidate) => String(candidate.instanceId) === suggestion.instanceId,
+    );
+    if (
+      !entry ||
+      !entry.enabled ||
+      !entry.isAvailable ||
+      entry.status !== "ready" ||
+      !entry.models.some((model) => model.slug === suggestion.model)
+    ) {
+      return null;
+    }
+    return {
+      label: `${entry.displayName} / ${suggestion.model}`,
+      modelSelection: { instanceId: entry.instanceId, model: suggestion.model },
+    };
+  }, [activePlan?.steps, activeThread, isResearchThread, providerHandoffEntries, researchStages]);
   const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
@@ -4958,6 +4994,7 @@ function ChatViewContent(props: ChatViewProps) {
     const researchMessageTextForSend = expandDeepResearchPrompt(
       messageTextForSend,
       researchProviderCandidates,
+      researchStages,
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
@@ -6361,6 +6398,13 @@ function ChatViewContent(props: ChatViewProps) {
                           <ResearchProgressBanner
                             steps={activePlan?.steps ?? []}
                             isRunning={phase === "running"}
+                            suggestionLabel={researchStageSuggestion?.label ?? null}
+                            onApplySuggestion={
+                              researchStageSuggestion && !providerHandoffBusy
+                                ? () =>
+                                    void onProviderHandoff(researchStageSuggestion.modelSelection)
+                                : undefined
+                            }
                           />
                         ) : null}
                         <RateLimitResumeBanner

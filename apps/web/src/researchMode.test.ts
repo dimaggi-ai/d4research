@@ -3,8 +3,10 @@ import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 
 import {
   deriveResearchProviderCandidates,
+  describeParallelStageNotes,
   expandDeepResearchPrompt,
   isDeepResearchPrompt,
+  resolveResearchStages,
   sanitizeResearchModelSlugs,
 } from "./researchMode";
 
@@ -16,8 +18,8 @@ describe("research mode", () => {
 
   it("expands a tagged prompt with bounded roles, memory, and ready CLIs", () => {
     const prompt = expandDeepResearchPrompt("#deep-research compare runtimes", [
-      { name: "Claude", cli: "claude", models: ["sonnet"] },
-      { name: "Junie", cli: "junie", models: ["custom:local"] },
+      { instanceId: "claude", name: "Claude", cli: "claude", models: ["sonnet"] },
+      { instanceId: "junie", name: "Junie", cli: "junie", models: ["custom:local"] },
     ]);
 
     expect(prompt).toContain("at most three delegated agents concurrently");
@@ -61,7 +63,93 @@ describe("research mode", () => {
     });
 
     expect(deriveResearchProviderCandidates([makeEntry("ready"), makeEntry("disabled")])).toEqual([
-      { name: "Claude", cli: "claude", models: ["sonnet"] },
+      { instanceId: "claude-ready", name: "Claude", cli: "claude", models: ["sonnet"] },
+    ]);
+  });
+
+  it("builds the stage list from configured stages, skipping disabled ones", () => {
+    const prompt = expandDeepResearchPrompt(
+      "#deep-research compare runtimes",
+      [],
+      [
+        { id: "a", title: "Survey literature", goal: "Find prior art.", enabled: true },
+        { id: "b", title: "Skipped stage", goal: "", enabled: false },
+        { id: "c", title: "Write it up", goal: "", enabled: true },
+      ],
+    );
+    expect(prompt).toContain("1. Survey literature — Find prior art.");
+    expect(prompt).toContain("2. Write it up");
+    expect(prompt).not.toContain("Skipped stage");
+    expect(prompt).toContain("create one step per stage below using its exact title");
+  });
+
+  it("falls back to the default stages when everything is disabled", () => {
+    const prompt = expandDeepResearchPrompt(
+      "#deep-research q",
+      [],
+      [{ id: "a", title: "Only stage", goal: "", enabled: false }],
+    );
+    expect(prompt).toContain("Gather primary evidence");
+  });
+
+  it("renders parallel groups as honest interleaving notes", () => {
+    const stages = [
+      { id: "a", title: "A", goal: "", enabled: true, parallelGroup: 1 },
+      { id: "b", title: "B", goal: "", enabled: true, parallelGroup: 1 },
+      { id: "c", title: "C", goal: "", enabled: true },
+    ];
+    expect(describeParallelStageNotes(stages)).toEqual([
+      "Stages 1 and 2 are independent and may be worked in either order or interleaved.",
+    ]);
+    const prompt = expandDeepResearchPrompt("#deep-research q", [], stages);
+    expect(prompt).toContain("Stages 1 and 2 are independent");
+  });
+
+  it("marks per-stage provider picks as suggestions, never as ran", () => {
+    const prompt = expandDeepResearchPrompt(
+      "#deep-research q",
+      [{ instanceId: "junie", name: "Junie", cli: "junie", models: ["gemini-3.1-pro"] }],
+      [
+        {
+          id: "lit",
+          title: "Literature",
+          goal: "",
+          enabled: true,
+          suggestedInstanceId: "junie" as never,
+          suggestedModel: "gemini-3.1-pro",
+        },
+      ],
+    );
+    expect(prompt).toContain("Suggested for this stage: Junie / gemini-3.1-pro");
+    expect(prompt).toContain("a suggestion only");
+    expect(prompt).toContain("Never claim it ran unless it did");
+  });
+
+  it("drops a suggestion whose model slug is malformed", () => {
+    const prompt = expandDeepResearchPrompt(
+      "#deep-research q",
+      [],
+      [
+        {
+          id: "lit",
+          title: "Literature",
+          goal: "",
+          enabled: true,
+          suggestedInstanceId: "junie" as never,
+          suggestedModel: "⠋ Fetching available models...",
+        },
+      ],
+    );
+    expect(prompt).not.toContain("Suggested for this stage");
+  });
+
+  it("resolves configured stages with the default fallback", () => {
+    expect(resolveResearchStages(undefined).map((stage) => stage.id)).toEqual([
+      "scope",
+      "gather",
+      "test",
+      "challenge",
+      "synthesize",
     ]);
   });
 });

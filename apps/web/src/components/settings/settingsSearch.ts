@@ -167,6 +167,17 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "handoff",
   },
   {
+    id: "deep-research",
+    title: "Deep research",
+    to: "/settings/general",
+  },
+  {
+    id: "deep-research-stages",
+    title: "Research stages",
+    to: "/settings/general",
+    targetId: "deep-research",
+  },
+  {
     id: "tool-guard-policies",
     title: "Tool Guard policies",
     to: "/settings/tool-guard",

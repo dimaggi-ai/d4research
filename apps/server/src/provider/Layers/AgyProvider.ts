@@ -32,9 +32,10 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDe
 const PROBE_TIMEOUT_MS = 20_000;
 
 // CSI sequences, OSC sequences (BEL- or ST-terminated), two-byte escapes like
-// `ESC(B`/`ESC7`, and stray C0 control characters other than \t.
-// eslint-disable-next-line no-control-regex
+// `ESC(B`/`ESC7`, and stray C0 control characters other than \t. Matching
+// control characters is the entire point here — the CLI emits them.
 const ANSI_ESCAPE_REGEX =
+  // eslint-disable-next-line no-control-regex
   /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x08\x0b-\x1f\x7f]/gu;
 
 // Model slugs are plain machine identifiers. Anything else — stderr prose

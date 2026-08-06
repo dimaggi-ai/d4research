@@ -79,6 +79,9 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
         <ol className="mt-2 space-y-1">
           {steps.map((step, index) => (
             <li
+              // Plan steps carry no id and are never reordered — the provider
+              // rewrites the list in place — so position is their identity.
+              // eslint-disable-next-line react/no-array-index-key
               key={`${index}-${step.step}`}
               className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"
             >

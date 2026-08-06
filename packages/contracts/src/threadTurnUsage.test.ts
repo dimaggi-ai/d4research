@@ -3,9 +3,11 @@ import * as Schema from "effect/Schema";
 
 import { ThreadTurnUsageRow } from "./threadTurnUsage.ts";
 
+const decodeThreadTurnUsageRow = Schema.decodeUnknownSync(ThreadTurnUsageRow);
+
 describe("ThreadTurnUsageRow", () => {
   it("decodes persisted usage rows with nullable metrics", () => {
-    const row = Schema.decodeUnknownSync(ThreadTurnUsageRow)({
+    const row = decodeThreadTurnUsageRow({
       turnId: "turn-1",
       provider: "codex",
       instanceId: "codex-work",

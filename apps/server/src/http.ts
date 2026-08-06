@@ -47,7 +47,7 @@ import {
 } from "./toolGuardLifecycle.ts";
 import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts";
 import type { ToolGuardPolicy } from "@t3tools/contracts";
-import { compressHandoffContext, HandoffCompressionError } from "./handoffCompression.ts";
+import { compressHandoffContext } from "./handoffCompression.ts";
 import {
   DEFAULT_LOCAL_MEMO_BASE_URL,
   makeLocalMemoConnector,

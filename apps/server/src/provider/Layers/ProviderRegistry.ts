@@ -78,21 +78,26 @@ const makeManualProviderMaintenanceCapabilities = (provider: ProviderDriverKind)
 const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean =>
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
-const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
-  if (provider.driver !== ProviderDriverKind.make("opencode")) {
-    return true;
-  }
-
-  // OpenCode's initial snapshot is deliberately non-authoritative while its
-  // first probe is still running. A probe error from an installed CLI/server
-  // is likewise partial: it could not establish the current inventory.
-  // Conversely, disabled and missing-CLI snapshots are authoritative removals,
-  // as are successful ready/warning inventories (including an empty one after
-  // logout or plugin removal).
+// A snapshot is non-authoritative while the first probe is still running, or
+// when an installed CLI/server errored mid-probe: neither could establish the
+// current inventory. Disabled and missing-CLI snapshots are authoritative, as
+// are successful ready/warning inventories.
+const isNonAuthoritativeProviderSnapshot = (provider: ServerProvider): boolean => {
   const isPendingInitialProbe =
     provider.enabled && !provider.installed && provider.status === "warning";
   const didInstalledProviderProbeFail = provider.installed && provider.status === "error";
   return isPendingInitialProbe || didInstalledProviderProbeFail;
+};
+
+const shouldRetainOnEmptyModels = (provider: ServerProvider): boolean => {
+  if (isNonAuthoritativeProviderSnapshot(provider)) {
+    return true;
+  }
+  // OpenCode's ready/warning inventory is authoritative even when empty (e.g.
+  // after logout or plugin removal). Other drivers keep their previous list
+  // across a transiently empty discovery so a flaky probe can't blank the
+  // picker mid-session.
+  return provider.driver !== ProviderDriverKind.make("opencode");
 };
 
 const mergeProviderModels = (
@@ -100,9 +105,7 @@ const mergeProviderModels = (
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
-
-  if (shouldRetainMissingModels && nextModels.length === 0 && previousModels.length > 0) {
+  if (nextModels.length === 0 && previousModels.length > 0 && shouldRetainOnEmptyModels(provider)) {
     return previousModels;
   }
 
@@ -117,8 +120,12 @@ const mergeProviderModels = (
       capabilities: previousModel.capabilities,
     };
   });
+  // Leftover previous models are appended only while the snapshot is
+  // non-authoritative. A healthy non-empty inventory fully replaces the list —
+  // appending across ready refreshes made every stale or malformed entry
+  // immortal, since no later probe could ever evict it.
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
-  return shouldRetainMissingModels
+  return isNonAuthoritativeProviderSnapshot(provider)
     ? [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))]
     : mergedModels;
 };

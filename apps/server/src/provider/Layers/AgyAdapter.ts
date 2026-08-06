@@ -302,6 +302,19 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
                   cause,
                 }),
             ),
+            // `--print-timeout 5m` is only a hint to the CLI; agy is known to
+            // wedge on pipes, so enforce a hard server-side deadline as well.
+            Effect.timeoutOrElse({
+              duration: "6 minutes",
+              orElse: () =>
+                Effect.fail(
+                  new ProviderAdapterRequestError({
+                    provider: PROVIDER,
+                    method: "agy --print",
+                    detail: "Agy turn did not exit within 6 minutes; killing the process.",
+                  }),
+                ),
+            }),
           ),
         );
         yield* Fiber.join(outputFiber);

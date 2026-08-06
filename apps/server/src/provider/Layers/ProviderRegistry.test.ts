@@ -684,6 +684,48 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ]);
       });
 
+      it("evicts stale garbage models on a healthy non-empty refresh", () => {
+        const garbageSlug =
+          "⠋ Fetching available models...\r⠙ Fetching available models...[Kgemini-3.6-flash-high     Gemini 3.6 Flash (High)";
+        const previousProvider = {
+          instanceId: ProviderInstanceId.make("agy"),
+          driver: ProviderDriverKind.make("agy"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-08-05T00:00:00.000Z",
+          version: "1.1.10",
+          models: [
+            {
+              slug: garbageSlug,
+              name: garbageSlug,
+              isCustom: false,
+              capabilities: createModelCapabilities({ optionDescriptors: [] }),
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const refreshedProvider = {
+          ...previousProvider,
+          checkedAt: "2026-08-05T00:01:00.000Z",
+          models: [
+            {
+              slug: "gemini-3.6-flash-high",
+              name: "Gemini 3.6 Flash (High)",
+              isCustom: false,
+              capabilities: createModelCapabilities({ optionDescriptors: [] }),
+            },
+          ],
+        } satisfies ServerProvider;
+
+        assert.deepStrictEqual(
+          mergeProviderSnapshot(previousProvider, refreshedProvider).models.map((m) => m.slug),
+          ["gemini-3.6-flash-high"],
+        );
+      });
+
       it("classifies pending, logout, uninstall, and reconnect OpenCode inventories", () => {
         const previousProvider = {
           instanceId: ProviderInstanceId.make("opencode"),

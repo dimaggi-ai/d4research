@@ -60,6 +60,46 @@ describe("parseAgyModelsOutput", () => {
       { slug: "gemini-only", name: "gemini-only" },
     ]);
   });
+
+  it("rejects stderr prose merged in by the PTY wrapper", () => {
+    const stdout =
+      "Warning: connector auth expired" +
+      LF +
+      "Using profile default" +
+      LF +
+      "gemini-3.6-flash-high     Gemini 3.6 Flash (High)" +
+      LF;
+    expect(parseAgyModelsOutput(stdout)).toEqual([
+      { slug: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)" },
+    ]);
+  });
+
+  it("strips OSC and two-byte escapes before parsing", () => {
+    const stdout = ESC + "]0;agy" + String.fromCharCode(0x07) + ESC + "(Bgemini-x  Gemini X" + LF;
+    expect(parseAgyModelsOutput(stdout)).toEqual([{ slug: "gemini-x", name: "Gemini X" }]);
+  });
+
+  it("recovers every row from a newline-less carriage-return blob", () => {
+    const stdout =
+      "⠋ Fetching available models..." +
+      CR +
+      ESC +
+      "[Kgemini-3.6-flash-high     Gemini 3.6 Flash (High)" +
+      CR +
+      "gemini-3.5-flash-medium   Gemini 3.5 Flash (Medium)";
+    expect(parseAgyModelsOutput(stdout)).toEqual([
+      { slug: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)" },
+      { slug: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium)" },
+    ]);
+  });
+
+  it("never emits spinner blobs or unsplit rows as slugs", () => {
+    const poisoned = "⠋ Fetching available models..." + CR + "⠙ Fetching available models..." + LF;
+    for (const { slug } of parseAgyModelsOutput(poisoned)) {
+      expect(slug).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+    }
+    expect(parseAgyModelsOutput(poisoned)).toEqual([]);
+  });
 });
 
 describe("quotePosixShellArgument", () => {

@@ -221,6 +221,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         continue;
       }
       for (const model of models) {
+        // A model slug is a machine identifier. Control characters or inner
+        // whitespace mean a malformed discovery result (e.g. spinner output
+        // captured from a CLI) — never render or offer those for selection.
+        // eslint-disable-next-line no-control-regex
+        if (/[\s\x00-\x1f\x7f]/u.test(model.slug)) {
+          continue;
+        }
         out.push({
           slug: model.slug,
           name: model.name,

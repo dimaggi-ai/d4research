@@ -12,8 +12,18 @@ import * as Schema from "effect/Schema";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 
+// Bump to invalidate every previously written snapshot — e.g. after a model
+// discovery/parsing fix, so caches poisoned by the old code are ignored
+// instead of being rehydrated (and re-persisted) forever.
+export const PROVIDER_STATUS_CACHE_VERSION = 2;
+
+const ProviderStatusCacheEnvelope = Schema.Struct({
+  cacheVersion: Schema.Number,
+  provider: ServerProviderSchema,
+});
+
 const decodeProviderStatusCache = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(ServerProviderSchema),
+  Schema.fromJsonString(Schema.Union([ProviderStatusCacheEnvelope, ServerProviderSchema])),
 );
 
 const mergeProviderModels = (
@@ -131,6 +141,13 @@ export const readProviderStatusCache = (filePath: string) =>
     }
 
     return yield* decodeProviderStatusCache(trimmed).pipe(
+      Effect.map((decoded) => {
+        // Version-less payloads predate the envelope and may carry snapshots
+        // written by since-fixed discovery code; treat them as absent.
+        if (!("cacheVersion" in decoded)) return undefined;
+        if (decoded.cacheVersion !== PROVIDER_STATUS_CACHE_VERSION) return undefined;
+        return decoded.provider;
+      }),
       Effect.matchCauseEffect({
         onFailure: (cause) =>
           Effect.logWarning("failed to parse provider status cache, ignoring", {
@@ -149,6 +166,10 @@ export const writeProviderStatusCache = (input: {
   const { updateState: _updateState, ...cacheableProvider } = input.provider;
   return writeFileStringAtomically({
     filePath: input.filePath,
-    contents: `${JSON.stringify(cacheableProvider, null, 2)}\n`,
+    contents: `${JSON.stringify(
+      { cacheVersion: PROVIDER_STATUS_CACHE_VERSION, provider: cacheableProvider },
+      null,
+      2,
+    )}\n`,
   });
 };

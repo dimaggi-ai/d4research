@@ -31,8 +31,16 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDe
 // Settings probe bounded, but give that first discovery enough time to finish.
 const PROBE_TIMEOUT_MS = 20_000;
 
+// CSI sequences, OSC sequences (BEL- or ST-terminated), two-byte escapes like
+// `ESC(B`/`ESC7`, and stray C0 control characters other than \t.
 // eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;?]*[A-Za-z]/gu;
+const ANSI_ESCAPE_REGEX =
+  /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x08\x0b-\x1f\x7f]/gu;
+
+// Model slugs are plain machine identifiers. Anything else — stderr prose
+// merged in by the PTY wrapper, spinner frames, escape residue — must never
+// become a selectable model.
+const MODEL_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export const quotePosixShellArgument = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
@@ -42,21 +50,20 @@ export function parseAgyModelsOutput(stdout: string): ReadonlyArray<{
 }> {
   const results: Array<{ slug: string; name: string }> = [];
   for (const rawLine of stdout.split(/\r?\n/u)) {
-    // Agy prints a spinner that rewrites the current line via bare `\r`. Take
-    // whatever follows the final carriage return — that is what the terminal
-    // actually shows for this logical line.
-    const lastCr = rawLine.lastIndexOf("\r");
-    const rendered = lastCr >= 0 ? rawLine.slice(lastCr + 1) : rawLine;
-    const cleaned = rendered.replaceAll(ANSI_ESCAPE_REGEX, "").trim();
-    if (!cleaned) continue;
-    // Skip any lingering spinner frame that never got overwritten.
-    if (/Fetching available models/u.test(cleaned)) continue;
-    // Agy formats rows as `slug   Description` with runs of spaces padding
-    // the slug column, so split on 2-or-more whitespace.
-    const [slug, ...rest] = cleaned.split(/\s{2,}/u);
-    if (!slug) continue;
-    const name = rest.join(" ").trim() || slug;
-    results.push({ slug, name });
+    // Agy prints a spinner that rewrites the current line via bare `\r`.
+    // Parse every `\r` segment rather than only the final one, so a row that
+    // shares a physical line with spinner frames still gets picked up — slug
+    // validation below rejects the frames themselves.
+    for (const segment of rawLine.split("\r")) {
+      const cleaned = segment.replaceAll(ANSI_ESCAPE_REGEX, "").trim();
+      if (!cleaned) continue;
+      // Agy formats rows as `slug   Description` with runs of spaces padding
+      // the slug column, so split on 2-or-more whitespace.
+      const [slug, ...rest] = cleaned.split(/\s{2,}/u);
+      if (!slug || !MODEL_SLUG_REGEX.test(slug)) continue;
+      const name = rest.join(" ").trim() || slug;
+      results.push({ slug, name });
+    }
   }
   return results;
 }

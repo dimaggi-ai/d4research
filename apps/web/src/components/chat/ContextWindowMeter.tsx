@@ -12,6 +12,21 @@ function formatPercentage(value: number | null): string | null {
   return `${Math.round(value)}%`;
 }
 
+function formatCost(usd: number): string {
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function UsageRow(props: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+      <span className="text-muted-foreground/60">{props.label}</span>
+      <span className="font-medium tabular-nums text-muted-foreground/80">{props.value}</span>
+    </div>
+  );
+}
+
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   providerDisplayName?: string | null;
@@ -28,6 +43,8 @@ export function ContextWindowMeter(props: {
   const usageColor = isOverloaded
     ? "var(--color-red-500)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
+
+  const hasTokenBreakdown = (usage.inputTokens ?? 0) > 0 || (usage.outputTokens ?? 0) > 0;
 
   return (
     <Popover>
@@ -120,12 +137,48 @@ export function ContextWindowMeter(props: {
             </div>
           ) : null}
           {showTotalProcessed ? (
-            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-              <span className="text-muted-foreground/60">Total processed</span>
-              <span className="font-medium tabular-nums text-muted-foreground/80">
-                {formatContextWindowTokens(totalProcessedTokens)}
-              </span>
-            </div>
+            <UsageRow
+              label="Total processed"
+              value={formatContextWindowTokens(totalProcessedTokens)}
+            />
+          ) : null}
+          {hasTokenBreakdown ? (
+            <>
+              <div className="my-1 h-px bg-border/50" />
+              {(usage.inputTokens ?? 0) > 0 ? (
+                <UsageRow
+                  label="Input"
+                  value={formatContextWindowTokens(usage.inputTokens ?? null)}
+                />
+              ) : null}
+              {(usage.cachedInputTokens ?? 0) > 0 ? (
+                <UsageRow
+                  label="Cached input"
+                  value={formatContextWindowTokens(usage.cachedInputTokens ?? null)}
+                />
+              ) : null}
+              {(usage.outputTokens ?? 0) > 0 ? (
+                <UsageRow
+                  label="Output"
+                  value={formatContextWindowTokens(usage.outputTokens ?? null)}
+                />
+              ) : null}
+              {(usage.reasoningOutputTokens ?? 0) > 0 ? (
+                <UsageRow
+                  label="Reasoning"
+                  value={formatContextWindowTokens(usage.reasoningOutputTokens ?? null)}
+                />
+              ) : null}
+            </>
+          ) : null}
+          {(usage.totalCostUsd ?? 0) > 0 ? (
+            <>
+              <div className="my-1 h-px bg-border/50" />
+              <UsageRow label="T3 session cost" value={formatCost(usage.totalCostUsd!)} />
+            </>
+          ) : null}
+          {(usage.toolUses ?? 0) > 0 ? (
+            <UsageRow label="Tool uses" value={String(usage.toolUses)} />
           ) : null}
           {usage.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-[11px] font-medium text-muted-foreground/70">

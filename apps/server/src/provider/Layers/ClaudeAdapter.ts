@@ -200,6 +200,7 @@ interface ClaudeSessionContext {
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
+  lastMessageStartUsage: Record<string, unknown> | undefined;
   lastAssistantUuid: string | undefined;
   lastThreadStartedId: string | undefined;
   stopped: boolean;
@@ -381,6 +382,10 @@ function claudeUsageOutputTokens(usage: Record<string, unknown>): number {
   return finiteNonNegativeInteger(usage.output_tokens) ?? 0;
 }
 
+function claudeUsageCachedInputTokens(usage: Record<string, unknown>): number {
+  return finiteNonNegativeInteger(usage.cache_read_input_tokens) ?? 0;
+}
+
 function lastClaudeUsageIteration(
   value: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
@@ -409,6 +414,7 @@ function claudeTotalProcessedTokens(value: unknown): number | undefined {
 function makeClaudeTokenUsageSnapshot(input: {
   readonly activeTokens: number;
   readonly inputTokens?: number;
+  readonly cachedInputTokens?: number;
   readonly outputTokens?: number;
   readonly contextWindow?: number;
   readonly totalProcessedTokens?: number;
@@ -427,6 +433,7 @@ function makeClaudeTokenUsageSnapshot(input: {
     (maxTokens !== undefined ? Math.min(activeTokens, maxTokens) : activeTokens);
   const totalProcessedTokens = finiteNonNegativeInteger(input.totalProcessedTokens);
   const inputTokens = finiteNonNegativeInteger(input.inputTokens);
+  const cachedInputTokens = finiteNonNegativeInteger(input.cachedInputTokens);
   const outputTokens = finiteNonNegativeInteger(input.outputTokens);
 
   return {
@@ -436,7 +443,13 @@ function makeClaudeTokenUsageSnapshot(input: {
       ? { totalProcessedTokens }
       : {}),
     ...(inputTokens !== undefined && inputTokens > 0 ? { inputTokens } : {}),
+    ...(cachedInputTokens !== undefined && cachedInputTokens > 0 ? { cachedInputTokens } : {}),
     ...(outputTokens !== undefined && outputTokens > 0 ? { outputTokens } : {}),
+    ...(inputTokens !== undefined && inputTokens > 0 ? { lastInputTokens: inputTokens } : {}),
+    ...(cachedInputTokens !== undefined && cachedInputTokens > 0
+      ? { lastCachedInputTokens: cachedInputTokens }
+      : {}),
+    ...(outputTokens !== undefined && outputTokens > 0 ? { lastOutputTokens: outputTokens } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(input.compactsAutomatically !== undefined
       ? { compactsAutomatically: input.compactsAutomatically }
@@ -448,23 +461,37 @@ function normalizeClaudeActiveTokenUsage(
   value: unknown,
   contextWindow?: number,
   totalProcessedTokens?: number,
+  previousUsedTokens?: number,
 ): ThreadTokenUsageSnapshot | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
 
   const usage = value as Record<string, unknown>;
-  const activeUsage = lastClaudeUsageIteration(usage) ?? usage;
+  const lastIteration = lastClaudeUsageIteration(usage);
+  const activeUsage = lastIteration ?? usage;
   const inputTokens = claudeUsageInputTokens(activeUsage);
+  const cachedInputTokens = claudeUsageCachedInputTokens(activeUsage);
   const outputTokens = claudeUsageOutputTokens(activeUsage);
-  const activeTokens = claudeTotalProcessedTokens(activeUsage) ?? inputTokens + outputTokens;
-  if (activeTokens <= 0) {
+  const computedActiveTokens =
+    claudeTotalProcessedTokens(activeUsage) ?? inputTokens + outputTokens;
+  if (computedActiveTokens <= 0) {
+    return undefined;
+  }
+
+  const maxTokens = finitePositiveInteger(contextWindow);
+  const activeTokens =
+    lastIteration === undefined && maxTokens !== undefined && computedActiveTokens > maxTokens
+      ? finitePositiveInteger(previousUsedTokens)
+      : computedActiveTokens;
+  if (activeTokens === undefined) {
     return undefined;
   }
 
   return makeClaudeTokenUsageSnapshot({
     activeTokens,
     inputTokens,
+    cachedInputTokens,
     outputTokens,
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(totalProcessedTokens !== undefined ? { totalProcessedTokens } : {}),
@@ -1919,11 +1946,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           resultUsageRecord,
           maxTokens,
           accumulatedTotalProcessedTokens ?? context.lastKnownTotalProcessedTokens,
+          contextUsageSnapshot?.usedTokens ?? context.lastKnownTokenUsage?.usedTokens,
         )
       : undefined;
     const lastGoodUsage = context.lastKnownTokenUsage;
+    const contextUsageWithResultBreakdown = contextUsageSnapshot
+      ? {
+          ...resultIterationSnapshot,
+          ...contextUsageSnapshot,
+        }
+      : undefined;
     const usageSnapshot: ThreadTokenUsageSnapshot | undefined =
-      contextUsageSnapshot ??
+      contextUsageWithResultBreakdown ??
       (resultTotalOnly && lastGoodUsage
         ? {
             ...lastGoodUsage,
@@ -1955,12 +1989,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           }
         : undefined);
 
+    const finalCostUsd =
+      typeof result?.total_cost_usd === "number" ? result.total_cost_usd : undefined;
+    const usageSnapshotWithCost: ThreadTokenUsageSnapshot | undefined =
+      usageSnapshot && finalCostUsd !== undefined
+        ? { ...usageSnapshot, totalCostUsd: finalCostUsd }
+        : usageSnapshot;
+
     const turnState = context.turnState;
     if (!turnState) {
-      yield* emitThreadTokenUsage(context, usageSnapshot, {
+      yield* emitThreadTokenUsage(context, usageSnapshotWithCost, {
         rawMethod: "claude/result",
         rawPayload: result ?? { status },
       });
+      context.lastMessageStartUsage = undefined;
 
       const stamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({
@@ -1974,9 +2016,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...(result?.stop_reason !== undefined ? { stopReason: result.stop_reason } : {}),
           ...(result?.usage ? { usage: result.usage } : {}),
           ...(result?.modelUsage ? { modelUsage: result.modelUsage } : {}),
-          ...(typeof result?.total_cost_usd === "number"
-            ? { totalCostUsd: result.total_cost_usd }
-            : {}),
+          ...(finalCostUsd !== undefined ? { totalCostUsd: finalCostUsd } : {}),
           ...(errorMessage ? { errorMessage } : {}),
         },
         providerRefs: {},
@@ -2031,7 +2071,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       items: [...turnState.items],
     });
 
-    yield* emitThreadTokenUsage(context, usageSnapshot, {
+    yield* emitThreadTokenUsage(context, usageSnapshotWithCost, {
       rawMethod: "claude/result",
       rawPayload: result ?? { status },
     });
@@ -2049,9 +2089,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(result?.stop_reason !== undefined ? { stopReason: result.stop_reason } : {}),
         ...(result?.usage ? { usage: result.usage } : {}),
         ...(result?.modelUsage ? { modelUsage: result.modelUsage } : {}),
-        ...(typeof result?.total_cost_usd === "number"
-          ? { totalCostUsd: result.total_cost_usd }
-          : {}),
+        ...(finalCostUsd !== undefined ? { totalCostUsd: finalCostUsd } : {}),
         ...(errorMessage ? { errorMessage } : {}),
       },
       providerRefs: nativeProviderRefs(context),
@@ -2059,6 +2097,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const updatedAt = yield* nowIso;
     context.turnState = undefined;
+    context.lastMessageStartUsage = undefined;
     context.session = {
       ...context.session,
       status: "ready",
@@ -2079,15 +2118,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const { event } = message;
 
+    if (event.type === "message_start") {
+      if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
+        return;
+      }
+
+      context.lastMessageStartUsage = event.message.usage as unknown as Record<string, unknown>;
+      return;
+    }
+
     if (event.type === "message_delta") {
       if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
         return;
       }
 
       const snapshot = normalizeClaudeActiveTokenUsage(
-        event.usage,
+        {
+          ...context.lastMessageStartUsage,
+          output_tokens: event.usage.output_tokens,
+        },
         context.lastKnownContextWindow,
         context.lastKnownTotalProcessedTokens,
+        context.lastKnownTokenUsage?.usedTokens,
       );
       yield* emitThreadTokenUsage(context, snapshot, {
         rawMethod: "claude/stream_event/message_delta",
@@ -3639,6 +3691,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
+        lastMessageStartUsage: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
         stopped: false,
@@ -3783,6 +3836,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const updatedAt = yield* nowIso;
       context.turnState = turnState;
+      context.lastMessageStartUsage = undefined;
       context.session = {
         ...context.session,
         status: "running",

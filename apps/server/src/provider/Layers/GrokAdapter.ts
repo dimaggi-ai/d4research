@@ -71,8 +71,12 @@ import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogg
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
-const PROVIDER = ProviderDriverKind.make("grok");
 const GROK_RESUME_VERSION = 1 as const;
+
+export const acpSessionReadyReason = (displayName: string) => `${displayName} ACP session ready`;
+
+export const acpPromptRequestFailedMessage = (displayName: string) =>
+  `${displayName} prompt request failed.`;
 
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
@@ -86,6 +90,10 @@ export interface GrokAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   /** ACP runtime override used by providers that share the standard ACP surface. */
   readonly makeRuntime?: typeof makeGrokAcpRuntime;
+  readonly providerIdentity?: {
+    readonly kind: ProviderDriverKind;
+    readonly displayName: string;
+  };
 }
 
 interface PendingApproval {
@@ -228,6 +236,12 @@ export function grokPromptSettlementBelongsToContext(input: {
 
 export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapterLiveOptions) {
   return Effect.gen(function* () {
+    const providerIdentity = options?.providerIdentity ?? {
+      kind: ProviderDriverKind.make("grok"),
+      displayName: "Grok",
+    };
+    const PROVIDER = providerIdentity.kind;
+    const providerDisplayName = providerIdentity.displayName;
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("grok");
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -254,7 +268,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           new ProviderAdapterRequestError({
             provider: PROVIDER,
             method: "crypto/randomUUIDv4",
-            detail: "Failed to generate Grok runtime identifier.",
+            detail: `Failed to generate ${providerDisplayName} runtime identifier.`,
             cause,
           }),
       ),
@@ -266,7 +280,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpTransportError({
-              detail: "Failed to process Grok ACP callback.",
+              detail: `Failed to process ${providerDisplayName} ACP callback.`,
               cause,
             }),
         ),
@@ -455,7 +469,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         );
       }).pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("Failed to write native Grok notification log.", {
+          Effect.logWarning(`Failed to write native ${providerDisplayName} notification log.`, {
             cause,
             threadId,
             method,
@@ -820,6 +834,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                         threadId: ctx.threadId,
                         turnId: notificationTurnId,
                         itemId: event.itemId,
+                        streamKind: event.streamKind,
                         lifecycle: "item.started",
                       }),
                     );
@@ -832,7 +847,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                         threadId: ctx.threadId,
                         turnId: notificationTurnId,
                         itemId: event.itemId,
+                        streamKind: event.streamKind,
                         lifecycle: "item.completed",
+                        ...(event.text !== undefined ? { text: event.text } : {}),
                       }),
                     );
                     return;
@@ -866,6 +883,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                         threadId: ctx.threadId,
                         turnId: notificationTurnId,
                         ...(event.itemId ? { itemId: event.itemId } : {}),
+                        streamKind: event.streamKind,
                         text: event.text,
                         rawPayload: event.rawPayload,
                       }),
@@ -876,7 +894,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             ),
           ).pipe(
             Effect.catch((cause) =>
-              Effect.logError("Failed to process Grok runtime notification.", { cause }),
+              Effect.logError(`Failed to process ${providerDisplayName} runtime notification.`, {
+                cause,
+              }),
             ),
             Effect.forkChild,
           );
@@ -897,7 +917,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             ...(yield* makeEventStamp()),
             provider: PROVIDER,
             threadId: input.threadId,
-            payload: { state: "ready", reason: "Grok ACP session ready" },
+            payload: { state: "ready", reason: acpSessionReadyReason(providerDisplayName) },
           });
           yield* offerRuntimeEvent({
             type: "thread.started",
@@ -1015,7 +1035,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 return yield* new ProviderAdapterRequestError({
                   provider: PROVIDER,
                   method: "session/prompt",
-                  detail: "Grok prompt was interrupted during preparation.",
+                  detail: `${providerDisplayName} prompt was interrupted during preparation.`,
                 });
               }
               if (steeringTurnId === undefined) {
@@ -1055,7 +1075,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     return;
                   }
                   yield* settlePromptInFlight(input.threadId, turnId, liveCtx.acpSessionId, {
-                    errorMessage: "Grok prompt preparation failed.",
+                    errorMessage: `${providerDisplayName} prompt preparation failed.`,
                     emitTurnCompletion: false,
                   });
                 }),
@@ -1104,7 +1124,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   prepared.turnId,
                   prepared.acpSessionId,
                   {
-                    errorMessage: "Grok session changed before the turn completed.",
+                    errorMessage: `${providerDisplayName} session changed before the turn completed.`,
                     settleAllPrompts: true,
                   },
                 );
@@ -1112,7 +1132,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 return yield* new ProviderAdapterRequestError({
                   provider: PROVIDER,
                   method: "session/prompt",
-                  detail: "Grok session changed before the turn completed.",
+                  detail: `${providerDisplayName} session changed before the turn completed.`,
                 });
               }
               // Keep prompt settlement atomic with respect to Stop and steering.
@@ -1227,7 +1247,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                         prepared.turnId,
                         prepared.acpSessionId,
                         {
-                          errorMessage: "Grok session changed before the turn completed.",
+                          errorMessage: `${providerDisplayName} session changed before the turn completed.`,
                           settleAllPrompts: true,
                         },
                       );
@@ -1266,7 +1286,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               yield* withThreadLock(
                 input.threadId,
                 settlePromptInFlight(input.threadId, prepared.turnId, prepared.acpSessionId, {
-                  errorMessage: errorMessage ?? "Grok prompt request failed.",
+                  errorMessage: errorMessage ?? acpPromptRequestFailedMessage(providerDisplayName),
                 }),
               );
             }).pipe(Effect.catch(() => Effect.void)),
@@ -1412,7 +1432,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         return yield* new ProviderAdapterRequestError({
           provider: PROVIDER,
           method: "thread/rollback",
-          detail: "Grok ACP sessions do not support provider-side rollback yet.",
+          detail: `${providerDisplayName} ACP sessions do not support provider-side rollback yet.`,
         });
       });
 

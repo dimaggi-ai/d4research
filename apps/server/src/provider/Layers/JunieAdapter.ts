@@ -13,7 +13,6 @@ import { makeJunieAcpRuntime } from "../acp/JunieAcpSupport.ts";
 import type { JunieAdapterShape } from "../Services/JunieAdapter.ts";
 import { makeGrokAdapter, type GrokAdapterLiveOptions } from "./GrokAdapter.ts";
 
-const GROK = ProviderDriverKind.make("grok");
 const JUNIE = ProviderDriverKind.make("junie");
 
 export function resolveJunieModelSelection(
@@ -43,6 +42,10 @@ export const makeJunieAdapter = (settings: JunieSettings, options?: JunieAdapter
   makeGrokAdapter(settings, {
     ...options,
     instanceId: options?.instanceId ?? ProviderInstanceId.make("junie"),
+    providerIdentity: {
+      kind: JUNIE,
+      displayName: "Junie",
+    },
     makeRuntime: (input) =>
       makeJunieAcpRuntime({
         ...input,
@@ -58,7 +61,6 @@ export const makeJunieAdapter = (settings: JunieSettings, options?: JunieAdapter
             base
               .startSession({
                 ...input,
-                provider: input.provider === JUNIE ? GROK : input.provider,
                 modelSelection: resolveJunieModelSelection(input.modelSelection),
               })
               .pipe(Effect.map(asJunieSession)),

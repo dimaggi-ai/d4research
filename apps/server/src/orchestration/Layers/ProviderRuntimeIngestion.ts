@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type AssistantDeliveryMode,
   CommandId,
+  EventId,
   MessageId,
   type OrchestrationEvent,
   type OrchestrationMessage,
@@ -111,6 +112,8 @@ const BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY = 20_000;
 const BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL = Duration.minutes(120);
 const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
+const BUFFERED_REASONING_TEXT_BY_ITEM_CACHE_CAPACITY = 20_000;
+const BUFFERED_REASONING_TEXT_BY_ITEM_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
@@ -745,6 +748,12 @@ const make = Effect.gen(function* () {
     capacity: BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY,
     timeToLive: BUFFERED_PROPOSED_PLAN_BY_ID_TTL,
     lookup: () => Effect.succeed({ text: "", createdAt: "" }),
+  });
+
+  const bufferedReasoningTextByItem = yield* Cache.make<string, string>({
+    capacity: BUFFERED_REASONING_TEXT_BY_ITEM_CACHE_CAPACITY,
+    timeToLive: BUFFERED_REASONING_TEXT_BY_ITEM_TTL,
+    lookup: () => Effect.succeed(""),
   });
 
   // Task names arrive on task.started/task.progress but not on task.completed,
@@ -1479,8 +1488,46 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      const reasoningDelta =
+        event.type === "content.delta" && event.payload.streamKind === "reasoning_text"
+          ? event.payload.delta
+          : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
+
+      if (reasoningDelta && reasoningDelta.length > 0) {
+        const reasoningItemKey = `${thread.id}:${event.itemId ?? event.turnId ?? event.eventId}`;
+        const accumulatedReasoning = yield* Cache.getOption(
+          bufferedReasoningTextByItem,
+          reasoningItemKey,
+        ).pipe(
+          Effect.map(
+            (existingText) => `${Option.getOrElse(existingText, () => "")}${reasoningDelta}`,
+          ),
+        );
+        yield* Cache.set(bufferedReasoningTextByItem, reasoningItemKey, accumulatedReasoning);
+        if (accumulatedReasoning.trim().length > 0) {
+          const activity = {
+            id: EventId.make(`reasoning:${reasoningItemKey}`),
+            createdAt: now,
+            tone: "info" as const,
+            kind: "task.progress",
+            summary: "Reasoning update",
+            payload: {
+              taskId: reasoningItemKey,
+              detail: accumulatedReasoning,
+            },
+            turnId: toTurnId(event.turnId) ?? null,
+          };
+          yield* orchestrationEngine.dispatch({
+            type: "thread.activity.append",
+            commandId: yield* providerCommandId(event, "reasoning-activity-append"),
+            threadId: thread.id,
+            activity,
+            createdAt: activity.createdAt,
+          });
+        }
+      }
 
       if (assistantDelta && assistantDelta.length > 0) {
         const turnId = toTurnId(event.turnId);

@@ -16,6 +16,7 @@ const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
+const emitJunieThoughtSequence = process.env.T3_ACP_EMIT_JUNIE_THOUGHT_SEQUENCE === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
@@ -626,6 +627,54 @@ const program = Effect.gen(function* () {
             content: { type: "text", text: "after tool" },
           },
         });
+
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitJunieThoughtSequence) {
+        const toolCallId = "junie-tool-call-1";
+
+        for (const text of ["Inspecting ", "the repository", "."]) {
+          yield* agent.client.sessionUpdate({
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "agent_thought_chunk",
+              content: { type: "text", text },
+            },
+          });
+        }
+
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "Read file",
+            kind: "read",
+            status: "pending",
+            rawInput: { path: "package.json" },
+          },
+        });
+
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: "completed",
+            rawOutput: { content: "{}" },
+          },
+        });
+
+        for (const text of ["Finished ", "the review."]) {
+          yield* agent.client.sessionUpdate({
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text },
+            },
+          });
+        }
 
         return { stopReason: "end_turn" };
       }

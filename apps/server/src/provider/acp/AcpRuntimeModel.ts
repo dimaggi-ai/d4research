@@ -88,10 +88,13 @@ export type AcpParsedSessionEvent =
   | {
       readonly _tag: "AssistantItemStarted";
       readonly itemId: string;
+      readonly streamKind: "assistant_text" | "reasoning_text";
     }
   | {
       readonly _tag: "AssistantItemCompleted";
       readonly itemId: string;
+      readonly streamKind: "assistant_text" | "reasoning_text";
+      readonly text?: string;
     }
   | {
       readonly _tag: "PlanUpdated";
@@ -106,6 +109,7 @@ export type AcpParsedSessionEvent =
   | {
       readonly _tag: "ContentDelta";
       readonly itemId?: string;
+      readonly streamKind: "assistant_text" | "reasoning_text";
       readonly text: string;
       readonly rawPayload: unknown;
     };
@@ -508,10 +512,12 @@ export function syntheticLoadSessionResponseFromInitialize(
 export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotification): {
   readonly modeId?: string;
   readonly events: ReadonlyArray<AcpParsedSessionEvent>;
+  readonly ignoredSessionUpdateKind?: string;
 } {
   const upd = params.update;
   const events: Array<AcpParsedSessionEvent> = [];
   let modeId: string | undefined;
+  let ignoredSessionUpdateKind: string | undefined;
 
   switch (upd.sessionUpdate) {
     case "current_mode_update": {
@@ -568,15 +574,35 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          streamKind: "assistant_text",
           text: upd.content.text,
           rawPayload: params,
         });
       }
       break;
     }
-    default:
+    case "agent_thought_chunk": {
+      if (upd.content.type === "text" && upd.content.text.length > 0) {
+        events.push({
+          _tag: "ContentDelta",
+          streamKind: "reasoning_text",
+          text: upd.content.text,
+          rawPayload: params,
+        });
+      }
       break;
+    }
+    default: {
+      ignoredSessionUpdateKind = String(
+        (upd as { readonly sessionUpdate?: unknown }).sessionUpdate ?? "unknown",
+      );
+      break;
+    }
   }
 
-  return { ...(modeId !== undefined ? { modeId } : {}), events };
+  return {
+    ...(modeId !== undefined ? { modeId } : {}),
+    events,
+    ...(ignoredSessionUpdateKind !== undefined ? { ignoredSessionUpdateKind } : {}),
+  };
 }

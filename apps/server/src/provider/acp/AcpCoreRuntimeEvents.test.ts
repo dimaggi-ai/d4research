@@ -123,6 +123,7 @@ describe("AcpCoreRuntimeEvents", () => {
         threadId: "thread-1" as never,
         turnId,
         itemId: "assistant:session-1:segment:0",
+        streamKind: "assistant_text",
         text: "hello",
         rawPayload: { sessionId: "session-1" },
       }),
@@ -141,6 +142,7 @@ describe("AcpCoreRuntimeEvents", () => {
         threadId: "thread-1" as never,
         turnId,
         itemId: "assistant:session-1:segment:0",
+        streamKind: "assistant_text",
         lifecycle: "item.started",
       }),
     ).toMatchObject({
@@ -149,6 +151,48 @@ describe("AcpCoreRuntimeEvents", () => {
       payload: {
         itemType: "assistant_message",
         status: "inProgress",
+      },
+    });
+
+    expect(
+      makeAcpAssistantItemEvent({
+        stamp,
+        provider: ProviderDriverKind.make("junie"),
+        threadId: "thread-1" as never,
+        turnId,
+        itemId: "reasoning:session-1:segment:1",
+        streamKind: "reasoning_text",
+        lifecycle: "item.completed",
+        text: "Inspecting the repository",
+      }),
+    ).toMatchObject({
+      type: "item.completed",
+      itemId: "reasoning:session-1:segment:1",
+      payload: {
+        itemType: "reasoning",
+        status: "completed",
+        detail: "Inspecting the repository",
+      },
+    });
+
+    expect(
+      makeAcpAssistantItemEvent({
+        stamp,
+        provider: ProviderDriverKind.make("junie"),
+        threadId: "thread-1" as never,
+        turnId,
+        itemId: "assistant:session-1:segment:2",
+        streamKind: "assistant_text",
+        lifecycle: "item.completed",
+        text: "Finished the review.",
+      }),
+    ).toMatchObject({
+      type: "item.completed",
+      itemId: "assistant:session-1:segment:2",
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+        detail: "Finished the review.",
       },
     });
   });

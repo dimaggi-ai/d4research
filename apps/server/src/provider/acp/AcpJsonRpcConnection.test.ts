@@ -330,6 +330,55 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("keeps recorded Junie thoughts and assistant output in separate ACP items", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      const promptResult = yield* runtime.prompt({
+        prompt: [{ type: "text", text: "review the repository" }],
+      });
+      expect(promptResult).toMatchObject({ stopReason: "end_turn" });
+
+      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 11)));
+      const deltas = notes.filter((note) => note._tag === "ContentDelta");
+      const starts = notes.filter((note) => note._tag === "AssistantItemStarted");
+      const completions = notes.filter((note) => note._tag === "AssistantItemCompleted");
+      const reasoningDeltas = deltas.filter((note) => note.streamKind === "reasoning_text");
+      const assistantDeltas = deltas.filter((note) => note.streamKind === "assistant_text");
+      const reasoningStart = starts.find((note) => note.streamKind === "reasoning_text");
+      const assistantStart = starts.find((note) => note.streamKind === "assistant_text");
+      const assistantCompletion = completions.find((note) => note.streamKind === "assistant_text");
+
+      expect(reasoningDeltas.map((note) => note.text).join("")).toBe("Inspecting the repository.");
+      expect(assistantDeltas.map((note) => note.text).join("")).toBe("Finished the review.");
+      expect(reasoningStart?.itemId).toBe(reasoningDeltas[0]?.itemId);
+      expect(assistantStart?.itemId).toBe(assistantDeltas[0]?.itemId);
+      expect(assistantStart?.itemId).not.toBe(reasoningStart?.itemId);
+      expect(assistantCompletion).toMatchObject({
+        itemId: assistantStart?.itemId,
+        text: "Finished the review.",
+      });
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              T3_ACP_EMIT_JUNIE_THOUGHT_SEQUENCE: "1",
+            },
+          },
+          cwd: process.cwd(),
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+          authMethodId: "test",
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+  );
+
   it.effect("suppresses generic placeholder tool updates until completion", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;

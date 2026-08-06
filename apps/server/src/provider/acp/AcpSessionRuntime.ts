@@ -267,7 +267,15 @@ type AcpStartState =
 
 interface AcpAssistantSegmentState {
   readonly nextSegmentIndex: number;
-  readonly activeItemId?: string;
+  readonly activeItemByStreamKind: Partial<
+    Record<
+      "assistant_text" | "reasoning_text",
+      {
+        readonly itemId: string;
+        readonly text: string;
+      }
+    >
+  >;
 }
 
 interface EnsureActiveAssistantSegmentResult {
@@ -298,7 +306,10 @@ export const make = (
           }),
       ),
     );
-    const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({ nextSegmentIndex: 0 });
+    const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({
+      nextSegmentIndex: 0,
+      activeItemByStreamKind: {},
+    });
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
@@ -879,6 +890,11 @@ const handleSessionUpdate = ({
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
     const parsed = parseSessionUpdateEvent(params);
+    if (parsed.ignoredSessionUpdateKind) {
+      yield* Effect.logDebug("Ignored unsupported ACP session update.", {
+        sessionUpdate: parsed.ignoredSessionUpdateKind,
+      });
+    }
     if (parsed.modeId) {
       yield* Ref.update(modeStateRef, (current) =>
         current === undefined ? current : updateModeState(current, parsed.modeId!),
@@ -914,7 +930,7 @@ const handleSessionUpdate = ({
       if (event._tag === "ContentDelta") {
         if (event.text.trim().length === 0) {
           const assistantSegmentState = yield* Ref.get(assistantSegmentRef);
-          if (!assistantSegmentState.activeItemId) {
+          if (!assistantSegmentState.activeItemByStreamKind[event.streamKind]) {
             continue;
           }
         }
@@ -923,6 +939,23 @@ const handleSessionUpdate = ({
           assistantSegmentRef,
           sessionId: params.sessionId,
           assistantItemRuntimeId,
+          streamKind: event.streamKind,
+        });
+        yield* Ref.update(assistantSegmentRef, (current) => {
+          const activeItem = current.activeItemByStreamKind[event.streamKind];
+          if (!activeItem || activeItem.itemId !== itemId) {
+            return current;
+          }
+          return {
+            ...current,
+            activeItemByStreamKind: {
+              ...current.activeItemByStreamKind,
+              [event.streamKind]: {
+                ...activeItem,
+                text: `${activeItem.text}${event.text}`,
+              },
+            },
+          };
         });
         yield* Queue.offer(queue, {
           ...event,
@@ -960,38 +993,55 @@ function shouldEmitToolCallUpdate(
   return previous === undefined || previous.title !== next.title || previous.detail !== next.detail;
 }
 
-const assistantItemId = (sessionId: string, runtimeId: string, segmentIndex: number) =>
-  `assistant:${sessionId}:runtime:${runtimeId}:segment:${segmentIndex}`;
+const assistantItemId = (
+  sessionId: string,
+  runtimeId: string,
+  streamKind: "assistant_text" | "reasoning_text",
+  segmentIndex: number,
+) =>
+  `${streamKind === "reasoning_text" ? "reasoning" : "assistant"}:${sessionId}:runtime:${runtimeId}:segment:${segmentIndex}`;
 
 const ensureActiveAssistantSegment = ({
   queue,
   assistantSegmentRef,
   sessionId,
   assistantItemRuntimeId,
+  streamKind,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly sessionId: string;
   readonly assistantItemRuntimeId: string;
+  readonly streamKind: "assistant_text" | "reasoning_text";
 }) =>
   Ref.modify<AcpAssistantSegmentState, EnsureActiveAssistantSegmentResult>(
     assistantSegmentRef,
     (current) => {
-      if (current.activeItemId) {
-        return [{ itemId: current.activeItemId }, current] as const;
+      const activeItem = current.activeItemByStreamKind[streamKind];
+      if (activeItem) {
+        return [{ itemId: activeItem.itemId }, current] as const;
       }
-      const itemId = assistantItemId(sessionId, assistantItemRuntimeId, current.nextSegmentIndex);
+      const itemId = assistantItemId(
+        sessionId,
+        assistantItemRuntimeId,
+        streamKind,
+        current.nextSegmentIndex,
+      );
       return [
         {
           itemId,
           startedEvent: {
             _tag: "AssistantItemStarted",
             itemId,
+            streamKind,
           } satisfies Extract<AcpParsedSessionEvent, { readonly _tag: "AssistantItemStarted" }>,
         },
         {
           nextSegmentIndex: current.nextSegmentIndex + 1,
-          activeItemId: itemId,
+          activeItemByStreamKind: {
+            ...current.activeItemByStreamKind,
+            [streamKind]: { itemId, text: "" },
+          },
         } satisfies AcpAssistantSegmentState,
       ] as const;
     },
@@ -1011,16 +1061,30 @@ const closeActiveAssistantSegment = ({
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
 }) =>
   Ref.modify(assistantSegmentRef, (current) => {
-    if (!current.activeItemId) {
-      return [undefined, current] as const;
+    const events = (["reasoning_text", "assistant_text"] as const).flatMap((streamKind) => {
+      const activeItem = current.activeItemByStreamKind[streamKind];
+      return activeItem
+        ? [
+            {
+              _tag: "AssistantItemCompleted",
+              itemId: activeItem.itemId,
+              streamKind,
+              ...(activeItem.text.length > 0 ? { text: activeItem.text } : {}),
+            } satisfies AcpParsedSessionEvent,
+          ]
+        : [];
+    });
+    if (events.length === 0) {
+      return [events, current] as const;
     }
     return [
-      {
-        _tag: "AssistantItemCompleted",
-        itemId: current.activeItemId,
-      } satisfies AcpParsedSessionEvent,
+      events,
       {
         nextSegmentIndex: current.nextSegmentIndex,
+        activeItemByStreamKind: {},
       } satisfies AcpAssistantSegmentState,
     ] as const;
-  }).pipe(Effect.flatMap((event) => (event ? Queue.offer(queue, event) : Effect.void)));
+  }).pipe(
+    Effect.flatMap((events) => Effect.forEach(events, (event) => Queue.offer(queue, event))),
+    Effect.asVoid,
+  );

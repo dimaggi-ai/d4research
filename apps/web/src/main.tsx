@@ -16,6 +16,7 @@ import {
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
+import { shouldRegisterServiceWorkerForLocation } from "./serviceWorkerRegistration";
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
@@ -27,7 +28,15 @@ if (isElectron) {
   syncDocumentWindowControlsOverlayClass();
 }
 
-if ("serviceWorker" in navigator && (window.isSecureContext || location.hostname === "localhost")) {
+if (
+  "serviceWorker" in navigator &&
+  (window.isSecureContext || location.hostname === "localhost") &&
+  // A newly activated worker claims the page and reloads it. During pairing
+  // that reload lands mid-exchange: the server has already consumed the
+  // one-time token, the response (and its session cookie) is discarded, and
+  // the token can never be used again. Register after pairing instead.
+  shouldRegisterServiceWorkerForLocation(new URL(window.location.href))
+) {
   let reloadingForUpdate = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (reloadingForUpdate) return;

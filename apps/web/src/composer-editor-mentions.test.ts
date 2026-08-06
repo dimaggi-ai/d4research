@@ -71,13 +71,25 @@ describe("splitPromptIntoComposerSegments", () => {
     ).toEqual([{ type: "text", text: "Read [the docs](https://example.com/docs) first" }]);
   });
 
-  it.each(["@expo/ui", "@jane/foo.js", "@scope/pkg/sub/path"])(
+  it.each(["@expo/ui", "@jane/foo.js"])(
     "does not turn scoped package reference %s into file mention segments",
     (reference) => {
       const prompt = `Install ${reference} next`;
       expect(splitPromptIntoComposerSegments(prompt)).toEqual([{ type: "text", text: prompt }]);
     },
   );
+
+  it("turns a deep bare path into a file mention segment", () => {
+    expect(splitPromptIntoComposerSegments("Inspect @apps/server/src/bin.ts next")).toEqual([
+      { type: "text", text: "Inspect " },
+      {
+        type: "mention",
+        path: "apps/server/src/bin.ts",
+        source: "@apps/server/src/bin.ts",
+      },
+      { type: "text", text: " next" },
+    ]);
+  });
 
   it("keeps IME-composed text containing a scoped package reference as text", () => {
     const prompt = "入力 @expo/ui　を追加";

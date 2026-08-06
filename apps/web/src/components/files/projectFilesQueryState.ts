@@ -18,6 +18,9 @@ const EMPTY_PROJECT_FILE_PATH = "";
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
 ).pipe(Atom.withLabel("project-file-query:empty"));
+const EMPTY_PROJECT_ENTRIES_QUERY_ATOM = Atom.make(
+  AsyncResult.initial<ProjectListEntriesResult, never>(false),
+).pipe(Atom.withLabel("project-entries-query:empty"));
 function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativePath: string) {
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
@@ -140,6 +143,30 @@ function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | 
     return `${path} doesn't exist in this workspace. It may belong to a different project, or it was moved or deleted.`;
   }
   return cause instanceof Error ? cause.message : "Workspace query failed.";
+}
+
+/**
+ * Entries for callers that may not have an environment or workspace yet (chat
+ * rendering runs before a thread is bound). Missing inputs resolve to a stable
+ * empty atom so no query is issued and hook order stays constant.
+ */
+export function useOptionalProjectEntriesQuery(
+  environmentId: EnvironmentId | null,
+  cwd: string | undefined,
+): ProjectQueryState<ProjectListEntriesResult> {
+  const atom =
+    environmentId && cwd
+      ? getProjectEntriesQueryAtom(environmentId, cwd)
+      : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
+  const result = useAtomValue(atom);
+  const refreshAtom = useAtomRefresh(atom);
+  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  return {
+    data: Option.getOrNull(AsyncResult.value(result)),
+    error: errorMessage(result),
+    isPending: result.waiting,
+    refresh,
+  };
 }
 
 export function useProjectEntriesQuery(

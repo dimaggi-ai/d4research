@@ -82,12 +82,28 @@ describe("collectComposerInlineTokens", () => {
     expect(collectComposerInlineTokens("Read [docs](https://example.com) first")).toEqual([]);
   });
 
-  it.each(["@expo/ui", "@jane/foo.js", "@scope/pkg/sub/path"])(
+  it.each(["@expo/ui", "@jane/foo.js"])(
     "keeps scoped package reference %s as plain text",
     (reference) => {
       expect(collectComposerInlineTokens(`Install ${reference} next`)).toEqual([]);
     },
   );
+
+  it.each([
+    "apps/server/src/provider/Layers/ClaudeAdapter.ts",
+    "ops/tool-guard/profiles/local-coding/policy.yaml",
+    "scope/pkg/sub/path",
+  ])("keeps deep bare path %s as a mention", (path) => {
+    expect(collectComposerInlineTokens(`Inspect @${path} next`)).toEqual([
+      {
+        type: "mention",
+        value: path,
+        source: `@${path}`,
+        start: 8,
+        end: 9 + path.length,
+      },
+    ]);
+  });
 
   it("keeps scoped package references plain across incomplete input and IME whitespace", () => {
     expect(collectComposerInlineTokens("Install @expo/ui")).toEqual([]);

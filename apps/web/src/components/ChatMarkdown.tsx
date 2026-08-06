@@ -78,6 +78,7 @@ import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useActiveEnvironmentId } from "../state/entities";
+import { useOptionalProjectEntriesQuery } from "./files/projectFilesQueryState";
 import { serverEnvironment } from "../state/server";
 import { assetEnvironment } from "../state/assets";
 import { usePreparedConnection } from "../state/session";
@@ -1276,6 +1277,27 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  // Path-shaped text is linkified heuristically, so a path belonging to another
+  // project (or one since moved) becomes a link that cannot open. When the
+  // workspace index is loaded and complete, use it to keep only real files
+  // clickable. A truncated or absent index means "cannot tell" — link as before
+  // rather than hiding valid files.
+  const workspaceEntriesQuery = useOptionalProjectEntriesQuery(environmentId, cwd);
+  const knownWorkspacePaths = useMemo(() => {
+    const data = workspaceEntriesQuery.data;
+    if (!cwd || !data || data.truncated) return null;
+    return new Set(data.entries.map((entry) => entry.path));
+  }, [cwd, workspaceEntriesQuery.data]);
+  const isResolvableWorkspaceLink = useCallback(
+    (meta: MarkdownFileLinkMeta) => {
+      if (!knownWorkspacePaths) return true;
+      // Absolute/out-of-workspace targets are opened by the external editor
+      // instead of the in-app preview, so the index says nothing about them.
+      if (!meta.workspaceRelativePath) return true;
+      return knownWorkspacePaths.has(meta.workspaceRelativePath);
+    },
+    [knownWorkspacePaths],
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
@@ -1285,23 +1307,23 @@ function ChatMarkdown({
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
       const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
-      if (meta) {
+      if (meta && isResolvableWorkspaceLink(meta)) {
         metaByHref.set(normalizedHref, meta);
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, text, isResolvableWorkspaceLink]);
   const inlineCodeFileLinkMetaByText = useMemo(() => {
     const metaByText = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractInlineCodeSpans(text)) {
       if (metaByText.has(span)) continue;
       const meta = resolveInlineCodeFileLinkMeta(span, cwd);
-      if (meta) {
+      if (meta && isResolvableWorkspaceLink(meta)) {
         metaByText.set(span, meta);
       }
     }
     return metaByText;
-  }, [cwd, text]);
+  }, [cwd, text, isResolvableWorkspaceLink]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [
       ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),

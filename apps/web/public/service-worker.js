@@ -19,10 +19,23 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Backend traffic must never be mediated by the worker: none of it is
+// cacheable, and interception turned recoverable network failures into opaque
+// ones (a failed API fetch resolved to `undefined`). Kept in sync with
+// DEV_PROXIED_PATH_PREFIXES in packages/shared/src/devProxy.ts.
+const BACKEND_PATH_PREFIXES = ["/api", "/oauth", "/.well-known", "/ws"];
+
+function isBackendPath(pathname) {
+  return BACKEND_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
+  if (isBackendPath(url.pathname)) return;
 
   if (request.mode === "navigate") {
     event.respondWith(fetch(request, { cache: "no-store" }));
@@ -42,7 +55,12 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        .catch((cause) => {
+          // Only substitute a cached copy when one exists; otherwise let the
+          // failure surface so the page can retry or report it.
+          if (cached) return cached;
+          throw cause;
+        });
       return cached ?? network;
     }),
   );

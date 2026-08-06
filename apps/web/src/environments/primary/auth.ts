@@ -228,31 +228,33 @@ function readEnvironmentHttpErrorStatus(error: EnvironmentHttpCommonErrorType): 
   }
 }
 
+// Pairing credentials are single-use and consumed server-side before the
+// response is written, so a retry after a dropped connection always fails with
+// `invalid_credential` — and burns the link. Unlike the idempotent bootstrap
+// reads, this exchange must be attempted exactly once.
 async function exchangeBootstrapCredential(credential: string): Promise<AuthBrowserSessionResult> {
-  return retryTransientBootstrap(async () => {
-    try {
-      return await runPrimaryHttp(
-        PrimaryEnvironmentHttpClient.pipe(
-          Effect.flatMap((client) => client.auth.browserSession({ payload: { credential } })),
-        ),
-      );
-    } catch (error) {
-      if (
-        isEnvironmentHttpCommonError(error) &&
-        error._tag === "EnvironmentAuthInvalidError" &&
-        error.reason === "invalid_credential"
-      ) {
-        throw new PrimaryEnvironmentPairingCredentialRejectedError({
-          providedLength: credential.length,
-          cause: error,
-        });
-      }
-      throw PrimaryEnvironmentRequestError.fromCause({
-        operation: "exchange-bootstrap-credential",
+  try {
+    return await runPrimaryHttp(
+      PrimaryEnvironmentHttpClient.pipe(
+        Effect.flatMap((client) => client.auth.browserSession({ payload: { credential } })),
+      ),
+    );
+  } catch (error) {
+    if (
+      isEnvironmentHttpCommonError(error) &&
+      error._tag === "EnvironmentAuthInvalidError" &&
+      error.reason === "invalid_credential"
+    ) {
+      throw new PrimaryEnvironmentPairingCredentialRejectedError({
+        providedLength: credential.length,
         cause: error,
       });
     }
-  });
+    throw PrimaryEnvironmentRequestError.fromCause({
+      operation: "exchange-bootstrap-credential",
+      cause: error,
+    });
+  }
 }
 
 async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionState> {
@@ -276,7 +278,9 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
   }
 }
 
-const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
+// 500 included because a dev proxy answers with it while the backend restarts;
+// only idempotent bootstrap reads run through this retry.
+const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([500, 502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
@@ -344,6 +348,10 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
   }
 }
 
+// A single-use credential must reach the server at most once, no matter how
+// many callers race (route effects, retries, a second tab of the same link).
+const inFlightCredentialExchanges = new Map<string, Promise<void>>();
+
 export async function submitServerAuthCredential(credential: string): Promise<void> {
   const trimmedCredential = credential.trim();
   if (!trimmedCredential) {
@@ -352,10 +360,21 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
     });
   }
 
-  resolvedAuthenticatedGateState = null;
-  await exchangeBootstrapCredential(trimmedCredential);
-  bootstrapPromise = null;
-  stripPairingTokenFromUrl();
+  const inFlight = inFlightCredentialExchanges.get(trimmedCredential);
+  if (inFlight) return inFlight;
+
+  const exchange = (async () => {
+    resolvedAuthenticatedGateState = null;
+    await exchangeBootstrapCredential(trimmedCredential);
+    bootstrapPromise = null;
+    stripPairingTokenFromUrl();
+  })();
+  inFlightCredentialExchanges.set(trimmedCredential, exchange);
+  try {
+    await exchange;
+  } finally {
+    inFlightCredentialExchanges.delete(trimmedCredential);
+  }
 }
 
 export async function createServerPairingCredential(input?: {

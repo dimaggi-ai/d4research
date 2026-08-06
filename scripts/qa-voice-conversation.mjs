@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeProcess from "node:process";
 import { chromium } from "../apps/desktop/node_modules/playwright-core/index.mjs";
 
-const pairUrl = process.env.T3CODE_QA_PAIR_URL?.trim();
+const pairUrl = NodeProcess.env.T3CODE_QA_PAIR_URL?.trim();
 if (!pairUrl) throw new Error("T3CODE_QA_PAIR_URL is required");
 
 const executableCandidates = [
-  process.env.T3CODE_QA_CHROMIUM?.trim(),
-  path.join(os.homedir(), ".cache/ms-playwright/chromium-1228/chrome-linux64/chrome"),
-  path.join(os.homedir(), ".cache/ms-playwright/chromium-1223/chrome-linux64/chrome"),
+  NodeProcess.env.T3CODE_QA_CHROMIUM?.trim(),
+  NodePath.join(NodeOS.homedir(), ".cache/ms-playwright/chromium-1228/chrome-linux64/chrome"),
+  NodePath.join(NodeOS.homedir(), ".cache/ms-playwright/chromium-1223/chrome-linux64/chrome"),
 ].filter(Boolean);
-const executablePath = executableCandidates.find((candidate) => fs.existsSync(candidate));
+const executablePath = executableCandidates.find((candidate) => NodeFS.existsSync(candidate));
 if (!executablePath) throw new Error("No Chromium executable found; set T3CODE_QA_CHROMIUM");
 
 const browser = await chromium.launch({

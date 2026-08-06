@@ -4,6 +4,7 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -102,12 +103,13 @@ const runAgy = (
   environment: NodeJS.ProcessEnv,
 ) =>
   Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
     const command = settings.binaryPath || "agy";
     const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
     // Agy's `models` command keeps running when its stdout is an ordinary
     // Node pipe, while it exits normally under a PTY. Settings health checks
     // run from Node, so give this discovery-only probe a Linux pseudo-terminal.
-    if (process.platform === "linux" && args.length === 1 && args[0] === "models") {
+    if (platform === "linux" && args.length === 1 && args[0] === "models") {
       const scriptCommand = [resolved.command, ...resolved.args]
         .map(quotePosixShellArgument)
         .join(" ");

@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off - Production build bootstrap stamps the emitted PWA worker before an Effect runtime exists.
 import tailwindcss from "@tailwindcss/vite";
-import { readFile, writeFile } from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -150,8 +150,8 @@ export default defineConfig(() => {
         closeBundle: async () => {
           const sourceUrl = new URL("./public/service-worker.js", import.meta.url);
           const outputUrl = new URL("./dist/service-worker.js", import.meta.url);
-          const source = await readFile(sourceUrl, "utf8");
-          await writeFile(outputUrl, stampPwaServiceWorker(source, pwaBuildId), "utf8");
+          const source = await NodeFSP.readFile(sourceUrl, "utf8");
+          await NodeFSP.writeFile(outputUrl, stampPwaServiceWorker(source, pwaBuildId), "utf8");
         },
       },
     ],

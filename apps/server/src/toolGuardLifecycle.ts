@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as ServerConfig from "./config.ts";
 import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
@@ -32,15 +33,10 @@ export interface ToolGuardManagedPaths {
   readonly profiles: string;
 }
 
-type ToolGuardPlatform = "win32" | "posix";
-
-const toolGuardPlatform = (platform = process.platform): ToolGuardPlatform =>
-  platform === "win32" ? "win32" : "posix";
-
-const toolGuardHome = (platform = process.platform) =>
+const toolGuardHome = (platform: NodeJS.Platform, environment: NodeJS.ProcessEnv) =>
   platform === "win32"
-    ? (process.env.USERPROFILE ?? process.env.HOME ?? "")
-    : (process.env.HOME ?? "");
+    ? (environment.USERPROFILE ?? environment.HOME ?? "")
+    : (environment.HOME ?? "");
 
 export interface ToolGuardLifecycleResult {
   readonly ok: boolean;
@@ -50,7 +46,7 @@ export interface ToolGuardLifecycleResult {
 export function managedToolGuardPaths(
   stateDir: string,
   path: Pick<Path.Path, "join">,
-  platform = toolGuardPlatform(),
+  platform: NodeJS.Platform,
 ): ToolGuardManagedPaths {
   const root = path.join(stateDir, "tool-guard", "integration");
   const windows = platform === "win32";
@@ -64,7 +60,7 @@ export function managedToolGuardPaths(
   };
 }
 
-export function managedToolGuardCommand(hookPath: string, platform = toolGuardPlatform()) {
+export function managedToolGuardCommand(hookPath: string, platform: NodeJS.Platform) {
   if (platform !== "win32") return hookPath;
   const escaped = hookPath.replaceAll('"', '\\"');
   return `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${escaped}"`;
@@ -169,7 +165,9 @@ export const externalToolGuardHookPaths = (home: string, path: Pick<Path.Path, "
 const hasExternalToolGuardHook = Effect.fn("hasExternalToolGuardHook")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = toolGuardHome();
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const home = toolGuardHome(platform, environment);
   if (!home) return false;
   const contents = yield* Effect.forEach(externalToolGuardHookPaths(home, path), (configPath) =>
     fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => "")),
@@ -186,7 +184,9 @@ const removeExternalToolGuardHooksFromConfigs = Effect.fn(
 )(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = toolGuardHome();
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(
     externalToolGuardHookPaths(home, path),
@@ -208,7 +208,9 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = toolGuardHome();
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(
     providerHookPaths(home, path),
@@ -219,7 +221,7 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
         const providerHookPath = configPath.includes(`${path.sep}.gemini${path.sep}`)
           ? agyHookPath
           : hookPath;
-        const providerHookCommand = managedToolGuardCommand(providerHookPath);
+        const providerHookCommand = managedToolGuardCommand(providerHookPath, platform);
         const next = enabled
           ? addManagedHook(current, providerHookCommand)
           : removeManagedHook(current);
@@ -231,7 +233,9 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
 
 const validateProviderHookConfigs = Effect.fn("validateProviderHookConfigs")(function* () {
   const path = yield* Path.Path;
-  const home = toolGuardHome();
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(externalToolGuardHookPaths(home, path), readJson, { discard: true });
 });
@@ -241,17 +245,19 @@ export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = toolGuardHome();
-  const binaryName = process.platform === "win32" ? "tg.exe" : "tg";
-  const pathSeparator = process.platform === "win32" ? ";" : ":";
-  const pathCandidates = (process.env.PATH ?? "")
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const home = toolGuardHome(platform, environment);
+  const binaryName = platform === "win32" ? "tg.exe" : "tg";
+  const pathSeparator = platform === "win32" ? ";" : ":";
+  const pathCandidates = (environment.PATH ?? "")
     .split(pathSeparator)
     .map((entry) => entry.trim().replace(/^"|"$/g, ""))
     .filter(Boolean)
     .map((entry) => path.join(entry, binaryName));
   const candidates = [
     managedBinary,
-    process.env.T3RESEARCH_TOOL_GUARD_BIN,
+    environment.T3RESEARCH_TOOL_GUARD_BIN,
     ...pathCandidates,
     home ? path.join(home, "workspace", "github", "tool-guard-core", "bin", binaryName) : undefined,
     home ? path.join(home, "tools", "tg-guard", binaryName) : undefined,
@@ -265,18 +271,20 @@ export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
 const resolveResources = Effect.fn("resolveToolGuardResources")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
   const bundled = path.join(import.meta.dirname, "tool-guard");
   const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
   const profilesCandidates = [
-    process.env.D2RESEARCH_TOOL_GUARD_RESOURCES
-      ? path.join(process.env.D2RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
+    environment.D2RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(environment.D2RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
       : undefined,
     path.join(bundled, "profiles"),
     path.join(repositoryRoot, "ops", "tool-guard", "profiles"),
   ].filter((candidate): candidate is string => Boolean(candidate));
   const scriptsCandidates = [
-    process.env.D2RESEARCH_TOOL_GUARD_RESOURCES
-      ? path.join(process.env.D2RESEARCH_TOOL_GUARD_RESOURCES, "scripts")
+    environment.D2RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(environment.D2RESEARCH_TOOL_GUARD_RESOURCES, "scripts")
       : undefined,
     path.join(bundled, "scripts"),
     path.join(repositoryRoot, "scripts"),
@@ -289,7 +297,7 @@ const resolveResources = Effect.fn("resolveToolGuardResources")(function* () {
     }
   }
   let scripts: string | undefined;
-  const hookName = `t3research-tool-guard-hook${process.platform === "win32" ? ".ps1" : ""}`;
+  const hookName = `t3research-tool-guard-hook${platform === "win32" ? ".ps1" : ""}`;
   for (const candidate of scriptsCandidates) {
     if (yield* fileSystem.exists(path.join(candidate, hookName))) {
       scripts = candidate;
@@ -314,7 +322,8 @@ export const readToolGuardManifest = Effect.fn("readToolGuardManifest")(function
 export const initializeToolGuardRuntime = Effect.fn("initializeToolGuardRuntime")(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const managed = managedToolGuardPaths(config.stateDir, path);
+  const platform = yield* HostProcessPlatform;
+  const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const manifest = yield* readToolGuardManifest(managed.manifest);
   setToolGuardRuntimeEnabled(manifest?.enabled === true);
 });
@@ -324,7 +333,8 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
-    const managed = managedToolGuardPaths(config.stateDir, path);
+    const platform = yield* HostProcessPlatform;
+    const managed = managedToolGuardPaths(config.stateDir, path, platform);
     const manifest = yield* readToolGuardManifest(managed.manifest);
     yield* validateProviderHookConfigs();
 
@@ -363,18 +373,18 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
       yield* fileSystem.copyFile(
         path.join(
           resources.scripts,
-          `t3research-tool-guard-hook${process.platform === "win32" ? ".ps1" : ""}`,
+          `t3research-tool-guard-hook${platform === "win32" ? ".ps1" : ""}`,
         ),
         managed.hook,
       );
       yield* fileSystem.copyFile(
         path.join(
           resources.scripts,
-          `t3research-tool-guard-agy-hook${process.platform === "win32" ? ".ps1" : ""}`,
+          `t3research-tool-guard-agy-hook${platform === "win32" ? ".ps1" : ""}`,
         ),
         managed.agyHook,
       );
-      if (process.platform !== "win32") {
+      if (platform !== "win32") {
         yield* fileSystem.chmod(managed.hook, 0o755);
         yield* fileSystem.chmod(managed.agyHook, 0o755);
       }

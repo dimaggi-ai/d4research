@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeURL from "node:url";
 
 export async function copyToolGuardAssets(input: {
   readonly repositoryRoot: string;
@@ -28,7 +28,10 @@ export async function copyToolGuardAssets(input: {
 }
 
 if (import.meta.main) {
-  const serverRoot = NodePath.resolve(NodePath.dirname(fileURLToPath(import.meta.url)), "..");
+  const serverRoot = NodePath.resolve(
+    NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+    "..",
+  );
   await copyToolGuardAssets({
     repositoryRoot: NodePath.resolve(serverRoot, "../.."),
     destination: NodePath.join(serverRoot, "dist", "tool-guard"),

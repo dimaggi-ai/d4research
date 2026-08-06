@@ -1,10 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AgySettings } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -129,26 +131,29 @@ describe("quotePosixShellArgument", () => {
 });
 
 describe("PTY wrapping round-trip", () => {
-  it.skipIf(process.platform !== "linux")(
-    "quotePosixShellArgument produces shell-safe arguments for script -c",
-    async () => {
-      const { execFileSync } = await import("node:child_process");
+  it.effect("quotePosixShellArgument produces shell-safe arguments for script -c", () =>
+    Effect.gen(function* () {
+      if ((yield* HostProcessPlatform) !== "linux") return;
       const args = ["/usr/bin/echo", "hello world", "it's a test", 'say "hi"'];
       const command = args.map(quotePosixShellArgument).join(" ");
-      const output = execFileSync("script", ["-q", "-e", "-c", command, "/dev/null"], {
-        encoding: "utf-8",
-        timeout: 5000,
-      });
+      const output = NodeChildProcess.execFileSync(
+        "script",
+        ["-q", "-e", "-c", command, "/dev/null"],
+        {
+          encoding: "utf-8",
+          timeout: 5000,
+        },
+      );
       const cleaned = output.replace(/\r\n/g, "\n").trim();
       expect(cleaned).toBe('hello world it\'s a test say "hi"');
-    },
+    }),
   );
 });
 
 it.layer(NodeServices.layer)("Agy provider health", (it) => {
   it.effect("uses a PTY for model discovery when Agy requires one", () =>
     Effect.gen(function* () {
-      if (process.platform !== "linux") return;
+      if ((yield* HostProcessPlatform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-agy-health-")),
       );
@@ -172,7 +177,7 @@ it.layer(NodeServices.layer)("Agy provider health", (it) => {
 
   it.effect("PTY wrapping handles binary paths with spaces", () =>
     Effect.gen(function* () {
-      if (process.platform !== "linux") return;
+      if ((yield* HostProcessPlatform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2 agy health ")),
       );
@@ -196,7 +201,7 @@ it.layer(NodeServices.layer)("Agy provider health", (it) => {
 
   it.effect("PTY wrapping handles realistic spinner + ANSI output", () =>
     Effect.gen(function* () {
-      if (process.platform !== "linux") return;
+      if ((yield* HostProcessPlatform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-agy-health-")),
       );

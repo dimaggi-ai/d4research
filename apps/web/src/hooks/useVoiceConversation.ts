@@ -127,6 +127,8 @@ export function useVoiceConversation(options: {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioEndedHandlerRef = useRef<(() => void) | null>(null);
+  const audioErrorHandlerRef = useRef<(() => void) | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const cancelRecordingRef = useRef(false);
@@ -144,16 +146,26 @@ export function useVoiceConversation(options: {
     streamRef.current = null;
   }, []);
 
+  const clearPlaybackHandlers = useCallback((audio: HTMLAudioElement) => {
+    if (audioEndedHandlerRef.current) {
+      audio.removeEventListener("ended", audioEndedHandlerRef.current);
+      audioEndedHandlerRef.current = null;
+    }
+    if (audioErrorHandlerRef.current) {
+      audio.removeEventListener("error", audioErrorHandlerRef.current);
+      audioErrorHandlerRef.current = null;
+    }
+  }, []);
+
   const stopPlayback = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
+    clearPlaybackHandlers(audio);
     if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
     audio.removeAttribute("src");
-    audio.onended = null;
-    audio.onerror = null;
     audioRef.current = null;
-  }, []);
+  }, [clearPlaybackHandlers]);
 
   // iOS only allows delayed playback when an audio element was unlocked by
   // the original tap. Reuse that element for every spoken reply in this
@@ -223,18 +235,21 @@ export function useVoiceConversation(options: {
         const finish = () => {
           URL.revokeObjectURL(objectUrl);
           audio.removeAttribute("src");
-          audio.onended = null;
-          audio.onerror = null;
+          clearPlaybackHandlers(audio);
           if (activeRef.current) window.setTimeout(() => void startListeningRef.current(), 300);
         };
-        audio.onended = finish;
-        audio.onerror = () => failConversation("The local voice gateway could not play the reply.");
+        const handleError = () =>
+          failConversation("The local voice gateway could not play the reply.");
+        audioEndedHandlerRef.current = finish;
+        audioErrorHandlerRef.current = handleError;
+        audio.addEventListener("ended", finish, { once: true });
+        audio.addEventListener("error", handleError, { once: true });
         await audio.play();
       } catch {
         failConversation(voiceGatewayUnavailableMessage());
       }
     },
-    [failConversation],
+    [clearPlaybackHandlers, failConversation],
   );
 
   const expectAssistantReply = useCallback(() => {

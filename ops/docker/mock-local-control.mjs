@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import * as NodeHttp from "node:http";
 
 const systemSnapshot = {
   cpu: { overall: 17, load: [0.4, 0.3, 0.2], temp: 51 },
@@ -35,7 +35,7 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-createServer((request, response) => {
+NodeHttp.createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1:8093");
   if (
     request.method === "GET" &&

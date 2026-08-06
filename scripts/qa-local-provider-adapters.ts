@@ -15,13 +15,15 @@ import { ServerConfig } from "../apps/server/src/config.ts";
 import { makeAgyAdapter } from "../apps/server/src/provider/Layers/AgyAdapter.ts";
 import { makeJunieAdapter } from "../apps/server/src/provider/Layers/JunieAdapter.ts";
 
+const decodeAgySettings = Schema.decodeSync(AgySettings);
+const decodeJunieSettings = Schema.decodeSync(JunieSettings);
 const provider = process.argv[2];
 const layer = ServerConfig.layerTest(process.cwd(), {
   prefix: `t3code-${provider ?? "provider"}-qa-`,
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 const runAgy = Effect.gen(function* () {
-  const adapter = yield* makeAgyAdapter(Schema.decodeSync(AgySettings)({ binaryPath: "agy" }));
+  const adapter = yield* makeAgyAdapter(decodeAgySettings({ binaryPath: "agy" }));
   const threadId = ThreadId.make(`qa-agy-${Date.now()}`);
   console.log("qa: agy adapter ready");
   yield* adapter.startSession({
@@ -42,7 +44,7 @@ const runAgy = Effect.gen(function* () {
 
 const runJunie = Effect.gen(function* () {
   const adapter = yield* makeJunieAdapter(
-    Schema.decodeSync(JunieSettings)({
+    decodeJunieSettings({
       binaryPath: process.env.JUNIE_BINARY ?? "junie",
       defaultModel: process.env.JUNIE_MODEL ?? "custom:t3-local-ollama",
     }),

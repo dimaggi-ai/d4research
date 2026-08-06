@@ -112,6 +112,7 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
           typeof envelope.response === "string"
             ? envelope.response
             : JSON.stringify(envelope.response);
+        // oxlint-disable-next-line t3code/no-inline-schema-compile -- Each operation supplies its own output schema, so no module-level decoder exists.
         return Schema.decodeEffect(Schema.fromJsonString(input.outputSchemaJson))(
           extractJsonObject(response),
         ).pipe(

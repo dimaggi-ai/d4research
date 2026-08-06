@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as ServerConfig from "./config.ts";
 import {
@@ -51,13 +52,15 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const managed = managedToolGuardPaths(config.stateDir, path);
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const manifest = yield* readToolGuardManifest(managed.manifest);
   const binaryPath = yield* findToolGuardBinary(managed.binary);
   const home =
-    process.platform === "win32"
-      ? (process.env.USERPROFILE ?? process.env.HOME ?? "")
-      : (process.env.HOME ?? "");
+    platform === "win32"
+      ? (environment.USERPROFILE ?? environment.HOME ?? "")
+      : (environment.HOME ?? "");
   const hookConfigPaths = home ? externalToolGuardHookPaths(home, path) : [];
   const hookConfigs = yield* Effect.forEach(hookConfigPaths, (configPath) =>
     fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => "")),

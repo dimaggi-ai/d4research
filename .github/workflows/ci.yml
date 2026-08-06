@@ -1,19 +1,22 @@
 name: CI
 
+# This fork runs on GitHub-hosted runners rather than upstream's Blacksmith
+# fleet, so CI is deliberately infrequent: pushes to master do not trigger it.
+# Use "Run workflow" for an on-demand check.
 on:
   pull_request:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   check:
     name: Check
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -59,7 +62,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -91,7 +94,10 @@ jobs:
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
-    runs-on: blacksmith-6vcpu-macos-26
+    # macOS minutes are the scarcest free resource and this fork rarely touches
+    # native mobile code, so keep it off pull requests.
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -119,7 +125,7 @@ jobs:
 
   release_smoke:
     name: Release Smoke
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout

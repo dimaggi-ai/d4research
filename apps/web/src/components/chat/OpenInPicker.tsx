@@ -268,26 +268,57 @@ export const OpenInPicker = memo(function OpenInPicker({
   ]);
 
   return (
-    <Button
-      aria-label={compact ? "Open file in preferred editor" : "Open project with preferred app"}
-      size="xs"
-      variant="outline"
-      disabled={!preferredEditor || !openInCwd}
-      onClick={() => openInEditor(preferredEditor)}
-    >
-      {primaryOption?.Icon && (
-        <primaryOption.Icon
-          aria-hidden="true"
-          className={cn("size-3.5", getOpenInIconClass(primaryOption.kind))}
-        />
-      )}
-      <span
-        className={
-          compact ? "sr-only" : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
-        }
+    <Group aria-label="Open in editor">
+      <Button
+        aria-label={compact ? "Open file in preferred editor" : "Open project with preferred app"}
+        className="ps-[8.5px]"
+        size="xs"
+        variant="outline"
+        disabled={!preferredEditor || !openInCwd}
+        onClick={() => openInEditor(preferredEditor)}
       >
-        Open
-      </span>
-    </Button>
+        {primaryOption?.Icon && (
+          <primaryOption.Icon
+            aria-hidden="true"
+            className={cn("size-3.5", getOpenInIconClass(primaryOption.kind))}
+          />
+        )}
+        <span
+          className={
+            compact
+              ? "sr-only"
+              : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
+          }
+        >
+          Open
+        </span>
+      </Button>
+      <GroupSeparator {...(!compact ? { className: "hidden @3xl/header-actions:block" } : {})} />
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              aria-label={compact ? "Choose editor" : "Copy options"}
+              size="icon-xs"
+              variant="outline"
+            />
+          }
+        >
+          <ChevronDownIcon aria-hidden="true" className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          {options.length === 0 && <MenuItem disabled>No installed editors found</MenuItem>}
+          {options.map(({ label, Icon, value, kind }) => (
+            <MenuItem key={value} onClick={() => openInEditor(value)}>
+              <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
+              {label}
+              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
+                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+              )}
+            </MenuItem>
+          ))}
+        </MenuPopup>
+      </Menu>
+    </Group>
   );
 });

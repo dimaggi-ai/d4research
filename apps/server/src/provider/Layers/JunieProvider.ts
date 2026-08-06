@@ -9,7 +9,9 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -30,9 +32,40 @@ const PRESENTATION = {
   requiresNewThreadForModelChange: true,
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
-const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
-  { slug: "default", name: "Default", isCustom: false, capabilities: EMPTY_CAPABILITIES },
+// Junie's ACP handshake advertises no models, so the picker showed a single
+// synthetic "Default" entry. These are the JetBrains-hosted ids the CLI accepts
+// via `--model`; users can add more through the provider's custom models.
+const HOSTED_MODELS: ReadonlyArray<readonly [string, string]> = [
+  ["gpt-5.6-terra", "GPT-5.6-Terra"],
+  ["gpt-5.6-sol", "GPT-5.6-Sol"],
+  ["gpt-5.6-luna", "GPT-5.6-Luna"],
+  ["claude-opus-4-8", "Claude Opus 4.8"],
+  ["claude-sonnet-5", "Claude Sonnet 5"],
+  ["gemini-3.1-pro", "Gemini 3.1 Pro"],
 ];
+
+const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = HOSTED_MODELS.map(([slug, name]) => ({
+  slug,
+  name,
+  isCustom: false,
+  capabilities: EMPTY_CAPABILITIES,
+}));
+
+/**
+ * Junie loads custom model definitions from `<home>/.junie/models/*.json` and
+ * the same folder inside a project (`--model-default-locations`). Each file
+ * names the model in its `id` field.
+ */
+export function parseJunieCustomModelId(fileContents: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(fileContents);
+    if (!parsed || typeof parsed !== "object") return null;
+    const id = (parsed as { readonly id?: unknown }).id;
+    return typeof id === "string" && id.trim().length > 0 ? id.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 const modelsFromSettings = (
   customModels: ReadonlyArray<string>,
@@ -79,6 +112,27 @@ const runVersion = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
     );
   });
 
+const discoverCustomModelIds = (environment: NodeJS.ProcessEnv) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = environment.HOME ?? environment.USERPROFILE;
+    if (!home) return [] as ReadonlyArray<string>;
+    const modelsDir = path.join(home, ".junie", "models");
+    if (!(yield* fileSystem.exists(modelsDir))) return [] as ReadonlyArray<string>;
+    const entries = yield* fileSystem.readDirectory(modelsDir);
+    const ids: Array<string> = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      const contents = yield* fileSystem
+        .readFileString(path.join(modelsDir, entry))
+        .pipe(Effect.orElseSucceed(() => ""));
+      const id = parseJunieCustomModelId(contents);
+      if (id) ids.push(id);
+    }
+    return ids as ReadonlyArray<string>;
+  }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
+
 const discoverModels = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -113,7 +167,7 @@ export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(fu
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
   if (!settings.enabled) return yield* buildInitialJunieProviderSnapshot(settings);
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
@@ -192,12 +246,15 @@ export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(fu
     });
   }
   const discovered = discovery.value.value;
+  // Junie advertises no ACP models today, so the hosted catalog is the usable
+  // list; models defined under ~/.junie/models are merged in as custom entries.
+  const customModelIds = yield* discoverCustomModelIds(environment);
   return buildServerProvider({
     presentation: PRESENTATION,
     enabled: true,
     checkedAt,
     models: modelsFromSettings(
-      settings.customModels,
+      [...settings.customModels, ...customModelIds],
       discovered.length ? discovered : BUILT_IN_MODELS,
     ),
     probe: { installed: true, version, status: "ready", auth: { status: "unknown" } },

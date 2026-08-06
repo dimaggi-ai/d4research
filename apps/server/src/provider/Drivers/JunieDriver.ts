@@ -105,10 +105,14 @@ export const JunieDriver: ProviderDriver<JunieSettings, JunieDriverEnv> = {
       const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv, {
         makeRuntime: (input) => makeJunieAcpRuntime({ ...input, junieSettings: effectiveConfig }),
       });
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const checkProvider = checkJunieProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
       );
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<JunieSettings>>({

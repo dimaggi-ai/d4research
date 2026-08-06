@@ -636,6 +636,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
+      ...(settings.autoResumeAfterUsageLimit !== DEFAULT_UNIFIED_SETTINGS.autoResumeAfterUsageLimit
+        ? ["Resume after usage limits"]
+        : []),
       ...(settings.enableProviderUpdateChecks !==
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
@@ -680,6 +683,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizeTerminal,
       settings.glassOpacity,
       settings.enableAssistantStreaming,
+      settings.autoResumeAfterUsageLimit,
       settings.enableProviderUpdateChecks,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
@@ -710,6 +714,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+      autoResumeAfterUsageLimit: DEFAULT_UNIFIED_SETTINGS.autoResumeAfterUsageLimit,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
@@ -1817,6 +1822,33 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("auto-resume-usage-limit")}
+          description="Automatically continue a failed turn after the provider usage window resets."
+          resetAction={
+            settings.autoResumeAfterUsageLimit !==
+            DEFAULT_UNIFIED_SETTINGS.autoResumeAfterUsageLimit ? (
+              <SettingResetButton
+                label="resume after usage limits"
+                onClick={() =>
+                  updateSettings({
+                    autoResumeAfterUsageLimit: DEFAULT_UNIFIED_SETTINGS.autoResumeAfterUsageLimit,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.autoResumeAfterUsageLimit}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoResumeAfterUsageLimit: Boolean(checked) })
+              }
+              aria-label="Resume after provider usage limits"
             />
           }
         />

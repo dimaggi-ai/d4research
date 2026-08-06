@@ -22,9 +22,11 @@ import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
@@ -43,6 +45,8 @@ import {
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
+import { isRateLimitFailure, resolveResumeAt } from "../rateLimitDetection.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -718,6 +722,8 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const providerRegistry = yield* ProviderRegistry;
+  const latestRateLimitsByProvider = yield* Ref.make(new Map<string, unknown>());
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -1326,6 +1332,15 @@ const make = Effect.gen(function* () {
       const thread = yield* resolveThreadShell(event.threadId);
       if (!thread) return;
 
+      const providerRateLimitKey = event.providerInstanceId ?? event.provider;
+      if (event.type === "account.rate-limits.updated") {
+        yield* Ref.update(latestRateLimitsByProvider, (current) => {
+          const next = new Map(current);
+          next.set(providerRateLimitKey, event.payload.rateLimits);
+          return next;
+        });
+      }
+
       let loadedThreadDetail: OrchestrationThread | null | undefined;
       const getLoadedThreadDetail = () =>
         Effect.gen(function* () {
@@ -1735,6 +1750,61 @@ const make = Effect.gen(function* () {
             planId: proposedPlanIdForTurn(thread.id, turnId),
             turnId,
             updatedAt: now,
+          });
+        }
+
+        const latestRateLimitPayload = (yield* Ref.get(latestRateLimitsByProvider)).get(
+          providerRateLimitKey,
+        );
+        yield* Ref.update(latestRateLimitsByProvider, (current) => {
+          const next = new Map(current);
+          next.delete(providerRateLimitKey);
+          return next;
+        });
+        const settings = yield* serverSettingsService.getSettings;
+        if (
+          shouldApplyThreadLifecycle &&
+          settings.autoResumeAfterUsageLimit &&
+          normalizeRuntimeTurnState(event.payload.state) === "failed" &&
+          isRateLimitFailure(event.payload.errorMessage, [event.payload, latestRateLimitPayload])
+        ) {
+          const providers = yield* providerRegistry.getProviders;
+          const provider = providers.find(
+            (candidate) =>
+              candidate.instanceId ===
+              (event.providerInstanceId ?? thread.modelSelection.instanceId),
+          );
+          const eventDateTime = DateTime.makeUnsafe(now);
+          const resumeAt =
+            resolveResumeAt(provider?.usage, DateTime.toDate(eventDateTime)) ??
+            DateTime.formatIso(
+              DateTime.makeUnsafe(
+                DateTime.toEpochMillis(eventDateTime) + Duration.toMillis(Duration.minutes(15)),
+              ),
+            );
+          const reason =
+            event.payload.errorMessage ??
+            provider?.usage?.limitReached ??
+            "Provider usage limit reached";
+          const activity = {
+            id: EventId.make(`rate-limit:${event.eventId}`),
+            createdAt: now,
+            tone: "error" as const,
+            kind: "turn.rate-limited",
+            summary: "Usage limit reached",
+            payload: {
+              resumeAt,
+              reason,
+              provider: event.provider,
+            },
+            turnId: turnId ?? null,
+          };
+          yield* orchestrationEngine.dispatch({
+            type: "thread.activity.append",
+            commandId: yield* providerCommandId(event, "rate-limit-activity-append"),
+            threadId: thread.id,
+            activity,
+            createdAt: now,
           });
         }
       }

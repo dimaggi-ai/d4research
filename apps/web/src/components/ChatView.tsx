@@ -257,6 +257,11 @@ import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
 import { ResearchProgressBanner } from "./chat/ResearchProgressBanner";
+import {
+  deriveRateLimitResumeState,
+  RATE_LIMIT_CONTINUATION_PROMPT,
+  RateLimitResumeBanner,
+} from "./chat/RateLimitResumeBanner";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -2206,6 +2211,17 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
   });
+  const rateLimitResumeState = useMemo(() => {
+    const state = deriveRateLimitResumeState(threadActivities);
+    if (
+      !state ||
+      (activeLatestTurn !== null &&
+        Date.parse(activeLatestTurn.requestedAt) > Date.parse(state.createdAt))
+    ) {
+      return null;
+    }
+    return state;
+  }, [activeLatestTurn, threadActivities]);
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
@@ -2683,6 +2699,62 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeServerThread, draftId, routeThreadKey, routeThreadRef],
   );
+  const onResumeAfterUsageLimit = useCallback(async () => {
+    if (
+      !rateLimitResumeState ||
+      !activeThread ||
+      !isServerThread ||
+      isSendBusy ||
+      isConnecting ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    setThreadError(activeThread.id, null);
+    const result = await startThreadTurn({
+      environmentId,
+      input: {
+        threadId: activeThread.id,
+        message: {
+          messageId: newMessageId(),
+          role: "user",
+          text: RATE_LIMIT_CONTINUATION_PROMPT,
+          attachments: [],
+        },
+        modelSelection: activeThread.modelSelection,
+        titleSeed: activeThread.title,
+        runtimeMode: activeThread.runtimeMode,
+        interactionMode: activeThread.interactionMode,
+        createdAt,
+      },
+    });
+    sendInFlightRef.current = false;
+    if (result._tag === "Failure") {
+      resetLocalDispatch();
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to resume the turn.",
+        );
+      }
+    }
+  }, [
+    activeThread,
+    beginLocalDispatch,
+    environmentId,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    rateLimitResumeState,
+    resetLocalDispatch,
+    setThreadError,
+    startThreadTurn,
+  ]);
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -6320,6 +6392,11 @@ function ChatViewContent(props: ChatViewProps) {
                             isRunning={phase === "running"}
                           />
                         ) : null}
+                        <RateLimitResumeBanner
+                          state={rateLimitResumeState}
+                          disabled={isWorking}
+                          onResumeNow={() => void onResumeAfterUsageLimit()}
+                        />
                         <QueuedRequestsBanner
                           requests={queuedRequests}
                           onRemove={(requestId) => removeQueuedRequest(routeThreadKey, requestId)}

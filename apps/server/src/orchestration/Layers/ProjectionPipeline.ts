@@ -23,6 +23,7 @@ import { ProjectionStateRepository } from "../../persistence/Services/Projection
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { type ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { ProjectionThreadTurnUsageRepository } from "../../persistence/Services/ProjectionThreadTurnUsage.ts";
+import { ProjectionThreadResumeScheduleRepository } from "../../persistence/Services/ProjectionThreadResumeSchedule.ts";
 import {
   type ProjectionThreadMessage,
   ProjectionThreadMessageRepository,
@@ -42,6 +43,7 @@ import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/Projec
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { ProjectionThreadTurnUsageRepositoryLive } from "../../persistence/Layers/ProjectionThreadTurnUsage.ts";
+import { ProjectionThreadResumeScheduleRepositoryLive } from "../../persistence/Layers/ProjectionThreadResumeSchedule.ts";
 import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/Layers/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/ProjectionThreadSessions.ts";
@@ -58,6 +60,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { RATE_LIMIT_CONTINUATION_PROMPT } from "../rateLimitDetection.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -117,6 +120,13 @@ const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsFor
 );
 
 const decodeThreadTokenUsageSnapshot = Schema.decodeUnknownOption(ThreadTokenUsageSnapshot);
+const decodeRateLimitedActivityPayload = Schema.decodeUnknownOption(
+  Schema.Struct({
+    resumeAt: Schema.String,
+    reason: Schema.String,
+    provider: Schema.String,
+  }),
+);
 
 function extractActivityRequestId(payload: unknown): ApprovalRequestId | null {
   if (typeof payload !== "object" || payload === null) {
@@ -485,6 +495,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadProposedPlanRepository = yield* ProjectionThreadProposedPlanRepository;
     const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
     const projectionThreadTurnUsageRepository = yield* ProjectionThreadTurnUsageRepository;
+    const projectionThreadResumeScheduleRepository =
+      yield* ProjectionThreadResumeScheduleRepository;
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
@@ -1112,13 +1124,53 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       switch (event.type) {
         case "thread.archived":
         case "thread.deleted":
-          yield* projectionThreadTurnUsageRepository.deleteByThreadId({
+          yield* Effect.all([
+            projectionThreadTurnUsageRepository.deleteByThreadId({
+              threadId: event.payload.threadId,
+            }),
+            projectionThreadResumeScheduleRepository.deleteByThreadId({
+              threadId: event.payload.threadId,
+            }),
+          ]).pipe(Effect.asVoid);
+          return;
+
+        case "thread.turn-start-requested":
+          yield* projectionThreadResumeScheduleRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
           return;
 
         case "thread.activity-appended": {
           const { activity } = event.payload;
+          if (activity.kind === "turn.rate-limited") {
+            const payload = decodeRateLimitedActivityPayload(activity.payload);
+            if (Option.isNone(payload)) {
+              return;
+            }
+            const thread = yield* projectionThreadRepository.getById({
+              threadId: event.payload.threadId,
+            });
+            if (
+              Option.isNone(thread) ||
+              thread.value.archivedAt !== null ||
+              thread.value.deletedAt !== null
+            ) {
+              return;
+            }
+            yield* projectionThreadResumeScheduleRepository.upsert({
+              threadId: event.payload.threadId,
+              resumeAt: payload.value.resumeAt,
+              reason: payload.value.reason,
+              provider: payload.value.provider,
+              instanceId: thread.value.modelSelection.instanceId,
+              model: thread.value.modelSelection.model,
+              prompt: RATE_LIMIT_CONTINUATION_PROMPT,
+              createdAt: activity.createdAt,
+              attempts: 0,
+            });
+            return;
+          }
+
           if (activity.kind !== "context-window.updated" || activity.turnId === null) {
             return;
           }
@@ -1793,6 +1845,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadProposedPlanRepositoryLive),
   Layer.provideMerge(ProjectionThreadActivityRepositoryLive),
   Layer.provideMerge(ProjectionThreadTurnUsageRepositoryLive),
+  Layer.provideMerge(ProjectionThreadResumeScheduleRepositoryLive),
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),

@@ -19,6 +19,7 @@ import {
   ProjectId,
   ProviderItemId,
   type ServerSettings,
+  type ServerProvider,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -54,6 +55,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
   return ServerSettingsService.layerTest(overrides);
@@ -253,7 +255,10 @@ describe("ProviderRuntimeIngestion", () => {
     }
   });
 
-  async function createHarness(options?: { serverSettings?: Partial<ServerSettings> }) {
+  async function createHarness(options?: {
+    serverSettings?: Partial<ServerSettings>;
+    providers?: ReadonlyArray<ServerProvider>;
+  }) {
     const workspaceRoot = makeTempDir("t3-provider-project-");
     NodeFS.mkdirSync(NodePath.join(workspaceRoot, ".git"));
     const provider = createProviderServiceHarness();
@@ -274,6 +279,7 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
+      Layer.provideMerge(makeProviderRegistryLayer(options?.providers)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
@@ -394,6 +400,109 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("turn failed");
+  });
+
+  it("parks a failed turn when provider usage is rate-limited", async () => {
+    const harness = await createHarness({
+      providers: [
+        {
+          instanceId: ProviderInstanceId.make("codex"),
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          installed: true,
+          version: "1.0.0",
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: "2026-08-05T10:00:00.000Z",
+          models: [],
+          slashCommands: [],
+          skills: [],
+          usage: {
+            support: "supported",
+            planType: "pro",
+            windows: [
+              {
+                id: "primary",
+                label: "5-hour window",
+                utilizationPercent: 100,
+                resetsAt: "2026-08-05T10:45:00.000Z",
+                windowMinutes: 300,
+              },
+              {
+                id: "secondary",
+                label: "7-day window",
+                utilizationPercent: 99,
+                resetsAt: "2026-08-09T00:00:00.000Z",
+                windowMinutes: 10_080,
+              },
+            ],
+            limitReached: "primary",
+            checkedAt: "2026-08-05T10:00:00.000Z",
+            message: null,
+          },
+        },
+      ],
+    });
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-rate-limit-started"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-08-05T10:00:00.000Z",
+      turnId: asTurnId("turn-rate-limit"),
+      payload: {},
+    });
+    await harness.drain();
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-rate-limit-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-08-05T10:01:00.000Z",
+      turnId: asTurnId("turn-rate-limit"),
+      payload: {
+        state: "failed",
+        errorMessage: "Rate limit reached for the primary window",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.kind === "turn.rate-limited"),
+    );
+    const activity = thread.activities.find((candidate) => candidate.kind === "turn.rate-limited");
+    expect(activity?.payload).toEqual({
+      resumeAt: "2026-08-05T10:45:00.000Z",
+      reason: "Rate limit reached for the primary window",
+      provider: "codex",
+    });
+  });
+
+  it("does not park rate-limited failures when automatic resume is disabled", async () => {
+    const harness = await createHarness({
+      serverSettings: { autoResumeAfterUsageLimit: false },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-rate-limit-disabled"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-08-05T10:01:00.000Z",
+      turnId: asTurnId("turn-rate-limit-disabled"),
+      payload: {
+        state: "failed",
+        errorMessage: "HTTP 429: too many requests",
+      },
+    });
+    await harness.drain();
+
+    const thread = await harness
+      .readModel()
+      .then((snapshot) => snapshot.threads.find((entry) => entry.id === "thread-1")!);
+    expect(thread.activities.some((activity) => activity.kind === "turn.rate-limited")).toBe(false);
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

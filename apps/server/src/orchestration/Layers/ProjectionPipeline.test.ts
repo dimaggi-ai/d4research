@@ -406,6 +406,128 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-turn-usage-test
         assert.deepEqual(archivedUsageRows, []);
       }),
     );
+
+    it.effect("parks a rate-limited thread and removes the schedule when archived", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-rate-limited");
+        const createdAt = "2026-08-05T10:00:00.000Z";
+        const resumeAt = "2026-08-05T11:00:00.000Z";
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-rate-limit-created"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-rate-limit-created"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rate-limit-created"),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-rate-limit"),
+            title: "Rate limited",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claude-work"),
+              model: "claude-opus-4-1",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make("evt-rate-limit-activity"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-rate-limit-activity"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rate-limit-activity"),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make("activity-rate-limit"),
+              tone: "error",
+              kind: "turn.rate-limited",
+              summary: "Usage limit reached",
+              payload: {
+                resumeAt,
+                reason: "Claude usage limit reached",
+                provider: "claudeAgent",
+              },
+              turnId: TurnId.make("turn-rate-limit"),
+              createdAt,
+            },
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+
+        const rows = yield* sql<{
+          readonly threadId: string;
+          readonly resumeAt: string;
+          readonly provider: string;
+          readonly instanceId: string;
+          readonly model: string;
+          readonly attempts: number;
+        }>`
+          SELECT
+            thread_id AS "threadId",
+            resume_at AS "resumeAt",
+            provider,
+            instance_id AS "instanceId",
+            model,
+            attempts
+          FROM projection_thread_resume_schedule
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepEqual(rows, [
+          {
+            threadId,
+            resumeAt,
+            provider: "claudeAgent",
+            instanceId: "claude-work",
+            model: "claude-opus-4-1",
+            attempts: 0,
+          },
+        ]);
+
+        yield* eventStore.append({
+          type: "thread.archived",
+          eventId: EventId.make("evt-rate-limit-archived"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-08-05T10:01:00.000Z",
+          commandId: CommandId.make("cmd-rate-limit-archived"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-rate-limit-archived"),
+          metadata: {},
+          payload: {
+            threadId,
+            archivedAt: "2026-08-05T10:01:00.000Z",
+            updatedAt: "2026-08-05T10:01:00.000Z",
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+
+        assert.deepEqual(
+          yield* sql`
+            SELECT thread_id
+            FROM projection_thread_resume_schedule
+            WHERE thread_id = ${threadId}
+          `,
+          [],
+        );
+      }),
+    );
   },
 );
 

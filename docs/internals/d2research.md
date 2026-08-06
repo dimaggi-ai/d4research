@@ -31,7 +31,14 @@ The visible transcript remains authoritative. Memo supplements it with a compact
 
 d2research does not replace provider permission modes. Native provider behavior is the default. Users may install a managed Tool Guard copy into a specific environment, then enable or disable its hooks for that server and uninstall it completely.
 
-The managed installation copies versioned binaries, platform-native wrappers, and profiles into the environment rather than depending on a developer checkout. Hooks are gated by the d2 server runtime and remain inert outside an enabled environment. The lifecycle is exposed in Settings and covered by focused server and web tests on macOS, Linux, and Windows paths.
+The managed installation copies versioned binaries, platform-native wrappers, and profiles into the environment rather than depending on a developer checkout. Hooks are gated by the d2 server runtime and remain inert outside an enabled environment. The lifecycle is exposed in Settings, and a dedicated **Settings → Tool Guard** page shows the active policy — read-only from the bundled profile before installation, editable once managed. Both are covered by focused server and web tests on macOS, Linux, and Windows paths. See [tool-guard.md](./tool-guard.md).
+
+### Readiness and usage visibility
+
+Provider snapshots carry optional account usage data (`ServerProviderUsage`): plan type and rolling
+rate-limit windows with utilization and reset times, probed from the Claude Agent SDK and the Codex
+app-server. The System panel shows them beside token usage and the context-window meter, so a
+handoff target can be chosen with limits in view.
 
 ### Local environment integrations
 

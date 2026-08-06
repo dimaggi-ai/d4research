@@ -46,3 +46,7 @@ change.
 
 Mobile offers the same four modes. It labels the first one **Approve actions** rather than
 **Supervised**.
+
+If the optional [Tool Guard](./tool-guard.md) integration is installed and enabled, the mode also
+selects how the guard runs: the three guarded modes enforce the shared policy, while **Full
+access** only audits.

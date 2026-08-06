@@ -122,6 +122,52 @@ spills the whole accumulated text as one delta. The buffer also flushes at inter
 when a request opens (approval) or user input is requested, via
 `flushBufferedAssistantMessagesForTurn`.
 
+## Provider snapshots: models, skills, usage
+
+Each provider probe produces a `ServerProvider` snapshot
+([`server.ts`](../../packages/contracts/src/server.ts)): install/auth/status, the model list, and —
+where the CLI exposes them — `slashCommands` and `skills` that the web composer surfaces as `/` and
+`$` completions.
+
+Snapshots may also carry `usage: ServerProviderUsage` — plan type, rolling usage windows
+(`ServerProviderUsageWindow`: label, `utilizationPercent`, `resetsAt`), optional credits, and a
+`limitReached` marker. Two drivers populate it today:
+
+- **Claude** — `ClaudeProvider.ts` calls the Agent SDK's experimental usage API
+  (`usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`) and maps it via `mapClaudeUsage`;
+  failures degrade to `support: "unavailable"`.
+- **Codex** — `CodexProvider.ts` maps the app-server rate-limit report (`mapCodexRateLimits`),
+  including plan detection; an unauthenticated account reports `support: "unauthenticated"`.
+
+The web System panel renders supported providers in its **Usage limits** section
+(`UsageLimitsMonitor` in `apps/web/src/components/SystemPanel.tsx`).
+
+## Ollama models through the Claude driver
+
+The web settings offer an **Ollama preset** for a Claude provider instance
+(`apps/web/src/components/settings/ollamaClaudePreset.ts`). `applyOllamaClaudePreset` switches the
+instance to the `claudeAgent` driver and sets `ANTHROPIC_BASE_URL=http://127.0.0.1:11434`,
+`ANTHROPIC_AUTH_TOKEN=ollama`, and an empty `ANTHROPIC_API_KEY`, so Claude Code talks to the local
+Ollama daemon. The preset seeds `customModels` with:
+
+- locally installed models discovered via `fetchLocalOllamaModelIds` (GET
+  `http://127.0.0.1:11434/api/tags`, 3 s timeout, failure returns an empty list), and
+- the Ollama **cloud** tags in `OLLAMA_CLAUDE_CLOUD_MODELS`: `glm-5.2:cloud`,
+  `kimi-k2.7-code:cloud`, `minimax-m2.7:cloud`, `nemotron-3-super:cloud`, `qwen3.5:cloud`.
+
+Server-side, `ClaudeDriver` also discovers local models with `ollama list` when
+`ANTHROPIC_BASE_URL` points at `127.0.0.1:11434` (see the transport notes above).
+`isOllamaClaudePresetConfigured` detects a preset-shaped instance so the settings card can label it.
+
+## Tool Guard environment
+
+The Claude, Codex, and Agy adapters inject Tool Guard variables into the provider process through
+`toolGuardEnvironment` (`apps/server/src/provider/toolGuardRuntime.ts`). When the managed
+integration is enabled (`setToolGuardRuntimeEnabled`), it sets `T3RESEARCH_RUNTIME_MODE` to the
+thread's runtime mode, `T3RESEARCH_TOOL_GUARD_MODE` to `shadow` for `full-access` and `enforcement`
+for every other mode, and `T3RESEARCH_TOOL_GUARD_PROFILE`. When disabled it returns the environment
+unchanged, so the hooks stay inert. See [tool-guard.md](./tool-guard.md).
+
 [drivers]: ../../apps/server/src/provider/builtInDrivers.ts
 [codex]: ../../apps/server/src/provider/Drivers/CodexDriver.ts
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts

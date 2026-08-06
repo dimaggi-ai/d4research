@@ -47,3 +47,23 @@ hooks when the managed integration is disabled or removed.
 On Windows, d2research detects `tg.exe`, installs PowerShell hook adapters, and invokes them with a
 non-interactive execution-policy bypass. On macOS and Linux it installs the corresponding shell
 adapters.
+
+## How the access modes map
+
+Tool Guard follows the per-thread access selector. **Supervised**, **Auto-accept edits**, and
+**Auto** run the guard in _enforcement_: a matching policy rule can block a command outright or
+require human review. **Full access** runs the guard in _shadow_: every rule still evaluates and is
+written to the local audit log, but nothing is blocked. Native provider permissions apply in all
+modes; Tool Guard is an additional layer, not a replacement.
+
+## View and edit the policy
+
+**Settings → Tool Guard** shows the active policy as rule cards — each with its effect (Deny,
+Review, or Allow), an explanation, and the pattern it matches. The page works even before you
+install anything: without the managed integration it shows the bundled default policy read-only, so
+you can review exactly what would be enforced.
+
+Once the managed integration is installed, the same page becomes an editor: add, edit, or delete
+rules (rule id, effect, matched field, regex pattern, and description). Saved changes apply to the
+managed profile on this environment; the audit-only shadow copy used by Full access is kept in sync
+automatically.

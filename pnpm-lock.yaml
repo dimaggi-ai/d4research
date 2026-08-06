@@ -511,6 +511,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.5.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@clerk/clerk-js':
+        specifier: 6.25.12
+        version: 6.25.12(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/electron':
         specifier: 0.0.24
         version: 0.0.24(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@41.5.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

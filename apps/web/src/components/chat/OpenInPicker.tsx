@@ -1,9 +1,11 @@
 import { EditorId, type EnvironmentId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useMemo } from "react";
-import { isOpenFavoriteEditorShortcut } from "../../keybindings";
+import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
 import { usePreferredEditor } from "../../editorPreferences";
-import { FolderClosedIcon } from "lucide-react";
+import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { Group, GroupSeparator } from "../ui/group";
+import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import {
   CursorIcon,
   Icon,
@@ -233,6 +235,11 @@ export const OpenInPicker = memo(function OpenInPicker({
       preferredEditor,
       setPreferredEditor,
     ],
+  );
+
+  const openFavoriteEditorShortcutLabel = useMemo(
+    () => shortcutLabelForCommand(keybindings, "editor.openFavorite"),
+    [keybindings],
   );
 
   useEffect(() => {

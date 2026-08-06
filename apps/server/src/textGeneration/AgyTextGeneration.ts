@@ -27,7 +27,7 @@ const AgyJsonEnvelope = Schema.Struct({
   response: Schema.Unknown,
 });
 const decodeEnvelope = Schema.decodeUnknownSync(Schema.fromJsonString(AgyJsonEnvelope));
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const isTextGenerationError = Schema.is(TextGenerationError);
 
 export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function* (

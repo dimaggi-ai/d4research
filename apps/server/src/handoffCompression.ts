@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { type ProviderInstanceId, ThreadId } from "@t3tools/contracts";
@@ -26,16 +27,14 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
   input: CompressHandoffContextInput,
 ) {
   const registry = yield* ProviderAdapterRegistry;
-  const adapter = yield* registry
-    .getByInstance(input.instanceId)
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new HandoffCompressionError({
-            detail: `Provider '${input.instanceId}' unavailable: ${cause.message}`,
-          }),
-      ),
-    );
+  const adapter = yield* registry.getByInstance(input.instanceId).pipe(
+    Effect.mapError(
+      (cause) =>
+        new HandoffCompressionError({
+          detail: `Provider '${input.instanceId}' unavailable: ${cause.message}`,
+        }),
+    ),
+  );
 
   const systemPrompt = input.customPrompt.trim() || DEFAULT_COMPRESSION_PROMPT;
   const turnInput = [
@@ -46,7 +45,7 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
     input.transcript,
   ].join("\n");
 
-  const threadId = ThreadId.make(`handoff-compress-${Date.now()}`);
+  const threadId = ThreadId.make(`handoff-compress-${yield* Clock.currentTimeMillis}`);
 
   yield* adapter
     .startSession({

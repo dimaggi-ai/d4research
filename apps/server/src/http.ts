@@ -451,14 +451,6 @@ export const handoffCompressRouteLayer = HttpRouter.add(
           ),
         ),
       ),
-      Effect.catchTag("ProviderUnsupportedError", (error) =>
-        Effect.succeed(
-          HttpServerResponse.jsonUnsafe(
-            { ok: false, message: error.message },
-            { status: 502, headers: { "cache-control": "no-store" } },
-          ),
-        ),
-      ),
       Effect.orElseSucceed(() =>
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Context compression failed." },

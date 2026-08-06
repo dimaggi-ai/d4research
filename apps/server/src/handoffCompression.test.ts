@@ -2,8 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { ProviderDriverKind, ProviderInstanceId, TurnId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
 
+import type { ProviderAdapterError } from "./provider/Errors.ts";
+import type { ProviderAdapterShape } from "./provider/Services/ProviderAdapter.ts";
 import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegistry.ts";
 import { compressHandoffContext, HandoffCompressionError } from "./handoffCompression.ts";
 
@@ -72,7 +74,7 @@ function registryLayer(responseText: string) {
   return Layer.succeed(ProviderAdapterRegistry, {
     getByInstance: (instanceId: ProviderInstanceId) =>
       instanceId === MOCK_INSTANCE
-        ? Effect.succeed(adapter)
+        ? Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>)
         : Effect.fail({
             _tag: "ProviderUnsupportedError" as const,
             message: `No instance: ${instanceId}`,

@@ -11,7 +11,6 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import { initializeToolGuardRuntime } from "./toolGuardLifecycle.ts";
-import * as HttpResponseCompression from "./httpCompression/HttpResponseCompression.ts";
 import {
   otlpTracesProxyRouteLayer,
   missionControlSystemRouteLayer,
@@ -259,7 +258,10 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // NDJSON writers and is provided at the outer runtime layer so both
 // `ProviderService` and the per-instance drivers read the same logger pair.
 const ProviderLayerLive = ProviderServiceLive.pipe(
-  Layer.provide(ProviderAdapterRegistryLive),
+  // provideMerge (not provide): the handoff-compression HTTP route resolves
+  // adapters straight from ProviderAdapterRegistry, so the registry must stay
+  // visible in the runtime context rather than being absorbed here.
+  Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 

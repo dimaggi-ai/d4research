@@ -6,7 +6,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 
 import { makeLocalMemoConnector } from "./connectors.ts";
 
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const fakeHttpLayer = (respond: (request: HttpClientRequest.HttpClientRequest) => unknown) =>
   Layer.succeed(

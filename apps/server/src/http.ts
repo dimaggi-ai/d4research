@@ -352,15 +352,15 @@ export const toolGuardPolicyReadRouteLayer = HttpRouter.add(
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
     return yield* Effect.gen(function* () {
-      const policy = yield* readToolGuardPolicy();
-      if (!policy) {
+      const read = yield* readToolGuardPolicy();
+      if (!read) {
         return HttpServerResponse.jsonUnsafe(
           { ok: false, message: "No active policy found." },
           { status: 404, headers: { "cache-control": "no-store" } },
         );
       }
       return HttpServerResponse.jsonUnsafe(
-        { ok: true, policy },
+        { ok: true, policy: read.policy, source: read.source },
         { headers: { "cache-control": "no-store" } },
       );
     }).pipe(

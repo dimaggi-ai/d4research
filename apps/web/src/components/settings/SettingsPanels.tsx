@@ -6,8 +6,8 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
-  ShieldCheckIcon,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -142,9 +142,6 @@ import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePreferredEditor } from "../../editorPreferences";
-import { useToolGuardStatus } from "../../hooks/useToolGuardStatus";
-import { useToolGuardPolicy } from "../../hooks/useToolGuardPolicy";
-import { ToolGuardPolicyEditor } from "./ToolGuardPolicyEditor";
 import {
   DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
   DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
@@ -1127,9 +1124,6 @@ export function AppearanceSettingsPanel() {
 export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const toolGuardStatus = useToolGuardStatus();
-  const toolGuardPolicy = useToolGuardPolicy(toolGuardStatus.installed);
-  const [policyEditorOpen, setPolicyEditorOpen] = useState(false);
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1873,132 +1867,15 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection title="Agent permissions">
         <SettingsRow
-          title="Native provider permissions"
-          description="The default. Access modes use each provider's built-in sandbox and approval behavior."
+          title="Tool Guard"
+          description="Environment-local policy enforcement for Codex, Claude, and Antigravity."
           control={
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ShieldCheckIcon className="size-4" />
-              {toolGuardStatus.integration === "external"
-                ? "Overridden externally"
-                : toolGuardStatus.enabled
-                  ? "Replaced by Tool Guard"
-                  : "Active"}
-            </span>
+            <Link to="/settings/tool-guard" className="text-xs text-primary hover:underline">
+              Open Tool Guard settings →
+            </Link>
           }
         />
-        <SettingsRow
-          title="d2research Tool Guard"
-          description="Optional environment-local policy enforcement for Codex, Claude, and Antigravity."
-          status={toolGuardStatus.message}
-          control={
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ShieldCheckIcon
-                  className={toolGuardStatus.enabled ? "size-4 text-emerald-500" : "size-4"}
-                />
-                {toolGuardStatus.integration === "external"
-                  ? "Externally managed"
-                  : toolGuardStatus.integration === "managed"
-                    ? "Enabled"
-                    : toolGuardStatus.integration === "disabled"
-                      ? "Disabled"
-                      : toolGuardStatus.integration === "available"
-                        ? "Available"
-                        : "Unavailable"}
-              </span>
-              {toolGuardStatus.canInstall ? (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={toolGuardStatus.action !== null}
-                  onClick={() => void toolGuardStatus.runAction("install")}
-                >
-                  Install
-                </Button>
-              ) : null}
-              {toolGuardStatus.canReplaceExternal ? (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={toolGuardStatus.action !== null}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Replace external Tool Guard hooks with the d2research-managed integration?\n\nOnly Tool Guard hook entries will be removed. Other provider hooks remain unchanged. Removed external Tool Guard entries are not restored by Uninstall.\n\nDetected in:\n${toolGuardStatus.externalHookConfigPaths.join("\n")}`,
-                      )
-                    ) {
-                      void toolGuardStatus.runAction("replace-external");
-                    }
-                  }}
-                >
-                  Replace with d2research
-                </Button>
-              ) : null}
-              {toolGuardStatus.canManage ? (
-                <>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={toolGuardStatus.action !== null}
-                    onClick={() =>
-                      void toolGuardStatus.runAction(toolGuardStatus.enabled ? "disable" : "enable")
-                    }
-                  >
-                    {toolGuardStatus.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={toolGuardStatus.action !== null}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Uninstall the d2research Tool Guard integration from this environment?",
-                        )
-                      ) {
-                        void toolGuardStatus.runAction("uninstall");
-                      }
-                    }}
-                  >
-                    Uninstall
-                  </Button>
-                </>
-              ) : null}
-            </div>
-          }
-        />
-
-        {toolGuardStatus.installed ? (
-          <SettingsRow
-            id="tool-guard-policies"
-            title="Policy rules"
-            description={
-              toolGuardPolicy.state === "ready" && toolGuardPolicy.policy
-                ? `${toolGuardPolicy.policy.rules.length} rule${toolGuardPolicy.policy.rules.length === 1 ? "" : "s"} in ${toolGuardPolicy.policy.mode} mode.`
-                : "Manage the enforcement rules that guard tool invocations."
-            }
-            control={
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={toolGuardPolicy.state !== "ready"}
-                onClick={() => setPolicyEditorOpen(true)}
-              >
-                Manage Policies
-              </Button>
-            }
-          />
-        ) : null}
       </SettingsSection>
-
-      <ToolGuardPolicyEditor
-        open={policyEditorOpen}
-        onOpenChange={setPolicyEditorOpen}
-        policy={toolGuardPolicy.policy}
-        saving={toolGuardPolicy.saving}
-        error={toolGuardPolicy.error}
-        onSave={toolGuardPolicy.save}
-      />
 
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

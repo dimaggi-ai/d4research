@@ -53,3 +53,47 @@ rules:
     effect: escalate
     citation:
       excerpt: "Publishing or rewriting Git history requires human review."
+
+  - rule_id: review-github-public-actions
+    rule_type: regex
+    conditions:
+      field: parameters.command
+      operator: regex
+      value: '\b(gh|hub)\s+(repo\s+(create|delete|edit\s+--visibility)|pr\s+(create|merge|close)|issue\s+(create|close|transfer)|release\s+create|api\s+)'
+    effect: escalate
+    citation:
+      excerpt: "GitHub public actions (create/merge PRs, create/close issues, create repos/releases, API calls) require human review."
+
+  - rule_id: review-npm-publish
+    rule_type: regex
+    conditions:
+      field: parameters.command
+      operator: regex
+      value: '\bnpm\s+publish\b|\byarn\s+publish\b|\bpnpm\s+publish\b'
+    effect: escalate
+    citation:
+      excerpt: "Publishing packages to npm requires human review."
+
+  - rule_id: deny-env-secrets-exfiltration
+    rule_type: regex
+    conditions:
+      and:
+        - field: parameters.command
+          operator: regex
+          value: '(env|printenv|set)\b|(\$\{?[A-Z_]*KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)'
+        - field: parameters.command
+          operator: regex
+          value: '\b(curl|wget|nc|ncat|ssh|scp|rsync)\b|\|'
+    effect: deny
+    citation:
+      excerpt: "Piping environment variables or secrets to network commands is never permitted."
+
+  - rule_id: review-docker-privileged
+    rule_type: regex
+    conditions:
+      field: parameters.command
+      operator: regex
+      value: '\bdocker\s+(run|exec)\b.*--privileged|\bdocker\s+system\s+prune\b'
+    effect: escalate
+    citation:
+      excerpt: "Running privileged Docker containers or system prune requires human review."

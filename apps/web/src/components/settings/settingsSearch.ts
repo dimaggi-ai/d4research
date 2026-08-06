@@ -5,6 +5,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/connections"
+  | "/settings/tool-guard"
   | "/settings/beta"
   | "/settings/archived";
 
@@ -26,6 +27,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
+  "/settings/tool-guard": "Tool Guard",
   "/settings/beta": "Beta",
   "/settings/archived": "Archive",
 };
@@ -135,7 +137,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "tool-guard-policies",
     title: "Tool Guard policies",
-    to: "/settings/general",
+    to: "/settings/tool-guard",
   },
   {
     id: "keybindings",

@@ -4,6 +4,7 @@ import type { ToolGuardPolicy } from "@t3tools/contracts";
 export interface ToolGuardPolicyState {
   readonly state: "loading" | "ready" | "unavailable";
   readonly policy: ToolGuardPolicy | null;
+  readonly source: "managed" | "bundled" | null;
   readonly saving: boolean;
   readonly error: string | null;
   readonly refresh: () => void;
@@ -12,6 +13,7 @@ export interface ToolGuardPolicyState {
 
 export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
   const [policy, setPolicy] = useState<ToolGuardPolicy | null>(null);
+  const [source, setSource] = useState<"managed" | "bundled" | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +24,7 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     if (!enabled) {
       setState("unavailable");
       setPolicy(null);
+      setSource(null);
       return;
     }
     const controller = new AbortController();
@@ -36,20 +39,28 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
         if (!response.ok) {
           setState("unavailable");
           setPolicy(null);
+          setSource(null);
           return;
         }
-        const payload = (await response.json()) as { ok?: boolean; policy?: ToolGuardPolicy };
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          policy?: ToolGuardPolicy;
+          source?: "managed" | "bundled";
+        };
         if (payload.ok && payload.policy) {
           setPolicy(payload.policy);
+          setSource(payload.source ?? "managed");
           setState("ready");
         } else {
           setState("unavailable");
           setPolicy(null);
+          setSource(null);
         }
       } catch {
         if (controller.signal.aborted) return;
         setState("unavailable");
         setPolicy(null);
+        setSource(null);
       }
     };
     void load();
@@ -81,5 +92,5 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     }
   }, []);
 
-  return { state, policy, saving, error, refresh, save };
+  return { state, policy, source, saving, error, refresh, save };
 }

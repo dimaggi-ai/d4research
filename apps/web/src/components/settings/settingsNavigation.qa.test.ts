@@ -10,6 +10,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/providers",
   "/settings/source-control",
   "/settings/connections",
+  "/settings/tool-guard",
   "/settings/beta",
   "/settings/archived",
 ] as const;

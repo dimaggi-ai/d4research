@@ -110,16 +110,47 @@ function resolveActiveProfileDir(profilesDir: string, path: Pick<Path.Path, "joi
   return path.join(profilesDir, "local-coding");
 }
 
+export type ToolGuardPolicySource = "managed" | "bundled";
+
+export interface ToolGuardPolicyReadResult {
+  readonly policy: ToolGuardPolicy;
+  readonly source: ToolGuardPolicySource;
+}
+
+/**
+ * Profiles shipped with the server (or the repository checkout in dev). These
+ * back the read-only policy view before the managed integration is installed;
+ * installation copies the same resources into the managed state directory.
+ */
+const bundledProfilesDirCandidates = (path: Pick<Path.Path, "join" | "resolve">) =>
+  [
+    process.env.D2RESEARCH_TOOL_GUARD_RESOURCES
+      ? path.join(process.env.D2RESEARCH_TOOL_GUARD_RESOURCES, "profiles")
+      : undefined,
+    path.join(import.meta.dirname, "tool-guard", "profiles"),
+    path.join(path.resolve(import.meta.dirname, "../../.."), "ops", "tool-guard", "profiles"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
 export const readToolGuardPolicy = Effect.fn("readToolGuardPolicy")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const managed = managedToolGuardPaths(config.stateDir, path);
-  const profileDir = resolveActiveProfileDir(managed.profiles, path);
-  const policyPath = path.join(profileDir, "policy.yaml");
-  if (!(yield* fileSystem.exists(policyPath))) return null;
-  const content = yield* fileSystem.readFileString(policyPath);
-  return parsePolicy(content);
+  const candidates: ReadonlyArray<{
+    readonly dir: string;
+    readonly source: ToolGuardPolicySource;
+  }> = [
+    { dir: managed.profiles, source: "managed" },
+    ...bundledProfilesDirCandidates(path).map((dir) => ({ dir, source: "bundled" as const })),
+  ];
+  for (const candidate of candidates) {
+    const policyPath = path.join(resolveActiveProfileDir(candidate.dir, path), "policy.yaml");
+    if (!(yield* fileSystem.exists(policyPath))) continue;
+    const content = yield* fileSystem.readFileString(policyPath);
+    const policy = parsePolicy(content);
+    if (policy) return { policy, source: candidate.source } satisfies ToolGuardPolicyReadResult;
+  }
+  return null;
 });
 
 export const writeToolGuardPolicy = Effect.fn("writeToolGuardPolicy")(function* (

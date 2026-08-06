@@ -21,6 +21,7 @@ import type {
   ProviderOptionDescriptor,
   ServerProviderModel,
   ServerProviderSkill,
+  ServerProviderUsage,
 } from "@t3tools/contracts";
 import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
 
@@ -48,6 +49,7 @@ export interface CodexAppServerProviderSnapshot {
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
+  readonly usage?: ServerProviderUsage;
 }
 
 const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
@@ -319,6 +321,68 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
+function makeCodexUsageStatus(
+  support: Exclude<ServerProviderUsage["support"], "supported">,
+  checkedAt: string,
+): ServerProviderUsage {
+  return {
+    support,
+    planType: null,
+    windows: [],
+    limitReached: null,
+    checkedAt,
+    message: null,
+  };
+}
+
+function codexRateLimitWindowLabel(windowMinutes: number | null): string {
+  if (windowMinutes === 300) return "5-hour";
+  if (windowMinutes === 10_080) return "Weekly";
+  return windowMinutes === null ? "Usage window" : `${windowMinutes} min window`;
+}
+
+export function mapCodexRateLimits(
+  raw: CodexSchema.V2GetAccountRateLimitsResponse,
+  checkedAt: string,
+): ServerProviderUsage {
+  const windows = (["primary", "secondary"] as const).flatMap((id) => {
+    const window = raw.rateLimits[id];
+    if (!window) return [];
+    const windowMinutes = window.windowDurationMins ?? null;
+    return [
+      {
+        id,
+        label: codexRateLimitWindowLabel(windowMinutes),
+        utilizationPercent: window.usedPercent,
+        resetsAt:
+          window.resetsAt === null || window.resetsAt === undefined
+            ? null
+            : DateTime.formatIso(DateTime.makeUnsafe(window.resetsAt * 1_000)),
+        windowMinutes,
+      },
+    ];
+  });
+  const credits = raw.rateLimits.credits;
+
+  return {
+    support: "supported",
+    planType: raw.rateLimits.planType ?? null,
+    windows,
+    ...(credits
+      ? {
+          credits: {
+            balance: credits.balance ?? null,
+            hasCredits: credits.hasCredits,
+            unlimited: credits.unlimited,
+          },
+        }
+      : {}),
+    limitReached: raw.rateLimits.rateLimitReachedType ?? null,
+    checkedAt,
+    message: null,
+  };
+}
+
 const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
@@ -385,15 +449,27 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
   const version = versionMatch ? versionMatch[1] : undefined;
 
-  const accountResponse = yield* client.request("account/read", {});
+  const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
+  const [accountResponse, rateLimitsResult] = yield* Effect.all(
+    [
+      client.request("account/read", {}),
+      client.request("account/rateLimits/read", undefined).pipe(Effect.result),
+    ],
+    { concurrency: "unbounded" },
+  );
   if (!accountResponse.account && accountResponse.requiresOpenaiAuth) {
     return {
       account: accountResponse,
       version,
       models: appendCustomCodexModels([], input.customModels ?? []),
       skills: [],
+      usage: makeCodexUsageStatus("unauthenticated", usageCheckedAt),
     } satisfies CodexAppServerProviderSnapshot;
   }
+
+  const usage = Result.isFailure(rateLimitsResult)
+    ? makeCodexUsageStatus("unavailable", usageCheckedAt)
+    : mapCodexRateLimits(rateLimitsResult.success, usageCheckedAt);
 
   const [skillsResponse, models] = yield* Effect.all(
     [
@@ -412,6 +488,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
       appendCustomCodexModels(models, input.customModels ?? []),
     ),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
+    usage,
   } satisfies CodexAppServerProviderSnapshot;
 });
 
@@ -594,6 +671,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
+  const usage =
+    accountStatus.auth.status === "unauthenticated"
+      ? makeCodexUsageStatus("unauthenticated", checkedAt)
+      : (snapshot.usage ?? makeCodexUsageStatus("unavailable", checkedAt));
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
@@ -601,6 +682,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    usage,
     probe: {
       installed: true,
       version: snapshot.version ?? null,

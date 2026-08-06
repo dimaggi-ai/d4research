@@ -4,6 +4,7 @@ import {
   applyPreferredCodexDefaultModel,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
+  mapCodexRateLimits,
 } from "./CodexProvider.ts";
 
 it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
@@ -18,6 +19,65 @@ it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
       ["gpt-5.6-sol", false],
       ["gpt-5.4", true],
     ],
+  );
+});
+
+it("maps Codex account rate limits into normalized usage windows", () => {
+  const checkedAt = "2026-08-05T12:00:00.000Z";
+
+  assert.deepStrictEqual(
+    mapCodexRateLimits(
+      {
+        rateLimits: {
+          planType: "pro",
+          primary: {
+            usedPercent: 35,
+            resetsAt: 0,
+            windowDurationMins: 300,
+          },
+          secondary: {
+            usedPercent: 72,
+            resetsAt: null,
+            windowDurationMins: 10_080,
+          },
+          credits: {
+            balance: "12.50",
+            hasCredits: true,
+            unlimited: false,
+          },
+          rateLimitReachedType: "workspace_member_usage_limit_reached",
+        },
+      },
+      checkedAt,
+    ),
+    {
+      support: "supported",
+      planType: "pro",
+      windows: [
+        {
+          id: "primary",
+          label: "5-hour",
+          utilizationPercent: 35,
+          resetsAt: "1970-01-01T00:00:00.000Z",
+          windowMinutes: 300,
+        },
+        {
+          id: "secondary",
+          label: "Weekly",
+          utilizationPercent: 72,
+          resetsAt: null,
+          windowMinutes: 10_080,
+        },
+      ],
+      credits: {
+        balance: "12.50",
+        hasCredits: true,
+        unlimited: false,
+      },
+      limitReached: "workspace_member_usage_limit_reached",
+      checkedAt,
+      message: null,
+    },
   );
 });
 

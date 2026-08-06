@@ -4,6 +4,7 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ServerProviderUsage,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -23,6 +24,7 @@ import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   query as claudeQuery,
   type Options as ClaudeQueryOptions,
+  type SDKControlGetUsageResponse,
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
   type SettingSource,
@@ -372,6 +374,13 @@ export function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
   return baseUrl !== undefined && OLLAMA_LOCAL_BASE_URLS.has(baseUrl);
 }
 
+export function getBuiltInClaudeModelsForEnvironment(
+  environment: NodeJS.ProcessEnv,
+  version: string | null,
+): ReadonlyArray<ServerProviderModel> {
+  return claudeUsesLocalOllama(environment) ? [] : getBuiltInClaudeModelsForVersion(version);
+}
+
 const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     if (!claudeUsesLocalOllama(environment)) return [] as ReadonlyArray<string>;
@@ -664,7 +673,64 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly usage?: ServerProviderUsage;
 };
+
+const CLAUDE_USAGE_WINDOWS = [
+  ["five_hour", "5-hour"],
+  ["seven_day", "Weekly"],
+  ["seven_day_opus", "Weekly (Opus)"],
+  ["seven_day_sonnet", "Weekly (Sonnet)"],
+  ["seven_day_oauth_apps", "Weekly (OAuth apps)"],
+] as const;
+
+function makeClaudeUsageStatus(
+  support: Exclude<ServerProviderUsage["support"], "supported">,
+  checkedAt: string,
+): ServerProviderUsage {
+  return {
+    support,
+    planType: null,
+    windows: [],
+    limitReached: null,
+    checkedAt,
+    message: null,
+  };
+}
+
+export function mapClaudeUsage(
+  raw: SDKControlGetUsageResponse,
+  checkedAt: string,
+): ServerProviderUsage {
+  if (!raw.rate_limits_available) {
+    return {
+      ...makeClaudeUsageStatus("unsupported", checkedAt),
+      planType: raw.subscription_type,
+    };
+  }
+
+  return {
+    support: "supported",
+    planType: raw.subscription_type,
+    windows: CLAUDE_USAGE_WINDOWS.flatMap(([id, label]) => {
+      const window = raw.rate_limits?.[id];
+      return window
+        ? [
+            {
+              id,
+              label,
+              utilizationPercent: window.utilization,
+              resetsAt: window.resets_at,
+              windowMinutes: null,
+            },
+          ]
+        : [];
+    }),
+    limitReached: null,
+    checkedAt,
+    message: null,
+  };
+}
 
 function parseClaudeInitializationCommands(
   commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
@@ -763,6 +829,7 @@ const probeClaudeCapabilities = (
       claudeSettings.binaryPath,
       claudeEnvironment,
     );
+    const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
     return yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
@@ -779,6 +846,10 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
+      const usage = await q
+        .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()
+        .then((raw) => mapClaudeUsage(raw, usageCheckedAt))
+        .catch(() => makeClaudeUsageStatus("unavailable", usageCheckedAt));
       const account = init.account as
         | {
             readonly email?: string;
@@ -793,6 +864,7 @@ const probeClaudeCapabilities = (
         tokenSource: account?.tokenSource,
         apiProvider: account?.apiProvider,
         slashCommands: parseClaudeInitializationCommands(init.commands),
+        usage,
       } satisfies ClaudeCapabilitiesProbe;
     });
   }).pipe(
@@ -930,8 +1002,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  // Ollama implements Anthropic's wire protocol, but does not host Anthropic
+  // Claude models. Do not offer the normal Claude aliases against that endpoint:
+  // each would fail as an unknown Ollama model. Locally copied aliases are still
+  // included via `ollama list` below.
+  const builtInModels = getBuiltInClaudeModelsForEnvironment(resolvedEnvironment, parsedVersion);
   const models = providerModelsFromSettings(
-    getBuiltInClaudeModelsForVersion(parsedVersion),
+    builtInModels,
     [...claudeSettings.customModels, ...(yield* discoverLocalOllamaModels(resolvedEnvironment))],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -960,6 +1037,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       models,
       slashCommands: dedupedSlashCommands,
       skills,
+      usage: makeClaudeUsageStatus("unavailable", checkedAt),
       probe: {
         installed: true,
         version: parsedVersion,
@@ -982,6 +1060,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
+    usage: capabilities.usage ?? makeClaudeUsageStatus("unavailable", checkedAt),
     probe: {
       installed: true,
       version: parsedVersion,

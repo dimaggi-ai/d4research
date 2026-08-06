@@ -9,8 +9,10 @@ import * as Schema from "effect/Schema";
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
+  getBuiltInClaudeModelsForEnvironment,
   claudeUsesLocalOllama,
   isLegacyClaudeModel,
+  mapClaudeUsage,
   parseOllamaModelList,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
@@ -41,6 +43,11 @@ it("discovers locally installed Ollama models only for the local Ollama endpoint
   );
   assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11434" }), true);
   assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "https://ollama.example" }), false);
+  assert.deepStrictEqual(
+    getBuiltInClaudeModelsForEnvironment({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11434" }, "2.1.0"),
+    [],
+  );
+  assert.ok(getBuiltInClaudeModelsForEnvironment({}, "2.1.0").length > 0);
 });
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {
@@ -65,6 +72,86 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.abortController, abortController);
   assert.equal(options.env?.HOME, "/home/user");
   assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
+});
+
+it("maps supported and unsupported Claude usage limits", () => {
+  const checkedAt = "2026-08-05T12:00:00.000Z";
+  const session = {
+    total_cost_usd: 0,
+    total_api_duration_ms: 0,
+    total_duration_ms: 0,
+    total_lines_added: 0,
+    total_lines_removed: 0,
+    model_usage: {},
+  };
+
+  assert.deepStrictEqual(
+    mapClaudeUsage(
+      {
+        session,
+        subscription_type: "max",
+        rate_limits_available: true,
+        behaviors: null,
+        rate_limits: {
+          five_hour: { utilization: 42.5, resets_at: "2026-08-05T15:00:00.000Z" },
+          seven_day: { utilization: null, resets_at: null },
+          seven_day_opus: { utilization: 10, resets_at: "2026-08-09T00:00:00.000Z" },
+        },
+      },
+      checkedAt,
+    ),
+    {
+      support: "supported",
+      planType: "max",
+      windows: [
+        {
+          id: "five_hour",
+          label: "5-hour",
+          utilizationPercent: 42.5,
+          resetsAt: "2026-08-05T15:00:00.000Z",
+          windowMinutes: null,
+        },
+        {
+          id: "seven_day",
+          label: "Weekly",
+          utilizationPercent: null,
+          resetsAt: null,
+          windowMinutes: null,
+        },
+        {
+          id: "seven_day_opus",
+          label: "Weekly (Opus)",
+          utilizationPercent: 10,
+          resetsAt: "2026-08-09T00:00:00.000Z",
+          windowMinutes: null,
+        },
+      ],
+      limitReached: null,
+      checkedAt,
+      message: null,
+    },
+  );
+
+  assert.deepStrictEqual(
+    mapClaudeUsage(
+      {
+        session,
+        subscription_type: null,
+        rate_limits_available: false,
+        behaviors: null,
+        rate_limits: null,
+      },
+      checkedAt,
+    ),
+    {
+      support: "unsupported",
+      planType: null,
+      windows: [],
+      limitReached: null,
+      checkedAt,
+      message: null,
+    },
+  );
 });
 
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
@@ -101,6 +188,22 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "const lines = createInterface({ input: process.stdin });",
           'lines.on("line", (line) => {',
           "  const message = JSON.parse(line);",
+          '  if (message.type === "control_request" && message.request?.subtype === "get_usage") {',
+          "    process.stdout.write(JSON.stringify({",
+          '      type: "control_response",',
+          "      response: {",
+          '        subtype: "success",',
+          "        request_id: message.request_id,",
+          "        response: {",
+          "          session: { total_cost_usd: 0, total_api_duration_ms: 0, total_duration_ms: 0, total_lines_added: 0, total_lines_removed: 0, model_usage: {} },",
+          '          subscription_type: "pro",',
+          "          rate_limits_available: true,",
+          '          rate_limits: { five_hour: { utilization: 25, resets_at: "2026-08-05T15:00:00.000Z" } },',
+          "        },",
+          "      },",
+          '    }) + "\\n");',
+          "    return;",
+          "  }",
           '  if (message.type !== "control_request" || message.request?.subtype !== "initialize") return;',
           "  process.stdout.write(JSON.stringify({",
           '    type: "control_response",',
@@ -133,6 +236,9 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         },
         workspaceCwd,
       );
+      assert.ok(capabilities);
+      assert.ok(capabilities.usage);
+      assert.match(capabilities.usage.checkedAt, /^\d{4}-\d{2}-\d{2}T/u);
 
       assert.deepEqual(capabilities, {
         email: "dev@example.com",
@@ -146,6 +252,22 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             input: { hint: "[path]" },
           },
         ],
+        usage: {
+          support: "supported",
+          planType: "pro",
+          windows: [
+            {
+              id: "five_hour",
+              label: "5-hour",
+              utilizationPercent: 25,
+              resetsAt: "2026-08-05T15:00:00.000Z",
+              windowMinutes: null,
+            },
+          ],
+          limitReached: null,
+          checkedAt: capabilities.usage.checkedAt,
+          message: null,
+        },
       });
 
       // @effect-diagnostics-next-line preferSchemaOverJson:off

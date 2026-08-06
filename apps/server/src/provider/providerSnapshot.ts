@@ -3,6 +3,7 @@ import type {
   ModelCapabilities,
   ServerProvider,
   ServerProviderAuth,
+  ServerProviderUsage,
   ServerProviderSkill,
   ServerProviderSlashCommand,
   ServerProviderModel,
@@ -138,6 +139,26 @@ export function parseGenericCliVersion(output: string): string | null {
   return match?.[1] ?? null;
 }
 
+const BRAND_CASING: Record<string, string> = {
+  glm: "GLM",
+  gpt: "GPT",
+  oss: "OSS",
+  llm: "LLM",
+  ai: "AI",
+};
+
+function humanizeModelSlug(slug: string): string {
+  if (slug.includes("/")) return slug;
+  const [base, tag] = slug.split(":", 2) as [string, string | undefined];
+  const words = base.split(/[-_]+/u).map((w) => {
+    if (/^\d/u.test(w)) return w;
+    const lower = w.toLowerCase();
+    return BRAND_CASING[lower] ?? w.charAt(0).toUpperCase() + w.slice(1);
+  });
+  const name = words.join(" ");
+  return tag && tag !== "latest" ? `${name} (${tag})` : name;
+}
+
 export function providerModelsFromSettings(
   builtInModels: ReadonlyArray<ServerProviderModel>,
   customModels: ReadonlyArray<string>,
@@ -155,7 +176,7 @@ export function providerModelsFromSettings(
     seen.add(normalized);
     customEntries.push({
       slug: normalized,
-      name: normalized,
+      name: humanizeModelSlug(normalized),
       isCustom: true,
       capabilities: customModelCapabilities,
     });
@@ -215,6 +236,7 @@ export function buildServerProvider(input: {
   models: ReadonlyArray<ServerProviderModel>;
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  usage?: ServerProviderUsage;
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
@@ -244,6 +266,7 @@ export function buildServerProvider(input: {
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
     ...(versionAdvisory ? { versionAdvisory } : {}),
+    ...(input.usage ? { usage: input.usage } : {}),
   };
 }
 

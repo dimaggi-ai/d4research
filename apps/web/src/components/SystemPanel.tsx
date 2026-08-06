@@ -1,16 +1,23 @@
 import {
   Activity,
+  CoinsIcon,
   Cpu,
+  Gauge,
   HardDrive,
   MemoryStick,
   RefreshCw,
   Server,
   ShieldCheck,
 } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import type { ServerProvider } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "./ui/button";
 import { cn } from "~/lib/utils";
+import type { ContextWindowSnapshot } from "~/lib/contextWindow";
+import { formatContextWindowTokens } from "~/lib/contextWindow";
+import { primaryServerProvidersAtom } from "~/state/server";
 
 export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
 const SYSTEM_MONITOR_URL = "/api/system-monitor";
@@ -84,6 +91,109 @@ function ToolGuardMonitor({ snapshot }: { snapshot: ToolGuardSnapshot | null }) 
   );
 }
 
+function formatUsageReset(resetsAt: string | null): string {
+  if (!resetsAt) return "Reset time unavailable";
+  const reset = new Date(resetsAt);
+  return Number.isNaN(reset.getTime())
+    ? "Reset time unavailable"
+    : `Resets ${reset.toLocaleString()}`;
+}
+
+function UsageLimitsMonitor({ providers }: { providers: ReadonlyArray<ServerProvider> }) {
+  const supportedProviders = providers.filter(
+    (provider) => provider.usage?.support === "supported",
+  );
+  if (supportedProviders.length === 0) return null;
+
+  return (
+    <section className="mb-5 rounded-lg border border-border/70 p-3">
+      <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Gauge className="size-3.5" /> Usage limits
+      </div>
+      <div className="space-y-3">
+        {supportedProviders.map((provider) => {
+          const usage = provider.usage;
+          if (!usage || usage.support !== "supported") return null;
+          return (
+            <div key={provider.instanceId} className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="font-medium text-foreground">
+                  {provider.displayName ?? provider.driver}
+                </span>
+                {usage.planType ? (
+                  <span className="text-muted-foreground">{usage.planType}</span>
+                ) : null}
+              </div>
+              {usage.windows.map((window) => (
+                <div key={window.id} className="text-xs text-muted-foreground">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span>{window.label}</span>
+                    <span className="tabular-nums">
+                      {window.utilizationPercent === null ? "—" : `${window.utilizationPercent}%`}
+                    </span>
+                  </div>
+                  <div className="text-[11px]">{formatUsageReset(window.resetsAt)}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function TokenUsageMonitor({ usage }: { usage: ContextWindowSnapshot }) {
+  const usedPct = usage.usedPercentage ?? 0;
+  return (
+    <section className="mb-5 rounded-lg border border-border/70 p-3">
+      <div className="mb-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2 font-medium">
+          <CoinsIcon className="size-3.5" /> Token Usage
+        </span>
+        {(usage.totalCostUsd ?? 0) > 0 ? (
+          <span className="font-medium tabular-nums">{formatCost(usage.totalCostUsd!)}</span>
+        ) : null}
+      </div>
+      {usage.maxTokens !== null ? (
+        <Meter
+          label="Context window"
+          value={usedPct}
+          detail={`${formatContextWindowTokens(usage.usedTokens)} / ${formatContextWindowTokens(usage.maxTokens ?? null)}`}
+        />
+      ) : (
+        <div className="text-xs text-muted-foreground">
+          {formatContextWindowTokens(usage.usedTokens)} tokens used
+        </div>
+      )}
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {(usage.inputTokens ?? 0) > 0 ? (
+          <span>Input: {formatContextWindowTokens(usage.inputTokens ?? null)}</span>
+        ) : null}
+        {(usage.cachedInputTokens ?? 0) > 0 ? (
+          <span>Cached: {formatContextWindowTokens(usage.cachedInputTokens ?? null)}</span>
+        ) : null}
+        {(usage.outputTokens ?? 0) > 0 ? (
+          <span>Output: {formatContextWindowTokens(usage.outputTokens ?? null)}</span>
+        ) : null}
+        {(usage.reasoningOutputTokens ?? 0) > 0 ? (
+          <span>Reasoning: {formatContextWindowTokens(usage.reasoningOutputTokens ?? null)}</span>
+        ) : null}
+        {(usage.toolUses ?? 0) > 0 ? <span>Tool uses: {usage.toolUses}</span> : null}
+        {(usage.durationMs ?? 0) > 0 ? (
+          <span>Duration: {Math.round((usage.durationMs ?? 0) / 1000)}s</span>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function gib(kib: number): string {
   return `${(kib / 1024 / 1024).toFixed(1)} GB`;
 }
@@ -117,7 +227,8 @@ function Meter(props: { label: string; value: number; detail: string }) {
   );
 }
 
-export function SystemPanel() {
+export function SystemPanel({ tokenUsage }: { tokenUsage?: ContextWindowSnapshot | null }) {
+  const providers = useAtomValue(primaryServerProvidersAtom);
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -166,6 +277,8 @@ export function SystemPanel() {
   if (!snapshot) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {tokenUsage ? <TokenUsageMonitor usage={tokenUsage} /> : null}
+        <UsageLimitsMonitor providers={providers} />
         <ToolGuardMonitor snapshot={toolGuard} />
         <div className="flex flex-col items-center justify-center gap-3 text-center">
           <Activity className="size-6 text-muted-foreground" />
@@ -205,6 +318,8 @@ export function SystemPanel() {
         <p className="mb-4 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600">{error}</p>
       ) : null}
 
+      {tokenUsage ? <TokenUsageMonitor usage={tokenUsage} /> : null}
+      <UsageLimitsMonitor providers={providers} />
       <ToolGuardMonitor snapshot={toolGuard} />
 
       <section className="grid gap-3 sm:grid-cols-2">

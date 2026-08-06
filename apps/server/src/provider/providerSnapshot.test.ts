@@ -52,6 +52,21 @@ describe("providerModelsFromSettings", () => {
     ]);
   });
 
+  it("uses readable names for unqualified model slugs", () => {
+    const capabilities = createModelCapabilities({ optionDescriptors: [] });
+    const models = providerModelsFromSettings(
+      [],
+      ["glm-4.7:cloud", "qwen3-coder:480b-cloud", "gpt-oss:20b"],
+      capabilities,
+    );
+
+    expect(models.map(({ name }) => name)).toEqual([
+      "GLM 4.7 (cloud)",
+      "Qwen3 Coder (480b-cloud)",
+      "GPT OSS (20b)",
+    ]);
+  });
+
   it("preserves a custom slug that collides with a provider alias", () => {
     const capabilities = createModelCapabilities({ optionDescriptors: [] });
     const models = providerModelsFromSettings(

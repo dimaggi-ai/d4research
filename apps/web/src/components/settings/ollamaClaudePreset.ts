@@ -5,9 +5,10 @@ import {
 } from "@t3tools/contracts";
 
 export const OLLAMA_CLAUDE_CLOUD_MODELS = [
-  "kimi-k2.5:cloud",
-  "glm-5:cloud",
+  "glm-5.2:cloud",
+  "kimi-k2.7-code:cloud",
   "minimax-m2.7:cloud",
+  "nemotron-3-super:cloud",
   "qwen3.5:cloud",
 ] as const;
 

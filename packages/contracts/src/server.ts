@@ -139,6 +139,32 @@ export const ServerProviderVersionAdvisory = Schema.Struct({
 });
 export type ServerProviderVersionAdvisory = typeof ServerProviderVersionAdvisory.Type;
 
+export const ServerProviderUsageWindow = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  utilizationPercent: Schema.NullOr(Schema.Number),
+  resetsAt: Schema.NullOr(Schema.String),
+  windowMinutes: Schema.NullOr(Schema.Number),
+});
+export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
+
+export const ServerProviderUsage = Schema.Struct({
+  support: Schema.Literals(["supported", "unsupported", "unauthenticated", "unavailable"]),
+  planType: Schema.NullOr(Schema.String),
+  windows: Schema.Array(ServerProviderUsageWindow),
+  credits: Schema.optional(
+    Schema.Struct({
+      balance: Schema.NullOr(Schema.String),
+      hasCredits: Schema.NullOr(Schema.Boolean),
+      unlimited: Schema.NullOr(Schema.Boolean),
+    }),
+  ),
+  limitReached: Schema.NullOr(Schema.String),
+  checkedAt: Schema.String,
+  message: Schema.NullOr(Schema.String),
+});
+export type ServerProviderUsage = typeof ServerProviderUsage.Type;
+
 export const ServerProviderUpdateStatus = Schema.Literals([
   "idle",
   "queued",
@@ -194,6 +220,7 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  usage: Schema.optionalKey(ServerProviderUsage),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

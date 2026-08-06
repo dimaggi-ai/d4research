@@ -133,6 +133,22 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         },
       ],
       message: "Cached message",
+      usage: {
+        support: "supported",
+        planType: "pro",
+        windows: [
+          {
+            id: "primary",
+            label: "5-hour",
+            utilizationPercent: 35,
+            resetsAt: "2026-04-10T15:00:00.000Z",
+            windowMinutes: 300,
+          },
+        ],
+        limitReached: null,
+        checkedAt: "2026-04-10T12:00:00.000Z",
+        message: null,
+      },
       skills: [
         {
           name: "github:gh-fix-ci",
@@ -177,6 +193,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         checkedAt: cachedCodex.checkedAt,
         slashCommands: cachedCodex.slashCommands,
         skills: cachedCodex.skills,
+        usage: cachedCodex.usage!,
         message: cachedCodex.message,
       },
     );

@@ -47,7 +47,11 @@ import {
 } from "./toolGuardLifecycle.ts";
 import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts";
 import type { ToolGuardPolicy } from "@t3tools/contracts";
-import { compressHandoffContext } from "./handoffCompression.ts";
+import {
+  compressHandoffContext,
+  compressHandoffContextLocal,
+  truncateHandoffTranscript,
+} from "./handoffCompression.ts";
 import {
   isShareSkillTargetRoot,
   readSkillsInventory,
@@ -69,6 +73,7 @@ const SKILLS_PATH = "/api/skills";
 const SKILLS_SHARE_PATH = "/api/skills/share";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
+const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
@@ -500,21 +505,35 @@ export const handoffCompressRouteLayer = HttpRouter.add(
       const settingsService = yield* ServerSettingsService;
       const settings = yield* settingsService.getSettings;
       const compression = settings.handoff.contextCompression;
-      if (!compression.enabled || !compression.instanceId || !compression.model) {
+      if (
+        !compression.enabled ||
+        (compression.backend === "provider" && (!compression.instanceId || !compression.model))
+      ) {
         return HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Handoff compression is not configured." },
           { status: 400 },
         );
       }
-      const config = yield* ServerConfig.ServerConfig;
-      const compressed = yield* compressHandoffContext({
-        transcript: transcript.slice(0, compression.maxInputCharacters),
-        instanceId: compression.instanceId,
-        model: compression.model,
-        maxOutputCharacters: compression.maxOutputCharacters,
-        customPrompt: compression.customPrompt,
-        cwd: config.cwd,
-      });
+      let compressed: string;
+      if (compression.backend === "provider" && compression.instanceId && compression.model) {
+        const config = yield* ServerConfig.ServerConfig;
+        compressed = yield* compressHandoffContext({
+          transcript: transcript.slice(0, compression.maxInputCharacters),
+          instanceId: compression.instanceId,
+          model: compression.model,
+          maxOutputCharacters: compression.maxOutputCharacters,
+          customPrompt: compression.customPrompt,
+          cwd: config.cwd,
+        });
+      } else {
+        compressed = yield* compressHandoffContextLocal({
+          transcript,
+          model: compression.localModel,
+          maxInputCharacters: compression.maxInputCharacters,
+          maxOutputCharacters: compression.maxOutputCharacters,
+          customPrompt: compression.customPrompt,
+        });
+      }
       return HttpServerResponse.jsonUnsafe(
         { ok: true, compressed },
         { headers: { "cache-control": "no-store" } },
@@ -531,6 +550,177 @@ export const handoffCompressRouteLayer = HttpRouter.add(
       Effect.orElseSucceed(() =>
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Context compression failed." },
+          { status: 500, headers: { "cache-control": "no-store" } },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+interface HandoffPrepareBody {
+  readonly transcript?: unknown;
+  readonly project?: unknown;
+  readonly sourceThreadId?: unknown;
+  readonly sourceThreadTitle?: unknown;
+  readonly target?: unknown;
+}
+
+function readHandoffPrepareTarget(
+  target: unknown,
+): { instanceId: string; model: string } | undefined {
+  if (typeof target !== "object" || target === null) return undefined;
+  const { instanceId, model } = target as { instanceId?: unknown; model?: unknown };
+  if (typeof instanceId !== "string" || typeof model !== "string") return undefined;
+  const trimmedInstanceId = instanceId.trim();
+  const trimmedModel = model.trim();
+  if (!trimmedInstanceId || !trimmedModel) return undefined;
+  return { instanceId: trimmedInstanceId, model: trimmedModel };
+}
+
+export type HandoffCompressionPlan = "passthrough" | "provider" | "local";
+
+/**
+ * Picks which compression path a handoff takes. Provider sessions are only
+ * used when explicitly selected AND fully configured; everything else lands on
+ * the free local model, and disabled compression passes the transcript through.
+ */
+export function selectHandoffCompressionPlan(compression: {
+  readonly enabled: boolean;
+  readonly backend: "local" | "provider";
+  readonly instanceId?: string | undefined;
+  readonly model?: string | undefined;
+}): HandoffCompressionPlan {
+  if (!compression.enabled) return "passthrough";
+  if (compression.backend === "provider" && compression.instanceId && compression.model) {
+    return "provider";
+  }
+  return "local";
+}
+
+export function buildHandoffMemoryText(input: {
+  readonly summary: string;
+  readonly sourceThreadId?: string | undefined;
+  readonly sourceThreadTitle?: string | undefined;
+  readonly target?: { readonly instanceId: string; readonly model: string } | undefined;
+}): string {
+  const lines: Array<string> = [];
+  if (input.sourceThreadTitle || input.sourceThreadId) {
+    const title = input.sourceThreadTitle || "untitled thread";
+    lines.push(
+      input.sourceThreadId
+        ? `d2research provider handoff from thread ${title} (${input.sourceThreadId}).`
+        : `d2research provider handoff from thread ${title}.`,
+    );
+  } else {
+    lines.push("d2research provider handoff.");
+  }
+  if (input.target) {
+    lines.push(`Receiving agent: ${input.target.instanceId} / ${input.target.model}.`);
+  }
+  lines.push("Shared context:", input.summary.trim());
+  return lines.join("\n");
+}
+
+// One round-trip for the whole handoff: compresses the transcript per the
+// handoff settings (local Ollama by default, provider session when selected,
+// deterministic truncation as last resort — never an error) and persists the
+// compressed summary (not the raw transcript) to local Memo in the same call.
+export const handoffPrepareRouteLayer = HttpRouter.add(
+  "POST",
+  HANDOFF_PREPARE_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<unknown, HandoffPrepareBody>(yield* request.json);
+      const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+      if (!transcript || transcript.length > 60_000) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Handoff transcript must contain 1–60,000 characters." },
+          { status: 400 },
+        );
+      }
+      const project = typeof body.project === "string" ? body.project.trim() : undefined;
+      const sourceThreadId =
+        typeof body.sourceThreadId === "string" ? body.sourceThreadId.trim() : undefined;
+      const sourceThreadTitle =
+        typeof body.sourceThreadTitle === "string" ? body.sourceThreadTitle.trim() : undefined;
+      const target = readHandoffPrepareTarget(body.target);
+
+      const settingsService = yield* ServerSettingsService;
+      const settings = yield* settingsService.getSettings;
+      const compression = settings.handoff.contextCompression;
+      const clipped = transcript.slice(0, compression.maxInputCharacters);
+
+      const plan = selectHandoffCompressionPlan(compression);
+      let compressed: string;
+      if (plan === "passthrough") {
+        compressed = clipped;
+      } else if (plan === "provider" && compression.instanceId && compression.model) {
+        const config = yield* ServerConfig.ServerConfig;
+        compressed = yield* compressHandoffContext({
+          transcript: clipped,
+          instanceId: compression.instanceId,
+          model: compression.model,
+          maxOutputCharacters: compression.maxOutputCharacters,
+          customPrompt: compression.customPrompt,
+          cwd: config.cwd,
+        }).pipe(
+          // Handoff must never block on compression.
+          Effect.orElseSucceed(() =>
+            truncateHandoffTranscript(clipped, compression.maxOutputCharacters),
+          ),
+        );
+      } else {
+        compressed = yield* compressHandoffContextLocal({
+          transcript: clipped,
+          model: compression.localModel,
+          maxInputCharacters: compression.maxInputCharacters,
+          maxOutputCharacters: compression.maxOutputCharacters,
+          customPrompt: compression.customPrompt,
+        });
+      }
+
+      // Persist the compressed summary to local Memo best-effort — a memory
+      // outage must not block the handoff either.
+      let memoryPersisted = false;
+      if (settings.memory.localEnabled) {
+        memoryPersisted = yield* Effect.gen(function* () {
+          const connector = yield* makeLocalMemoConnector({
+            baseUrl:
+              process.env.T3CODE_LOCAL_MEMO_URL ??
+              settings.memory.localBaseUrl ??
+              DEFAULT_LOCAL_MEMO_BASE_URL,
+            timeoutMs: 5_000,
+          });
+          const result = yield* connector.add(
+            buildHandoffMemoryText({
+              summary: compressed,
+              sourceThreadId,
+              sourceThreadTitle,
+              target,
+            }),
+            "t3research-provider-handoff",
+            project,
+          );
+          return result.ok;
+        }).pipe(Effect.orElseSucceed(() => false));
+      }
+
+      return HttpServerResponse.jsonUnsafe(
+        { ok: true, compressed, memoryPersisted },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Handoff preparation failed." },
           { status: 500, headers: { "cache-control": "no-store" } },
         ),
       ),

@@ -39,16 +39,69 @@ export function isProviderHandoffCandidate(
   );
 }
 
-export function buildProviderHandoffTranscript(
+const HANDOFF_TASK_HEADER_MAX_CHARACTERS = 1_200;
+const HANDOFF_OMISSION_MARKER = "[... earlier conversation compressed/omitted ...]";
+const SECTION_SEPARATOR = "\n\n";
+
+/**
+ * Builds a handoff transcript that stays context-valid on long threads:
+ * the first non-empty user message (the original task) is kept verbatim as a
+ * header, then as many of the MOST RECENT messages as fit the remaining
+ * budget. Tail-only truncation dropped the task statement first — this never
+ * does.
+ */
+export function buildStructuredHandoffTranscript(
   messages: ReadonlyArray<ProviderHandoffMessage>,
   maxCharacters = 6_000,
 ): string {
   const sections = messages
     .filter((message) => message.text.trim().length > 0)
     .map((message) => `${message.role.toUpperCase()}: ${message.text.trim()}`);
-  const transcript = sections.join("\n\n");
+  const transcript = sections.join(SECTION_SEPARATOR);
   if (transcript.length <= maxCharacters) return transcript;
-  return `[Earlier messages omitted]\n\n${transcript.slice(-maxCharacters)}`;
+  // Degenerate budget: not even the omission marker fits, so structure is
+  // meaningless — keep the newest slice.
+  if (maxCharacters <= HANDOFF_OMISSION_MARKER.length * 2) {
+    return transcript.slice(transcript.length - maxCharacters);
+  }
+
+  const firstUserText =
+    messages.find((message) => message.role === "user" && message.text.trim().length > 0)?.text ??
+    "";
+  // The header may never eat the whole budget: cap it so at least half of the
+  // budget stays available for the most recent messages.
+  const headerBudget = Math.max(
+    0,
+    Math.min(
+      HANDOFF_TASK_HEADER_MAX_CHARACTERS,
+      Math.floor(maxCharacters / 2) - HANDOFF_OMISSION_MARKER.length - SECTION_SEPARATOR.length * 2,
+    ),
+  );
+  const taskHeader =
+    firstUserText.trim() && headerBudget > 0
+      ? `USER (original task): ${firstUserText.trim()}`.slice(0, headerBudget)
+      : "";
+
+  const headerParts = taskHeader
+    ? [taskHeader, HANDOFF_OMISSION_MARKER]
+    : [HANDOFF_OMISSION_MARKER];
+  const headerLength = headerParts.join(SECTION_SEPARATOR).length + SECTION_SEPARATOR.length;
+  let remaining = Math.max(0, maxCharacters - headerLength);
+
+  const tailSections: Array<string> = [];
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    const section = sections[index]!;
+    const cost = section.length + (tailSections.length > 0 ? SECTION_SEPARATOR.length : 0);
+    if (cost > remaining) break;
+    tailSections.unshift(section);
+    remaining -= cost;
+  }
+  if (tailSections.length === 0) {
+    // Even the newest message alone exceeds the budget: keep its newest slice.
+    const newest = sections[sections.length - 1] ?? "";
+    tailSections.push(newest.slice(Math.max(0, newest.length - remaining)));
+  }
+  return [...headerParts, tailSections.join(SECTION_SEPARATOR)].join(SECTION_SEPARATOR);
 }
 
 export function buildProviderHandoffPrompt(input: {
@@ -92,48 +145,40 @@ export function buildProviderHandoffMemory(input: {
   ].join("\n");
 }
 
-export async function compressProviderHandoffContext(transcript: string): Promise<string | null> {
+export interface PrepareProviderHandoffInput {
+  readonly transcript: string;
+  readonly project?: string | undefined;
+  readonly sourceThreadId?: string | undefined;
+  readonly sourceThreadTitle?: string | undefined;
+  readonly target?: { readonly instanceId: string; readonly model: string } | undefined;
+}
+
+/**
+ * Single round-trip handoff preparation: the server compresses the transcript
+ * per the handoff settings AND persists the compressed summary to local Memo.
+ * Returns the compressed summary, or null when preparation failed (callers
+ * fall back to the structured transcript — handoff never blocks on this).
+ */
+export async function prepareProviderHandoff(
+  input: PrepareProviderHandoffInput,
+): Promise<string | null> {
   try {
-    const response = await fetch("/api/handoff/compress", {
+    const response = await fetch("/api/handoff/prepare", {
       method: "POST",
       credentials: "include",
       cache: "no-store",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify(input),
     });
     const result = (await response.json().catch(() => null)) as {
       ok?: unknown;
       compressed?: unknown;
     } | null;
-    if (result?.ok === true && typeof result.compressed === "string") {
+    if (result?.ok === true && typeof result.compressed === "string" && result.compressed.trim()) {
       return result.compressed;
     }
     return null;
   } catch {
     return null;
-  }
-}
-
-export async function persistProviderHandoffMemory(input: {
-  readonly text: string;
-  readonly project?: string | undefined;
-}): Promise<void> {
-  const response = await fetch("/api/memory/handoff", {
-    method: "POST",
-    credentials: "include",
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const result = (await response.json().catch(() => null)) as {
-    ok?: unknown;
-    message?: unknown;
-  } | null;
-  if (!response.ok || result?.ok !== true) {
-    throw new Error(
-      typeof result?.message === "string"
-        ? result.message
-        : "Local Memo could not store the handoff context.",
-    );
   }
 }

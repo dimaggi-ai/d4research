@@ -607,9 +607,19 @@ export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 // ── Handoff settings ────────────────────────────────────────────────────
 export const DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS = 6_000;
 export const DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS = 2_000;
+export const DEFAULT_HANDOFF_LOCAL_MODEL = "gemma4:e4b-it-qat";
+
+export const HandoffCompressionBackend = Schema.Literals(["local", "provider"]);
+export type HandoffCompressionBackend = typeof HandoffCompressionBackend.Type;
 
 export const HandoffContextCompressionSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  backend: HandoffCompressionBackend.pipe(
+    Schema.withDecodingDefault(Effect.succeed("local" as const)),
+  ),
+  localModel: TrimmedNonEmptyString.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_HANDOFF_LOCAL_MODEL)),
+  ),
   instanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(TrimmedNonEmptyString),
   maxInputCharacters: Schema.Int.check(Schema.isGreaterThan(0)).pipe(
@@ -883,6 +893,8 @@ export const ServerSettingsPatch = Schema.Struct({
       contextCompression: Schema.optionalKey(
         Schema.Struct({
           enabled: Schema.optionalKey(Schema.Boolean),
+          backend: Schema.optionalKey(HandoffCompressionBackend),
+          localModel: Schema.optionalKey(TrimmedNonEmptyString),
           instanceId: Schema.optionalKey(ProviderInstanceId),
           model: Schema.optionalKey(TrimmedNonEmptyString),
           maxInputCharacters: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),

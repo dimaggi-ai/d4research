@@ -7,7 +7,13 @@ import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@t3too
 import type { ProviderAdapterError } from "./provider/Errors.ts";
 import type { ProviderAdapterShape } from "./provider/Services/ProviderAdapter.ts";
 import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegistry.ts";
-import { compressHandoffContext, HandoffCompressionError } from "./handoffCompression.ts";
+import {
+  compressHandoffContext,
+  compressHandoffContextLocal,
+  DEFAULT_OLLAMA_BASE_URL,
+  HandoffCompressionError,
+  truncateHandoffTranscript,
+} from "./handoffCompression.ts";
 
 const MOCK_PROVIDER = ProviderDriverKind.make("mock");
 const MOCK_INSTANCE = ProviderInstanceId.make("mock-compressor");
@@ -159,4 +165,125 @@ describe("compressHandoffContext", () => {
       expect(result.detail).toContain("unavailable");
     }).pipe(Effect.provide(registryLayer("anything"))),
   );
+});
+
+function jsonFetch(payload: unknown, status = 200): typeof globalThis.fetch {
+  return (() =>
+    Promise.resolve(
+      new Response(JSON.stringify(payload), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
+    )) as unknown as typeof globalThis.fetch;
+}
+
+describe("compressHandoffContextLocal", () => {
+  it.effect("returns the local model's summary on success", () =>
+    Effect.gen(function* () {
+      const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+      const fetchFn = ((url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: { content: "  dense local summary  " } }), {
+            status: 200,
+          }),
+        );
+      }) as typeof globalThis.fetch;
+
+      const result = yield* compressHandoffContextLocal({
+        transcript: "USER: do the thing\nASSISTANT: done",
+        model: "gemma4:e4b-it-qat",
+        maxInputCharacters: 6_000,
+        maxOutputCharacters: 2_000,
+        customPrompt: "",
+        fetchFn,
+      });
+
+      expect(result).toBe("dense local summary");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toBe(`${DEFAULT_OLLAMA_BASE_URL}/api/chat`);
+      expect(requests[0]!.body["model"]).toBe("gemma4:e4b-it-qat");
+      expect(requests[0]!.body["stream"]).toBe(false);
+      expect(requests[0]!.body["keep_alive"]).toBe("2m");
+      expect((requests[0]!.body["options"] as { num_ctx: number }).num_ctx).toBeGreaterThan(1_024);
+    }),
+  );
+
+  it.effect("clamps an over-long local summary to maxOutputCharacters", () =>
+    Effect.gen(function* () {
+      const result = yield* compressHandoffContextLocal({
+        transcript: "anything",
+        model: "gemma4:e4b-it-qat",
+        maxInputCharacters: 6_000,
+        maxOutputCharacters: 20,
+        customPrompt: "",
+        fetchFn: jsonFetch({ message: { content: "S".repeat(500) } }),
+      });
+      expect(result.length).toBe(20);
+    }),
+  );
+
+  it.effect("falls back to structured truncation when the daemon is unreachable", () =>
+    Effect.gen(function* () {
+      const transcript = `USER: original task statement\n${"filler ".repeat(500)}\nASSISTANT: final answer`;
+      const result = yield* compressHandoffContextLocal({
+        transcript,
+        model: "gemma4:e4b-it-qat",
+        maxInputCharacters: 6_000,
+        maxOutputCharacters: 500,
+        customPrompt: "",
+        fetchFn: (() =>
+          Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof globalThis.fetch,
+      });
+      expect(result.length).toBeLessThanOrEqual(500);
+      expect(result).toContain("original task statement");
+      expect(result).toContain("final answer");
+      expect(result).toContain("omitted");
+    }),
+  );
+
+  it.effect("falls back when the daemon answers with an error status", () =>
+    Effect.gen(function* () {
+      const result = yield* compressHandoffContextLocal({
+        transcript: "USER: short task",
+        model: "missing-model",
+        maxInputCharacters: 6_000,
+        maxOutputCharacters: 500,
+        customPrompt: "",
+        fetchFn: jsonFetch({ error: "model not found" }, 404),
+      });
+      expect(result).toBe("USER: short task");
+    }),
+  );
+
+  it.effect("falls back when the daemon returns an empty message", () =>
+    Effect.gen(function* () {
+      const result = yield* compressHandoffContextLocal({
+        transcript: "USER: short task",
+        model: "gemma4:e4b-it-qat",
+        maxInputCharacters: 6_000,
+        maxOutputCharacters: 500,
+        customPrompt: "",
+        fetchFn: jsonFetch({ message: { content: "   " } }),
+      });
+      expect(result).toBe("USER: short task");
+    }),
+  );
+});
+
+describe("truncateHandoffTranscript", () => {
+  it("passes short transcripts through", () => {
+    expect(truncateHandoffTranscript("short", 100)).toBe("short");
+  });
+
+  it("keeps head and tail within budget", () => {
+    const transcript = `HEAD${"x".repeat(5_000)}TAIL`;
+    const result = truncateHandoffTranscript(transcript, 400);
+    expect(result.length).toBeLessThanOrEqual(400);
+    expect(result.startsWith("HEAD")).toBe(true);
+    expect(result.endsWith("TAIL")).toBe(true);
+  });
 });

@@ -4,23 +4,50 @@ import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import {
   buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
-  buildProviderHandoffTranscript,
-  compressProviderHandoffContext,
+  buildStructuredHandoffTranscript,
   isProviderHandoffCandidate,
+  prepareProviderHandoff,
   shouldHandoffModelSelection,
 } from "./providerHandoff";
 
 describe("provider handoff", () => {
-  it("keeps the newest bounded conversation context", () => {
-    const transcript = buildProviderHandoffTranscript(
+  it("passes a short thread through unchanged", () => {
+    const transcript = buildStructuredHandoffTranscript(
       [
         { role: "user", text: "old context" },
         { role: "assistant", text: "latest result" },
       ],
-      25,
+      6_000,
     );
-    expect(transcript).toContain("latest result");
-    expect(transcript).toContain("Earlier messages omitted");
+    expect(transcript).toBe("USER: old context\n\nASSISTANT: latest result");
+    expect(transcript).not.toContain("omitted");
+  });
+
+  it("keeps the original task AND the newest messages on a long thread", () => {
+    const messages = [
+      { role: "user", text: "Original task: migrate the billing service to Effect v4." },
+      ...Array.from({ length: 40 }, (_value, index) => ({
+        role: index % 2 === 0 ? "assistant" : "user",
+        text: `filler message ${index} ${"x".repeat(400)}`,
+      })),
+      { role: "assistant", text: "Final answer: the migration is complete." },
+    ];
+    const transcript = buildStructuredHandoffTranscript(messages, 3_000);
+    expect(transcript).toContain("migrate the billing service to Effect v4");
+    expect(transcript).toContain("USER (original task):");
+    expect(transcript).toContain("earlier conversation");
+    expect(transcript).toContain("Final answer: the migration is complete.");
+    expect(transcript.length).toBeLessThanOrEqual(3_000);
+  });
+
+  it("respects the character budget even when the first message is huge", () => {
+    const messages = [
+      { role: "user", text: "T".repeat(10_000) },
+      { role: "assistant", text: "R".repeat(10_000) },
+    ];
+    const transcript = buildStructuredHandoffTranscript(messages, 1_000);
+    expect(transcript.length).toBeLessThanOrEqual(1_000);
+    expect(transcript).toContain("R");
   });
 
   it("tells the receiving provider that shared Memo context is ready", () => {
@@ -77,46 +104,53 @@ describe("provider handoff", () => {
       { role: "user", text: "A".repeat(500) },
       { role: "assistant", text: "B".repeat(500) },
     ];
-    const small = buildProviderHandoffTranscript(messages, 200);
-    expect(small).toContain("Earlier messages omitted");
-    expect(small.length).toBeLessThanOrEqual(200 + "[Earlier messages omitted]\n\n".length);
+    const small = buildStructuredHandoffTranscript(messages, 400);
+    expect(small).toContain("earlier conversation");
+    expect(small.length).toBeLessThanOrEqual(400);
 
-    const large = buildProviderHandoffTranscript(messages, 50_000);
-    expect(large).not.toContain("Earlier messages omitted");
+    const large = buildStructuredHandoffTranscript(messages, 50_000);
+    expect(large).not.toContain("earlier conversation");
   });
 
-  it("compression client returns null on network failure", async () => {
+  it("prepare client returns null on network failure", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = () => Promise.reject(new Error("offline"));
     try {
-      const result = await compressProviderHandoffContext("test transcript");
+      const result = await prepareProviderHandoff({ transcript: "test transcript" });
       expect(result).toBeNull();
     } finally {
       globalThis.fetch = original;
     }
   });
 
-  it("compression client returns null on non-ok response", async () => {
+  it("prepare client returns null on non-ok response", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = () =>
       Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 502 }));
     try {
-      const result = await compressProviderHandoffContext("test transcript");
+      const result = await prepareProviderHandoff({ transcript: "test transcript" });
       expect(result).toBeNull();
     } finally {
       globalThis.fetch = original;
     }
   });
 
-  it("compression client returns compressed text on success", async () => {
+  it("prepare client posts once to /api/handoff/prepare and returns the summary", async () => {
     const original = globalThis.fetch;
-    globalThis.fetch = () =>
-      Promise.resolve(
+    const calls: Array<string> = [];
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Promise.resolve(
         new Response(JSON.stringify({ ok: true, compressed: "dense summary" }), { status: 200 }),
       );
+    }) as typeof globalThis.fetch;
     try {
-      const result = await compressProviderHandoffContext("long transcript");
+      const result = await prepareProviderHandoff({
+        transcript: "long transcript",
+        project: "t3code",
+      });
       expect(result).toBe("dense summary");
+      expect(calls).toEqual(["/api/handoff/prepare"]);
     } finally {
       globalThis.fetch = original;
     }

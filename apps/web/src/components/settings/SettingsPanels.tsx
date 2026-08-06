@@ -167,6 +167,7 @@ import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePreferredEditor } from "../../editorPreferences";
 import {
+  DEFAULT_HANDOFF_LOCAL_MODEL,
   DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
   DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
 } from "@t3tools/contracts/settings";
@@ -2242,30 +2243,85 @@ export function GeneralSettingsPanel() {
         {settings.handoff.contextCompression.enabled ? (
           <>
             <SettingsRow
-              id="handoff-compression-provider"
-              title="Compression provider"
-              description="Choose a provider and model to compress the conversation context before handoff."
+              id="handoff-compression-backend"
+              title="Compression backend"
+              description="Local Ollama model runs free on this machine with no cold start. Provider session spawns a full provider CLI session and spends cloud tokens."
               control={
-                <ProviderModelPicker
-                  activeInstanceId={
-                    settings.handoff.contextCompression.instanceId ?? textGenInstanceId
-                  }
-                  model={settings.handoff.contextCompression.model ?? textGenModel}
-                  lockedProvider={null}
-                  instanceEntries={textGenerationModelInstanceEntries}
-                  modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                  triggerVariant="outline"
-                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                  onInstanceModelChange={(instanceId, model) => {
+                <Select
+                  value={settings.handoff.contextCompression.backend}
+                  onValueChange={(value) => {
+                    if (value !== "local" && value !== "provider") return;
                     updateSettings({
-                      handoff: {
-                        contextCompression: { instanceId, model },
-                      },
+                      handoff: { contextCompression: { backend: value } },
                     });
                   }}
-                />
+                >
+                  <SelectTrigger className="w-full sm:w-48" aria-label="Compression backend">
+                    <SelectValue>
+                      {settings.handoff.contextCompression.backend === "provider"
+                        ? "Provider session"
+                        : "Local Ollama model"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="local">
+                      Local Ollama model
+                    </SelectItem>
+                    <SelectItem hideIndicator value="provider">
+                      Provider session
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
               }
             />
+
+            {settings.handoff.contextCompression.backend === "local" ? (
+              <SettingsRow
+                id="handoff-compression-local-model"
+                title="Local model"
+                description="Ollama model used to compress the conversation (served from the local daemon at 127.0.0.1:11434)."
+                control={
+                  <DraftInput
+                    value={settings.handoff.contextCompression.localModel}
+                    onCommit={(value) => {
+                      const localModel = value.trim();
+                      if (!localModel) return;
+                      updateSettings({
+                        handoff: { contextCompression: { localModel } },
+                      });
+                    }}
+                    placeholder={DEFAULT_HANDOFF_LOCAL_MODEL}
+                    className="w-full max-w-xs text-xs"
+                  />
+                }
+              />
+            ) : (
+              <SettingsRow
+                id="handoff-compression-provider"
+                title="Compression provider"
+                description="Choose a provider and model to compress the conversation context before handoff."
+                control={
+                  <ProviderModelPicker
+                    activeInstanceId={
+                      settings.handoff.contextCompression.instanceId ?? textGenInstanceId
+                    }
+                    model={settings.handoff.contextCompression.model ?? textGenModel}
+                    lockedProvider={null}
+                    instanceEntries={textGenerationModelInstanceEntries}
+                    modelOptionsByInstance={textGenerationModelOptionsByInstance}
+                    triggerVariant="outline"
+                    triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                    onInstanceModelChange={(instanceId, model) => {
+                      updateSettings({
+                        handoff: {
+                          contextCompression: { instanceId, model },
+                        },
+                      });
+                    }}
+                  />
+                }
+              />
+            )}
 
             <SettingsRow
               id="handoff-max-input"

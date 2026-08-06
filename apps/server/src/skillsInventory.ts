@@ -352,6 +352,21 @@ export const shareSkill = Effect.fn("shareSkill")(function* (
     return { ok: false, status: 400, message: "Source skill does not exist." };
   }
 
+  // The lexical guard alone is spoofable: a symlink planted inside a skills
+  // root can resolve anywhere — sharing it would symlink or recursively copy
+  // that target (an ~/.ssh, say) into an agent root. The resolved path must
+  // land inside a known root as well.
+  const realRoots = yield* Effect.forEach(knownRoots, (root) =>
+    fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
+  );
+  if (!realRoots.some((root) => isInsideRoot(path, root, sourceReal))) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Source path resolves outside every known skills root.",
+    };
+  }
+
   const targetRootDirectory =
     input.targetRoot === "claude-user"
       ? roots.claudeUserSkills

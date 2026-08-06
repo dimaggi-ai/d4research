@@ -1,79 +1,66 @@
 # Handoff Context Compression
 
-When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. By default this is a naïve tail-truncation of the transcript to 6 000 characters. With compression enabled, the transcript is first sent through a chosen provider to produce a dense summary, saving tokens on the receiving side while preserving the full uncompressed context in Memo for accuracy.
+When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. The transcript is structured — the first user message (the task statement) is kept verbatim, the middle is marked as omitted, and the most recent messages fill the remaining budget — and then compressed into a dense summary before it travels. Compression defaults to a local Ollama model, so a handoff costs no cloud tokens and no provider cold start.
 
 ## Settings
 
 Compression is configured under **Settings → General → Handoff → Context compression** and stored in `ServerSettings.handoff.contextCompression`.
 
-| Field                 | Type                 | Default | Description                                                          |
-| --------------------- | -------------------- | ------- | -------------------------------------------------------------------- |
-| `enabled`             | boolean              | `false` | Master toggle                                                        |
-| `instanceId`          | `ProviderInstanceId` | —       | Provider instance to run the compression (e.g. a local Ollama model) |
-| `model`               | string               | —       | Model name within that provider                                      |
-| `maxInputCharacters`  | positive int         | `6 000` | Max transcript length sent to the compressor                         |
-| `maxOutputCharacters` | positive int         | `2 000` | Max compressed summary length                                        |
-| `customPrompt`        | string               | `""`    | Override the default compression system prompt                       |
+| Field                 | Type                    | Default             | Description                                                    |
+| --------------------- | ----------------------- | ------------------- | -------------------------------------------------------------- |
+| `enabled`             | boolean                 | `false`             | Master toggle                                                  |
+| `backend`             | `"local" \| "provider"` | `"local"`           | Local Ollama daemon vs. a full provider session                |
+| `localModel`          | string                  | `gemma4:e4b-it-qat` | Ollama model used when `backend` is `"local"`                  |
+| `instanceId`          | `ProviderInstanceId`    | —                   | Provider instance to run the compression (`backend: provider`) |
+| `model`               | string                  | —                   | Model within that provider (`backend: provider`)               |
+| `maxInputCharacters`  | positive int            | `6 000`             | Max transcript length sent to the compressor                   |
+| `maxOutputCharacters` | positive int            | `2 000`             | Max compressed summary length                                  |
+| `customPrompt`        | string                  | `""`                | Override the default compression system prompt                 |
 
-All three of `enabled`, `instanceId`, and `model` must be set for compression to activate.
+With `backend: "local"` only `enabled` and `localModel` matter. With `backend: "provider"`, `instanceId` and `model` must also be set.
 
 ## Architecture
 
 ```
 ChatView (onProviderHandoff)
   │
-  ├─ buildProviderHandoffTranscript(messages, maxInputCharacters)
-  │     → tail-truncated plain-text transcript
+  ├─ buildStructuredHandoffTranscript(messages, maxInputCharacters)
+  │     → head (first user message, capped) + omission marker + freshest tail
   │
-  ├─ POST /api/handoff/compress  { transcript }
+  ├─ POST /api/handoff/prepare  { transcript, project, sourceThreadId, sourceThreadTitle, target }
   │     │
   │     ├─ reads compression settings from ServerSettings
-  │     ├─ truncates transcript to maxInputCharacters
-  │     └─ calls compressHandoffContext(...)
-  │           │
-  │           ├─ ProviderAdapterRegistry.getByInstance(instanceId)
-  │           ├─ adapter.startSession(ephemeral thread)
-  │           ├─ adapter.sendTurn(systemPrompt + transcript)
-  │           ├─ adapter.readThread → extract response text
-  │           ├─ adapter.stopSession (Effect.ensuring — always runs)
-  │           └─ truncate output to maxOutputCharacters
+  │     ├─ backend "local"    → compressHandoffContextLocal (Ollama /api/chat,
+  │     │                       stream:false, keep_alive 2m, 60 s timeout;
+  │     │                       any failure → truncateHandoffTranscript)
+  │     ├─ backend "provider" → compressHandoffContext (ephemeral provider
+  │     │                       session, 120 s timeout on the turn)
+  │     └─ persists the COMPRESSED summary to local Memo, then returns it
   │
-  ├─ Dual-write:
-  │     ├─ Memo:  full uncompressed transcript  (persistProviderHandoffMemory)
-  │     └─ Handoff prompt:  compressed summary   (buildProviderHandoffPrompt)
-  │
-  └─ Fallback: if compression returns null → summarizeReplyForSpeech
+  └─ Fallback: prepare failed → the structured transcript itself is the
+     summary, and the client backfills Memo best-effort via
+     persistProviderHandoffMemoryFallback → POST /api/memory/handoff
 ```
 
-## Server endpoint
+One round-trip does both jobs. The browser uploads the transcript once; Memo stores the compressed summary (the local memory service applies its own curation on top), not a duplicate of the raw transcript.
 
-**`POST /api/handoff/compress`**
+## Server endpoints
+
+**`POST /api/handoff/prepare`** — the primary path.
 
 - **Auth:** `AuthOrchestrationOperateScope`
-- **Request:** `{ transcript: string }`
-- **Response:** `{ ok: true, compressed: string }` on success
+- **Request:** `{ transcript, project?, sourceThreadId?, sourceThreadTitle?, target? }`
+- **Response:** `{ ok: true, compressed: string }` — `compressed` falls back to structured truncation when the compressor fails; the route only errors on an empty transcript or an internal fault.
 
-| Condition        | Status | Response                                                           |
-| ---------------- | ------ | ------------------------------------------------------------------ |
-| Empty transcript | 400    | `{ ok: false, message: "Transcript must be non-empty." }`          |
-| Not configured   | 400    | `{ ok: false, message: "Handoff compression is not configured." }` |
-| Provider error   | 502    | `{ ok: false, message: "<detail>" }`                               |
-| Unknown error    | 500    | `{ ok: false, message: "Context compression failed." }`            |
-
-The route is registered in `server.ts` between `handoffMemoryRouteLayer` and `assetRouteLayer`.
+**`POST /api/handoff/compress`** — retained for compatibility; compresses without persisting. Same auth scope, request `{ transcript }`.
 
 ## Compression logic
 
-`compressHandoffContext` in `apps/server/src/handoffCompression.ts` is an Effect function that:
+Both live in `apps/server/src/handoffCompression.ts`:
 
-1. Resolves the provider adapter from the registry by `instanceId`.
-2. Builds the turn input: the system prompt (custom or default), a max-length instruction, and the transcript separated by `--- TRANSCRIPT ---`.
-3. Creates an ephemeral thread (`handoff-compress-<timestamp>`).
-4. Runs `startSession` → `sendTurn` → `readThread` → `stopSession` through the standard adapter interface.
-5. Cleanup always runs via `Effect.ensuring`, so the ephemeral session is torn down even on failure.
-6. Hard-truncates the output to `maxOutputCharacters` if needed.
-
-This works with any provider that implements the adapter interface — Claude, Codex, Agy, local Ollama models via the Claude adapter, etc.
+- `compressHandoffContextLocal` — POSTs Ollama's `/api/chat` with the compression prompt, `stream: false`, `keep_alive: "2m"`, and a `num_ctx` sized to the input budget. Total by design: daemon down, non-200, malformed JSON, empty content, or timeout (60 s) all fall back to `truncateHandoffTranscript` instead of erroring.
+- `compressHandoffContext` — resolves the provider adapter by `instanceId`, runs `startSession → sendTurn → readThread → stopSession` on an ephemeral thread with a 120 s timeout on the turn; cleanup always runs via `Effect.ensuring`. Errors are wrapped in `HandoffCompressionError`, which the prepare route converts into the truncation fallback.
+- `truncateHandoffTranscript` — head+tail truncation with an omission marker; never exceeds the budget, even when the budget is smaller than the marker.
 
 ### Default compression prompt
 
@@ -86,36 +73,25 @@ Output only the compressed summary, no preamble.
 
 ## Client integration
 
-`compressProviderHandoffContext` in `apps/web/src/providerHandoff.ts` is a simple async function that POSTs the transcript and returns the compressed string, or `null` on any failure (network error, non-ok response, malformed JSON). Silent failure by design — the caller always has a fallback path.
-
-## Dual-write pattern
-
-When compression is enabled, the handoff writes to two destinations:
-
-- **Memo (persistent memory):** receives the **full uncompressed transcript** via `buildProviderHandoffMemory`. This preserves complete context for future `memory_search` queries by any agent.
-- **Handoff prompt (to receiving provider):** receives only the **compressed summary** via `buildProviderHandoffPrompt`. This saves tokens on the receiving provider's context window.
-
-When compression is disabled or fails, both destinations receive the same `summarizeReplyForSpeech` output (the legacy behavior).
+`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and returns the compressed summary, or `null` on any failure (network error, non-ok response, malformed JSON). Silent failure by design — the caller falls back to the structured transcript and backfills Memo through `persistProviderHandoffMemoryFallback`, so a failed compressor never blocks a handoff and never leaves Memo empty for that handoff.
 
 ## Failure modes
 
 The system never hard-fails a handoff. The fallback chain is:
 
-1. Compression succeeds → use compressed summary
-2. Compression returns null (provider error, empty response, network failure) → fall back to `summarizeReplyForSpeech`
-3. Voice summarization is always available as the last resort
-
-Server-side errors are all wrapped in `HandoffCompressionError` (a `Data.TaggedError`) with a `detail` string describing what went wrong.
+1. Compression succeeds → compressed summary in the prompt, same summary in Memo.
+2. Compressor fails server-side → structured truncation in the prompt and in Memo.
+3. The prepare round-trip itself fails → structured transcript in the prompt; the client backfills Memo via `/api/memory/handoff` best-effort.
 
 ## Files
 
 | File                                         | Role                                                      |
 | -------------------------------------------- | --------------------------------------------------------- |
-| `packages/contracts/src/settings.ts`         | `HandoffContextCompressionSettings` schema                |
-| `apps/server/src/handoffCompression.ts`      | Core compression Effect + error type                      |
-| `apps/server/src/handoffCompression.test.ts` | 5 tests with mock adapter                                 |
-| `apps/server/src/http.ts`                    | `POST /api/handoff/compress` route                        |
+| `packages/contracts/src/settings.ts`         | `HandoffContextCompressionSettings` schema (+ patch)      |
+| `apps/server/src/handoffCompression.ts`      | Local + provider compression, truncation, error type      |
+| `apps/server/src/handoffCompression.test.ts` | Local success/fallback, provider mock, truncation tests   |
+| `apps/server/src/http.ts`                    | `/api/handoff/prepare` and `/api/handoff/compress` routes |
 | `apps/server/src/server.ts`                  | Route registration                                        |
-| `apps/web/src/providerHandoff.ts`            | `compressProviderHandoffContext` client function          |
-| `apps/web/src/providerHandoff.test.ts`       | Client-side compression tests                             |
-| `apps/web/src/components/ChatView.tsx`       | `onProviderHandoff` — wires compression into handoff flow |
+| `apps/web/src/providerHandoff.ts`            | Structured transcript, prepare client, Memo fallback      |
+| `apps/web/src/providerHandoff.test.ts`       | Client-side transcript/prepare tests                      |
+| `apps/web/src/components/ChatView.tsx`       | `onProviderHandoff` — wires preparation into handoff flow |

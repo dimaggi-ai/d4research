@@ -286,4 +286,10 @@ describe("truncateHandoffTranscript", () => {
     expect(result.startsWith("HEAD")).toBe(true);
     expect(result.endsWith("TAIL")).toBe(true);
   });
+
+  it("never exceeds a budget smaller than the omission marker", () => {
+    const result = truncateHandoffTranscript("x".repeat(100) + "TAIL", 30);
+    expect(result.length).toBeLessThanOrEqual(30);
+    expect(result.endsWith("TAIL")).toBe(true);
+  });
 });

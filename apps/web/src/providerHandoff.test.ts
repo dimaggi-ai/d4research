@@ -6,6 +6,7 @@ import {
   buildProviderHandoffPrompt,
   buildStructuredHandoffTranscript,
   isProviderHandoffCandidate,
+  persistProviderHandoffMemoryFallback,
   prepareProviderHandoff,
   shouldHandoffModelSelection,
 } from "./providerHandoff";
@@ -130,6 +131,26 @@ describe("provider handoff", () => {
     try {
       const result = await prepareProviderHandoff({ transcript: "test transcript" });
       expect(result).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("memo fallback posts to the memory route and reports the outcome", async () => {
+    const original = globalThis.fetch;
+    const calls: Array<string> = [];
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    };
+    try {
+      const stored = await persistProviderHandoffMemoryFallback({ text: "ctx", project: "p" });
+      expect(stored).toBe(true);
+      expect(calls).toEqual(["/api/memory/handoff"]);
+
+      globalThis.fetch = () => Promise.reject(new Error("offline"));
+      const failed = await persistProviderHandoffMemoryFallback({ text: "ctx" });
+      expect(failed).toBe(false);
     } finally {
       globalThis.fetch = original;
     }

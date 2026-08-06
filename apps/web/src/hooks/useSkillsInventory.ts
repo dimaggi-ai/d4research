@@ -62,7 +62,11 @@ function toEntry(value: unknown): SkillsInventoryEntry | null {
 }
 
 export async function requestSkillShare(
-  input: { readonly sourcePath: string; readonly targetRoot: SkillsInventoryRoot },
+  input: {
+    readonly sourcePath: string;
+    readonly targetRoot: SkillsInventoryRoot;
+    readonly cwd?: string | undefined;
+  },
   fetcher: typeof fetch = fetch,
 ): Promise<{ readonly ok: boolean; readonly message: string }> {
   const response = await fetcher("/api/skills/share", {
@@ -98,6 +102,8 @@ export interface SkillsInventoryState {
   ) => Promise<{ readonly ok: boolean; readonly message: string }>;
   readonly refresh: () => void;
 }
+
+const SKILLS_POLL_INTERVAL_MS = 30_000;
 
 export function useSkillsInventory(cwd?: string): SkillsInventoryState {
   const [entries, setEntries] = useState<ReadonlyArray<SkillsInventoryEntry>>([]);
@@ -136,28 +142,39 @@ export function useSkillsInventory(cwd?: string): SkillsInventoryState {
     };
 
     void load();
-    return () => controller.abort();
+    // Skills live on disk and change behind the app's back (a CLI install, a
+    // deleted symlink) — poll like the other system-state hooks do.
+    const interval = window.setInterval(() => void load(), SKILLS_POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(interval);
+      controller.abort();
+    };
   }, [cwd, refreshSequence]);
 
-  const share = useCallback(async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {
-    setSharing(`${sourcePath}:${targetRoot}`);
-    try {
-      const result = await requestSkillShare({ sourcePath, targetRoot });
-      if (result.ok) {
-        setError(null);
-        setRefreshSequence((value) => value + 1);
-      } else {
-        setError(result.message);
+  const share = useCallback(
+    async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {
+      setSharing(`${sourcePath}:${targetRoot}`);
+      try {
+        // The workspace cwd scopes project roots server-side; without it a
+        // project-skill share resolves against the server's own cwd and fails.
+        const result = await requestSkillShare({ sourcePath, targetRoot, cwd });
+        if (result.ok) {
+          setError(null);
+          setRefreshSequence((value) => value + 1);
+        } else {
+          setError(result.message);
+        }
+        return result;
+      } catch {
+        const message = "Could not share the skill.";
+        setError(message);
+        return { ok: false, message };
+      } finally {
+        setSharing(null);
       }
-      return result;
-    } catch {
-      const message = "Could not share the skill.";
-      setError(message);
-      return { ok: false, message };
-    } finally {
-      setSharing(null);
-    }
-  }, []);
+    },
+    [cwd],
+  );
 
   return { state, entries, error, sharing, share, refresh };
 }

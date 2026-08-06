@@ -183,6 +183,38 @@ it.layer(NodeServices.layer)("shareSkill", (it) => {
     }),
   );
 
+  it.effect("rejects a source that lexically sits in a root but resolves outside it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-share-" });
+      const homeDir = path.join(tempDir, "home");
+
+      // A "skill" that is really a symlink to a directory outside every root
+      // (the private-keys scenario). The lexical path passes; the realpath
+      // must not.
+      const secrets = path.join(tempDir, "secrets");
+      yield* fs.makeDirectory(secrets, { recursive: true });
+      yield* fs.writeFileString(path.join(secrets, "id_ed25519"), "PRIVATE");
+      const skillsRoot = path.join(homeDir, ".claude", "skills");
+      yield* fs.makeDirectory(skillsRoot, { recursive: true });
+      yield* fs.symlink(secrets, path.join(skillsRoot, "planted"));
+
+      const result = yield* shareSkill(
+        { sourcePath: path.join(skillsRoot, "planted"), targetRoot: "codex-user" },
+        { homeDir },
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false ? result.status : 0, 400);
+
+      // Nothing may have been linked or copied into the codex root.
+      const leaked = yield* fs
+        .exists(path.join(homeDir, ".codex", "skills", "secrets"))
+        .pipe(Effect.orElseSucceed(() => false));
+      assert.equal(leaked, false);
+    }),
+  );
+
   it.effect("symlinks a known skill into another agent root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -12,6 +12,9 @@ Output only the compressed summary, no preamble.`;
 
 export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 const LOCAL_COMPRESSION_TIMEOUT_MILLIS = 60_000;
+// Provider CLIs cold-start and stream, so they get more room than the local
+// daemon — but a hung provider must never hold a handoff open forever.
+const PROVIDER_COMPRESSION_TIMEOUT_MILLIS = 120_000;
 
 /**
  * Deterministic, model-free fallback: keeps the head (task statement) and the
@@ -22,6 +25,12 @@ export function truncateHandoffTranscript(transcript: string, maxCharacters: num
   const trimmed = transcript.trim();
   if (trimmed.length <= maxCharacters) return trimmed;
   const marker = "\n\n[... middle of conversation omitted ...]\n\n";
+  // A budget smaller than the marker would still emit the marker and land
+  // over budget; below that point the freshest tail is worth more than a
+  // truncation notice.
+  if (maxCharacters <= marker.length) {
+    return trimmed.slice(trimmed.length - maxCharacters);
+  }
   const budget = Math.max(0, maxCharacters - marker.length);
   const headLength = Math.floor(budget * 0.3);
   const tailLength = budget - headLength;
@@ -50,7 +59,7 @@ export interface CompressHandoffContextLocalInput {
  */
 export const compressHandoffContextLocal = Effect.fn("compressHandoffContextLocal")(function* (
   input: CompressHandoffContextLocalInput,
-) {
+): Effect.fn.Return<string, never, never> {
   const fetchFn = input.fetchFn ?? globalThis.fetch;
   const baseUrl = (input.baseUrl ?? DEFAULT_OLLAMA_BASE_URL).replace(/\/$/, "");
   const transcript = input.transcript.slice(0, input.maxInputCharacters);
@@ -183,6 +192,7 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
           .join("")
           .trim();
       }),
+      Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
       Effect.mapError(
         (cause) =>
           new HandoffCompressionError({

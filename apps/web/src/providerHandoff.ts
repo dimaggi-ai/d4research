@@ -182,3 +182,28 @@ export async function prepareProviderHandoff(
     return null;
   }
 }
+
+/**
+ * Best-effort Memo write for the prepare-failure path. When /api/handoff/prepare
+ * fails, the handoff still proceeds with the structured transcript — but Memo
+ * would silently hold nothing for this handoff, breaking later memory_search.
+ * This posts the fallback context through the standalone memory route instead.
+ */
+export async function persistProviderHandoffMemoryFallback(input: {
+  readonly text: string;
+  readonly project?: string | undefined;
+}): Promise<boolean> {
+  try {
+    const response = await fetch("/api/memory/handoff", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const result = (await response.json().catch(() => null)) as { ok?: unknown } | null;
+    return response.ok && result?.ok === true;
+  } catch {
+    return false;
+  }
+}

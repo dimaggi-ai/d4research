@@ -175,8 +175,10 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
+  buildProviderHandoffMemory,
   buildProviderHandoffPrompt,
   buildStructuredHandoffTranscript,
+  persistProviderHandoffMemoryFallback,
   prepareProviderHandoff,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
@@ -5855,6 +5857,20 @@ function ChatViewContent(props: ChatViewProps) {
           target: targetModelSelection,
         });
         const summary = prepared ?? transcript;
+        if (prepared === null) {
+          // The prepare round-trip also persists to Memo; when it fails the
+          // handoff must still go through, but Memo would silently miss this
+          // handoff entirely. Backfill it best-effort via the memory route.
+          void persistProviderHandoffMemoryFallback({
+            text: buildProviderHandoffMemory({
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              summary: transcript,
+              target: targetModelSelection,
+            }),
+            project: activeProject.title,
+          });
+        }
         const handoffPrompt = buildProviderHandoffPrompt({
           sourceThreadId: activeThread.id,
           sourceThreadTitle: activeThread.title,

@@ -4,6 +4,7 @@ import { Link2Icon, SearchIcon, Share2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { useActiveProjectTarget } from "../../hooks/useActiveProjectTarget";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
@@ -131,7 +132,10 @@ function SkillRow({
 }
 
 export function SkillsSettingsPanel() {
-  const inventory = useSkillsInventory();
+  // Project-scoped skills resolve against the active workspace, both for the
+  // inventory scan and for shares — the server's own cwd is not the project.
+  const activeProject = useActiveProjectTarget();
+  const inventory = useSkillsInventory(activeProject?.cwd);
   const [query, setQuery] = useState("");
 
   const grouped = useMemo(() => {

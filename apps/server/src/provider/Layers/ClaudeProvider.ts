@@ -368,11 +368,21 @@ const OLLAMA_DEFAULT_PORT = "11434";
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"]);
 
 /** Returns local model slugs from the tabular `ollama list` output. */
+// Embedding models answer /api/embed, not the messages endpoint — offering
+// them as chat models guarantees a failed turn. Ollama's list output carries
+// no capability flag, so recognize them by the naming convention every
+// published embedder follows.
+const OLLAMA_EMBEDDING_MODEL_PATTERN = /embed|minilm|reranker/iu;
+
+export function isLikelyOllamaEmbeddingModel(slug: string): boolean {
+  return OLLAMA_EMBEDDING_MODEL_PATTERN.test(slug);
+}
+
 export function parseOllamaModelList(output: string): ReadonlyArray<string> {
   const seen = new Set<string>();
   for (const line of output.split(/\r?\n/u).slice(1)) {
     const slug = line.trim().split(/\s+/u, 1)[0];
-    if (slug) seen.add(slug);
+    if (slug && !isLikelyOllamaEmbeddingModel(slug)) seen.add(slug);
   }
   return [...seen];
 }
@@ -387,7 +397,9 @@ export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> 
     if (!entry || typeof entry !== "object") continue;
     const { name, model } = entry as { name?: unknown; model?: unknown };
     const slug = typeof name === "string" && name.length > 0 ? name : model;
-    if (typeof slug === "string" && slug.length > 0) seen.add(slug);
+    if (typeof slug === "string" && slug.length > 0 && !isLikelyOllamaEmbeddingModel(slug)) {
+      seen.add(slug);
+    }
   }
   return [...seen];
 }
@@ -427,9 +439,10 @@ const OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS = 3_000;
 /**
  * Fetch model tags straight from the Ollama daemon's HTTP API. Best-effort
  * fallback for hosts where the `ollama` CLI is not on PATH but the daemon is
- * reachable; any failure collapses to an empty list. `FetchHttpClient.layer` is
- * provided here so callers of `checkClaudeProviderStatus` keep their
- * requirements unchanged.
+ * reachable; failure or timeout collapses to `null` so callers can tell an
+ * unreachable daemon from an empty one. `FetchHttpClient.layer` is provided
+ * here so callers of `checkClaudeProviderStatus` keep their requirements
+ * unchanged.
  */
 const fetchOllamaTags = (baseUrl: string) =>
   Effect.gen(function* () {
@@ -440,13 +453,19 @@ const fetchOllamaTags = (baseUrl: string) =>
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Unknown)),
       );
-    return parseOllamaTagsPayload(payload);
+    return parseOllamaTagsPayload(payload) as ReadonlyArray<string> | null;
   }).pipe(
     Effect.timeoutOption(OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS),
-    Effect.map(Option.getOrElse(() => [] as ReadonlyArray<string>)),
-    Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
+    Effect.map(Option.getOrElse((): ReadonlyArray<string> | null => null)),
+    Effect.orElseSucceed((): ReadonlyArray<string> | null => null),
     Effect.provide(FetchHttpClient.layer),
   );
+
+export interface LocalOllamaDiscovery {
+  readonly models: ReadonlyArray<string>;
+  /** False when neither the CLI nor the HTTP API answered — daemon down. */
+  readonly reachable: boolean;
+}
 
 /**
  * Discover models the local Ollama daemon can serve. Prefers `ollama list`
@@ -455,7 +474,9 @@ const fetchOllamaTags = (baseUrl: string) =>
  */
 const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
-    if (!claudeUsesLocalOllama(environment)) return [] as ReadonlyArray<string>;
+    if (!claudeUsesLocalOllama(environment)) {
+      return { models: [], reachable: true } satisfies LocalOllamaDiscovery;
+    }
     const listed = yield* resolveSpawnCommand("ollama", ["list"], { env: environment }).pipe(
       Effect.flatMap((resolved) =>
         spawnAndCollect(
@@ -475,10 +496,13 @@ const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
       listed.success.value.code === 0
     ) {
       const models = parseOllamaModelList(listed.success.value.stdout);
-      if (models.length > 0) return models;
+      if (models.length > 0) return { models, reachable: true } satisfies LocalOllamaDiscovery;
     }
     const baseUrl = environment.ANTHROPIC_BASE_URL?.trim();
-    return baseUrl ? yield* fetchOllamaTags(baseUrl) : ([] as ReadonlyArray<string>);
+    const tags = baseUrl ? yield* fetchOllamaTags(baseUrl) : null;
+    return tags === null
+      ? ({ models: [], reachable: false } satisfies LocalOllamaDiscovery)
+      : ({ models: tags, reachable: true } satisfies LocalOllamaDiscovery);
   });
 
 function formatClaudeOpus5UpgradeMessage(version: string | null): string {
@@ -1017,7 +1041,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   // Discover Ollama-served models before probing the Claude CLI: even when the
   // CLI probe fails, the picker should still surface the models the endpoint
   // actually hosts (with the probe's warning/error status alongside).
-  const discoveredOllamaModels = yield* discoverLocalOllamaModels(resolvedEnvironment);
+  const ollamaDiscovery = yield* discoverLocalOllamaModels(resolvedEnvironment);
+  const discoveredOllamaModels = ollamaDiscovery.models;
   const modelsWithDiscovery = providerModelsFromSettings(
     usesLocalOllama ? [] : BUILT_IN_MODELS,
     [...claudeSettings.customModels, ...discoveredOllamaModels],
@@ -1129,6 +1154,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     // is the whole credential — so report ready and keep the models reachable
     // rather than failing closed on an account lookup that cannot succeed.
     if (usesLocalOllama) {
+      // "Ready" is only honest while the daemon answers. With the daemon down,
+      // saved models would render a working-looking picker whose every turn
+      // fails — report the outage instead, even though that hides the models.
+      const ollamaReachable = ollamaDiscovery.reachable;
       return buildServerProvider({
         presentation: CLAUDE_PRESENTATION,
         enabled: claudeSettings.enabled,
@@ -1140,10 +1169,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         probe: {
           installed: true,
           version: parsedVersion,
-          status: "ready",
+          status: ollamaReachable ? "ready" : "warning",
           auth: { status: "authenticated", type: "ollama", label: "Ollama" },
-          message:
-            models.length > 0
+          message: !ollamaReachable
+            ? "The Ollama daemon is not responding. Start it (`ollama serve`) and refresh."
+            : models.length > 0
               ? "Serving models from the local Ollama endpoint."
               : "Connected to the local Ollama endpoint, but no models were discovered. Run `ollama pull` (or `ollama signin` for cloud models).",
         },

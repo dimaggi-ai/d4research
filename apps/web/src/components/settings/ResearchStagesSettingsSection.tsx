@@ -62,7 +62,8 @@ export function ResearchStagesSettingsSection({
       <p className="px-3 text-xs text-muted-foreground sm:px-4">
         Stages a <span className="font-mono">#deep-research</span> thread works through, in order. A
         stage's provider/model is a suggestion: the thread shows a hand-off shortcut when that stage
-        becomes active, and nothing switches without you.
+        becomes active, and nothing switches without you. With every stage disabled, research
+        threads fall back to the built-in five stages.
       </p>
 
       <div className="space-y-2 px-3 sm:px-4" data-testid="research-stages-list">

@@ -15,6 +15,7 @@ const LOCAL_COMPRESSION_TIMEOUT_MILLIS = 60_000;
 // Provider CLIs cold-start and stream, so they get more room than the local
 // daemon — but a hung provider must never hold a handoff open forever.
 const PROVIDER_COMPRESSION_TIMEOUT_MILLIS = 120_000;
+const SESSION_STOP_TIMEOUT_MILLIS = 10_000;
 
 /**
  * Deterministic, model-free fallback: keeps the head (task statement) and the
@@ -161,6 +162,10 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
       modelSelection: { instanceId: input.instanceId, model: input.model },
     })
     .pipe(
+      // The turn timeout below cannot help if the startup handshake itself
+      // hangs — bound it separately so a wedged provider CLI cannot hold
+      // /api/handoff/prepare open forever.
+      Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
       Effect.mapError(
         (cause) =>
           new HandoffCompressionError({
@@ -199,7 +204,11 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
             detail: `Compression turn failed: ${cause instanceof Error ? cause.message : String(cause)}`,
           }),
       ),
-      Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.ignore)),
+      Effect.ensuring(
+        adapter
+          .stopSession(threadId)
+          .pipe(Effect.timeout(SESSION_STOP_TIMEOUT_MILLIS), Effect.ignore),
+      ),
     );
 
   if (!compressed) {

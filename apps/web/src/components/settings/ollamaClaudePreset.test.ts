@@ -6,6 +6,7 @@ import {
   discoverOllamaModels,
   isOllamaClaudePresetConfigured,
   OLLAMA_CLAUDE_CLOUD_MODELS,
+  OLLAMA_PRESET_BACKUP_KEY,
   ollamaDiscoveryOrigins,
   parseOllamaTagsPayload,
   pickOllamaAliasModel,
@@ -200,14 +201,64 @@ describe("removeOllamaClaudePreset", () => {
     expect(removeOllamaClaudePreset(applied).config).toMatchObject({ customModels: [] });
   });
 
-  it("removes locally pulled tags only when discovery reports them", () => {
+  it("restores the snapshot regardless of what discovery reports today", () => {
     const applied = applyOllamaClaudePreset(claudeInstance(), ["llama4:latest"]);
     expect(removeOllamaClaudePreset(applied, ["llama4:latest"]).config).toMatchObject({
       customModels: [],
     });
     expect(removeOllamaClaudePreset(applied, []).config).toMatchObject({
+      customModels: [],
+    });
+  });
+
+  it("restores pre-preset managed variables and models from the snapshot", () => {
+    // The exact scenario the adversarial review probed: values that existed
+    // before the preset must survive an apply → remove round trip.
+    const original = claudeInstance({
+      environment: [
+        { name: "ANTHROPIC_DEFAULT_HAIKU_MODEL", value: "my-old-haiku", sensitive: false },
+        { name: "ANTHROPIC_BASE_URL", value: "https://old.example", sensitive: false },
+      ],
+      config: { customModels: ["gemma4:e4b-it-qat"] },
+    });
+    const reverted = removeOllamaClaudePreset(
+      applyOllamaClaudePreset(original, ["glm-5.2:cloud", "gemma4:e4b-it-qat"]),
+      ["glm-5.2:cloud", "gemma4:e4b-it-qat"],
+    );
+    expect(reverted.environment).toEqual(
+      expect.arrayContaining([
+        { name: "ANTHROPIC_DEFAULT_HAIKU_MODEL", value: "my-old-haiku", sensitive: false },
+        { name: "ANTHROPIC_BASE_URL", value: "https://old.example", sensitive: false },
+      ]),
+    );
+    expect(reverted.config).toMatchObject({ customModels: ["gemma4:e4b-it-qat"] });
+  });
+
+  it("falls back to the preset-model filter when no snapshot exists", () => {
+    const applied = applyOllamaClaudePreset(claudeInstance(), ["llama4:latest"]);
+    const legacy = {
+      ...applied,
+      config: Object.fromEntries(
+        Object.entries(applied.config as Record<string, unknown>).filter(
+          ([key]) => key !== OLLAMA_PRESET_BACKUP_KEY,
+        ),
+      ),
+    };
+    expect(removeOllamaClaudePreset(legacy, []).config).toMatchObject({
       customModels: ["llama4:latest"],
     });
+  });
+
+  it("filters embedding-only models out of tags payloads", () => {
+    expect(
+      parseOllamaTagsPayload({
+        models: [
+          { name: "glm-5.2:cloud" },
+          { name: "mxbai-embed-large:latest" },
+          { name: "nomic-embed-text:latest" },
+        ],
+      }),
+    ).toEqual(["glm-5.2:cloud"]);
   });
 
   it("preserves custom Anthropic models the user added", () => {

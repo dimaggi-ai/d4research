@@ -159,9 +159,15 @@ export interface PrepareProviderHandoffInput {
  * Returns the compressed summary, or null when preparation failed (callers
  * fall back to the structured transcript — handoff never blocks on this).
  */
+// Compression is bounded server-side (60 s local, 120 s provider), so a
+// request outliving both is stuck, not slow. The fallback path is free.
+const PREPARE_TIMEOUT_MS = 150_000;
+
 export async function prepareProviderHandoff(
   input: PrepareProviderHandoffInput,
 ): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PREPARE_TIMEOUT_MS);
   try {
     const response = await fetch("/api/handoff/prepare", {
       method: "POST",
@@ -169,6 +175,7 @@ export async function prepareProviderHandoff(
       cache: "no-store",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
+      signal: controller.signal,
     });
     const result = (await response.json().catch(() => null)) as {
       ok?: unknown;
@@ -180,6 +187,8 @@ export async function prepareProviderHandoff(
     return null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

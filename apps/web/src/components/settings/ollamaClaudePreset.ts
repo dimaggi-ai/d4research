@@ -95,6 +95,18 @@ export function applyOllamaClaudePreset(
     ? config.customModels.filter((model): model is string => typeof model === "string")
     : [];
 
+  // Snapshot what the preset is about to replace, once: removing the preset
+  // restores this instead of guessing. A refresh (preset already applied)
+  // must not overwrite the snapshot with preset-managed state.
+  const backup =
+    config[OLLAMA_PRESET_BACKUP_KEY] ??
+    ({
+      environment: (instance.environment ?? []).filter((variable) =>
+        OLLAMA_MANAGED_VARIABLES.includes(variable.name),
+      ),
+      customModels: existingModels,
+    } satisfies OllamaPresetBackup);
+
   return {
     ...instance,
     driver: ProviderDriverKind.make("claudeAgent"),
@@ -102,6 +114,7 @@ export function applyOllamaClaudePreset(
     config: {
       ...config,
       customModels: [...new Set([...existingModels, ...models])],
+      [OLLAMA_PRESET_BACKUP_KEY]: backup,
     },
   };
 }
@@ -134,7 +147,13 @@ export function ollamaDiscoveryOrigins(location?: {
   return origins;
 }
 
-/** Extract model slugs from an Ollama `GET /api/tags` payload. */
+// Embedding models answer /api/embed, not the chat endpoint — selecting one
+// as a Claude chat model guarantees a failed turn. The tags payload carries no
+// capability flag, so recognize them by the naming convention embedders follow.
+// (Mirrors the server-side filter in ClaudeProvider.ts.)
+const OLLAMA_EMBEDDING_MODEL_PATTERN = /embed|minilm|reranker/iu;
+
+/** Extract chat-capable model slugs from an Ollama `GET /api/tags` payload. */
 export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> {
   if (!payload || typeof payload !== "object") return [];
   const models = (payload as { models?: unknown }).models;
@@ -144,7 +163,9 @@ export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> 
     if (!entry || typeof entry !== "object") continue;
     const { name, model } = entry as { name?: unknown; model?: unknown };
     const id = typeof name === "string" && name.length > 0 ? name : model;
-    if (typeof id === "string" && id.length > 0) ids.push(id);
+    if (typeof id === "string" && id.length > 0 && !OLLAMA_EMBEDDING_MODEL_PATTERN.test(id)) {
+      ids.push(id);
+    }
   }
   return [...new Set(ids)];
 }
@@ -199,6 +220,35 @@ const OLLAMA_MANAGED_VARIABLES: ReadonlyArray<string> = [
 ];
 
 /**
+ * Where the preset stashes the state it replaced. The contracts envelope keeps
+ * driver config opaque (`Schema.Unknown`), so an extra key rides along in the
+ * stored instance config; the server-side driver decode simply ignores it.
+ */
+export const OLLAMA_PRESET_BACKUP_KEY = "ollamaPresetBackup";
+
+export interface OllamaPresetBackup {
+  readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>;
+  readonly customModels: ReadonlyArray<string>;
+}
+
+function readPresetBackup(config: Record<string, unknown>): OllamaPresetBackup | null {
+  const backup = config[OLLAMA_PRESET_BACKUP_KEY];
+  if (backup === null || typeof backup !== "object" || Array.isArray(backup)) return null;
+  const { environment, customModels } = backup as Partial<OllamaPresetBackup>;
+  if (!Array.isArray(environment) || !Array.isArray(customModels)) return null;
+  return {
+    environment: environment.filter(
+      (variable): variable is ProviderInstanceEnvironmentVariable =>
+        variable !== null &&
+        typeof variable === "object" &&
+        typeof (variable as { name?: unknown }).name === "string" &&
+        typeof (variable as { value?: unknown }).value === "string",
+    ),
+    customModels: customModels.filter((model): model is string => typeof model === "string"),
+  };
+}
+
+/**
  * Whether a custom model came from the preset. The driver config schema is a
  * closed struct, so the applied tags cannot be recorded alongside them — but
  * Ollama tags are recognisable: they are either in the bundled roster or carry
@@ -226,16 +276,24 @@ export function removeOllamaClaudePreset(
 ): ProviderInstanceConfig {
   const discovered = new Set(discoveredLocalModels.map((id) => id.trim()).filter(Boolean));
   const managed = new Set(OLLAMA_MANAGED_VARIABLES);
-  const environment = (instance.environment ?? []).filter(
-    (variable) => !managed.has(variable.name),
-  );
   const config = configRecord(instance.config);
+  const backup = readPresetBackup(config);
+  delete config[OLLAMA_PRESET_BACKUP_KEY];
+
+  const environment = [
+    ...(instance.environment ?? []).filter((variable) => !managed.has(variable.name)),
+    // Restore whatever managed variables the preset originally replaced.
+    ...(backup?.environment ?? []),
+  ];
   const existingModels = Array.isArray(config.customModels)
     ? config.customModels.filter((model): model is string => typeof model === "string")
     : [];
-  const customModels = existingModels.filter(
-    (model) => !isOllamaPresetModel(model) && !discovered.has(model.trim()),
-  );
+  // With a snapshot the previous model list comes back verbatim; without one
+  // (preset applied before snapshots existed) fall back to filtering out what
+  // looks preset-added.
+  const customModels =
+    backup?.customModels ??
+    existingModels.filter((model) => !isOllamaPresetModel(model) && !discovered.has(model.trim()));
 
   const next: ProviderInstanceConfig = {
     ...instance,

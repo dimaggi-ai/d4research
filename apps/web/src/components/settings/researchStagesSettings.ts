@@ -21,9 +21,15 @@ export function addResearchStage(
   stages: ReadonlyArray<ResearchStageConfig>,
 ): ReadonlyArray<ResearchStageConfig> {
   if (stages.length >= RESEARCH_STAGE_MAX_COUNT) return stages;
+  // Stage titles double as plan-step keys: the active-stage suggestion matches
+  // plan steps by title, so two identical titles would resolve to the first
+  // stage's suggestion. Generate a unique title, not just a unique id.
+  const taken = new Set(stages.map((stage) => stage.title.trim().toLowerCase()));
+  let index = stages.length + 1;
+  while (taken.has(`new stage ${index}`)) index += 1;
   return [
     ...stages,
-    { id: nextResearchStageId(stages), title: "New stage", goal: "", enabled: true },
+    { id: nextResearchStageId(stages), title: `New stage ${index}`, goal: "", enabled: true },
   ];
 }
 

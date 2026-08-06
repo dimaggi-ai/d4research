@@ -24,12 +24,12 @@ type ClaudeSkillScope = "user" | "project";
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
-type SkillFrontmatter =
+export type SkillFrontmatter =
   | { readonly kind: "missing" }
   | { readonly kind: "malformed" }
   | { readonly kind: "parsed"; readonly name?: string; readonly description?: string };
 
-function parseSkillFrontmatter(contents: string): SkillFrontmatter {
+export function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   const match = FRONTMATTER_PATTERN.exec(contents);
   if (!match) {
     return { kind: "missing" };
@@ -84,6 +84,55 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
 });
 
 /**
+ * Depth limit for skill discovery below a skills root. Real user setups nest
+ * skills one category level deep (`skills/writing/copywriting/SKILL.md`); the
+ * limit keeps a pathological tree from turning discovery into a full walk.
+ */
+const SKILL_SCAN_MAX_DEPTH = 3;
+
+/**
+ * Walk a skills root and return every directory that contains a `SKILL.md`,
+ * recursing into category subdirectories up to {@link SKILL_SCAN_MAX_DEPTH}.
+ * Hidden directories and `node_modules` are skipped, and a directory that is
+ * itself a skill is never descended into — nested `SKILL.md` files inside a
+ * skill are fixtures, not separate skills. Results are sorted for determinism.
+ */
+export const collectSkillDirectories = Effect.fn("collectSkillDirectories")(function* (
+  directory: string,
+  depth: number = SKILL_SCAN_MAX_DEPTH,
+): Effect.fn.Return<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> {
+  if (depth <= 0) {
+    return [];
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const entries = yield* fileSystem
+    .readDirectory(directory)
+    .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+
+  const found: Array<string> = [];
+  for (const entry of [...entries].sort()) {
+    if (entry.startsWith(".") || entry === "node_modules") {
+      continue;
+    }
+    const entryPath = path.join(directory, entry);
+    const info = yield* fileSystem.stat(entryPath).pipe(Effect.orElseSucceed(() => undefined));
+    if (info?.type !== "Directory") {
+      continue;
+    }
+    const hasSkillManifest = yield* fileSystem
+      .exists(path.join(entryPath, "SKILL.md"))
+      .pipe(Effect.orElseSucceed(() => false));
+    if (hasSkillManifest) {
+      found.push(entryPath);
+      continue;
+    }
+    found.push(...(yield* collectSkillDirectories(entryPath, depth - 1)));
+  }
+  return found;
+});
+
+/**
  * Enumerate Claude Code skills from the user config dir and the workspace.
  * Discovery is best-effort: unreadable roots and malformed skill entries are
  * skipped so a broken skill never degrades the provider snapshot. On name
@@ -106,12 +155,10 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
 
   const skillsByName = new Map<string, ServerProviderSkill>();
   for (const root of roots) {
-    const entries = yield* fileSystem
-      .readDirectory(root.directory)
-      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    const skillDirectories = yield* collectSkillDirectories(root.directory);
 
-    for (const entry of [...entries].sort()) {
-      const skillPath = path.join(root.directory, entry, "SKILL.md");
+    for (const skillDirectory of skillDirectories) {
+      const skillPath = path.join(skillDirectory, "SKILL.md");
       const contents = yield* fileSystem
         .readFileString(skillPath)
         .pipe(Effect.orElseSucceed(() => undefined));
@@ -127,7 +174,9 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         continue;
       }
 
-      const name = (frontmatter.kind === "parsed" ? frontmatter.name : undefined) ?? entry.trim();
+      const name =
+        (frontmatter.kind === "parsed" ? frontmatter.name : undefined) ??
+        path.basename(skillDirectory).trim();
       if (!name) {
         continue;
       }

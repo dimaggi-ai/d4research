@@ -93,6 +93,90 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
     }),
   );
 
+  it.effect("discovers skills nested in category subdirectories", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const skillsDir = path.join(configDir, "skills");
+
+      // Real user layout: one category level between the root and the skill.
+      yield* writeSkill(
+        path.join(skillsDir, "writing"),
+        "copywriting",
+        ["---", "name: copywriting", "description: Write copy.", "---"].join("\n"),
+      );
+      yield* writeSkill(
+        path.join(skillsDir, "operational"),
+        "system-doctor",
+        ["---", "name: system-doctor", "description: Health check.", "---"].join("\n"),
+      );
+      // A top-level (unnested) skill must still be found alongside nested ones.
+      yield* writeSkill(skillsDir, "top-level", ["---", "name: top-level", "---"].join("\n"));
+      // Two levels of categories — still within the depth limit of 3.
+      yield* writeSkill(
+        path.join(skillsDir, "deep", "deeper"),
+        "depth-three",
+        ["---", "name: depth-three", "---"].join("\n"),
+      );
+      // Four levels down exceeds the depth limit and must be invisible.
+      yield* writeSkill(
+        path.join(skillsDir, "a", "b", "c"),
+        "too-deep",
+        ["---", "name: too-deep", "---"].join("\n"),
+      );
+      // Hidden and node_modules directories are never descended into.
+      yield* writeSkill(
+        path.join(skillsDir, ".hidden"),
+        "hidden-skill",
+        ["---", "name: hidden-skill", "---"].join("\n"),
+      );
+      yield* writeSkill(
+        path.join(skillsDir, "node_modules"),
+        "dep-skill",
+        ["---", "name: dep-skill", "---"].join("\n"),
+      );
+      // A stray file at the root (README.md) is not a category directory.
+      yield* fs.writeFileString(path.join(skillsDir, "README.md"), "not a skill");
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined);
+
+      assert.deepEqual(
+        skills.map((skill) => skill.name),
+        ["copywriting", "depth-three", "system-doctor", "top-level"],
+      );
+      assert.equal(skills[0]?.path, path.join(skillsDir, "writing", "copywriting", "SKILL.md"));
+      assert.equal(skills[0]?.scope, "user");
+    }),
+  );
+
+  it.effect("does not recurse inside a discovered skill directory", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const skillsDir = path.join(configDir, "skills");
+
+      yield* writeSkill(skillsDir, "outer", ["---", "name: outer", "---"].join("\n"));
+      // A SKILL.md nested inside a skill is a fixture of that skill, not a
+      // separate skill.
+      yield* writeSkill(
+        path.join(skillsDir, "outer", "fixtures"),
+        "inner",
+        ["---", "name: inner", "---"].join("\n"),
+      );
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir }, undefined);
+
+      assert.deepEqual(
+        skills.map((skill) => skill.name),
+        ["outer"],
+      );
+    }),
+  );
+
   it.effect("falls back to the directory name and skips malformed frontmatter", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

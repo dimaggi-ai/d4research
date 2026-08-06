@@ -49,6 +49,12 @@ import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts"
 import type { ToolGuardPolicy } from "@t3tools/contracts";
 import { compressHandoffContext } from "./handoffCompression.ts";
 import {
+  isShareSkillTargetRoot,
+  readSkillsInventory,
+  shareSkill,
+  type SkillsInventoryEntry,
+} from "./skillsInventory.ts";
+import {
   DEFAULT_LOCAL_MEMO_BASE_URL,
   makeLocalMemoConnector,
 } from "./mcp/toolkits/memory/connectors.ts";
@@ -59,6 +65,8 @@ const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
 const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
 const TOOL_GUARD_POLICY_PATH = "/api/tool-guard/policy";
+const SKILLS_PATH = "/api/skills";
+const SKILLS_SHARE_PATH = "/api/skills/share";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -340,6 +348,75 @@ export const toolGuardPolicyWriteRouteLayer = HttpRouter.add(
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Failed to save policy." },
           { status: 500 },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const skillsInventoryRouteLayer = HttpRouter.add(
+  "GET",
+  SKILLS_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    // `cwd` scopes the project roots; without it only the user-level roots are scanned.
+    const cwd = Option.isSome(url)
+      ? url.value.searchParams.get("cwd")?.trim() || undefined
+      : undefined;
+    const skills = yield* readSkillsInventory({ cwd: cwd ?? process.cwd() }).pipe(
+      Effect.orElseSucceed((): ReadonlyArray<SkillsInventoryEntry> => []),
+    );
+    return HttpServerResponse.jsonUnsafe({ skills }, { headers: { "cache-control": "no-store" } });
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const skillsShareRouteLayer = HttpRouter.add(
+  "POST",
+  SKILLS_SHARE_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<unknown, { sourcePath?: unknown; targetRoot?: unknown; cwd?: unknown }>(
+        yield* request.json,
+      );
+      const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath.trim() : "";
+      if (!sourcePath || !isShareSkillTargetRoot(body.targetRoot)) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Expected a skill source path and a known target root." },
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
+      const cwd = typeof body.cwd === "string" && body.cwd.trim() ? body.cwd.trim() : process.cwd();
+      const result = yield* shareSkill({ sourcePath, targetRoot: body.targetRoot }, { cwd });
+      return result.ok
+        ? HttpServerResponse.jsonUnsafe(
+            { ok: true, targetPath: result.targetPath, mode: result.mode },
+            { headers: { "cache-control": "no-store" } },
+          )
+        : HttpServerResponse.jsonUnsafe(
+            { ok: false, message: result.message },
+            { status: result.status, headers: { "cache-control": "no-store" } },
+          );
+    }).pipe(
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Could not share the skill." },
+          { status: 500, headers: { "cache-control": "no-store" } },
         ),
       ),
     );

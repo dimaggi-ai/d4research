@@ -11,6 +11,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/source-control",
   "/settings/connections",
   "/settings/tool-guard",
+  "/settings/skills",
   "/settings/beta",
   "/settings/archived",
 ] as const;

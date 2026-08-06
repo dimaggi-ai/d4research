@@ -129,6 +129,32 @@ Each provider probe produces a `ServerProvider` snapshot
 where the CLI exposes them — `slashCommands` and `skills` that the web composer surfaces as `/` and
 `$` completions.
 
+`discoverClaudeSkills` ([`ClaudeSkills.ts`](../../apps/server/src/provider/Drivers/ClaudeSkills.ts))
+scans `<configDir>/skills` (scope `user`) and `<cwd>/.claude/skills` (scope `project`). The scan
+recurses up to three levels so category layouts (`skills/writing/copywriting/SKILL.md`) are found;
+hidden directories and `node_modules` are skipped, and a directory holding a `SKILL.md` is itself a
+skill and is never descended into. Project skills win name collisions with user skills.
+
+### Skills inventory and the Skills settings page
+
+[`skillsInventory.ts`](../../apps/server/src/skillsInventory.ts) merges every skills root the local
+agents read — `~/.claude/skills`, `~/.codex/skills` plus its hidden `.system` set (scope `system`),
+`~/.junie/skills`, `~/.junie/commands/*.md` (kind `command`, description from frontmatter or the
+first heading), and the project's `.agents/skills` and `.claude/skills`. Project roots frequently
+alias one another through a symlink, so entries are deduplicated by resolved path while the aliasing
+is still reported (`isSymlinked`) and the `agents` list unions every root that reaches the entry.
+
+Two raw routes expose it ([`http.ts`](../../apps/server/src/http.ts), registered in
+[`server.ts`](../../apps/server/src/server.ts)):
+
+- `GET /api/skills` (read scope, optional `?cwd=` — defaults to the server cwd) returns `{ skills }`.
+- `POST /api/skills/share` (operate scope, body `{ sourcePath, targetRoot }`) symlinks the skill into
+  the target agent root, falling back to a recursive copy. The source must resolve inside a known
+  skills root — traversal is rejected with 400 — and an existing target is never overwritten (409).
+
+The web side is `useSkillsInventory` plus `SkillsSettingsPanel` at `/settings/skills`, which groups
+skills by root, filters by name/description/path, and offers the Share action per row.
+
 Snapshots may also carry `usage: ServerProviderUsage` — plan type, rolling usage windows
 (`ServerProviderUsageWindow`: label, `utilizationPercent`, `resetsAt`), optional credits, and a
 `limitReached` marker. Two drivers populate it today:

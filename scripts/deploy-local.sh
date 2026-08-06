@@ -27,7 +27,7 @@ run_with_heartbeat() {
   local started_at=$SECONDS
   local last_heartbeat_at=$SECONDS
   local previous_size=0
-  log_path="$(mktemp --tmpdir "t3code-deploy.XXXXXX.log")"
+  log_path="$(mktemp --tmpdir "d4research-deploy.XXXXXX.log")"
 
   echo "$name: started (deadline ${timeout_seconds}s)"
   timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" "$@" >"$log_path" 2>&1 &
@@ -88,14 +88,14 @@ if [[ "${1:-}" == "--complete-restart" ]]; then
     echo "restart-worker: unsupported restart mode '$RESTART_MODE'" >&2
     exit 2
   fi
-  echo "restart-worker: restarting T3 Code outside the active T3 session"
-  systemctl --user restart t3code.service
-  wait_for_url "T3 Code" "$APP_URL/"
-  wait_for_url "T3 Code manifest" "$APP_URL/manifest.webmanifest"
+  echo "restart-worker: restarting d4research outside the active T3 session"
+  systemctl --user restart d4research.service
+  wait_for_url "d4research" "$APP_URL/"
+  wait_for_url "d4research manifest" "$APP_URL/manifest.webmanifest"
   if [[ "$REQUIRE_VOICE" == "1" ]]; then
     wait_for_url "Local voice service" "$VOICE_URL"
   fi
-  echo "restart-worker: T3 Code and local voice are ready"
+  echo "restart-worker: d4research and local voice are ready"
   exit 0
 fi
 
@@ -109,7 +109,7 @@ else
   echo "pre-deploy: local voice readiness check disabled"
 fi
 
-echo "build: validating and bundling T3 Code with bounded steps"
+echo "build: validating and bundling d4research with bounded steps"
 run_with_heartbeat "Web typecheck" 120 vp run --filter @t3tools/web typecheck
 run_with_heartbeat "Web build" 180 vp run --filter @t3tools/web build
 run_with_heartbeat "Server build" 180 node apps/server/scripts/cli.ts build
@@ -124,7 +124,7 @@ if [[ "$RESTART_MODE" != "systemd" ]]; then
   exit 2
 fi
 
-restart_unit="t3code-restart-$(date +%s)-$$"
+restart_unit="d4research-restart-$(date +%s)-$$"
 echo "restart: scheduling detached readiness worker ${restart_unit} in 5s"
 systemd-run \
   --user \

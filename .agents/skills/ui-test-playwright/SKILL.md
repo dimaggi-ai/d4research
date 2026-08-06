@@ -89,6 +89,6 @@ verified unless a spec or a screenshot actually demonstrates it.
 
 - Do not point the harness at the user's real `~/.t3` state or the production
   server on port 3773.
-- Do not restart `t3code.service` to test something; boot an isolated app.
+- Do not restart `d4research.service` to test something; boot an isolated app.
 - Treat pairing URLs as secrets: they are single-use and must not appear in
   final responses, commits, or logs.

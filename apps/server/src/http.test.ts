@@ -3,10 +3,29 @@ import { describe } from "vite-plus/test";
 
 import {
   buildHandoffMemoryText,
+  isBuildAssetPath,
   isLoopbackHostname,
   resolveDevRedirectUrl,
   selectHandoffCompressionPlan,
 } from "./http.ts";
+
+describe("static build assets", () => {
+  it("treats bundler output as an asset, never a client route", () => {
+    // A client left on a previous build requests chunks this build renamed.
+    // These must 404 rather than fall back to index.html, which the browser
+    // rejects on MIME grounds and reports as an unopenable panel.
+    expect(isBuildAssetPath("assets/FilePreviewPanel-DhOl-_WG.js")).toBe(true);
+    expect(isBuildAssetPath("assets/index-B0FU_a-4.css")).toBe(true);
+    expect(isBuildAssetPath("service-worker.js")).toBe(true);
+    expect(isBuildAssetPath("index-abc.js.map")).toBe(true);
+  });
+
+  it("leaves client routes to the SPA fallback", () => {
+    expect(isBuildAssetPath("settings/skills")).toBe(false);
+    expect(isBuildAssetPath("projects/meko-benchmark")).toBe(false);
+    expect(isBuildAssetPath("index.html")).toBe(false);
+  });
+});
 
 describe("http dev routing", () => {
   it("treats localhost and loopback addresses as local", () => {

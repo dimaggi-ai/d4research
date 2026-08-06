@@ -45,7 +45,6 @@ import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/ter
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  lazy,
   memo,
   Suspense,
   useCallback,
@@ -182,6 +181,7 @@ import {
   prepareProviderHandoff,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
+import { lazyWithReload } from "../lazyWithReload";
 import {
   DEEP_RESEARCH_TAG,
   deriveResearchProviderCandidates,
@@ -421,11 +421,13 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
-const PreviewPanel = lazy(() =>
+// Lazily loaded across a deploy boundary: a tab holding the previous build
+// asks for chunks this build renamed, so these recover instead of failing.
+const PreviewPanel = lazyWithReload(() =>
   import("./preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
-const DiffPanel = lazy(() => import("./DiffPanel"));
-const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const DiffPanel = lazyWithReload(() => import("./DiffPanel"));
+const FilePreviewPanel = lazyWithReload(() => import("./files/FilePreviewPanel"));
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",

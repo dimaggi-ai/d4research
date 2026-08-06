@@ -769,6 +769,20 @@ export const assetRouteLayer = HttpRouter.add(
   }),
 );
 
+/**
+ * Paths the bundler emits: hashed chunks under `assets/`, plus any top-level
+ * script/style/map. These must never fall back to `index.html`.
+ */
+const BUILD_ASSET_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".css", ".map", ".wasm"]);
+
+export function isBuildAssetPath(relativePath: string): boolean {
+  if (relativePath.startsWith("assets/")) {
+    return true;
+  }
+  const lastDot = relativePath.lastIndexOf(".");
+  return lastDot > 0 && BUILD_ASSET_EXTENSIONS.has(relativePath.slice(lastDot).toLowerCase());
+}
+
 export const staticAndDevRouteLayer = HttpRouter.add(
   "GET",
   "*",
@@ -835,6 +849,15 @@ export const staticAndDevRouteLayer = HttpRouter.add(
 
     const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
     if (!fileInfo || fileInfo.type !== "File") {
+      // The SPA fallback exists for client routes. A build asset is not one:
+      // answering a missing chunk with index.html makes the browser reject it
+      // on MIME grounds ("Expected a JavaScript-or-Wasm module script"), which
+      // is what a client left on a previous build sees when it lazily loads a
+      // chunk the new build renamed. A 404 states the real problem and lets
+      // the client recover.
+      if (isBuildAssetPath(staticRelativePath)) {
+        return HttpServerResponse.text("Not Found", { status: 404 });
+      }
       const indexPath = path.resolve(staticRoot, "index.html");
       const indexData = yield* fileSystem
         .readFile(indexPath)

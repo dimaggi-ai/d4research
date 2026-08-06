@@ -115,9 +115,30 @@ export function clearProjectFileQueryData(
   appAtomRegistry.set(optimisticFileAtom(environmentId, cwd, relativePath), null);
 }
 
+function isMissingFileReadError(cause: unknown): cause is {
+  readonly relativePath?: string;
+  readonly cwd?: string;
+} {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "_tag" in cause &&
+    cause._tag === "ProjectReadFileError" &&
+    "operation" in cause &&
+    cause.operation === "realpath-target"
+  );
+}
+
 function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | null {
   if (result._tag !== "Failure") return null;
   const cause = Cause.squash(result.cause);
+  // Chat messages linkify any path-shaped text, including paths that belong
+  // to a different project than the active thread. Opening one fails the
+  // target realpath — explain that instead of surfacing the raw read error.
+  if (isMissingFileReadError(cause)) {
+    const path = cause.relativePath ?? "This file";
+    return `${path} doesn't exist in this workspace. It may belong to a different project, or it was moved or deleted.`;
+  }
   return cause instanceof Error ? cause.message : "Workspace query failed.";
 }
 

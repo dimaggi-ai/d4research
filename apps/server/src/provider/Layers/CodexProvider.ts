@@ -254,7 +254,7 @@ function appendCustomCodexModels(
   return customEntries.length === 0 ? models : [...models, ...customEntries];
 }
 
-function parseCodexSkillsListResponse(
+export function parseCodexSkillsListResponse(
   response: CodexSchema.V2SkillsListResponse,
   cwd: string,
 ): ReadonlyArray<ServerProviderSkill> {

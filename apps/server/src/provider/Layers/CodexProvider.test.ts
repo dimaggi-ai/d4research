@@ -5,7 +5,47 @@ import {
   isLegacyCodexModel,
   mapCodexModelCapabilities,
   mapCodexRateLimits,
+  parseCodexSkillsListResponse,
 } from "./CodexProvider.ts";
+
+it("reads Codex's native skills list for the requested workspace", () => {
+  const response = {
+    data: [
+      {
+        cwd: "/work/project-a",
+        skills: [
+          {
+            name: "storyboard",
+            path: "/home/dev/.codex/skills/storyboard/SKILL.md",
+            enabled: true,
+            description: "Build a shot list.",
+            scope: "user",
+          },
+        ],
+      },
+      {
+        cwd: "/work/project-b",
+        skills: [{ name: "other", path: "/home/dev/.codex/skills/other/SKILL.md", enabled: false }],
+      },
+    ],
+  } as unknown as Parameters<typeof parseCodexSkillsListResponse>[0];
+
+  assert.deepStrictEqual(parseCodexSkillsListResponse(response, "/work/project-a"), [
+    {
+      name: "storyboard",
+      path: "/home/dev/.codex/skills/storyboard/SKILL.md",
+      enabled: true,
+      description: "Build a shot list.",
+      scope: "user",
+    },
+  ]);
+
+  // An unknown cwd falls back to the union of every workspace's skills.
+  assert.deepStrictEqual(
+    parseCodexSkillsListResponse(response, "/work/unknown").map((skill) => skill.name),
+    ["storyboard", "other"],
+  );
+});
 
 it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
   assert.deepStrictEqual(

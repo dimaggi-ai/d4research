@@ -9,6 +9,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
+  ServerProviderSkill,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -228,7 +229,12 @@ import {
 } from "../../lib/contextWindow";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
+import {
+  describeComposerFallbackSkill,
+  toComposerFallbackSkills,
+} from "../../composerSkillFallback";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useSkillsInventory } from "../../hooks/useSkillsInventory";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
 import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -911,6 +917,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
   );
+  // Providers without native skill support report none, which would leave the
+  // `$` menu empty. Fall back to the local inventory the server can expand —
+  // and only poll for it on those providers.
+  const providerReportsSkills = (selectedProviderStatus?.skills.length ?? 0) > 0;
+  const skillsInventory = useSkillsInventory(undefined, { enabled: !providerReportsSkills });
+  const composerSkills = useMemo<ReadonlyArray<ServerProviderSkill>>(
+    () =>
+      providerReportsSkills
+        ? (selectedProviderStatus?.skills ?? [])
+        : toComposerFallbackSkills(skillsInventory.entries),
+    [providerReportsSkills, selectedProviderStatus, skillsInventory.entries],
+  );
   const selectedProviderModels = useMemo<ReadonlyArray<ServerProvider["models"][number]>>(
     () => selectedProviderEntry?.models ?? [],
     [selectedProviderEntry],
@@ -1160,22 +1178,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderStatus?.skills ?? [], composerTrigger.query).map(
-        (skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: formatProviderSkillDisplayName(skill),
-          description:
-            skill.shortDescription ??
+      return searchProviderSkills(composerSkills, composerTrigger.query).map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: formatProviderSkillDisplayName(skill),
+        description: providerReportsSkills
+          ? (skill.shortDescription ??
             skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-        }),
-      );
+            (skill.scope ? `${skill.scope} skill` : "Run provider skill"))
+          : describeComposerFallbackSkill(skill),
+      }));
     }
     return [];
-  }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
+  }, [
+    composerSkills,
+    composerTrigger,
+    providerReportsSkills,
+    selectedProvider,
+    selectedProviderStatus,
+    workspaceEntries.entries,
+  ]);
 
   const composerMenuOpen = Boolean(composerTrigger);
   const composerMenuSearchKey = composerTrigger
@@ -3145,7 +3169,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ? composerTerminalContexts
                     : []
                 }
-                skills={selectedProviderStatus?.skills ?? []}
+                skills={composerSkills}
                 {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}

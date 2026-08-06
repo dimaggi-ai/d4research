@@ -155,6 +155,54 @@ Two raw routes expose it ([`http.ts`](../../apps/server/src/http.ts), registered
 The web side is `useSkillsInventory` plus `SkillsSettingsPanel` at `/settings/skills`, which groups
 skills by root, filters by name/description/path, and offers the Share action per row.
 
+### Skills on providers with no native support
+
+Only two drivers resolve a `$name` token themselves: **Claude** (`discoverClaudeSkills`) and **Codex**
+(`skills/list`, parsed by `parseCodexSkillsListResponse`). Agy, Cursor, Grok, Junie and OpenCode
+report `skills: []`, so a bare `$name` would reach them as a meaningless string.
+
+For those, the server expands the token.
+[`skillExpansion.ts`](../../apps/server/src/skillExpansion.ts) finds `$name` tokens at a word
+boundary — ignoring `$` inside inline code spans, fenced blocks, and `$$` — and appends a compact
+reference block after the message text: name, description, the absolute `SKILL.md` path, and one
+instruction to read that file first. It is progressive disclosure, not the body: every provider here
+is a local CLI with file-read tools. The original token stays in place because it is the user's
+visible attachment, and the block states plainly that attaching a skill does not run it.
+
+The expansion happens in `normalizeDispatchCommand`
+([`Normalizer.ts`](../../apps/server/src/orchestration/Normalizer.ts)), so it is part of the
+persisted user message and every client — web, desktop, mobile — sees the same authoritative thread.
+Constraints worth knowing:
+
+- **User roots only.** A `thread.turn.start` carries no workspace root for an existing thread, so the
+  inventory scan runs without a cwd: `claude-user`, `codex-user`, `junie-user`. Project-scoped skills
+  are out of scope for expansion and remain natively available on Claude and Codex.
+- **Never twice.** Skill names the target instance already reports natively (looked up through
+  `ProviderRegistry` by `instanceId`) are skipped. With no registry in context, or no `instanceId` on
+  the command, nothing is treated as native.
+- **Never fatal.** A message with no `$` never touches the filesystem, and any failure of the scan
+  sends the text through unchanged.
+- **Honest about gaps.** A token naming a skill whose `SKILL.md` no longer resolves (a broken share
+  symlink) gets a visible "skill file missing" note rather than being dropped silently.
+
+The web composer's `$` menu follows the same rule: when the provider snapshot reports no skills, it
+falls back to the local inventory filtered to those same user roots
+([`composerSkillFallback.ts`](../../apps/web/src/composerSkillFallback.ts)), labelled "Attach as
+instructions". `useSkillsInventory` takes an `enabled` flag so chat views on Claude and Codex do not
+pay for a poll they never read.
+
+### `skills_search` (MCP)
+
+[`mcp/toolkits/skills`](../../apps/server/src/mcp/toolkits/skills/) registers one read-only tool,
+`skills_search(query, limit)`, answered from `readSkillsInventory` at query time — a live scan, so a
+deleted skill disappears immediately and there is no index to go stale. It returns each skill's name,
+description, absolute path, root/kind/scope, and which agents can see it; it never runs a skill.
+
+Reachability follows the MCP session, not the skills support: **Codex, Claude, Cursor, Grok and
+OpenCode** get an `McpProviderSession` and can call it. **Agy and Junie** have no MCP session in
+their adapters and cannot. Agy still benefits from token expansion; Junie resolves its own skills and
+commands locally.
+
 Snapshots may also carry `usage: ServerProviderUsage` — plan type, rolling usage windows
 (`ServerProviderUsageWindow`: label, `utilizationPercent`, `resetsAt`), optional credits, and a
 `limitReached` marker. Two drivers populate it today:

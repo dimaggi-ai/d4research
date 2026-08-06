@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import {
   type ClientOrchestrationCommand,
@@ -8,12 +9,92 @@ import {
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
 
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
+import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
+import { expandSkillTokens, findSkillTokens } from "../skillExpansion.ts";
+import { readSkillsInventory, type SkillsInventoryRoot } from "../skillsInventory.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+
+/**
+ * Only user-level roots take part in expansion. A `thread.turn.start` carries
+ * no workspace root for an existing thread, so the inventory is scanned
+ * without a cwd and project-scoped skills stay out of scope — they remain
+ * natively available on Claude and Codex.
+ */
+const EXPANDABLE_SKILL_ROOTS: ReadonlySet<SkillsInventoryRoot> = new Set<SkillsInventoryRoot>([
+  "claude-user",
+  "codex-user",
+  "junie-user",
+]);
+
+/**
+ * Skill names the target provider instance already resolves on its own. With
+ * no registry in context (and none is required — the Normalizer runs in tests
+ * without one) nothing is treated as native.
+ */
+const resolveNativeSkillNames = Effect.fn("normalizer.resolveNativeSkillNames")(function* (
+  instanceId: ProviderInstanceId | undefined,
+) {
+  if (instanceId === undefined) {
+    return [] as ReadonlyArray<string>;
+  }
+  const registry = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
+  if (Option.isNone(registry)) {
+    return [] as ReadonlyArray<string>;
+  }
+  const providers = yield* registry.value.getProviders;
+  const snapshot = providers.find((provider) => provider.instanceId === instanceId);
+  return (snapshot?.skills ?? []).map((skill) => skill.name);
+});
+
+/**
+ * Append a compact skill reference block for `$name` attachments the target
+ * provider cannot resolve itself. The expansion is part of the persisted user
+ * message, so the visible thread stays authoritative on every client.
+ *
+ * Best effort throughout: a message with no `$` never touches the filesystem,
+ * and any failure sends the text unchanged rather than failing the turn.
+ */
+const expandSkillReferences = Effect.fn("normalizer.expandSkillReferences")(function* (input: {
+  readonly text: string;
+  readonly instanceId: ProviderInstanceId | undefined;
+}) {
+  if (!input.text.includes("$") || findSkillTokens(input.text).length === 0) {
+    return input.text;
+  }
+
+  return yield* Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const tokenNames = new Set(findSkillTokens(input.text).map((token) => token.name));
+    const inventory = yield* readSkillsInventory();
+    const candidates = inventory.filter(
+      (entry) => EXPANDABLE_SKILL_ROOTS.has(entry.root) && tokenNames.has(entry.name),
+    );
+    if (candidates.length === 0) {
+      return input.text;
+    }
+
+    const nativeSkillNames = yield* resolveNativeSkillNames(input.instanceId);
+    const workspaceSkills = yield* Effect.forEach(candidates, (entry) =>
+      fileSystem.exists(entry.path).pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.map((available) => ({
+          name: entry.name,
+          path: entry.path,
+          available,
+          ...(entry.description ? { description: entry.description } : {}),
+        })),
+      ),
+    );
+
+    return expandSkillTokens({ text: input.text, workspaceSkills, nativeSkillNames }).text;
+  }).pipe(Effect.catchCause(() => Effect.succeed(input.text)));
+});
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
@@ -169,10 +250,18 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       { concurrency: 1 },
     );
 
+    const text = yield* expandSkillReferences({
+      text: canonicalCommand.message.text,
+      instanceId:
+        canonicalCommand.modelSelection?.instanceId ??
+        canonicalCommand.bootstrap?.createThread?.modelSelection?.instanceId,
+    });
+
     return {
       ...canonicalCommand,
       message: {
         ...canonicalCommand.message,
+        text,
         attachments: normalizedAttachments,
       },
     } satisfies OrchestrationCommand;

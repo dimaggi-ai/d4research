@@ -24,6 +24,8 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
+import { SkillsToolkitHandlersLive } from "./toolkits/skills/handlers.ts";
+import { SkillsToolkit } from "./toolkits/skills/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -217,6 +219,10 @@ const MemoryToolkitRegistrationLive = McpServer.toolkit(MemoryToolkit).pipe(
   Layer.provide(MemoryToolkitHandlersLive),
 );
 
+const SkillsToolkitRegistrationLive = McpServer.toolkit(SkillsToolkit).pipe(
+  Layer.provide(SkillsToolkitHandlersLive),
+);
+
 export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewStandardToolkitRegistrationLive,
   PreviewSnapshotRegistrationLive,
@@ -231,5 +237,6 @@ const McpTransportLive = McpServer.layerHttp({
 
 export const layer = PreviewToolkitRegistrationLive.pipe(
   Layer.merge(MemoryToolkitRegistrationLive),
+  Layer.merge(SkillsToolkitRegistrationLive),
   Layer.provideMerge(McpTransportLive),
 );

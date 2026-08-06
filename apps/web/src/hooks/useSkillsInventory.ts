@@ -105,7 +105,20 @@ export interface SkillsInventoryState {
 
 const SKILLS_POLL_INTERVAL_MS = 30_000;
 
-export function useSkillsInventory(cwd?: string): SkillsInventoryState {
+export interface UseSkillsInventoryOptions {
+  /**
+   * Skip fetching and polling entirely. Callers that only need the inventory
+   * as a fallback (the composer, when the provider reports its own skills)
+   * pass false so no chat view pays for a poll it will not read.
+   */
+  readonly enabled?: boolean;
+}
+
+export function useSkillsInventory(
+  cwd?: string,
+  options: UseSkillsInventoryOptions = {},
+): SkillsInventoryState {
+  const enabled = options.enabled !== false;
   const [entries, setEntries] = useState<ReadonlyArray<SkillsInventoryEntry>>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +127,9 @@ export function useSkillsInventory(cwd?: string): SkillsInventoryState {
   const refresh = useCallback(() => setRefreshSequence((value) => value + 1), []);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const controller = new AbortController();
     const load = async () => {
       try {
@@ -149,7 +165,7 @@ export function useSkillsInventory(cwd?: string): SkillsInventoryState {
       window.clearInterval(interval);
       controller.abort();
     };
-  }, [cwd, refreshSequence]);
+  }, [cwd, enabled, refreshSequence]);
 
   const share = useCallback(
     async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {

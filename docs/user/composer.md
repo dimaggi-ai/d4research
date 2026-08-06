@@ -11,14 +11,19 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
 | Trigger | Menu                               | What gets inserted                                                                      |
 | ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
 | `@`     | Files and folders in the workspace | A path mention. Paths with spaces are quoted automatically.                             |
-| `$`     | Provider skills                    | `$<skill-name>` — skills the selected provider advertises                               |
+| `$`     | Skills                             | `$<skill-name>` — the provider's own skills, or your installed ones                     |
 | `/`     | Commands                           | Built-in `/model`, `/plan`, `/default`, plus the selected provider's own slash commands |
 
 - **File mentions** search the project's entries as you type. Dragging a file from the workspace
   file tree into the composer inserts a markdown-style file link (`[name](path)`) — mentions and
   links both resolve inside the workspace for the agent.
-- **Skills** come from the provider snapshot (each provider instance reports its own skills and
-  slash commands), so the `$` menu changes when you switch models. If nothing matches you are
+- **Skills** come from the provider when it has its own (Claude and Codex do), so the `$` menu
+  changes when you switch models. Providers without built-in skill support offer your installed
+  skills instead — the ones listed under **Settings → Skills**, from your agent directories and the
+  current project. Attaching one of those adds a short reference to your message: the skill's name,
+  what it is for, and where its instructions live, with a note to read them. The agent reads the
+  file itself, so a long skill costs you a few lines rather than its whole text, and attaching a
+  skill never runs it — it hands the agent instructions to follow. If nothing matches you are
   pointed at `/` to browse provider commands instead.
 - `/model` jumps into the model picker; `/plan` and `/default` switch the interaction mode. A
   standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.

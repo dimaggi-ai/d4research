@@ -8,12 +8,16 @@ import {
   type IsoDateTime,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
+  type ProjectId,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderInstanceId,
+  type ThreadId,
 } from "@t3tools/contracts";
 
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";
 import { ServerConfig } from "../config.ts";
+import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { expandSkillTokens, findSkillTokens } from "../skillExpansion.ts";
@@ -21,15 +25,15 @@ import { readSkillsInventory, type SkillsInventoryRoot } from "../skillsInventor
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 /**
- * Only user-level roots take part in expansion. A `thread.turn.start` carries
- * no workspace root for an existing thread, so the inventory is scanned
- * without a cwd and project-scoped skills stay out of scope — they remain
- * natively available on Claude and Codex.
+ * Every root takes part in expansion. Project skills need the thread's
+ * workspace, which is resolved below; when that lookup comes up empty the
+ * inventory simply holds no project rows.
  */
 const EXPANDABLE_SKILL_ROOTS: ReadonlySet<SkillsInventoryRoot> = new Set<SkillsInventoryRoot>([
   "claude-user",
   "codex-user",
   "junie-user",
+  "project",
 ]);
 
 /**
@@ -53,6 +57,50 @@ const resolveNativeSkillNames = Effect.fn("normalizer.resolveNativeSkillNames")(
 });
 
 /**
+ * The workspace a thread's project-scoped skills live under. A brand-new
+ * thread carries its workspace root on the bootstrap; an existing one is
+ * looked up through the read model. Optional service, so a caller without
+ * projections (and the Normalizer's own tests) simply loses project skills
+ * rather than failing the turn.
+ */
+const resolveThreadSkillsCwd = Effect.fn("normalizer.resolveThreadSkillsCwd")(function* (
+  threadId: ThreadId,
+  bootstrap: {
+    readonly workspaceRoot: string | undefined;
+    readonly projectId: ProjectId | undefined;
+  },
+) {
+  if (bootstrap.workspaceRoot) {
+    return bootstrap.workspaceRoot;
+  }
+  const query = yield* Effect.serviceOption(ProjectionSnapshotQuery);
+  if (Option.isNone(query)) {
+    return undefined;
+  }
+  // A thread being created in this same command has no read-model row yet;
+  // its project does.
+  if (bootstrap.projectId) {
+    const project = yield* query.value.getProjectShellById(bootstrap.projectId).pipe(
+      Effect.map(Option.getOrUndefined),
+      Effect.orElseSucceed(() => undefined),
+    );
+    return project?.workspaceRoot;
+  }
+  const thread = yield* query.value.getThreadDetailById(threadId).pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.orElseSucceed(() => undefined),
+  );
+  if (!thread) {
+    return undefined;
+  }
+  const project = yield* query.value.getProjectShellById(thread.projectId).pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.orElseSucceed(() => undefined),
+  );
+  return resolveThreadWorkspaceCwd({ thread, projects: project ? [project] : [] });
+});
+
+/**
  * Append a compact skill reference block for `$name` attachments the target
  * provider cannot resolve itself. The expansion is part of the persisted user
  * message, so the visible thread stays authoritative on every client.
@@ -63,6 +111,11 @@ const resolveNativeSkillNames = Effect.fn("normalizer.resolveNativeSkillNames")(
 const expandSkillReferences = Effect.fn("normalizer.expandSkillReferences")(function* (input: {
   readonly text: string;
   readonly instanceId: ProviderInstanceId | undefined;
+  readonly threadId: ThreadId;
+  readonly bootstrap: {
+    readonly workspaceRoot: string | undefined;
+    readonly projectId: ProjectId | undefined;
+  };
 }) {
   if (!input.text.includes("$") || findSkillTokens(input.text).length === 0) {
     return input.text;
@@ -71,7 +124,8 @@ const expandSkillReferences = Effect.fn("normalizer.expandSkillReferences")(func
   return yield* Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const tokenNames = new Set(findSkillTokens(input.text).map((token) => token.name));
-    const inventory = yield* readSkillsInventory();
+    const cwd = yield* resolveThreadSkillsCwd(input.threadId, input.bootstrap);
+    const inventory = yield* readSkillsInventory(cwd === undefined ? {} : { cwd });
     const candidates = inventory.filter(
       (entry) => EXPANDABLE_SKILL_ROOTS.has(entry.root) && tokenNames.has(entry.name),
     );
@@ -255,6 +309,13 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       instanceId:
         canonicalCommand.modelSelection?.instanceId ??
         canonicalCommand.bootstrap?.createThread?.modelSelection?.instanceId,
+      threadId: canonicalCommand.threadId,
+      bootstrap: {
+        workspaceRoot:
+          canonicalCommand.bootstrap?.createThread?.worktreePath ??
+          canonicalCommand.bootstrap?.prepareWorktree?.projectCwd,
+        projectId: canonicalCommand.bootstrap?.createThread?.projectId,
+      },
     });
 
     return {

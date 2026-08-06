@@ -158,4 +158,40 @@ effectIt.layer(normalizerTestLayer)("normalizeDispatchCommand skill expansion", 
       assert.equal(command.message.text, "no attachments in this message");
     }),
   );
+
+  it.effect("expands a project skill using the bootstrapping turn's worktree", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-normalizer-project-" });
+      const worktree = path.join(tempDir, "worktree");
+      const skillDir = path.join(worktree, ".agents", "skills", "update-docs");
+      yield* fs.makeDirectory(skillDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: update-docs\ndescription: Refresh the docs.\n---\n\nBody.",
+      );
+
+      const base = turnStartCommand("apply $update-docs here");
+      const command = yield* normalizeDispatchCommand({
+        ...base,
+        bootstrap: {
+          createThread: {
+            projectId: ProjectId.make("project-skills"),
+            title: "Skills",
+            modelSelection: { instanceId: ProviderInstanceId.make("agy"), model: "agy-default" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: worktree,
+            createdAt: clientCreatedAt,
+          },
+        },
+      } as ClientOrchestrationCommand);
+
+      if (command.type !== "thread.turn.start") return;
+      assert.include(command.message.text, path.join(skillDir, "SKILL.md"));
+      assert.include(command.message.text, "Refresh the docs.");
+    }),
+  );
 });

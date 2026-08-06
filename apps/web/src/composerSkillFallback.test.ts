@@ -15,17 +15,18 @@ const entry = (overrides: Partial<SkillsInventoryEntry>): SkillsInventoryEntry =
 });
 
 describe("toComposerFallbackSkills", () => {
-  it("offers user-root skills the server can expand", () => {
+  it("offers skills from every root the server can expand", () => {
     const skills = toComposerFallbackSkills([
       entry({ description: "Review code." }),
       entry({ name: "storyboard", root: "codex-user" }),
+      entry({ name: "update-docs", root: "project", scope: "project" }),
     ]);
-    expect(skills.map((skill) => skill.name)).toEqual(["security-review", "storyboard"]);
+    expect(skills.map((skill) => skill.name)).toEqual([
+      "security-review",
+      "storyboard",
+      "update-docs",
+    ]);
     expect(skills[0]?.description).toBe("Review code.");
-  });
-
-  it("drops project-scoped skills, which expansion does not resolve", () => {
-    expect(toComposerFallbackSkills([entry({ root: "project", scope: "project" })])).toEqual([]);
   });
 
   it("keeps one entry per name when roots alias each other", () => {

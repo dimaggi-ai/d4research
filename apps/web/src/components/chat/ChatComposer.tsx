@@ -921,7 +921,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // `$` menu empty. Fall back to the local inventory the server can expand —
   // and only poll for it on those providers.
   const providerReportsSkills = (selectedProviderStatus?.skills.length ?? 0) > 0;
-  const skillsInventory = useSkillsInventory(undefined, { enabled: !providerReportsSkills });
+  // The thread's workspace scopes project skills, the same root the server
+  // resolves when it expands the token.
+  const skillsInventory = useSkillsInventory(gitCwd ?? undefined, {
+    enabled: !providerReportsSkills,
+  });
   const composerSkills = useMemo<ReadonlyArray<ServerProviderSkill>>(
     () =>
       providerReportsSkills

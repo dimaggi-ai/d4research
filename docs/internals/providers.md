@@ -174,9 +174,12 @@ The expansion happens in `normalizeDispatchCommand`
 persisted user message and every client — web, desktop, mobile — sees the same authoritative thread.
 Constraints worth knowing:
 
-- **User roots only.** A `thread.turn.start` carries no workspace root for an existing thread, so the
-  inventory scan runs without a cwd: `claude-user`, `codex-user`, `junie-user`. Project-scoped skills
-  are out of scope for expansion and remain natively available on Claude and Codex.
+- **Every root, including project skills.** The scan covers `claude-user`, `codex-user`,
+  `junie-user` and `project`. A `thread.turn.start` carries no workspace root for an existing
+  thread, so the Normalizer resolves it: a bootstrapping turn uses its worktree path, prepared
+  worktree cwd, or the project it names, and an existing thread is looked up through
+  `ProjectionSnapshotQuery`. That service is optional — without it the scan simply returns no
+  project rows.
 - **Never twice.** Skill names the target instance already reports natively (looked up through
   `ProviderRegistry` by `instanceId`) are skipped. With no registry in context, or no `instanceId` on
   the command, nothing is treated as native.
@@ -186,7 +189,7 @@ Constraints worth knowing:
   symlink) gets a visible "skill file missing" note rather than being dropped silently.
 
 The web composer's `$` menu follows the same rule: when the provider snapshot reports no skills, it
-falls back to the local inventory filtered to those same user roots
+falls back to the local inventory for the thread's workspace
 ([`composerSkillFallback.ts`](../../apps/web/src/composerSkillFallback.ts)), labelled "Attach as
 instructions". `useSkillsInventory` takes an `enabled` flag so chat views on Claude and Codex do not
 pay for a poll they never read.

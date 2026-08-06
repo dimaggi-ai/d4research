@@ -14,6 +14,7 @@ import {
   isLegacyClaudeModel,
   mapClaudeUsage,
   parseOllamaModelList,
+  parseOllamaTagsPayload,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
@@ -48,6 +49,74 @@ it("discovers locally installed Ollama models only for the local Ollama endpoint
     [],
   );
   assert.ok(getBuiltInClaudeModelsForEnvironment({}, "2.1.0").length > 0);
+});
+
+it("keeps Ollama `:cloud` tags when parsing either discovery source", () => {
+  // Real `ollama list` output: cloud entries carry "-" as their size column.
+  assert.deepStrictEqual(
+    parseOllamaModelList(
+      [
+        "NAME                     ID              SIZE      MODIFIED",
+        "glm-5.2:cloud            ce8fd6f94793    -         9 days ago",
+        "gpt-oss:20b-cloud        875e8e3a629a    -         9 days ago",
+        "gemma4:e4b               c6eb396dbd59    9.6 GB    3 months ago",
+      ].join("\n"),
+    ),
+    ["glm-5.2:cloud", "gpt-oss:20b-cloud", "gemma4:e4b"],
+  );
+  assert.deepStrictEqual(
+    parseOllamaTagsPayload({
+      models: [
+        { name: "glm-5.2:cloud", model: "glm-5.2:cloud", remote_host: "https://ollama.com:443" },
+        { model: "gemma4:e4b" },
+        { name: "glm-5.2:cloud" },
+        { name: "" },
+        null,
+      ],
+    }),
+    ["glm-5.2:cloud", "gemma4:e4b"],
+  );
+  assert.deepStrictEqual(parseOllamaTagsPayload({ models: "nope" }), []);
+  assert.deepStrictEqual(parseOllamaTagsPayload(undefined), []);
+});
+
+it("recognizes the endpoint `ollama launch claude` configures, in every spelling", () => {
+  // Exactly what ollama 0.32.4 exports.
+  assert.equal(
+    claudeUsesLocalOllama({
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:11434",
+      ANTHROPIC_AUTH_TOKEN: "ollama",
+      ANTHROPIC_API_KEY: "",
+    }),
+    true,
+  );
+  for (const baseUrl of [
+    "http://localhost:11434",
+    "http://127.0.0.1:11434/",
+    "http://[::1]:11434",
+    "  http://127.0.0.1:11434  ",
+  ]) {
+    assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: baseUrl }), true, baseUrl);
+  }
+  // A non-default port still counts when the Ollama sentinel token is present.
+  assert.equal(
+    claudeUsesLocalOllama({
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:11437",
+      ANTHROPIC_AUTH_TOKEN: "ollama",
+    }),
+    true,
+  );
+  assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: "http://127.0.0.1:11437" }), false);
+  for (const baseUrl of [
+    "https://api.anthropic.com",
+    "http://192.168.4.34:11434",
+    "http://127.0.0.1:11434/v1",
+    "not-a-url",
+    "",
+  ]) {
+    assert.equal(claudeUsesLocalOllama({ ANTHROPIC_BASE_URL: baseUrl }), false, baseUrl);
+  }
+  assert.equal(claudeUsesLocalOllama({}), false);
 });
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {

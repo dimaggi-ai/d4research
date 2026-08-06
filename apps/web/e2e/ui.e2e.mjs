@@ -86,6 +86,56 @@ spec("system panel renders monitors for the active thread", async ({ page, webUr
   );
 });
 
+// The Ollama preset is the only path from a stock install to Ollama-served
+// models, so assert against the *live* daemon roster rather than the bundled
+// fallback list — a stale hardcoded roster is exactly the bug this guards.
+spec("Ollama preset lists live cloud models on a Claude instance", async ({ page, webUrl }) => {
+  const liveTags = await fetch("http://127.0.0.1:11434/api/tags")
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+  const cloudModels = (liveTags?.models ?? [])
+    .map((entry) => entry?.name)
+    .filter((name) => typeof name === "string" && /:cloud$|-cloud$/.test(name));
+  if (cloudModels.length === 0) {
+    console.log("SKIP Ollama preset — no local daemon or no :cloud tags");
+    return;
+  }
+
+  await page.goto(`${webUrl}/settings/providers`, { waitUntil: "domcontentloaded" });
+  // The action lives inside the Claude instance's collapsed details. The
+  // disclosure is labelled "Show <name> details" (not "Details"), and expanding
+  // a card flips its label to "Hide ...", so never index into the match list —
+  // the indices shift underneath you. Target Claude by name.
+  await page
+    .getByRole("button", { name: "Show Claude details" })
+    .first()
+    .click({ timeout: 20_000 });
+  const presetButton = page.getByTestId("ollama-preset-button").first();
+  await presetButton.waitFor({ state: "visible", timeout: 20_000 });
+  await presetButton.click();
+
+  const hint = page.getByTestId("ollama-preset-hint").first();
+  await hint.waitFor({ state: "visible", timeout: 20_000 });
+  const hintText = await hint.innerText();
+  NodeAssert.ok(
+    /Discovered \d+ Ollama model/.test(hintText),
+    `expected a discovery hint, saw: ${hintText}`,
+  );
+
+  // Custom model rows are editable inputs, so their slugs live in `value`, not
+  // in the document text — collect both before asserting.
+  const rendered = [
+    await page.locator("body").innerText(),
+    ...(await page.locator("input").evaluateAll((els) => els.map((el) => el.value))),
+  ].join("\n");
+  const found = cloudModels.filter((model) => rendered.includes(model));
+  NodeAssert.ok(
+    found.length > 0,
+    `expected a live :cloud model in the settings model list; looked for ${cloudModels.join(", ")}`,
+  );
+  console.log(`  (matched live cloud models: ${found.join(", ")})`);
+});
+
 async function main() {
   const app = await startIsolatedApp();
   let session;

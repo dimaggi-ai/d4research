@@ -12,6 +12,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import {
   createModelCapabilities,
@@ -357,7 +364,8 @@ function getBuiltInClaudeModelsForVersion(
   });
 }
 
-const OLLAMA_LOCAL_BASE_URLS = new Set(["http://127.0.0.1:11434", "http://localhost:11434"]);
+const OLLAMA_DEFAULT_PORT = "11434";
+const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0"]);
 
 /** Returns local model slugs from the tabular `ollama list` output. */
 export function parseOllamaModelList(output: string): ReadonlyArray<string> {
@@ -369,9 +377,42 @@ export function parseOllamaModelList(output: string): ReadonlyArray<string> {
   return [...seen];
 }
 
+/** Returns model slugs from an Ollama `GET /api/tags` JSON payload. */
+export function parseOllamaTagsPayload(payload: unknown): ReadonlyArray<string> {
+  if (!payload || typeof payload !== "object") return [];
+  const models = (payload as { models?: unknown }).models;
+  if (!Array.isArray(models)) return [];
+  const seen = new Set<string>();
+  for (const entry of models) {
+    if (!entry || typeof entry !== "object") continue;
+    const { name, model } = entry as { name?: unknown; model?: unknown };
+    const slug = typeof name === "string" && name.length > 0 ? name : model;
+    if (typeof slug === "string" && slug.length > 0) seen.add(slug);
+  }
+  return [...seen];
+}
+
+/**
+ * Recognize a locally hosted Ollama Anthropic-compatible endpoint. Matches both
+ * the in-app preset and the environment `ollama launch claude` exports
+ * (`ANTHROPIC_BASE_URL=http://127.0.0.1:11434`, `ANTHROPIC_AUTH_TOKEN=ollama`),
+ * tolerating trailing slashes, `localhost`/loopback host spellings, and a
+ * non-default port when the auth token marks the endpoint as Ollama.
+ */
 export function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
-  const baseUrl = environment.ANTHROPIC_BASE_URL?.replace(/\/$/u, "");
-  return baseUrl !== undefined && OLLAMA_LOCAL_BASE_URLS.has(baseUrl);
+  const raw = environment.ANTHROPIC_BASE_URL?.trim();
+  if (!raw) return false;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (url.pathname !== "" && url.pathname !== "/") return false;
+  if (!LOCAL_HOSTNAMES.has(url.hostname.toLowerCase())) return false;
+  const port = url.port === "" ? (url.protocol === "http:" ? "80" : "443") : url.port;
+  return port === OLLAMA_DEFAULT_PORT || environment.ANTHROPIC_AUTH_TOKEN === "ollama";
 }
 
 export function getBuiltInClaudeModelsForEnvironment(
@@ -381,25 +422,63 @@ export function getBuiltInClaudeModelsForEnvironment(
   return claudeUsesLocalOllama(environment) ? [] : getBuiltInClaudeModelsForVersion(version);
 }
 
+const OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS = 3_000;
+
+/**
+ * Fetch model tags straight from the Ollama daemon's HTTP API. Best-effort
+ * fallback for hosts where the `ollama` CLI is not on PATH but the daemon is
+ * reachable; any failure collapses to an empty list. `FetchHttpClient.layer` is
+ * provided here so callers of `checkClaudeProviderStatus` keep their
+ * requirements unchanged.
+ */
+const fetchOllamaTags = (baseUrl: string) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    const payload = yield* client
+      .execute(HttpClientRequest.get(new URL("/api/tags", baseUrl)))
+      .pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Unknown)),
+      );
+    return parseOllamaTagsPayload(payload);
+  }).pipe(
+    Effect.timeoutOption(OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS),
+    Effect.map(Option.getOrElse(() => [] as ReadonlyArray<string>)),
+    Effect.orElseSucceed(() => [] as ReadonlyArray<string>),
+    Effect.provide(FetchHttpClient.layer),
+  );
+
+/**
+ * Discover models the local Ollama daemon can serve. Prefers `ollama list`
+ * (includes `:cloud` tags and locally created aliases); falls back to the
+ * daemon's `GET /api/tags` HTTP API when the CLI is missing or fails.
+ */
 const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     if (!claudeUsesLocalOllama(environment)) return [] as ReadonlyArray<string>;
-    const resolved = yield* resolveSpawnCommand("ollama", ["list"], { env: environment });
-    const listed = yield* spawnAndCollect(
-      "ollama",
-      ChildProcess.make(resolved.command, resolved.args, {
-        env: environment,
-        shell: resolved.shell,
-      }),
-    ).pipe(Effect.timeoutOption(DEFAULT_TIMEOUT_MS), Effect.result);
+    const listed = yield* resolveSpawnCommand("ollama", ["list"], { env: environment }).pipe(
+      Effect.flatMap((resolved) =>
+        spawnAndCollect(
+          "ollama",
+          ChildProcess.make(resolved.command, resolved.args, {
+            env: environment,
+            shell: resolved.shell,
+          }),
+        ),
+      ),
+      Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
+      Effect.result,
+    );
     if (
-      Result.isFailure(listed) ||
-      Option.isNone(listed.success) ||
-      listed.success.value.code !== 0
+      Result.isSuccess(listed) &&
+      Option.isSome(listed.success) &&
+      listed.success.value.code === 0
     ) {
-      return [] as ReadonlyArray<string>;
+      const models = parseOllamaModelList(listed.success.value.stdout);
+      if (models.length > 0) return models;
     }
-    return parseOllamaModelList(listed.success.value.stdout);
+    const baseUrl = environment.ANTHROPIC_BASE_URL?.trim();
+    return baseUrl ? yield* fetchOllamaTags(baseUrl) : ([] as ReadonlyArray<string>);
   });
 
 function formatClaudeOpus5UpgradeMessage(version: string | null): string {
@@ -912,8 +991,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 > {
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
+  const usesLocalOllama = claudeUsesLocalOllama(resolvedEnvironment);
   const allModels = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    usesLocalOllama ? [] : BUILT_IN_MODELS,
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -934,6 +1014,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  // Discover Ollama-served models before probing the Claude CLI: even when the
+  // CLI probe fails, the picker should still surface the models the endpoint
+  // actually hosts (with the probe's warning/error status alongside).
+  const discoveredOllamaModels = yield* discoverLocalOllamaModels(resolvedEnvironment);
+  const modelsWithDiscovery = providerModelsFromSettings(
+    usesLocalOllama ? [] : BUILT_IN_MODELS,
+    [...claudeSettings.customModels, ...discoveredOllamaModels],
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  );
+
   const versionProbe = yield* runClaudeCommand(
     claudeSettings,
     ["--version"],
@@ -949,7 +1039,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: allModels,
+      models: modelsWithDiscovery,
       probe: {
         installed: !isCommandMissingCause(error),
         version: null,
@@ -967,7 +1057,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: allModels,
+      models: modelsWithDiscovery,
       probe: {
         installed: true,
         version: null,
@@ -991,7 +1081,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: allModels,
+      models: modelsWithDiscovery,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -1007,9 +1097,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   // each would fail as an unknown Ollama model. Locally copied aliases are still
   // included via `ollama list` below.
   const builtInModels = getBuiltInClaudeModelsForEnvironment(resolvedEnvironment, parsedVersion);
+  // Reuse the discovery performed above rather than shelling out to `ollama`
+  // a second time for the same snapshot.
   const models = providerModelsFromSettings(
     builtInModels,
-    [...claudeSettings.customModels, ...(yield* discoverLocalOllamaModels(resolvedEnvironment))],
+    [...claudeSettings.customModels, ...discoveredOllamaModels],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const versionUpgradeMessage = supportsClaudeOpus5(parsedVersion)
@@ -1030,6 +1122,33 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
+    // The model picker only offers models from instances whose status is
+    // exactly "ready", so a soft "warning" here hides every model the endpoint
+    // can actually serve. Against a local Ollama endpoint there is no Anthropic
+    // account to verify in the first place — the sentinel `ANTHROPIC_AUTH_TOKEN`
+    // is the whole credential — so report ready and keep the models reachable
+    // rather than failing closed on an account lookup that cannot succeed.
+    if (usesLocalOllama) {
+      return buildServerProvider({
+        presentation: CLAUDE_PRESENTATION,
+        enabled: claudeSettings.enabled,
+        checkedAt,
+        models,
+        slashCommands: dedupedSlashCommands,
+        skills,
+        usage: makeClaudeUsageStatus("unavailable", checkedAt),
+        probe: {
+          installed: true,
+          version: parsedVersion,
+          status: "ready",
+          auth: { status: "authenticated", type: "ollama", label: "Ollama" },
+          message:
+            models.length > 0
+              ? "Serving models from the local Ollama endpoint."
+              : "Connected to the local Ollama endpoint, but no models were discovered. Run `ollama pull` (or `ollama signin` for cloud models).",
+        },
+      });
+    }
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,

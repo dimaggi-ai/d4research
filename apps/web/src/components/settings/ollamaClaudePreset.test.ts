@@ -3,23 +3,33 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyOllamaClaudePreset,
+  discoverOllamaModels,
   isOllamaClaudePresetConfigured,
   OLLAMA_CLAUDE_CLOUD_MODELS,
+  ollamaDiscoveryOrigins,
+  parseOllamaTagsPayload,
+  pickOllamaAliasModel,
 } from "./ollamaClaudePreset";
 
+const claudeInstance = (
+  overrides: Partial<ProviderInstanceConfig> = {},
+): ProviderInstanceConfig => ({
+  driver: ProviderDriverKind.make("claudeAgent"),
+  ...overrides,
+});
+
 describe("Ollama Claude preset", () => {
-  it("preserves unrelated settings while replacing Ollama variables and adding cloud models", () => {
-    const input: ProviderInstanceConfig = {
-      driver: ProviderDriverKind.make("claudeAgent"),
+  it("preserves unrelated settings while replacing Ollama variables", () => {
+    const input = claudeInstance({
       displayName: "Work Claude",
       environment: [
         { name: "KEEP_ME", value: "yes", sensitive: false },
         { name: "ANTHROPIC_BASE_URL", value: "https://old.example", sensitive: false },
       ],
       config: { binaryPath: "/bin/claude", customModels: ["existing-model"] },
-    };
+    });
 
-    const result = applyOllamaClaudePreset(input);
+    const result = applyOllamaClaudePreset(input, ["glm-5.2:cloud"]);
 
     expect(result.displayName).toBe("Work Claude");
     expect(result.environment).toContainEqual({ name: "KEEP_ME", value: "yes", sensitive: false });
@@ -28,8 +38,128 @@ describe("Ollama Claude preset", () => {
     ]);
     expect((result.config as { customModels: ReadonlyArray<string> }).customModels).toEqual([
       "existing-model",
-      ...OLLAMA_CLAUDE_CLOUD_MODELS,
+      "glm-5.2:cloud",
     ]);
     expect(isOllamaClaudePresetConfigured(result)).toBe(true);
+  });
+
+  it("prefers live discovery over the bundled roster and keeps :cloud tags intact", () => {
+    const discovered = ["gemma4:e4b", "glm-5.2:cloud", "gpt-oss:20b-cloud"];
+    const result = applyOllamaClaudePreset(claudeInstance(), discovered);
+    const models = (result.config as { customModels: ReadonlyArray<string> }).customModels;
+
+    expect(models).toEqual(discovered);
+    expect(models).not.toContain("qwen3.5:cloud");
+    expect(models.filter((model) => model.includes(":cloud"))).toEqual(["glm-5.2:cloud"]);
+  });
+
+  it("falls back to the bundled roster only when discovery returned nothing", () => {
+    const result = applyOllamaClaudePreset(claudeInstance(), []);
+    expect((result.config as { customModels: ReadonlyArray<string> }).customModels).toEqual([
+      ...OLLAMA_CLAUDE_CLOUD_MODELS,
+    ]);
+  });
+
+  it("pins the Claude alias models so background haiku/sonnet calls resolve", () => {
+    const result = applyOllamaClaudePreset(claudeInstance(), ["gemma4:e4b", "kimi-k3:cloud"]);
+    const values = new Map((result.environment ?? []).map(({ name, value }) => [name, value]));
+
+    expect(values.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")).toBe("kimi-k3:cloud");
+    expect(values.get("ANTHROPIC_DEFAULT_SONNET_MODEL")).toBe("kimi-k3:cloud");
+    expect(values.get("ANTHROPIC_DEFAULT_OPUS_MODEL")).toBe("kimi-k3:cloud");
+  });
+
+  it("prefers a cloud tag as the alias target, then any model", () => {
+    expect(pickOllamaAliasModel(["gemma4:e4b", "glm-5.2:cloud"])).toBe("glm-5.2:cloud");
+    expect(pickOllamaAliasModel(["gemma4:e4b", "gpt-oss:20b-cloud"])).toBe("gpt-oss:20b-cloud");
+    expect(pickOllamaAliasModel(["gemma4:e4b"])).toBe("gemma4:e4b");
+    expect(pickOllamaAliasModel([])).toBe(null);
+  });
+
+  it("recognizes the environment `ollama launch claude` exports", () => {
+    expect(
+      isOllamaClaudePresetConfigured(
+        claudeInstance({
+          environment: [
+            { name: "ANTHROPIC_AUTH_TOKEN", value: "ollama", sensitive: false },
+            { name: "ANTHROPIC_BASE_URL", value: "http://localhost:11434/", sensitive: false },
+          ],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isOllamaClaudePresetConfigured(
+        claudeInstance({
+          environment: [
+            { name: "ANTHROPIC_AUTH_TOKEN", value: "sk-ant-real", sensitive: true },
+            { name: "ANTHROPIC_BASE_URL", value: "http://127.0.0.1:11434", sensitive: false },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Ollama tag discovery", () => {
+  it("parses /api/tags payloads, keeping cloud tags and deduping", () => {
+    expect(
+      parseOllamaTagsPayload({
+        models: [
+          { name: "glm-5.2:cloud", model: "glm-5.2:cloud", remote_host: "https://ollama.com:443" },
+          { model: "gemma4:e4b" },
+          { name: "glm-5.2:cloud" },
+          { name: "" },
+          null,
+        ],
+      }),
+    ).toEqual(["glm-5.2:cloud", "gemma4:e4b"]);
+    expect(parseOllamaTagsPayload({ models: "nope" })).toEqual([]);
+    expect(parseOllamaTagsPayload(null)).toEqual([]);
+  });
+
+  it("falls back from loopback to the host serving the app for remote browsers", () => {
+    expect(
+      ollamaDiscoveryOrigins({ protocol: "https:", hostname: "cacheos.example.ts.net" }),
+    ).toEqual(["http://127.0.0.1:11434", "https://cacheos.example.ts.net:11434"]);
+    expect(ollamaDiscoveryOrigins({ protocol: "http:", hostname: "localhost" })).toEqual([
+      "http://127.0.0.1:11434",
+    ]);
+  });
+
+  it("reports unreachable when every candidate origin fails", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error("ECONNREFUSED"))) as typeof fetch;
+    try {
+      expect(await discoverOllamaModels(["http://127.0.0.1:11434"])).toEqual({
+        models: [],
+        reachable: false,
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("returns the first origin that answers", async () => {
+    const original = globalThis.fetch;
+    const seen: string[] = [];
+    globalThis.fetch = ((input: string) => {
+      seen.push(String(input));
+      if (String(input).includes("127.0.0.1")) return Promise.reject(new Error("ECONNREFUSED"));
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ models: [{ name: "glm-5.2:cloud" }] }),
+      } as unknown as Response);
+    }) as unknown as typeof fetch;
+    try {
+      expect(
+        await discoverOllamaModels(["http://127.0.0.1:11434", "http://host.example:11434"]),
+      ).toEqual({ models: ["glm-5.2:cloud"], reachable: true });
+      expect(seen).toEqual([
+        "http://127.0.0.1:11434/api/tags",
+        "http://host.example:11434/api/tags",
+      ]);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

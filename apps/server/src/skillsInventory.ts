@@ -290,7 +290,7 @@ export type ShareSkillResult =
   | { readonly ok: true; readonly targetPath: string; readonly mode: "symlink" | "copy" }
   | { readonly ok: false; readonly status: 400 | 409 | 500; readonly message: string };
 
-const SHARE_TARGET_ROOTS: ReadonlyArray<ShareSkillTargetRoot> = new Set([
+const SHARE_TARGET_ROOTS: ReadonlySet<ShareSkillTargetRoot> = new Set<ShareSkillTargetRoot>([
   "claude-user",
   "codex-user",
   "junie-user",

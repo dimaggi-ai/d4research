@@ -45,7 +45,7 @@ import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import {
   applyOllamaClaudePreset,
-  fetchLocalOllamaModelIds,
+  discoverOllamaModels,
   isOllamaClaudePresetConfigured,
 } from "./ollamaClaudePreset";
 import {
@@ -488,15 +488,29 @@ export function ProviderInstanceCard({
   });
   const ollamaClaudeConfigured = isOllamaClaudePresetConfigured(instance);
   const [ollamaDiscoveryPending, setOllamaDiscoveryPending] = useState(false);
+  const [ollamaDiscoveryResult, setOllamaDiscoveryResult] = useState<{
+    readonly reachable: boolean;
+    readonly count: number;
+  } | null>(null);
   const runOllamaClaudePreset = () => {
     if (ollamaDiscoveryPending) return;
     setOllamaDiscoveryPending(true);
     void (async () => {
-      const local = await fetchLocalOllamaModelIds();
-      onUpdate(applyOllamaClaudePreset(instance, local));
+      const { models, reachable } = await discoverOllamaModels();
+      onUpdate(applyOllamaClaudePreset(instance, models));
+      setOllamaDiscoveryResult({ reachable, count: models.length });
       setOllamaDiscoveryPending(false);
     })();
   };
+  const ollamaHint = ollamaDiscoveryPending
+    ? null
+    : ollamaDiscoveryResult === null
+      ? null
+      : !ollamaDiscoveryResult.reachable
+        ? "Could not reach the Ollama daemon on port 11434 — added the bundled cloud models instead. Start Ollama (`ollama serve`) and press Refresh."
+        : ollamaDiscoveryResult.count === 0
+          ? "The Ollama daemon answered but has no models. Run `ollama pull <model>` or `ollama signin` for cloud models."
+          : `Discovered ${ollamaDiscoveryResult.count} Ollama model${ollamaDiscoveryResult.count === 1 ? "" : "s"}.`;
 
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -774,12 +788,22 @@ export function ProviderInstanceCard({
             {driverKind === "claudeAgent" ? (
               <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/25 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-foreground">Claude through Ollama</p>
+                  <p className="text-xs font-medium text-foreground">
+                    Use Ollama (local + cloud) models
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {ollamaClaudeConfigured
-                      ? "Configured for local and Ollama Cloud models through the local Ollama service."
-                      : "Use Ollama's Anthropic-compatible API and recommended cloud coding models."}
+                      ? "This instance runs Claude Code against the local Ollama service. Refresh to pick up newly pulled or signed-in models."
+                      : "Point this Claude instance at Ollama's Anthropic-compatible API and list every model your daemon serves, including :cloud tags."}
                   </p>
+                  {ollamaHint ? (
+                    <p
+                      data-testid="ollama-preset-hint"
+                      className="mt-1 text-xs text-muted-foreground"
+                    >
+                      {ollamaHint}
+                    </p>
+                  ) : null}
                   <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                     Cloud models require: ollama signin
                   </p>
@@ -789,6 +813,7 @@ export function ProviderInstanceCard({
                   size="sm"
                   variant={ollamaClaudeConfigured ? "outline" : "default"}
                   className="shrink-0"
+                  data-testid="ollama-preset-button"
                   disabled={ollamaDiscoveryPending}
                   onClick={runOllamaClaudePreset}
                 >
@@ -796,7 +821,7 @@ export function ProviderInstanceCard({
                     ? "Discovering models..."
                     : ollamaClaudeConfigured
                       ? "Refresh Ollama models"
-                      : "Configure Ollama"}
+                      : "Use Ollama models"}
                 </Button>
               </div>
             ) : null}

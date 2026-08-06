@@ -14,10 +14,12 @@ import {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  isResearchMode: boolean;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
+  onToggleResearch: () => void;
 }) {
   return (
     <Menu>
@@ -56,6 +58,15 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Research</div>
+        <MenuRadioGroup
+          value={props.isResearchMode ? "on" : "off"}
+          onValueChange={() => props.onToggleResearch()}
+        >
+          <MenuRadioItem value="off">Off</MenuRadioItem>
+          <MenuRadioItem value="on">Deep research</MenuRadioItem>
+        </MenuRadioGroup>
+        <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Agent access</div>
         <MenuRadioGroup
           value={props.runtimeMode}

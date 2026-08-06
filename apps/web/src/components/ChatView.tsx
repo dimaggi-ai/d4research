@@ -154,6 +154,7 @@ import {
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
+import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
@@ -2103,6 +2104,10 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const activeContextWindowForMonitor = useMemo(
+    () => deriveLatestContextWindowSnapshot(threadActivities),
+    [threadActivities],
+  );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
@@ -3658,9 +3663,22 @@ function ChatViewContent(props: ChatViewProps) {
   }, []);
   useEffect(() => {
     let removeListeners: (() => void) | null = null;
-    const frame = requestAnimationFrame(() => {
+    let frame: number | null = null;
+    let cancelled = false;
+    // The virtualized list's scroll node often mounts a few frames after the
+    // thread switches; a one-shot attach silently leaves live-follow with no
+    // user opt-out, so retry until the node exists.
+    let remainingAttempts = 120;
+    const attach = () => {
+      if (cancelled) {
+        return;
+      }
       const scrollNode = legendListRef.current?.getScrollableNode();
       if (!scrollNode) {
+        if (remainingAttempts > 0) {
+          remainingAttempts -= 1;
+          frame = requestAnimationFrame(attach);
+        }
         return;
       }
       const handleManualNavigation = () => {
@@ -3680,10 +3698,14 @@ function ChatViewContent(props: ChatViewProps) {
         scrollNode.removeEventListener("touchmove", handleManualNavigation);
         scrollNode.removeEventListener("pointerdown", handleManualNavigation);
       };
-    });
+    };
+    frame = requestAnimationFrame(attach);
 
     return () => {
-      cancelAnimationFrame(frame);
+      cancelled = true;
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
       removeListeners?.();
     };
   }, [activeThread?.id]);
@@ -6018,7 +6040,7 @@ function ChatViewContent(props: ChatViewProps) {
         mode="embedded"
       />
     ) : activeRightPanelSurface?.kind === "system" ? (
-      <SystemPanel />
+      <SystemPanel tokenUsage={activeContextWindowForMonitor} />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (

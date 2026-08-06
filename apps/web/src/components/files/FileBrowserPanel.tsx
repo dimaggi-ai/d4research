@@ -360,6 +360,12 @@ export default function FileBrowserPanel({
           onClose={search.close}
         />
       </div>
+      {entriesQuery.data?.truncated ? (
+        <div className="border-b px-3 py-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-500">
+          Large workspace: only the first {entries.length.toLocaleString()} entries are shown. Add
+          an <code>.ignore</code> file excluding build or data directories to index the rest.
+        </div>
+      ) : null}
       {entriesQuery.error && entriesQuery.data === null ? (
         <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
       ) : (

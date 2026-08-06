@@ -183,6 +183,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
+import { isDeepResearchPrompt, DEEP_RESEARCH_TAG } from "../../researchMode";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
@@ -277,14 +278,50 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  isResearchMode: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
+  onToggleResearch: () => void;
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const interactionModeTooltip =
     props.interactionMode === "plan"
       ? "Plan mode — click to return to normal build mode"
       : "Default mode — click to enter plan mode";
+
+  const researchToggle = (
+    <>
+      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ComposerControl
+              className={cn(
+                "shrink-0 whitespace-nowrap",
+                props.isResearchMode
+                  ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/15 hover:text-violet-300"
+                  : "text-muted-foreground/70 hover:text-foreground/80",
+              )}
+              type="button"
+              onClick={props.onToggleResearch}
+              aria-label={props.isResearchMode ? "Exit research mode" : "Enter research mode"}
+            />
+          }
+        >
+          <ComposerControlIcon
+            icon={TelescopeIcon}
+            className={props.isResearchMode ? "text-current opacity-100" : undefined}
+          />
+          <span className="sr-only sm:not-sr-only">Research</span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {props.isResearchMode
+            ? "Research mode active — click to exit"
+            : "Start #deep-research in this chat"}
+        </TooltipPopup>
+      </Tooltip>
+    </>
+  );
 
   const interactionModeToggle = props.showInteractionModeToggle ? (
     <>
@@ -370,6 +407,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       </Tooltip>
 
       {interactionModeToggle}
+      {researchToggle}
     </>
   );
 });
@@ -674,6 +712,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const prompt = composerDraft.prompt;
+  const isResearchMode = isDeepResearchPrompt(prompt);
+  const toggleResearch = useCallback(() => {
+    if (isResearchMode) {
+      const stripped = prompt.trimStart().slice(DEEP_RESEARCH_TAG.length).trimStart();
+      composerRef.current?.replacePrompt(stripped);
+    } else {
+      onStartDeepResearch();
+    }
+  }, [isResearchMode, prompt, composerRef, onStartDeepResearch]);
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
@@ -917,6 +964,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
     [activeThreadActivities],
   );
+
+  const lastUsageWarningRef = useRef<number>(0);
+  useEffect(() => {
+    const pct = activeContextWindow?.usedPercentage ?? 0;
+    if (pct <= 0) return;
+    const threshold = pct >= 95 ? 95 : pct >= 80 ? 80 : 0;
+    if (threshold === 0 || threshold <= lastUsageWarningRef.current) return;
+    lastUsageWarningRef.current = threshold;
+    toastManager.add({
+      type: threshold >= 95 ? "error" : "warning",
+      title: threshold >= 95 ? "Context window almost full" : "Context window reaching limit",
+      description:
+        threshold >= 95
+          ? `${Math.round(pct)}% used — the provider may compact or truncate context soon.`
+          : `${Math.round(pct)}% of the context window is in use.`,
+    });
+  }, [activeContextWindow?.usedPercentage]);
+
   const activeThreadProviderDisplayName = useMemo(() => {
     if (!activeThreadModelSelection) return null;
     const entry = providerStatuses.find(
@@ -3183,31 +3248,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 )}
 
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <ComposerControl
-                        type="button"
-                        className="shrink-0 gap-1.5 text-muted-foreground/70 hover:text-foreground/80"
-                        aria-label="Start deep research"
-                        onClick={onStartDeepResearch}
-                      />
-                    }
-                  >
-                    <ComposerControlIcon icon={TelescopeIcon} />
-                    <span className="sr-only">Research</span>
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">Start #deep-research in this chat</TooltipPopup>
-                </Tooltip>
-
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
                     interactionMode={interactionMode}
                     runtimeMode={runtimeMode}
+                    isResearchMode={isResearchMode}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
                     onRuntimeModeChange={handleRuntimeModeChange}
+                    onToggleResearch={toggleResearch}
                   />
                 ) : (
                   <>
@@ -3221,8 +3271,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      isResearchMode={isResearchMode}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
+                      onToggleResearch={toggleResearch}
                     />
                   </>
                 )}

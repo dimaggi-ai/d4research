@@ -1,6 +1,6 @@
 # Agy (Google Gemini CLI)
 
-Agy is a provider that wraps the [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) (`agy` binary). It gives T3 Code access to Gemini models through the same interface used for Claude and Codex.
+Agy is a provider that wraps the [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) (`agy` binary). It gives d4research access to Gemini models through the same interface used for Claude and Codex.
 
 > **Early Access** — Agy is marked as early access. Some rough edges are expected.
 
@@ -15,9 +15,9 @@ agy --version
 agy models
 ```
 
-If `agy models` hangs on Linux, that's expected — T3 Code handles this with a PTY wrapper (see [Quirks](#quirks) below). As long as the binary is on your PATH, the provider will work.
+If `agy models` hangs on Linux, that's expected — d4research handles this with a PTY wrapper (see [Quirks](#quirks) below). As long as the binary is on your PATH, the provider will work.
 
-### 2. Enable in T3 Code
+### 2. Enable in d4research
 
 In **Settings → Providers**, the Agy provider should appear automatically. If it detects the `agy` binary on your PATH, it will show as ready with the list of available Gemini models.
 
@@ -35,9 +35,9 @@ You can also set per-instance environment variables in the provider settings, sa
 
 ### Model discovery
 
-T3 Code runs `agy models` to discover available Gemini models. On Linux, this command requires a pseudo-terminal (it hangs on plain pipes), so the provider wraps it in `script -q -e -c <command> /dev/null` to provide a PTY. The output contains animated spinner frames and ANSI escapes, which are stripped during parsing.
+d4research runs `agy models` to discover available Gemini models. On Linux, this command requires a pseudo-terminal (it hangs on plain pipes), so the provider wraps it in `script -q -e -c <command> /dev/null` to provide a PTY. The output contains animated spinner frames and ANSI escapes, which are stripped during parsing.
 
-Cold starts can take up to 20 seconds while Agy initializes its connector state. T3 Code uses a generous timeout to accommodate this.
+Cold starts can take up to 20 seconds while Agy initializes its connector state. d4research uses a generous timeout to accommodate this.
 
 ### Sessions
 
@@ -51,17 +51,17 @@ For structured output (commit messages, PR content, branch names), Agy uses `--o
 
 ## Multiple accounts
 
-Unlike Claude and Codex, Agy authentication is managed entirely by the `agy` CLI itself (Google account login). T3 Code does not manage Agy credentials directly — it reports auth status based on whether `agy models` succeeds.
+Unlike Claude and Codex, Agy authentication is managed entirely by the `agy` CLI itself (Google account login). d4research does not manage Agy credentials directly — it reports auth status based on whether `agy models` succeeds.
 
 To use multiple Google accounts, create separate Agy provider instances in **Settings → Providers** with different binary paths or environment variables pointing to different Agy configurations.
 
 ## Quirks
 
-- **PTY wrapping (Linux only):** `agy models` requires a pseudo-terminal on Linux. T3 Code handles this automatically via `script(1)`.
+- **PTY wrapping (Linux only):** `agy models` requires a pseudo-terminal on Linux. d4research handles this automatically via `script(1)`.
 - **Cold start:** First model discovery after a reboot can take up to 20 seconds.
 - **One turn at a time:** Overlapping turns on the same thread are not supported.
 - **Model changes require new threads:** Switching models within an Agy conversation requires starting a new thread.
-- **Spinner output:** The `agy models` output contains animated spinner frames that T3 Code parses out automatically.
+- **Spinner output:** The `agy models` output contains animated spinner frames that d4research parses out automatically.
 
 ## Handoff
 

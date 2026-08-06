@@ -1,6 +1,6 @@
 # d4research architecture and scope
 
-d4research is a private product-research fork of T3 Code. It asks a focused question: what must a fast coding-agent control surface add to support durable, multi-provider research without hiding execution or weakening permission boundaries?
+d4research is a product-research fork of T3 Code. It asks a focused question: what must a fast coding-agent control surface add to support durable, multi-provider research without hiding execution or weakening permission boundaries?
 
 ## Product thesis
 
@@ -58,7 +58,7 @@ Research changes must continue to account for:
 
 ## Current boundaries
 
-- The repository is private and installed from source; it has no public `d4research` npm package or desktop release channel.
+- The repository is public and normally installed from source. Desktop builds are cut on a maintainer machine and attached to GitHub releases; there is no `d4research` npm package.
 - Deep Research does not guarantee delegation and may use fewer roles when that is sufficient.
 - Memo-backed handoff depends on a configured local Memo service.
 - Voice and Mission Control require the matching local deployment services.

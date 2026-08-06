@@ -4,7 +4,9 @@ A multi-provider coding agent workspace for structured research, built on the [T
 
 ## Installation
 
-d4research is a **source-only** private fork. There are no prebuilt binaries, desktop installers, npm packages, or Docker images. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
+Desktop builds are published on the [releases page](https://github.com/dimaggi-ai/d4research/releases). They are cut on a maintainer machine rather than in CI, so the set of platforms tracks whatever that machine can build — currently a Linux `x86_64` AppImage — and the binaries are unsigned. macOS and Windows installers are not published; build them from source, or run from source on any platform.
+
+There is no npm package or Docker image for this fork. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
 ### Requirements
 
@@ -156,4 +158,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for policy and [AGENTS.md](./AGENTS.md)
 
 ## Attribution
 
-d4research is a private product-research fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping](https://ping.gg). The application architecture, event-sourced server, provider adapters, and multi-surface clients are inherited from T3 Code. Compatibility names (`t3`, `T3CODE_HOME`, package identifiers) are retained where changing them would break protocols, storage, or deployment workflows.
+d4research is a product-research fork of [T3 Code](https://github.com/pingdotgg/t3code) by [Ping](https://ping.gg). The application architecture, event-sourced server, provider adapters, and multi-surface clients are inherited from T3 Code. Compatibility names (`t3`, `T3CODE_HOME`, package identifiers) are retained where changing them would break protocols, storage, or deployment workflows.

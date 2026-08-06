@@ -46,7 +46,14 @@ if (
   window.addEventListener("load", () => {
     void navigator.serviceWorker
       .register("/service-worker.js", { updateViaCache: "none" })
-      .then((registration) => registration.update());
+      .then((registration) => registration.update())
+      // Offline caching is an enhancement, not a requirement. Registration
+      // fails outright on an origin whose certificate the browser does not
+      // trust (a raw LAN IP behind a self-signed CA), and an uncaught
+      // rejection there reads like an app fault rather than a missing nicety.
+      .catch((cause: unknown) => {
+        console.warn("Service worker registration skipped.", cause);
+      });
   });
 }
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;

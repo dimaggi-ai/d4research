@@ -9,7 +9,8 @@
     "build": "vp build",
     "preview": "vp preview",
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run --passWithNoTests --project unit"
+    "test": "vp test run --passWithNoTests --project unit",
+    "test:e2e": "node e2e/ui.e2e.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -58,6 +59,7 @@
     "@vitejs/plugin-react": "^6.0.0",
     "babel-plugin-react-compiler": "1.0.0",
     "msw": "2.12.11",
+    "playwright-core": "1.60.0",
     "tailwindcss": "^4.0.0",
     "vite": "catalog:",
     "vite-plus": "catalog:"

@@ -4904,13 +4904,7 @@ function ChatViewContent(props: ChatViewProps) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      toastManager.add(
-        stackedThreadToast({
-          type: "success",
-          title: "Request queued",
-          description: "It will run automatically after the current turn finishes.",
-        }),
-      );
+      // No toast: the queue banner above the composer already shows the entry.
       return;
     }
     const threadIdForSend = activeThread.id;

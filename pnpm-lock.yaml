@@ -641,6 +641,9 @@ importers:
       msw:
         specifier: 2.12.11
         version: 2.12.11(@types/node@24.12.4)(typescript@6.0.3)
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.0

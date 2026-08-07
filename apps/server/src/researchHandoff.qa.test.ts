@@ -28,8 +28,11 @@ async function pickGemmaModel(): Promise<string | null> {
     const names = (payload.models ?? [])
       .map((model) => model.name)
       .filter((name): name is string => typeof name === "string");
+    // Same preference as the web QA suite: both suites may run in one vitest
+    // invocation, and loading two different gemma tags concurrently swaps
+    // models on the GPU mid-generation, truncating replies.
     return (
-      names.find((name) => name === "gemma4:e4b-it-qat") ??
+      names.find((name) => name === "gemma4:12b-it-qat") ??
       names.find((name) => name.startsWith("gemma4:")) ??
       null
     );

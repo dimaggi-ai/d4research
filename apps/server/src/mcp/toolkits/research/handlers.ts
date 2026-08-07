@@ -69,13 +69,22 @@ const handlers = {
       );
       let promptFileContent: string | null = null;
       if (input.promptFileName !== undefined) {
-        const file = settings.research.promptFiles.find(
-          (candidate) => candidate.name === input.promptFileName,
+        // Prefer the named scenario's files; fall back to every scenario plus
+        // the legacy single-pipeline list so older briefings keep working.
+        const scenario = settings.research.scenarios.find(
+          (candidate) => candidate.name === input.scenario,
         );
+        const searchable = [
+          ...(scenario?.promptFiles ?? []),
+          ...settings.research.scenarios.flatMap((candidate) => candidate.promptFiles),
+          ...settings.research.promptFiles,
+        ];
+        const file = searchable.find((candidate) => candidate.name === input.promptFileName);
         if (!file) {
+          const attached = [...new Set(searchable.map((candidate) => candidate.name))];
           return yield* new ResearchDelegateError({
             detail: `Prompt file "${input.promptFileName}" is not attached in Settings → Research. Attached: ${
-              settings.research.promptFiles.map((candidate) => candidate.name).join(", ") || "none"
+              attached.join(", ") || "none"
             }.`,
           });
         }

@@ -6,16 +6,19 @@ active model changes.
 
 ## Configure the pipeline
 
-Research runs a **pipeline you author** in **Settings → Research**. The intended flow: attach
+Research runs **named scenarios** you author in **Settings → Research** — each scenario is a
+full pipeline with its own prompt, prompt files, and orchestrator model. Create one per kind of
+work (`blog`, `audit`, `paper`, …) and run it with `!research:<name>`. The intended flow: attach
 your role prompt files first, then write the pipeline — typing `!` in the editor suggests ready
 providers, their models, and your attached files, and the live validation under it shows every
 link resolved (or exactly why not) before you run anything.
 
-| Field                  | Purpose                                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Orchestrator model** | The provider/model that runs the pipeline. Off uses the thread's current model. A mid-tier model is fine — the pipeline does the thinking; the orchestrator follows it. |
-| **Pipeline**           | Numbered steps the orchestrator must follow verbatim. Loops between steps are allowed.                                                                                  |
-| **Prompt files**       | Markdown attachments a step can hand to a delegate. View them in a popup, remove them any time.                                                                         |
+| Field                  | Purpose                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Scenario**           | Which named pipeline the rest of the tab edits; add and delete scenarios here.                                                                                                     |
+| **Orchestrator model** | The provider/model that runs the scenario's pipeline. Off uses the thread's current model. A mid-tier model is fine — the pipeline does the thinking; the orchestrator follows it. |
+| **Pipeline**           | Numbered steps the orchestrator must follow verbatim. Loops between steps are allowed.                                                                                             |
+| **Prompt files**       | Markdown attachments a step can hand to a delegate. View them in a popup, remove them any time.                                                                                    |
 
 Inside the pipeline, reference models with directives:
 
@@ -40,13 +43,17 @@ Step 5: Validate and deliver.
 
 ## Start deep research
 
-Type `#deep-research` at the very start of your prompt, or click the **telescope icon** in the
-composer footer. If a dedicated orchestrator model is configured, starting research switches the
-thread to it through the normal handoff flow first.
+Type `!research:<scenario>` at the very start of your prompt — or bare `!research` for the
+scenario selected in Settings. The legacy `#deep-research` trigger still works. Clicking the
+**telescope icon** inserts the selected scenario's trigger; if that scenario has a dedicated
+orchestrator model, the thread switches to it through the normal handoff flow first.
 
 ```
-#deep-research Why does the PTY wrapper hang on macOS but not Linux?
+!research:blog Write a post comparing FTS5 and embedding search.
 ```
+
+Naming a scenario that does not exist stops with the configured scenario list — the orchestrator
+never improvises a pipeline.
 
 ### How it works
 

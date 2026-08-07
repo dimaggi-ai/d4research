@@ -3,8 +3,10 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   deriveDirectiveSuggestions,
   expandResearchPipelinePrompt,
+  findResearchScenario,
   isDeepResearchPrompt,
   parseResearchDirectives,
+  parseResearchTrigger,
   resolveResearchDirective,
   type ResearchProviderCandidate,
 } from "./researchPipeline";
@@ -139,21 +141,77 @@ describe("deriveDirectiveSuggestions", () => {
   });
 });
 
+const RESEARCH_SETTINGS = {
+  scenarios: [
+    {
+      name: "blog",
+      orchestratorSelection: null,
+      pipelinePrompt:
+        "Step 1: plan.\nStep 2: fan out to !claude:fable:OPTIONAL_prompt.md and !codex:terra.",
+      promptFiles: FILES,
+    },
+    {
+      name: "audit",
+      orchestratorSelection: null,
+      pipelinePrompt: "Step 1: audit.",
+      promptFiles: [],
+    },
+  ],
+  activeScenario: "blog",
+  orchestratorSelection: null,
+  pipelinePrompt: "",
+  promptFiles: [],
+};
+
+describe("parseResearchTrigger", () => {
+  it("parses !research:name, bare !research, and legacy #deep-research", () => {
+    expect(parseResearchTrigger("!research:blog write about X")).toEqual({
+      scenarioName: "blog",
+      task: "write about X",
+    });
+    expect(parseResearchTrigger("!research just do it")).toEqual({
+      scenarioName: null,
+      task: "just do it",
+    });
+    expect(parseResearchTrigger("  #deep-research topic")).toEqual({
+      scenarioName: null,
+      task: "topic",
+    });
+    expect(parseResearchTrigger("!researcher is a word")).toBeNull();
+    expect(parseResearchTrigger("plain prompt")).toBeNull();
+  });
+});
+
+describe("findResearchScenario", () => {
+  it("finds by name, falls back to active, and migrates legacy fields", () => {
+    expect(findResearchScenario(RESEARCH_SETTINGS, "audit")?.name).toBe("audit");
+    expect(findResearchScenario(RESEARCH_SETTINGS, null)?.name).toBe("blog");
+    expect(findResearchScenario(RESEARCH_SETTINGS, "missing")).toBeNull();
+    const legacy = {
+      scenarios: [],
+      activeScenario: "",
+      orchestratorSelection: null,
+      pipelinePrompt: "Step 1: legacy.",
+      promptFiles: FILES,
+    };
+    const migrated = findResearchScenario(legacy, null);
+    expect(migrated?.name).toBe("default");
+    expect(migrated?.pipelinePrompt).toBe("Step 1: legacy.");
+  });
+});
+
 describe("expandResearchPipelinePrompt", () => {
-  const pipeline = {
-    pipelinePrompt:
-      "Step 1: plan.\nStep 2: fan out to !claude:fable:OPTIONAL_prompt.md and !codex:terra.",
-    promptFiles: FILES,
-  };
+  const pipeline = RESEARCH_SETTINGS;
 
   it("leaves non-research prompts untouched", () => {
     expect(expandResearchPipelinePrompt("hello", pipeline, CANDIDATES)).toBe("hello");
   });
 
   it("quotes the pipeline verbatim with protocol, targets, and loop budgets", () => {
-    const expanded = expandResearchPipelinePrompt("#deep-research compare X", pipeline, CANDIDATES);
+    const expanded = expandResearchPipelinePrompt("!research:blog compare X", pipeline, CANDIDATES);
     expect(expanded).toContain("PIPELINE (verbatim):");
-    expect(expanded).toContain(pipeline.pipelinePrompt);
+    expect(expanded).toContain(pipeline.scenarios[0]!.pipelinePrompt);
+    expect(expanded).toContain("`blog` scenario");
     expect(expanded).toContain("claudeAgent:claude-fable-5");
     expect(expanded).toContain("research_delegate");
     expect(expanded).toContain("[step N | visit K]");
@@ -162,8 +220,11 @@ describe("expandResearchPipelinePrompt", () => {
 
   it("surfaces unresolved directives instead of dropping them", () => {
     const expanded = expandResearchPipelinePrompt(
-      "#deep-research go",
-      { ...pipeline, pipelinePrompt: "Step 1: !gemini:pro decides." },
+      "!research:blog go",
+      {
+        ...pipeline,
+        scenarios: [{ ...pipeline.scenarios[0]!, pipelinePrompt: "Step 1: !gemini:pro decides." }],
+      },
       CANDIDATES,
     );
     expect(expanded).toContain("UNRESOLVED");
@@ -172,10 +233,18 @@ describe("expandResearchPipelinePrompt", () => {
   it("refuses to improvise when no pipeline is configured", () => {
     const expanded = expandResearchPipelinePrompt(
       "#deep-research go",
-      { pipelinePrompt: "", promptFiles: [] },
+      { ...pipeline, scenarios: [], pipelinePrompt: "" },
       CANDIDATES,
     );
     expect(expanded).toContain("Settings → Research");
+    expect(expanded).toContain("Do not improvise");
+  });
+
+  it("refuses to improvise for an unknown scenario and lists the real ones", () => {
+    const expanded = expandResearchPipelinePrompt("!research:nope go", pipeline, CANDIDATES);
+    expect(expanded).toContain("No research scenario named `nope`");
+    expect(expanded).toContain("`blog`");
+    expect(expanded).toContain("`audit`");
     expect(expanded).toContain("Do not improvise");
   });
 

@@ -174,6 +174,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/research",
   },
   {
+    id: "research-scenario",
+    title: "Research scenarios",
+    to: "/settings/research",
+    targetId: "research-pipeline",
+  },
+  {
     id: "research-orchestrator-model",
     title: "Orchestrator model",
     to: "/settings/research",

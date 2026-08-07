@@ -1,11 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef, useState } from "react";
 import { EyeIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
-import type { ResearchPromptFile } from "@t3tools/contracts";
+import type { ResearchPromptFile, ResearchScenario } from "@t3tools/contracts";
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
   RESEARCH_PROMPT_FILE_MAX_CHARS,
   RESEARCH_PROMPT_FILE_MAX_COUNT,
+  RESEARCH_SCENARIO_MAX_COUNT,
+  RESEARCH_SCENARIO_NAME_REGEX,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
@@ -23,11 +25,14 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import {
   deriveDirectiveSuggestions,
   deriveResearchProviderCandidates,
+  listResearchScenarios,
   resolveResearchDirectives,
   type DirectiveSuggestion,
 } from "../../researchPipeline";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
@@ -51,22 +56,42 @@ export function ResearchSettingsPanel() {
   const [viewedFile, setViewedFile] = useState<ResearchPromptFile | null>(null);
 
   const research = settings.research;
-  const promptFiles = research.promptFiles;
+  const scenarios = listResearchScenarios(research);
+  const scenario =
+    scenarios.find((candidate) => candidate.name === research.activeScenario) ??
+    (scenarios[0] as ResearchScenario);
+  const promptFiles = scenario.promptFiles;
+  const [newScenarioName, setNewScenarioName] = useState("");
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
+
+  // Every write persists the full scenario list (whole-array replacement in
+  // the settings patch), which also migrates the legacy single pipeline into
+  // its `default` scenario on first touch.
+  const saveScenarios = (next: ReadonlyArray<ResearchScenario>, active: string) =>
+    updateSettings({ research: { scenarios: next, activeScenario: active } });
+  const updateScenario = (partial: Partial<ResearchScenario>) =>
+    saveScenarios(
+      scenarios.map((candidate) =>
+        candidate.name === scenario.name ? { ...candidate, ...partial } : candidate,
+      ),
+      scenario.name,
+    );
+
   const pipelineRef = useRef<HTMLTextAreaElement>(null);
-  const [pipelineDraft, setPipelineDraft] = useState(research.pipelinePrompt);
-  const [pipelineCaret, setPipelineCaret] = useState(research.pipelinePrompt.length);
+  const [pipelineDraft, setPipelineDraft] = useState(scenario.pipelinePrompt);
+  const [pipelineCaret, setPipelineCaret] = useState(scenario.pipelinePrompt.length);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
-  // Another client (or another tab) may save a different pipeline; adopt it
-  // unless this editor is the one holding unsaved changes.
+  // Scenario switches and remote saves both replace the draft — unless this
+  // editor is the one holding unsaved changes.
   useEffect(() => {
     setPipelineDraft((current) =>
-      document.activeElement === pipelineRef.current ? current : research.pipelinePrompt,
+      document.activeElement === pipelineRef.current ? current : scenario.pipelinePrompt,
     );
-  }, [research.pipelinePrompt]);
+  }, [scenario.name, scenario.pipelinePrompt]);
   const defaultModelSelection = resolveAppModelSelectionState(settings, serverProviders);
-  const usesDedicatedOrchestrator = research.orchestratorSelection !== null;
-  const activeSelection = research.orchestratorSelection ?? defaultModelSelection;
+  const usesDedicatedOrchestrator = scenario.orchestratorSelection !== null;
+  const activeSelection = scenario.orchestratorSelection ?? defaultModelSelection;
   const instanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
   );
@@ -124,12 +149,89 @@ export function ResearchSettingsPanel() {
       if (existing >= 0) next[existing] = { name: file.name, content };
       else next.push({ name: file.name, content });
     }
-    updateSettings({ research: { promptFiles: next } });
+    updateScenario({ promptFiles: next });
+  };
+
+  const addScenario = () => {
+    const name = newScenarioName.trim().toLowerCase();
+    if (!RESEARCH_SCENARIO_NAME_REGEX.test(name)) {
+      setScenarioError("Lowercase letters, digits, and dashes only (max 40).");
+      return;
+    }
+    if (scenarios.some((candidate) => candidate.name === name)) {
+      setScenarioError(`Scenario "${name}" already exists.`);
+      return;
+    }
+    if (scenarios.length >= RESEARCH_SCENARIO_MAX_COUNT) {
+      setScenarioError(`At most ${RESEARCH_SCENARIO_MAX_COUNT} scenarios.`);
+      return;
+    }
+    setScenarioError(null);
+    setNewScenarioName("");
+    saveScenarios(
+      [...scenarios, { name, orchestratorSelection: null, pipelinePrompt: "", promptFiles: [] }],
+      name,
+    );
   };
 
   return (
     <SettingsPageContainer>
       <SettingsSection {...searchableSetting("research-pipeline")}>
+        <SettingsRow
+          {...searchableSetting("research-scenario")}
+          description="Each scenario is a full pipeline: its own prompt, files, and orchestrator. Run one with !research:<name>."
+          control={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Select
+                value={scenario.name}
+                onValueChange={(value) => saveScenarios(scenarios, String(value))}
+              >
+                <SelectTrigger className="w-40" aria-label="Research scenario">
+                  <SelectValue>{scenario.name}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {scenarios.map((candidate) => (
+                    <SelectItem key={candidate.name} hideIndicator value={candidate.name}>
+                      {candidate.name}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Delete scenario ${scenario.name}`}
+                disabled={scenarios.length <= 1}
+                onClick={() => {
+                  const remaining = scenarios.filter(
+                    (candidate) => candidate.name !== scenario.name,
+                  );
+                  saveScenarios(remaining, remaining[0]?.name ?? "");
+                }}
+              >
+                <Trash2Icon className="size-3.5" />
+              </Button>
+            </div>
+          }
+        >
+          <div className="mt-2 flex max-w-md items-center gap-2">
+            <Input
+              value={newScenarioName}
+              onChange={(event) => setNewScenarioName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") addScenario();
+              }}
+              placeholder="new-scenario-name"
+              className="h-7 font-mono text-xs"
+              aria-label="New scenario name"
+            />
+            <Button variant="outline" size="sm" onClick={addScenario}>
+              Add
+            </Button>
+          </div>
+          {scenarioError ? <p className="mt-2 text-xs text-destructive">{scenarioError}</p> : null}
+        </SettingsRow>
+
         <SettingsRow
           {...searchableSetting("research-orchestrator-model")}
           description="Runs the pipeline: reads it, delegates to the models it names, and enforces step order. Off uses the thread's current model."
@@ -146,8 +248,8 @@ export function ResearchSettingsPanel() {
                   triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
                   triggerAriaLabel="Research orchestrator model"
                   onInstanceModelChange={(instanceId, model) => {
-                    updateSettings({
-                      research: { orchestratorSelection: createModelSelection(instanceId, model) },
+                    updateScenario({
+                      orchestratorSelection: createModelSelection(instanceId, model),
                     });
                   }}
                 />
@@ -155,16 +257,14 @@ export function ResearchSettingsPanel() {
               <Switch
                 checked={usesDedicatedOrchestrator}
                 onCheckedChange={(checked) =>
-                  updateSettings({
-                    research: {
-                      orchestratorSelection: checked
-                        ? createModelSelection(
-                            defaultModelSelection.instanceId,
-                            defaultModelSelection.model,
-                            defaultModelSelection.options,
-                          )
-                        : null,
-                    },
+                  updateScenario({
+                    orchestratorSelection: checked
+                      ? createModelSelection(
+                          defaultModelSelection.instanceId,
+                          defaultModelSelection.model,
+                          defaultModelSelection.options,
+                        )
+                      : null,
                   })
                 }
                 aria-label="Use a dedicated research orchestrator model"
@@ -223,12 +323,10 @@ export function ResearchSettingsPanel() {
                     size="icon-sm"
                     aria-label={`Remove ${file.name}`}
                     onClick={() =>
-                      updateSettings({
-                        research: {
-                          promptFiles: promptFiles.filter(
-                            (candidate) => candidate.name !== file.name,
-                          ),
-                        },
+                      updateScenario({
+                        promptFiles: promptFiles.filter(
+                          (candidate) => candidate.name !== file.name,
+                        ),
                       })
                     }
                   >
@@ -279,8 +377,8 @@ export function ResearchSettingsPanel() {
                 }
               }}
               onBlur={() => {
-                if (pipelineDraft !== research.pipelinePrompt) {
-                  updateSettings({ research: { pipelinePrompt: pipelineDraft } });
+                if (pipelineDraft !== scenario.pipelinePrompt) {
+                  updateScenario({ pipelinePrompt: pipelineDraft });
                 }
               }}
               rows={24}

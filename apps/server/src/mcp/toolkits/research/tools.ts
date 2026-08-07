@@ -45,6 +45,12 @@ export const ResearchDelegateInput = Schema.Struct({
         "Name of a prompt file attached in Settings → Research. Its content is inlined server-side ahead of the prompt.",
     }),
   ),
+  scenario: Schema.optional(Schema.String).pipe(
+    Schema.annotate({
+      description:
+        "Research scenario this pipeline run belongs to, as stated in the briefing. Scopes prompt-file lookup.",
+    }),
+  ),
   step: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)).pipe(
     Schema.annotate({
       description:

@@ -37,7 +37,7 @@ async function pickGemmaModel(): Promise<string | null> {
   }
 }
 
-async function generate(model: string, system: string, user: string): Promise<string> {
+async function generateOnce(model: string, system: string, user: string): Promise<string> {
   const response = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -55,6 +55,21 @@ async function generate(model: string, system: string, user: string): Promise<st
   if (!response.ok) throw new Error(`Ollama responded ${response.status}`);
   const payload = (await response.json()) as { message?: { content?: string } };
   return payload.message?.content ?? "";
+}
+
+/**
+ * Concurrent suites (this one and the server handoff QA) can force an Ollama
+ * model reload mid-generation, returning a truncated reply. Retry a couple of
+ * times on suspiciously short output — a genuinely incapable model still
+ * produces the same short answer three times and fails the assertions.
+ */
+async function generate(model: string, system: string, user: string): Promise<string> {
+  let reply = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    reply = await generateOnce(model, system, user);
+    if (reply.trim().length >= 40) return reply;
+  }
+  return reply;
 }
 
 const CANDIDATES: ReadonlyArray<ResearchProviderCandidate> = [
@@ -79,6 +94,9 @@ describe("research pipeline QA (live gemma4)", () => {
       const briefing = expandResearchPipelinePrompt(
         "#deep-research Which is heavier, a liter of water or a liter of oil?",
         {
+          scenarios: [],
+          activeScenario: "",
+          orchestratorSelection: null,
           pipelinePrompt:
             "Step 1: Delegate the research question to !claude:fable.\nStep 2: Summarize the delegate's answer for the user.",
           promptFiles: [],
@@ -115,6 +133,9 @@ describe("research pipeline QA (live gemma4)", () => {
       const briefing = expandResearchPipelinePrompt(
         "#deep-research What color is the sky?",
         {
+          scenarios: [],
+          activeScenario: "",
+          orchestratorSelection: null,
           pipelinePrompt: "Step 1: Delegate the question to !gemini:pro and report its answer.",
           promptFiles: [],
         },

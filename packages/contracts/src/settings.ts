@@ -662,14 +662,41 @@ export const ResearchPromptFile = Schema.Struct({
 });
 export type ResearchPromptFile = typeof ResearchPromptFile.Type;
 
+export const RESEARCH_SCENARIO_MAX_COUNT = 12;
+/** Scenario names ride inside `!research:<name>` triggers, so they must be directive-safe. */
+export const RESEARCH_SCENARIO_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
 /**
- * Deep-research pipeline configuration. `pipelinePrompt` is the user-authored
- * plan the orchestrator must follow verbatim; `!provider:model[:file.md]`
- * directives inside it name delegation targets. `orchestratorSelection`
- * chooses which provider/model runs the research thread; null keeps the
- * thread's current selection.
+ * One named research scenario: its own orchestrator model, pipeline prompt,
+ * and prompt files. Selected in Settings → Research and triggered from the
+ * composer as `!research:<name>`.
+ */
+export const ResearchScenario = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isPattern(RESEARCH_SCENARIO_NAME_REGEX)),
+  orchestratorSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  pipelinePrompt: Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+  promptFiles: Schema.Array(ResearchPromptFile)
+    .check(Schema.isMaxLength(RESEARCH_PROMPT_FILE_MAX_COUNT))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type ResearchScenario = typeof ResearchScenario.Type;
+
+/**
+ * Deep-research configuration. Scenarios each carry a full pipeline; the
+ * legacy single-pipeline fields remain decodable so pre-scenario settings
+ * files migrate losslessly (readers fold them into a `default` scenario).
+ * `bypassCompression`/`shareMemoContext` are global across scenarios.
  */
 export const ResearchSettings = Schema.Struct({
+  scenarios: Schema.Array(ResearchScenario)
+    .check(Schema.isMaxLength(RESEARCH_SCENARIO_MAX_COUNT))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** Scenario the settings UI edits and the composer button triggers. */
+  activeScenario: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   orchestratorSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -967,13 +994,16 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   research: Schema.optionalKey(
     Schema.Struct({
+      // Whole-array replacement for scenarios and prompt files: the lists are
+      // small and ordered; per-index patches would risk half-merged edits.
+      scenarios: Schema.optionalKey(
+        Schema.Array(ResearchScenario).check(Schema.isMaxLength(RESEARCH_SCENARIO_MAX_COUNT)),
+      ),
+      activeScenario: Schema.optionalKey(TrimmedString),
       orchestratorSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
       pipelinePrompt: Schema.optionalKey(
         Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)),
       ),
-      // Whole-array replacement. The file list is small and ordered; per-index
-      // patches would risk half-merged edits. The web UI sends the full list
-      // every time it changes.
       promptFiles: Schema.optionalKey(
         Schema.Array(ResearchPromptFile).check(Schema.isMaxLength(RESEARCH_PROMPT_FILE_MAX_COUNT)),
       ),

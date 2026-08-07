@@ -183,11 +183,11 @@ import {
 } from "../providerHandoff";
 import { lazyWithReload } from "../lazyWithReload";
 import {
-  DEEP_RESEARCH_TAG,
   deriveResearchProviderCandidates,
   expandResearchPipelinePrompt,
+  findResearchScenario,
   isDeepResearchPrompt,
-  researchPipelineFromSettings,
+  RESEARCH_TRIGGER_PREFIX,
 } from "../researchPipeline";
 import {
   canAutoDispatchQueuedRequest,
@@ -2106,10 +2106,6 @@ function ChatViewContent(props: ChatViewProps) {
   const researchProviderCandidates = useMemo(
     () => deriveResearchProviderCandidates(providerHandoffEntries),
     [providerHandoffEntries],
-  );
-  const researchPipeline = useMemo(
-    () => researchPipelineFromSettings(settings.research),
-    [settings.research],
   );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
@@ -4984,7 +4980,7 @@ function ChatViewContent(props: ChatViewProps) {
     );
     const researchMessageTextForSend = expandResearchPipelinePrompt(
       messageTextForSend,
-      researchPipeline,
+      settings.research,
       researchProviderCandidates,
     );
     const messageIdForSend = newMessageId();
@@ -5952,10 +5948,13 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef.current?.focusAtEnd();
       return;
     }
-    // Starting research is the explicit action the configured orchestrator
+    // The telescope button runs the scenario selected in Settings → Research.
+    // Typed `!research:<name>` triggers pick their own scenario at send time.
+    const scenario = findResearchScenario(settings.research, null);
+    // Starting research is the explicit action the scenario's orchestrator
     // model is *for* — switch through the normal handoff flow so history and
     // rollback behave exactly like a manual model change.
-    const orchestrator = settings.research.orchestratorSelection;
+    const orchestrator = scenario?.orchestratorSelection ?? null;
     if (
       orchestrator !== null &&
       activeThread &&
@@ -5965,9 +5964,10 @@ function ChatViewContent(props: ChatViewProps) {
     ) {
       void onProviderHandoff(orchestrator);
     }
+    const trigger = `${RESEARCH_TRIGGER_PREFIX}:${scenario?.name ?? "default"}`;
     const nextPrompt = currentPrompt.trim()
-      ? `${DEEP_RESEARCH_TAG} ${currentPrompt.trimStart()}`
-      : `${DEEP_RESEARCH_TAG} `;
+      ? `${trigger} ${currentPrompt.trimStart()}`
+      : `${trigger} `;
     composerRef.current?.replacePrompt(nextPrompt);
   }, [
     activeThread,
@@ -5975,7 +5975,7 @@ function ChatViewContent(props: ChatViewProps) {
     onProviderHandoff,
     promptRef,
     providerHandoffBusy,
-    settings.research.orchestratorSelection,
+    settings.research,
   ]);
 
   const getModelDisabledReason = useCallback(

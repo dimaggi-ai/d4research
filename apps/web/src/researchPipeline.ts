@@ -1,9 +1,32 @@
-import type { ResearchPromptFile, ResearchSettings } from "@t3tools/contracts";
+import type { ResearchPromptFile, ResearchScenario, ResearchSettings } from "@t3tools/contracts";
 import { RESEARCH_DELEGATION_BUDGET_PER_TURN, RESEARCH_STEP_VISIT_LIMIT } from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "./providerInstances";
 
+/** Legacy trigger, still honored so old muscle memory and threads keep working. */
 export const DEEP_RESEARCH_TAG = "#deep-research";
+export const RESEARCH_TRIGGER_PREFIX = "!research";
+export const DEFAULT_RESEARCH_SCENARIO_NAME = "default";
+
+// `!research:blog task…`, `!research task…`, or legacy `#deep-research[:name]`.
+const RESEARCH_TRIGGER_REGEX =
+  /^\s*(?:!research|#deep-research)(?::([a-z0-9][a-z0-9-]*))?(?=\s|$)/i;
+
+export interface ResearchTrigger {
+  /** Scenario the trigger names, or null for the configured default. */
+  readonly scenarioName: string | null;
+  /** The research task with the trigger stripped. */
+  readonly task: string;
+}
+
+export function parseResearchTrigger(prompt: string): ResearchTrigger | null {
+  const match = RESEARCH_TRIGGER_REGEX.exec(prompt);
+  if (!match) return null;
+  return {
+    scenarioName: match[1]?.toLowerCase() ?? null,
+    task: prompt.slice((match.index ?? 0) + match[0].length).trim(),
+  };
+}
 
 const CLI_BY_DRIVER: Readonly<Record<string, string>> = {
   agy: "agy",
@@ -33,7 +56,7 @@ export function sanitizeResearchModelSlugs(models: ReadonlyArray<string>): Reado
 }
 
 export function isDeepResearchPrompt(prompt: string): boolean {
-  return prompt.trimStart().toLowerCase().startsWith(DEEP_RESEARCH_TAG);
+  return parseResearchTrigger(prompt) !== null;
 }
 
 export function deriveResearchProviderCandidates(
@@ -271,39 +294,81 @@ export function deriveDirectiveSuggestions(
 
 // ── Orchestrator prompt ────────────────────────────────────────────────────
 
-export interface ResearchPipelineInput {
-  readonly pipelinePrompt: string;
-  readonly promptFiles: ReadonlyArray<ResearchPromptFile>;
+type ResearchSettingsLike = Pick<
+  ResearchSettings,
+  "scenarios" | "activeScenario" | "orchestratorSelection" | "pipelinePrompt" | "promptFiles"
+>;
+
+/**
+ * The scenario list the UI and the composer work with. Pre-scenario settings
+ * carried one anonymous pipeline; fold it into a `default` scenario so nothing
+ * a user configured disappears. There is always at least one scenario.
+ */
+export function listResearchScenarios(
+  settings: ResearchSettingsLike | undefined,
+): ReadonlyArray<ResearchScenario> {
+  const scenarios = settings?.scenarios ?? [];
+  if (scenarios.length > 0) return scenarios;
+  return [
+    {
+      name: DEFAULT_RESEARCH_SCENARIO_NAME,
+      orchestratorSelection: settings?.orchestratorSelection ?? null,
+      pipelinePrompt: settings?.pipelinePrompt ?? "",
+      promptFiles: settings?.promptFiles ?? [],
+    },
+  ];
 }
 
-export function researchPipelineFromSettings(
-  settings: Pick<ResearchSettings, "pipelinePrompt" | "promptFiles"> | undefined,
-): ResearchPipelineInput {
-  return {
-    pipelinePrompt: settings?.pipelinePrompt ?? "",
-    promptFiles: settings?.promptFiles ?? [],
-  };
+/** The scenario a trigger names, or the configured/first one for bare triggers. */
+export function findResearchScenario(
+  settings: ResearchSettingsLike | undefined,
+  scenarioName: string | null,
+): ResearchScenario | null {
+  const scenarios = listResearchScenarios(settings);
+  if (scenarioName !== null) {
+    return scenarios.find((scenario) => scenario.name === scenarioName) ?? null;
+  }
+  return (
+    scenarios.find((scenario) => scenario.name === settings?.activeScenario) ?? scenarios[0] ?? null
+  );
 }
 
 /**
- * Compiles the orchestrator turn for a `#deep-research` prompt. The pipeline
- * from Settings → Research is quoted verbatim and framed with a strict
- * execution protocol: step-by-step tracing through the plan tool, delegation
- * only through `research_delegate`, and explicit loop budgets so a cyclic
- * pipeline (fan out → summarize → argue → regenerate → summarize again)
- * terminates instead of orbiting. Returns the prompt unchanged when it is not
- * a research prompt.
+ * Compiles the orchestrator turn for a `!research[:scenario]` prompt (legacy
+ * `#deep-research` still works). The scenario's pipeline is quoted verbatim
+ * and framed with a strict execution protocol: step-by-step tracing through
+ * the plan tool, delegation only through `research_delegate`, and explicit
+ * loop budgets so a cyclic pipeline (fan out → summarize → argue → regenerate
+ * → summarize again) terminates instead of orbiting. Returns the prompt
+ * unchanged when it is not a research prompt, and refuses to improvise when
+ * the named scenario does not exist.
  */
 export function expandResearchPipelinePrompt(
   prompt: string,
-  pipeline: ResearchPipelineInput,
+  settings: ResearchSettingsLike | undefined,
   candidates: ReadonlyArray<ResearchProviderCandidate>,
 ): string {
-  if (!isDeepResearchPrompt(prompt)) return prompt;
+  const trigger = parseResearchTrigger(prompt);
+  if (!trigger) return prompt;
 
-  const task = prompt.trimStart().slice(DEEP_RESEARCH_TAG.length).trim();
-  const pipelinePrompt = pipeline.pipelinePrompt.trim();
-  const resolutions = resolveResearchDirectives(pipelinePrompt, candidates, pipeline.promptFiles);
+  const { task } = trigger;
+  const scenario = findResearchScenario(settings, trigger.scenarioName);
+  if (!scenario) {
+    const available = listResearchScenarios(settings)
+      .map((entry) => `\`${entry.name}\``)
+      .join(", ");
+    return [
+      RESEARCH_TRIGGER_PREFIX,
+      "",
+      `No research scenario named \`${trigger.scenarioName}\` exists. Tell the user, list the configured scenarios (${available}), and stop. Do not improvise a pipeline.`,
+      "",
+      "Research task:",
+      task || "None provided.",
+    ].join("\n");
+  }
+
+  const pipelinePrompt = scenario.pipelinePrompt.trim();
+  const resolutions = resolveResearchDirectives(pipelinePrompt, candidates, scenario.promptFiles);
   const targetLines = resolutions.map((resolution) =>
     resolution.ok
       ? `- \`${resolution.directive.raw}\` → target \`${resolution.instanceId}:${resolution.model}\`${
@@ -313,13 +378,13 @@ export function expandResearchPipelinePrompt(
         }`
       : `- \`${resolution.directive.raw}\` → UNRESOLVED: ${resolution.error} Report this to the user in your first status instead of guessing a substitute.`,
   );
-  const fileLines = pipeline.promptFiles.map((file) => `- \`${file.name}\``);
+  const fileLines = scenario.promptFiles.map((file) => `- \`${file.name}\``);
 
   if (!pipelinePrompt) {
     return [
-      DEEP_RESEARCH_TAG,
+      RESEARCH_TRIGGER_PREFIX,
       "",
-      "No research pipeline is configured. Tell the user to define one in Settings → Research (orchestrator model, pipeline prompt, prompt files), then stop. Do not improvise a pipeline.",
+      `The research scenario \`${scenario.name}\` has no pipeline. Tell the user to define one in Settings → Research, then stop. Do not improvise a pipeline.`,
       "",
       "Research task:",
       task || "None provided.",
@@ -327,13 +392,13 @@ export function expandResearchPipelinePrompt(
   }
 
   return [
-    DEEP_RESEARCH_TAG,
+    `${RESEARCH_TRIGGER_PREFIX}:${scenario.name}`,
     "",
-    "You are the research orchestrator for this thread. The PIPELINE below is authoritative: follow its steps exactly, in order, including any loops it defines. Do not add, skip, merge, or reorder steps.",
+    `You are the research orchestrator for this thread, running the \`${scenario.name}\` scenario. The PIPELINE below is authoritative: follow its steps exactly, in order, including any loops it defines. Do not add, skip, merge, or reorder steps.`,
     "",
     "Execution protocol (non-negotiable):",
     "1. TRACE — Maintain the plan tool as your step ledger: one entry per pipeline step titled `Step N: <title>`. Exactly one entry is in-progress at any time. On a revisit, append ` (visit K)` to the entry text. Begin every message with the marker `[step N | visit K]`.",
-    `2. DELEGATE — A \`!provider:model[:file.md]\` directive is executed only by calling the \`research_delegate\` tool. Its \`target\` argument must be the resolved \`instanceId:model\` string from the "Delegation targets" list below, copied exactly — never the \`!\` directive itself. Pass your request as \`prompt\`, the file name as \`promptFileName\` when the directive names one, and the current \`step\`/\`visit\`. Never claim a delegation ran unless the tool returned its answer. Never delegate to yourself recursively.`,
+    `2. DELEGATE — A \`!provider:model[:file.md]\` directive is executed only by calling the \`research_delegate\` tool. Its \`target\` argument must be the resolved \`instanceId:model\` string from the "Delegation targets" list below, copied exactly — never the \`!\` directive itself. Pass your request as \`prompt\`, the file name as \`promptFileName\` when the directive names one, \`scenario\` as \`${scenario.name}\`, and the current \`step\`/\`visit\`. Never claim a delegation ran unless the tool returned its answer. Never delegate to yourself recursively.`,
     `3. LOOP GUARD — A step may run at most ${RESEARCH_STEP_VISIT_LIMIT} visits and the whole turn has a hard budget of ${RESEARCH_DELEGATION_BUDGET_PER_TURN} delegations, enforced by the server. When a guard trips, stop looping, synthesize from what you have, and state plainly which loop was cut and why.`,
     "4. HONESTY — Preserve links, file paths, commands, disagreements, and uncertainty when summarizing delegate answers. A delegate that failed or timed out is reported as failed, not paraphrased into a result.",
     "",

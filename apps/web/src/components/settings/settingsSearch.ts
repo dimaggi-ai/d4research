@@ -192,12 +192,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "research-pipeline",
   },
   {
-    id: "research-directive-help",
-    title: "Directive reference",
-    to: "/settings/research",
-    targetId: "research-pipeline",
-  },
-  {
     id: "research-context",
     title: "Research context",
     to: "/settings/research",

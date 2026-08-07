@@ -7,9 +7,9 @@ active model changes.
 ## Configure the pipeline
 
 Research runs a **pipeline you author** in **Settings → Research**. The intended flow: attach
-your role prompt files first, check the directive reference for exact model names, then paste the
-main pipeline prompt — the live validation under it shows every link resolved (or exactly why
-not) before you run anything.
+your role prompt files first, then write the pipeline — typing `!` in the editor suggests ready
+providers, their models, and your attached files, and the live validation under it shows every
+link resolved (or exactly why not) before you run anything.
 
 | Field                  | Purpose                                                                                                                                                                 |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

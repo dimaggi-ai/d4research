@@ -243,39 +243,10 @@ export function ResearchSettingsPanel() {
         </SettingsRow>
 
         <SettingsRow
-          {...searchableSetting("research-directive-help")}
-          description="Copy-ready targets for every ready provider. Append :file.md to send an attached prompt file along."
-        >
-          {candidates.length > 0 ? (
-            <ul className="mt-3 max-w-2xl space-y-2 pb-1">
-              {candidates.map((candidate) => (
-                <li key={candidate.instanceId} className="text-xs">
-                  <span className="font-medium text-foreground">{candidate.name}</span>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {candidate.models.map((model) => (
-                      <code
-                        key={model}
-                        className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-muted-foreground"
-                      >
-                        !{candidate.cli}:{model}
-                      </code>
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              No ready providers detected. Enable and authenticate providers first.
-            </p>
-          )}
-        </SettingsRow>
-
-        <SettingsRow
           {...searchableSetting("research-pipeline-prompt")}
-          description="The steps the orchestrator must follow, verbatim. Reference models as !provider:model or !provider:model:file.md — loops are allowed and budget-guarded."
+          description="The steps the orchestrator must follow, verbatim. Type ! for model suggestions — loops are allowed and budget-guarded."
         >
-          <div className="mt-3 max-w-2xl pb-1">
+          <div className="mt-3 max-w-4xl pb-1">
             <Textarea
               ref={pipelineRef}
               value={pipelineDraft}
@@ -312,8 +283,8 @@ export function ResearchSettingsPanel() {
                   updateSettings({ research: { pipelinePrompt: pipelineDraft } });
                 }
               }}
-              rows={10}
-              className="font-mono text-xs"
+              rows={24}
+              className="min-h-64 resize-y font-mono text-xs"
               placeholder={
                 "Step 1: Scope the question.\nStep 2: Fan out to !claude:fable:depth.md and !codex:terra.\nStep 3: Summarize all answers.\nStep 4: Argue with the summary; if it does not hold, ask one model to regenerate and go back to step 3.\nStep 5: Validate and deliver."
               }

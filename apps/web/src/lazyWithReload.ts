@@ -69,13 +69,22 @@ export function lazyWithReload<T extends ComponentType<Any>>(
   factory: () => Promise<{ default: T }>,
 ): ReturnType<typeof lazy<T>> {
   return lazy(() =>
-    factory().catch((cause: unknown) => {
-      if (shouldReloadForChunkFailure(cause, globalThis.sessionStorage)) {
-        globalThis.location.reload();
-        // Never settles: the reload replaces this document.
-        return new Promise<{ default: T }>(() => {});
-      }
-      throw cause;
-    }),
+    factory().then(
+      (loaded) => {
+        // A successful load means this build's chunks resolve — re-arm the
+        // guard so the *next* deploy can recover the same way. Without this,
+        // one recovery would consume the guard for the tab's whole lifetime.
+        clearChunkReloadGuard();
+        return loaded;
+      },
+      (cause: unknown) => {
+        if (shouldReloadForChunkFailure(cause, globalThis.sessionStorage)) {
+          globalThis.location.reload();
+          // Never settles: the reload replaces this document.
+          return new Promise<{ default: T }>(() => {});
+        }
+        throw cause;
+      },
+    ),
   );
 }

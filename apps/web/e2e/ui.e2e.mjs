@@ -89,6 +89,32 @@ spec("system panel renders monitors for the active thread", async ({ page, webUr
 // The Ollama preset is the only path from a stock install to Ollama-served
 // models, so assert against the *live* daemon roster rather than the bundled
 // fallback list — a stale hardcoded roster is exactly the bug this guards.
+// The file preview panel is a lazily loaded chunk — the surface that broke
+// when a stale tab fetched renamed chunks and got index.html back. Opening a
+// real file end-to-end proves the chunk loads and the file actually renders.
+spec("files panel opens a workspace file", async ({ page, webUrl, workspace }) => {
+  await page.goto(webUrl, { waitUntil: "domcontentloaded" });
+  await openProject(page, workspace);
+
+  const addSurface = page.getByRole("button", { name: /add panel surface/i }).first();
+  if (await addSurface.isVisible().catch(() => false)) {
+    await addSurface.click();
+    await page.getByRole("menuitem", { name: /files/i }).first().click();
+  } else {
+    // Empty right panel shows the surface picker inline instead.
+    await page
+      .getByRole("button", { name: /^Files/ })
+      .first()
+      .click();
+  }
+
+  const fileEntry = page.getByText("README.md").first();
+  await fileEntry.waitFor({ state: "visible", timeout: 20_000 });
+  await fileEntry.click();
+  // The fixture README's heading, rendered by the lazily loaded preview panel.
+  await page.getByText("e2e fixture").first().waitFor({ state: "visible", timeout: 20_000 });
+});
+
 spec("Ollama preset lists live cloud models on a Claude instance", async ({ page, webUrl }) => {
   const liveTags = await fetch("http://127.0.0.1:11434/api/tags")
     .then((response) => (response.ok ? response.json() : null))

@@ -256,7 +256,11 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
-import { deriveActiveStageSuggestion, ResearchProgressBanner } from "./chat/ResearchProgressBanner";
+import {
+  deriveActiveStageSuggestion,
+  deriveResearchBannerSteps,
+  ResearchProgressBanner,
+} from "./chat/ResearchProgressBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -2196,6 +2200,24 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [activeThread?.messages],
   );
+  // A completed plan inherited from a previous turn would render as a 100%
+  // bar at the start of a new research run; hide it until the lead posts its
+  // own stages.
+  const researchBannerSteps = useMemo(
+    () =>
+      deriveResearchBannerSteps({
+        steps: activePlan?.steps ?? [],
+        planTurnId: activePlan?.turnId ?? null,
+        latestTurnId: activeLatestTurn?.turnId ?? null,
+        isRunning: phase === "running",
+      }),
+    [activeLatestTurn?.turnId, activePlan, phase],
+  );
+  // Closing the banner is scoped to this plan: a new research run writes a new
+  // plan turn, which changes the key and brings the banner back.
+  const researchBannerKey = `${activeThreadId ?? "none"}:${activePlan?.turnId ?? "none"}`;
+  const [dismissedResearchBannerKey, setDismissedResearchBannerKey] = useState<string | null>(null);
+  const researchBannerDismissed = dismissedResearchBannerKey === researchBannerKey;
   // The active stage may suggest a different provider/model (configured in
   // Settings → Deep Research). This only surfaces a user-triggered affordance
   // that reuses the normal handoff flow — nothing switches automatically.
@@ -6412,9 +6434,9 @@ function ChatViewContent(props: ChatViewProps) {
                       )}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
-                        {isResearchThread ? (
+                        {isResearchThread && !researchBannerDismissed ? (
                           <ResearchProgressBanner
-                            steps={activePlan?.steps ?? []}
+                            steps={researchBannerSteps}
                             isRunning={phase === "running"}
                             suggestionLabel={researchStageSuggestion?.label ?? null}
                             onApplySuggestion={
@@ -6422,6 +6444,11 @@ function ChatViewContent(props: ChatViewProps) {
                                 ? () =>
                                     void onProviderHandoff(researchStageSuggestion.modelSelection)
                                 : undefined
+                            }
+                            onDismiss={
+                              phase === "running"
+                                ? undefined
+                                : () => setDismissedResearchBannerKey(researchBannerKey)
                             }
                           />
                         ) : null}

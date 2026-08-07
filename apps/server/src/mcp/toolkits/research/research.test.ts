@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import { RESEARCH_DELEGATION_BUDGET_PER_TURN, RESEARCH_STEP_VISIT_LIMIT } from "@t3tools/contracts";
 
 import { ResearchDelegationBudget, ResearchDelegationBudgetLive } from "./budget.ts";
-import { parseDelegateTarget } from "./handlers.ts";
+import { extractAssistantText, isColdStartProne, parseDelegateTarget } from "./handlers.ts";
 
 const withBudget = <A>(
   body: (budget: ResearchDelegationBudget["Service"]) => Effect.Effect<A>,
@@ -25,6 +25,68 @@ describe("parseDelegateTarget", () => {
     expect(parseDelegateTarget("claudeAgent")).toBeNull();
     expect(parseDelegateTarget(":model")).toBeNull();
     expect(parseDelegateTarget("claudeAgent:")).toBeNull();
+  });
+});
+
+describe("extractAssistantText", () => {
+  it("returns the codex agentMessage, not the echoed prompt or reasoning", () => {
+    // Shape codex app-server thread/read returns: the echoed prompt and
+    // intermediate reasoning share the turn with the real answer.
+    const thread = {
+      turns: [
+        {
+          items: [
+            { type: "userMessage", content: [{ type: "text", text: "Reply with OK" }] },
+            { type: "reasoning", content: ["thinking about it"] },
+            { type: "agentMessage", text: "OK" },
+          ],
+        },
+      ],
+    };
+    expect(extractAssistantText(thread)).toBe("OK");
+  });
+
+  it("is empty for an in-progress codex turn that has no agentMessage yet", () => {
+    // The window the poll must not exit on: turn exists, answer does not.
+    const thread = { turns: [{ items: [{ type: "userMessage", content: [] }] }] };
+    expect(extractAssistantText(thread)).toBe("");
+  });
+
+  it("reads claude/opencode role+content blocks and skips the user turn", () => {
+    const thread = {
+      turns: [
+        {
+          items: [
+            { role: "user", content: [{ type: "text", text: "question" }] },
+            { role: "assistant", content: [{ type: "text", text: "answer" }] },
+          ],
+        },
+      ],
+    };
+    expect(extractAssistantText(thread)).toBe("answer");
+  });
+
+  it("reads agy plain-string and { text } items", () => {
+    expect(extractAssistantText({ turns: [{ items: ["hello ", { text: "world" }] }] })).toBe(
+      "hello world",
+    );
+  });
+
+  it("is empty when there are no turns", () => {
+    expect(extractAssistantText({ turns: [] })).toBe("");
+  });
+});
+
+describe("isColdStartProne", () => {
+  it("flags Ollama cloud models so they get a warm-up turn", () => {
+    expect(isColdStartProne("kimi-k2.7-code:cloud")).toBe(true);
+    expect(isColdStartProne("glm-5.2:cloud")).toBe(true);
+  });
+
+  it("leaves warm hosted/local models on the fast path", () => {
+    expect(isColdStartProne("claude-fable-5")).toBe(false);
+    expect(isColdStartProne("gpt-5.6-terra")).toBe(false);
+    expect(isColdStartProne("gemini-3.6-flash-high")).toBe(false);
   });
 });
 

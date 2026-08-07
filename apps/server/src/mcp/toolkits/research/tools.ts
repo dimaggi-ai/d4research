@@ -7,6 +7,7 @@ import { HttpClient } from "effect/unstable/http";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
+import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 
@@ -23,6 +24,7 @@ const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProviderAdapterRegistry,
+  ProjectionSnapshotQuery,
   ServerConfig.ServerConfig,
   ResearchDelegationBudget,
   Path.Path,

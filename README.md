@@ -20,15 +20,42 @@ Desktop artifacts are cut on a maintainer machine rather than in CI, so when the
 git clone git@github.com:dimaggi-ai/d4research.git
 cd d4research
 
-# Install the Vite+ build tool (one-time)
-curl -fsSL https://vite.plus | bash
+# Verifies the Node runtime, installs Vite+ and dependencies,
+# and reports which provider CLIs are usable.
+./scripts/setup.sh
 
-# Install dependencies and start the dev server
+vp run dev
+```
+
+`scripts/setup.sh` is idempotent, so re-run it whenever the environment looks
+wrong. Pass `--check` to diagnose without changing anything. It is deliberately
+a shell script rather than one of the `scripts/*.ts` entry points, because the
+most common failure it catches is a Node binary that reports a version but
+crashes on execution — at which point nothing written in TypeScript can run.
+
+To set the environment up by hand instead:
+
+```bash
+curl -fsSL https://vite.plus | bash   # Vite+ build tool, one-time
 vp i
 vp run dev
 ```
 
-The web UI opens at `http://localhost:3773`. Connect from any browser, including remote devices via [Tailscale or relay](./docs/user/remote-access.md).
+`vp run dev` prints a `[dev-runner]` line with the ports it actually bound
+(`5733` for the web client and `13773` for the server by default; both shift if
+occupied), followed by a pairing URL:
+
+```
+pairingUrl: http://localhost:5733/pair#token=XXXXXXXXXXXX
+```
+
+Open that URL. The web app requires pairing, so the bare origin will not
+authenticate. Connect from any browser, including remote devices via
+[Tailscale or relay](./docs/user/remote-access.md).
+
+> [!NOTE]
+> `http://localhost:3773` is the port used by a production `vp run start`
+> build, not by `vp run dev`.
 
 ### Updating
 

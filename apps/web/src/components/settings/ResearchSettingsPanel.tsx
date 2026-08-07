@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef, useState } from "react";
-import { EyeIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
+import { EyeIcon, PaperclipIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { ResearchPromptFile, ResearchScenario } from "@t3tools/contracts";
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
@@ -33,7 +33,14 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -41,6 +48,9 @@ import { SettingsPageContainer } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 const ACCEPTED_FILE_SUFFIXES = [".md", ".markdown", ".txt"];
+// Reserved dropdown value for the "Add scenario…" action; scenario names are
+// validated against RESEARCH_SCENARIO_NAME_REGEX so this can never collide.
+const ADD_SCENARIO_VALUE = "__add_scenario__";
 
 function isAcceptedFileName(name: string): boolean {
   const lower = name.toLowerCase();
@@ -63,6 +73,7 @@ export function ResearchSettingsPanel() {
   const promptFiles = scenario.promptFiles;
   const [newScenarioName, setNewScenarioName] = useState("");
   const [scenarioError, setScenarioError] = useState<string | null>(null);
+  const [addScenarioOpen, setAddScenarioOpen] = useState(false);
 
   // Every write persists the full scenario list (whole-array replacement in
   // the settings patch), which also migrates the legacy single pipeline into
@@ -152,6 +163,12 @@ export function ResearchSettingsPanel() {
     updateScenario({ promptFiles: next });
   };
 
+  const openAddScenario = () => {
+    setNewScenarioName("");
+    setScenarioError(null);
+    setAddScenarioOpen(true);
+  };
+
   const addScenario = () => {
     const name = newScenarioName.trim().toLowerCase();
     if (!RESEARCH_SCENARIO_NAME_REGEX.test(name)) {
@@ -166,8 +183,9 @@ export function ResearchSettingsPanel() {
       setScenarioError(`At most ${RESEARCH_SCENARIO_MAX_COUNT} scenarios.`);
       return;
     }
-    setScenarioError(null);
+    setAddScenarioOpen(false);
     setNewScenarioName("");
+    setScenarioError(null);
     saveScenarios(
       [...scenarios, { name, orchestratorSelection: null, pipelinePrompt: "", promptFiles: [] }],
       name,
@@ -184,7 +202,10 @@ export function ResearchSettingsPanel() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Select
                 value={scenario.name}
-                onValueChange={(value) => saveScenarios(scenarios, String(value))}
+                onValueChange={(value) => {
+                  if (value === ADD_SCENARIO_VALUE) openAddScenario();
+                  else saveScenarios(scenarios, String(value));
+                }}
               >
                 <SelectTrigger className="w-40" aria-label="Research scenario">
                   <SelectValue>{scenario.name}</SelectValue>
@@ -195,6 +216,11 @@ export function ResearchSettingsPanel() {
                       {candidate.name}
                     </SelectItem>
                   ))}
+                  <SelectItem hideIndicator value={ADD_SCENARIO_VALUE}>
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <PlusIcon className="size-3.5" /> Add scenario…
+                    </span>
+                  </SelectItem>
                 </SelectPopup>
               </Select>
               <Button
@@ -213,24 +239,45 @@ export function ResearchSettingsPanel() {
               </Button>
             </div>
           }
+        />
+
+        <Dialog
+          open={addScenarioOpen}
+          onOpenChange={(open) => {
+            setAddScenarioOpen(open);
+            if (!open) {
+              setNewScenarioName("");
+              setScenarioError(null);
+            }
+          }}
         >
-          <div className="mt-2 flex max-w-md items-center gap-2">
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>New research scenario</DialogTitle>
+              <DialogDescription>
+                Lowercase letters, digits, and dashes. Run it as !research:name.
+              </DialogDescription>
+            </DialogHeader>
             <Input
+              autoFocus
               value={newScenarioName}
               onChange={(event) => setNewScenarioName(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") addScenario();
               }}
-              placeholder="new-scenario-name"
-              className="h-7 font-mono text-xs"
+              placeholder="blog"
+              className="font-mono text-sm"
               aria-label="New scenario name"
             />
-            <Button variant="outline" size="sm" onClick={addScenario}>
-              Add
-            </Button>
-          </div>
-          {scenarioError ? <p className="mt-2 text-xs text-destructive">{scenarioError}</p> : null}
-        </SettingsRow>
+            {scenarioError ? <p className="text-xs text-destructive">{scenarioError}</p> : null}
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setAddScenarioOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={addScenario}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <SettingsRow
           {...searchableSetting("research-orchestrator-model")}

@@ -135,12 +135,23 @@ const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 
-export const DEFAULT_MODEL = "gpt-5.6-sol";
+/**
+ * Static fallback used wherever no live `model/list` response is available yet:
+ * server startup, Codex session normalization, and the composer's first draft.
+ * It has to be a slug Codex actually accepts for every account type, so it is
+ * deliberately not `gpt-5.6-sol` — Codex rejects that one outright on ChatGPT
+ * accounts and does not return it from `model/list`. Preference for a newer
+ * model belongs in `PREFERRED_DEFAULT_CODEX_MODELS`, which is filtered against
+ * what the account can really see.
+ */
+export const DEFAULT_MODEL = "gpt-5.6-terra";
 
 /**
  * Codex default-model preference, most preferred first. The provider snapshot
  * marks the first of these present in the live `model/list` response as
- * default; when none are available, Codex's own `isDefault` flag wins.
+ * default; when none are available, Codex's own `isDefault` flag wins. Listing
+ * a slug here is safe even when the account cannot use it, because absent
+ * models never match.
  */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-5.6-sol",

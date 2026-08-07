@@ -93,7 +93,7 @@ Features layered on top of the T3 Code base:
 
 ### Deep Research
 
-Prefix a prompt with `#deep-research` to activate structured multi-agent research. The system constructs a research-lead brief with Scout, Analyst, Challenger, and Synthesizer roles, advertises only currently ready providers, caps delegated work at three concurrent agents, and forbids recursive delegation.
+Prefix a prompt with `#deep-research` to run the pipeline you authored in Settings > Research: an orchestrator model follows your numbered steps verbatim, delegates to the models named by `!provider:model[:file.md]` directives through a budgeted `research_delegate` tool (3 visits per step-target, 24 delegations per run, server-enforced), and traces every step as `[step N | visit K]` in the progress banner. Loops are allowed and provably terminate; recursive delegation is forbidden. Handoffs bypass compression by default so evidence crosses verbatim, and delegates receive shared-memory context as-is.
 
 ### Same-Thread Provider Handoff
 

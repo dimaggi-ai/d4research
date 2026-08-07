@@ -33,11 +33,26 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDe
 const PROBE_TIMEOUT_MS = 20_000;
 
 // CSI sequences, OSC sequences (BEL- or ST-terminated), two-byte escapes like
-// `ESC(B`/`ESC7`, and stray C0 control characters other than \t. Matching
-// control characters is the entire point here — the CLI emits them.
+// `ESC(B`/`ESC7`, and stray C0 control characters other than \t and \b.
+// Matching control characters is the entire point here — the CLI emits them.
+// Backspace is deliberately excluded and handled by `applyBackspaces`.
 const ANSI_ESCAPE_REGEX =
   // eslint-disable-next-line no-control-regex
-  /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x08\x0b-\x1f\x7f]/gu;
+  /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x07\x0b-\x1f\x7f]/gu;
+
+// A PTY rubs characters out with backspaces rather than rewriting the line, and
+// BSD `script` opens every session by printing a literal `^D` and immediately
+// erasing it. Dropping the backspaces as control characters would leave the
+// caret glued to the first real token, so replay the erasure instead.
+export function applyBackspaces(value: string): string {
+  if (!value.includes("\b")) return value;
+  let result = "";
+  for (const character of value) {
+    if (character === "\b") result = result.slice(0, -1);
+    else result += character;
+  }
+  return result;
+}
 
 // Model slugs are plain machine identifiers. Anything else — stderr prose
 // merged in by the PTY wrapper, spinner frames, escape residue — must never
@@ -45,6 +60,11 @@ const ANSI_ESCAPE_REGEX =
 const MODEL_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
 export const quotePosixShellArgument = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+
+// Platforms where `script` can hand the models probe a pseudo-terminal.
+// Windows has no equivalent, so it keeps the plain pipe.
+export const isPtyProbePlatform = (platform: NodeJS.Platform) =>
+  platform === "linux" || platform === "darwin";
 
 export function parseAgyModelsOutput(stdout: string): ReadonlyArray<{
   readonly slug: string;
@@ -57,7 +77,7 @@ export function parseAgyModelsOutput(stdout: string): ReadonlyArray<{
     // shares a physical line with spinner frames still gets picked up — slug
     // validation below rejects the frames themselves.
     for (const segment of rawLine.split("\r")) {
-      const cleaned = segment.replaceAll(ANSI_ESCAPE_REGEX, "").trim();
+      const cleaned = applyBackspaces(segment.replaceAll(ANSI_ESCAPE_REGEX, "")).trim();
       if (!cleaned) continue;
       // Agy formats rows as `slug   Description` with runs of spaces padding
       // the slug column, so split on 2-or-more whitespace.
@@ -108,15 +128,31 @@ const runAgy = (
     const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
     // Agy's `models` command keeps running when its stdout is an ordinary
     // Node pipe, while it exits normally under a PTY. Settings health checks
-    // run from Node, so give this discovery-only probe a Linux pseudo-terminal.
-    if (platform === "linux" && args.length === 1 && args[0] === "models") {
-      const scriptCommand = [resolved.command, ...resolved.args]
-        .map(quotePosixShellArgument)
-        .join(" ");
+    // run from Node, so give this discovery-only probe a pseudo-terminal.
+    // `script` provides one on both Linux and macOS, but the two versions
+    // disagree on how the command is passed: util-linux wants a single `-c`
+    // string, BSD wants argv after the typescript file. Both forward the
+    // child's exit status, which the caller reads to decide health.
+    if (isPtyProbePlatform(platform) && args.length === 1 && args[0] === "models") {
+      const scriptArgs =
+        platform === "linux"
+          ? [
+              "-q",
+              "-e",
+              "-c",
+              [resolved.command, ...resolved.args].map(quotePosixShellArgument).join(" "),
+              "/dev/null",
+            ]
+          : ["-q", "/dev/null", resolved.command, ...resolved.args];
       return yield* spawnAndCollect(
         command,
-        ChildProcess.make("script", ["-q", "-e", "-c", scriptCommand, "/dev/null"], {
+        ChildProcess.make("script", scriptArgs, {
           env: environment,
+          // BSD `script` calls tcgetattr on its own stdin. Node's default pipe
+          // is a socket on macOS, which fails that call outright; "ignore"
+          // hands it /dev/null, which reports ENOTTY and is tolerated. The
+          // probe never reads input, so this costs nothing on Linux either.
+          stdin: "ignore",
         }),
       );
     }

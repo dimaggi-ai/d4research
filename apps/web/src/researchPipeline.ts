@@ -183,6 +183,92 @@ export function resolveResearchDirectives(
   );
 }
 
+// ── Directive autocomplete ─────────────────────────────────────────────────
+
+export interface DirectiveSuggestion {
+  /** Full replacement for the active `!` token, e.g. `!claude:claude-fable-5`. */
+  readonly insert: string;
+  /** Short label for the list row. */
+  readonly label: string;
+  /** Where the active token starts in the text (the `!` itself). */
+  readonly tokenStart: number;
+}
+
+const ACTIVE_DIRECTIVE_TOKEN_REGEX = /!([A-Za-z0-9-]*)((?::[A-Za-z0-9._:/-]*)?)$/;
+const MAX_DIRECTIVE_SUGGESTIONS = 12;
+
+/**
+ * Suggestions for the `!` token the caret is inside, so pipeline authors never
+ * copy targets by hand: `!` lists providers, `!provider:` lists that
+ * provider's models, and a complete `!provider:model:` offers the attached
+ * prompt files. Returns an empty list when the caret is not in a directive.
+ */
+export function deriveDirectiveSuggestions(
+  textBeforeCaret: string,
+  candidates: ReadonlyArray<ResearchProviderCandidate>,
+  promptFiles: ReadonlyArray<ResearchPromptFile>,
+): ReadonlyArray<DirectiveSuggestion> {
+  const match = ACTIVE_DIRECTIVE_TOKEN_REGEX.exec(textBeforeCaret);
+  if (!match) return [];
+  const tokenStart = textBeforeCaret.length - match[0].length;
+  const providerPart = match[1] ?? "";
+  const rest = match[2] ?? "";
+
+  // No colon yet — complete the provider.
+  if (rest.length === 0) {
+    const needle = providerPart.toLowerCase();
+    return candidates
+      .filter(
+        (candidate) =>
+          candidate.cli.toLowerCase().startsWith(needle) ||
+          candidate.name.toLowerCase().startsWith(needle),
+      )
+      .slice(0, MAX_DIRECTIVE_SUGGESTIONS)
+      .map((candidate) => ({
+        insert: `!${candidate.cli}:`,
+        label: `${candidate.name} — ${candidate.models.length} models`,
+        tokenStart,
+      }));
+  }
+
+  const provider = candidates.find(
+    (candidate) =>
+      candidate.cli.toLowerCase() === providerPart.toLowerCase() ||
+      candidate.name.toLowerCase() === providerPart.toLowerCase(),
+  );
+  if (!provider) return [];
+  const afterProvider = rest.slice(1); // drop the leading ':'
+
+  // A full model followed by ':' — offer the attached prompt files.
+  const modelExact = provider.models.find(
+    (model) =>
+      afterProvider.toLowerCase() === `${model.toLowerCase()}:` ||
+      afterProvider.toLowerCase().startsWith(`${model.toLowerCase()}:`),
+  );
+  if (modelExact) {
+    const filePrefix = afterProvider.slice(modelExact.length + 1).toLowerCase();
+    return promptFiles
+      .filter((file) => file.name.toLowerCase().startsWith(filePrefix))
+      .slice(0, MAX_DIRECTIVE_SUGGESTIONS)
+      .map((file) => ({
+        insert: `!${provider.cli}:${modelExact}:${file.name}`,
+        label: `${modelExact} + ${file.name}`,
+        tokenStart,
+      }));
+  }
+
+  // Otherwise complete the model.
+  const modelNeedle = afterProvider.toLowerCase();
+  return provider.models
+    .filter((model) => model.toLowerCase().includes(modelNeedle))
+    .slice(0, MAX_DIRECTIVE_SUGGESTIONS)
+    .map((model) => ({
+      insert: `!${provider.cli}:${model}`,
+      label: model,
+      tokenStart,
+    }));
+}
+
 // ── Orchestrator prompt ────────────────────────────────────────────────────
 
 export interface ResearchPipelineInput {

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EyeIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
 import type { ResearchPromptFile } from "@t3tools/contracts";
 import {
@@ -21,8 +21,10 @@ import {
 } from "../../modelSelection";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
+  deriveDirectiveSuggestions,
   deriveResearchProviderCandidates,
   resolveResearchDirectives,
+  type DirectiveSuggestion,
 } from "../../researchPipeline";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Button } from "../ui/button";
@@ -50,6 +52,18 @@ export function ResearchSettingsPanel() {
 
   const research = settings.research;
   const promptFiles = research.promptFiles;
+  const pipelineRef = useRef<HTMLTextAreaElement>(null);
+  const [pipelineDraft, setPipelineDraft] = useState(research.pipelinePrompt);
+  const [pipelineCaret, setPipelineCaret] = useState(research.pipelinePrompt.length);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  // Another client (or another tab) may save a different pipeline; adopt it
+  // unless this editor is the one holding unsaved changes.
+  useEffect(() => {
+    setPipelineDraft((current) =>
+      document.activeElement === pipelineRef.current ? current : research.pipelinePrompt,
+    );
+  }, [research.pipelinePrompt]);
   const defaultModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const usesDedicatedOrchestrator = research.orchestratorSelection !== null;
   const activeSelection = research.orchestratorSelection ?? defaultModelSelection;
@@ -63,7 +77,28 @@ export function ResearchSettingsPanel() {
     activeSelection.model,
   );
   const candidates = deriveResearchProviderCandidates(instanceEntries);
-  const resolutions = resolveResearchDirectives(research.pipelinePrompt, candidates, promptFiles);
+  const resolutions = resolveResearchDirectives(pipelineDraft, candidates, promptFiles);
+  const suggestions = suggestionsDismissed
+    ? []
+    : deriveDirectiveSuggestions(pipelineDraft.slice(0, pipelineCaret), candidates, promptFiles);
+
+  const acceptSuggestion = (suggestion: DirectiveSuggestion) => {
+    const next =
+      pipelineDraft.slice(0, suggestion.tokenStart) +
+      suggestion.insert +
+      pipelineDraft.slice(pipelineCaret);
+    const caretAfter = suggestion.tokenStart + suggestion.insert.length;
+    setPipelineDraft(next.slice(0, RESEARCH_PIPELINE_PROMPT_MAX_CHARS));
+    setPipelineCaret(caretAfter);
+    setSuggestionIndex(0);
+    // Restore focus and caret after React applies the new value.
+    requestAnimationFrame(() => {
+      const element = pipelineRef.current;
+      if (!element) return;
+      element.focus();
+      element.setSelectionRange(caretAfter, caretAfter);
+    });
+  };
 
   const attachFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -242,15 +277,39 @@ export function ResearchSettingsPanel() {
         >
           <div className="mt-3 max-w-2xl pb-1">
             <Textarea
-              key={research.pipelinePrompt}
-              defaultValue={research.pipelinePrompt}
-              onBlur={(event) => {
-                const pipelinePrompt = event.target.value.slice(
-                  0,
-                  RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
-                );
-                if (pipelinePrompt !== research.pipelinePrompt) {
-                  updateSettings({ research: { pipelinePrompt } });
+              ref={pipelineRef}
+              value={pipelineDraft}
+              onChange={(event) => {
+                setPipelineDraft(event.target.value.slice(0, RESEARCH_PIPELINE_PROMPT_MAX_CHARS));
+                setPipelineCaret(event.target.selectionStart ?? event.target.value.length);
+                setSuggestionsDismissed(false);
+                setSuggestionIndex(0);
+              }}
+              onSelect={(event) =>
+                setPipelineCaret(
+                  (event.target as HTMLTextAreaElement).selectionStart ?? pipelineDraft.length,
+                )
+              }
+              onKeyDown={(event) => {
+                if (suggestions.length === 0) return;
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSuggestionIndex((index) => (index + 1) % suggestions.length);
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSuggestionIndex(
+                    (index) => (index - 1 + suggestions.length) % suggestions.length,
+                  );
+                } else if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  acceptSuggestion(suggestions[suggestionIndex] ?? suggestions[0]!);
+                } else if (event.key === "Escape") {
+                  setSuggestionsDismissed(true);
+                }
+              }}
+              onBlur={() => {
+                if (pipelineDraft !== research.pipelinePrompt) {
+                  updateSettings({ research: { pipelinePrompt: pipelineDraft } });
                 }
               }}
               rows={10}
@@ -260,6 +319,39 @@ export function ResearchSettingsPanel() {
               }
               aria-label="Research pipeline prompt"
             />
+            {suggestions.length > 0 ? (
+              <ul
+                className="mt-1 overflow-hidden rounded-md border border-border/60 bg-popover shadow-sm"
+                role="listbox"
+                aria-label="Directive suggestions"
+                data-research-directive-suggestions="true"
+              >
+                {suggestions.map((suggestion, index) => (
+                  <li
+                    key={suggestion.insert}
+                    role="option"
+                    aria-selected={index === suggestionIndex}
+                  >
+                    <button
+                      type="button"
+                      className={`flex w-full items-baseline gap-2 px-2 py-1 text-left font-mono text-xs ${
+                        index === suggestionIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-muted"
+                      }`}
+                      // onMouseDown so the click wins over the textarea blur.
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        acceptSuggestion(suggestion);
+                      }}
+                    >
+                      <span className="shrink-0 text-foreground">{suggestion.insert}</span>
+                      <span className="min-w-0 flex-1 truncate">{suggestion.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {resolutions.length > 0 ? (
               <ul className="mt-2 space-y-1" data-research-directives="true">
                 {resolutions.map((resolution) => (

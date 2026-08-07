@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  deriveDirectiveSuggestions,
   expandResearchPipelinePrompt,
   isDeepResearchPrompt,
   parseResearchDirectives,
@@ -101,6 +102,40 @@ describe("resolveResearchDirective", () => {
     );
     expect(resolution.ok).toBe(false);
     if (!resolution.ok) expect(resolution.error).toContain("missing.md");
+  });
+});
+
+describe("deriveDirectiveSuggestions", () => {
+  it("suggests providers right after the bang", () => {
+    const suggestions = deriveDirectiveSuggestions("Step 2: fan out to !", CANDIDATES, FILES);
+    expect(suggestions.map((entry) => entry.insert)).toEqual(["!claude:", "!codex:"]);
+    expect(suggestions[0]?.tokenStart).toBe("Step 2: fan out to ".length);
+  });
+
+  it("narrows providers by prefix", () => {
+    expect(deriveDirectiveSuggestions("send to !co", CANDIDATES, FILES)).toMatchObject([
+      { insert: "!codex:" },
+    ]);
+  });
+
+  it("suggests the provider's models after the colon, filtered by fragment", () => {
+    expect(
+      deriveDirectiveSuggestions("!claude:fab", CANDIDATES, FILES).map((entry) => entry.insert),
+    ).toEqual(["!claude:claude-fable-5"]);
+    expect(deriveDirectiveSuggestions("!claude:", CANDIDATES, FILES)).toHaveLength(3);
+  });
+
+  it("offers attached prompt files after a complete model and colon", () => {
+    expect(
+      deriveDirectiveSuggestions("!claude:claude-fable-5:", CANDIDATES, FILES).map(
+        (entry) => entry.insert,
+      ),
+    ).toEqual(["!claude:claude-fable-5:OPTIONAL_prompt.md"]);
+  });
+
+  it("stays quiet outside a directive token", () => {
+    expect(deriveDirectiveSuggestions("plain prose, no token", CANDIDATES, FILES)).toEqual([]);
+    expect(deriveDirectiveSuggestions("ends with space ! ", CANDIDATES, FILES)).toEqual([]);
   });
 });
 

@@ -9,6 +9,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/keybindings",
   "/settings/providers",
   "/settings/source-control",
+  "/settings/research",
   "/settings/connections",
   "/settings/tool-guard",
   "/settings/skills",

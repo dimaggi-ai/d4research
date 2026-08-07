@@ -642,82 +642,79 @@ export type HandoffSettings = typeof HandoffSettings.Type;
 export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = Schema.decodeSync(HandoffSettings)({});
 
 // ── Research settings ────────────────────────────────────────────────────
-export const RESEARCH_STAGE_MAX_COUNT = 12;
+export const RESEARCH_PROMPT_FILE_MAX_COUNT = 8;
+export const RESEARCH_PROMPT_FILE_MAX_CHARS = 64_000;
+export const RESEARCH_PIPELINE_PROMPT_MAX_CHARS = 32_000;
+/** Hard per-turn ceiling on `research_delegate` calls the server will honor. */
+export const RESEARCH_DELEGATION_BUDGET_PER_TURN = 24;
+/** Hard ceiling on delegations attributed to one pipeline step per turn. */
+export const RESEARCH_STEP_VISIT_LIMIT = 3;
 
 /**
- * One configurable deep-research stage. `suggestedInstanceId`/`suggestedModel`
- * are suggestions the user may act on (e.g. via provider handoff) — nothing
- * auto-runs them. Stages sharing a `parallelGroup` number are independent and
- * may be worked concurrently.
+ * One prompt file attached to the research pipeline. Referenced from the
+ * pipeline prompt by name via `!provider:model:<name>`; the server inlines the
+ * content into the delegated request so the orchestrator context never carries
+ * file bodies. Content is capped because settings travel over the websocket.
  */
-export const ResearchStageConfig = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  title: TrimmedNonEmptyString,
-  goal: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  suggestedInstanceId: Schema.optionalKey(ProviderInstanceId),
-  suggestedModel: Schema.optionalKey(TrimmedNonEmptyString),
-  parallelGroup: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+export const ResearchPromptFile = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  content: Schema.String.check(Schema.isMaxLength(RESEARCH_PROMPT_FILE_MAX_CHARS)),
 });
-export type ResearchStageConfig = typeof ResearchStageConfig.Type;
+export type ResearchPromptFile = typeof ResearchPromptFile.Type;
 
-// The built-in five stages. This literal is the single source of truth for
-// the default research flow: settings decode to it when unset, and the web
-// research prompt falls back to it when every configured stage is disabled.
-const DEFAULT_RESEARCH_STAGES_INPUT = [
-  {
-    id: "scope",
-    title: "Scope the question",
-    goal: "Pin down the question, constraints, and what a complete answer looks like.",
-  },
-  {
-    id: "gather",
-    title: "Gather primary evidence",
-    goal: "Find primary sources, data, and implementation details.",
-  },
-  {
-    id: "test",
-    title: "Test competing explanations",
-    goal: "Weigh alternative explanations against the collected evidence.",
-  },
-  {
-    id: "challenge",
-    title: "Challenge findings",
-    goal: "Look for missing evidence, regressions, and false confidence.",
-  },
-  {
-    id: "synthesize",
-    title: "Synthesize the answer",
-    goal: "Merge cited findings into the final answer, preserving uncertainty.",
-  },
-];
-
+/**
+ * Deep-research pipeline configuration. `pipelinePrompt` is the user-authored
+ * plan the orchestrator must follow verbatim; `!provider:model[:file.md]`
+ * directives inside it name delegation targets. `orchestratorSelection`
+ * chooses which provider/model runs the research thread; null keeps the
+ * thread's current selection.
+ */
 export const ResearchSettings = Schema.Struct({
-  stages: Schema.Array(ResearchStageConfig)
-    .check(Schema.isMaxLength(RESEARCH_STAGE_MAX_COUNT))
-    .pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RESEARCH_STAGES_INPUT))),
+  orchestratorSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  pipelinePrompt: Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+  promptFiles: Schema.Array(ResearchPromptFile)
+    .check(Schema.isMaxLength(RESEARCH_PROMPT_FILE_MAX_COUNT))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /**
+   * Research handoffs skip context compression and carry the transcript as-is.
+   * Research pipelines lose evidence to summarization, so this defaults on.
+   */
+  bypassCompression: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Inject local shared-memory matches into every delegated request. */
+  shareMemoContext: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type ResearchSettings = typeof ResearchSettings.Type;
 
 export const DEFAULT_RESEARCH_SETTINGS: ResearchSettings = Schema.decodeSync(ResearchSettings)({});
-export const DEFAULT_RESEARCH_STAGES: ReadonlyArray<ResearchStageConfig> =
-  DEFAULT_RESEARCH_SETTINGS.stages;
 
 // ── Memory connector settings ────────────────────────────────────────────
+export const MemoryLocalBackend = Schema.Literals(["builtin", "memo-rest"]);
+export type MemoryLocalBackend = typeof MemoryLocalBackend.Type;
+
 export const MemoryConnectorSettings = Schema.Struct({
   localEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
     Schema.annotateKey({
-      title: "Enable local Memo",
-      description: "Enable the on-device Memo REST memory server.",
+      title: "Enable local shared memory",
+      description: "Enable the local shared-memory connector.",
       providerSettingsForm: { control: "switch" },
     }),
   ),
+  /**
+   * Which store backs the local connector. `builtin` is the zero-dependency
+   * SQLite store inside the T3 server; `memo-rest` talks to an external Memo
+   * REST server at `localBaseUrl`.
+   */
+  localBackend: MemoryLocalBackend.pipe(Schema.withDecodingDefault(Effect.succeed("builtin"))),
   localBaseUrl: TrimmedString.pipe(
     Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:8099")),
     Schema.annotateKey({
       title: "Memo base URL",
-      description: "Base URL for the local Memo REST server.",
+      description: "Base URL for the external Memo REST server (memo-rest backend only).",
       providerSettingsForm: { placeholder: "http://127.0.0.1:8099", clearWhenEmpty: "omit" },
     }),
   ),
@@ -948,6 +945,7 @@ export const ServerSettingsPatch = Schema.Struct({
   memory: Schema.optionalKey(
     Schema.Struct({
       localEnabled: Schema.optionalKey(Schema.Boolean),
+      localBackend: Schema.optionalKey(MemoryLocalBackend),
       localBaseUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
@@ -969,12 +967,18 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   research: Schema.optionalKey(
     Schema.Struct({
-      // Whole-array replacement. Stage lists are small and ordered; per-index
-      // patches would risk half-merged reorders. The web UI sends the full
-      // list every time it edits stages.
-      stages: Schema.optionalKey(
-        Schema.Array(ResearchStageConfig).check(Schema.isMaxLength(RESEARCH_STAGE_MAX_COUNT)),
+      orchestratorSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+      pipelinePrompt: Schema.optionalKey(
+        Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)),
       ),
+      // Whole-array replacement. The file list is small and ordered; per-index
+      // patches would risk half-merged edits. The web UI sends the full list
+      // every time it changes.
+      promptFiles: Schema.optionalKey(
+        Schema.Array(ResearchPromptFile).check(Schema.isMaxLength(RESEARCH_PROMPT_FILE_MAX_COUNT)),
+      ),
+      bypassCompression: Schema.optionalKey(Schema.Boolean),
+      shareMemoContext: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   providers: Schema.optionalKey(

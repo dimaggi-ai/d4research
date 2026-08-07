@@ -4,6 +4,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/source-control"
+  | "/settings/research"
   | "/settings/connections"
   | "/settings/tool-guard"
   | "/settings/skills"
@@ -27,6 +28,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
+  "/settings/research": "Research",
   "/settings/connections": "Connections",
   "/settings/tool-guard": "Tool Guard",
   "/settings/skills": "Skills",
@@ -167,15 +169,39 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "handoff",
   },
   {
-    id: "deep-research",
-    title: "Deep research",
-    to: "/settings/general",
+    id: "research-pipeline",
+    title: "Research",
+    to: "/settings/research",
   },
   {
-    id: "deep-research-stages",
-    title: "Research stages",
-    to: "/settings/general",
-    targetId: "deep-research",
+    id: "research-orchestrator-model",
+    title: "Orchestrator model",
+    to: "/settings/research",
+    targetId: "research-pipeline",
+  },
+  {
+    id: "research-pipeline-prompt",
+    title: "Pipeline",
+    to: "/settings/research",
+    targetId: "research-pipeline",
+  },
+  {
+    id: "research-prompt-files",
+    title: "Prompt files",
+    to: "/settings/research",
+    targetId: "research-pipeline",
+  },
+  {
+    id: "research-directive-help",
+    title: "Directive reference",
+    to: "/settings/research",
+    targetId: "research-pipeline",
+  },
+  {
+    id: "research-context",
+    title: "Research context",
+    to: "/settings/research",
+    targetId: "research-pipeline",
   },
   {
     id: "tool-guard-policies",

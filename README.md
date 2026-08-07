@@ -103,7 +103,7 @@ Switch models mid-conversation without losing context. The system summarizes a b
 
 ### Local Shared Memory
 
-Providers exchange durable findings through a local [Memo](https://github.com/dimaggi-ai/meko-mcp-server) connector. Handoff context, evidence, file paths, commands, and uncertainty survive across provider switches and sessions.
+Providers exchange durable findings through a local shared-memory connector. Handoff context, evidence, file paths, commands, and uncertainty survive across provider switches and sessions. The default backend is a built-in SQLite store (FTS5 keyword search) inside the server itself — zero external dependencies. An external Memo REST server can be selected instead via the `memo-rest` backend in settings.
 
 ### Managed Tool Guard
 

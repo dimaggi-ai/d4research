@@ -1,43 +1,9 @@
 import * as Effect from "effect/Effect";
 
-import { ServerSettingsService } from "../../../serverSettings.ts";
-import {
-  DEFAULT_LOCAL_MEMO_BASE_URL,
-  MemoryConnectorError,
-  makeLocalMemoConnector,
-} from "./connectors.ts";
+import { makeConfiguredMemoryConnector } from "./localConnector.ts";
 import { MemoryToolkit } from "./tools.ts";
 
-const getMemorySettings = Effect.fn("memory.getSettings")(function* () {
-  const service = yield* ServerSettingsService;
-  return yield* service.getSettings.pipe(
-    Effect.map((settings) => settings.memory),
-    Effect.mapError(
-      (cause) =>
-        new MemoryConnectorError({
-          connector: "local",
-          operation: "configure",
-          message: "Could not read memory connector settings.",
-          cause,
-        }),
-    ),
-  );
-});
-
-const getLocalConnector = Effect.fn("memory.getLocalConnector")(function* () {
-  const settings = yield* getMemorySettings();
-  if (!settings.localEnabled) {
-    return yield* new MemoryConnectorError({
-      connector: "local",
-      operation: "configure",
-      message: "Local Memo is disabled in Settings → Connections.",
-    });
-  }
-  return yield* makeLocalMemoConnector({
-    baseUrl:
-      process.env.T3CODE_LOCAL_MEMO_URL ?? settings.localBaseUrl ?? DEFAULT_LOCAL_MEMO_BASE_URL,
-  });
-});
+const getLocalConnector = makeConfiguredMemoryConnector;
 
 const handlers = {
   memory_search: (input) =>

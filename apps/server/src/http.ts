@@ -58,10 +58,7 @@ import {
   shareSkill,
   type SkillsInventoryEntry,
 } from "./skillsInventory.ts";
-import {
-  DEFAULT_LOCAL_MEMO_BASE_URL,
-  makeLocalMemoConnector,
-} from "./mcp/toolkits/memory/connectors.ts";
+import { makeConfiguredMemoryConnector } from "./mcp/toolkits/memory/localConnector.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -450,21 +447,7 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
           { status: 400 },
         );
       }
-      const settingsService = yield* ServerSettingsService;
-      const settings = yield* settingsService.getSettings;
-      if (!settings.memory.localEnabled) {
-        return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Local Memo is disabled in Settings → Connections." },
-          { status: 503 },
-        );
-      }
-      const connector = yield* makeLocalMemoConnector({
-        baseUrl:
-          process.env.T3CODE_LOCAL_MEMO_URL ??
-          settings.memory.localBaseUrl ??
-          DEFAULT_LOCAL_MEMO_BASE_URL,
-        timeoutMs: 5_000,
-      });
+      const connector = yield* makeConfiguredMemoryConnector();
       const result = yield* connector.add(text, "t3research-provider-handoff", project);
       return HttpServerResponse.jsonUnsafe(
         { ok: result.ok },
@@ -569,6 +552,8 @@ interface HandoffPrepareBody {
   readonly sourceThreadId?: unknown;
   readonly sourceThreadTitle?: unknown;
   readonly target?: unknown;
+  /** Skip compression entirely and hand the transcript over as-is. */
+  readonly bypassCompression?: unknown;
 }
 
 function readHandoffPrepareTarget(
@@ -601,6 +586,17 @@ export function selectHandoffCompressionPlan(compression: {
     return "provider";
   }
   return "local";
+}
+
+/**
+ * The prepare route's actual plan: a research bypass wins over every
+ * compression setting — pipeline evidence crosses the handoff verbatim.
+ */
+export function resolveHandoffPreparePlan(
+  compression: Parameters<typeof selectHandoffCompressionPlan>[0],
+  bypassCompression: boolean,
+): HandoffCompressionPlan {
+  return bypassCompression ? "passthrough" : selectHandoffCompressionPlan(compression);
 }
 
 export function buildHandoffMemoryText(input: {
@@ -656,9 +652,15 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
       const settingsService = yield* ServerSettingsService;
       const settings = yield* settingsService.getSettings;
       const compression = settings.handoff.contextCompression;
-      const clipped = transcript.slice(0, compression.maxInputCharacters);
+      // Research pipelines opt out of compression: evidence must survive the
+      // handoff verbatim, so the transcript skips the input clip too (the
+      // 60k transport guard above still applies).
+      const bypassCompression = body.bypassCompression === true;
+      const clipped = bypassCompression
+        ? transcript
+        : transcript.slice(0, compression.maxInputCharacters);
 
-      const plan = selectHandoffCompressionPlan(compression);
+      const plan = resolveHandoffPreparePlan(compression, bypassCompression);
       let compressed: string;
       if (plan === "passthrough") {
         compressed = clipped;
@@ -692,13 +694,7 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
       let memoryPersisted = false;
       if (settings.memory.localEnabled) {
         memoryPersisted = yield* Effect.gen(function* () {
-          const connector = yield* makeLocalMemoConnector({
-            baseUrl:
-              process.env.T3CODE_LOCAL_MEMO_URL ??
-              settings.memory.localBaseUrl ??
-              DEFAULT_LOCAL_MEMO_BASE_URL,
-            timeoutMs: 5_000,
-          });
+          const connector = yield* makeConfiguredMemoryConnector();
           const result = yield* connector.add(
             buildHandoffMemoryText({
               summary: compressed,

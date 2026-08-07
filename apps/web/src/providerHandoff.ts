@@ -151,6 +151,11 @@ export interface PrepareProviderHandoffInput {
   readonly sourceThreadId?: string | undefined;
   readonly sourceThreadTitle?: string | undefined;
   readonly target?: { readonly instanceId: string; readonly model: string } | undefined;
+  /**
+   * Skip compression server-side and hand the transcript over as-is.
+   * Research handoffs set this: pipeline evidence must survive verbatim.
+   */
+  readonly bypassCompression?: boolean | undefined;
 }
 
 /**

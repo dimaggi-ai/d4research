@@ -4,6 +4,8 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { HttpClient } from "effect/unstable/http";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as Path from "effect/Path";
+import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { MemoryConnectorError, MemoryEntry } from "./connectors.ts";
 
@@ -11,6 +13,8 @@ const dependencies = [
   McpInvocationContext.McpInvocationContext,
   HttpClient.HttpClient,
   ServerSettingsService,
+  ServerConfig.ServerConfig,
+  Path.Path,
 ];
 
 const Connector = Schema.Literal("local").pipe(

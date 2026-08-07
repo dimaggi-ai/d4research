@@ -185,10 +185,10 @@ import { lazyWithReload } from "../lazyWithReload";
 import {
   DEEP_RESEARCH_TAG,
   deriveResearchProviderCandidates,
-  expandDeepResearchPrompt,
+  expandResearchPipelinePrompt,
   isDeepResearchPrompt,
-  resolveResearchStages,
-} from "../researchMode";
+  researchPipelineFromSettings,
+} from "../researchPipeline";
 import {
   canAutoDispatchQueuedRequest,
   type QueuedChatRequest,
@@ -256,11 +256,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
-import {
-  deriveActiveStageSuggestion,
-  deriveResearchBannerSteps,
-  ResearchProgressBanner,
-} from "./chat/ResearchProgressBanner";
+import { deriveResearchBannerSteps, ResearchProgressBanner } from "./chat/ResearchProgressBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -2111,9 +2107,9 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveResearchProviderCandidates(providerHandoffEntries),
     [providerHandoffEntries],
   );
-  const researchStages = useMemo(
-    () => resolveResearchStages(settings.research.stages),
-    [settings.research.stages],
+  const researchPipeline = useMemo(
+    () => researchPipelineFromSettings(settings.research),
+    [settings.research],
   );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
@@ -2218,37 +2214,6 @@ function ChatViewContent(props: ChatViewProps) {
   const researchBannerKey = `${activeThreadId ?? "none"}:${activePlan?.turnId ?? "none"}`;
   const [dismissedResearchBannerKey, setDismissedResearchBannerKey] = useState<string | null>(null);
   const researchBannerDismissed = dismissedResearchBannerKey === researchBannerKey;
-  // The active stage may suggest a different provider/model (configured in
-  // Settings → Deep Research). This only surfaces a user-triggered affordance
-  // that reuses the normal handoff flow — nothing switches automatically.
-  const researchStageSuggestion = useMemo(() => {
-    if (!isResearchThread || !activeThread) return null;
-    const suggestion = deriveActiveStageSuggestion({
-      steps: activePlan?.steps ?? [],
-      stages: researchStages,
-      current: {
-        instanceId: String(activeThread.modelSelection.instanceId),
-        model: activeThread.modelSelection.model,
-      },
-    });
-    if (!suggestion) return null;
-    const entry = providerHandoffEntries.find(
-      (candidate) => String(candidate.instanceId) === suggestion.instanceId,
-    );
-    if (
-      !entry ||
-      !entry.enabled ||
-      !entry.isAvailable ||
-      entry.status !== "ready" ||
-      !entry.models.some((model) => model.slug === suggestion.model)
-    ) {
-      return null;
-    }
-    return {
-      label: `${entry.displayName} / ${suggestion.model}`,
-      modelSelection: { instanceId: entry.instanceId, model: suggestion.model },
-    };
-  }, [activePlan?.steps, activeThread, isResearchThread, providerHandoffEntries, researchStages]);
   const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
@@ -5017,10 +4982,10 @@ function ChatViewContent(props: ChatViewProps) {
       messageTextWithPreviewAnnotations,
       composerReviewCommentsSnapshot,
     );
-    const researchMessageTextForSend = expandDeepResearchPrompt(
+    const researchMessageTextForSend = expandResearchPipelinePrompt(
       messageTextForSend,
+      researchPipeline,
       researchProviderCandidates,
-      researchStages,
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
@@ -5862,13 +5827,17 @@ function ChatViewContent(props: ChatViewProps) {
 
       try {
         const compression = settings.handoff.contextCompression;
+        // Research handoffs carry the transcript as-is: pipeline evidence must
+        // not be summarized away between steps. 60k is the server's transport
+        // guard for the prepare route.
+        const bypassCompression = isResearchThread && settings.research.bypassCompression;
         const transcript =
           buildStructuredHandoffTranscript(
             displayServerMessages.map((message) => ({
               role: message.role,
               text: message.text,
             })),
-            compression.maxInputCharacters,
+            bypassCompression ? 60_000 : compression.maxInputCharacters,
           ) || `Continue the work from ${activeThread.title}.`;
         // One round-trip: the server compresses per settings and persists the
         // compressed summary to local Memo. On failure the structured
@@ -5879,6 +5848,7 @@ function ChatViewContent(props: ChatViewProps) {
           sourceThreadId: activeThread.id,
           sourceThreadTitle: activeThread.title,
           target: targetModelSelection,
+          bypassCompression,
         });
         const summary = prepared ?? transcript;
         if (prepared === null) {
@@ -5963,6 +5933,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThread,
       displayServerMessages,
       environmentId,
+      isResearchThread,
       isSendBusy,
       providerHandoffBusy,
       providerHandoffEntries,
@@ -5981,11 +5952,31 @@ function ChatViewContent(props: ChatViewProps) {
       composerRef.current?.focusAtEnd();
       return;
     }
+    // Starting research is the explicit action the configured orchestrator
+    // model is *for* — switch through the normal handoff flow so history and
+    // rollback behave exactly like a manual model change.
+    const orchestrator = settings.research.orchestratorSelection;
+    if (
+      orchestrator !== null &&
+      activeThread &&
+      !providerHandoffBusy &&
+      (String(activeThread.modelSelection.instanceId) !== String(orchestrator.instanceId) ||
+        activeThread.modelSelection.model !== orchestrator.model)
+    ) {
+      void onProviderHandoff(orchestrator);
+    }
     const nextPrompt = currentPrompt.trim()
       ? `${DEEP_RESEARCH_TAG} ${currentPrompt.trimStart()}`
       : `${DEEP_RESEARCH_TAG} `;
     composerRef.current?.replacePrompt(nextPrompt);
-  }, [composerRef, promptRef]);
+  }, [
+    activeThread,
+    composerRef,
+    onProviderHandoff,
+    promptRef,
+    providerHandoffBusy,
+    settings.research.orchestratorSelection,
+  ]);
 
   const getModelDisabledReason = useCallback(
     (): string | null => (providerHandoffBusy ? "Handoff in progress." : null),
@@ -6438,13 +6429,6 @@ function ChatViewContent(props: ChatViewProps) {
                           <ResearchProgressBanner
                             steps={researchBannerSteps}
                             isRunning={phase === "running"}
-                            suggestionLabel={researchStageSuggestion?.label ?? null}
-                            onApplySuggestion={
-                              researchStageSuggestion && !providerHandoffBusy
-                                ? () =>
-                                    void onProviderHandoff(researchStageSuggestion.modelSelection)
-                                : undefined
-                            }
                             onDismiss={
                               phase === "running"
                                 ? undefined

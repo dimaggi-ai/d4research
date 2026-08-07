@@ -143,7 +143,6 @@ import {
   type ProviderUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
-import { ResearchStagesSettingsSection } from "./ResearchStagesSettingsSection";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
   backgroundActivitySharedPolicySettings,
@@ -2440,13 +2439,6 @@ export function GeneralSettingsPanel() {
           </>
         ) : null}
       </SettingsSection>
-
-      <ResearchStagesSettingsSection
-        stages={settings.research.stages}
-        onStagesChange={(stages) => updateSettings({ research: { stages } })}
-        instanceEntries={textGenerationModelInstanceEntries}
-        modelOptionsByInstance={textGenerationModelOptionsByInstance}
-      />
 
       <SettingsSection title="Agent permissions">
         <SettingsRow

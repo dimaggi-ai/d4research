@@ -4,55 +4,78 @@ d4research is a research workspace for evidence-heavy work across models and pro
 mode structures an investigation, while provider handoff preserves one continuous chat when the
 active model changes.
 
+## Configure the pipeline
+
+Research runs a **pipeline you author** in **Settings → Research**. The intended flow: attach
+your role prompt files first, check the directive reference for exact model names, then paste the
+main pipeline prompt — the live validation under it shows every link resolved (or exactly why
+not) before you run anything.
+
+| Field                  | Purpose                                                                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Orchestrator model** | The provider/model that runs the pipeline. Off uses the thread's current model. A mid-tier model is fine — the pipeline does the thinking; the orchestrator follows it. |
+| **Pipeline**           | Numbered steps the orchestrator must follow verbatim. Loops between steps are allowed.                                                                                  |
+| **Prompt files**       | Markdown attachments a step can hand to a delegate. View them in a popup, remove them any time.                                                                         |
+
+Inside the pipeline, reference models with directives:
+
+```
+!provider:model              e.g. !claude:fable   or  !codex:terra
+!provider:model:file.md      also sends the named prompt file to that model
+```
+
+Provider matches by name (`claude`, `codex`, `junie`, …); the model fragment can be partial as long
+as it is unambiguous (`fable` → `claude-fable-5`). The settings screen validates every directive
+live and shows what it resolved to — or exactly why it did not.
+
+A pipeline can fan out and loop:
+
+```
+Step 1: Scope the question.
+Step 2: Fan out to !claude:fable:depth.md, !codex:terra, and !junie:opus.
+Step 3: Summarize all answers.
+Step 4: Argue with the summary. If it does not hold, ask one model to regenerate and go back to step 3.
+Step 5: Validate and deliver.
+```
+
 ## Start deep research
 
 Type `#deep-research` at the very start of your prompt, or click the **telescope icon** in the
-composer footer. d4research expands the tag into a research-lead brief that asks the active provider
-to plan the investigation, delegate to specialist roles, preserve evidence, challenge weak
-conclusions, and synthesize the result.
+composer footer. If a dedicated orchestrator model is configured, starting research switches the
+thread to it through the normal handoff flow first.
 
 ```
 #deep-research Why does the PTY wrapper hang on macOS but not Linux?
 ```
 
-If you click the telescope button, `#deep-research ` is prepended to whatever is already in the
-composer. The tag must appear at the very start of the prompt (after optional whitespace) — placing
-it later in the text has no effect.
-
 ### How it works
 
-When you send the message, `expandDeepResearchPrompt()` detects the tag, strips it, and injects a
-structured brief. The brief:
+The tag expands into an orchestrator brief that quotes your pipeline **verbatim** and binds it to a
+strict execution protocol:
 
-1. Instructs the provider to act as "research lead for this d4research thread."
-2. Lists all ready provider CLIs with their available models so the lead can delegate.
-3. Suggests four roles, round-robin assigned to available providers.
-4. Caps concurrent delegation at three agents and forbids recursive delegation.
-5. Requires status reports after each stage.
-6. Instructs agents to store and retrieve findings via `memory_remember` / `memory_search` with
-   connector `"local"`.
-7. Appends the user's actual research question.
+1. **Trace** — the orchestrator keeps one plan entry per step, marks exactly one in progress, and
+   prefixes every message with `[step N | visit K]`, so you always know where the pipeline is.
+2. **Delegate** — `!provider:model` directives execute only through the `research_delegate` tool,
+   which runs one bounded request against that provider and returns its answer. The orchestrator is
+   forbidden to claim a delegation ran unless the tool returned.
+3. **Loop guard** — the server enforces the budgets, not the model: a step can delegate to the same
+   target at most 3 times, and a research run has a hard ceiling of 24 delegations. When a guard
+   trips, the orchestrator must say which loop was cut and synthesize from what it has.
+4. **Honesty** — failed or timed-out delegates are reported as failed; links, commands, and
+   uncertainty survive summarization.
 
-### Roles
+Prompt file contents are inlined **server-side** into the delegated request, so the orchestrator's
+own context never carries the file bodies. When shared-memory injection is on, each delegate also
+receives the top local-memory matches for its request **verbatim** — no summarization between what
+one model learned and what the next one reads. Research handoffs skip context compression by
+default for the same reason.
 
-The brief suggests four specialist roles:
+### Tracing
 
-| Role            | Purpose                                                        |
-| --------------- | -------------------------------------------------------------- |
-| **Scout**       | Find primary evidence and map the problem                      |
-| **Analyst**     | Test competing explanations and inspect implementation details |
-| **Challenger**  | Look for missing evidence, regressions, and false confidence   |
-| **Synthesizer** | Merge cited findings into the final answer                     |
-
-These are prompt-suggested roles, not guaranteed background jobs. The provider uses whatever
-delegation tools it actually has and advertises only providers that are currently ready. Only
-enabled, available, and ready provider instances with at least one model appear in the brief.
-
-### Memory integration
-
-When local Memo tools are available, research agents should store durable findings (with sources,
-file paths, commands, and uncertainty) via `memory_remember` and retrieve shared context via
-`memory_search` before each handoff. The visible thread remains the authoritative record.
+The research banner above the composer shows the step ledger: which step is active, how many are
+done, and the full list when expanded. Delegations appear in the thread as ordinary tool calls with
+their step and visit numbers, so a cycling pipeline is visible — and provably terminated — rather
+than a mystery.
 
 ## Provider handoff
 
@@ -123,11 +146,12 @@ never hard-fails; it always degrades gracefully.
 
 ## Boundaries
 
-- Deep Research structures a provider prompt; it does not create an unbounded autonomous swarm.
-- Suggested roles and available providers are not proof that delegated work ran.
+- Deep Research executes the pipeline you wrote; it does not create an unbounded autonomous swarm.
+- Delegations are real, bounded, budgeted calls; the orchestrator may not claim one ran unless it did, and delegates cannot delegate further.
 - Provider-native authentication and permission behavior still apply.
-- Research mode is entirely client-side — there is no server-side orchestration type for research
-  threads. They appear as normal threads in the sidebar.
+- Research threads appear as normal threads in the sidebar. The pipeline brief is composed
+  client-side; delegation runs through the server's `research_delegate` tool with server-enforced
+  budgets.
 - Tool Guard is separate and opt-in. See [Tool Guard](./tool-guard.md).
 - Voice conversation requires the d2 local voice gateway. It is an environment integration, not a
   hosted service bundled with a generic checkout.
@@ -136,8 +160,8 @@ never hard-fails; it always degrades gracefully.
 
 | File                                            | Role                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------- |
-| `apps/web/src/researchMode.ts`                  | Tag detection, prompt expansion, role assignment            |
-| `apps/web/src/researchMode.test.ts`             | Tests for tag detection and expansion                       |
+| `apps/web/src/researchPipeline.ts`              | Tag detection, directive parsing, orchestrator brief        |
+| `apps/server/src/mcp/toolkits/research/`        | `research_delegate` tool, delegation budgets                |
 | `apps/web/src/providerHandoff.ts`               | Handoff transcript, prompt, memory, compression client      |
 | `apps/web/src/components/ChatView.tsx`          | `onProviderHandoff` orchestration, `onStartDeepResearch`    |
 | `apps/web/src/components/chat/ChatComposer.tsx` | Telescope button UI                                         |

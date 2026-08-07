@@ -8,50 +8,6 @@ export interface ResearchProgressStep {
   readonly status: "pending" | "inProgress" | "completed";
 }
 
-export interface ResearchStageSuggestionSource {
-  readonly title: string;
-  readonly suggestedInstanceId?: string | undefined;
-  readonly suggestedModel?: string | undefined;
-}
-
-export interface ResearchStageSuggestion {
-  readonly instanceId: string;
-  readonly model: string;
-}
-
-function normalizeStageTitle(title: string): string {
-  return title.trim().toLowerCase();
-}
-
-/**
- * The provider/model the active research stage suggests, when it differs from
- * the thread's current selection. Matching is by stage title because plan
- * steps are free text the provider echoes back — the prompt asks for exact
- * stage titles, so a title match is the stage. Returns null when nothing is
- * suggested or the suggestion is already active; acting on it is always a
- * user decision.
- */
-export function deriveActiveStageSuggestion(input: {
-  readonly steps: ReadonlyArray<ResearchProgressStep>;
-  readonly stages: ReadonlyArray<ResearchStageSuggestionSource>;
-  readonly current: { readonly instanceId: string; readonly model: string } | null;
-}): ResearchStageSuggestion | null {
-  const { current } = summarizeResearchProgress(input.steps);
-  if (current === null) return null;
-  const stage = input.stages.find(
-    (candidate) => normalizeStageTitle(candidate.title) === normalizeStageTitle(current),
-  );
-  if (!stage?.suggestedInstanceId || !stage.suggestedModel) return null;
-  if (
-    input.current !== null &&
-    input.current.instanceId === stage.suggestedInstanceId &&
-    input.current.model === stage.suggestedModel
-  ) {
-    return null;
-  }
-  return { instanceId: stage.suggestedInstanceId, model: stage.suggestedModel };
-}
-
 /**
  * Steps the research banner should render. Until the running turn writes its
  * own plan, the active plan falls back to the previous turn's so todo lists
@@ -102,15 +58,10 @@ export function summarizeResearchProgress(steps: ReadonlyArray<ResearchProgressS
 export const ResearchProgressBanner = memo(function ResearchProgressBanner({
   steps,
   isRunning,
-  suggestionLabel,
-  onApplySuggestion,
   onDismiss,
 }: {
   readonly steps: ReadonlyArray<ResearchProgressStep>;
   readonly isRunning: boolean;
-  /** Label for the active stage's suggested provider/model, if any. */
-  readonly suggestionLabel?: string | null;
-  readonly onApplySuggestion?: (() => void) | undefined;
   /** Closes the banner. Offered once the research is no longer running. */
   readonly onDismiss?: (() => void) | undefined;
 }) {
@@ -158,20 +109,6 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
           </button>
         ) : null}
       </div>
-      {suggestionLabel && onApplySuggestion ? (
-        <div className="mt-1.5 flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            Stage suggests {suggestionLabel}
-          </span>
-          <button
-            type="button"
-            className="shrink-0 rounded-md border border-border/60 px-2 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
-            onClick={onApplySuggestion}
-          >
-            Hand off
-          </button>
-        </div>
-      ) : null}
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full rounded-full bg-violet-400 transition-[width]"

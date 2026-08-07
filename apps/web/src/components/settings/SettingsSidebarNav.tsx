@@ -20,6 +20,7 @@ import {
   Settings2Icon,
   ShieldCheckIcon,
   SparklesIcon,
+  TelescopeIcon,
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -53,6 +54,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/research": TelescopeIcon,
   "/settings/connections": Link2Icon,
   "/settings/tool-guard": ShieldCheckIcon,
   "/settings/skills": SparklesIcon,

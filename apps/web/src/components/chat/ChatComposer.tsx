@@ -207,7 +207,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { isDeepResearchPrompt, DEEP_RESEARCH_TAG } from "../../researchMode";
+import { isDeepResearchPrompt, DEEP_RESEARCH_TAG } from "../../researchPipeline";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,

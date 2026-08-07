@@ -199,6 +199,7 @@ describe("ServerSettings memory connectors", () => {
     const settings = decodeServerSettings({});
     expect(settings.memory).toEqual({
       localEnabled: true,
+      localBackend: "builtin",
       localBaseUrl: "http://127.0.0.1:8099",
     });
   });
@@ -216,6 +217,7 @@ describe("ServerSettings memory connectors", () => {
       }).memory,
     ).toEqual({
       localEnabled: true,
+      localBackend: "builtin",
       localBaseUrl: "http://127.0.0.1:8099",
     });
   });

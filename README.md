@@ -4,9 +4,9 @@ A multi-provider coding agent workspace for structured research, built on the [T
 
 ## Installation
 
-Desktop builds are published on the [releases page](https://github.com/dimaggi-ai/d4research/releases). They are cut on a maintainer machine rather than in CI, so the set of platforms tracks whatever that machine can build — currently a Linux `x86_64` AppImage — and the binaries are unsigned. macOS and Windows installers are not published; build them from source, or run from source on any platform.
+**Run this fork from source** — see [Setup](#setup) below. No prebuilt binaries are published yet: the [releases page](https://github.com/dimaggi-ai/d4research/releases) is currently empty, and there is no npm package or Docker image. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
-There is no npm package or Docker image for this fork. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
+Desktop artifacts are cut on a maintainer machine rather than in CI, so when they do land the platform set tracks whatever that machine can build — a Linux `x86_64` AppImage via `vp run dist:desktop:linux` — and the binaries are unsigned. macOS and Windows installers are not published; build them from source with the matching `dist:desktop:*` script, or run from source on any platform.
 
 ### Requirements
 

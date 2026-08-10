@@ -2218,8 +2218,12 @@ function ChatViewContent(props: ChatViewProps) {
   // recent pipeline controls the visible progress label without changing the
   // thread-wide research compression policy above.
   const pipelineKind = useMemo(
-    () => deriveThreadPipelineKind(activeThread?.messages ?? []),
-    [activeThread?.messages],
+    () =>
+      deriveThreadPipelineKind(
+        activeThread?.messages ?? [],
+        activeThread?.session?.activeTurnId ?? null,
+      ),
+    [activeThread?.messages, activeThread?.session?.activeTurnId],
   );
   // A completed plan inherited from a previous turn would render as a 100%
   // bar at the start of a new research run; hide it until the lead posts its

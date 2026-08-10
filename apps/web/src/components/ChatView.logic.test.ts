@@ -55,21 +55,83 @@ describe("resolveProjectOpenInCwd", () => {
 });
 
 describe("research launch and composer retry safety", () => {
-  it("uses the most recently armed research or dev pipeline for progress", () => {
+  it("labels the active turn by the pipeline prompt that armed it", () => {
+    const devTurn = TurnId.make("turn-dev");
+    const researchTurn = TurnId.make("turn-research");
+    // The running turn is the dev pipeline; an earlier research prompt on a
+    // different turn does not win.
     expect(
-      deriveThreadPipelineKind([
-        { role: "user", text: "#deep-research investigate storage" },
-        { role: "assistant", text: "Working" },
-        { role: "user", text: "!dev:review review before push" },
-      ]),
+      deriveThreadPipelineKind(
+        [
+          { role: "user", text: "#deep-research investigate storage", turnId: researchTurn },
+          { role: "assistant", text: "Working", turnId: researchTurn },
+          { role: "user", text: "!dev:review review before push", turnId: devTurn },
+        ],
+        devTurn,
+      ),
     ).toBe("dev");
+    // A research prompt owns its own turn just the same.
     expect(
-      deriveThreadPipelineKind([
-        { role: "user", text: "!dev:review old run" },
-        { role: "user", text: "#deep-research new run" },
-      ]),
+      deriveThreadPipelineKind(
+        [
+          { role: "user", text: "!dev:review old run", turnId: devTurn },
+          { role: "user", text: "#deep-research new run", turnId: researchTurn },
+        ],
+        researchTurn,
+      ),
     ).toBe("research");
-    expect(deriveThreadPipelineKind([{ role: "assistant", text: "!dev:review" }])).toBeNull();
+    // A `!dev` string an assistant merely echoed never arms a pipeline.
+    expect(
+      deriveThreadPipelineKind(
+        [{ role: "assistant", text: "!dev:review", turnId: devTurn }],
+        devTurn,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not light the pipeline banner for a stale `!dev` when an ordinary turn runs", () => {
+    const devTurn = TurnId.make("turn-dev");
+    const chatTurn = TurnId.make("turn-chat");
+    // Old `!dev` on a prior turn, then an ordinary prompt that is now running.
+    expect(
+      deriveThreadPipelineKind(
+        [
+          { role: "user", text: "!dev:review review before push", turnId: devTurn },
+          { role: "assistant", text: "Reviewed.", turnId: devTurn },
+          { role: "user", text: "what does this function do?", turnId: chatTurn },
+        ],
+        chatTurn,
+      ),
+    ).toBeNull();
+  });
+
+  it("retains the pipeline kind for the active turn across a provider handoff", () => {
+    const devTurn = TurnId.make("turn-dev");
+    // A handoff continues the same running turn: the `!dev` prompt and the
+    // appended handoff context share the active turnId, so the banner stays.
+    expect(
+      deriveThreadPipelineKind(
+        [
+          { role: "user", text: "!dev:review review before push", turnId: devTurn },
+          { role: "assistant", text: "Handoff to Claude. Context loaded.", turnId: devTurn },
+        ],
+        devTurn,
+      ),
+    ).toBe("dev");
+  });
+
+  it("keeps the pipeline banner absent after a dev run completes and a normal turn runs", () => {
+    const devTurn = TurnId.make("turn-dev");
+    const chatTurn = TurnId.make("turn-chat");
+    const messages = [
+      { role: "user" as const, text: "!dev:review review before push", turnId: devTurn },
+      { role: "assistant" as const, text: "Done.", turnId: devTurn },
+      { role: "user" as const, text: "thanks, one more thing", turnId: chatTurn },
+    ];
+    // Completed dev turn followed by a running ordinary turn: no banner.
+    expect(deriveThreadPipelineKind(messages, chatTurn)).toBeNull();
+    // And with no active turn at all (idle thread), there is nothing to show.
+    expect(deriveThreadPipelineKind(messages, null)).toBeNull();
   });
 
   it("keeps an accepted research turn even when projection or navigation fails", () => {

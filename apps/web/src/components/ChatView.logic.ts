@@ -37,13 +37,26 @@ export const EMPTY_DISMISSED_RESEARCH_BANNERS: ReadonlyArray<string> = [];
 
 export type ThreadPipelineKind = "research" | "dev";
 
-/** The most recently armed pipeline owns the thread's active progress surface. */
+/**
+ * The pipeline progress surface belongs to the turn that is actually running,
+ * not to any pipeline prompt ever typed in the thread. A pipeline is armed by a
+ * `!dev`/`#deep-research` user prompt, and that prompt carries the turnId of the
+ * turn it starts. Scoping to the active turn keeps a stale prompt from an
+ * earlier — or already completed — turn from lighting the "Building" banner
+ * while an ordinary turn runs. A genuine provider handoff continues the same
+ * running turn, so its turnId is unchanged and the banner is retained. Steering
+ * messages added mid-run are ordinary text but share the running turn's turnId,
+ * so matching any pipeline prompt within the turn stays robust to them. This
+ * mirrors the server's per-turn `isPipelineOrchestratorTurn`.
+ */
 export function deriveThreadPipelineKind(
-  messages: ReadonlyArray<Pick<ChatMessage, "role" | "text">>,
+  messages: ReadonlyArray<Pick<ChatMessage, "role" | "text" | "turnId">>,
+  activeTurnId: TurnId | null,
 ): ThreadPipelineKind | null {
+  if (activeTurnId === null) return null;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (!message || message.role !== "user") continue;
+    if (!message || message.role !== "user" || message.turnId !== activeTurnId) continue;
     if (isDevPipelinePrompt(message.text)) return "dev";
     if (isDeepResearchPrompt(message.text)) return "research";
   }

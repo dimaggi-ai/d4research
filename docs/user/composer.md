@@ -25,6 +25,16 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
   file itself, so a long skill costs you a few lines rather than its whole text, and attaching a
   skill never runs it — it hands the agent instructions to follow. If nothing matches you are
   pointed at `/` to browse provider commands instead.
+- **Global** skills are selected in **Settings → Skills** with the **All chats** switch. They apply
+  to every turn in every chat. **Chat** skills are added from the **Skills** control in that chat's
+  composer and remain active only there, across reloads and provider handoffs. Global and chat
+  selections share a 12-skill ceiling; duplicates are charged once and global wins. Message bubbles
+  show `Global: name` and `Chat: name` badges. The agent reads each selected `SKILL.md`, so either
+  scope consumes context on every affected turn. A project skill overrides a same-named user skill.
+  Missing configured skills are removable and are never falsely reported as active.
+- Installing a skill from **Settings → Skills** shares its portable instructions with compatible
+  coding CLIs automatically. **Also install the Agy plugin package** is a separate opt-in because a
+  plugin can include executable hooks and MCP servers in addition to the skill.
 - `/model` jumps into the model picker; `/plan` and `/default` switch the interaction mode. A
   standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.
 
@@ -54,10 +64,21 @@ the next message.
 Press `⌘S` (Ctrl+S) with a prompt in the composer to stash it. The stash badge opens a popover of
 stashed prompts to restore or delete; stashed entries keep their attached images.
 
-## Research toggle
+## Pipeline triggers
 
-The telescope button prepends `#deep-research ` to the prompt; the tag only has an effect at the
-very start of a message. See [Research workflows](./research-workflows.md).
+Two triggers start a pipeline, and both only have an effect at the very start of a message:
+
+| Trigger            | Starts                                 |
+| ------------------ | -------------------------------------- |
+| `!research:<name>` | A research pipeline, in its own thread |
+| `!dev:<name>`      | A dev pipeline, in this thread         |
+
+The **telescope** button inserts `!research:` with the scenario selected in Settings already
+filled in; the **Build** control does the same for `!dev:`. Drop the `:<name>` to run whichever
+scenario is selected in Settings. Switching one trigger for the other replaces it rather than
+stacking both.
+
+See [Research workflows](./research-workflows.md).
 
 ## Access and interaction modes
 

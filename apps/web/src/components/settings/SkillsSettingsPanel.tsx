@@ -1,10 +1,15 @@
-import { useMemo, useState } from "react";
-import { Link2Icon, SearchIcon, Share2Icon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { DownloadIcon, Link2Icon, SearchIcon, Share2Icon } from "lucide-react";
+import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { useActiveProjectTarget } from "../../hooks/useActiveProjectTarget";
+import { Switch } from "../ui/switch";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { useProjects } from "../../state/entities";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { usePreparedConnection } from "../../state/session";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
@@ -19,26 +24,34 @@ const ROOT_ORDER: ReadonlyArray<SkillsInventoryRoot> = [
   "claude-user",
   "codex-user",
   "junie-user",
+  "agy-user",
 ];
 
 const ROOT_LABELS: Readonly<Record<SkillsInventoryRoot, string>> = {
   project: "Project",
   "claude-user": "Claude (user)",
-  "codex-user": "Codex (user)",
+  "codex-user": "Shared (user)",
   "junie-user": "Junie (user)",
+  "agy-user": "Agy (user)",
 };
 
 const ROOT_DESCRIPTIONS: Readonly<Record<SkillsInventoryRoot, string>> = {
   project: "Workspace skills under .agents/skills and .claude/skills.",
   "claude-user": "Skills under ~/.claude/skills, including category subdirectories.",
-  "codex-user": "Skills under ~/.codex/skills, including the bundled .system set.",
+  "codex-user":
+    "Skills under ~/.agents/skills, read natively by Codex, Cursor, Grok, and OpenCode; includes Codex's bundled .system set.",
   "junie-user": "Skills under ~/.junie/skills and commands under ~/.junie/commands.",
+  "agy-user": "Skills registered in ~/.gemini/config/skills.json.",
 };
 
 const AGENT_LABELS: Readonly<Record<SkillsInventoryAgent, string>> = {
   claude: "Claude",
   codex: "Codex",
+  cursor: "Cursor",
+  grok: "Grok",
+  opencode: "OpenCode",
   junie: "Junie",
+  agy: "Agy",
   all: "All agents",
 };
 
@@ -58,14 +71,26 @@ function Badge({ children, tone }: { children: string; tone: "scope" | "agent" |
   );
 }
 
+export function canEnableSkillForAllChats(
+  entry: Pick<SkillsInventoryEntry, "kind" | "scope">,
+): boolean {
+  return entry.kind === "skill" && entry.scope === "user";
+}
+
 function SkillRow({
   entry,
   sharing,
   onShare,
+  enabledByDefault,
+  defaultEnableDisabled,
+  onToggleDefault,
 }: {
   readonly entry: SkillsInventoryEntry;
   readonly sharing: string | null;
   readonly onShare: (sourcePath: string, targetRoot: SkillsInventoryRoot) => void;
+  readonly enabledByDefault: boolean;
+  readonly defaultEnableDisabled: boolean;
+  readonly onToggleDefault: (name: string, enabled: boolean) => void;
 }) {
   // Sharing a skill into the root it already lives in is a no-op the server
   // rejects, so it never appears as a choice.
@@ -97,6 +122,17 @@ function SkillRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {canEnableSkillForAllChats(entry) ? (
+          <label className="mr-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            All chats
+            <Switch
+              checked={enabledByDefault}
+              disabled={defaultEnableDisabled}
+              onCheckedChange={(checked) => onToggleDefault(entry.name, Boolean(checked))}
+              aria-label={`Enable ${entry.name} globally for all chats`}
+            />
+          </label>
+        ) : null}
         <Select
           value={target}
           onValueChange={(value) => {
@@ -132,11 +168,52 @@ function SkillRow({
 }
 
 export function SkillsSettingsPanel() {
-  // Project-scoped skills resolve against the active workspace, both for the
-  // inventory scan and for shares — the server's own cwd is not the project.
-  const activeProject = useActiveProjectTarget();
-  const inventory = useSkillsInventory(activeProject?.cwd);
+  // Settings routes have no active thread route. Select an environment-local
+  // project explicitly instead of silently scanning the server's own cwd.
+  const primaryEnvironment = usePrimaryEnvironment();
+  const projects = useProjects();
+  const projectOptions = useMemo(
+    () =>
+      projects.filter(
+        (project) =>
+          project.environmentId === primaryEnvironment?.environmentId && project.workspaceRoot,
+      ),
+    [primaryEnvironment?.environmentId, projects],
+  );
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  useEffect(() => {
+    if (projectOptions.some((project) => project.id === selectedProjectId)) return;
+    setSelectedProjectId(String(projectOptions[0]?.id ?? ""));
+  }, [projectOptions, selectedProjectId]);
+  const selectedProject = projectOptions.find(
+    (project) => String(project.id) === selectedProjectId,
+  );
+  const preparedConnectionOption = usePreparedConnection(primaryEnvironment?.environmentId ?? null);
+  const preparedConnection =
+    preparedConnectionOption._tag === "Some" ? preparedConnectionOption.value : null;
+  const inventory = useSkillsInventory(selectedProject?.workspaceRoot, {
+    preparedConnection,
+  });
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
   const [query, setQuery] = useState("");
+  const [installUrl, setInstallUrl] = useState("");
+  const [installAgyPlugin, setInstallAgyPlugin] = useState(false);
+  const [installMessage, setInstallMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingDefaultName, setSavingDefaultName] = useState<string | null>(null);
+  const [defaultSaveError, setDefaultSaveError] = useState<string | null>(null);
+
+  const runInstall = async () => {
+    const url = installUrl.trim();
+    if (url.length === 0 || inventory.installing) return;
+    setInstallMessage(null);
+    const result = await inventory.install(url, { installAgyPlugin });
+    setInstallMessage({ ok: result.ok, text: result.message });
+    if (result.ok) {
+      setInstallUrl("");
+      setInstallAgyPlugin(false);
+    }
+  };
 
   const grouped = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -154,15 +231,99 @@ export function SkillsSettingsPanel() {
   }, [inventory.entries, query]);
 
   const hasMatches = grouped.some((group) => group.entries.length > 0);
+  const enabledByDefault = settings.skills.enabledByDefault;
+  const enabledByDefaultSet = useMemo(() => new Set(enabledByDefault), [enabledByDefault]);
+  const availableSkillNames = useMemo(
+    () =>
+      new Set(
+        inventory.entries.filter((entry) => entry.kind === "skill").map((entry) => entry.name),
+      ),
+    [inventory.entries],
+  );
+  const missingEnabledNames = enabledByDefault.filter((name) => !availableSkillNames.has(name));
+  const chatsWithSessionSkills = Object.keys(settings.skills.enabledByThread).length;
+
+  const toggleDefault = async (name: string, enabled: boolean) => {
+    if (savingDefaultName !== null) return;
+    setSavingDefaultName(name);
+    setDefaultSaveError(null);
+    try {
+      await updateSettings({ skills: { setEnabledByDefault: { name, enabled } } });
+    } catch (error) {
+      setDefaultSaveError(error instanceof Error ? error.message : "Could not save global skills.");
+    } finally {
+      setSavingDefaultName(null);
+    }
+  };
 
   return (
     <SettingsPageContainer>
+      <SettingsSection {...searchableSetting("skills-enabled-default")}>
+        <p className="px-1 text-xs text-muted-foreground">
+          Global skills are attached to every turn in every chat and survive provider handoffs. Each
+          one consumes context because the receiving agent reads its SKILL.md before acting.
+        </p>
+        {defaultSaveError ? (
+          <p className="px-1 text-xs text-destructive">{defaultSaveError}</p>
+        ) : null}
+        <p className="px-1 text-xs text-muted-foreground">
+          {enabledByDefault.length} of {ENABLED_BY_DEFAULT_SKILL_MAX_COUNT} global skills enabled.
+          Use the All chats switch below. Add chat-only skills from the Skills control in a
+          composer; {chatsWithSessionSkills} chat{chatsWithSessionSkills === 1 ? "" : "s"} currently
+          ha{chatsWithSessionSkills === 1 ? "s" : "ve"} chat-specific skills.
+        </p>
+        {missingEnabledNames.length > 0 ? (
+          <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2">
+            <p className="text-xs text-muted-foreground">
+              These configured skills are missing in this environment and will not be attached:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {missingEnabledNames.map((name) => (
+                <Button
+                  key={name}
+                  size="xs"
+                  variant="outline"
+                  aria-label={`Disable missing default skill ${name}`}
+                  onClick={() => void toggleDefault(name, false)}
+                >
+                  {name} · Disable
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </SettingsSection>
+
       <SettingsSection {...searchableSetting("skills-inventory")}>
         <p className="px-1 text-xs text-muted-foreground">
-          Every skill and command the local agents can see, merged across each agent&rsquo;s skills
-          root. Share a skill to make it visible to another agent — d4research symlinks it into the
-          target root, or copies it when symlinks are unavailable.
+          Every skill and command the local agents can see. User skills installed by d4research are
+          automatically shared across compatible coding CLIs; existing conflicts are never
+          overwritten.
         </p>
+        {projectOptions.length > 0 ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border px-2 py-1.5">
+            <span className="text-xs text-muted-foreground">Project skills workspace</span>
+            <Select
+              value={selectedProjectId}
+              onValueChange={(value) => {
+                if (value !== null) setSelectedProjectId(value);
+              }}
+            >
+              <SelectTrigger className="h-7 min-w-48" aria-label="Skills project">
+                <SelectValue>
+                  {selectedProject?.title ?? selectedProject?.workspaceRoot ?? "Select project"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {projectOptions.map((project) => (
+                  <SelectItem key={project.id} value={String(project.id)}>
+                    {project.title}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </div>
+        ) : null}
         <div className="flex items-center gap-2 rounded-md border px-2 py-1.5">
           <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <Input
@@ -176,6 +337,47 @@ export function SkillsSettingsPanel() {
             className="min-w-0 flex-1"
           />
         </div>
+        <div className="flex items-center gap-2 rounded-md border px-2 py-1.5">
+          <DownloadIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <Input
+            nativeInput
+            unstyled
+            type="url"
+            value={installUrl}
+            onChange={(event) => setInstallUrl(event.currentTarget.value)}
+            placeholder="Install from a git URL, e.g. https://github.com/owner/skill-repo"
+            aria-label="Skill repository URL"
+            className="min-w-0 flex-1"
+          />
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={installUrl.trim().length === 0 || inventory.installing}
+            onClick={() => void runInstall()}
+          >
+            {inventory.installing ? "Installing…" : "Install"}
+          </Button>
+        </div>
+        <label className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+          <Switch
+            checked={installAgyPlugin}
+            onCheckedChange={(checked) => setInstallAgyPlugin(Boolean(checked))}
+            aria-label="Also install the Agy plugin package"
+          />
+          <span>
+            Also install the Agy plugin package. This grants the repository's hooks and MCP servers,
+            not only its portable skill instructions.
+          </span>
+        </label>
+        {installMessage ? (
+          <p
+            className={
+              installMessage.ok ? "text-xs text-muted-foreground" : "text-xs text-destructive"
+            }
+          >
+            {installMessage.text}
+          </p>
+        ) : null}
         {inventory.error ? <p className="text-xs text-destructive">{inventory.error}</p> : null}
         {inventory.state === "loading" ? (
           <p className="py-4 text-center text-xs text-muted-foreground">Reading skills…</p>
@@ -198,6 +400,13 @@ export function SkillsSettingsPanel() {
                   key={`${entry.root}:${entry.path}`}
                   entry={entry}
                   sharing={inventory.sharing}
+                  enabledByDefault={enabledByDefaultSet.has(entry.name)}
+                  defaultEnableDisabled={
+                    savingDefaultName !== null ||
+                    (!enabledByDefaultSet.has(entry.name) &&
+                      enabledByDefault.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT)
+                  }
+                  onToggleDefault={(name, enabled) => void toggleDefault(name, enabled)}
                   onShare={(sourcePath, targetRoot) => void inventory.share(sourcePath, targetRoot)}
                 />
               ))}

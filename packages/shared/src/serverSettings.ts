@@ -1,4 +1,5 @@
 import {
+  ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
   isProviderDriverKind,
   isProviderAvailable,
   type ModelSelection,
@@ -12,6 +13,7 @@ import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection } from "./model.ts";
+import { setEnabledSkillsForThread, updateEnabledSkillForThread } from "./enabledSkillsContext.ts";
 import {
   getBackgroundActivityBaseProfile,
   normalizeBackgroundActivitySettings,
@@ -131,6 +133,7 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    skills: skillsPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -169,6 +172,50 @@ export function applyServerSettingsPatch(
           }
         : undefined;
   const next = deepMerge(current, patchForMerge);
+  const replacedSkills = {
+    ...next.skills,
+    ...(skillsPatch?.enabledByDefault !== undefined
+      ? { enabledByDefault: skillsPatch.enabledByDefault }
+      : {}),
+    ...(skillsPatch?.enabledByThread !== undefined
+      ? { enabledByThread: skillsPatch.enabledByThread }
+      : {}),
+  };
+  const defaultSkillUpdate = skillsPatch?.setEnabledByDefault;
+  const globallyUpdatedSkills = defaultSkillUpdate
+    ? {
+        ...replacedSkills,
+        enabledByDefault: defaultSkillUpdate.enabled
+          ? [...new Set([...replacedSkills.enabledByDefault, defaultSkillUpdate.name])].slice(
+              0,
+              ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+            )
+          : replacedSkills.enabledByDefault.filter((name) => name !== defaultSkillUpdate.name),
+      }
+    : replacedSkills;
+  const threadSkillUpdate = skillsPatch?.setEnabledForThread;
+  const replacedThreadSkills = threadSkillUpdate
+    ? {
+        ...globallyUpdatedSkills,
+        enabledByThread: setEnabledSkillsForThread(
+          globallyUpdatedSkills.enabledByThread,
+          threadSkillUpdate.threadId,
+          threadSkillUpdate.names,
+        ),
+      }
+    : globallyUpdatedSkills;
+  const threadSkillToggle = skillsPatch?.setEnabledForThreadSkill;
+  const nextSkills = threadSkillToggle
+    ? {
+        ...replacedThreadSkills,
+        enabledByThread: updateEnabledSkillForThread(
+          replacedThreadSkills.enabledByThread,
+          threadSkillToggle.threadId,
+          threadSkillToggle.name,
+          threadSkillToggle.enabled,
+        ),
+      }
+    : replacedThreadSkills;
   const nextWithReplacementsBase = {
     ...next,
     ...(backgroundActivity !== undefined
@@ -190,6 +237,23 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
+    ...(patch.research?.scenarios !== undefined || patch.research?.promptFiles !== undefined
+      ? {
+          research: {
+            ...next.research,
+            ...(patch.research.scenarios !== undefined
+              ? { scenarios: patch.research.scenarios }
+              : {}),
+            ...(patch.research.promptFiles !== undefined
+              ? { promptFiles: patch.research.promptFiles }
+              : {}),
+          },
+        }
+      : {}),
+    ...(patch.dev?.scenarios !== undefined
+      ? { dev: { ...next.dev, scenarios: patch.dev.scenarios } }
+      : {}),
+    ...(skillsPatch !== undefined ? { skills: nextSkills } : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };

@@ -38,6 +38,7 @@ import {
   createModelSelection,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
@@ -65,6 +66,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -174,20 +176,20 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
-  buildProviderHandoffMemory,
+  buildProviderHandoffTranscript,
   buildProviderHandoffPrompt,
-  buildStructuredHandoffTranscript,
-  persistProviderHandoffMemoryFallback,
-  prepareProviderHandoff,
+  prepareDurableProviderHandoff,
+  runSameThreadProviderHandoffTransition,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
 import { lazyWithReload } from "../lazyWithReload";
+import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
 import {
-  deriveResearchProviderCandidates,
-  expandResearchPipelinePrompt,
+  applyResearchTrigger,
+  DEFAULT_RESEARCH_SCENARIO_NAME,
   findResearchScenario,
   isDeepResearchPrompt,
-  RESEARCH_TRIGGER_PREFIX,
+  listResearchScenarios,
 } from "../researchPipeline";
 import {
   canAutoDispatchQueuedRequest,
@@ -213,18 +215,14 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
-  appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
-import {
-  appendElementContextsToPrompt,
-  type ElementContextDraft,
-  formatElementContextLabel,
-} from "../lib/elementContext";
-import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
-import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
+import { type ElementContextDraft, formatElementContextLabel } from "../lib/elementContext";
+import type { PastedContextDraft } from "../lib/pastedContext";
+import { composeUserMessageContexts } from "../lib/userMessageContextComposition";
+import type { ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
@@ -240,6 +238,7 @@ import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { usePreparedConnection } from "../state/session";
 import {
   useProject,
   useProjects,
@@ -256,7 +255,13 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
-import { deriveResearchBannerSteps, ResearchProgressBanner } from "./chat/ResearchProgressBanner";
+import { PodcastPlayer } from "./chat/PodcastPlayer";
+import {
+  deriveResearchBannerSteps,
+  deriveResearchDelegations,
+  ResearchProgressBanner,
+  type ResearchDelegation,
+} from "./chat/ResearchProgressBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -293,11 +298,20 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveThreadPipelineKind,
   dismissBranchMismatchForSession,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
+  shouldDeleteFailedResearchThread,
+  shouldRestoreComposerSnapshot,
   getStartedThreadModelChangeBlockReason,
+  DISMISSED_AUDIO_ARTIFACTS_KEY,
+  DismissedAudioArtifactsSchema,
+  EMPTY_DISMISSED_AUDIO_ARTIFACTS,
+  audioArtifactDismissKey,
+  isAudioArtifactPath,
+  outgoingMessageLengthError,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
@@ -312,6 +326,7 @@ import {
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
+  threadHasStarted,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
@@ -346,6 +361,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
+const EMPTY_DELEGATIONS: ReadonlyArray<ResearchDelegation> = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
@@ -1190,6 +1206,7 @@ function ChatViewContent(props: ChatViewProps) {
     forceExpandedMobileComposer = false,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
+  const preparedConnection = Option.getOrNull(usePreparedConnection(environmentId));
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
@@ -1229,9 +1246,6 @@ function ChatViewContent(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
-  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
-    reportFailure: false,
-  });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
@@ -1277,6 +1291,14 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
   const settings = useEnvironmentSettings(environmentId);
+  const effectiveEnabledSkills = useMemo(
+    () =>
+      mergeEnabledSkillNames(
+        settings.skills.enabledByDefault,
+        settings.skills.enabledByThread[routeThreadRef.threadId] ?? [],
+      ),
+    [routeThreadRef.threadId, settings.skills.enabledByDefault, settings.skills.enabledByThread],
+  );
   // New-thread defaults live in the primary environment's settings.json (the
   // settings UI never writes to remote environments), so read them from the
   // primary server rather than the thread's environment.
@@ -1306,6 +1328,7 @@ function ChatViewContent(props: ChatViewProps) {
   const setComposerDraftElementContexts = useComposerDraftStore(
     (store) => store.setElementContexts,
   );
+  const setComposerDraftPastedContexts = useComposerDraftStore((store) => store.setPastedContexts);
   const setComposerDraftPreviewAnnotations = useComposerDraftStore(
     (store) => store.setPreviewAnnotations,
   );
@@ -1328,6 +1351,7 @@ function ChatViewContent(props: ChatViewProps) {
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
+  const composerPastedContextsRef = useRef<PastedContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -2103,15 +2127,14 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [providerStatuses, settings],
   );
-  const researchProviderCandidates = useMemo(
-    () => deriveResearchProviderCandidates(providerHandoffEntries),
-    [providerHandoffEntries],
-  );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
   );
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+  const selectedProviderSupportsPipelines = providerDriverSupportsPipelineOrchestration(
+    String(selectedProvider),
+  );
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const activeContextWindowForMonitor = useMemo(
@@ -2183,13 +2206,19 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  // Deep research runs long and across delegated agents, so its stage plan is
-  // surfaced above the composer instead of only inside the plan sidebar.
+  // Research compression policy remains thread-wide once research has run.
   const isResearchThread = useMemo(
     () =>
       (activeThread?.messages ?? []).some(
         (message) => message.role === "user" && isDeepResearchPrompt(message.text ?? ""),
       ),
+    [activeThread?.messages],
+  );
+  // Research and dev pipelines use the same bounded delegate engine. The most
+  // recent pipeline controls the visible progress label without changing the
+  // thread-wide research compression policy above.
+  const pipelineKind = useMemo(
+    () => deriveThreadPipelineKind(activeThread?.messages ?? []),
     [activeThread?.messages],
   );
   // A completed plan inherited from a previous turn would render as a 100%
@@ -2205,11 +2234,13 @@ function ChatViewContent(props: ChatViewProps) {
       }),
     [activeLatestTurn?.turnId, activePlan, phase],
   );
-  // Closing the banner is scoped to this plan: a new research run writes a new
-  // plan turn, which changes the key and brings the banner back.
-  const researchBannerKey = `${activeThreadId ?? "none"}:${activePlan?.turnId ?? "none"}`;
-  const [dismissedResearchBannerKey, setDismissedResearchBannerKey] = useState<string | null>(null);
-  const researchBannerDismissed = dismissedResearchBannerKey === researchBannerKey;
+  // The plan cannot express a rerun: a revisited step just flips back to
+  // inProgress. The delegate trail carries visit number, target, and remaining
+  // budget, so read it back for the banner.
+  const researchDelegations = useMemo(
+    () => (pipelineKind !== null ? deriveResearchDelegations(threadActivities) : EMPTY_DELEGATIONS),
+    [pipelineKind, threadActivities],
+  );
   const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
@@ -2513,6 +2544,36 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return byMessageId;
   }, [turnDiffSummaries]);
+  // Audio files the agent produced in this thread become playable artifacts.
+  // Distinct paths, in the order they were first touched across turns.
+  const audioArtifactPaths = useMemo(() => {
+    const seen = new Set<string>();
+    const paths: string[] = [];
+    for (const summary of turnDiffSummaries) {
+      for (const file of summary.files) {
+        if (isAudioArtifactPath(file.path) && !seen.has(file.path)) {
+          seen.add(file.path);
+          paths.push(file.path);
+        }
+      }
+    }
+    return paths;
+  }, [turnDiffSummaries]);
+  const [dismissedAudioArtifacts, setDismissedAudioArtifacts] = useLocalStorage(
+    DISMISSED_AUDIO_ARTIFACTS_KEY,
+    EMPTY_DISMISSED_AUDIO_ARTIFACTS,
+    DismissedAudioArtifactsSchema,
+  );
+  const visibleAudioArtifacts = useMemo(
+    () =>
+      activeThreadId === null
+        ? []
+        : audioArtifactPaths.filter(
+            (path) =>
+              !dismissedAudioArtifacts.includes(audioArtifactDismissKey(activeThreadId, path)),
+          ),
+    [audioArtifactPaths, dismissedAudioArtifacts, activeThreadId],
+  );
   const revertTurnCountByUserMessageId = useMemo(() => {
     const byUserMessageId = new Map<MessageId, number>();
     for (let index = 0; index < timelineEntries.length; index += 1) {
@@ -4790,6 +4851,7 @@ function ChatViewContent(props: ChatViewProps) {
       images: sendContextImages,
       terminalContexts: sendContextTerminalContexts,
       elementContexts: sendContextElementContexts,
+      pastedContexts: sendContextPastedContexts,
       previewAnnotations: sendContextPreviewAnnotations,
       reviewComments: sendContextReviewComments,
       selectedProvider: ctxSelectedProvider,
@@ -4821,6 +4883,7 @@ function ChatViewContent(props: ChatViewProps) {
     const composerImages = queuedRequestForSend ? [] : annotatedImages;
     const composerTerminalContexts = queuedRequestForSend ? [] : sendContextTerminalContexts;
     const composerElementContexts = queuedRequestForSend ? [] : sendContextElementContexts;
+    const composerPastedContexts = queuedRequestForSend ? [] : sendContextPastedContexts;
     const composerPreviewAnnotations = queuedRequestForSend ? [] : annotatedPreviewAnnotations;
     const composerReviewComments = queuedRequestForSend ? [] : sendContextReviewComments;
     const promptForSend = queuedRequestForSend?.text ?? promptRef.current;
@@ -4837,6 +4900,7 @@ function ChatViewContent(props: ChatViewProps) {
         composerElementContexts.length +
         composerPreviewAnnotations.length +
         composerReviewComments.length,
+      pastedContextCount: composerPastedContexts.length,
     });
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -4856,6 +4920,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerImages.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
+      composerPastedContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
@@ -4904,18 +4969,14 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
-      const queuedTextWithContexts = appendElementContextsToPrompt(
-        appendTerminalContextsToPrompt(promptForSend, sendableComposerTerminalContexts),
-        composerElementContexts,
-      );
-      const queuedTextWithAnnotations = composerPreviewAnnotations.reduce(
-        (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
-        queuedTextWithContexts,
-      );
-      const queuedText = appendReviewCommentsToPrompt(
-        queuedTextWithAnnotations,
-        composerReviewComments,
-      ).trim();
+      const queuedText = composeUserMessageContexts({
+        prompt: promptForSend,
+        pastedContexts: composerPastedContexts,
+        terminalContexts: sendableComposerTerminalContexts,
+        elementContexts: composerElementContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+      }).trim();
       enqueueRequest(routeThreadKey, {
         id: randomUUID(),
         text: queuedText,
@@ -4964,25 +5025,180 @@ function ChatViewContent(props: ChatViewProps) {
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerElementContextsSnapshot = [...composerElementContexts];
+    const composerPastedContextsSnapshot = [...composerPastedContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
-    const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
-      composerElementContextsSnapshot,
-    );
-    const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
-      (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
-      messageTextWithContexts,
-    );
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      messageTextWithPreviewAnnotations,
-      composerReviewCommentsSnapshot,
-    );
-    const researchMessageTextForSend = expandResearchPipelinePrompt(
-      messageTextForSend,
-      settings.research,
-      researchProviderCandidates,
-    );
+    const messageTextForSend = composeUserMessageContexts({
+      prompt: promptForSend,
+      pastedContexts: composerPastedContextsSnapshot,
+      terminalContexts: composerTerminalContextsSnapshot,
+      elementContexts: composerElementContextsSnapshot,
+      previewAnnotations: composerPreviewAnnotationsSnapshot,
+      reviewComments: composerReviewCommentsSnapshot,
+    });
+    // Research runs in its own thread. Firing `!research` inside an ongoing
+    // conversation splices the whole pipeline transcript (and every delegate
+    // relay) into this thread's context and hijacks it. When the active thread
+    // has already started, launch the pipeline in a fresh thread in the same
+    // project instead. The new thread is rooted at the project workspace, so
+    // delegates inherit the correct cwd and memory scope rather than whatever
+    // this thread happens to be checked out in. A brand-new empty thread is
+    // already a dedicated surface, so run in place there.
+    if (isDeepResearchPrompt(promptForSend) && threadHasStarted(activeThread)) {
+      const researchThreadId = newThreadId();
+      const researchCreatedAt = new Date().toISOString();
+      const researchTitle = truncate(trimmed || "Research");
+      const researchOutgoingText = formatOutgoingPrompt({
+        provider: ctxSelectedProvider,
+        model: ctxSelectedModel,
+        models: ctxSelectedProviderModels,
+        effort: ctxSelectedPromptEffort,
+        text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      });
+      const researchLengthError = outgoingMessageLengthError(researchOutgoingText);
+      if (researchLengthError !== null) {
+        setThreadError(activeThread.id, researchLengthError);
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+        return;
+      }
+      const researchAttachmentsResult = await settlePromise(() =>
+        Promise.all(
+          composerImages.map(async (image) => ({
+            type: "image" as const,
+            name: image.name,
+            mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            dataUrl: await readFileAsDataUrl(image.file),
+          })),
+        ),
+      );
+      if (researchAttachmentsResult._tag === "Failure") {
+        const error = squashAtomCommandFailure(researchAttachmentsResult);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Could not read the research attachment.",
+        );
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+        return;
+      }
+      const researchAttachments = researchAttachmentsResult.value;
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      const finishResearch = () => {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      };
+      const createResult = await createThread({
+        environmentId,
+        input: {
+          threadId: researchThreadId,
+          projectId: activeProject.id,
+          title: researchTitle,
+          modelSelection: ctxSelectedModelSelection,
+          runtimeMode,
+          interactionMode,
+          branch: activeThreadBranch,
+          // Local (non-worktree) so the delegate cwd resolves to the project
+          // workspace root, which is what scopes their memory correctly.
+          worktreePath: null,
+          createdAt: researchCreatedAt,
+        },
+      });
+      let researchFailure: AtomCommandResult<unknown, unknown> | null =
+        createResult._tag === "Failure" ? createResult : null;
+      let researchTurnStarted = false;
+      if (researchFailure === null) {
+        const startResult = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: researchThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: researchOutgoingText,
+              attachments: researchAttachments,
+            },
+            modelSelection: ctxSelectedModelSelection,
+            titleSeed: researchTitle,
+            runtimeMode,
+            interactionMode,
+            createdAt: researchCreatedAt,
+          },
+        });
+        researchFailure = startResult._tag === "Failure" ? startResult : null;
+        researchTurnStarted = startResult._tag === "Success";
+      }
+      if (researchFailure === null) {
+        const startedResult = await settlePromise(() =>
+          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, researchThreadId)),
+        );
+        researchFailure = startedResult._tag === "Failure" ? startedResult : null;
+      }
+      if (researchFailure === null) {
+        // Only clear the composer once the launch is committed, so a failed
+        // start leaves the user's `!research` prompt intact to retry.
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        const navigateResult = await settlePromise(() =>
+          navigate({
+            to: "/$environmentId/$threadId",
+            params: {
+              environmentId: activeThread.environmentId,
+              threadId: researchThreadId,
+            },
+          }),
+        );
+        researchFailure = navigateResult._tag === "Failure" ? navigateResult : null;
+      }
+      if (researchFailure !== null) {
+        // Once the turn is accepted the thread is authoritative. A delayed
+        // projector or failed navigation must never delete work already running.
+        if (shouldDeleteFailedResearchThread(researchTurnStarted)) {
+          const cleanupResult = await deleteThread({
+            environmentId,
+            input: { threadId: researchThreadId },
+          });
+          if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+            console.warn(
+              "Failed to clean up research thread after start failure.",
+              squashAtomCommandFailure(cleanupResult),
+            );
+          }
+        }
+        if (!isAtomCommandInterrupted(researchFailure)) {
+          const error = squashAtomCommandFailure(researchFailure);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: researchTurnStarted
+                ? "Research started but could not be opened"
+                : "Could not start research thread",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : researchTurnStarted
+                    ? "The pipeline is still running in its research thread."
+                    : "An error occurred while creating the research thread.",
+            }),
+          );
+        }
+      } else {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Research started in a new thread",
+            description:
+              "The pipeline runs in its own thread so it will not mix with this conversation.",
+          }),
+        );
+      }
+      finishResearch();
+      return;
+    }
+
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -4990,8 +5206,13 @@ function ChatViewContent(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: researchMessageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
     });
+    const outgoingLengthError = outgoingMessageLengthError(outgoingMessageText);
+    if (outgoingLengthError !== null) {
+      setThreadError(threadIdForSend, outgoingLengthError);
+      return;
+    }
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
         type: "image" as const,
@@ -5177,16 +5398,18 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      const currentDraft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
       if (
-        queuedRequestForSend === null &&
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0 &&
-        composerElementContextsRef.current.length === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
-          .length ?? 0) === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
-          .length ?? 0) === 0
+        shouldRestoreComposerSnapshot({
+          queuedRequest: queuedRequestForSend !== null,
+          promptLength: promptRef.current.length,
+          imageCount: composerImagesRef.current.length,
+          terminalContextCount: composerTerminalContextsRef.current.length,
+          elementContextCount: composerElementContextsRef.current.length,
+          pastedContextCount: composerPastedContextsRef.current.length,
+          previewAnnotationCount: currentDraft?.previewAnnotations.length ?? 0,
+          reviewCommentCount: currentDraft?.reviewComments.length ?? 0,
+        })
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -5201,10 +5424,12 @@ function ChatViewContent(props: ChatViewProps) {
         composerImagesRef.current = retryComposerImages;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
         composerElementContextsRef.current = composerElementContextsSnapshot;
+        composerPastedContextsRef.current = composerPastedContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftElementContexts(composerDraftTarget, composerElementContextsSnapshot);
+        setComposerDraftPastedContexts(composerDraftTarget, composerPastedContextsSnapshot);
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         composerRef.current?.resetCursorState({
@@ -5795,10 +6020,15 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onProviderHandoff = useCallback(
     async (targetModelSelection: ModelSelection) => {
+      // PRODUCT INVARIANT: provider handoff replaces only the provider-native
+      // session. It MUST keep activeThread.id, the visible transcript, route,
+      // branch, and worktree. Never create or navigate to another T3 thread
+      // here. Context must be durably written to local Memo before switching.
       if (
         routeKind !== "server" ||
         !activeThread ||
         !activeProject ||
+        !preparedConnection ||
         providerHandoffBusy ||
         isSendBusy ||
         sendInFlightRef.current
@@ -5813,13 +6043,12 @@ function ChatViewContent(props: ChatViewProps) {
         stackedThreadToast({
           type: "info",
           title: `Handing off to ${targetEntry?.displayName ?? targetModelSelection.instanceId}`,
-          description: "Saving context to local Memo, then continuing in this chat.",
+          description: "Saving context to local Memo, then switching providers in this chat.",
         }),
       );
       setProviderHandoffBusy(true);
       sendInFlightRef.current = true;
       const createdAt = new Date().toISOString();
-      let modelUpdated = false;
 
       try {
         const compression = settings.handoff.contextCompression;
@@ -5827,91 +6056,60 @@ function ChatViewContent(props: ChatViewProps) {
         // not be summarized away between steps. 60k is the server's transport
         // guard for the prepare route.
         const bypassCompression = isResearchThread && settings.research.bypassCompression;
-        const transcript =
-          buildStructuredHandoffTranscript(
-            displayServerMessages.map((message) => ({
-              role: message.role,
-              text: message.text,
-            })),
-            bypassCompression ? 60_000 : compression.maxInputCharacters,
-          ) || `Continue the work from ${activeThread.title}.`;
-        // One round-trip: the server compresses per settings and persists the
-        // compressed summary to local Memo. On failure the structured
-        // transcript itself is the summary — handoff never blocks on this.
-        const prepared = await prepareProviderHandoff({
-          transcript,
-          project: activeProject.title,
-          sourceThreadId: activeThread.id,
-          sourceThreadTitle: activeThread.title,
-          target: targetModelSelection,
-          bypassCompression,
-        });
-        const summary = prepared ?? transcript;
-        if (prepared === null) {
-          // The prepare round-trip also persists to Memo; when it fails the
-          // handoff must still go through, but Memo would silently miss this
-          // handoff entirely. Backfill it best-effort via the memory route.
-          void persistProviderHandoffMemoryFallback({
-            text: buildProviderHandoffMemory({
+        const transcript = buildProviderHandoffTranscript(
+          displayServerMessages.map((message) => ({
+            role: message.role,
+            text: message.text,
+          })),
+          bypassCompression ? 60_000 : compression.maxInputCharacters,
+        );
+        // One round-trip normally compresses and persists to local Memo. If
+        // that combined path does not prove persistence, the durable helper
+        // writes the structured transcript through the dedicated Memo route.
+        // The provider session is not changed unless one write succeeds.
+        await runSameThreadProviderHandoffTransition({
+          prepare: async () => {
+            const summary = await prepareDurableProviderHandoff({
+              transcript,
+              project: activeProject.title,
               sourceThreadId: activeThread.id,
               sourceThreadTitle: activeThread.title,
-              summary: transcript,
               target: targetModelSelection,
-            }),
-            project: activeProject.title,
-          });
-        }
-        const handoffPrompt = buildProviderHandoffPrompt({
-          sourceThreadId: activeThread.id,
-          sourceThreadTitle: activeThread.title,
-          summary,
-          target: targetModelSelection,
-          project: activeProject.title,
-          targetLabel: targetEntry?.displayName,
-        });
-
-        if (activeThread.session && activeThread.session.status !== "stopped") {
-          const stopResult = await stopThreadSession({
-            environmentId,
-            input: { threadId: activeThread.id, createdAt },
-          });
-          if (stopResult._tag === "Failure") throw squashAtomCommandFailure(stopResult);
-        }
-
-        const updateResult = await updateThreadMetadata({
-          environmentId,
-          input: {
-            threadId: activeThread.id,
-            modelSelection: targetModelSelection,
+              bypassCompression,
+              enabledSkills: effectiveEnabledSkills,
+              preparedConnection,
+            });
+            return buildProviderHandoffPrompt({
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              summary,
+              target: targetModelSelection,
+              project: activeProject.title,
+              targetLabel: targetEntry?.displayName,
+              enabledSkills: effectiveEnabledSkills,
+            });
+          },
+          startReceivingTurn: async (handoffPrompt) => {
+            const result = await startThreadTurn({
+              environmentId,
+              input: {
+                threadId: activeThread.id,
+                message: {
+                  messageId: newMessageId(),
+                  role: "user",
+                  text: handoffPrompt,
+                  attachments: [],
+                },
+                modelSelection: targetModelSelection,
+                runtimeMode,
+                interactionMode: "default",
+                createdAt,
+              },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
           },
         });
-        if (updateResult._tag === "Failure") throw squashAtomCommandFailure(updateResult);
-        modelUpdated = true;
-
-        const startResult = await startThreadTurn({
-          environmentId,
-          input: {
-            threadId: activeThread.id,
-            message: {
-              messageId: newMessageId(),
-              role: "user",
-              text: handoffPrompt,
-              attachments: [],
-            },
-            modelSelection: targetModelSelection,
-            runtimeMode,
-            interactionMode: "default",
-            createdAt,
-          },
-        });
-        if (startResult._tag === "Failure") throw squashAtomCommandFailure(startResult);
       } catch (error) {
-        if (modelUpdated) {
-          await updateThreadMetadata({
-            environmentId,
-            input: { threadId: activeThread.id, modelSelection: activeThread.modelSelection },
-          });
-        }
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -5928,7 +6126,9 @@ function ChatViewContent(props: ChatViewProps) {
       activeProject,
       activeThread,
       displayServerMessages,
+      effectiveEnabledSkills,
       environmentId,
+      preparedConnection,
       isResearchThread,
       isSendBusy,
       providerHandoffBusy,
@@ -5937,46 +6137,45 @@ function ChatViewContent(props: ChatViewProps) {
       runtimeMode,
       settings,
       startThreadTurn,
-      stopThreadSession,
-      updateThreadMetadata,
     ],
   );
 
-  const onStartDeepResearch = useCallback(() => {
-    const currentPrompt = promptRef.current;
-    if (isDeepResearchPrompt(currentPrompt)) {
-      composerRef.current?.focusAtEnd();
-      return;
-    }
-    // The telescope button runs the scenario selected in Settings → Research.
-    // Typed `!research:<name>` triggers pick their own scenario at send time.
-    const scenario = findResearchScenario(settings.research, null);
-    // Starting research is the explicit action the scenario's orchestrator
-    // model is *for* — switch through the normal handoff flow so history and
-    // rollback behave exactly like a manual model change.
-    const orchestrator = scenario?.orchestratorSelection ?? null;
-    if (
-      orchestrator !== null &&
-      activeThread &&
-      !providerHandoffBusy &&
-      (String(activeThread.modelSelection.instanceId) !== String(orchestrator.instanceId) ||
-        activeThread.modelSelection.model !== orchestrator.model)
-    ) {
-      void onProviderHandoff(orchestrator);
-    }
-    const trigger = `${RESEARCH_TRIGGER_PREFIX}:${scenario?.name ?? "default"}`;
-    const nextPrompt = currentPrompt.trim()
-      ? `${trigger} ${currentPrompt.trimStart()}`
-      : `${trigger} `;
-    composerRef.current?.replacePrompt(nextPrompt);
-  }, [
-    activeThread,
-    composerRef,
-    onProviderHandoff,
-    promptRef,
-    providerHandoffBusy,
-    settings.research,
-  ]);
+  // Picking a scenario swaps the trigger in place, so switching scenarios does
+  // not require clearing the prompt first. The pipeline runs on the thread's
+  // current model — what you see in the composer is what orchestrates.
+  const onStartDeepResearch = useCallback(
+    (scenarioName?: string) => {
+      const scenario = findResearchScenario(settings.research, scenarioName ?? null);
+      composerRef.current?.replacePrompt(
+        applyResearchTrigger(promptRef.current, scenario?.name ?? DEFAULT_RESEARCH_SCENARIO_NAME),
+      );
+    },
+    [composerRef, promptRef, settings.research],
+  );
+
+  const researchScenarioNames = useMemo(
+    () => listResearchScenarios(settings.research).map((scenario) => scenario.name),
+    [settings.research],
+  );
+
+  const devPipelineNames = useMemo(
+    () =>
+      selectedProviderSupportsPipelines
+        ? listDevScenarios(settings.dev).map((scenario) => scenario.name)
+        : [],
+    [selectedProviderSupportsPipelines, settings.dev],
+  );
+
+  // Research always runs in a thread of its own, so it is offered only on a
+  // chat that has not started yet. In a started thread the send-time divert
+  // would spawn a separate thread anyway, which reads as the button losing
+  // your conversation.
+  // A brand-new chat is a draft route — no server thread exists yet. Research
+  // must be offered there (that is the "new chat" case), and on a created but
+  // never-started server thread; only a started conversation hides it.
+  const canStartResearch =
+    selectedProviderSupportsPipelines &&
+    (routeKind === "draft" || (routeKind === "server" && !threadHasStarted(activeThread)));
 
   const getModelDisabledReason = useCallback(
     (): string | null => (providerHandoffBusy ? "Handoff in progress." : null),
@@ -6425,14 +6624,25 @@ function ChatViewContent(props: ChatViewProps) {
                       )}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
-                        {isResearchThread && !researchBannerDismissed ? (
+                        {pipelineKind !== null && phase === "running" ? (
                           <ResearchProgressBanner
+                            pipelineKind={pipelineKind}
+                            delegations={researchDelegations}
                             steps={researchBannerSteps}
-                            isRunning={phase === "running"}
-                            onDismiss={
-                              phase === "running"
-                                ? undefined
-                                : () => setDismissedResearchBannerKey(researchBannerKey)
+                            isRunning
+                            contextTokens={activeContextWindowForMonitor?.usedTokens ?? null}
+                          />
+                        ) : null}
+                        {activeThreadId !== null && visibleAudioArtifacts.length > 0 ? (
+                          <PodcastPlayer
+                            environmentId={environmentId}
+                            threadId={activeThreadId}
+                            artifacts={visibleAudioArtifacts}
+                            onRemove={(path) =>
+                              setDismissedAudioArtifacts((keys) => {
+                                const key = audioArtifactDismissKey(activeThreadId, path);
+                                return keys.includes(key) ? keys : [...keys, key];
+                              })
                             }
                           />
                         ) : null}
@@ -6495,10 +6705,12 @@ function ChatViewContent(props: ChatViewProps) {
                             keybindings={keybindings}
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             gitCwd={gitCwd}
+                            activeProjectCwd={activeProject?.workspaceRoot ?? null}
                             promptRef={promptRef}
                             composerImagesRef={composerImagesRef}
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
+                            composerPastedContextsRef={composerPastedContextsRef}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
@@ -6515,6 +6727,9 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             onProviderModelSelect={onProviderModelSelect}
                             onStartDeepResearch={onStartDeepResearch}
+                            canStartResearch={canStartResearch}
+                            researchScenarios={researchScenarioNames}
+                            devPipelines={devPipelineNames}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}

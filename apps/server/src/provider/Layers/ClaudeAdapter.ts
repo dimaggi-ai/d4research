@@ -203,6 +203,9 @@ interface ClaudeSessionContext {
   lastMessageStartUsage: Record<string, unknown> | undefined;
   lastAssistantUuid: string | undefined;
   lastThreadStartedId: string | undefined;
+  // Set when the user presses stop, so the terminal result the SDK pushes back
+  // is reported as an interrupted turn rather than a provider failure.
+  interruptRequested: boolean;
   stopped: boolean;
 }
 
@@ -303,6 +306,15 @@ function resultErrorsText(result: SDKResultMessage): string {
   return "errors" in result && Array.isArray(result.errors)
     ? result.errors.join(" ").toLowerCase()
     : "";
+}
+
+/**
+ * The Claude CLI tags its own internal, non-actionable stream diagnostics with
+ * `[ede_diagnostic]`. A user-pressed stop yields a result whose only "error" is
+ * one of these, so it must never reach the user as a runtime error.
+ */
+function isClaudeDiagnosticMessage(message: string): boolean {
+  return message.toLowerCase().includes("[ede_diagnostic]");
 }
 
 function isInterruptedResult(result: SDKResultMessage): boolean {
@@ -1034,6 +1046,12 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   if (errors.includes("cancel")) {
     return "cancelled";
   }
+  // The SDK reports genuine failures with `is_error`. A non-error result that
+  // reached here carries only diagnostics, so it is a completed turn, not a
+  // failed one.
+  if (result.is_error === false) {
+    return "completed";
+  }
   return "failed";
 }
 
@@ -1368,9 +1386,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
   const crypto = yield* Crypto.Crypto;
-  const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
-    Effect.provideService(Path.Path, path),
-  );
+  const claudeEnvironmentBase = yield* makeClaudeEnvironment(
+    claudeSettings,
+    options?.environment,
+  ).pipe(Effect.provideService(Path.Path, path));
+  // The CLI's default MCP tool-call timeout aborts long tool calls with a
+  // client-side "The operation timed out." A research delegation legitimately
+  // runs for many minutes (web-search verification, cold cloud models), so the
+  // orchestrator must wait at least as long as the research handler's own
+  // delegate ceiling (30 min) plus margin. An explicit user value still wins.
+  const claudeEnvironment: NodeJS.ProcessEnv = {
+    ...claudeEnvironmentBase,
+    ...(claudeEnvironmentBase.MCP_TOOL_TIMEOUT === undefined
+      ? { MCP_TOOL_TIMEOUT: "1860000" }
+      : {}),
+  };
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -2097,6 +2127,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const updatedAt = yield* nowIso;
     context.turnState = undefined;
+    context.interruptRequested = false;
     context.lastMessageStartUsage = undefined;
     context.session = {
       ...context.session,
@@ -2606,8 +2637,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    const status = turnStatusFromResult(message);
-    const errorMessage = message.subtype === "success" ? undefined : message.errors[0];
+    // A user-pressed stop makes the SDK end the turn with a non-success result
+    // whose only error is an internal `[ede_diagnostic]` line. That is a normal
+    // interruption, not a provider failure, so neither the bogus status nor the
+    // diagnostic text should reach the thread.
+    const status =
+      context.interruptRequested && message.subtype !== "success"
+        ? "interrupted"
+        : turnStatusFromResult(message);
+    const errorMessage =
+      message.subtype === "success"
+        ? undefined
+        : message.errors.find((entry) => !isClaudeDiagnosticMessage(entry));
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
@@ -3694,6 +3735,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         lastMessageStartUsage: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,
         lastThreadStartedId: undefined,
+        interruptRequested: false,
         stopped: false,
       };
       yield* Ref.set(contextRef, context);
@@ -3880,10 +3922,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const interruptTurn: ClaudeAdapterShape["interruptTurn"] = Effect.fn("interruptTurn")(
     function* (threadId, _turnId) {
       const context = yield* requireSession(threadId);
+      context.interruptRequested = true;
       yield* Effect.tryPromise({
         try: () => context.query.interrupt(),
         catch: (cause) => toRequestError(threadId, "turn/interrupt", cause),
-      });
+      }).pipe(
+        // The flag changes how the next non-success SDK result is classified.
+        // If the SDK rejected the interrupt, leaving it set would turn a real
+        // provider error into a false user cancellation.
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            context.interruptRequested = false;
+          }),
+        ),
+      );
     },
   );
 

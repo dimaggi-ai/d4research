@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applyResearchTrigger,
   deriveDirectiveSuggestions,
   expandResearchPipelinePrompt,
   findResearchScenario,
   isDeepResearchPrompt,
   parseResearchDirectives,
+  PIPELINE_DIRECTIVE_MAX_COUNT,
   parseResearchTrigger,
+  stripResearchTrigger,
   resolveResearchDirective,
+  sanitizeResearchModelSlugs,
   type ResearchProviderCandidate,
 } from "./researchPipeline";
 
@@ -22,6 +26,19 @@ const CANDIDATES: ReadonlyArray<ResearchProviderCandidate> = [
 ];
 
 const FILES = [{ name: "OPTIONAL_prompt.md", content: "be thorough" }];
+
+describe("research model catalog", () => {
+  it("keeps every valid discovered model instead of silently truncating large CLIs", () => {
+    const models = [
+      ...Array.from({ length: 80 }, (_, index) => `model-${index}`),
+      "invalid model",
+      "\u2800\u2801 spinner",
+    ];
+    const sanitized = sanitizeResearchModelSlugs(models);
+    expect(sanitized).toHaveLength(80);
+    expect(sanitized.at(-1)).toBe("model-79");
+  });
+});
 
 describe("parseResearchDirectives", () => {
   it("parses provider, model, and optional prompt file", () => {
@@ -69,6 +86,40 @@ describe("parseResearchDirectives", () => {
     expect(parseResearchDirectives("ask !codex:terra, then !claude:fable; summarize")).toEqual([
       { raw: "!codex:terra", provider: "codex", model: "terra", promptFile: undefined },
       { raw: "!claude:fable", provider: "claude", model: "fable", promptFile: undefined },
+    ]);
+  });
+
+  it("rejects lookalikes and malformed prompt-file suffixes without corrupting neighbors", () => {
+    expect(
+      parseResearchDirectives(
+        "! missing, ！codex:terra, !-bad:model, !codex:, !codex:terra:file.pdf, then !codex:sol",
+      ),
+    ).toEqual([
+      {
+        raw: "!codex:terra:file.pdf",
+        provider: "codex",
+        model: "terra:file.pdf",
+        promptFile: undefined,
+      },
+      { raw: "!codex:sol", provider: "codex", model: "sol", promptFile: undefined },
+    ]);
+  });
+
+  it("bounds adversarial directive floods while preserving deterministic first-seen order", () => {
+    const prompt = Array.from(
+      { length: PIPELINE_DIRECTIVE_MAX_COUNT * 20 },
+      (_, index) => `step ${index}: !codex:model-${index}`,
+    ).join("\n");
+    const found = parseResearchDirectives(prompt);
+    expect(found).toHaveLength(PIPELINE_DIRECTIVE_MAX_COUNT);
+    expect(found[0]?.raw).toBe("!codex:model-0");
+    expect(found.at(-1)?.raw).toBe(`!codex:model-${PIPELINE_DIRECTIVE_MAX_COUNT - 1}`);
+  });
+
+  it("deduplicates a large repeated prompt before applying the cap", () => {
+    const prompt = "!codex:terra ".repeat(10_000);
+    expect(parseResearchDirectives(prompt)).toEqual([
+      { raw: "!codex:terra", provider: "codex", model: "terra", promptFile: undefined },
     ]);
   });
 });
@@ -145,20 +196,17 @@ const RESEARCH_SETTINGS = {
   scenarios: [
     {
       name: "blog",
-      orchestratorSelection: null,
       pipelinePrompt:
         "Step 1: plan.\nStep 2: fan out to !claude:fable:OPTIONAL_prompt.md and !codex:terra.",
       promptFiles: FILES,
     },
     {
       name: "audit",
-      orchestratorSelection: null,
       pipelinePrompt: "Step 1: audit.",
       promptFiles: [],
     },
   ],
   activeScenario: "blog",
-  orchestratorSelection: null,
   pipelinePrompt: "",
   promptFiles: [],
 };
@@ -182,6 +230,23 @@ describe("parseResearchTrigger", () => {
   });
 });
 
+describe("stripResearchTrigger", () => {
+  // Triggers vary in length, so the composer cannot slice a fixed tag off.
+  it("removes triggers of any length and leaves untriggered prompts alone", () => {
+    expect(stripResearchTrigger("!research:blog write about X")).toBe("write about X");
+    expect(stripResearchTrigger("!research just do it")).toBe("just do it");
+    expect(stripResearchTrigger("  #deep-research topic")).toBe("topic");
+    expect(stripResearchTrigger("!research:blog")).toBe("");
+    expect(stripResearchTrigger("plain prompt")).toBe("plain prompt");
+  });
+});
+
+describe("pipeline mode switching", () => {
+  it("replaces a dev trigger instead of nesting it inside research", () => {
+    expect(applyResearchTrigger("!dev:fix repair auth", "blog")).toBe("!research:blog repair auth");
+  });
+});
+
 describe("findResearchScenario", () => {
   it("finds by name, falls back to active, and migrates legacy fields", () => {
     expect(findResearchScenario(RESEARCH_SETTINGS, "audit")?.name).toBe("audit");
@@ -190,7 +255,6 @@ describe("findResearchScenario", () => {
     const legacy = {
       scenarios: [],
       activeScenario: "",
-      orchestratorSelection: null,
       pipelinePrompt: "Step 1: legacy.",
       promptFiles: FILES,
     };
@@ -216,6 +280,24 @@ describe("expandResearchPipelinePrompt", () => {
     expect(expanded).toContain("research_delegate");
     expect(expanded).toContain("[step N | visit K]");
     expect(expanded).toContain("compare X");
+  });
+
+  it("is idempotent: re-expanding an expanded prompt does not duplicate the wrapper", () => {
+    const once = expandResearchPipelinePrompt("!research:blog compare X", pipeline, CANDIDATES);
+    const twice = expandResearchPipelinePrompt(once, pipeline, CANDIDATES);
+    expect(twice).toBe(once);
+    // The wrapper and the pipeline each appear exactly once, not nested.
+    expect(twice.split("PIPELINE (verbatim):").length - 1).toBe(1);
+    expect(twice.split("Execution protocol (non-negotiable):").length - 1).toBe(1);
+  });
+
+  it("requires an explicit run-state report in the protocol", () => {
+    const expanded = expandResearchPipelinePrompt("!research:blog go", pipeline, CANDIDATES);
+    // The orchestrator must end with a per-step outcome ledger and admit
+    // which conclusions rest on failed steps — never a smoothed-over summary.
+    expect(expanded).toContain("RUN STATE");
+    expect(expanded).toContain("A run report that hides a failure is a failed run.");
+    expect(expanded).toContain("competing claims");
   });
 
   it("surfaces unresolved directives instead of dropping them", () => {

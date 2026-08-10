@@ -2,6 +2,12 @@
 
 When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. The transcript is structured — the first user message (the task statement) is kept verbatim, the middle is marked as omitted, and the most recent messages fill the remaining budget — and then compressed into a dense summary before it travels. Compression defaults to a local Ollama model, so a handoff costs no cloud tokens and no provider cold start.
 
+## Non-negotiable thread invariant
+
+A provider handoff stays on the existing d4research thread. Only the provider-native session changes. The implementation must retain the thread ID, route, visible transcript, branch, and worktree; it must not call the create-thread flow or navigate to a newly allocated thread. The receiving turn is a context-synchronization turn: it transfers the handoff prompt, explicitly forbids resuming prior work, and asks the receiving agent to wait for the user's next instruction.
+
+Local Memo is the durable context bridge between provider-native sessions. The client must receive proof that `/api/handoff/prepare` persisted the summary, or successfully write the fallback record through `/api/memory/handoff`, before it stops the source session or changes the thread's model selection. Failure of both writes blocks the switch. This ordering prevents a receiving provider from starting with a UI-visible history that its fresh native session cannot recover.
+
 ## Settings
 
 Compression is configured under **Settings → General → Handoff → Context compression** and stored in `ServerSettings.handoff.contextCompression`.
@@ -37,9 +43,12 @@ ChatView (onProviderHandoff)
   │     │                       session, 120 s timeout on the turn)
   │     └─ persists the COMPRESSED summary to local Memo, then returns it
   │
-  └─ Fallback: prepare failed → the structured transcript itself is the
-     summary, and the client backfills Memo best-effort via
-     persistProviderHandoffMemoryFallback → POST /api/memory/handoff
+  ├─ Fallback: prepare did not prove persistence → the structured transcript
+  │  becomes the summary and the client writes it via
+  │  POST /api/memory/handoff; failure blocks the provider switch
+  │
+  └─ Start context-only receiving turn on the same thread
+        → acknowledge the loaded context; do not resume prior work
 ```
 
 One round-trip does both jobs. The browser uploads the transcript once; Memo stores the compressed summary (the local memory service applies its own curation on top), not a duplicate of the raw transcript.
@@ -73,15 +82,18 @@ Output only the compressed summary, no preamble.
 
 ## Client integration
 
-`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and returns the compressed summary, or `null` on any failure (network error, non-ok response, malformed JSON). Silent failure by design — the caller falls back to the structured transcript and backfills Memo through `persistProviderHandoffMemoryFallback`, so a failed compressor never blocks a handoff and never leaves Memo empty for that handoff.
+`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and returns the compressed summary only when the response also proves `memoryPersisted: true`. `prepareDurableProviderHandoff` owns the complete boundary: on network error, non-ok response, malformed JSON, or an unconfirmed write, it stores the structured transcript through `persistProviderHandoffMemoryFallback`. If that fallback fails, it rejects before the source provider session or thread metadata changes.
+
+`buildProviderHandoffPrompt` places the context-only instruction after the summary. This ordering matters: prior task text is reference material, not a fresh instruction. An empty transcript uses a neutral “no prior messages” record and never manufactures a “continue the work” task.
 
 ## Failure modes
 
-The system never hard-fails a handoff. The fallback chain is:
+Compression never hard-fails a handoff, but unavailable local memory does. The fallback chain is:
 
 1. Compression succeeds → compressed summary in the prompt, same summary in Memo.
 2. Compressor fails server-side → structured truncation in the prompt and in Memo.
-3. The prepare round-trip itself fails → structured transcript in the prompt; the client backfills Memo via `/api/memory/handoff` best-effort.
+3. The prepare round-trip does not prove persistence → structured transcript in the prompt; the client writes it to Memo via `/api/memory/handoff`.
+4. Both Memo paths fail → abort before stopping the source session or changing the existing thread.
 
 ## Files
 

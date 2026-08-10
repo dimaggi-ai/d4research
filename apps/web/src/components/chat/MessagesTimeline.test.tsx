@@ -3,6 +3,7 @@ import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
+import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -488,6 +489,31 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("SubmitButton");
     expect(markup).not.toContain("&lt;element_context");
     expect(markup).not.toContain("<element_context");
+  });
+
+  it("renders enabled skills as badges without leaking server transport markup", () => {
+    const text = appendEnabledSkillsContext("Fix the flaky test", [
+      {
+        name: "focus-mode",
+        path: "/home/test/.agents/skills/focus-mode/SKILL.md",
+      },
+      {
+        name: "security-review",
+        path: "/home/test/.agents/skills/security-review/SKILL.md",
+        scope: "session",
+      },
+    ]);
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[buildUserTimelineEntry(text)]} />,
+    );
+
+    expect(markup).toContain("Global: focus-mode");
+    expect(markup).toContain("Chat: security-review");
+    expect(markup).toContain('data-enabled-skill="focus-mode"');
+    expect(markup).toContain('data-enabled-skill-scope="global"');
+    expect(markup).toContain('data-enabled-skill-scope="session"');
+    expect(markup).not.toContain("&lt;enabled_skills");
+    expect(markup).not.toContain("/home/test/.agents/skills");
   });
 
   it("keeps the copy button for collapsed long user messages", () => {

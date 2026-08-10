@@ -18,6 +18,7 @@ import {
   MessageId,
   ProjectId,
   ProviderItemId,
+  RuntimeItemId,
   type ServerSettings,
   type ServerProvider,
   ThreadId,
@@ -47,6 +48,7 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import {
   ProviderRuntimeIngestionLive,
+  runtimeEventToActivities,
   shouldAppendRuntimeEventActivities,
 } from "./ProviderRuntimeIngestion.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -56,6 +58,8 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
+import { countResearchDelegations } from "../researchIntegrity.ts";
+import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
   return ServerSettingsService.layerTest(overrides);
@@ -97,6 +101,52 @@ describe("shouldAppendRuntimeEventActivities", () => {
         eventTurnState: "interrupted",
       }),
     ).toBe(true);
+  });
+});
+
+describe("runtime tool liveness activities", () => {
+  it("preserves the tool-call identity and elapsed signal without the tool input", () => {
+    const [progress] = runtimeEventToActivities({
+      type: "tool.progress",
+      eventId: asEventId("evt-tool-progress"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-08-09T00:01:05.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      payload: {
+        toolUseId: "call-1",
+        toolName: "research_delegate",
+        elapsedSeconds: 65,
+      },
+    });
+
+    expect(progress).toMatchObject({
+      kind: "tool.progress",
+      summary: "research_delegate is running",
+      payload: {
+        toolCallId: "call-1",
+        toolName: "research_delegate",
+        elapsedSeconds: 65,
+      },
+    });
+    expect(JSON.stringify(progress?.payload)).not.toContain("prompt");
+
+    const [started] = runtimeEventToActivities({
+      type: "item.started",
+      eventId: asEventId("evt-tool-started-liveness"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-08-09T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      itemId: RuntimeItemId.make("call-1"),
+      payload: {
+        itemType: "mcp_tool_call",
+        status: "inProgress",
+        title: "t3-code · research_delegate",
+        data: { secretPrompt: "must not enter the activity row" },
+      },
+    });
+    expect(started?.payload).toEqual({ itemType: "mcp_tool_call", toolCallId: "call-1" });
   });
 });
 
@@ -161,6 +211,7 @@ function createProviderServiceHarness() {
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
     },
+    subscribeEvents: Effect.succeed(Stream.fromPubSub(runtimeEventPubSub)),
   };
 
   const setSession = (session: ProviderSession): void => {
@@ -359,6 +410,38 @@ describe("ProviderRuntimeIngestion", () => {
       drain,
     };
   }
+
+  it("carries correlated tool progress through ingestion into the thread snapshot", async () => {
+    const harness = await createHarness();
+    harness.emit({
+      type: "tool.progress",
+      eventId: asEventId("evt-live-tool-progress"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-08-09T00:01:05.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      payload: {
+        toolUseId: "delegate-call-1",
+        toolName: "research_delegate",
+        summary: "Delegate is still running",
+        elapsedSeconds: 65,
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.id === "evt-live-tool-progress"),
+    );
+    const progress = thread.activities.find((activity) => activity.id === "evt-live-tool-progress");
+    expect(progress).toMatchObject({
+      kind: "tool.progress",
+      summary: "Delegate is still running",
+      payload: {
+        toolCallId: "delegate-call-1",
+        toolName: "research_delegate",
+        elapsedSeconds: 65,
+      },
+    });
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
@@ -1227,6 +1310,61 @@ describe("ProviderRuntimeIngestion", () => {
     expect(data?.toolCallId).toBe("tool-read-1");
     expect(data?.kind).toBe("read");
     expect(rawOutput?.content).toBe('import * as Effect from "effect/Effect"\n');
+  });
+
+  it("carries a real adapter research tool event through ingestion and bounded projection", async () => {
+    const harness = await createHarness();
+    const turnId = asTurnId("turn-research-delegate");
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-research-delegate"),
+      provider: ProviderDriverKind.make("junie"),
+      createdAt: "2026-08-09T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId,
+      itemId: asItemId("item-research-delegate"),
+      payload: {
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        title: "research_delegate",
+        data: {
+          toolCallId: "delegate-1",
+          rawInput: {
+            name: "research_delegate",
+            arguments: { step: "2", target: "junie:grok-4.5", visit: 1 },
+          },
+          rawOutput: {
+            content: "delegate answer",
+            structuredContent: { remainingBudget: 21 },
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-research-delegate",
+      ),
+    );
+    expect(countResearchDelegations(thread, turnId)).toBe(1);
+
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-research-delegate",
+    );
+    expect(activity).toBeDefined();
+    if (!activity) return;
+    expect(projectActivityPayload(activity).payload).toMatchObject({
+      data: {
+        researchDelegate: {
+          step: "2",
+          target: "junie:grok-4.5",
+          visit: 1,
+          remainingBudget: 21,
+          failed: false,
+        },
+      },
+    });
   });
 
   it("normalizes command execution activities to ran-command summaries", async () => {

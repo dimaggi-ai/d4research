@@ -11,6 +11,15 @@ import * as EffectAcpAgent from "effect-acp/agent";
 import * as AcpError from "effect-acp/errors";
 import type * as AcpSchema from "effect-acp/schema";
 
+/**
+ * Which real CLI this mock is standing in for. The default emits every model
+ * surface at once, which is convenient but permissive: it satisfies code that
+ * reads `models.availableModels` AND code that reads `configOptions`, so a
+ * discovery test against it passes no matter which field the provider reads.
+ * That is how Junie shipped reading Grok's field. A profile narrows the
+ * response to what that CLI actually sends, so the test can disagree.
+ */
+const modelSurfaceProfile = process.env.T3_ACP_MOCK_PROFILE ?? "permissive";
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
@@ -294,6 +303,14 @@ function modelState(): AcpSchema.SessionModelState {
   };
 }
 
+// Junie leaves `models` unset and answers with a model-category config option;
+// Grok is the mirror image. Verified against both CLIs — see JunieAcpCliProbe
+// and GrokAcpCliProbe.
+const sessionModelSurfaces = () => ({
+  ...(modelSurfaceProfile === "junie" ? {} : { models: modelState() }),
+  ...(modelSurfaceProfile === "grok" ? {} : { configOptions: configOptions() }),
+});
+
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
 
@@ -314,8 +331,7 @@ const program = Effect.gen(function* () {
     Effect.succeed({
       sessionId,
       modes: modeState(),
-      models: modelState(),
-      configOptions: configOptions(),
+      ...sessionModelSurfaces(),
     }),
   );
 
@@ -359,8 +375,7 @@ const program = Effect.gen(function* () {
         yield* Effect.sleep(loadSessionDelayMs);
         return {
           modes: modeState(),
-          models: modelState(),
-          configOptions: configOptions(),
+          ...sessionModelSurfaces(),
         };
       }
       if (emitLoadReplay) {
@@ -375,8 +390,7 @@ const program = Effect.gen(function* () {
       });
       return {
         modes: modeState(),
-        models: modelState(),
-        configOptions: configOptions(),
+        ...sessionModelSurfaces(),
       };
     }),
   );

@@ -40,6 +40,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { resolveResearchDelegateMcpTimeoutSeconds } from "../../mcp/researchDelegateTiming.ts";
 import { toolGuardEnvironment } from "../toolGuardRuntime.ts";
 
 import {
@@ -62,7 +63,7 @@ import {
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
-import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { codexT3McpToolTimeoutArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1013,6 +1014,7 @@ function mapToRuntimeEvents(
         ...runtimeEventBase(event, canonicalThreadId),
         type: "tool.progress",
         payload: {
+          toolUseId: payload.itemId,
           summary: payload.message,
         },
       },
@@ -1398,6 +1400,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment);
         const environment = toolGuardEnvironment(
           options?.environment ?? process.env,
           input.runtimeMode,
@@ -1407,7 +1410,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
+          launchArgs,
+          webSearch: codexConfig.webSearch,
           environment,
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
@@ -1425,6 +1429,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 appServerArgs: [
+                  ...codexT3McpToolTimeoutArgs(
+                    launchArgs,
+                    resolveResearchDelegateMcpTimeoutSeconds(),
+                  ),
                   "-c",
                   `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
                   "-c",

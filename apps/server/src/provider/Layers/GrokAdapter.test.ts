@@ -184,6 +184,16 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         assert.equal(delta.payload.delta, "hello from mock");
       }
 
+      const snapshot = yield* adapter.readThread(threadId);
+      const assistantSnapshot = snapshot.turns[0]?.items.find(
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          (item as { type?: unknown }).type === "agentMessage",
+      ) as { id?: unknown; text?: unknown } | undefined;
+      assert.match(String(assistantSnapshot?.id), /^assistant:/);
+      assert.equal(assistantSnapshot?.text, "hello from mock");
+
       yield* adapter.stopSession(threadId);
     }),
   );
@@ -459,7 +469,22 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       const snapshot = yield* adapter.readThread(threadId);
       assert.equal(snapshot.turns.length, 1);
-      assert.equal(snapshot.turns[0]?.items.length, 1);
+      const transcriptText = snapshot.turns[0]?.items
+        .flatMap((item) =>
+          typeof item === "object" &&
+          item !== null &&
+          (item as { type?: unknown }).type === "agentMessage"
+            ? [String((item as { text?: unknown }).text ?? "")]
+            : [],
+        )
+        .join("");
+      assert.equal(transcriptText, "hello from mock");
+      assert.isTrue(
+        snapshot.turns[0]?.items.some(
+          (item) => typeof item === "object" && item !== null && "result" in item,
+        ),
+        "the prompt result must survive alongside streamed assistant text",
+      );
 
       yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);

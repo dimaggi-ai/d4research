@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as Crypto from "effect/Crypto";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
@@ -9,7 +10,23 @@ import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
+
+/**
+ * Machine-readable failure category. The orchestrator's RUN STATE report and
+ * the UI both need to say *how* a delegation failed (refusal vs timeout vs
+ * crash), and a prose-only detail string cannot be classified reliably.
+ */
+export const ResearchDelegateFailureKind = Schema.Literals([
+  "authorization",
+  "budget",
+  "start",
+  "timeout",
+  "empty",
+  "error",
+]);
+export type ResearchDelegateFailureKind = typeof ResearchDelegateFailureKind.Type;
 
 export class ResearchDelegateError extends Schema.TaggedErrorClass<ResearchDelegateError>()(
   "ResearchDelegateError",
@@ -17,6 +34,7 @@ export class ResearchDelegateError extends Schema.TaggedErrorClass<ResearchDeleg
     detail: Schema.String,
     /** True when the failure is a spent loop budget rather than a broken delegate. */
     budgetExhausted: Schema.optional(Schema.Boolean),
+    failureKind: Schema.optional(ResearchDelegateFailureKind),
   },
 ) {}
 
@@ -24,11 +42,13 @@ const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProviderAdapterRegistry,
+  ProviderService,
   ProjectionSnapshotQuery,
   ServerConfig.ServerConfig,
   ResearchDelegationBudget,
   Path.Path,
   HttpClient.HttpClient,
+  Crypto.Crypto,
 ];
 
 export const ResearchDelegateInput = Schema.Struct({
@@ -44,13 +64,20 @@ export const ResearchDelegateInput = Schema.Struct({
   promptFileName: Schema.optional(Schema.String).pipe(
     Schema.annotate({
       description:
-        "Name of a prompt file attached in Settings → Research. Its content is inlined server-side ahead of the prompt.",
+        "Name of a prompt file attached to this run's scenario. Its content is inlined server-side ahead of the prompt. Requires scenario; only files attached to that scenario can be named.",
+    }),
+  ),
+  pipelineKind: Schema.optional(Schema.Literals(["research", "dev"])).pipe(
+    Schema.withDecodingDefault(Effect.succeed("research")),
+    Schema.annotate({
+      description:
+        "Pipeline settings namespace used for prompt-file lookup. Pass dev for a !dev run; defaults to research for compatibility.",
     }),
   ),
   scenario: Schema.optional(Schema.String).pipe(
     Schema.annotate({
       description:
-        "Research scenario this pipeline run belongs to, as stated in the briefing. Scopes prompt-file lookup.",
+        "Scenario this pipeline run belongs to, copied exactly from the briefing. Scopes prompt-file lookup to that scenario's attachments; required whenever promptFileName is set.",
     }),
   ),
   step: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)).pipe(
@@ -72,6 +99,8 @@ export const ResearchDelegateOutput = Schema.Struct({
   visit: Schema.Int,
   /** Delegations left in this research run's budget after this call. */
   remainingBudget: Schema.Int,
+  /** Wall-clock cost of the delegation, for the run's resource ledger. */
+  durationMs: Schema.Int,
   /** True when the delegate's answer was cut at the output cap. */
   truncated: Schema.Boolean,
   text: Schema.String,

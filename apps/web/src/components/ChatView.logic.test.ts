@@ -18,6 +18,7 @@ import {
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveThreadPipelineKind,
   dismissBranchMismatchForSession,
   getStartedThreadModelChangeBlockReason,
   hasServerAcknowledgedLocalDispatch,
@@ -28,6 +29,11 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   startNewThreadForProject,
+  shouldDeleteFailedResearchThread,
+  shouldRestoreComposerSnapshot,
+  isAudioArtifactPath,
+  audioArtifactDismissKey,
+  outgoingMessageLengthError,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -45,6 +51,74 @@ describe("resolveProjectOpenInCwd", () => {
 
   it("disables project open actions only when neither path exists", () => {
     expect(resolveProjectOpenInCwd(null, null)).toBeNull();
+  });
+});
+
+describe("research launch and composer retry safety", () => {
+  it("uses the most recently armed research or dev pipeline for progress", () => {
+    expect(
+      deriveThreadPipelineKind([
+        { role: "user", text: "#deep-research investigate storage" },
+        { role: "assistant", text: "Working" },
+        { role: "user", text: "!dev:review review before push" },
+      ]),
+    ).toBe("dev");
+    expect(
+      deriveThreadPipelineKind([
+        { role: "user", text: "!dev:review old run" },
+        { role: "user", text: "#deep-research new run" },
+      ]),
+    ).toBe("research");
+    expect(deriveThreadPipelineKind([{ role: "assistant", text: "!dev:review" }])).toBeNull();
+  });
+
+  it("keeps an accepted research turn even when projection or navigation fails", () => {
+    expect(shouldDeleteFailedResearchThread(true)).toBe(false);
+    expect(shouldDeleteFailedResearchThread(false)).toBe(true);
+  });
+
+  it("restores a failed send only into an untouched composer, including pasted contexts", () => {
+    const empty = {
+      queuedRequest: false,
+      promptLength: 0,
+      imageCount: 0,
+      terminalContextCount: 0,
+      elementContextCount: 0,
+      pastedContextCount: 0,
+      previewAnnotationCount: 0,
+      reviewCommentCount: 0,
+    };
+    expect(shouldRestoreComposerSnapshot(empty)).toBe(true);
+    expect(shouldRestoreComposerSnapshot({ ...empty, pastedContextCount: 1 })).toBe(false);
+    expect(shouldRestoreComposerSnapshot({ ...empty, promptLength: 1 })).toBe(false);
+    expect(shouldRestoreComposerSnapshot({ ...empty, queuedRequest: true })).toBe(false);
+  });
+});
+
+describe("provider-bound message size", () => {
+  it("accepts the exact contract boundary and rejects one character more", () => {
+    expect(outgoingMessageLengthError("x".repeat(120_000))).toBeNull();
+    expect(outgoingMessageLengthError("x".repeat(120_001))).toBe(
+      "This message is 120001 characters; the provider limit is 120000. Shorten the prompt or remove an attached context.",
+    );
+  });
+});
+
+describe("audio artifacts", () => {
+  it("recognizes supported extensions case-insensitively without substring matches", () => {
+    for (const path of ["show.mp3", "voice.WAV", "clip.m4a", "voice.opus", "stream.weba"]) {
+      expect(isAudioArtifactPath(path)).toBe(true);
+    }
+    for (const path of ["show.mp3.txt", "README", ".mp3-backup", "video.mp4"]) {
+      expect(isAudioArtifactPath(path)).toBe(false);
+    }
+  });
+
+  it("scopes dismissal keys to both thread and artifact path", () => {
+    expect(audioArtifactDismissKey("thread-a", "out/show.mp3")).toBe("thread-a::out/show.mp3");
+    expect(audioArtifactDismissKey("thread-b", "out/show.mp3")).not.toBe(
+      audioArtifactDismissKey("thread-a", "out/show.mp3"),
+    );
   });
 });
 
@@ -270,6 +344,17 @@ describe("deriveComposerSendState", () => {
         elementContextCount: 0,
       }).hasSendableContent,
     ).toBe(false);
+  });
+
+  it("treats a pasted-text attachment with no prompt as sendable", () => {
+    expect(
+      deriveComposerSendState({
+        prompt: "",
+        imageCount: 0,
+        terminalContexts: [],
+        pastedContextCount: 1,
+      }).hasSendableContent,
+    ).toBe(true);
   });
 });
 

@@ -2,6 +2,8 @@ import Mime from "@effect/platform-node/Mime";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  ENABLED_BY_DEFAULT_SKILL_NAME_MAX_CHARS,
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
@@ -36,6 +38,7 @@ import {
   failEnvironmentScopeRequired,
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
+  requireEnvironmentScope,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
@@ -54,9 +57,10 @@ import {
 } from "./handoffCompression.ts";
 import {
   isShareSkillTargetRoot,
+  PortableSkillsInventory,
   readSkillsInventory,
-  shareSkill,
-  type SkillsInventoryEntry,
+  shareSkillAndRefreshInventory,
+  installSkillFromGit,
 } from "./skillsInventory.ts";
 import { makeConfiguredMemoryConnector } from "./mcp/toolkits/memory/localConnector.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
@@ -66,8 +70,8 @@ const MISSION_CONTROL_SYSTEM_PATH = "/api/system-monitor";
 const MISSION_CONTROL_SYSTEM_URL = "http://127.0.0.1:8093/sysmon";
 const TOOL_GUARD_STATUS_PATH = "/api/tool-guard/status";
 const TOOL_GUARD_POLICY_PATH = "/api/tool-guard/policy";
-const SKILLS_PATH = "/api/skills";
 const SKILLS_SHARE_PATH = "/api/skills/share";
+const SKILLS_INSTALL_PATH = "/api/skills/install";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
@@ -148,6 +152,24 @@ export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
         yield* annotateEnvironmentRequest(args.endpoint.name);
         return yield* serverEnvironment.getDescriptor;
       }, traceRelayRequest),
+    );
+  }),
+);
+
+export const skillsHttpApiLayer = HttpApiBuilder.group(
+  EnvironmentHttpApi,
+  "skills",
+  Effect.fnUntraced(function* (handlers) {
+    yield* Effect.void;
+    return handlers.handle(
+      "inventory",
+      Effect.fn("environment.skills.inventory")(function* (args) {
+        yield* annotateEnvironmentRequest(args.endpoint.name);
+        yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+        const cwd = args.query.cwd?.trim() || process.cwd();
+        const skills = yield* readSkillsInventory({ cwd });
+        return { skills };
+      }),
     );
   }),
 );
@@ -362,30 +384,6 @@ export const toolGuardPolicyWriteRouteLayer = HttpRouter.add(
   ),
 );
 
-export const skillsInventoryRouteLayer = HttpRouter.add(
-  "GET",
-  SKILLS_PATH,
-  Effect.gen(function* () {
-    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    // `cwd` scopes the project roots; without it only the user-level roots are scanned.
-    const cwd = Option.isSome(url)
-      ? url.value.searchParams.get("cwd")?.trim() || undefined
-      : undefined;
-    const skills = yield* readSkillsInventory({ cwd: cwd ?? process.cwd() }).pipe(
-      Effect.orElseSucceed((): ReadonlyArray<SkillsInventoryEntry> => []),
-    );
-    return HttpServerResponse.jsonUnsafe({ skills }, { headers: { "cache-control": "no-store" } });
-  }).pipe(
-    Effect.catchTags({
-      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-      EnvironmentInternalError: HttpServerRespondable.toResponse,
-      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-    }),
-  ),
-);
-
 export const skillsShareRouteLayer = HttpRouter.add(
   "POST",
   SKILLS_SHARE_PATH,
@@ -404,7 +402,10 @@ export const skillsShareRouteLayer = HttpRouter.add(
         );
       }
       const cwd = typeof body.cwd === "string" && body.cwd.trim() ? body.cwd.trim() : process.cwd();
-      const result = yield* shareSkill({ sourcePath, targetRoot: body.targetRoot }, { cwd });
+      const result = yield* shareSkillAndRefreshInventory(
+        { sourcePath, targetRoot: body.targetRoot },
+        { cwd },
+      );
       return result.ok
         ? HttpServerResponse.jsonUnsafe(
             { ok: true, targetPath: result.targetPath, mode: result.mode },
@@ -431,6 +432,69 @@ export const skillsShareRouteLayer = HttpRouter.add(
   ),
 );
 
+type InstallSkillFromGit = typeof installSkillFromGit;
+
+/**
+ * Build the authenticated skill-install route around an explicit installer.
+ * Production uses the real git lifecycle below; tests inject the boundary so
+ * JSON decoding, opt-in propagation, and HTTP status mapping are exercised
+ * without cloning a remote repository.
+ */
+export const makeSkillsInstallRouteLayer = (install: InstallSkillFromGit = installSkillFromGit) =>
+  HttpRouter.add(
+    "POST",
+    SKILLS_INSTALL_PATH,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const portableSkills = yield* PortableSkillsInventory;
+      return yield* Effect.gen(function* () {
+        const body = cast<unknown, { url?: unknown; cwd?: unknown; installAgyPlugin?: unknown }>(
+          yield* request.json,
+        );
+        const cwd =
+          typeof body.cwd === "string" && body.cwd.trim() ? body.cwd.trim() : process.cwd();
+        const result = yield* install(
+          {
+            url: typeof body.url === "string" ? body.url : "",
+            cwd,
+            installAgyPlugin: body.installAgyPlugin === true,
+          },
+          { cwd },
+        );
+        if (result.ok) yield* portableSkills.refresh;
+        return result.ok
+          ? HttpServerResponse.jsonUnsafe(
+              {
+                ok: true,
+                installed: result.installed,
+                sharedRoots: result.sharedRoots,
+                agyPlugin: result.agyPlugin,
+              },
+              { headers: { "cache-control": "no-store" } },
+            )
+          : HttpServerResponse.jsonUnsafe(
+              { ok: false, message: result.message },
+              { status: result.status, headers: { "cache-control": "no-store" } },
+            );
+      }).pipe(
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.jsonUnsafe(
+            { ok: false, message: "Could not install the skill." },
+            { status: 500, headers: { "cache-control": "no-store" } },
+          ),
+        ),
+      );
+    }).pipe(
+      Effect.catchTags({
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+      }),
+    ),
+  );
+
+export const skillsInstallRouteLayer = makeSkillsInstallRouteLayer();
 export const handoffMemoryRouteLayer = HttpRouter.add(
   "POST",
   HANDOFF_MEMORY_PATH,
@@ -552,8 +616,24 @@ interface HandoffPrepareBody {
   readonly sourceThreadId?: unknown;
   readonly sourceThreadTitle?: unknown;
   readonly target?: unknown;
+  readonly enabledSkills?: unknown;
   /** Skip compression entirely and hand the transcript over as-is. */
   readonly bypassCompression?: unknown;
+}
+
+export function readHandoffEnabledSkills(value: unknown): ReadonlyArray<string> {
+  if (!Array.isArray(value)) return [];
+  const names: Array<string> = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const name = item.trim();
+    if (!name || name.length > ENABLED_BY_DEFAULT_SKILL_NAME_MAX_CHARS || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+    if (names.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT) break;
+  }
+  return names;
 }
 
 function readHandoffPrepareTarget(
@@ -604,6 +684,7 @@ export function buildHandoffMemoryText(input: {
   readonly sourceThreadId?: string | undefined;
   readonly sourceThreadTitle?: string | undefined;
   readonly target?: { readonly instanceId: string; readonly model: string } | undefined;
+  readonly enabledSkills?: ReadonlyArray<string> | undefined;
 }): string {
   const lines: Array<string> = [];
   if (input.sourceThreadTitle || input.sourceThreadId) {
@@ -618,6 +699,9 @@ export function buildHandoffMemoryText(input: {
   }
   if (input.target) {
     lines.push(`Receiving agent: ${input.target.instanceId} / ${input.target.model}.`);
+  }
+  if (input.enabledSkills && input.enabledSkills.length > 0) {
+    lines.push(`Configured global and chat skills to preserve: ${input.enabledSkills.join(", ")}.`);
   }
   lines.push("Shared context:", input.summary.trim());
   return lines.join("\n");
@@ -648,6 +732,7 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
       const sourceThreadTitle =
         typeof body.sourceThreadTitle === "string" ? body.sourceThreadTitle.trim() : undefined;
       const target = readHandoffPrepareTarget(body.target);
+      const enabledSkills = readHandoffEnabledSkills(body.enabledSkills);
 
       const settingsService = yield* ServerSettingsService;
       const settings = yield* settingsService.getSettings;
@@ -689,8 +774,10 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
         });
       }
 
-      // Persist the compressed summary to local Memo best-effort — a memory
-      // outage must not block the handoff either.
+      // Attempt to persist the compressed summary to local Memo and report the
+      // result explicitly. The client treats memoryPersisted:false as a failed
+      // prepare and must complete the dedicated memory fallback before it
+      // changes the existing thread's provider session.
       let memoryPersisted = false;
       if (settings.memory.localEnabled) {
         memoryPersisted = yield* Effect.gen(function* () {
@@ -701,6 +788,7 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
               sourceThreadId,
               sourceThreadTitle,
               target,
+              enabledSkills,
             }),
             "t3research-provider-handoff",
             project,

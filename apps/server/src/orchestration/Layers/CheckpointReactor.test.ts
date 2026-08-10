@@ -126,6 +126,7 @@ function createProviderServiceHarness(
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
     },
+    subscribeEvents: Effect.succeed(Stream.fromPubSub(runtimeEventPubSub)),
   };
 
   const emit = (event: LegacyProviderRuntimeEvent): void => {

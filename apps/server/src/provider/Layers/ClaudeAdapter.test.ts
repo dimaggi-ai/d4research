@@ -60,6 +60,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
   public contextUsage: SDKControlGetContextUsageResponse | undefined;
+  public interruptFailure: Error | undefined;
   public closeCalls = 0;
 
   emit(message: SDKMessage): void {
@@ -98,6 +99,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 
   readonly interrupt = async (): Promise<void> => {
     this.interruptCalls.push(undefined);
+    if (this.interruptFailure) throw this.interruptFailure;
   };
 
   readonly setModel = async (model?: string): Promise<void> => {
@@ -1047,6 +1049,157 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(String(turnStartedEvents[0]?.turnId), String(turn.turnId));
       assert.equal(turnCompletedEvents.length, 1);
       assert.equal(String(turnCompletedEvents[0]?.turnId), String(turn.turnId));
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // Pressing stop makes the SDK end the turn with a non-success result whose
+  // only "error" is an internal `[ede_diagnostic]` line. That must read as an
+  // interruption, never as a provider error surfaced into the thread.
+  it.effect("treats an ede_diagnostic-only result after stop as interrupted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "long running work",
+        attachments: [],
+      });
+
+      yield* adapter.interruptTurn(session.threadId, turn.turnId);
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: false,
+        errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],
+        session_id: "sdk-session-ede-diagnostic",
+        uuid: "result-ede-diagnostic",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+
+      assert.isUndefined(runtimeEvents.find((event) => event.type === "runtime.error"));
+
+      const turnCompleted = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.isDefined(turnCompleted);
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(turnCompleted.payload.state, "interrupted");
+        assert.isUndefined(turnCompleted.payload.errorMessage);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("does not misclassify a provider failure when interrupt itself is rejected", () => {
+    const harness = makeHarness();
+    harness.query.interruptFailure = new Error("interrupt transport unavailable");
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "work that subsequently fails",
+        attachments: [],
+      });
+
+      const interruptError = yield* Effect.flip(
+        adapter.interruptTurn(session.threadId, turn.turnId),
+      );
+      assert.match(String(interruptError), /turn\/interrupt/);
+      assert.equal(harness.query.interruptCalls.length, 1);
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["actual provider failure"],
+        session_id: "sdk-session-rejected-interrupt",
+        uuid: "result-rejected-interrupt",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.isDefined(runtimeEvents.find((event) => event.type === "runtime.error"));
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.isDefined(completed);
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.equal(completed.payload.errorMessage, "actual provider failure");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // A genuine failure must still surface, even when a diagnostic rides along.
+  it.effect("still reports real Claude errors alongside an ede_diagnostic line", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "do the thing",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: [
+          "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null",
+          "Model provider returned 500.",
+        ],
+        session_id: "sdk-session-real-error",
+        uuid: "result-real-error",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+
+      const turnCompleted = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.isDefined(turnCompleted);
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(turnCompleted.payload.state, "failed");
+        assert.equal(turnCompleted.payload.errorMessage, "Model provider returned 500.");
+      }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -5,6 +5,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/research"
+  | "/settings/dev-pipelines"
   | "/settings/connections"
   | "/settings/tool-guard"
   | "/settings/skills"
@@ -29,6 +30,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
   "/settings/research": "Research",
+  "/settings/dev-pipelines": "Dev pipelines",
   "/settings/connections": "Connections",
   "/settings/tool-guard": "Tool Guard",
   "/settings/skills": "Skills",
@@ -180,12 +182,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "research-pipeline",
   },
   {
-    id: "research-orchestrator-model",
-    title: "Orchestrator model",
-    to: "/settings/research",
-    targetId: "research-pipeline",
-  },
-  {
     id: "research-pipeline-prompt",
     title: "Pipeline",
     to: "/settings/research",
@@ -204,9 +200,37 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "research-pipeline",
   },
   {
+    id: "dev-pipelines",
+    title: "Dev pipelines",
+    to: "/settings/dev-pipelines",
+  },
+  {
+    id: "dev-pipeline-scenario",
+    title: "Dev pipeline",
+    to: "/settings/dev-pipelines",
+    targetId: "dev-pipelines",
+  },
+  {
+    id: "dev-pipeline-prompt",
+    title: "Pipeline steps",
+    to: "/settings/dev-pipelines",
+    targetId: "dev-pipelines",
+  },
+  {
+    id: "dev-pipeline-prompt-files",
+    title: "Dev pipeline prompt files",
+    to: "/settings/dev-pipelines",
+    targetId: "dev-pipelines",
+  },
+  {
     id: "tool-guard-policies",
     title: "Tool Guard policies",
     to: "/settings/tool-guard",
+  },
+  {
+    id: "skills-enabled-default",
+    title: "Global skills",
+    to: "/settings/skills",
   },
   {
     id: "skills-inventory",

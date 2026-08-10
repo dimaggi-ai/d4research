@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  ThreadId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
@@ -203,6 +204,108 @@ describe("serverSettings helpers", () => {
         sourceControlWriterModelSelection: null,
       }).sourceControlWriterModelSelection,
     ).toBeNull();
+  });
+
+  it("replaces the enabled-by-default skill list without retaining old names", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      skills: {
+        enabledByDefault: ["old-skill", "keep-skill"],
+        enabledByThread: { [ThreadId.make("thread-old")]: ["chat-old"] },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: { enabledByDefault: ["new-skill"] },
+      }).skills.enabledByDefault,
+    ).toEqual(["new-skill"]);
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: { enabledByDefault: [] },
+      }).skills.enabledByDefault,
+    ).toEqual([]);
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: { enabledByThread: { [ThreadId.make("thread-new")]: ["chat-new"] } },
+      }).skills.enabledByThread,
+    ).toEqual({ "thread-new": ["chat-new"] });
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: { enabledByThread: {} },
+      }).skills.enabledByThread,
+    ).toEqual({});
+  });
+
+  it("applies global and chat replacements together without dropping either field", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      skills: {
+        enabledByDefault: ["old-global"],
+        enabledByThread: { [ThreadId.make("old-thread")]: ["old-chat"] },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: {
+          enabledByDefault: ["new-global"],
+          enabledByThread: { [ThreadId.make("new-thread")]: ["new-chat"] },
+        },
+      }).skills,
+    ).toEqual({
+      enabledByDefault: ["new-global"],
+      enabledByThread: { "new-thread": ["new-chat"] },
+    });
+  });
+
+  it("merges atomic skill updates against the latest server state", () => {
+    const firstClient = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      skills: {
+        setEnabledForThread: { threadId: ThreadId.make("thread-a"), names: ["alpha"] },
+      },
+    });
+    const secondClient = applyServerSettingsPatch(firstClient, {
+      skills: {
+        setEnabledForThread: { threadId: ThreadId.make("thread-b"), names: ["beta"] },
+        setEnabledByDefault: { name: "global", enabled: true },
+      },
+    });
+
+    expect(secondClient.skills).toEqual({
+      enabledByDefault: ["global"],
+      enabledByThread: { "thread-a": ["alpha"], "thread-b": ["beta"] },
+    });
+    expect(
+      applyServerSettingsPatch(secondClient, {
+        skills: { setEnabledByDefault: { name: "global", enabled: false } },
+      }).skills.enabledByDefault,
+    ).toEqual([]);
+  });
+
+  it("merges concurrent per-thread skill toggles without last-writer data loss", () => {
+    const threadId = ThreadId.make("thread-a");
+    const firstClient = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      skills: {
+        setEnabledForThreadSkill: { threadId, name: "alpha", enabled: true },
+      },
+    });
+    const secondClient = applyServerSettingsPatch(firstClient, {
+      skills: {
+        setEnabledForThreadSkill: { threadId, name: "beta", enabled: true },
+      },
+    });
+
+    expect(secondClient.skills.enabledByThread).toEqual({
+      "thread-a": ["alpha", "beta"],
+    });
+    expect(
+      applyServerSettingsPatch(secondClient, {
+        skills: {
+          setEnabledForThreadSkill: { threadId, name: "alpha", enabled: false },
+        },
+      }).skills.enabledByThread,
+    ).toEqual({ "thread-a": ["beta"] });
   });
 
   it("falls back from a disabled source control writer provider without clearing its selection", () => {
@@ -511,5 +614,43 @@ describe("serverSettings helpers", () => {
     });
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
+  });
+
+  it("replaces dev scenarios as a complete ordered collection", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      dev: {
+        activeScenario: "second",
+        scenarios: [
+          { name: "first", pipelinePrompt: "first", promptFiles: [] },
+          { name: "second", pipelinePrompt: "second", promptFiles: [] },
+        ],
+      },
+    });
+    const next = applyServerSettingsPatch(current, {
+      dev: {
+        activeScenario: "replacement",
+        scenarios: [{ name: "replacement", pipelinePrompt: "new", promptFiles: [] }],
+      },
+    });
+
+    expect(next.dev).toEqual({
+      activeScenario: "replacement",
+      scenarios: [{ name: "replacement", pipelinePrompt: "new", promptFiles: [] }],
+    });
+  });
+
+  it("replaces research scenario and prompt-file arrays instead of merging indices", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      research: {
+        scenarios: [{ name: "old", pipelinePrompt: "old", promptFiles: [] }],
+        promptFiles: [{ name: "old.md", content: "old" }],
+      },
+    });
+    const next = applyServerSettingsPatch(current, {
+      research: { scenarios: [], promptFiles: [] },
+    });
+
+    expect(next.research.scenarios).toEqual([]);
+    expect(next.research.promptFiles).toEqual([]);
   });
 });

@@ -60,6 +60,7 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../src/orchestration/Services/RateLimitResumeReactor.ts";
+import { ResearchIntegrityReactor } from "../src/orchestration/Services/ResearchIntegrityReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -371,6 +372,12 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.succeed(RateLimitResumeReactor, {
           start: () => Effect.void,
           runDue: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ResearchIntegrityReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
         }),
       ),
       Layer.provideMerge(

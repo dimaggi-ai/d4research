@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { ThreadId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
@@ -304,13 +304,23 @@ export const CodexSettings = makeProviderSettingsSchema(
         description: "Additional CLI arguments passed to codex app-server on session start.",
       }),
     ),
+    // Codex is the only provider with native retrieval. Research drafters
+    // without it answer from training data alone, so this defaults on.
+    webSearch: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Web search",
+        description:
+          "Let Codex use its native web_search tool. Research delegates answer from training data alone when this is off.",
+      }),
+    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "webSearch", "launchArgs"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
@@ -641,6 +651,37 @@ export type HandoffSettings = typeof HandoffSettings.Type;
 
 export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = Schema.decodeSync(HandoffSettings)({});
 
+// ── Skills settings ────────────────────────────────────────────────────
+/** Bound the per-turn context tax and keep a malformed settings file finite. */
+export const ENABLED_BY_DEFAULT_SKILL_MAX_COUNT = 12;
+export const ENABLED_BY_DEFAULT_SKILL_NAME_MAX_CHARS = 128;
+export const ENABLED_SKILL_SESSION_MAX_COUNT = 256;
+
+const EnabledSkillName = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ENABLED_BY_DEFAULT_SKILL_NAME_MAX_CHARS),
+);
+const EnabledSkillNames = Schema.Array(EnabledSkillName).check(
+  Schema.isMaxLength(ENABLED_BY_DEFAULT_SKILL_MAX_COUNT),
+);
+
+const EnabledSkillsByThread = Schema.Record(ThreadId, EnabledSkillNames).check(
+  Schema.makeFilter(
+    (value) =>
+      Object.keys(value).length <= ENABLED_SKILL_SESSION_MAX_COUNT ||
+      `At most ${ENABLED_SKILL_SESSION_MAX_COUNT} chats may carry session skills.`,
+  ),
+);
+
+export const SkillsSettings = Schema.Struct({
+  /** Skill names resolved against the live environment inventory on every turn. */
+  enabledByDefault: EnabledSkillNames.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** Additional names active only in one durable chat (draft thread ids are preallocated). */
+  enabledByThread: EnabledSkillsByThread.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type SkillsSettings = typeof SkillsSettings.Type;
+
+export const DEFAULT_SKILLS_SETTINGS: SkillsSettings = Schema.decodeSync(SkillsSettings)({});
+
 // ── Research settings ────────────────────────────────────────────────────
 export const RESEARCH_PROMPT_FILE_MAX_COUNT = 8;
 export const RESEARCH_PROMPT_FILE_MAX_CHARS = 64_000;
@@ -667,15 +708,14 @@ export const RESEARCH_SCENARIO_MAX_COUNT = 12;
 export const RESEARCH_SCENARIO_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 /**
- * One named research scenario: its own orchestrator model, pipeline prompt,
- * and prompt files. Selected in Settings → Research and triggered from the
- * composer as `!research:<name>`.
+ * One named research scenario: its pipeline prompt and prompt files. Selected
+ * in Settings → Research and triggered from the composer as
+ * `!research:<name>`. The pipeline always runs on the thread's current model —
+ * a scenario deliberately carries no orchestrator model of its own, so the
+ * model visible in the composer is always the one that runs.
  */
 export const ResearchScenario = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isPattern(RESEARCH_SCENARIO_NAME_REGEX)),
-  orchestratorSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
   pipelinePrompt: Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)).pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
   ),
@@ -697,9 +737,6 @@ export const ResearchSettings = Schema.Struct({
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /** Scenario the settings UI edits and the composer button triggers. */
   activeScenario: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  orchestratorSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
   pipelinePrompt: Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)).pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
   ),
@@ -717,6 +754,31 @@ export const ResearchSettings = Schema.Struct({
 export type ResearchSettings = typeof ResearchSettings.Type;
 
 export const DEFAULT_RESEARCH_SETTINGS: ResearchSettings = Schema.decodeSync(ResearchSettings)({});
+
+// ── Dev pipelines ────────────────────────────────────────────────────────
+//
+// A dev pipeline is the research engine pointed at code work: the same
+// server-enforced delegation budget, visit caps, target fallback, and honest
+// run reporting. Only the prompt and the trigger differ, so a scenario reuses
+// `ResearchScenario` rather than duplicating its shape.
+
+export const DEV_SCENARIO_MAX_COUNT = 12;
+
+/**
+ * Dev-pipeline configuration. Triggered from the composer's Build control as
+ * `!dev:<name>`; runs in place (unlike research, which opens its own thread)
+ * because the work belongs to the conversation that asked for it.
+ */
+export const DevSettings = Schema.Struct({
+  scenarios: Schema.Array(ResearchScenario)
+    .check(Schema.isMaxLength(DEV_SCENARIO_MAX_COUNT))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** Scenario the Build control selects by default. */
+  activeScenario: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type DevSettings = typeof DevSettings.Type;
+
+export const DEFAULT_DEV_SETTINGS: DevSettings = Schema.decodeSync(DevSettings)({});
 
 // ── Memory connector settings ────────────────────────────────────────────
 export const MemoryLocalBackend = Schema.Literals(["builtin", "memo-rest"]);
@@ -826,7 +888,9 @@ export const ServerSettings = Schema.Struct({
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   memory: MemoryConnectorSettings,
   handoff: HandoffSettings,
+  skills: SkillsSettings,
   research: ResearchSettings,
+  dev: DevSettings,
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -888,6 +952,7 @@ const CodexSettingsPatch = Schema.Struct({
   homePath: Schema.optionalKey(TrimmedString),
   shadowHomePath: Schema.optionalKey(TrimmedString),
   launchArgs: Schema.optionalKey(TrimmedString),
+  webSearch: Schema.optionalKey(Schema.Boolean),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
@@ -992,6 +1057,30 @@ export const ServerSettingsPatch = Schema.Struct({
       ),
     }),
   ),
+  skills: Schema.optionalKey(
+    Schema.Struct({
+      // Whole-list replacement: names are ordered, unique in the UI, and tiny.
+      enabledByDefault: Schema.optionalKey(EnabledSkillNames),
+      // Whole-map replacement keeps deletion of a chat-level selection unambiguous.
+      enabledByThread: Schema.optionalKey(EnabledSkillsByThread),
+      /** Atomic idempotent update used by multi-client global controls. */
+      setEnabledByDefault: Schema.optionalKey(
+        Schema.Struct({ name: EnabledSkillName, enabled: Schema.Boolean }),
+      ),
+      /** Atomic one-chat replacement merged against the latest server state. */
+      setEnabledForThread: Schema.optionalKey(
+        Schema.Struct({ threadId: ThreadId, names: EnabledSkillNames }),
+      ),
+      /** Atomic idempotent toggle merged against the latest multi-client state. */
+      setEnabledForThreadSkill: Schema.optionalKey(
+        Schema.Struct({
+          threadId: ThreadId,
+          name: EnabledSkillName,
+          enabled: Schema.Boolean,
+        }),
+      ),
+    }),
+  ),
   research: Schema.optionalKey(
     Schema.Struct({
       // Whole-array replacement for scenarios and prompt files: the lists are
@@ -1000,7 +1089,6 @@ export const ServerSettingsPatch = Schema.Struct({
         Schema.Array(ResearchScenario).check(Schema.isMaxLength(RESEARCH_SCENARIO_MAX_COUNT)),
       ),
       activeScenario: Schema.optionalKey(TrimmedString),
-      orchestratorSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
       pipelinePrompt: Schema.optionalKey(
         Schema.String.check(Schema.isMaxLength(RESEARCH_PIPELINE_PROMPT_MAX_CHARS)),
       ),
@@ -1009,6 +1097,14 @@ export const ServerSettingsPatch = Schema.Struct({
       ),
       bypassCompression: Schema.optionalKey(Schema.Boolean),
       shareMemoContext: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  dev: Schema.optionalKey(
+    Schema.Struct({
+      scenarios: Schema.optionalKey(
+        Schema.Array(ResearchScenario).check(Schema.isMaxLength(DEV_SCENARIO_MAX_COUNT)),
+      ),
+      activeScenario: Schema.optionalKey(TrimmedString),
     }),
   ),
   providers: Schema.optionalKey(

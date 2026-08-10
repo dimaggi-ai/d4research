@@ -4,23 +4,16 @@ import { EyeIcon, PaperclipIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { ResearchPromptFile, ResearchScenario } from "@t3tools/contracts";
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
-  RESEARCH_PROMPT_FILE_MAX_CHARS,
   RESEARCH_PROMPT_FILE_MAX_COUNT,
   RESEARCH_SCENARIO_MAX_COUNT,
   RESEARCH_SCENARIO_NAME_REGEX,
 } from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
-
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import {
-  getCustomModelOptionsByInstance,
-  resolveAppModelSelectionState,
-} from "../../modelSelection";
 import { primaryServerProvidersAtom } from "../../state/server";
 import {
   deriveDirectiveSuggestions,
@@ -29,7 +22,7 @@ import {
   resolveResearchDirectives,
   type DirectiveSuggestion,
 } from "../../researchPipeline";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { ACCEPTED_PROMPT_FILE_SUFFIXES, mergePromptFiles } from "../../lib/promptFiles";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -47,15 +40,9 @@ import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { SettingsPageContainer } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-const ACCEPTED_FILE_SUFFIXES = [".md", ".markdown", ".txt"];
 // Reserved dropdown value for the "Add scenario…" action; scenario names are
 // validated against RESEARCH_SCENARIO_NAME_REGEX so this can never collide.
 const ADD_SCENARIO_VALUE = "__add_scenario__";
-
-function isAcceptedFileName(name: string): boolean {
-  const lower = name.toLowerCase();
-  return ACCEPTED_FILE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-}
 
 export function ResearchSettingsPanel() {
   const settings = usePrimarySettings();
@@ -100,17 +87,8 @@ export function ResearchSettingsPanel() {
       document.activeElement === pipelineRef.current ? current : scenario.pipelinePrompt,
     );
   }, [scenario.name, scenario.pipelinePrompt]);
-  const defaultModelSelection = resolveAppModelSelectionState(settings, serverProviders);
-  const usesDedicatedOrchestrator = scenario.orchestratorSelection !== null;
-  const activeSelection = scenario.orchestratorSelection ?? defaultModelSelection;
   const instanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
-  );
-  const modelOptionsByInstance = getCustomModelOptionsByInstance(
-    settings,
-    serverProviders,
-    activeSelection.instanceId,
-    activeSelection.model,
   );
   const candidates = deriveResearchProviderCandidates(instanceEntries);
   const resolutions = resolveResearchDirectives(pipelineDraft, candidates, promptFiles);
@@ -138,29 +116,9 @@ export function ResearchSettingsPanel() {
 
   const attachFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setFileError(null);
-    const next = [...promptFiles];
-    for (const file of Array.from(files)) {
-      if (!isAcceptedFileName(file.name)) {
-        setFileError(`"${file.name}" skipped — only ${ACCEPTED_FILE_SUFFIXES.join(", ")} files.`);
-        continue;
-      }
-      if (next.length >= RESEARCH_PROMPT_FILE_MAX_COUNT) {
-        setFileError(`At most ${RESEARCH_PROMPT_FILE_MAX_COUNT} prompt files.`);
-        break;
-      }
-      const content = await file.text();
-      if (content.length > RESEARCH_PROMPT_FILE_MAX_CHARS) {
-        setFileError(
-          `"${file.name}" skipped — over ${Math.floor(RESEARCH_PROMPT_FILE_MAX_CHARS / 1000)}k characters.`,
-        );
-        continue;
-      }
-      const existing = next.findIndex((candidate) => candidate.name === file.name);
-      if (existing >= 0) next[existing] = { name: file.name, content };
-      else next.push({ name: file.name, content });
-    }
-    updateScenario({ promptFiles: next });
+    const result = await mergePromptFiles(promptFiles, Array.from(files));
+    setFileError(result.errors.length > 0 ? result.errors.join(" ") : null);
+    updateScenario({ promptFiles: result.promptFiles });
   };
 
   const openAddScenario = () => {
@@ -186,10 +144,7 @@ export function ResearchSettingsPanel() {
     setAddScenarioOpen(false);
     setNewScenarioName("");
     setScenarioError(null);
-    saveScenarios(
-      [...scenarios, { name, orchestratorSelection: null, pipelinePrompt: "", promptFiles: [] }],
-      name,
-    );
+    saveScenarios([...scenarios, { name, pipelinePrompt: "", promptFiles: [] }], name);
   };
 
   return (
@@ -197,7 +152,7 @@ export function ResearchSettingsPanel() {
       <SettingsSection {...searchableSetting("research-pipeline")}>
         <SettingsRow
           {...searchableSetting("research-scenario")}
-          description="Each scenario is a full pipeline: its own prompt, files, and orchestrator. Run one with !research:<name>."
+          description="Each scenario is a full pipeline: its own prompt and files, run on the thread's current model. Run one with !research:<name>."
           control={
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Select
@@ -280,47 +235,6 @@ export function ResearchSettingsPanel() {
         </Dialog>
 
         <SettingsRow
-          {...searchableSetting("research-orchestrator-model")}
-          description="Runs the pipeline: reads it, delegates to the models it names, and enforces step order. Off uses the thread's current model."
-          control={
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {usesDedicatedOrchestrator ? (
-                <ProviderModelPicker
-                  activeInstanceId={activeSelection.instanceId}
-                  model={activeSelection.model}
-                  lockedProvider={null}
-                  instanceEntries={instanceEntries}
-                  modelOptionsByInstance={modelOptionsByInstance}
-                  triggerVariant="outline"
-                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                  triggerAriaLabel="Research orchestrator model"
-                  onInstanceModelChange={(instanceId, model) => {
-                    updateScenario({
-                      orchestratorSelection: createModelSelection(instanceId, model),
-                    });
-                  }}
-                />
-              ) : null}
-              <Switch
-                checked={usesDedicatedOrchestrator}
-                onCheckedChange={(checked) =>
-                  updateScenario({
-                    orchestratorSelection: checked
-                      ? createModelSelection(
-                          defaultModelSelection.instanceId,
-                          defaultModelSelection.model,
-                          defaultModelSelection.options,
-                        )
-                      : null,
-                  })
-                }
-                aria-label="Use a dedicated research orchestrator model"
-              />
-            </div>
-          }
-        />
-
-        <SettingsRow
           {...searchableSetting("research-prompt-files")}
           description="Markdown attachments a directive can reference by name. Contents are sent to the delegate, not pasted into the orchestrator."
           control={
@@ -337,7 +251,7 @@ export function ResearchSettingsPanel() {
           <input
             ref={fileInputRef}
             type="file"
-            accept={ACCEPTED_FILE_SUFFIXES.join(",")}
+            accept={ACCEPTED_PROMPT_FILE_SUFFIXES.join(",")}
             multiple
             hidden
             onChange={(event) => {

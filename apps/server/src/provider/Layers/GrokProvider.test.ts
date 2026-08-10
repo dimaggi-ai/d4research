@@ -1,3 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -9,6 +15,26 @@ import { GrokSettings } from "@t3tools/contracts";
 import { buildInitialGrokProviderSnapshot, checkGrokProviderStatus } from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
+const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
+
+const makeGrokMockCli = async () => {
+  const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-mock-"));
+  const wrapperPath = NodePath.join(dir, "fake-grok.sh");
+  await NodeFSP.writeFile(
+    wrapperPath,
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "--version" ]; then echo "grok-cli 0.0.99"; exit 0; fi',
+      "export T3_ACP_MOCK_PROFILE=grok",
+      `exec node ${JSON.stringify(mockAgentPath)} "$@"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await NodeFSP.chmod(wrapperPath, 0o755);
+  return wrapperPath;
+};
 
 describe("buildInitialGrokProviderSnapshot", () => {
   it.effect("returns a disabled snapshot when settings.enabled is false", () =>
@@ -105,6 +131,18 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.installed).toBe(true);
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
       expect(snapshot.message).toContain("ACP startup failed");
+    }),
+  );
+
+  it.effect("discovers models from Grok's successful SessionModelState handshake", () =>
+    Effect.gen(function* () {
+      const binaryPath = yield* Effect.promise(makeGrokMockCli);
+      const snapshot = yield* checkGrokProviderStatus(
+        decodeGrokSettings({ enabled: true, binaryPath }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build", "grok-mock-alt"]);
     }),
   );
 });

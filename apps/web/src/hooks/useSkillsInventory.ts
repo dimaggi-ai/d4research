@@ -1,64 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
+import type {
+  SkillsInventoryAgent,
+  SkillsInventoryEntry,
+  SkillsInventoryRoot,
+  SkillsInventoryScope,
+} from "@t3tools/contracts";
+import type { PreparedConnection } from "@t3tools/client-runtime/connection";
+import {
+  fetchEnvironmentSkillsInventory,
+  preparedEnvironmentFetchAuthorization,
+} from "@t3tools/client-runtime/state/skills";
 
-export type SkillsInventoryRoot = "claude-user" | "codex-user" | "junie-user" | "project";
+import { runtime } from "../lib/runtime";
 
-export type SkillsInventoryAgent = "claude" | "codex" | "junie" | "all";
+export type {
+  SkillsInventoryAgent,
+  SkillsInventoryEntry,
+  SkillsInventoryRoot,
+  SkillsInventoryScope,
+};
 
-export type SkillsInventoryScope = "user" | "project" | "system";
-
-export interface SkillsInventoryEntry {
-  readonly name: string;
-  readonly description?: string;
-  readonly path: string;
-  readonly root: SkillsInventoryRoot;
-  readonly kind: "skill" | "command";
-  readonly scope: SkillsInventoryScope;
-  readonly agents: ReadonlyArray<SkillsInventoryAgent>;
-  readonly isSymlinked: boolean;
+function environmentApiUrl(path: string, httpBaseUrl?: string | null): string | null {
+  return httpBaseUrl ? new URL(path, httpBaseUrl).toString() : null;
 }
 
-const ROOTS: ReadonlySet<string> = new Set<SkillsInventoryRoot>([
-  "claude-user",
-  "codex-user",
-  "junie-user",
-  "project",
-]);
-const AGENTS: ReadonlySet<string> = new Set<SkillsInventoryAgent>([
-  "claude",
-  "codex",
-  "junie",
-  "all",
-]);
-const SCOPES: ReadonlySet<string> = new Set<SkillsInventoryScope>(["user", "project", "system"]);
-
-/**
- * Narrow one wire entry, dropping anything whose discriminants the server did
- * not send in a shape this build understands. The inventory is best-effort on
- * the server too, so a partial payload degrades to fewer rows, never a crash.
- */
-function toEntry(value: unknown): SkillsInventoryEntry | null {
-  if (typeof value !== "object" || value === null) return null;
-  const record = value as Record<string, unknown>;
-  const { name, path, root, kind, scope, agents, description } = record;
-  if (typeof name !== "string" || !name) return null;
-  if (typeof path !== "string" || !path) return null;
-  if (typeof root !== "string" || !ROOTS.has(root)) return null;
-  if (kind !== "skill" && kind !== "command") return null;
-  if (typeof scope !== "string" || !SCOPES.has(scope)) return null;
-  return {
-    name,
-    path,
-    root: root as SkillsInventoryRoot,
-    kind,
-    scope: scope as SkillsInventoryScope,
-    agents: Array.isArray(agents)
-      ? agents.filter(
-          (agent): agent is SkillsInventoryAgent => typeof agent === "string" && AGENTS.has(agent),
-        )
-      : [],
-    isSymlinked: record.isSymlinked === true,
-    ...(typeof description === "string" && description ? { description } : {}),
-  };
+export function skillsInventoryRequestUrl(
+  cwd?: string,
+  httpBaseUrl?: string | null,
+): string | null {
+  const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+  return environmentApiUrl(`/api/skills${query}`, httpBaseUrl);
 }
 
 export async function requestSkillShare(
@@ -66,14 +37,20 @@ export async function requestSkillShare(
     readonly sourcePath: string;
     readonly targetRoot: SkillsInventoryRoot;
     readonly cwd?: string | undefined;
+    readonly httpBaseUrl?: string | undefined;
   },
   fetcher: typeof fetch = fetch,
 ): Promise<{ readonly ok: boolean; readonly message: string }> {
-  const response = await fetcher("/api/skills/share", {
+  const { httpBaseUrl, ...body } = input;
+  const endpoint = environmentApiUrl("/api/skills/share", httpBaseUrl);
+  if (endpoint === null) {
+    return { ok: false, message: "The selected environment is not connected." };
+  }
+  const response = await fetcher(endpoint, {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
   const payload = (await response.json()) as { message?: unknown; targetPath?: unknown };
   if (response.ok) {
@@ -91,11 +68,67 @@ export async function requestSkillShare(
   };
 }
 
+export async function requestSkillInstall(
+  input: {
+    readonly url: string;
+    readonly cwd?: string | undefined;
+    readonly installAgyPlugin?: boolean;
+    readonly httpBaseUrl?: string | undefined;
+  },
+  fetcher: typeof fetch = fetch,
+): Promise<{ readonly ok: boolean; readonly message: string }> {
+  const { httpBaseUrl, ...body } = input;
+  const endpoint = environmentApiUrl("/api/skills/install", httpBaseUrl);
+  if (endpoint === null) {
+    return { ok: false, message: "The selected environment is not connected." };
+  }
+  const response = await fetcher(endpoint, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json()) as {
+    message?: unknown;
+    installed?: unknown;
+    sharedRoots?: unknown;
+    agyPlugin?: unknown;
+  };
+  if (response.ok) {
+    const installed = Array.isArray(payload.installed) ? payload.installed.join(", ") : "";
+    // Agy reads the portable skill too. A plugin is a separate, broader
+    // package channel, so that outcome is reported independently.
+    const agyNote =
+      payload.agyPlugin === "installed"
+        ? " Agy plugin installed."
+        : payload.agyPlugin === "failed"
+          ? " Agy plugin install failed."
+          : payload.agyPlugin === "agy-unavailable"
+            ? " Agy not installed on this machine."
+            : "";
+    return {
+      ok: true,
+      message: installed
+        ? `Installed ${installed} for Claude, Codex, Cursor, Grok, OpenCode, Junie and Agy.${agyNote}`
+        : `Skill installed.${agyNote}`,
+    };
+  }
+  return {
+    ok: false,
+    message: typeof payload.message === "string" ? payload.message : "Could not install the skill.",
+  };
+}
+
 export interface SkillsInventoryState {
   readonly state: "loading" | "ready" | "error";
   readonly entries: ReadonlyArray<SkillsInventoryEntry>;
   readonly error: string | null;
   readonly sharing: string | null;
+  readonly installing: boolean;
+  readonly install: (
+    url: string,
+    options?: { readonly installAgyPlugin?: boolean },
+  ) => Promise<{ readonly ok: boolean; readonly message: string }>;
   readonly share: (
     sourcePath: string,
     targetRoot: SkillsInventoryRoot,
@@ -112,6 +145,7 @@ export interface UseSkillsInventoryOptions {
    * pass false so no chat view pays for a poll it will not read.
    */
   readonly enabled?: boolean;
+  readonly preparedConnection?: PreparedConnection | null;
 }
 
 export function useSkillsInventory(
@@ -119,38 +153,38 @@ export function useSkillsInventory(
   options: UseSkillsInventoryOptions = {},
 ): SkillsInventoryState {
   const enabled = options.enabled !== false;
+  const preparedConnection = options.preparedConnection ?? null;
+  const httpBaseUrl = preparedConnection?.httpBaseUrl ?? null;
   const [entries, setEntries] = useState<ReadonlyArray<SkillsInventoryEntry>>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
   const [refreshSequence, setRefreshSequence] = useState(0);
   const refresh = useCallback(() => setRefreshSequence((value) => value + 1), []);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !preparedConnection) {
+      setEntries([]);
+      setState(enabled ? "loading" : "ready");
+      setError(null);
       return;
     }
-    const controller = new AbortController();
+    setEntries([]);
+    setState("loading");
+    setError(null);
+    let active = true;
     const load = async () => {
       try {
-        const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-        const response = await fetch(`/api/skills${query}`, {
-          credentials: "include",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`status ${response.status}`);
-        const payload = (await response.json()) as { skills?: unknown };
-        const parsed = Array.isArray(payload.skills)
-          ? payload.skills
-              .map(toEntry)
-              .filter((entry): entry is SkillsInventoryEntry => entry !== null)
-          : [];
-        setEntries(parsed);
+        const payload = await runtime.runPromise(
+          fetchEnvironmentSkillsInventory({ prepared: preparedConnection, cwd }),
+        );
+        if (!active) return;
+        setEntries(payload.skills);
         setState("ready");
         setError(null);
       } catch {
-        if (controller.signal.aborted) return;
+        if (!active) return;
         setEntries([]);
         setState("error");
         setError("Could not read the local skills inventory.");
@@ -163,9 +197,26 @@ export function useSkillsInventory(
     const interval = window.setInterval(() => void load(), SKILLS_POLL_INTERVAL_MS);
     return () => {
       window.clearInterval(interval);
-      controller.abort();
+      active = false;
     };
-  }, [cwd, enabled, refreshSequence]);
+  }, [cwd, enabled, preparedConnection, refreshSequence]);
+
+  const authorizedFetcher = useCallback<typeof fetch>(
+    async (input, init) => {
+      if (!preparedConnection) throw new Error("Environment is not connected.");
+      const url = String(input);
+      const method = init?.method === "POST" ? "POST" : "GET";
+      const auth = await runtime.runPromise(
+        preparedEnvironmentFetchAuthorization(preparedConnection, method, url),
+      );
+      return fetch(input, {
+        ...init,
+        ...(auth.credentials ? { credentials: auth.credentials } : {}),
+        headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), ...auth.headers },
+      });
+    },
+    [preparedConnection],
+  );
 
   const share = useCallback(
     async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {
@@ -173,7 +224,15 @@ export function useSkillsInventory(
       try {
         // The workspace cwd scopes project roots server-side; without it a
         // project-skill share resolves against the server's own cwd and fails.
-        const result = await requestSkillShare({ sourcePath, targetRoot, cwd });
+        const result = await requestSkillShare(
+          {
+            sourcePath,
+            targetRoot,
+            cwd,
+            ...(httpBaseUrl ? { httpBaseUrl } : {}),
+          },
+          authorizedFetcher,
+        );
         if (result.ok) {
           setError(null);
           setRefreshSequence((value) => value + 1);
@@ -189,8 +248,39 @@ export function useSkillsInventory(
         setSharing(null);
       }
     },
-    [cwd],
+    [authorizedFetcher, cwd, httpBaseUrl],
   );
 
-  return { state, entries, error, sharing, share, refresh };
+  const install = useCallback(
+    async (url: string, options?: { readonly installAgyPlugin?: boolean }) => {
+      setInstalling(true);
+      try {
+        const result = await requestSkillInstall(
+          {
+            url,
+            cwd,
+            installAgyPlugin: options?.installAgyPlugin === true,
+            ...(httpBaseUrl ? { httpBaseUrl } : {}),
+          },
+          authorizedFetcher,
+        );
+        if (result.ok) {
+          setError(null);
+          setRefreshSequence((value) => value + 1);
+        } else {
+          setError(result.message);
+        }
+        return result;
+      } catch {
+        const message = "Could not install the skill.";
+        setError(message);
+        return { ok: false, message };
+      } finally {
+        setInstalling(false);
+      }
+    },
+    [authorizedFetcher, cwd, httpBaseUrl],
+  );
+
+  return { state, entries, error, sharing, installing, install, share, refresh };
 }

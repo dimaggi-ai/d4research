@@ -18,8 +18,9 @@ import {
   toolGuardStatusRouteLayer,
   toolGuardPolicyReadRouteLayer,
   toolGuardPolicyWriteRouteLayer,
-  skillsInventoryRouteLayer,
+  skillsHttpApiLayer,
   skillsShareRouteLayer,
+  skillsInstallRouteLayer,
   handoffMemoryRouteLayer,
   handoffCompressRouteLayer,
   handoffPrepareRouteLayer,
@@ -30,6 +31,7 @@ import {
   httpCompressionLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
+import { PortableSkillsInventoryLive, reconcileUserSkills } from "./skillsInventory.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
@@ -66,6 +68,7 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { RateLimitResumeReactorLive } from "./orchestration/Layers/RateLimitResumeReactor.ts";
+import { ResearchIntegrityReactorLive } from "./orchestration/Layers/ResearchIntegrityReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
@@ -213,7 +216,11 @@ const HttpServerLive = Layer.unwrap(
         Effect.promise(() => import("@effect/platform-node/NodeHttpServer")),
         Effect.promise(() => import("node:http")),
       ]);
-      return NodeHttpServer.layer(NodeHttp.createServer, {
+      // Bound only the time a peer may spend sending request headers/body.
+      // Long research handler execution happens after ingress completes and
+      // remains governed by the delegate Effect timeout; disabling this server
+      // guard globally allowed slow request bodies to occupy sockets forever.
+      return NodeHttpServer.layer(() => NodeHttp.createServer({ requestTimeout: 120_000 }), {
         host: config.host ?? "127.0.0.1",
         port: config.port,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
@@ -247,6 +254,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(RateLimitResumeReactorLive),
+  Layer.provideMerge(ResearchIntegrityReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -385,7 +393,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),
-  Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistryLive)),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
@@ -446,6 +454,7 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(authHttpApiLayer),
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
+      Layer.provide(skillsHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
@@ -455,8 +464,8 @@ export const makeRoutesLayer = Layer.mergeAll(
     toolGuardLifecycleRouteLayer,
     toolGuardPolicyReadRouteLayer,
     toolGuardPolicyWriteRouteLayer,
-    skillsInventoryRouteLayer,
     skillsShareRouteLayer,
+    skillsInstallRouteLayer,
     handoffMemoryRouteLayer,
     handoffCompressRouteLayer,
     handoffPrepareRouteLayer,
@@ -487,6 +496,27 @@ export const makeServerLayer = Layer.unwrap(
 
     yield* initializeToolGuardRuntime();
     yield* fixPath();
+
+    // Reconcile before any provider runtime or route can start. Running this
+    // as a sibling Layer races provider session creation: a CLI can snapshot
+    // its skills milliseconds before the links appear and remain stale for
+    // the whole session.
+    yield* reconcileUserSkills().pipe(
+      Effect.tap(({ shared, conflicts, failures }) => {
+        if (shared.length === 0 && conflicts.length === 0 && failures.length === 0) {
+          return Effect.void;
+        }
+        const details = {
+          shared: shared.map(({ name, targetRoot }) => `${name}:${targetRoot}`),
+          conflicts: conflicts.map(({ name, targetRoot }) => `${name}:${targetRoot}`),
+          failures: failures.map(({ name, targetRoot }) => `${name}:${targetRoot}`),
+        };
+        return failures.length > 0 || conflicts.length > 0
+          ? Effect.logWarning("User skill reconciliation completed with conflicts", details)
+          : Effect.logInfo("User skills shared across coding CLIs", details);
+      }),
+      Effect.provide(PlatformServicesLive),
+    );
 
     const httpListeningLayer = Layer.effectDiscard(
       Effect.gen(function* () {

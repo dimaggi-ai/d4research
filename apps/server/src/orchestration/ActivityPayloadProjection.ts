@@ -18,6 +18,114 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const RESEARCH_DELEGATE_NAME = /(?:^|__)research_delegate$/i;
+
+function parseRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") return asRecord(value);
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function findNestedFiniteNumber(value: unknown, key: string, depth = 0): number | null {
+  if (depth > 6) return null;
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = findNestedFiniteNumber(child, key, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  const record = parseRecord(value);
+  if (!record) return null;
+  const direct = record[key];
+  if (typeof direct === "number" && Number.isFinite(direct)) return direct;
+  for (const child of Object.values(record)) {
+    const found = findNestedFiniteNumber(child, key, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function findNestedTrue(value: unknown, keys: ReadonlySet<string>, depth = 0): boolean {
+  if (depth > 6) return false;
+  if (Array.isArray(value)) {
+    return value.some((child) => findNestedTrue(child, keys, depth + 1));
+  }
+  const record = parseRecord(value);
+  if (!record) return false;
+  for (const [key, child] of Object.entries(record)) {
+    if (keys.has(key) && child === true) return true;
+    if (findNestedTrue(child, keys, depth + 1)) return true;
+  }
+  return false;
+}
+
+/**
+ * Preserve only the small research ledger across activity projection. ACP
+ * stores the delegate arguments in `rawInput`, which normal projection drops;
+ * retaining the full provider output would undo the snapshot size reduction.
+ */
+function projectResearchDelegate(
+  payload: Record<string, unknown>,
+  data: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const item = asRecord(data.item);
+  const state = asRecord(data.state);
+  const rawInput = parseRecord(data.rawInput);
+  const names = [
+    payload.title,
+    data.toolName,
+    data.tool,
+    item?.tool,
+    item?.name,
+    rawInput?.toolName,
+    rawInput?.tool,
+    rawInput?.name,
+  ];
+  if (!names.some((name) => typeof name === "string" && RESEARCH_DELEGATE_NAME.test(name))) {
+    return undefined;
+  }
+  const input =
+    asRecord(data.input) ??
+    asRecord(item?.arguments) ??
+    asRecord(item?.input) ??
+    asRecord(state?.input) ??
+    asRecord(rawInput?.arguments) ??
+    asRecord(rawInput?.input) ??
+    rawInput;
+  if (!input) return undefined;
+  const step = asTrimmedString(input.step);
+  const target = asTrimmedString(input.target);
+  if (!step && !target) return undefined;
+  const visit =
+    typeof input.visit === "number" && Number.isSafeInteger(input.visit) && input.visit > 0
+      ? input.visit
+      : 1;
+  const output = data.output ?? item?.result ?? state?.output ?? data.rawOutput ?? data.result;
+  const callId =
+    asTrimmedString(data.toolCallId) ??
+    asTrimmedString(data.toolUseId) ??
+    asTrimmedString(item?.id) ??
+    asTrimmedString(state?.toolCallId);
+  const remainingBudget = findNestedFiniteNumber(output, "remainingBudget");
+  const durationMs = findNestedFiniteNumber(output, "durationMs");
+  return {
+    ...(callId ? { callId } : {}),
+    ...(step ? { step } : {}),
+    ...(target ? { target } : {}),
+    visit,
+    ...(remainingBudget !== null ? { remainingBudget } : {}),
+    ...(durationMs !== null ? { durationMs } : {}),
+    failed:
+      payload.status === "failed" ||
+      state?.status === "error" ||
+      findNestedTrue(output, new Set(["is_error", "isError"])),
+  };
+}
+
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown): void {
   const normalized = asTrimmedString(value);
   if (!normalized || seen.has(normalized)) {
@@ -160,11 +268,23 @@ export function projectActivityPayload(
 ): OrchestrationThreadActivity {
   const payload = asRecord(activity.payload);
   const data = asRecord(payload?.data);
-  if (!payload || !data || payload.itemType === "mcp_tool_call") {
+  if (!payload || !data) {
     return activity;
+  }
+  const researchDelegate = projectResearchDelegate(payload, data);
+  if (payload.itemType === "mcp_tool_call") {
+    return researchDelegate
+      ? {
+          ...activity,
+          payload: { ...payload, data: { ...data, researchDelegate } },
+        }
+      : activity;
   }
 
   const projectedData: Record<string, unknown> = {};
+  if (researchDelegate) {
+    projectedData.researchDelegate = researchDelegate;
+  }
   const item = projectCommandData(data);
   if (item) {
     projectedData.item = item;

@@ -11,8 +11,8 @@ import { RESEARCH_DELEGATION_BUDGET_PER_TURN, RESEARCH_STEP_VISIT_LIMIT } from "
  * not: every `research_delegate` call burns budget here, and a step name can
  * only be charged `RESEARCH_STEP_VISIT_LIMIT` times per delegation target.
  *
- * State is keyed by orchestrator thread and expires after an idle window, so
- * one research run cannot starve the next one in the same thread.
+ * State is keyed by orchestrator turn, so a fresh dev/research run in the same
+ * durable thread always receives a fresh budget without waiting for a timer.
  */
 export interface ResearchBudgetCharge {
   readonly ok: boolean;
@@ -20,22 +20,28 @@ export interface ResearchBudgetCharge {
   readonly reason?: string;
 }
 
-interface ThreadBudgetState {
-  readonly lastChargeMs: number;
+interface RunBudgetState {
   readonly total: number;
   readonly perStepTarget: ReadonlyMap<string, number>;
+  readonly lastTouchedAt: number;
 }
 
-const IDLE_RESET_MILLIS = 60 * 60 * 1000;
+/** Hard bound for abandoned/completed run accounting retained in one server process. */
+export const RESEARCH_RETAINED_RUN_LIMIT = 1_024;
+/**
+ * A delegate may legitimately run for 30 minutes. Only accounting untouched
+ * for four times that deadline is safe to classify as abandoned. A full map
+ * with no such entry rejects new runs; it never resets a possibly active run.
+ */
+export const RESEARCH_RUN_IDLE_RETENTION_MILLIS = 2 * 60 * 60 * 1_000;
 
 export class ResearchDelegationBudget extends Context.Service<
   ResearchDelegationBudget,
   {
     readonly charge: (input: {
-      readonly threadId: string;
+      readonly runId: string;
       readonly step: string;
       readonly target: string;
-      readonly nowMs: number;
     }) => Effect.Effect<ResearchBudgetCharge>;
   }
 >()("t3/mcp/toolkits/research/budget/ResearchDelegationBudget") {}
@@ -43,52 +49,76 @@ export class ResearchDelegationBudget extends Context.Service<
 export const ResearchDelegationBudgetLive = Layer.effect(
   ResearchDelegationBudget,
   Effect.gen(function* () {
-    const state = yield* Ref.make(new Map<string, ThreadBudgetState>());
+    const state = yield* Ref.make(new Map<string, RunBudgetState>());
     return {
-      charge: ({ threadId, step, target, nowMs }) =>
-        Ref.modify(
-          state,
-          (byThread): readonly [ResearchBudgetCharge, Map<string, ThreadBudgetState>] => {
-            const previous = byThread.get(threadId);
-            const fresh =
-              previous === undefined || nowMs - previous.lastChargeMs > IDLE_RESET_MILLIS;
-            const total = fresh ? 0 : (previous?.total ?? 0);
-            const perStepTarget = fresh
-              ? new Map<string, number>()
-              : new Map(previous?.perStepTarget ?? []);
-            const stepKey = `${step}→${target}`;
-            const visits = perStepTarget.get(stepKey) ?? 0;
+      charge: ({ runId, step, target }) =>
+        Effect.gen(function* () {
+          const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+          return yield* Ref.modify(
+            state,
+            (byRun): readonly [ResearchBudgetCharge, Map<string, RunBudgetState>] => {
+              const previous = byRun.get(runId);
+              const total = previous?.total ?? 0;
+              const perStepTarget = new Map(previous?.perStepTarget ?? []);
+              const stepKey = `${step}→${target}`;
+              const visits = perStepTarget.get(stepKey) ?? 0;
 
-            if (total >= RESEARCH_DELEGATION_BUDGET_PER_TURN) {
-              return [
-                {
-                  ok: false,
-                  remaining: 0,
-                  reason: `Delegation budget exhausted (${RESEARCH_DELEGATION_BUDGET_PER_TURN} per research run). Synthesize with what you have.`,
-                },
-                byThread,
-              ] as const;
-            }
-            if (visits >= RESEARCH_STEP_VISIT_LIMIT) {
-              return [
-                {
-                  ok: false,
-                  remaining: RESEARCH_DELEGATION_BUDGET_PER_TURN - total,
-                  reason: `Step "${step}" already delegated to ${target} ${RESEARCH_STEP_VISIT_LIMIT} times. This loop is cut; move the pipeline forward.`,
-                },
-                byThread,
-              ] as const;
-            }
+              const touched = () => {
+                if (previous === undefined) return byRun;
+                const next = new Map(byRun);
+                next.set(runId, { ...previous, lastTouchedAt: now });
+                return next;
+              };
 
-            perStepTarget.set(stepKey, visits + 1);
-            const next = new Map(byThread);
-            next.set(threadId, { lastChargeMs: nowMs, total: total + 1, perStepTarget });
-            return [
-              { ok: true, remaining: RESEARCH_DELEGATION_BUDGET_PER_TURN - total - 1 },
-              next,
-            ] as const;
-          },
-        ),
+              if (total >= RESEARCH_DELEGATION_BUDGET_PER_TURN) {
+                return [
+                  {
+                    ok: false,
+                    remaining: 0,
+                    reason: `Delegation budget exhausted (${RESEARCH_DELEGATION_BUDGET_PER_TURN} per research run). Synthesize with what you have.`,
+                  },
+                  touched(),
+                ] as const;
+              }
+              if (visits >= RESEARCH_STEP_VISIT_LIMIT) {
+                return [
+                  {
+                    ok: false,
+                    remaining: RESEARCH_DELEGATION_BUDGET_PER_TURN - total,
+                    reason: `Step "${step}" already delegated to ${target} ${RESEARCH_STEP_VISIT_LIMIT} times. This loop is cut; move the pipeline forward.`,
+                  },
+                  touched(),
+                ] as const;
+              }
+
+              perStepTarget.set(stepKey, visits + 1);
+              const next = new Map(byRun);
+              if (!next.has(runId)) {
+                for (const [retainedRunId, retained] of next) {
+                  if (now - retained.lastTouchedAt >= RESEARCH_RUN_IDLE_RETENTION_MILLIS) {
+                    next.delete(retainedRunId);
+                  }
+                }
+                if (next.size >= RESEARCH_RETAINED_RUN_LIMIT) {
+                  return [
+                    {
+                      ok: false,
+                      remaining: RESEARCH_DELEGATION_BUDGET_PER_TURN,
+                      reason:
+                        "Research delegation capacity is temporarily full. Wait for an active run to finish rather than retrying recursively.",
+                    },
+                    byRun,
+                  ] as const;
+                }
+              }
+              next.set(runId, { total: total + 1, perStepTarget, lastTouchedAt: now });
+              return [
+                { ok: true, remaining: RESEARCH_DELEGATION_BUDGET_PER_TURN - total - 1 },
+                next,
+              ] as const;
+            },
+          );
+        }),
     };
   }),
 );

@@ -44,6 +44,7 @@ import {
   type RelayClientInstallProgressEvent,
   type ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
+  type ServerProvider,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
   AssetWorkspaceContextNotFoundError,
@@ -93,6 +94,7 @@ import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import { mergePortableSkillsIntoProviders, PortableSkillsInventory } from "./skillsInventory.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -368,6 +370,7 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const portableSkillsInventory = yield* PortableSkillsInventory;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -978,9 +981,16 @@ const makeWsRpcLayer = (
           );
       };
 
+      const withPortableSkills = (providers: ReadonlyArray<ServerProvider>) =>
+        portableSkillsInventory.get.pipe(
+          Effect.map((inventory) => mergePortableSkillsIntoProviders(providers, inventory)),
+        );
+
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
-        const providers = yield* providerRegistry.getProviders;
+        const providers = yield* providerRegistry.getProviders.pipe(
+          Effect.flatMap(withPortableSkills),
+        );
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
         );
@@ -2021,13 +2031,30 @@ const makeWsRpcLayer = (
                   },
                 })),
               );
-              const providerStatuses = providerRegistry.streamChanges.pipe(
+              const providerStatusUpdates = providerRegistry.streamChanges.pipe(
+                // The registry emission is the authoritative full snapshot.
+                // Re-reading here can race the registry's internal projection
+                // and replace the emitted update with older state.
+                Stream.mapEffect(withPortableSkills),
+              );
+              const portableSkillUpdates = portableSkillsInventory.changes.pipe(
+                Stream.mapEffect(() =>
+                  providerRegistry.getProviders.pipe(Effect.flatMap(withPortableSkills)),
+                ),
+              );
+              const providerStatuses = Stream.merge(
+                providerStatusUpdates,
+                portableSkillUpdates,
+              ).pipe(
+                // Coalesce first. Filesystem work happens once in the cached
+                // inventory service when a mutation publishes; subscribers
+                // only combine two in-memory snapshots here.
+                Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
                 Stream.map((providers) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,
                   payload: { providers },
                 })),
-                Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
               const settingsUpdates = serverSettings.streamChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),

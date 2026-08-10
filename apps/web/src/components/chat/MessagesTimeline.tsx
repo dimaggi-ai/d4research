@@ -58,6 +58,7 @@ import {
   WrenchIcon,
   XIcon,
   ZapIcon,
+  FileTextIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -84,18 +85,11 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
-import {
-  extractTrailingElementContexts,
-  type ParsedElementContextEntry,
-} from "~/lib/elementContext";
-import {
-  extractTrailingPreviewAnnotation,
-  type ParsedPreviewAnnotation,
-} from "~/lib/previewAnnotation";
+import type { ParsedTerminalContextEntry } from "~/lib/terminalContext";
+import type { ParsedElementContextEntry } from "~/lib/elementContext";
+import type { ParsedPastedContextEntry } from "~/lib/pastedContext";
+import type { ParsedPreviewAnnotation } from "~/lib/previewAnnotation";
+import { extractUserMessageContexts } from "~/lib/userMessageContextComposition";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -870,21 +864,13 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const userImages = row.message.attachments ?? [];
-  const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
-  const terminalContexts = displayedUserMessage.contexts;
-  const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
-  while (true) {
-    const extracted = extractTrailingPreviewAnnotation(visibleText);
-    if (!extracted.annotation) break;
-    previewAnnotations.unshift(extracted.annotation);
-    visibleText = extracted.promptText;
-  }
-  const elementContextState = extractTrailingElementContexts(visibleText);
-  const elementContexts = [
-    ...displayedUserMessage.elementContexts,
-    ...elementContextState.contexts,
-  ];
+  const displayedUserMessage = extractUserMessageContexts(row.message.text);
+  const terminalContexts = displayedUserMessage.terminalContexts;
+  const previewAnnotations = displayedUserMessage.previewAnnotations;
+  const pastedContexts = displayedUserMessage.pastedContexts;
+  const elementContexts = displayedUserMessage.elementContexts;
+  const globalEnabledSkills = displayedUserMessage.globalEnabledSkills;
+  const sessionEnabledSkills = displayedUserMessage.sessionEnabledSkills;
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
@@ -942,8 +928,46 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
+        {pastedContexts.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {pastedContexts.map((context, index) => (
+              <UserMessagePastedContextChip
+                // Parsed transcript entries have no persisted id and never
+                // reorder. Position prevents duplicate files from sharing a
+                // React key while keeping it stable for this immutable row.
+                // eslint-disable-next-line react/no-array-index-key
+                key={`${index}:${context.name}:${context.charCount}:${context.lineCount}`}
+                context={context}
+              />
+            ))}
+          </div>
+        ) : null}
+        {globalEnabledSkills.length + sessionEnabledSkills.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Enabled skills">
+            {globalEnabledSkills.map((name) => (
+              <span
+                key={name}
+                data-enabled-skill={name}
+                data-enabled-skill-scope="global"
+                className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+              >
+                Global: {name}
+              </span>
+            ))}
+            {sessionEnabledSkills.map((name) => (
+              <span
+                key={name}
+                data-enabled-skill={name}
+                data-enabled-skill-scope="session"
+                className="rounded-md border border-info/25 bg-info/10 px-2 py-1 text-[11px] font-medium text-info"
+              >
+                Chat: {name}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
+          text={displayedUserMessage.visibleText}
           terminalContexts={terminalContexts}
           skills={ctx.skills}
           markdownCwd={ctx.markdownCwd}
@@ -1344,6 +1368,34 @@ const UserMessageElementContextChip = memo(function UserMessageElementContextChi
   );
 });
 
+const UserMessagePastedContextChip = memo(function UserMessagePastedContextChip(props: {
+  context: ParsedPastedContextEntry;
+}) {
+  const kb = props.context.charCount / 1024;
+  const size = kb >= 1 ? `${kb.toFixed(1)} KB` : `${props.context.charCount} chars`;
+  const meta = `${props.context.lineCount} ${
+    props.context.lineCount === 1 ? "line" : "lines"
+  } · ${size}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-0.5 text-xs text-foreground/85">
+            <FileTextIcon className="size-3 shrink-0" />
+            <span className="truncate">{props.context.name}</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground/85">{meta}</span>
+          </span>
+        }
+      />
+      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap leading-tight">
+        {`${props.context.name}\n${meta}\n\n${props.context.body.slice(0, 600)}${
+          props.context.body.length > 600 ? "\n…" : ""
+        }`}
+      </TooltipPopup>
+    </Tooltip>
+  );
+});
+
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;
   image: NonNullable<TimelineMessage["attachments"]>[number] | null;
@@ -1414,7 +1466,7 @@ function shouldCollapseUserMessage(text: string): boolean {
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  terminalContexts: ReadonlyArray<ParsedTerminalContextEntry>;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
   footer?: ReactNode;
@@ -1482,7 +1534,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  terminalContexts: ReadonlyArray<ParsedTerminalContextEntry>;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {

@@ -289,6 +289,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     event: ProviderRuntimeEvent,
   ): Effect.Effect<void> =>
     Effect.sync(() => correlateRuntimeEventWithInstance(source, event)).pipe(
+      Effect.tap((canonicalEvent) =>
+        canonicalEvent.type === "turn.started" && canonicalEvent.turnId !== undefined
+          ? McpSessionRegistry.setActiveMcpTurn(canonicalEvent.threadId, canonicalEvent.turnId)
+          : Effect.void,
+      ),
       Effect.flatMap((canonicalEvent) =>
         increment(providerRuntimeEventsTotal, {
           provider: canonicalEvent.provider,
@@ -686,6 +691,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       const turn = yield* routed.adapter.sendTurn(input);
+      yield* McpSessionRegistry.setActiveMcpTurn(input.threadId, turn.turnId);
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
@@ -1091,6 +1097,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     get streamEvents(): ProviderServiceMethod<"streamEvents"> {
       return Stream.fromPubSub(runtimeEventPubSub);
     },
+    subscribeEvents: PubSub.subscribe(runtimeEventPubSub).pipe(
+      Effect.map((subscription) => Stream.fromEffectRepeat(PubSub.take(subscription))),
+    ),
   } satisfies ProviderService.ProviderService["Service"];
 });
 

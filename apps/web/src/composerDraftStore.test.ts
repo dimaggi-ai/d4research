@@ -75,7 +75,8 @@ import {
   insertInlineTerminalContextPlaceholder,
   type TerminalContextDraft,
 } from "./lib/terminalContext";
-import { createDebouncedStorage } from "./lib/storage";
+import { createDebouncedJsonStorage, createDebouncedStorage } from "./lib/storage";
+import { PASTED_CONTEXT_MAX_CHARS } from "./lib/pastedContext";
 
 function makeImage(input: {
   id: string;
@@ -286,6 +287,19 @@ describe("composerDraftStore clearComposerContent", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft).toBeUndefined();
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:optimistic");
+  });
+
+  it("clears pasted attachments so a sent file cannot leak into the next turn", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "review this");
+    useComposerDraftStore
+      .getState()
+      .addPastedContexts(threadRef, [
+        { id: "paste-sent", name: "sent.log", content: "first turn only", fromFile: true },
+      ]);
+
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 });
 
@@ -1770,5 +1784,264 @@ describe("createDebouncedStorage", () => {
     vi.advanceTimersByTime(300);
     expect(base.setItem).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledWith("key", "v2");
+  });
+});
+
+describe("createDebouncedJsonStorage", () => {
+  it("defers serialization of large state until the debounce fires", () => {
+    vi.useFakeTimers();
+    try {
+      const base = createMockStorage();
+      const toJSON = vi.fn(() => ({ pastedContexts: ["x".repeat(200_000)] }));
+      const storage = createDebouncedJsonStorage<unknown>(base);
+
+      storage.setItem("drafts", { state: { toJSON } });
+      expect(toJSON).not.toHaveBeenCalled();
+      expect(base.setItem).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(300);
+      expect(toJSON).toHaveBeenCalledOnce();
+      expect(base.setItem).toHaveBeenCalledOnce();
+      expect(JSON.parse(base.setItem.mock.calls[0]?.[1] ?? "{}")).toEqual({
+        state: { pastedContexts: ["x".repeat(200_000)] },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("composerDraftStore pastedContexts", () => {
+  const threadId = ThreadId.make("thread-pasted");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  const pasted = (id: string, name: string, content = "body") => ({
+    id,
+    name,
+    content,
+    fromFile: false,
+  });
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("adds attachments and preserves order across batches", () => {
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "a.md")]);
+    useComposerDraftStore
+      .getState()
+      .addPastedContexts(threadRef, [pasted("p2", "b.md"), pasted("p3", "c.md")]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.pastedContexts.map((entry) => entry.name)).toEqual(["a.md", "b.md", "c.md"]);
+  });
+
+  it("bounds bulk and replacement batches at the persisted attachment limit", () => {
+    const bulk = Array.from({ length: 20 }, (_, index) => pasted(`p${index}`, `${index}.md`));
+    useComposerDraftStore.getState().addPastedContexts(threadRef, bulk);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts).toHaveLength(8);
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts.map((entry) => entry.name),
+    ).toEqual(Array.from({ length: 8 }, (_, index) => `${index}.md`));
+
+    useComposerDraftStore.getState().setPastedContexts(threadRef, bulk.toReversed());
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts).toHaveLength(8);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts[0]?.name).toBe("19.md");
+  });
+
+  it("repairs duplicate ids so every rendered chip retains its own identity", () => {
+    useComposerDraftStore
+      .getState()
+      .setPastedContexts(threadRef, [pasted("duplicate", "a.md"), pasted("duplicate", "b.md")]);
+    const contexts = draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts ?? [];
+    expect(contexts.map((context) => context.name)).toEqual(["a.md", "b.md"]);
+    expect(new Set(contexts.map((context) => context.id)).size).toBe(2);
+  });
+
+  it("removes a single attachment by id and leaves the rest", () => {
+    useComposerDraftStore
+      .getState()
+      .addPastedContexts(threadRef, [pasted("p1", "a.md"), pasted("p2", "b.md")]);
+    useComposerDraftStore.getState().removePastedContext(threadRef, "p1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts.map((e) => e.id)).toEqual([
+      "p2",
+    ]);
+  });
+
+  it("drops the whole draft when the last attachment is removed", () => {
+    // An attachment-only draft is real content: removing it must not leave an
+    // empty draft behind, and must not delete a draft that still has a prompt.
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "a.md")]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts).toHaveLength(1);
+    useComposerDraftStore.getState().removePastedContext(threadRef, "p1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("keeps a draft that still has prompt text after clearing attachments", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "still typing");
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "a.md")]);
+    useComposerDraftStore.getState().clearPastedContexts(threadRef);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.prompt).toBe("still typing");
+    expect(draft?.pastedContexts).toHaveLength(0);
+  });
+
+  it("replaces the list wholesale, as send-failure restore does", () => {
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "a.md")]);
+    useComposerDraftStore.getState().setPastedContexts(threadRef, [pasted("p9", "restored.md")]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts.map((e) => e.id)).toEqual([
+      "p9",
+    ]);
+  });
+
+  it("ignores an empty add and an unknown id", () => {
+    useComposerDraftStore.getState().addPastedContexts(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "a.md")]);
+    useComposerDraftStore.getState().removePastedContext(threadRef, "does-not-exist");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts).toHaveLength(1);
+  });
+
+  it("keeps attachments isolated per thread", () => {
+    const otherThreadId = ThreadId.make("thread-pasted-other");
+    const otherRef = scopeThreadRef(TEST_ENVIRONMENT_ID, otherThreadId);
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "mine.md")]);
+    useComposerDraftStore.getState().addPastedContexts(otherRef, [pasted("p2", "theirs.md")]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.pastedContexts.map((e) => e.name)).toEqual([
+      "mine.md",
+    ]);
+    expect(draftFor(otherThreadId, TEST_ENVIRONMENT_ID)?.pastedContexts.map((e) => e.name)).toEqual(
+      ["theirs.md"],
+    );
+  });
+
+  it("round-trips pasted attachments through the exact persistence merge", () => {
+    useComposerDraftStore
+      .getState()
+      .addPastedContexts(threadRef, [pasted("p1", "reload.md", "persisted body")]);
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+
+    const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    const hydrated = persistApi
+      .getOptions()
+      .merge(persisted, useComposerDraftStore.getInitialState());
+
+    expect(
+      hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.pastedContexts,
+    ).toEqual([pasted("p1", "reload.md", "persisted body")]);
+  });
+
+  it("filters malformed pasted attachments without deleting the rest of the draft", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    const hydrated = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadKey]: {
+            prompt: "keep me",
+            attachments: [],
+            pastedContexts: [
+              pasted("valid", "valid.md"),
+              { id: "bad", name: "bad.md", content: 42, fromFile: true },
+            ],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+
+    expect(hydrated.draftsByThreadKey[threadKey]?.prompt).toBe("keep me");
+    expect(hydrated.draftsByThreadKey[threadKey]?.pastedContexts).toEqual([
+      pasted("valid", "valid.md"),
+    ]);
+  });
+
+  it("bounds and de-duplicates pasted contexts loaded from browser storage", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    const hydrated = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadKey]: {
+            prompt: "",
+            attachments: [],
+            pastedContexts: [
+              pasted("same", "first.md", "x".repeat(PASTED_CONTEXT_MAX_CHARS + 500)),
+              pasted("same", "second.md"),
+            ],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    const contexts = hydrated.draftsByThreadKey[threadKey]?.pastedContexts ?? [];
+    expect(contexts).toHaveLength(2);
+    expect(new Set(contexts.map((context) => context.id)).size).toBe(2);
+    expect(contexts[0]?.content).toContain("[truncated: 500 more characters]");
+    expect(contexts[0]!.content.length).toBeLessThan(120_000);
+  });
+});
+
+describe("composerDraftStore preview annotation persistence", () => {
+  const threadId = ThreadId.make("thread-preview-annotation");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const annotation = {
+    id: "annotation-1",
+    pageUrl: "https://example.test/page",
+    pageTitle: "Page",
+    comment: "Fix the button",
+    elements: [],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: "2026-08-08T20:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("round-trips annotations through the exact persistence merge", () => {
+    useComposerDraftStore.getState().addPreviewAnnotation(threadRef, annotation);
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+
+    const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    const hydrated = persistApi
+      .getOptions()
+      .merge(persisted, useComposerDraftStore.getInitialState());
+
+    expect(
+      hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.previewAnnotations,
+    ).toEqual([annotation]);
   });
 });

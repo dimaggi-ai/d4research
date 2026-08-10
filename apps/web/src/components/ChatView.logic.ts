@@ -4,6 +4,7 @@ import {
   ProjectId,
   type ModelSelection,
   type ProviderDriverKind,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
@@ -21,12 +22,98 @@ import {
   type TerminalContextDraft,
 } from "../lib/terminalContext";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
+import { isDevPipelinePrompt } from "../devPipeline";
+import { isDeepResearchPrompt } from "../researchPipeline";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 
+// Dismissed research progress banners, persisted so a completed run's banner
+// stays closed across reloads. Keyed by `threadId:planTurnId`; a new run mints
+// a new plan turn and therefore a new, undismissed key.
+export const DISMISSED_RESEARCH_BANNERS_KEY = "t3code:dismissed-research-banners";
+export const EMPTY_DISMISSED_RESEARCH_BANNERS: ReadonlyArray<string> = [];
+
+export type ThreadPipelineKind = "research" | "dev";
+
+/** The most recently armed pipeline owns the thread's active progress surface. */
+export function deriveThreadPipelineKind(
+  messages: ReadonlyArray<Pick<ChatMessage, "role" | "text">>,
+): ThreadPipelineKind | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== "user") continue;
+    if (isDevPipelinePrompt(message.text)) return "dev";
+    if (isDeepResearchPrompt(message.text)) return "research";
+  }
+  return null;
+}
+
+/** Validate the exact provider-bound string before optimistic state clears the draft. */
+export function outgoingMessageLengthError(messageText: string): string | null {
+  if (messageText.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS) return null;
+  return `This message is ${messageText.length} characters; the provider limit is ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS}. Shorten the prompt or remove an attached context.`;
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+export const DismissedResearchBannersSchema = Schema.Array(Schema.String);
+
+// Audio files an agent produced in a thread, surfaced as playable artifacts.
+// Removal only hides the artifact from the player (persisted per thread+path);
+// the generated file itself stays in the workspace and its checkpoints.
+export const DISMISSED_AUDIO_ARTIFACTS_KEY = "t3code:dismissed-audio-artifacts";
+export const EMPTY_DISMISSED_AUDIO_ARTIFACTS: ReadonlyArray<string> = [];
+export const DismissedAudioArtifactsSchema = Schema.Array(Schema.String);
+
+const AUDIO_ARTIFACT_EXTENSIONS = new Set([
+  "mp3",
+  "wav",
+  "m4a",
+  "ogg",
+  "oga",
+  "aac",
+  "flac",
+  "opus",
+  "weba",
+]);
+
+export function isAudioArtifactPath(path: string): boolean {
+  const extension = path.split(".").pop()?.toLowerCase();
+  return extension !== undefined && AUDIO_ARTIFACT_EXTENSIONS.has(extension);
+}
+
+export function audioArtifactDismissKey(threadId: string, path: string): string {
+  return `${threadId}::${path}`;
+}
+
+/** Delete only a research shell whose first turn was never accepted. */
+export function shouldDeleteFailedResearchThread(turnStarted: boolean): boolean {
+  return !turnStarted;
+}
+
+/** A failed turn may restore its snapshot only when the user has not started another draft. */
+export function shouldRestoreComposerSnapshot(input: {
+  queuedRequest: boolean;
+  promptLength: number;
+  imageCount: number;
+  terminalContextCount: number;
+  elementContextCount: number;
+  pastedContextCount: number;
+  previewAnnotationCount: number;
+  reviewCommentCount: number;
+}): boolean {
+  return (
+    !input.queuedRequest &&
+    input.promptLength === 0 &&
+    input.imageCount === 0 &&
+    input.terminalContextCount === 0 &&
+    input.elementContextCount === 0 &&
+    input.pastedContextCount === 0 &&
+    input.previewAnnotationCount === 0 &&
+    input.reviewCommentCount === 0
+  );
+}
 
 /**
  * Open-in actions are project actions, not Git-only actions. A repository root
@@ -282,6 +369,8 @@ export function deriveComposerSendState(options: {
    * contexts do: a prompt of just element chips is still a valid send.
    */
   elementContextCount?: number;
+  /** Large-paste and dropped-text attachments are independently sendable. */
+  pastedContextCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -293,6 +382,7 @@ export function deriveComposerSendState(options: {
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
   const elementContextCount = options.elementContextCount ?? 0;
+  const pastedContextCount = options.pastedContextCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -301,7 +391,8 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0,
+      elementContextCount > 0 ||
+      pastedContextCount > 0,
   };
 }
 

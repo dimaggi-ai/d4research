@@ -7,8 +7,8 @@ import { expandResearchPipelinePrompt, type ResearchProviderCandidate } from "./
  * orchestrator actually obey the compiled protocol — step markers, delegation
  * through the tool, honesty about unresolved targets? Unit tests prove the
  * prompt says these things; this proves a mid model reads them the way we
- * intend. Skips cleanly when no Ollama daemon or no gemma4 tag is present, so
- * CI never depends on a local daemon.
+ * intend. This suite is explicitly opt-in; once enabled, missing Ollama/model
+ * prerequisites fail instead of returning a green test without an assertion.
  */
 const OLLAMA_URL = "http://127.0.0.1:11434";
 const GENERATION_TIMEOUT_MS = 150_000;
@@ -82,77 +82,76 @@ const CANDIDATES: ReadonlyArray<ResearchProviderCandidate> = [
   { instanceId: "codex", name: "Codex", cli: "codex", models: ["gpt-5.6-terra"] },
 ];
 
-describe("research pipeline QA (live gemma4)", () => {
-  it(
-    "a small orchestrator opens with the step marker and delegates via the tool",
-    async () => {
-      const model = await pickGemmaModel();
-      if (!model) {
-        console.log("SKIP research pipeline QA — no local Ollama daemon or gemma4 tag");
-        return;
-      }
-      const briefing = expandResearchPipelinePrompt(
-        "#deep-research Which is heavier, a liter of water or a liter of oil?",
-        {
-          scenarios: [],
-          activeScenario: "",
-          orchestratorSelection: null,
-          pipelinePrompt:
-            "Step 1: Delegate the research question to !claude:fable.\nStep 2: Summarize the delegate's answer for the user.",
-          promptFiles: [],
-        },
-        CANDIDATES,
-      );
-      // No live tool harness exists over bare /api/chat, so the probe asks
-      // the model to write out the call it would make. What we verify is
-      // comprehension of the briefing: the marker discipline and the
-      // directive → resolved-target mapping.
-      const reply = await generate(
-        model,
-        briefing,
-        "Begin executing the pipeline now. First state your current step marker. Then write out the exact research_delegate tool call you would make, including the target argument copied exactly from the Delegation targets list. Do not simulate results you do not have.",
-      );
-      // Trace discipline: the protocol demands a `[step N | visit K]` marker.
-      expect(reply).toMatch(/\[\s*step\s*1/i);
-      // Delegation discipline: the call names the tool and carries the exact
-      // resolved target — not the raw `!` directive.
-      expect(reply).toMatch(/research[_ ]delegate/i);
-      expect(reply).toContain("claudeAgent:claude-fable-5");
-    },
-    GENERATION_TIMEOUT_MS + 10_000,
-  );
+describe.runIf(process.env.T3_RESEARCH_PIPELINE_QA === "1")(
+  "research pipeline QA (live gemma4)",
+  () => {
+    it(
+      "a small orchestrator opens with the step marker and delegates via the tool",
+      async () => {
+        const model = await pickGemmaModel();
+        if (!model) {
+          throw new Error("T3_RESEARCH_PIPELINE_QA=1 requires Ollama with a gemma4 model");
+        }
+        const briefing = expandResearchPipelinePrompt(
+          "#deep-research Which is heavier, a liter of water or a liter of oil?",
+          {
+            scenarios: [],
+            activeScenario: "",
+            pipelinePrompt:
+              "Step 1: Delegate the research question to !claude:fable.\nStep 2: Summarize the delegate's answer for the user.",
+            promptFiles: [],
+          },
+          CANDIDATES,
+        );
+        // No live tool harness exists over bare /api/chat, so the probe asks
+        // the model to write out the call it would make. What we verify is
+        // comprehension of the briefing: the marker discipline and the
+        // directive → resolved-target mapping.
+        const reply = await generate(
+          model,
+          briefing,
+          "Begin executing the pipeline now. First state your current step marker. Then write out the exact research_delegate tool call you would make, including the target argument copied exactly from the Delegation targets list. Do not simulate results you do not have.",
+        );
+        // Trace discipline: the protocol demands a `[step N | visit K]` marker.
+        expect(reply).toMatch(/\[\s*step\s*1/i);
+        // Delegation discipline: the call names the tool and carries the exact
+        // resolved target — not the raw `!` directive.
+        expect(reply).toMatch(/research[_ ]delegate/i);
+        expect(reply).toContain("claudeAgent:claude-fable-5");
+      },
+      GENERATION_TIMEOUT_MS + 10_000,
+    );
 
-  it(
-    "a small orchestrator reports an unresolved directive instead of substituting",
-    async () => {
-      const model = await pickGemmaModel();
-      if (!model) {
-        console.log("SKIP research pipeline QA — no local Ollama daemon or gemma4 tag");
-        return;
-      }
-      const briefing = expandResearchPipelinePrompt(
-        "#deep-research What color is the sky?",
-        {
-          scenarios: [],
-          activeScenario: "",
-          orchestratorSelection: null,
-          pipelinePrompt: "Step 1: Delegate the question to !gemini:pro and report its answer.",
-          promptFiles: [],
-        },
-        CANDIDATES,
-      );
-      const reply = await generate(
-        model,
-        briefing,
-        "Begin executing the pipeline now. First state your current step marker. Then state your first action. Do not simulate results you do not have.",
-      );
-      // The briefing marks the target UNRESOLVED and orders it surfaced to the
-      // user. The model must name the broken directive, and must not silently
-      // reroute the call to a provider the pipeline never named.
-      expect(reply.toLowerCase()).toContain("gemini");
-      expect(reply).not.toContain("claudeAgent:claude-fable-5");
-      expect(reply).not.toContain("codex:gpt-5.6-terra");
-    },
-    GENERATION_TIMEOUT_MS + 10_000,
-  );
-});
+    it(
+      "a small orchestrator reports an unresolved directive instead of substituting",
+      async () => {
+        const model = await pickGemmaModel();
+        if (!model) {
+          throw new Error("T3_RESEARCH_PIPELINE_QA=1 requires Ollama with a gemma4 model");
+        }
+        const briefing = expandResearchPipelinePrompt(
+          "#deep-research What color is the sky?",
+          {
+            scenarios: [],
+            activeScenario: "",
+            pipelinePrompt: "Step 1: Delegate the question to !gemini:pro and report its answer.",
+            promptFiles: [],
+          },
+          CANDIDATES,
+        );
+        const reply = await generate(
+          model,
+          briefing,
+          "Begin executing the pipeline now. First state your current step marker. Then state your first action. Do not simulate results you do not have.",
+        );
+        // The briefing marks the target UNRESOLVED and orders it surfaced to the
+        // user. The model must name the broken directive, and must not silently
+        // reroute the call to a provider the pipeline never named.
+        expect(reply.toLowerCase()).toContain("gemini");
+        expect(reply).not.toContain("claudeAgent:claude-fable-5");
+        expect(reply).not.toContain("codex:gpt-5.6-terra");
+      },
+      GENERATION_TIMEOUT_MS + 10_000,
+    );
+  },
+);

@@ -25,6 +25,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { APP_STAGE_LABEL } from "~/branding";
 import { resolveSidebarV2Enabled } from "~/branding.logic";
 import { ensureLocalApi } from "~/localApi";
@@ -291,15 +292,18 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     "server settings update",
   );
   const updateSettings = useCallback(
-    (patch: UnifiedSettingsPatch) => {
+    async (patch: UnifiedSettingsPatch): Promise<void> => {
       const { serverPatch, clientPatch } = splitPatch(patch);
 
       if (Object.keys(serverPatch).length > 0) {
         if (environmentId) {
-          void persistServerSettings({
+          const result = await persistServerSettings({
             environmentId,
             input: { patch: serverPatch },
           });
+          if (result._tag === "Failure") {
+            throw squashAtomCommandFailure(result);
+          }
         }
       }
       if (Object.keys(clientPatch).length > 0) {

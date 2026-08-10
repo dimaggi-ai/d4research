@@ -1,6 +1,8 @@
 import {
   type ChatAttachment,
   CommandId,
+  type DevSettings,
+  type ResearchSettings,
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
@@ -13,6 +15,19 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+import {
+  deriveDevProviderCandidates,
+  expandDevPipelinePrompt,
+  parseDevTrigger,
+  providerDriverSupportsPipelineOrchestration,
+  type DevProviderCandidate,
+} from "@t3tools/shared/devPipeline";
+import {
+  deriveResearchProviderCandidatesFromProviders,
+  expandResearchPipelinePrompt,
+  parseResearchTrigger,
+  type ResearchProviderCandidate,
+} from "@t3tools/shared/researchPipeline";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -65,6 +80,43 @@ type ProviderIntentEvent = Extract<
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
+
+/**
+ * Expand only the provider-bound copy of a dev trigger. The persisted message
+ * remains the compact user-authored text, including when Claude prompt effort
+ * prepends its transport-only `Ultrathink:` marker.
+ */
+export function expandProviderDevMessage(
+  messageText: string,
+  settings: Pick<DevSettings, "scenarios" | "activeScenario"> | undefined,
+  candidates: ReadonlyArray<DevProviderCandidate>,
+): string {
+  const hasEffortPrefix = messageText.startsWith(CLAUDE_ULTRATHINK_PREFIX);
+  const prompt = hasEffortPrefix ? messageText.slice(CLAUDE_ULTRATHINK_PREFIX.length) : messageText;
+  if (parseDevTrigger(prompt) === null) return messageText;
+  const expanded = expandDevPipelinePrompt(prompt, settings, candidates);
+  return hasEffortPrefix ? `${CLAUDE_ULTRATHINK_PREFIX}${expanded}` : expanded;
+}
+
+/**
+ * Expand only the provider-bound copy of a research trigger. The compact
+ * trigger remains in event history, transcripts, handoffs, and remote sync.
+ */
+export function expandProviderResearchMessage(
+  messageText: string,
+  settings:
+    | Pick<ResearchSettings, "scenarios" | "activeScenario" | "pipelinePrompt" | "promptFiles">
+    | undefined,
+  candidates: ReadonlyArray<ResearchProviderCandidate>,
+): string {
+  const hasEffortPrefix = messageText.startsWith(CLAUDE_ULTRATHINK_PREFIX);
+  const prompt = hasEffortPrefix ? messageText.slice(CLAUDE_ULTRATHINK_PREFIX.length) : messageText;
+  if (parseResearchTrigger(prompt) === null) return messageText;
+  const expanded = expandResearchPipelinePrompt(prompt, settings, candidates);
+  return hasEffortPrefix ? `${CLAUDE_ULTRATHINK_PREFIX}${expanded}` : expanded;
 }
 
 function mapProviderSessionStatusToOrchestrationStatus(
@@ -574,7 +626,11 @@ const make = Effect.gen(function* () {
         createdAt,
       });
     }
-    if (activeThreadSession !== null) {
+    if (
+      activeThreadSession !== null &&
+      (requestedModelSelection === undefined ||
+        requestedModelSelection.instanceId === currentInstanceId)
+    ) {
       yield* rejectStartedThreadModelChangeIfRequired({
         threadId,
         currentModelSelection:
@@ -587,29 +643,6 @@ const make = Effect.gen(function* () {
             : thread.modelSelection,
         requestedModelSelection,
       });
-    }
-    if (
-      activeThreadSession !== null &&
-      requestedModelSelection !== undefined &&
-      requestedModelSelection.instanceId !== currentInstanceId
-    ) {
-      if (currentInfo.driverKind !== desiredInfo.driverKind) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' is bound to driver '${currentInfo.driverKind}' and cannot switch to '${desiredInfo.driverKind}'.`,
-        });
-      }
-      if (
-        currentInfo.continuationIdentity.continuationKey !==
-        desiredInfo.continuationIdentity.continuationKey
-      ) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' cannot switch from instance '${currentInstanceId}' to '${desiredInstanceId}' because their provider resume state is incompatible.`,
-        });
-      }
     }
     const project = yield* resolveProject(thread.projectId);
     const effectiveCwd = resolveThreadWorkspaceCwd({
@@ -673,6 +706,11 @@ const make = Effect.gen(function* () {
       const instanceChanged =
         requestedModelSelection !== undefined &&
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
+      const continuationChanged =
+        instanceChanged &&
+        (currentInfo.driverKind !== desiredInfo.driverKind ||
+          currentInfo.continuationIdentity.continuationKey !==
+            desiredInfo.continuationIdentity.continuationKey);
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
       const previousModelSelection = threadModelSelections.get(threadId);
       const shouldRestartForModelSelectionChange =
@@ -690,9 +728,10 @@ const make = Effect.gen(function* () {
         return existingSessionThreadId;
       }
 
-      const resumeCursor = shouldRestartForModelChange
-        ? undefined
-        : (activeSession?.resumeCursor ?? undefined);
+      const resumeCursor =
+        shouldRestartForModelChange || continuationChanged
+          ? undefined
+          : (activeSession?.resumeCursor ?? undefined);
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,
@@ -1161,9 +1200,50 @@ const make = Effect.gen(function* () {
         ),
       );
 
+    const settings = yield* serverSettingsService.getSettings;
+    const providers = yield* providerRegistry.getProviders;
+    const promptWithoutEffort = message.text.startsWith(CLAUDE_ULTRATHINK_PREFIX)
+      ? message.text.slice(CLAUDE_ULTRATHINK_PREFIX.length)
+      : message.text;
+    const pipelineKind =
+      parseDevTrigger(promptWithoutEffort) !== null
+        ? "dev"
+        : parseResearchTrigger(promptWithoutEffort) !== null
+          ? "research"
+          : null;
+    const desiredInstanceId =
+      event.payload.modelSelection?.instanceId ?? thread.modelSelection.instanceId;
+    const desiredProvider = providers.find((provider) => provider.instanceId === desiredInstanceId);
+    if (
+      pipelineKind !== null &&
+      desiredProvider !== undefined &&
+      !providerDriverSupportsPipelineOrchestration(String(desiredProvider.driver))
+    ) {
+      yield* handleTurnStartFailure(
+        Cause.fail(
+          new ProviderAdapterRequestError({
+            provider: String(desiredProvider.instanceId),
+            method: "thread.turn.start",
+            detail: `${desiredProvider.displayName ?? desiredProvider.instanceId} cannot orchestrate ${pipelineKind} pipelines because its adapter does not expose MCP tools. Select Claude, Codex, Cursor, Grok, or OpenCode for the orchestrator; the pipeline may still delegate work to ${desiredProvider.displayName ?? desiredProvider.instanceId}.`,
+          }),
+        ),
+      );
+      return;
+    }
+    const devExpandedMessageText = expandProviderDevMessage(
+      message.text,
+      settings.dev,
+      deriveDevProviderCandidates(providers),
+    );
+    const providerMessageText = expandProviderResearchMessage(
+      devExpandedMessageText,
+      settings.research,
+      deriveResearchProviderCandidatesFromProviders(providers),
+    );
+
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: message.text,
+      messageText: providerMessageText,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

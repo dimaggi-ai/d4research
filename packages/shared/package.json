@@ -206,6 +206,22 @@
     "./devProxy": {
       "types": "./src/devProxy.ts",
       "import": "./src/devProxy.ts"
+    },
+    "./devPipeline": {
+      "types": "./src/devPipeline.ts",
+      "import": "./src/devPipeline.ts"
+    },
+    "./researchPipeline": {
+      "types": "./src/researchPipeline.ts",
+      "import": "./src/researchPipeline.ts"
+    },
+    "./enabledSkillsContext": {
+      "types": "./src/enabledSkillsContext.ts",
+      "import": "./src/enabledSkillsContext.ts"
+    },
+    "./userMessageTransport": {
+      "types": "./src/userMessageTransport.ts",
+      "import": "./src/userMessageTransport.ts"
     }
   },
   "scripts": {

@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -35,6 +36,7 @@ import * as Stream from "effect/Stream";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -290,6 +292,7 @@ validationLayer("CodexAdapterLive validation", (it) => {
           cwd: process.cwd(),
           environment: undefined,
           launchArgs: "",
+          webSearch: true,
           model: "gpt-5.3-codex",
           providerInstanceId: ProviderInstanceId.make("codex"),
           serviceTier: "priority",
@@ -300,6 +303,42 @@ validationLayer("CodexAdapterLive validation", (it) => {
       NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_RUNTIME_MODE, "full-access");
       NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_TOOL_GUARD_MODE, "shadow");
       NodeAssert.equal(runtimeOptions?.environment?.T3RESEARCH_TOOL_GUARD_PROFILE, "full-access");
+    }),
+  );
+
+  it.effect("keeps T3 MCP calls alive beyond the delegated-turn deadline", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const threadId = asThreadId("thread-mcp-timeout");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test-token",
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+      );
+
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const runtimeOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0];
+      NodeAssert.deepStrictEqual(runtimeOptions?.appServerArgs, [
+        "-c",
+        "mcp_servers.t3-code.tool_timeout_sec=1860",
+        "-c",
+        "mcp_servers.t3-code.url=http://127.0.0.1:43123/mcp",
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+      ]);
+      NodeAssert.equal(runtimeOptions?.environment?.T3_MCP_BEARER_TOKEN, "test-token");
     }),
   );
 });
@@ -623,6 +662,40 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           result: { content: [{ type: "text", text: "attached" }] },
           status: "completed",
         },
+      });
+    }),
+  );
+
+  it.effect("keeps MCP progress correlated with its running tool call", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-progress"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:01:05.000Z",
+        method: "item/mcpToolCall/progress",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("mcp_1"),
+        payload: {
+          itemId: "mcp_1",
+          message: "Still running",
+          threadId: "provider-thread-1",
+          turnId: "provider-turn-1",
+        },
+      });
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      NodeAssert.equal(firstEvent.value.type, "tool.progress");
+      if (firstEvent.value.type !== "tool.progress") return;
+      NodeAssert.deepStrictEqual(firstEvent.value.payload, {
+        toolUseId: "mcp_1",
+        summary: "Still running",
       });
     }),
   );

@@ -166,6 +166,44 @@ function appendPromptResultToTurn(
     : [...ctx.turns, { id: turnId, items: [{ prompt: promptParts, result }] }];
 }
 
+/**
+ * Keep ACP's streamed assistant text in the provider thread snapshot. The
+ * research delegate reads this snapshot after completion; storing only the
+ * prompt response (`{ stopReason }`) makes every successful Grok/Junie answer
+ * look empty even though the runtime events rendered it in the UI.
+ */
+function upsertAssistantSnapshotItem(
+  ctx: GrokSessionContext,
+  turnId: TurnId,
+  itemId: string,
+  text: string,
+  mode: "append" | "replace",
+): void {
+  const existingTurn = ctx.turns.find((turn) => turn.id === turnId);
+  const items = existingTurn?.items ?? [];
+  const existingIndex = items.findIndex(
+    (item) => isRecord(item) && item.type === "agentMessage" && String(item.id ?? "") === itemId,
+  );
+  const existingText =
+    existingIndex >= 0 &&
+    isRecord(items[existingIndex]) &&
+    typeof items[existingIndex].text === "string"
+      ? items[existingIndex].text
+      : "";
+  const nextItem = {
+    id: itemId,
+    type: "agentMessage",
+    text: mode === "append" ? `${existingText}${text}` : text,
+  };
+  const nextItems =
+    existingIndex >= 0
+      ? items.map((item, index) => (index === existingIndex ? nextItem : item))
+      : [...items, nextItem];
+  ctx.turns = existingTurn
+    ? ctx.turns.map((turn) => (turn.id === turnId ? { ...turn, items: nextItems } : turn))
+    : [...ctx.turns, { id: turnId, items: nextItems }];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -840,6 +878,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     );
                     return;
                   case "AssistantItemCompleted":
+                    if (event.streamKind === "assistant_text" && event.text !== undefined) {
+                      upsertAssistantSnapshotItem(
+                        ctx,
+                        notificationTurnId,
+                        event.itemId,
+                        event.text,
+                        "replace",
+                      );
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp,
@@ -876,6 +923,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     );
                     return;
                   case "ContentDelta":
+                    if (event.streamKind === "assistant_text") {
+                      upsertAssistantSnapshotItem(
+                        ctx,
+                        notificationTurnId,
+                        event.itemId ?? `assistant:${notificationTurnId}`,
+                        event.text,
+                        "append",
+                      );
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp,

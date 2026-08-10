@@ -1,8 +1,32 @@
-import type { ModelSelection, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ThreadId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
+import type { PreparedConnection } from "@t3tools/client-runtime/connection";
+import { preparedEnvironmentFetchAuthorization } from "@t3tools/client-runtime/state/skills";
+import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+
+import { runtime } from "./lib/runtime";
 
 export interface ProviderHandoffMessage {
   readonly role: string;
   readonly text: string;
+}
+
+export interface SameThreadProviderHandoffTransition<Prepared> {
+  /** Must durably persist context before returning. */
+  readonly prepare: () => Promise<Prepared>;
+  /** One server command persists the target model, message, and turn intent. */
+  readonly startReceivingTurn: (prepared: Prepared) => Promise<void>;
+}
+
+/**
+ * Durable preparation finishes before one atomic turn-start command changes
+ * the model and starts the receiving provider. There is no client-side
+ * stop/update rollback window for another device to interleave with.
+ */
+export async function runSameThreadProviderHandoffTransition<Prepared>(
+  input: SameThreadProviderHandoffTransition<Prepared>,
+): Promise<void> {
+  const prepared = await input.prepare();
+  await input.startReceivingTurn(prepared);
 }
 
 export function shouldHandoffModelSelection(input: {
@@ -54,7 +78,14 @@ export function buildStructuredHandoffTranscript(
   messages: ReadonlyArray<ProviderHandoffMessage>,
   maxCharacters = 6_000,
 ): string {
-  const sections = messages
+  const normalizedMessages = messages.map((message) => ({
+    ...message,
+    text:
+      message.role === "user"
+        ? extractTrailingEnabledSkillsContext(message.text).promptText
+        : message.text,
+  }));
+  const sections = normalizedMessages
     .filter((message) => message.text.trim().length > 0)
     .map((message) => `${message.role.toUpperCase()}: ${message.text.trim()}`);
   const transcript = sections.join(SECTION_SEPARATOR);
@@ -66,8 +97,8 @@ export function buildStructuredHandoffTranscript(
   }
 
   const firstUserText =
-    messages.find((message) => message.role === "user" && message.text.trim().length > 0)?.text ??
-    "";
+    normalizedMessages.find((message) => message.role === "user" && message.text.trim().length > 0)
+      ?.text ?? "";
   // The header may never eat the whole budget: cap it so at least half of the
   // budget stays available for the most recent messages.
   const headerBudget = Math.max(
@@ -104,6 +135,24 @@ export function buildStructuredHandoffTranscript(
   return [...headerParts, tailSections.join(SECTION_SEPARATOR)].join(SECTION_SEPARATOR);
 }
 
+export const EMPTY_PROVIDER_HANDOFF_TRANSCRIPT =
+  "No prior conversation messages were available for this context handoff.";
+
+/**
+ * A provider switch always carries context, but it is never itself a request to
+ * resume work. In particular, an empty transcript must not manufacture a
+ * continuation task for the receiving agent.
+ */
+export function buildProviderHandoffTranscript(
+  messages: ReadonlyArray<ProviderHandoffMessage>,
+  maxCharacters = 6_000,
+): string {
+  return (
+    buildStructuredHandoffTranscript(messages, maxCharacters).trim() ||
+    EMPTY_PROVIDER_HANDOFF_TRANSCRIPT
+  );
+}
+
 export function buildProviderHandoffPrompt(input: {
   readonly sourceThreadId: ThreadId;
   readonly sourceThreadTitle: string;
@@ -111,13 +160,17 @@ export function buildProviderHandoffPrompt(input: {
   readonly target: ModelSelection;
   readonly project?: string | undefined;
   readonly targetLabel?: string | undefined;
+  readonly enabledSkills?: ReadonlyArray<string> | undefined;
 }): string {
   const project = input.project?.trim();
   const targetLabel = input.targetLabel?.trim() || String(input.target.instanceId);
+  const enabledSkills = [...new Set(input.enabledSkills ?? [])].filter(
+    (name) => name.trim().length > 0,
+  );
   return [
     `Handoff to ${targetLabel} / ${input.target.model}.`,
     "📎 Context attached: local Memo (shared agent memory).",
-    "This provider handoff continues in the same d4research chat.",
+    "This provider handoff stays in the same d4research chat.",
     "",
     `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
     `Target model: ${input.target.instanceId} / ${input.target.model}`,
@@ -125,9 +178,20 @@ export function buildProviderHandoffPrompt(input: {
     "",
     'Use memory_search with connector="local" whenever more shared context is needed',
     project ? `using project="${project}".` : "for the current project.",
+    ...(enabledSkills.length > 0
+      ? [
+          "",
+          `Configured global and chat skills: ${enabledSkills.join(", ")}.`,
+          "Keep these preferences after the handoff; available SKILL.md references are attached to each turn.",
+        ]
+      : []),
     "",
-    "Handoff summary:",
+    "Handoff context (reference only):",
     input.summary.trim(),
+    "",
+    "This is context synchronization only, not a request to continue or resume any prior job or task.",
+    "Do not edit files, run tools, or advance prior work because of this handoff.",
+    "Acknowledge briefly that the context is loaded, then wait for the user's next instruction.",
   ].join("\n");
 }
 
@@ -136,10 +200,17 @@ export function buildProviderHandoffMemory(input: {
   readonly sourceThreadTitle: string;
   readonly summary: string;
   readonly target: ModelSelection;
+  readonly enabledSkills?: ReadonlyArray<string> | undefined;
 }): string {
+  const enabledSkills = [...new Set(input.enabledSkills ?? [])].filter(
+    (name) => name.trim().length > 0,
+  );
   return [
     `d4research provider handoff from thread ${input.sourceThreadTitle} (${input.sourceThreadId}).`,
     `Receiving agent: ${input.target.instanceId} / ${input.target.model}.`,
+    ...(enabledSkills.length > 0
+      ? [`Configured global and chat skills to preserve: ${enabledSkills.join(", ")}.`]
+      : []),
     "Shared context:",
     input.summary.trim(),
   ].join("\n");
@@ -151,11 +222,37 @@ export interface PrepareProviderHandoffInput {
   readonly sourceThreadId?: string | undefined;
   readonly sourceThreadTitle?: string | undefined;
   readonly target?: { readonly instanceId: string; readonly model: string } | undefined;
+  readonly enabledSkills?: ReadonlyArray<string> | undefined;
   /**
    * Skip compression server-side and hand the transcript over as-is.
    * Research handoffs set this: pipeline evidence must survive verbatim.
    */
   readonly bypassCompression?: boolean | undefined;
+  /** Connected environment that owns this thread and its local Memo. */
+  readonly preparedConnection?: PreparedConnection | undefined;
+}
+
+function environmentApiUrl(path: string, prepared?: PreparedConnection): string | null {
+  return prepared ? new URL(path, prepared.httpBaseUrl).toString() : null;
+}
+
+async function authorizedEnvironmentPost(input: {
+  readonly prepared: PreparedConnection;
+  readonly endpoint: string;
+  readonly body: unknown;
+  readonly signal: AbortSignal;
+}): Promise<Response> {
+  const auth = await runtime.runPromise(
+    preparedEnvironmentFetchAuthorization(input.prepared, "POST", input.endpoint),
+  );
+  return fetch(input.endpoint, {
+    method: "POST",
+    cache: "no-store",
+    ...(auth.credentials ? { credentials: auth.credentials } : {}),
+    headers: { "content-type": "application/json", ...auth.headers },
+    body: JSON.stringify(input.body),
+    signal: input.signal,
+  });
 }
 
 /**
@@ -167,6 +264,7 @@ export interface PrepareProviderHandoffInput {
 // Compression is bounded server-side (60 s local, 120 s provider), so a
 // request outliving both is stuck, not slow. The fallback path is free.
 const PREPARE_TIMEOUT_MS = 150_000;
+export const PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS = 15_000;
 
 export async function prepareProviderHandoff(
   input: PrepareProviderHandoffInput,
@@ -174,19 +272,26 @@ export async function prepareProviderHandoff(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PREPARE_TIMEOUT_MS);
   try {
-    const response = await fetch("/api/handoff/prepare", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
+    const { preparedConnection, ...body } = input;
+    const endpoint = environmentApiUrl("/api/handoff/prepare", preparedConnection);
+    if (endpoint === null || preparedConnection === undefined) return null;
+    const response = await authorizedEnvironmentPost({
+      prepared: preparedConnection,
+      endpoint,
+      body,
       signal: controller.signal,
     });
     const result = (await response.json().catch(() => null)) as {
       ok?: unknown;
       compressed?: unknown;
+      memoryPersisted?: unknown;
     } | null;
-    if (result?.ok === true && typeof result.compressed === "string" && result.compressed.trim()) {
+    if (
+      result?.ok === true &&
+      result.memoryPersisted === true &&
+      typeof result.compressed === "string" &&
+      result.compressed.trim()
+    ) {
       return result.compressed;
     }
     return null;
@@ -198,26 +303,66 @@ export async function prepareProviderHandoff(
 }
 
 /**
- * Best-effort Memo write for the prepare-failure path. When /api/handoff/prepare
- * fails, the handoff still proceeds with the structured transcript — but Memo
- * would silently hold nothing for this handoff, breaking later memory_search.
- * This posts the fallback context through the standalone memory route instead.
+ * Prepares a provider handoff and proves that its context reached local Memo.
+ *
+ * INVARIANT: a provider handoff may replace the provider-native session, but
+ * it must never replace the d4research thread. The receiving turn starts on
+ * the existing thread only after this durable local-memory bridge succeeds.
+ */
+export async function prepareDurableProviderHandoff(
+  input: PrepareProviderHandoffInput & {
+    readonly sourceThreadId: string;
+    readonly sourceThreadTitle: string;
+    readonly target: ModelSelection;
+  },
+): Promise<string> {
+  const prepared = await prepareProviderHandoff(input);
+  if (prepared !== null) return prepared;
+
+  const stored = await persistProviderHandoffMemoryFallback({
+    text: buildProviderHandoffMemory({
+      sourceThreadId: ThreadId.make(input.sourceThreadId),
+      sourceThreadTitle: input.sourceThreadTitle,
+      summary: input.transcript,
+      target: input.target,
+      enabledSkills: input.enabledSkills,
+    }),
+    project: input.project,
+    preparedConnection: input.preparedConnection,
+  });
+  if (!stored) {
+    throw new Error("Local Memo could not store the provider handoff context.");
+  }
+  return input.transcript;
+}
+
+/**
+ * Memo write for the prepare-failure path. The durable handoff boundary awaits
+ * this result and blocks the provider switch when it fails, so a receiving
+ * native session is never started without recoverable local context.
  */
 export async function persistProviderHandoffMemoryFallback(input: {
   readonly text: string;
   readonly project?: string | undefined;
+  readonly preparedConnection?: PreparedConnection | undefined;
 }): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS);
   try {
-    const response = await fetch("/api/memory/handoff", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
+    const { preparedConnection, ...body } = input;
+    const endpoint = environmentApiUrl("/api/memory/handoff", preparedConnection);
+    if (endpoint === null || preparedConnection === undefined) return false;
+    const response = await authorizedEnvironmentPost({
+      prepared: preparedConnection,
+      endpoint,
+      body,
+      signal: controller.signal,
     });
     const result = (await response.json().catch(() => null)) as { ok?: unknown } | null;
     return response.ok && result?.ok === true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }

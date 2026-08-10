@@ -438,6 +438,33 @@ export function runtimeEventToActivities(
       ];
     }
 
+    case "tool.progress": {
+      const toolCallId = event.payload.toolUseId ?? event.itemId;
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "tool",
+          kind: "tool.progress",
+          summary: event.payload.summary
+            ? truncateDetail(event.payload.summary, 120)
+            : event.payload.toolName
+              ? `${event.payload.toolName} is running`
+              : "Tool is running",
+          payload: {
+            ...(toolCallId ? { toolCallId: String(toolCallId) } : {}),
+            ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
+            ...(event.payload.summary ? { summary: truncateDetail(event.payload.summary) } : {}),
+            ...(event.payload.elapsedSeconds !== undefined
+              ? { elapsedSeconds: event.payload.elapsedSeconds }
+              : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "runtime.warning": {
       return [
         {
@@ -701,6 +728,7 @@ export function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.itemId ? { toolCallId: String(event.itemId) } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

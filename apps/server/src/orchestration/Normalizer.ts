@@ -13,10 +13,15 @@ import {
   type ProviderInstanceId,
   type ThreadId,
 } from "@t3tools/contracts";
+import {
+  appendEnabledSkillsContext,
+  mergeEnabledSkillNames,
+} from "@t3tools/shared/enabledSkillsContext";
 
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";
 import { ServerConfig } from "../config.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
@@ -33,8 +38,18 @@ const EXPANDABLE_SKILL_ROOTS: ReadonlySet<SkillsInventoryRoot> = new Set<SkillsI
   "claude-user",
   "codex-user",
   "junie-user",
+  "agy-user",
   "project",
 ]);
+
+const DEFAULT_SKILL_ROOT_PRIORITY: Readonly<Record<SkillsInventoryRoot, number>> = {
+  // A project skill intentionally shadows a user skill with the same name.
+  project: 0,
+  "codex-user": 1,
+  "claude-user": 2,
+  "junie-user": 3,
+  "agy-user": 4,
+};
 
 /**
  * Skill names the target provider instance already resolves on its own. With
@@ -149,6 +164,71 @@ const expandSkillReferences = Effect.fn("normalizer.expandSkillReferences")(func
     return expandSkillTokens({ text: input.text, workspaceSkills, nativeSkillNames }).text;
   }).pipe(Effect.catchCause(() => Effect.succeed(input.text)));
 });
+
+/**
+ * Resolve the user's always-on names against the live inventory and attach
+ * compact file references. Settings and filesystem failures are deliberately
+ * best effort: they must never block an otherwise valid turn.
+ */
+const appendEnabledSkillReferences = Effect.fn("normalizer.appendEnabledSkillReferences")(
+  function* (input: {
+    readonly text: string;
+    readonly threadId: ThreadId;
+    readonly bootstrap: {
+      readonly workspaceRoot: string | undefined;
+      readonly projectId: ProjectId | undefined;
+    };
+  }) {
+    const settingsService = yield* Effect.serviceOption(ServerSettingsService);
+    if (Option.isNone(settingsService)) return input.text;
+
+    return yield* Effect.gen(function* () {
+      const settings = yield* settingsService.value.getSettings;
+      const globalNames = settings.skills.enabledByDefault;
+      const sessionNames = settings.skills.enabledByThread[input.threadId] ?? [];
+      const configuredNames = mergeEnabledSkillNames(globalNames, sessionNames);
+      if (configuredNames.length === 0) return input.text;
+      const globalNameSet = new Set(globalNames);
+
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* resolveThreadSkillsCwd(input.threadId, input.bootstrap);
+      const inventory = yield* readSkillsInventory(cwd === undefined ? {} : { cwd });
+      const candidates = inventory
+        .filter((entry) => entry.kind === "skill" && configuredNames.includes(entry.name))
+        .sort(
+          (left, right) =>
+            DEFAULT_SKILL_ROOT_PRIORITY[left.root] - DEFAULT_SKILL_ROOT_PRIORITY[right.root],
+        );
+
+      const byName = new Map<string, (typeof candidates)[number]>();
+      for (const entry of candidates) {
+        if (!byName.has(entry.name)) byName.set(entry.name, entry);
+      }
+      const available = yield* Effect.forEach(configuredNames, (name) => {
+        const entry = byName.get(name);
+        if (!entry) return Effect.succeed(null);
+        return fileSystem.exists(entry.path).pipe(
+          Effect.orElseSucceed(() => false),
+          Effect.map((exists) =>
+            exists
+              ? {
+                  name: entry.name,
+                  path: entry.path,
+                  scope: globalNameSet.has(entry.name) ? ("global" as const) : ("session" as const),
+                  ...(entry.description ? { description: entry.description } : {}),
+                }
+              : null,
+          ),
+        );
+      });
+
+      return appendEnabledSkillsContext(
+        input.text,
+        available.filter((skill) => skill !== null),
+      );
+    }).pipe(Effect.catchCause(() => Effect.succeed(input.text)));
+  },
+);
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
@@ -304,11 +384,21 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       { concurrency: 1 },
     );
 
-    const text = yield* expandSkillReferences({
+    const textWithExplicitSkills = yield* expandSkillReferences({
       text: canonicalCommand.message.text,
       instanceId:
         canonicalCommand.modelSelection?.instanceId ??
         canonicalCommand.bootstrap?.createThread?.modelSelection?.instanceId,
+      threadId: canonicalCommand.threadId,
+      bootstrap: {
+        workspaceRoot:
+          canonicalCommand.bootstrap?.createThread?.worktreePath ??
+          canonicalCommand.bootstrap?.prepareWorktree?.projectCwd,
+        projectId: canonicalCommand.bootstrap?.createThread?.projectId,
+      },
+    });
+    const text = yield* appendEnabledSkillReferences({
+      text: textWithExplicitSkills,
       threadId: canonicalCommand.threadId,
       bootstrap: {
         workspaceRoot:

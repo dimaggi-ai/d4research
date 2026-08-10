@@ -178,6 +178,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.deepEqual(next.providers.codex, {
         enabled: true,
+        webSearch: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
         shadowHomePath: "",
@@ -202,6 +203,27 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           ],
         ),
       );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists dev pipelines and their scoped prompt files across service reads", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const dev = {
+        activeScenario: "repair",
+        scenarios: [
+          {
+            name: "repair",
+            pipelinePrompt: "Review with !codex:gpt-5.6-sol:rules.md",
+            promptFiles: [{ name: "rules.md", content: "Keep the public API stable." }],
+          },
+        ],
+      };
+
+      yield* serverSettings.updateSettings({ dev });
+      const reread = yield* serverSettings.getSettings;
+
+      assert.deepEqual(reread.dev, dev);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
@@ -510,6 +532,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       assert.deepEqual(next.providers.codex, {
         enabled: true,
+        webSearch: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
         shadowHomePath: "",

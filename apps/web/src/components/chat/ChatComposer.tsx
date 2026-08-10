@@ -79,6 +79,7 @@ import {
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { type ElementContextDraft } from "../../lib/elementContext";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
+import { ComposerPendingPastedContexts } from "./ComposerPendingPastedContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
 import {
@@ -86,13 +87,21 @@ import {
   shouldUseCompactComposerFooter,
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
+import { activeDevScenarioName, applyDevTrigger, devPipelineControlKind } from "../../devPipeline";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import {
+  BUILD_MODE_VALUE,
+  CompactComposerControlsMenu,
+  PLAN_MODE_VALUE,
+  RESEARCH_OFF_VALUE,
+} from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerSessionSkillsControl } from "./ComposerSessionSkillsControl";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
+import { composerDraftOperationKey } from "./composerDraftOperationKey";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
@@ -207,7 +216,16 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { isDeepResearchPrompt, DEEP_RESEARCH_TAG } from "../../researchPipeline";
+import { parseResearchTrigger, stripResearchTrigger } from "../../researchPipeline";
+import {
+  type PastedContextDraft,
+  PASTED_CONTEXT_MAX_COUNT,
+  isTextLikeFile,
+  makePastedContext,
+  pastedTextLabel,
+  readPastedContextFiles,
+  shouldConvertPasteToContext,
+} from "../../lib/pastedContext";
 import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
@@ -231,11 +249,13 @@ import { formatProviderSkillDisplayName } from "../../providerSkillPresentation"
 import { searchProviderSkills } from "../../providerSkillSearch";
 import {
   describeComposerFallbackSkill,
+  providerSkillsToInventoryEntries,
   toComposerFallbackSkills,
 } from "../../composerSkillFallback";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { useSkillsInventory } from "../../hooks/useSkillsInventory";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
+import { useSkillsInventory } from "../../hooks/useSkillsInventory";
+import { usePreparedConnection } from "../../state/session";
 import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { TOOL_GUARD_MODE_PRESENTATION } from "../../toolGuardModes";
@@ -308,9 +328,15 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   isResearchMode: boolean;
+  canStartResearch: boolean;
+  researchScenarios: ReadonlyArray<string>;
+  activeResearchScenario: string | null;
+  devPipelines: ReadonlyArray<string>;
+  activeDevPipeline: string | null;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
-  onToggleResearch: () => void;
+  onSelectResearchScenario: (scenarioName: string | null) => void;
+  onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const interactionModeTooltip =
@@ -318,72 +344,167 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       ? "Plan mode — click to return to normal build mode"
       : "Default mode — click to enter plan mode";
 
-  const researchToggle = (
+  // A research run always gets its own thread, so the picker only appears on a
+  // chat that has not started. Selecting a scenario writes its trigger into the
+  // prompt; "Off" removes it.
+  const researchScenarioPicker = props.canStartResearch ? (
     <>
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              className={cn(
-                "shrink-0 whitespace-nowrap",
-                props.isResearchMode
-                  ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/15 hover:text-violet-300"
-                  : "text-muted-foreground/70 hover:text-foreground/80",
-              )}
-              type="button"
-              onClick={props.onToggleResearch}
-              aria-label={props.isResearchMode ? "Exit research mode" : "Enter research mode"}
-            />
+        <Select
+          value={
+            props.isResearchMode
+              ? (props.activeResearchScenario ?? RESEARCH_OFF_VALUE)
+              : RESEARCH_OFF_VALUE
+          }
+          onValueChange={(value) =>
+            props.onSelectResearchScenario(value === RESEARCH_OFF_VALUE ? null : String(value))
           }
         >
-          <ComposerControlIcon
-            icon={TelescopeIcon}
-            className={props.isResearchMode ? "text-current opacity-100" : undefined}
-          />
-          <span className="sr-only sm:not-sr-only">Research</span>
-        </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <ComposerSelectControl
+                className={cn(
+                  "shrink-0 whitespace-nowrap font-medium",
+                  props.isResearchMode
+                    ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/15 hover:text-violet-300"
+                    : "text-muted-foreground/70 hover:text-foreground/80",
+                )}
+                aria-label={
+                  props.isResearchMode
+                    ? `Research scenario: ${props.activeResearchScenario ?? "default"}`
+                    : "Start research"
+                }
+              />
+            }
+          >
+            <ComposerControlIcon
+              icon={TelescopeIcon}
+              className={props.isResearchMode ? "text-current opacity-100" : undefined}
+            />
+            <span className="sr-only sm:not-sr-only">
+              {props.isResearchMode ? (props.activeResearchScenario ?? "Research") : "Research"}
+            </span>
+          </TooltipTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+              Research scenario
+            </div>
+            <SelectItem value={RESEARCH_OFF_VALUE} hideIndicator>
+              Off
+            </SelectItem>
+            {props.researchScenarios.map((scenario) => (
+              <SelectItem key={scenario} value={scenario} hideIndicator>
+                {scenario}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
         <TooltipPopup side="top">
           {props.isResearchMode
-            ? "Research mode active — click to exit"
-            : "Start #deep-research in this chat"}
+            ? "Research pipeline armed — pick a scenario or turn it off"
+            : "Run a research pipeline in this new chat"}
         </TooltipPopup>
       </Tooltip>
     </>
-  );
-
-  const interactionModeToggle = props.showInteractionModeToggle ? (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              className={cn(
-                "shrink-0 whitespace-nowrap",
-                props.interactionMode === "plan"
-                  ? "bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 hover:text-blue-300"
-                  : "text-muted-foreground/70 hover:text-foreground/80",
-              )}
-              type="button"
-              onClick={props.onToggleInteractionMode}
-              aria-label={interactionModeTooltip}
-            />
-          }
-        >
-          {props.interactionMode === "plan" ? (
-            <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
-          ) : (
-            <ComposerControlIcon icon={BotIcon} opticalSize="large" />
-          )}
-          <span className="sr-only sm:not-sr-only">
-            {props.interactionMode === "plan" ? "Plan" : "Build"}
-          </span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
-      </Tooltip>
-    </>
   ) : null;
+
+  // Plan keeps its one-click exit; the Build side becomes the picker, because
+  // arming a dev pipeline is a choice between named pipelines, not a toggle.
+  const isPlanMode = props.interactionMode === "plan";
+  const onSelectMode = (value: string) => {
+    if (value === PLAN_MODE_VALUE) {
+      props.onSelectDevPipeline(null);
+      if (!isPlanMode) props.onToggleInteractionMode();
+      return;
+    }
+    if (isPlanMode) props.onToggleInteractionMode();
+    props.onSelectDevPipeline(value === BUILD_MODE_VALUE ? null : value);
+  };
+
+  const interactionModeToggle =
+    devPipelineControlKind(props.showInteractionModeToggle, props.interactionMode) ===
+    "plan-exit" ? (
+      <>
+        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ComposerControl
+                className="shrink-0 whitespace-nowrap bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 hover:text-blue-300"
+                type="button"
+                onClick={props.onToggleInteractionMode}
+                aria-label={interactionModeTooltip}
+              />
+            }
+          >
+            <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
+            <span className="sr-only sm:not-sr-only">Plan</span>
+          </TooltipTrigger>
+          <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
+        </Tooltip>
+      </>
+    ) : (
+      <>
+        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+        <Tooltip>
+          <Select
+            value={props.activeDevPipeline ?? BUILD_MODE_VALUE}
+            onValueChange={(value) => onSelectMode(String(value))}
+          >
+            <TooltipTrigger
+              render={
+                <ComposerSelectControl
+                  iconOnly
+                  className={cn(
+                    "shrink-0 whitespace-nowrap font-medium",
+                    props.activeDevPipeline
+                      ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300"
+                      : "text-muted-foreground/70 hover:text-foreground/80",
+                  )}
+                  aria-label={
+                    props.activeDevPipeline
+                      ? `Dev pipeline: ${props.activeDevPipeline}`
+                      : "Build mode"
+                  }
+                />
+              }
+            >
+              <ComposerControlIcon
+                icon={BotIcon}
+                opticalSize="large"
+                className={props.activeDevPipeline ? "text-current opacity-100" : undefined}
+              />
+            </TooltipTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem value={BUILD_MODE_VALUE} hideIndicator>
+                Build
+              </SelectItem>
+              {props.showInteractionModeToggle ? (
+                <SelectItem value={PLAN_MODE_VALUE} hideIndicator>
+                  Plan
+                </SelectItem>
+              ) : null}
+              {props.devPipelines.length > 0 ? (
+                <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+                  Dev pipeline
+                </div>
+              ) : null}
+              {props.devPipelines.map((pipeline) => (
+                <SelectItem key={pipeline} value={pipeline} hideIndicator>
+                  {pipeline}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          <TooltipPopup side="top">
+            {props.activeDevPipeline
+              ? `Dev pipeline "${props.activeDevPipeline}" armed — delegates advise, the agent edits`
+              : "Build mode — pick a dev pipeline to delegate plan, build, and review"}
+          </TooltipPopup>
+        </Tooltip>
+      </>
+    );
 
   return (
     <>
@@ -436,7 +557,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
       </Tooltip>
 
       {interactionModeToggle}
-      {researchToggle}
+      {researchScenarioPicker}
     </>
   );
 });
@@ -530,6 +651,7 @@ export interface ChatComposerHandle {
     images: ComposerImageAttachment[];
     terminalContexts: TerminalContextDraft[];
     elementContexts: ElementContextDraft[];
+    pastedContexts: PastedContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     selectedPromptEffort: string | null;
@@ -617,12 +739,14 @@ export interface ChatComposerProps {
   keybindings: ResolvedKeybindingsConfig;
   terminalOpen: boolean;
   gitCwd: string | null;
+  activeProjectCwd: string | null;
 
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
+  composerPastedContextsRef: React.RefObject<PastedContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
@@ -645,7 +769,11 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
-  onStartDeepResearch: () => void;
+  onStartDeepResearch: (scenarioName?: string) => void;
+  /** Research opens its own thread, so it is only offered on a chat that has not started. */
+  canStartResearch: boolean;
+  researchScenarios: ReadonlyArray<string>;
+  devPipelines: ReadonlyArray<string>;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -705,11 +833,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     keybindings,
     terminalOpen,
     gitCwd,
+    activeProjectCwd,
     promptRef,
     composerRef,
     composerImagesRef,
     composerTerminalContextsRef,
     composerElementContextsRef,
+    composerPastedContextsRef,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -720,6 +850,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
     onStartDeepResearch,
+    canStartResearch,
+    researchScenarios,
+    devPipelines,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -736,18 +869,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const prompt = composerDraft.prompt;
-  const isResearchMode = isDeepResearchPrompt(prompt);
-  const toggleResearch = useCallback(() => {
-    if (isResearchMode) {
-      const stripped = prompt.trimStart().slice(DEEP_RESEARCH_TAG.length).trimStart();
-      composerRef.current?.replacePrompt(stripped);
-    } else {
-      onStartDeepResearch();
-    }
-  }, [isResearchMode, prompt, composerRef, onStartDeepResearch]);
+  const researchTrigger = parseResearchTrigger(prompt);
+  const isResearchMode = researchTrigger !== null;
+  const activeResearchScenario = researchTrigger?.scenarioName ?? null;
+  const selectResearchScenario = useCallback(
+    (scenarioName: string | null) => {
+      if (scenarioName === null) {
+        composerRef.current?.replacePrompt(stripResearchTrigger(prompt));
+        return;
+      }
+      onStartDeepResearch(scenarioName);
+    },
+    [prompt, composerRef, onStartDeepResearch],
+  );
+  // A dev pipeline runs in this thread, so arming it is only a prompt rewrite —
+  // no thread to create, and the way out is selecting Build again.
+  const activeDevPipeline = activeDevScenarioName(prompt);
+  const selectDevPipeline = useCallback(
+    (scenarioName: string | null) => {
+      composerRef.current?.replacePrompt(
+        applyDevTrigger(stripResearchTrigger(prompt), scenarioName),
+      );
+    },
+    [prompt, composerRef],
+  );
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerElementContexts = composerDraft.elementContexts;
+  const composerPastedContexts = composerDraft.pastedContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
@@ -767,6 +916,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const removeComposerDraftElementContext = useComposerDraftStore(
     (store) => store.removeElementContext,
+  );
+  const addComposerDraftPastedContexts = useComposerDraftStore((store) => store.addPastedContexts);
+  const removeComposerDraftPastedContext = useComposerDraftStore(
+    (store) => store.removePastedContext,
   );
   const removeComposerDraftPreviewAnnotation = useComposerDraftStore(
     (store) => store.removePreviewAnnotation,
@@ -917,21 +1070,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
   );
-  // Providers without native skill support report none, which would leave the
-  // `$` menu empty. Fall back to the local inventory the server can expand —
-  // and only poll for it on those providers.
+  // Portable user skills come from the streamed provider snapshot. Project
+  // skills still require a workspace-scoped inventory read even when that
+  // snapshot is non-empty; a user skill is not proof of project discovery.
   const providerReportsSkills = (selectedProviderStatus?.skills.length ?? 0) > 0;
-  // The thread's workspace scopes project skills, the same root the server
-  // resolves when it expands the token.
-  const skillsInventory = useSkillsInventory(gitCwd ?? undefined, {
-    enabled: !providerReportsSkills,
+  const preparedConnectionOption = usePreparedConnection(environmentId);
+  const preparedConnection =
+    preparedConnectionOption._tag === "Some" ? preparedConnectionOption.value : null;
+  const inventoryFallback = useSkillsInventory(activeProjectCwd ?? undefined, {
+    enabled: Boolean(activeProjectCwd),
+    preparedConnection,
   });
+  const [isSessionSkillsOpen, setIsSessionSkillsOpen] = useState(false);
+  const environmentSkillEntries = useMemo(
+    () => [...providerSkillsToInventoryEntries(providerStatuses), ...inventoryFallback.entries],
+    [inventoryFallback.entries, providerStatuses],
+  );
   const composerSkills = useMemo<ReadonlyArray<ServerProviderSkill>>(
-    () =>
-      providerReportsSkills
-        ? (selectedProviderStatus?.skills ?? [])
-        : toComposerFallbackSkills(skillsInventory.entries),
-    [providerReportsSkills, selectedProviderStatus, skillsInventory.entries],
+    () => toComposerFallbackSkills(environmentSkillEntries),
+    [environmentSkillEntries],
   );
   const selectedProviderModels = useMemo<ReadonlyArray<ServerProvider["models"][number]>>(
     () => selectedProviderEntry?.models ?? [],
@@ -1091,6 +1248,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+  /** Text-file reads reserve chip slots and must finish before this draft sends. */
+  const pendingPastedContextReadsRef = useRef<Map<string, number>>(new Map());
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1105,10 +1264,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           composerElementContexts.length +
           composerPreviewAnnotations.length +
           composerReviewComments.length,
+        pastedContextCount: composerPastedContexts.length,
       }),
     [
       composerElementContexts.length,
       composerImages.length,
+      composerPastedContexts.length,
       composerPreviewAnnotations.length,
       composerReviewComments.length,
       composerTerminalContexts,
@@ -1444,6 +1605,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     composerElementContextsRef.current = composerElementContexts;
   }, [composerElementContexts, composerElementContextsRef]);
+
+  useEffect(() => {
+    composerPastedContextsRef.current = composerPastedContexts;
+  }, [composerPastedContexts, composerPastedContextsRef]);
 
   // ------------------------------------------------------------------
   // Composer menu highlight sync
@@ -1951,6 +2116,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
+      if (
+        (pendingPastedContextReadsRef.current.get(composerDraftOperationKey(composerDraftTarget)) ??
+          0) > 0
+      ) {
+        event?.preventDefault();
+        toastManager.add({
+          type: "info",
+          title: "Still reading an attached text file.",
+          description: "Send again once its attachment chip appears.",
+        });
+        return;
+      }
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
@@ -1959,6 +2136,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThreadId,
       blurMobileComposerAfterSend,
+      composerDraftTarget,
       isSendDisabled,
       noProviderAvailable,
       onSend,
@@ -2101,7 +2279,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // unique image into the overflow list for nothing.
         const existingDedupKeys = new Set(
           composerImagesRef.current.map(
-            (image) => `${image.mimeType} ${image.sizeBytes} ${image.name}`,
+            (image) => `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`,
           ),
         );
         const capacity = Math.max(
@@ -2112,7 +2290,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (attachment) =>
             !existingIds.has(attachment.id) &&
             !existingDedupKeys.has(
-              `${attachment.mimeType} ${attachment.sizeBytes} ${attachment.name}`,
+              `${attachment.mimeType}\u0000${attachment.sizeBytes}\u0000${attachment.name}`,
             ),
         );
         // Anything past the attachment limit cannot be restored. The entry is
@@ -2204,7 +2382,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // the composer has been cleared the user can type something genuinely
     // new (or switch threads) while encoding continues, and that deserves its
     // own entry.
-    const snapshotKey = `${String(composerDraftTarget)} ${prompt} ${images
+    const snapshotKey = `${composerDraftOperationKey(composerDraftTarget)}\u0000${prompt}\u0000${images
       .map((image) => image.id)
       .join(",")}`;
     if (stashInFlightRef.current.has(snapshotKey)) return;
@@ -2497,13 +2675,80 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Callbacks: paste / drag
   // ------------------------------------------------------------------
+  /** Reads dropped/pasted text files into attachment chips. */
+  const addComposerTextFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    const targetKey = composerDraftOperationKey(composerDraftTarget);
+    const pending = pendingPastedContextReadsRef.current.get(targetKey) ?? 0;
+    const available = Math.max(
+      0,
+      PASTED_CONTEXT_MAX_COUNT - composerPastedContextsRef.current.length - pending,
+    );
+    const reserved = Math.min(files.length, available);
+    if (reserved > 0) {
+      pendingPastedContextReadsRef.current.set(targetKey, pending + reserved);
+    }
+    try {
+      const result = await readPastedContextFiles(files, available);
+      if (result.contexts.length > 0) {
+        addComposerDraftPastedContexts(composerDraftTarget, result.contexts);
+      }
+      if (result.rejectedNames.length > 0 || result.skippedCount > 0) {
+        const reasons = [
+          ...(result.rejectedNames.length > 0
+            ? [`Could not read: ${result.rejectedNames.join(", ")}.`]
+            : []),
+          ...(result.skippedCount > 0
+            ? [
+                `${result.skippedCount} file${result.skippedCount === 1 ? " was" : "s were"} skipped at the ${PASTED_CONTEXT_MAX_COUNT}-attachment limit.`,
+              ]
+            : []),
+        ];
+        setThreadError(activeThreadId, reasons.join(" "));
+      }
+    } finally {
+      const remaining = (pendingPastedContextReadsRef.current.get(targetKey) ?? 0) - reserved;
+      if (remaining > 0) pendingPastedContextReadsRef.current.set(targetKey, remaining);
+      else pendingPastedContextReadsRef.current.delete(targetKey);
+    }
+  };
+
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
+    if (files.length > 0) {
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      const textFiles = files.filter((file) => isTextLikeFile(file));
+      if (imageFiles.length === 0 && textFiles.length === 0) return;
+      event.preventDefault();
+      if (imageFiles.length > 0) void addComposerImages(imageFiles);
+      if (textFiles.length > 0) void addComposerTextFiles(textFiles);
+      return;
+    }
+    // A very large paste reads as a document, not a sentence: collapse it into
+    // an attachment chip the way Claude/ChatGPT do, leaving the prompt for the
+    // actual instruction. Smaller pastes stay inline and behave normally.
+    const pastedText = event.clipboardData.getData("text/plain");
+    const targetKey = composerDraftOperationKey(composerDraftTarget);
+    if (
+      !shouldConvertPasteToContext({
+        textLength: pastedText.length,
+        existingContextCount: composerPastedContextsRef.current.length,
+        pendingContextCount: pendingPastedContextReadsRef.current.get(targetKey) ?? 0,
+      })
+    ) {
+      // At capacity, leave the native paste untouched. Preventing it here
+      // would discard clipboard data because the bounded store cannot add a
+      // ninth attachment.
+      return;
+    }
     event.preventDefault();
-    void addComposerImages(imageFiles);
+    addComposerDraftPastedContexts(composerDraftTarget, [
+      makePastedContext({
+        name: pastedTextLabel(pastedText),
+        content: pastedText,
+        fromFile: false,
+      }),
+    ]);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -2537,7 +2782,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     const files = Array.from(event.dataTransfer.files);
-    void addComposerImages(files);
+    const textFiles = files.filter((file) => isTextLikeFile(file));
+    const otherFiles = files.filter((file) => !isTextLikeFile(file));
+    if (otherFiles.length > 0) void addComposerImages(otherFiles);
+    if (textFiles.length > 0) void addComposerTextFiles(textFiles);
     focusComposer();
   };
 
@@ -2733,6 +2981,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         images: composerImagesRef.current,
         terminalContexts: composerTerminalContextsRef.current,
         elementContexts: composerElementContextsRef.current,
+        pastedContexts: composerPastedContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         selectedPromptEffort,
@@ -3082,6 +3331,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
               pendingUserInputs.length === 0 &&
+              composerPastedContexts.length > 0 && (
+                <ComposerPendingPastedContexts
+                  contexts={composerPastedContexts}
+                  onRemove={(contextId) =>
+                    removeComposerDraftPastedContext(composerDraftTarget, contextId)
+                  }
+                  className="mb-3"
+                />
+              )}
+
+            {!isComposerCollapsedMobile &&
+              !isComposerApprovalState &&
+              pendingUserInputs.length === 0 &&
               composerImages.some(
                 (image) =>
                   !composerPreviewAnnotations.some((annotation) => annotation.id === image.id),
@@ -3295,16 +3557,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 )}
 
+                <ComposerSessionSkillsControl
+                  environmentId={environmentId}
+                  threadId={routeThreadRef.threadId}
+                  globalNames={settings.skills.enabledByDefault}
+                  enabledByThread={settings.skills.enabledByThread}
+                  inventoryEntries={environmentSkillEntries}
+                  inventoryState="ready"
+                  open={isSessionSkillsOpen}
+                  onOpenChange={setIsSessionSkillsOpen}
+                />
+
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
                     interactionMode={interactionMode}
                     runtimeMode={runtimeMode}
                     isResearchMode={isResearchMode}
+                    canStartResearch={canStartResearch}
+                    researchScenarios={researchScenarios}
+                    activeResearchScenario={activeResearchScenario}
                     showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
                     onToggleInteractionMode={toggleInteractionMode}
                     onRuntimeModeChange={handleRuntimeModeChange}
-                    onToggleResearch={toggleResearch}
+                    onSelectResearchScenario={selectResearchScenario}
+                    devPipelines={devPipelines}
+                    activeDevPipeline={activeDevPipeline}
+                    onSelectDevPipeline={selectDevPipeline}
                   />
                 ) : (
                   <>
@@ -3319,9 +3598,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
                       isResearchMode={isResearchMode}
+                      canStartResearch={canStartResearch}
+                      researchScenarios={researchScenarios}
+                      activeResearchScenario={activeResearchScenario}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
-                      onToggleResearch={toggleResearch}
+                      onSelectResearchScenario={selectResearchScenario}
+                      devPipelines={devPipelines}
+                      activeDevPipeline={activeDevPipeline}
+                      onSelectDevPipeline={selectDevPipeline}
                     />
                   </>
                 )}

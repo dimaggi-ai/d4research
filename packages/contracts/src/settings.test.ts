@@ -223,6 +223,131 @@ describe("ServerSettings memory connectors", () => {
   });
 });
 
+describe("ServerSettings enabled skills", () => {
+  it("defaults legacy settings to no per-turn skill tax", () => {
+    expect(decodeServerSettings({}).skills).toEqual({
+      enabledByDefault: [],
+      enabledByThread: {},
+    });
+  });
+
+  it("trims names and accepts a whole-list patch", () => {
+    expect(
+      decodeServerSettingsPatch({
+        skills: { enabledByDefault: ["  focus-mode  ", "security-review"] },
+      }).skills,
+    ).toEqual({ enabledByDefault: ["focus-mode", "security-review"] });
+  });
+
+  it("rejects empty, oversized, and excessive enabled-skill lists", () => {
+    expect(() => decodeServerSettingsPatch({ skills: { enabledByDefault: ["   "] } })).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({ skills: { enabledByDefault: ["x".repeat(129)] } }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        skills: { enabledByDefault: Array.from({ length: 13 }, (_, index) => `skill-${index}`) },
+      }),
+    ).toThrow();
+  });
+
+  it("trims and bounds chat-specific skill selections", () => {
+    expect(
+      decodeServerSettingsPatch({
+        skills: { enabledByThread: { "thread-one": ["  chat-skill  "] } },
+      }).skills,
+    ).toEqual({ enabledByThread: { "thread-one": ["chat-skill"] } });
+    expect(() =>
+      decodeServerSettingsPatch({
+        skills: {
+          enabledByThread: {
+            "thread-one": Array.from({ length: 13 }, (_, index) => `skill-${index}`),
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("decodes atomic global and chat skill updates", () => {
+    expect(
+      decodeServerSettingsPatch({
+        skills: {
+          setEnabledByDefault: { name: " review ", enabled: true },
+          setEnabledForThread: { threadId: "thread-one", names: [" chat-skill "] },
+        },
+      }).skills,
+    ).toEqual({
+      setEnabledByDefault: { name: "review", enabled: true },
+      setEnabledForThread: { threadId: "thread-one", names: ["chat-skill"] },
+    });
+  });
+
+  it("decodes one atomic chat skill toggle", () => {
+    expect(
+      decodeServerSettingsPatch({
+        skills: {
+          setEnabledForThreadSkill: {
+            threadId: "thread-one",
+            name: " review ",
+            enabled: true,
+          },
+        },
+      }).skills,
+    ).toEqual({
+      setEnabledForThreadSkill: {
+        threadId: "thread-one",
+        name: "review",
+        enabled: true,
+      },
+    });
+  });
+
+  it("rejects an unbounded number of chats with session skills", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        skills: {
+          enabledByThread: Object.fromEntries(
+            Array.from({ length: 257 }, (_, index) => [`thread-${index}`, ["skill"]]),
+          ),
+        },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("ServerSettings dev pipelines", () => {
+  const pipeline = {
+    name: "fix-and-review",
+    pipelinePrompt: "PLAN !codex:gpt-5.6-sol",
+    promptFiles: [{ name: "rules.md", content: "Keep the patch minimal." }],
+  };
+
+  it("defaults legacy settings to an empty environment-scoped pipeline list", () => {
+    expect(decodeServerSettings({}).dev).toEqual({ scenarios: [], activeScenario: "" });
+  });
+
+  it("round-trips pipeline prompts and files through full settings decode", () => {
+    expect(
+      decodeServerSettings({
+        dev: { scenarios: [pipeline], activeScenario: "fix-and-review" },
+      }).dev,
+    ).toEqual({ scenarios: [pipeline], activeScenario: "fix-and-review" });
+  });
+
+  it("accepts whole-list patches and rejects invalid scenario names", () => {
+    expect(
+      decodeServerSettingsPatch({
+        dev: { scenarios: [pipeline], activeScenario: "fix-and-review" },
+      }).dev,
+    ).toEqual({ scenarios: [pipeline], activeScenario: "fix-and-review" });
+    expect(() =>
+      decodeServerSettingsPatch({
+        dev: { scenarios: [{ ...pipeline, name: "Not Valid" }] },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("ServerSettings.sourceControlWritingStyle", () => {
   it("defaults all style settings for legacy configs", () => {
     const settings = decodeServerSettings({});

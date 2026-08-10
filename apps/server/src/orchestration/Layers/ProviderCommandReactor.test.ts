@@ -9,6 +9,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -51,6 +52,8 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import {
   providerErrorLabel,
   providerErrorLabelFromInstanceHint,
+  expandProviderDevMessage,
+  expandProviderResearchMessage,
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -66,6 +69,59 @@ const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+describe("expandProviderDevMessage", () => {
+  const settings = {
+    scenarios: [{ name: "default", pipelinePrompt: "STEP 1\nDo it here.", promptFiles: [] }],
+    activeScenario: "default",
+  };
+
+  it("keeps a Claude effort prefix while expanding the trigger beneath it", () => {
+    const expanded = expandProviderDevMessage("Ultrathink:\n!dev:default fix it", settings, []);
+    expect(expanded).toMatch(/^Ultrathink:\n!dev:default/);
+    expect(expanded).toContain("Dev pipeline protocol (non-negotiable):");
+    expect(expanded).toContain("Task:\nfix it");
+  });
+
+  it("leaves ordinary prefixed prompts unchanged", () => {
+    expect(expandProviderDevMessage("Ultrathink:\nexplain it", settings, [])).toBe(
+      "Ultrathink:\nexplain it",
+    );
+  });
+});
+
+describe("expandProviderResearchMessage", () => {
+  const settings = {
+    scenarios: [
+      {
+        name: "private",
+        pipelinePrompt: "STEP 1\nUse the confidential review rubric.",
+        promptFiles: [],
+      },
+    ],
+    activeScenario: "private",
+    pipelinePrompt: "",
+    promptFiles: [],
+  };
+
+  it("keeps a Claude effort prefix while expanding the trigger beneath it", () => {
+    const expanded = expandProviderResearchMessage(
+      "Ultrathink:\n!research:private audit it",
+      settings,
+      [],
+    );
+    expect(expanded).toMatch(/^Ultrathink:\n!research:private/);
+    expect(expanded).toContain("Execution protocol (non-negotiable):");
+    expect(expanded).toContain("Use the confidential review rubric.");
+    expect(expanded).toContain("Research task:\naudit it");
+  });
+
+  it("leaves ordinary prefixed prompts unchanged", () => {
+    expect(expandProviderResearchMessage("Ultrathink:\nexplain it", settings, [])).toBe(
+      "Ultrathink:\nexplain it",
+    );
+  });
+});
 
 const deriveServerPathsSync = (baseDir: string, devUrl: URL | undefined) =>
   Effect.runSync(deriveServerPaths(baseDir, devUrl).pipe(Effect.provide(NodeServices.layer)));
@@ -148,6 +204,8 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly providerSnapshots?: ReadonlyArray<ServerProvider>;
+    readonly serverSettings?: Parameters<typeof ServerSettingsService.layerTest>[0];
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -296,12 +354,34 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
     );
-    const providerSnapshots = [
+    const defaultDriver = ProviderDriverKind.make(
+      String(modelSelection.instanceId).startsWith("claude") ? "claudeAgent" : "codex",
+    );
+    const providerSnapshots: ReadonlyArray<ServerProvider> = input?.providerSnapshots ?? [
       {
         instanceId: modelSelection.instanceId,
+        driver: defaultDriver,
+        displayName: defaultDriver === ProviderDriverKind.make("codex") ? "Codex" : "Claude",
         ...(input?.requiresNewThreadForModelChange === true
           ? { requiresNewThreadForModelChange: true }
           : {}),
+        enabled: true,
+        installed: true,
+        version: "test",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: now,
+        availability: "available",
+        models: [
+          {
+            slug: modelSelection.model,
+            name: modelSelection.model,
+            isCustom: false,
+            capabilities: null,
+          },
+        ],
+        slashCommands: [],
+        skills: [],
       },
     ];
 
@@ -341,6 +421,7 @@ describe("ProviderCommandReactor", () => {
       get streamEvents() {
         return Stream.fromPubSub(runtimeEventPubSub);
       },
+      subscribeEvents: Effect.succeed(Stream.fromPubSub(runtimeEventPubSub)),
     };
 
     const orchestrationLayer = OrchestrationEngineLive.pipe(
@@ -385,7 +466,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
-      Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
+      Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
@@ -406,7 +487,7 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -417,7 +498,7 @@ describe("ProviderCommandReactor", () => {
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
     const runEffect = <A, E>(effect: Effect.Effect<A, E>) => runtime!.runPromise(effect);
 
-    await Effect.runPromise(
+    await runEffect(
       engine.dispatch({
         type: "project.create",
         commandId: CommandId.make("cmd-project-create"),
@@ -428,7 +509,7 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
-    await Effect.runPromise(
+    await runEffect(
       engine.dispatch({
         type: "thread.create",
         commandId: CommandId.make("cmd-thread-create"),
@@ -544,6 +625,154 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("expands a raw dev trigger at the provider boundary for non-web clients", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-dev-pipeline"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-dev-pipeline"),
+          role: "user",
+          text: "!dev:default fix the mobile regression",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const [sentTurn] = harness.sendTurn.mock.calls[0] as unknown as [{ readonly input: string }];
+    const input = sentTurn.input;
+    expect(input).toContain("Dev pipeline protocol (non-negotiable):");
+    expect(input).toContain('pipelineKind: "dev"');
+    expect(input).toContain("fix the mobile regression");
+    expect(input).toContain("target `codex:gpt-5-codex`");
+    expect(input).not.toContain("UNRESOLVED");
+
+    const readModel = await harness.readModel();
+    const visibleMessage = readModel.threads
+      .find((entry) => entry.id === ThreadId.make("thread-1"))
+      ?.messages.find((entry) => entry.id === asMessageId("user-message-dev-pipeline"));
+    expect(visibleMessage?.text).toBe("!dev:default fix the mobile regression");
+  });
+
+  it("expands research only at the provider boundary and keeps history compact", async () => {
+    const privateScenarioBody = "STEP 1 — PRIVATE RUBRIC\nNever persist this scenario body.";
+    const harness = await createHarness({
+      serverSettings: {
+        research: {
+          scenarios: [
+            {
+              name: "private",
+              pipelinePrompt: privateScenarioBody,
+              promptFiles: [],
+            },
+          ],
+          activeScenario: "private",
+        },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-research-pipeline"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-research-pipeline"),
+          role: "user",
+          text: "!research:private audit remote auth",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const [sentTurn] = harness.sendTurn.mock.calls[0] as unknown as [{ readonly input: string }];
+    expect(sentTurn.input).toContain("Execution protocol (non-negotiable):");
+    expect(sentTurn.input).toContain(privateScenarioBody);
+    expect(sentTurn.input).toContain("Research task:\naudit remote auth");
+
+    const readModel = await harness.readModel();
+    const visibleMessage = readModel.threads
+      .find((entry) => entry.id === ThreadId.make("thread-1"))
+      ?.messages.find((entry) => entry.id === asMessageId("user-message-research-pipeline"));
+    expect(visibleMessage?.text).toBe("!research:private audit remote auth");
+    expect(visibleMessage?.text).not.toContain(privateScenarioBody);
+  });
+
+  it("rejects a pipeline before starting an adapter that cannot expose MCP tools", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const agySelection = {
+      instanceId: ProviderInstanceId.make("agy"),
+      model: "gemini-3.1-pro-preview",
+    };
+    const harness = await createHarness({
+      threadModelSelection: agySelection,
+      providerSnapshots: [
+        {
+          instanceId: agySelection.instanceId,
+          driver: ProviderDriverKind.make("agy"),
+          displayName: "Agy",
+          enabled: true,
+          installed: true,
+          version: "test",
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: now,
+          availability: "available",
+          models: [
+            {
+              slug: agySelection.model,
+              name: agySelection.model,
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        },
+      ],
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-unsupported-pipeline-provider"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-unsupported-pipeline-provider"),
+          role: "user",
+          text: "!dev:default fix it",
+          attachments: [],
+        },
+        modelSelection: agySelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await harness.drain();
+
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    const thread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    expect(thread?.session?.status).toBe("error");
+    expect(thread?.session?.lastError).toContain("does not expose MCP tools");
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>
@@ -2304,7 +2533,7 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("rejects provider changes after a thread is already bound to a session provider", async () => {
+  it("hands an active thread to a different provider from one turn-start command", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -2349,31 +2578,33 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      return (
-        thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed") ??
-        false
-      );
-    });
+    await waitFor(() => harness.startSession.mock.calls.length === 2);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await harness.drain();
 
-    expect(harness.startSession.mock.calls.length).toBe(1);
-    expect(harness.sendTurn.mock.calls.length).toBe(1);
+    expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-4-6",
+      },
+    });
+    expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
     expect(harness.stopSession.mock.calls.length).toBe(0);
 
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.providerName).toBe("codex");
+    expect(thread?.session?.providerName).toBe("claudeAgent");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
-    expect(
-      thread?.activities.find((activity) => activity.kind === "provider.turn.start.failed"),
-    ).toMatchObject({
-      payload: {
-        detail: expect.stringContaining("cannot switch to 'claudeAgent'"),
-      },
+    expect(thread?.modelSelection).toMatchObject({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-6",
     });
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
+    ).toBe(false);
   });
 
   it("starts a fresh provider after the existing thread session has stopped", async () => {
@@ -2796,7 +3027,7 @@ describe("ProviderCommandReactor", () => {
       ),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-set-for-user-input-error"),
@@ -2814,7 +3045,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("cmd-user-input-requested"),
@@ -2847,7 +3078,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.user-input.respond",
         commandId: CommandId.make("cmd-user-input-respond-stale"),

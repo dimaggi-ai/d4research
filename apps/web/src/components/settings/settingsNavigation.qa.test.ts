@@ -10,6 +10,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/providers",
   "/settings/source-control",
   "/settings/research",
+  "/settings/dev-pipelines",
   "/settings/connections",
   "/settings/tool-guard",
   "/settings/skills",

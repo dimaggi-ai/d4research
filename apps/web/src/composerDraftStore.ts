@@ -45,16 +45,23 @@ import {
   elementContextDedupKey,
   newElementContextId,
 } from "./lib/elementContext";
+import {
+  newPastedContextId,
+  PASTED_CONTEXT_MAX_CHARS,
+  PASTED_CONTEXT_MAX_COUNT,
+  type PastedContextDraft,
+} from "./lib/pastedContext";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
+import { createDebouncedJsonStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
+const isPreviewAnnotationPayload = Schema.is(PreviewAnnotationPayloadSchema);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 8;
@@ -66,7 +73,7 @@ export type DraftId = typeof DraftId.Type;
 
 const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 
-const composerDebouncedStorage = createDebouncedStorage(
+const composerDebouncedStorage = createDebouncedJsonStorage<PersistedComposerDraftStoreState>(
   typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
   COMPOSER_PERSIST_DEBOUNCE_MS,
 );
@@ -125,11 +132,20 @@ const PersistedElementContextDraft = Schema.Struct({
 });
 type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
 
+const PersistedPastedContextDraft = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  content: Schema.String,
+  fromFile: Schema.Boolean,
+});
+type PersistedPastedContextDraft = typeof PersistedPastedContextDraft.Type;
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
+  pastedContexts: Schema.optionalKey(Schema.Array(PersistedPastedContextDraft)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
@@ -260,6 +276,12 @@ export interface ComposerThreadDraftState {
    * re-derive the snapshot from on reload.
    */
   elementContexts: ElementContextDraft[];
+  /**
+   * Large pastes and dropped text files, shown as attachment chips instead of
+   * inline prompt body. Persisted inline because the content has no other
+   * source to re-read on reload.
+   */
+  pastedContexts: PastedContextDraft[];
   previewAnnotations: PreviewAnnotationPayload[];
   reviewComments: ReviewCommentContext[];
   /**
@@ -474,6 +496,18 @@ interface ComposerDraftStoreState {
   ) => void;
   removeElementContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
   clearElementContexts: (threadRef: ComposerThreadTarget) => void;
+  /** Append pasted/dropped text as an attachment chip. */
+  addPastedContexts: (
+    threadRef: ComposerThreadTarget,
+    contexts: ReadonlyArray<PastedContextDraft>,
+  ) => void;
+  /** Replace the list (send-failure retry restores the pre-send snapshot). */
+  setPastedContexts: (
+    threadRef: ComposerThreadTarget,
+    contexts: ReadonlyArray<PastedContextDraft>,
+  ) => void;
+  removePastedContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
+  clearPastedContexts: (threadRef: ComposerThreadTarget) => void;
   addPreviewAnnotation: (
     threadRef: ComposerThreadTarget,
     annotation: PreviewAnnotationPayload,
@@ -572,6 +606,7 @@ const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
+const EMPTY_PASTED_CONTEXTS: PastedContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
 Object.freeze(EMPTY_IMAGES);
@@ -594,6 +629,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   elementContexts: EMPTY_ELEMENT_CONTEXTS,
+  pastedContexts: EMPTY_PASTED_CONTEXTS,
   previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
   reviewComments: EMPTY_REVIEW_COMMENTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
@@ -616,6 +652,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     persistedAttachments: [],
     terminalContexts: [],
     elementContexts: [],
+    pastedContexts: [],
     previewAnnotations: [],
     reviewComments: [],
     modelSelectionByProvider: {},
@@ -689,6 +726,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
     draft.elementContexts.length === 0 &&
+    draft.pastedContexts.length === 0 &&
     draft.previewAnnotations.length === 0 &&
     draft.reviewComments.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
@@ -1139,6 +1177,51 @@ function normalizePersistedElementContextDraft(
     source,
     styles: typeof candidate.styles === "string" ? candidate.styles : "",
   };
+}
+
+function normalizePersistedPastedContextDraft(value: unknown): PersistedPastedContextDraft | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    candidate.id.length === 0 ||
+    typeof candidate.name !== "string" ||
+    candidate.name.length === 0 ||
+    typeof candidate.content !== "string" ||
+    typeof candidate.fromFile !== "boolean"
+  ) {
+    return null;
+  }
+  const normalizedContent = candidate.content.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  const content =
+    normalizedContent.length > PASTED_CONTEXT_MAX_CHARS
+      ? `${normalizedContent.slice(0, PASTED_CONTEXT_MAX_CHARS)}\n… [truncated: ${
+          normalizedContent.length - PASTED_CONTEXT_MAX_CHARS
+        } more characters]`
+      : normalizedContent;
+  const name = candidate.name.trim().slice(0, 80);
+  if (name.length === 0) return null;
+  return {
+    id: candidate.id.slice(0, 128),
+    name,
+    content,
+    fromFile: candidate.fromFile,
+  };
+}
+
+function boundedUniquePastedContexts(
+  contexts: ReadonlyArray<PastedContextDraft>,
+): PastedContextDraft[] {
+  const seen = new Set<string>();
+  return contexts.slice(0, PASTED_CONTEXT_MAX_COUNT).map((context) => {
+    if (!seen.has(context.id)) {
+      seen.add(context.id);
+      return context;
+    }
+    const id = newPastedContextId();
+    seen.add(id);
+    return { ...context, id };
+  });
 }
 
 function normalizePersistedTerminalContextDraft(
@@ -1670,6 +1753,17 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
+    const pastedContexts = Array.isArray(draftCandidate.pastedContexts)
+      ? boundedUniquePastedContexts(
+          draftCandidate.pastedContexts.flatMap((entry) => {
+            const normalized = normalizePersistedPastedContextDraft(entry);
+            return normalized ? [normalized] : [];
+          }),
+        )
+      : [];
+    const previewAnnotations = Array.isArray(draftCandidate.previewAnnotations)
+      ? draftCandidate.previewAnnotations.filter(isPreviewAnnotationPayload)
+      : [];
     const reviewComments = Array.isArray(draftCandidate.reviewComments)
       ? draftCandidate.reviewComments.filter(isReviewCommentContext)
       : [];
@@ -1737,6 +1831,8 @@ function normalizePersistedDraftsByThreadId(
       attachments.length === 0 &&
       terminalContexts.length === 0 &&
       elementContexts.length === 0 &&
+      pastedContexts.length === 0 &&
+      previewAnnotations.length === 0 &&
       reviewComments.length === 0 &&
       !hasModelData &&
       !runtimeMode &&
@@ -1761,6 +1857,8 @@ function normalizePersistedDraftsByThreadId(
       attachments,
       ...(terminalContexts.length > 0 ? { terminalContexts } : {}),
       ...(elementContexts.length > 0 ? { elementContexts } : {}),
+      ...(pastedContexts.length > 0 ? { pastedContexts } : {}),
+      ...(previewAnnotations.length > 0 ? { previewAnnotations } : {}),
       ...(reviewComments.length > 0 ? { reviewComments } : {}),
       ...(hasModelData
         ? {
@@ -1845,6 +1943,7 @@ function partializeComposerDraftStoreState(
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
       draft.elementContexts.length === 0 &&
+      draft.pastedContexts.length === 0 &&
       draft.previewAnnotations.length === 0 &&
       draft.reviewComments.length === 0 &&
       !hasModelData &&
@@ -1883,6 +1982,16 @@ function partializeComposerDraftStoreState(
               componentName: context.componentName,
               source: context.source,
               styles: context.styles,
+            })),
+          }
+        : {}),
+      ...(draft.pastedContexts.length > 0
+        ? {
+            pastedContexts: draft.pastedContexts.map((context) => ({
+              id: context.id,
+              name: context.name,
+              content: context.content,
+              fromFile: context.fromFile,
             })),
           }
         : {}),
@@ -2138,6 +2247,7 @@ function toHydratedThreadDraft(
       persistedDraft.elementContexts?.map((context) => ({
         ...context,
       })) ?? [],
+    pastedContexts: persistedDraft.pastedContexts?.map((context) => ({ ...context })) ?? [],
     previewAnnotations:
       persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
     reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
@@ -3131,6 +3241,75 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        addPastedContexts: (threadRef, contexts) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || contexts.length === 0) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              pastedContexts: boundedUniquePastedContexts([
+                ...existing.pastedContexts,
+                ...contexts,
+              ]),
+            };
+            return {
+              draftsByThreadKey: { ...state.draftsByThreadKey, [threadKey]: nextDraft },
+            };
+          });
+        },
+        setPastedContexts: (threadRef, contexts) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              pastedContexts: boundedUniquePastedContexts(contexts),
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        removePastedContext: (threadRef, contextId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || contextId.length === 0) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const filtered = current.pastedContexts.filter((entry) => entry.id !== contextId);
+            if (filtered.length === current.pastedContexts.length) return state;
+            const nextDraft: ComposerThreadDraftState = { ...current, pastedContexts: filtered };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        clearPastedContexts: (threadRef) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current || current.pastedContexts.length === 0) return state;
+            const nextDraft: ComposerThreadDraftState = { ...current, pastedContexts: [] };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         clearElementContexts: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) return;
@@ -3335,6 +3514,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               persistedAttachments: [],
               terminalContexts: [],
               elementContexts: [],
+              pastedContexts: [],
               previewAnnotations: [],
               reviewComments: [],
             };
@@ -3381,7 +3561,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
     {
       name: COMPOSER_DRAFT_STORAGE_KEY,
       version: COMPOSER_DRAFT_STORAGE_VERSION,
-      storage: createJSONStorage(() => composerDebouncedStorage),
+      storage: composerDebouncedStorage,
       migrate: migratePersistedComposerDraftStoreState,
       partialize: partializeComposerDraftStoreState,
       merge: (persistedState, currentState) => {

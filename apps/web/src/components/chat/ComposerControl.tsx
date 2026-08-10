@@ -55,14 +55,15 @@ export function ComposerControlChevron() {
 
 export function ComposerSelectControl({
   className,
+  iconOnly = false,
   size = "sm",
   variant = "ghost",
   ...props
-}: ComponentProps<typeof SelectTrigger>) {
+}: ComponentProps<typeof SelectTrigger> & { readonly iconOnly?: boolean }) {
   return (
     <SelectTrigger
-      className={cn(composerControlClassName, className)}
-      icon={<ComposerControlChevron />}
+      className={cn(composerControlClassName, iconOnly && "w-7 justify-center px-1.5", className)}
+      icon={iconOnly ? false : <ComposerControlChevron />}
       size={size}
       variant={variant}
       {...props}

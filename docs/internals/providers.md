@@ -124,6 +124,14 @@ when a request opens (approval) or user input is requested, via
 
 ## Provider snapshots: models, skills, usage
 
+### Live Junie compatibility gate
+
+The normal provider suite uses deterministic ACP fixtures. Before shipping a Junie discovery or
+model-selection change, run `vp run qa:provider:junie` on an authenticated workstation. This named
+gate performs a real ACP handshake, validates the live model catalog, selects the default dev
+pipeline's Junie build model, and requires exact streamed output. It is intentionally separate from
+CI because it requires the installed CLI and a live account; a skipped probe is not release proof.
+
 Each provider probe produces a `ServerProvider` snapshot
 ([`server.ts`](../../packages/contracts/src/server.ts)): install/auth/status, the model list, and —
 where the CLI exposes them — `slashCommands` and `skills` that the web composer surfaces as `/` and
@@ -138,22 +146,58 @@ skill and is never descended into. Project skills win name collisions with user 
 ### Skills inventory and the Skills settings page
 
 [`skillsInventory.ts`](../../apps/server/src/skillsInventory.ts) merges every skills root the local
-agents read — `~/.claude/skills`, `~/.codex/skills` plus its hidden `.system` set (scope `system`),
+agents read — the shared user root `~/.agents/skills` (Codex, Cursor, Grok, and OpenCode),
+`~/.claude/skills`, Codex's hidden `~/.codex/skills/.system` set (scope `system`),
 `~/.junie/skills`, `~/.junie/commands/*.md` (kind `command`, description from frontmatter or the
-first heading), and the project's `.agents/skills` and `.claude/skills`. Project roots frequently
-alias one another through a symlink, so entries are deduplicated by resolved path while the aliasing
-is still reported (`isSymlinked`) and the `agents` list unions every root that reaches the entry.
+first heading), Agy's documented `~/.gemini/config/skills.json` registry, and the project's
+`.agents/skills` and `.claude/skills`. Project roots frequently alias one another through a symlink, so entries are
+deduplicated by resolved path while the aliasing is still reported (`isSymlinked`) and the `agents`
+list unions every root that reaches the entry.
 
-Two raw routes expose it ([`http.ts`](../../apps/server/src/http.ts), registered in
+Git installs are copied into `~/.agents/skills`, then linked into the Claude and Junie user roots.
+Agy receives the same canonical root through an idempotent entry in
+`~/.gemini/config/skills.json`; unrelated existing config fields and entries are preserved.
+At server startup the same reconciliation runs for skills that were previously installed directly
+into Claude, Junie, or d4's obsolete `~/.codex/skills` user location. Reconciliation is idempotent,
+never overwrites a same-named skill, and reports conflicts in the server log. An Agy-compatible
+repository can also be installed through `agy plugin install`, but only when the user separately
+enables **Also install the Agy plugin package**. The bare skill link supplies the portable
+instructions automatically; the whole plugin is an explicit, broader capability grant because it
+may also contain executable hooks and MCP servers.
+
+Three authenticated endpoints expose it ([`http.ts`](../../apps/server/src/http.ts), registered in
 [`server.ts`](../../apps/server/src/server.ts)):
 
-- `GET /api/skills` (read scope, optional `?cwd=` — defaults to the server cwd) returns `{ skills }`.
+- The typed environment Skills inventory endpoint (read scope, optional `cwd`) returns `{ skills }`
+  through the selected local or remote environment connection.
 - `POST /api/skills/share` (operate scope, body `{ sourcePath, targetRoot }`) symlinks the skill into
   the target agent root, falling back to a recursive copy. The source must resolve inside a known
   skills root — traversal is rejected with 400 — and an existing target is never overwritten (409).
+- `POST /api/skills/install` (operate scope, body `{ url, cwd?, installAgyPlugin? }`) clones and
+  fans out portable skills. `installAgyPlugin` must be exactly `true` before the server may invoke
+  Agy's whole-package installer; the default is portable skills only.
 
 The web side is `useSkillsInventory` plus `SkillsSettingsPanel` at `/settings/skills`, which groups
-skills by root, filters by name/description/path, and offers the Share action per row.
+skills by root, filters by name/description/path, offers the Share action per row, and persists up to
+12 global `skills.enabledByDefault` names in server settings. Web and mobile composers persist
+additive chat selections in `skills.enabledByThread`, keyed by the durable (preallocated for drafts)
+thread id. Empty chat entries are removed and the map is bounded to 256 configured chats.
+
+Global and chat skills are merged and resolved from the live inventory on every
+`thread.turn.start` in the Normalizer. Global names win duplicates and the effective list is capped
+at 12. Project entries win same-name inventory collisions, followed by the shared user root and
+provider-specific roots. Only existing `SKILL.md` files are attached. The server appends the shared
+`<enabled_skills>` format from `@t3tools/shared/enabledSkillsContext`; web and mobile use the exact
+same parser to remove transport markup and render `Global: name` or `Chat: name` badges. Persisted
+version-one blocks remain readable as global. This is reference-only progressive disclosure, but
+the prompt explicitly requires the receiving agent to read and apply each file, so every selected
+skill has a deliberate per-turn context cost.
+
+Provider handoff carries the merged global and chat names outside the compressed summary in two
+places: the receiving prompt and the durable local Memo record. The receiving turn is normalized
+normally as well, which attaches the current live paths after the provider switch. Missing
+configured names are omitted rather than claimed as active and remain removable from Settings or
+the originating chat.
 
 ### Skills on providers with no native support
 

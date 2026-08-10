@@ -84,6 +84,7 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
+  "skills_inventory_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -489,6 +490,56 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+export const SkillsInventoryRoot = Schema.Literals([
+  "claude-user",
+  "codex-user",
+  "junie-user",
+  "agy-user",
+  "project",
+]);
+export type SkillsInventoryRoot = typeof SkillsInventoryRoot.Type;
+
+export const SkillsInventoryAgent = Schema.Literals([
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "opencode",
+  "junie",
+  "agy",
+  "all",
+]);
+export type SkillsInventoryAgent = typeof SkillsInventoryAgent.Type;
+
+export const SkillsInventoryScope = Schema.Literals(["user", "project", "system"]);
+export type SkillsInventoryScope = typeof SkillsInventoryScope.Type;
+
+export const SkillsInventoryEntry = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: Schema.optionalKey(Schema.String),
+  path: TrimmedNonEmptyString,
+  root: SkillsInventoryRoot,
+  kind: Schema.Literals(["skill", "command"]),
+  scope: SkillsInventoryScope,
+  agents: Schema.Array(SkillsInventoryAgent),
+  isSymlinked: Schema.Boolean,
+});
+export type SkillsInventoryEntry = typeof SkillsInventoryEntry.Type;
+
+export const SkillsInventoryResult = Schema.Struct({
+  skills: Schema.Array(SkillsInventoryEntry),
+});
+export type SkillsInventoryResult = typeof SkillsInventoryResult.Type;
+
+export class EnvironmentSkillsHttpApi extends HttpApiGroup.make("skills").add(
+  HttpApiEndpoint.get("inventory", "/api/skills", {
+    headers: OptionalBearerHeaders,
+    query: { cwd: Schema.optionalKey(Schema.String) },
+    success: SkillsInventoryResult,
+    error: EnvironmentOrchestrationSnapshotErrors,
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -554,4 +605,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
+  .add(EnvironmentSkillsHttpApi)
   .add(EnvironmentConnectHttpApi) {}

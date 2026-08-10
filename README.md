@@ -1,6 +1,6 @@
 # d4research
 
-A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation, and layer optional tool-safety policies on top.
+A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation without leaving the thread, replay authored pipelines that delegate steps across models under server-enforced budgets, and layer optional tool-safety policies on top.
 
 ## Installation
 
@@ -91,19 +91,50 @@ Everything from the upstream T3 Code platform is available:
 
 Features layered on top of the T3 Code base:
 
-### Deep Research
+### Pipelines
 
-Prefix a prompt with `#deep-research` to run the pipeline you authored in Settings > Research: an orchestrator model follows your numbered steps verbatim, delegates to the models named by `!provider:model[:file.md]` directives through a budgeted `research_delegate` tool (3 visits per step-target, 24 delegations per run, server-enforced), and traces every step as `[step N | visit K]` in the progress banner. Loops are allowed and provably terminate; recursive delegation is forbidden. Handoffs bypass compression by default so evidence crosses verbatim, and delegates receive shared-memory context as-is.
+A pipeline is a numbered plan you author once and replay on demand. One model orchestrates it, follows your steps verbatim, and delegates individual steps to other models. Two kinds share the same engine — the same server-enforced budgets, the same tracing, the same honesty rules — and differ only in trigger and intent:
+
+| Kind         | Trigger            | Runs                                                    | The orchestrator                                       |
+| ------------ | ------------------ | ------------------------------------------------------- | ------------------------------------------------------ |
+| **Research** | `!research:<name>` | In its own thread, so a long investigation stays intact | Synthesizes evidence; does not edit files              |
+| **Dev**      | `!dev:<name>`      | In place, because the work belongs to the conversation  | Applies the final change itself; delegates only advise |
+
+Both are configured as **named scenarios** — create one per kind of work (`blog`, `audit`, `review`) in **Settings → Research** and **Settings → Dev pipelines**. A bare `!research` or `!dev` runs the scenario selected in Settings. Naming a scenario that does not exist stops the run and lists the ones you have, rather than improvising a pipeline.
+
+Dev pipelines ship with a working default — a plan → build → review + verify chain that picks distinct model families for each role from whatever providers you have ready, so the reviewer is never the author.
+
+**Directives.** Inside a pipeline, `!provider:model` names a delegation target and `!provider:model:file.md` also hands that delegate one of your attached prompt files. The provider matches by name and the model fragment can be partial as long as it is unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then their models, then your attached files; live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
+
+**Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. Contents are inlined server-side into the delegated request, so the orchestrator's own context never carries the file bodies — and a file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
+
+**Budgets, enforced by the server rather than requested of the model.** A step may delegate to the same target at most 3 times, and a run has a hard ceiling of 24 delegations. Loops are allowed and provably terminate: when a guard trips, the orchestrator must say which loop was cut and synthesize from what it has. Delegates cannot delegate further.
+
+**Tracing and honesty.** Every message is prefixed `[step N | visit K]`, the banner above the composer shows the step ledger, and delegations appear in the thread as ordinary tool calls with their step and visit numbers. Each run ends with a `RUN STATE` report naming every step's targets, visits used, and outcome. A delegate that timed out, refused, or returned empty is reported as failed — never paraphrased into a result, and never claimed to have run at all.
+
+Research pipelines can orchestrate from Claude, Codex, Cursor, Grok, or OpenCode (the adapters that expose d4research MCP tools). Junie and Agy can be delegation targets inside any pipeline but cannot orchestrate one.
 
 ### Same-Thread Provider Handoff
 
-Switch models mid-conversation without losing context. The system summarizes a bounded transcript, stores handoff context in local Memo, stops the previous session, and continues with the new provider in the same thread. Failed handoffs roll back to the prior selection.
+Switch models mid-conversation without losing context or leaving the thread. This is a product invariant, not an implementation detail: a handoff replaces the provider-native session but never creates a second thread, changes the thread ID or route, forks the transcript, or switches branch or worktree.
 
-**Context compression** (new) -- Optionally route the transcript through a separate provider for summarization before handing off. Configurable in Settings > General > Handoff: choose a compression model, set max input/output characters, and provide a custom compression prompt.
+The client summarizes a bounded transcript and must prove the handoff context reached local Memo **before** anything else changes. Only then does it stop the old session, update the thread's model selection, and start the receiving provider on the same thread. If both memory writes fail, the switch is abandoned with the original provider still selected — the receiving model never starts against a visible history it cannot recover. The receiving turn is explicitly context-synchronization only: acknowledge and wait, do not resume prior work.
+
+**Context compression** — optionally route the transcript through a separate provider (a local Ollama model, say) before handing off. Configure the compression model, input/output character caps, and a custom compression prompt in **Settings → General → Handoff**. The compressed summary goes in the prompt to save tokens while the full transcript goes to Memo to preserve accuracy. Compression never hard-fails a handoff; unavailable local memory does. Research handoffs skip compression by default so evidence crosses verbatim.
+
+### Skills
+
+Portable `SKILL.md` instruction files, inventoried across every root your agents already read — the shared `~/.agents/skills` user root, Claude's and Codex's own locations, Agy's registry, and the current project — deduplicated when roots alias each other through a symlink, with every root that reaches an entry reported.
+
+Select skills at two scopes: **global** in **Settings → Skills** (every turn in every chat) or **chat** from the composer's Skills control (that chat only, surviving reloads and provider handoffs). The two share a 12-skill ceiling, duplicates are charged once, and message bubbles badge which scope applied. Attaching a skill hands the agent a short reference and asks it to read the file — it costs a few lines rather than the whole text, and it never executes anything.
+
+Install a skill from a Git repository and it is shared with compatible coding CLIs automatically. Installing the whole Agy plugin package is a separate opt-in, because a plugin can carry executable hooks and MCP servers on top of the instructions.
 
 ### Local Shared Memory
 
 Providers exchange durable findings through a local shared-memory connector. Handoff context, evidence, file paths, commands, and uncertainty survive across provider switches and sessions. The default backend is a built-in SQLite store (FTS5 keyword search) inside the server itself — zero external dependencies. An external Memo REST server can be selected instead via the `memo-rest` backend in settings.
+
+When shared-memory injection is on, each delegate also receives the top local matches for its request **verbatim** — no summarization between what one model learned and what the next one reads.
 
 ### Managed Tool Guard
 
@@ -122,11 +153,15 @@ Provider-native permissions remain the default. Tool Guard is opt-in and environ
 
 ### Voice Workflows
 
-Optional local speech-to-text, summarization, and text-to-speech for voice-driven research sessions. Requires local voice services (not included in a generic source checkout).
+Optional local speech-to-text, summarization, and text-to-speech for voice-driven research sessions, plus an in-thread player for generated audio with scrubbing, 15-second skips, and 1×–2× playback rates. Requires local voice services (not included in a generic source checkout).
 
 ### System Monitor
 
 Mission Control panel for environment health. Requires the local `sysmon` service.
+
+### Composer Additions
+
+Beyond the upstream composer, d4research adds pipeline triggers with autocomplete (`!research:`, `!dev:`), the Skills control for per-chat selections, and pasted-context capture: a paste or dropped text file over ~2,000 characters becomes an attachment chip (up to 8) you can review and remove, instead of burying your actual instruction under a wall of log. The model still receives the text; only the reading experience changes.
 
 ---
 
@@ -171,6 +206,8 @@ docs/           User guides, internals, and runbooks
 
 - [Documentation index](./docs/README.md)
 - [Research workflows](./docs/user/research-workflows.md)
+- [The composer](./docs/user/composer.md) — mentions, skills, pipeline triggers, pasted context
+- [Settings](./docs/user/settings.md)
 - [Tool Guard lifecycle](./docs/user/tool-guard.md)
 - [Permission modes](./docs/user/permission-modes.md)
 - [Remote access](./docs/user/remote-access.md)

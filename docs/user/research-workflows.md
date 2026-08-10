@@ -7,18 +7,17 @@ active model changes.
 ## Configure the pipeline
 
 Research runs **named scenarios** you author in **Settings → Research** — each scenario is a
-full pipeline with its own prompt, prompt files, and orchestrator model. Create one per kind of
+full pipeline with its own prompt and prompt files. Create one per kind of
 work (`blog`, `audit`, `paper`, …) and run it with `!research:<name>`. The intended flow: attach
 your role prompt files first, then write the pipeline — typing `!` in the editor suggests ready
 providers, their models, and your attached files, and the live validation under it shows every
 link resolved (or exactly why not) before you run anything.
 
-| Field                  | Purpose                                                                                                                                                                            |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Scenario**           | Which named pipeline the rest of the tab edits; add and delete scenarios here.                                                                                                     |
-| **Orchestrator model** | The provider/model that runs the scenario's pipeline. Off uses the thread's current model. A mid-tier model is fine — the pipeline does the thinking; the orchestrator follows it. |
-| **Pipeline**           | Numbered steps the orchestrator must follow verbatim. Loops between steps are allowed.                                                                                             |
-| **Prompt files**       | Markdown attachments a step can hand to a delegate. View them in a popup, remove them any time.                                                                                    |
+| Field            | Purpose                                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| **Scenario**     | Which named pipeline the rest of the tab edits; add and delete scenarios here.                  |
+| **Pipeline**     | Numbered steps the orchestrator must follow verbatim. Loops between steps are allowed.          |
+| **Prompt files** | Markdown attachments a step can hand to a delegate. View them in a popup, remove them any time. |
 
 Inside the pipeline, reference models with directives:
 
@@ -44,9 +43,8 @@ Step 5: Validate and deliver.
 ## Start deep research
 
 Type `!research:<scenario>` at the very start of your prompt — or bare `!research` for the
-scenario selected in Settings. The legacy `#deep-research` trigger still works. Clicking the
-**telescope icon** inserts the selected scenario's trigger; if that scenario has a dedicated
-orchestrator model, the thread switches to it through the normal handoff flow first.
+scenario selected in Settings. Clicking the **telescope icon** inserts the selected scenario's
+trigger. The provider and model already selected in the composer orchestrate the run.
 
 ```
 !research:blog Write a post comparing FTS5 and embedding search.
@@ -57,8 +55,14 @@ never improvises a pipeline.
 
 ### How it works
 
-The tag expands into an orchestrator brief that quotes your pipeline **verbatim** and binds it to a
-strict execution protocol:
+The thread stores and syncs only the compact trigger and task. At the provider boundary, the server
+expands that copy into an orchestrator brief that quotes your pipeline **verbatim** and binds it to
+a strict execution protocol. Scenario text therefore does not appear in message history, handoffs,
+or another client's transcript.
+
+The orchestrator must use a provider adapter that exposes d4research MCP tools: Claude, Codex,
+Cursor, Grok, or OpenCode. Junie and Agy can still be delegation targets inside the pipeline, but
+cannot orchestrate it themselves.
 
 1. **Trace** — the orchestrator keeps one plan entry per step, marks exactly one in progress, and
    prefixes every message with `[step N | visit K]`, so you always know where the pipeline is.
@@ -72,7 +76,10 @@ strict execution protocol:
    uncertainty survive summarization.
 
 Prompt file contents are inlined **server-side** into the delegated request, so the orchestrator's
-own context never carries the file bodies. When shared-memory injection is on, each delegate also
+own context never carries the file bodies. A file is readable only by the scenario it is attached
+to: a run of `audit` cannot inline a file you attached to `blog`, and a delegation that names a
+prompt file without naming its scenario is refused rather than answered from whichever scenario
+happens to hold that name. When shared-memory injection is on, each delegate also
 receives the top local-memory matches for its request **verbatim** — no summarization between what
 one model learned and what the next one reads. Research handoffs skip context compression by
 default for the same reason.
@@ -113,7 +120,8 @@ does not trigger a handoff — it's a simple model swap.
                         → when compression is on, the FULL transcript goes to Memo
 4. Stop old session     adapter.stopSession()
 5. Update model         thread metadata updated to new model selection
-6. Start new turn       handoff prompt injected as user message to receiving provider
+6. Sync receiving model context-only handoff prompt injected on the same thread
+                        → acknowledge context and wait; do not resume prior work
 7. Rollback on failure  model selection reverted if anything fails
 ```
 
@@ -124,7 +132,15 @@ The handoff prompt tells the receiving provider:
 - Which thread and source provider it is continuing from
 - That the visible transcript is the authoritative conversation history
 - That shared context is available via `memory_search` with connector `"local"`
+- Which global and chat skills are active, so the receiving provider keeps them active
 - A compact summary of the conversation so far
+- That the handoff is context synchronization only, not permission to resume a prior task, edit
+  files, or run tools; it should acknowledge context and wait for the next user instruction
+
+The merged global and chat skill names are also written into the durable local Memo handoff record.
+Chat selections are keyed by the same durable thread id, so a provider switch does not change their
+scope. The receiving turn gets the normal per-turn skill references after compression, so
+compression cannot silently remove either preference.
 
 ### Context compression (optional)
 

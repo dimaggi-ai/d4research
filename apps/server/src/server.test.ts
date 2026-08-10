@@ -87,6 +87,7 @@ import { PersistenceSqlError } from "./persistence/Errors.ts";
 import { ProjectionThreadTurnUsageRepository } from "./persistence/Services/ProjectionThreadTurnUsage.ts";
 import * as ProviderAdapterRegistryService from "./provider/Services/ProviderAdapterRegistry.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import { PortableSkillsInventory } from "./skillsInventory.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -332,6 +333,7 @@ const buildAppUnderTest = (options?: {
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
+    portableSkillsInventory?: Partial<PortableSkillsInventory["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -585,6 +587,12 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(PortableSkillsInventory)({
+            get: Effect.succeed([]),
+            refresh: Effect.succeed([]),
+            changes: Stream.empty,
+            ...options?.layers?.portableSkillsInventory,
+          }),
           Layer.mock(ServerSettings.ServerSettingsService)({
             start: Effect.void,
             ready: Effect.void,
@@ -4607,6 +4615,80 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         type: "providerStatuses",
         payload: { providers: nextProviders },
       });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps a config subscription live when the portable skill inventory changes", () =>
+    Effect.gen(function* () {
+      const provider = {
+        instanceId: ProviderInstanceId.make("codex"),
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        installed: true,
+        version: "1.0.0",
+        status: "ready" as const,
+        auth: { status: "authenticated" as const },
+        checkedAt: "2026-04-11T00:00:00.000Z",
+        models: [],
+        slashCommands: [],
+        skills: [],
+      } as const;
+      const installed = [
+        {
+          name: "review",
+          description: "Review the current diff.",
+          path: "/home/user/.agents/skills/review/SKILL.md",
+          root: "codex-user" as const,
+          kind: "skill" as const,
+          scope: "user" as const,
+          agents: ["all" as const],
+          isSymlinked: false,
+        },
+      ];
+      let current: typeof installed | [] = [];
+
+      yield* buildAppUnderTest({
+        layers: {
+          providerRegistry: {
+            getProviders: Effect.succeed([provider]),
+            streamChanges: Stream.empty,
+          },
+          portableSkillsInventory: {
+            get: Effect.sync(() => current),
+            changes: Stream.fromEffect(
+              Effect.sync(() => {
+                current = installed;
+                return installed;
+              }),
+            ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      const [snapshot, update] = Array.from(events);
+      assert.equal(snapshot?.type, "snapshot");
+      if (snapshot?.type === "snapshot") {
+        assert.deepEqual(snapshot.config.providers[0]?.skills, []);
+      }
+      assert.equal(update?.type, "providerStatuses");
+      if (update?.type === "providerStatuses") {
+        assert.deepEqual(update.payload.providers[0]?.skills, [
+          {
+            name: "review",
+            description: "Review the current diff.",
+            path: "/home/user/.agents/skills/review/SKILL.md",
+            enabled: true,
+            scope: "user",
+          },
+        ]);
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -32,7 +32,7 @@ it.layer(NodeServices.layer)("skills_search", (it) => {
         frontmatter("security-review", "Review code for vulnerabilities."),
       );
       yield* writeSkill(
-        path.join(homeDir, ".codex", "skills", "storyboard"),
+        path.join(homeDir, ".agents", "skills", "storyboard"),
         frontmatter("storyboard", "Build a shot list."),
       );
 
@@ -42,9 +42,9 @@ it.layer(NodeServices.layer)("skills_search", (it) => {
       assert.equal(byName[0]?.name, "storyboard");
       assert.equal(
         byName[0]?.path,
-        path.join(homeDir, ".codex", "skills", "storyboard", "SKILL.md"),
+        path.join(homeDir, ".agents", "skills", "storyboard", "SKILL.md"),
       );
-      assert.deepEqual(byName[0]?.agents, ["codex"]);
+      assert.deepEqual(byName[0]?.agents, ["codex", "cursor", "grok", "opencode"]);
 
       // Description hits are found too, and rank behind name hits.
       const byDescription = searchSkillsInventory(entries, "vulnerabilities", 10);
@@ -58,7 +58,7 @@ it.layer(NodeServices.layer)("skills_search", (it) => {
       assert.equal(searchSkillsInventory(entries, "", 1).length, 1);
 
       // A deleted skill disappears immediately — no index to go stale.
-      yield* fs.remove(path.join(homeDir, ".codex", "skills", "storyboard"), { recursive: true });
+      yield* fs.remove(path.join(homeDir, ".agents", "skills", "storyboard"), { recursive: true });
       const rescanned = yield* readSkillsInventory({ homeDir });
       assert.deepEqual(
         searchSkillsInventory(rescanned, "storyboard", 10).map((result) => result.name),
@@ -73,7 +73,7 @@ it.layer(NodeServices.layer)("skills_search", (it) => {
       const path = yield* Path.Path;
       const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-share-" });
       const homeDir = path.join(tempDir, "home");
-      const sourceDirectory = path.join(homeDir, ".codex", "skills", "storyboard");
+      const sourceDirectory = path.join(homeDir, ".agents", "skills", "storyboard");
       yield* writeSkill(sourceDirectory, frontmatter("storyboard", "Build a shot list."));
       yield* fs.makeDirectory(path.join(homeDir, ".claude", "skills"), { recursive: true });
 

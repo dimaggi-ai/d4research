@@ -137,6 +137,7 @@ const PersistedPastedContextDraft = Schema.Struct({
   name: Schema.String,
   content: Schema.String,
   fromFile: Schema.Boolean,
+  contentTruncated: Schema.optionalKey(Schema.Boolean),
 });
 type PersistedPastedContextDraft = typeof PersistedPastedContextDraft.Type;
 
@@ -1206,6 +1207,9 @@ function normalizePersistedPastedContextDraft(value: unknown): PersistedPastedCo
     name,
     content,
     fromFile: candidate.fromFile,
+    ...(candidate.contentTruncated === true || normalizedContent.length > PASTED_CONTEXT_MAX_CHARS
+      ? { contentTruncated: true }
+      : {}),
   };
 }
 
@@ -1992,6 +1996,7 @@ function partializeComposerDraftStoreState(
               name: context.name,
               content: context.content,
               fromFile: context.fromFile,
+              ...(context.contentTruncated ? { contentTruncated: true } : {}),
             })),
           }
         : {}),

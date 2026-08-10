@@ -1938,6 +1938,34 @@ describe("composerDraftStore pastedContexts", () => {
     ).toEqual([pasted("p1", "reload.md", "persisted body")]);
   });
 
+  it("persists the truncation warning without persisting the in-memory full source", () => {
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [
+      {
+        ...pasted("p1", "large.log", "bounded preview"),
+        sourceContent: "complete source that must stay out of localStorage",
+        contentTruncated: true,
+      },
+    ]);
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+
+    const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    expect(JSON.stringify(persisted)).not.toContain("complete source");
+    const hydrated = persistApi
+      .getOptions()
+      .merge(persisted, useComposerDraftStore.getInitialState());
+    expect(
+      hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.pastedContexts[0],
+    ).toMatchObject({ content: "bounded preview", contentTruncated: true });
+  });
+
   it("filters malformed pasted attachments without deleting the rest of the draft", () => {
     const persistApi = useComposerDraftStore.persist as unknown as {
       getOptions: () => {

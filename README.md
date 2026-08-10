@@ -161,7 +161,13 @@ Mission Control panel for environment health. Requires the local `sysmon` servic
 
 ### Composer Additions
 
-Beyond the upstream composer, d4research adds pipeline triggers with autocomplete (`!research:`, `!dev:`), the Skills control for per-chat selections, and pasted-context capture: a paste or dropped text file over ~2,000 characters becomes an attachment chip (up to 8) you can review and remove, instead of burying your actual instruction under a wall of log. The model still receives the text; only the reading experience changes.
+Beyond the upstream composer, d4research adds pipeline triggers with autocomplete (`!research:`, `!dev:`), the Skills control for per-chat selections, and pasted-context capture: a paste or dropped text file over ~2,000 characters becomes an attachment chip (up to 8) you can review and remove, instead of burying your actual instruction under a wall of log. Small attachments travel directly with the turn; larger ones use the local Memo path below.
+
+Large text attachments do not have to fit inside one provider request. When the composed message approaches the 120,000-character input ceiling, d4research first commits the complete document to the environment's local Memo as independently searchable 16,000-character chunks (up to 2,000,000 characters per document). The turn carries only a compact head/tail preview and exact `memory_search` tokens, so an agent can retrieve the pieces it needs without reloading the whole file into context. A manifest is written last, making successful retries idempotent and incomplete writes non-authoritative.
+
+Memo must confirm the write before the draft can be cleared. Normal sends clear optimistically during dispatch and restore the draft if the server rejects the turn start; queued sends clear after the Memo-backed request enters the local queue. If memory is disabled, unavailable, or times out, the draft remains intact and Send is released for a retry instead of requiring a page reload. Providers with the injected d4research MCP toolkit can fetch chunks during the turn; Agy and externally managed OpenCode currently receive the preview only, while the full local copy remains available after a same-thread handoff to a capable provider.
+
+Memo-backed attachments use durable local storage. There is currently no per-document delete control in the composer, so do not use this path for text you do not want retained in the configured Memo backend.
 
 ---
 

@@ -35,6 +35,33 @@ The client constructs a size-bounded recent transcript and requests a local comp
 
 The visible transcript remains authoritative. Memo supplements it with a compact bridge that can be recovered by another provider through `memory_search` using the local connector and project name.
 
+### Memo-backed composer documents
+
+Oversized pasted text and dropped text files use the same local Memo connector without placing the
+whole document in one memory row. Before dispatch, the web client calls the authenticated
+operate-scope route `POST /api/memory/attachment`. The server accepts at most 2,000,000 characters
+per document, splits the source into 16,000-character rows, and stores every row under the active
+project with deterministic alphanumeric document and chunk tokens. It writes a separate manifest
+last. A retry searches for that exact manifest token and skips duplicate writes only after the
+complete document has been committed; a partial write has no manifest and is retried.
+
+The provider-bound message contains a compact head/tail preview, the project, chunk count, and the
+exact `memory_search` query sequence (`<document-token>chunk0001`, then increment). The client
+waits for Memo before clearing or queuing the draft. Missing authorization, disabled memory,
+unreachable storage, a malformed response, or the 60-second browser timeout aborts preparation and
+releases the send latch, leaving the draft available to retry. Text held beyond the persisted draft
+preview is memory-only until this write succeeds; after a reload the client refuses to claim that a
+truncated preview is complete and asks the user to reattach it.
+
+Retrieval depends on the provider adapter exposing d4research's MCP toolkit. Codex, Claude, Cursor,
+Grok/Junie, and server-managed OpenCode sessions receive it. Agy and externally managed OpenCode
+currently receive the compact preview but cannot fetch the Memo chunks during that turn. The full
+copy remains local and becomes retrievable after a capable same-thread handoff.
+
+Attachment rows use a document-specific source label, but the composer does not currently expose a
+per-document deletion lifecycle. Treat them as durable connector data until that reverse path is
+implemented.
+
 ### Tool Guard lifecycle
 
 d4research does not replace provider permission modes. Native provider behavior is the default. Users may install a managed Tool Guard copy into a specific environment, then enable or disable its hooks for that server and uninstall it completely.
@@ -69,6 +96,7 @@ Research changes must continue to account for:
 - The repository is public and normally installed from source. Desktop builds are cut on a maintainer machine and attached to GitHub releases; there is no `d4research` npm package.
 - A pipeline executes the scenario the user wrote. It does not guarantee delegation: a pipeline with no `!provider:model` directives runs entirely on the orchestrating model, and a step may resolve in fewer visits than its budget allows.
 - Provider handoff requires a working configured local Memo connector. The built-in local SQLite backend satisfies this contract by default; an unavailable or disabled connector prevents the provider switch rather than creating a contextless receiving session.
+- Memo-backed composer documents require the same connector. Providers without the injected d4research MCP toolkit receive only the bounded preview during their turn.
 - Voice and Mission Control require the matching local deployment services.
 - Tool Guard is optional and environment-scoped on macOS, Linux, and Windows.
 - d4research is not a claim that all inherited T3 user documentation or compatibility identifiers have been renamed.

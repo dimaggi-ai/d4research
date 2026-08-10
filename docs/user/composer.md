@@ -38,12 +38,35 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
 - `/model` jumps into the model picker; `/plan` and `/default` switch the interaction mode. A
   standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.
 
-## Images
+## Attachments
 
 Paste or drag image files into the composer to attach them. Images are compressed client-side to
 the provider's attachment byte limit; files that cannot be decoded or remain too large after
-compression are rejected with an explanation. Non-image files are not accepted as attachments —
-reference them with an `@` mention instead.
+compression are rejected with an explanation.
+
+Pasting a large block of text or dropping a text, source, Markdown, JSON, or log file creates a
+collapsed text attachment. Small attachments travel directly with the message. When the complete
+request approaches the provider's 120,000-character input limit, d4research first saves the whole
+document to the environment's local Memo in 16,000-character chunks. The message then carries a
+compact beginning/end preview plus exact `memory_search` tokens that let the agent retrieve only
+the pieces it needs. Each Memo-backed document can contain up to 2,000,000 characters.
+
+Memo must confirm the write before the draft can be cleared. Normal sends clear optimistically
+during dispatch and restore the draft if the server rejects the turn start; queued sends clear after
+the Memo-backed request enters the local queue. If local Memo is disabled, unavailable, or times
+out, the request stays in the composer and Send becomes available again for a retry. A very large
+unsent attachment keeps only a bounded browser-storage preview across a page reload. If the app
+asks for the complete source, remove the stale attachment chip and then reattach the file before
+sending.
+
+Chunk retrieval is available when the selected provider receives d4research's memory tools. Other
+providers still see the compact preview, while the full local Memo copy remains available after a
+handoff to a provider with `memory_search`. For a workspace file the agent can read directly, an
+`@` mention remains the simplest unabridged option.
+
+Memo-backed attachments use durable local storage. The composer does not currently provide a
+per-document delete control, so do not use this path for text you do not want retained in the
+configured Memo backend.
 
 ## Queued follow-ups
 

@@ -63,6 +63,11 @@ import {
   installSkillFromGit,
 } from "./skillsInventory.ts";
 import { makeConfiguredMemoryConnector } from "./mcp/toolkits/memory/localConnector.ts";
+import {
+  isMemoAttachmentDocumentToken,
+  MEMO_ATTACHMENT_MAX_CHARACTERS,
+  persistMemoAttachment,
+} from "./memoAttachment.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -73,6 +78,7 @@ const TOOL_GUARD_POLICY_PATH = "/api/tool-guard/policy";
 const SKILLS_SHARE_PATH = "/api/skills/share";
 const SKILLS_INSTALL_PATH = "/api/skills/install";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
+const MEMO_ATTACHMENT_PATH = "/api/memory/attachment";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -522,6 +528,97 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Local Memo could not store the handoff context." },
           { status: 503 },
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchTags({
+      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+      EnvironmentInternalError: HttpServerRespondable.toResponse,
+      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+    }),
+  ),
+);
+
+export const memoAttachmentRouteLayer = HttpRouter.add(
+  "POST",
+  MEMO_ATTACHMENT_PATH,
+  Effect.gen(function* () {
+    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    return yield* Effect.gen(function* () {
+      const body = cast<
+        unknown,
+        { documentToken?: unknown; name?: unknown; content?: unknown; project?: unknown }
+      >(yield* request.json);
+      const documentToken = typeof body.documentToken === "string" ? body.documentToken.trim() : "";
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const content = typeof body.content === "string" ? body.content : "";
+      const project = typeof body.project === "string" ? body.project.trim() : undefined;
+      if (!isMemoAttachmentDocumentToken(documentToken)) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Invalid Memo attachment document token." },
+          { status: 400 },
+        );
+      }
+      if (!name || name.length > 80) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Memo attachment name must contain 1-80 characters." },
+          { status: 400 },
+        );
+      }
+      if (!content || content.length > MEMO_ATTACHMENT_MAX_CHARACTERS) {
+        return HttpServerResponse.jsonUnsafe(
+          {
+            ok: false,
+            message: `Memo attachment must contain 1-${MEMO_ATTACHMENT_MAX_CHARACTERS.toLocaleString()} characters.`,
+          },
+          { status: 400 },
+        );
+      }
+      if (project && project.length > 200) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Memo attachment project must not exceed 200 characters." },
+          { status: 400 },
+        );
+      }
+
+      const connector = yield* makeConfiguredMemoryConnector();
+      const stored = yield* persistMemoAttachment({
+        connector,
+        documentToken,
+        name,
+        content,
+        project,
+      });
+      return HttpServerResponse.jsonUnsafe(
+        {
+          ok: true,
+          ...stored,
+        },
+        { headers: { "cache-control": "no-store" } },
+      );
+    }).pipe(
+      Effect.catchTags({
+        MemoAttachmentPersistenceError: (error) =>
+          Effect.succeed(
+            HttpServerResponse.jsonUnsafe(
+              { ok: false, message: error.message },
+              { status: 503, headers: { "cache-control": "no-store" } },
+            ),
+          ),
+        MemoryConnectorError: (error) =>
+          Effect.succeed(
+            HttpServerResponse.jsonUnsafe(
+              { ok: false, message: error.message },
+              { status: 503, headers: { "cache-control": "no-store" } },
+            ),
+          ),
+      }),
+      Effect.orElseSucceed(() =>
+        HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Local Memo could not store the attachment." },
+          { status: 503, headers: { "cache-control": "no-store" } },
         ),
       ),
     );

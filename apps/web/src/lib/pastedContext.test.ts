@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vite-plus/test";
-
 import {
   PASTED_CONTEXT_MAX_CHARS,
   PASTED_CONTEXT_MAX_COUNT,
@@ -171,6 +170,8 @@ describe("makePastedContext", () => {
     // The model must never be told it has content it does not.
     expect(made.content).toContain("truncated");
     expect(made.content).toContain("500 more characters");
+    expect(made.sourceContent).toBe(oversized);
+    expect(made.contentTruncated).toBe(true);
   });
 
   it("normalizes CRLF and trims surrounding blank lines", () => {

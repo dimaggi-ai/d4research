@@ -8,6 +8,7 @@ import {
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
   type ServerProvider,
@@ -182,6 +183,12 @@ import {
   runSameThreadProviderHandoffTransition,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
+import {
+  makeMemoAttachmentPersistence,
+  MEMO_ATTACHMENT_SEND_RESERVE_CHARS,
+  pastedContextsNeedMemo,
+  replacePastedContextsWithMemoReferences,
+} from "../memoAttachments";
 import { lazyWithReload } from "../lazyWithReload";
 import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
 import {
@@ -4962,34 +4969,14 @@ function ChatViewContent(props: ChatViewProps) {
       );
       return;
     }
-    if (phase === "running" && queuedRequestForSend === null) {
-      if (composerImages.length > 0) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "info",
-            title: "Images remain in the composer",
-            description: "Queue text-only requests, or wait and send this request with its images.",
-          }),
-        );
-        return;
-      }
-      const queuedText = composeUserMessageContexts({
-        prompt: promptForSend,
-        pastedContexts: composerPastedContexts,
-        terminalContexts: sendableComposerTerminalContexts,
-        elementContexts: composerElementContexts,
-        previewAnnotations: composerPreviewAnnotations,
-        reviewComments: composerReviewComments,
-      }).trim();
-      enqueueRequest(routeThreadKey, {
-        id: randomUUID(),
-        text: queuedText,
-        createdAt: new Date().toISOString(),
-      });
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      // No toast: the queue banner above the composer already shows the entry.
+    if (phase === "running" && queuedRequestForSend === null && composerImages.length > 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Images remain in the composer",
+          description: "Queue text-only requests, or wait and send this request with its images.",
+        }),
+      );
       return;
     }
     const threadIdForSend = activeThread.id;
@@ -4998,13 +4985,125 @@ function ChatViewContent(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
         ? activeThreadBranch
         : null;
-
-    // In worktree mode, require an explicit base branch so we don't silently
-    // fall back to local execution when branch selection is missing.
     const shouldCreateWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
-    if (shouldCreateWorktree && !activeThreadBranch) {
+    if (phase !== "running" && shouldCreateWorktree && !activeThreadBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
+      return;
+    }
+    const renderOutgoingMessage = (pastedContexts: ReadonlyArray<PastedContextDraft>) => {
+      const messageText = composeUserMessageContexts({
+        prompt: promptForSend,
+        pastedContexts,
+        terminalContexts: sendableComposerTerminalContexts,
+        elementContexts: composerElementContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+      });
+      return formatOutgoingPrompt({
+        provider: ctxSelectedProvider,
+        model: ctxSelectedModel,
+        models: ctxSelectedProviderModels,
+        effort: ctxSelectedPromptEffort,
+        text: messageText || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      });
+    };
+    let preparedPastedContexts: ReadonlyArray<PastedContextDraft> = composerPastedContexts;
+    let memoBackedAttachmentCount = 0;
+    const initialOutgoingText = renderOutgoingMessage(composerPastedContexts);
+    if (
+      pastedContextsNeedMemo({
+        contexts: composerPastedContexts,
+        renderedTextLength: initialOutgoingText.length,
+        maxChars: PROVIDER_SEND_TURN_MAX_INPUT_CHARS - MEMO_ATTACHMENT_SEND_RESERVE_CHARS,
+      })
+    ) {
+      if (!preparedConnection) {
+        setThreadError(
+          activeThread.id,
+          "Reconnect this environment before saving the complete attachment to local Memo.",
+        );
+        return;
+      }
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      try {
+        preparedPastedContexts = await replacePastedContextsWithMemoReferences({
+          contexts: composerPastedContexts,
+          project: activeProject.title,
+          persist: makeMemoAttachmentPersistence(preparedConnection),
+        });
+        memoBackedAttachmentCount = preparedPastedContexts.length;
+      } catch (error) {
+        setThreadError(
+          activeThread.id,
+          error instanceof Error
+            ? error.message
+            : "Local Memo could not store the complete attachment.",
+        );
+        if (queuedRequestForSend !== null) {
+          queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
+          queuedDispatchRef.current = null;
+        }
+        return;
+      } finally {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      }
+    }
+    const preparedOutgoingMessage = {
+      contexts: preparedPastedContexts,
+      text: renderOutgoingMessage(preparedPastedContexts),
+    };
+    const memoReferenceLimit =
+      PROVIDER_SEND_TURN_MAX_INPUT_CHARS - MEMO_ATTACHMENT_SEND_RESERVE_CHARS;
+    const outgoingLengthError =
+      memoBackedAttachmentCount > 0 && preparedOutgoingMessage.text.length > memoReferenceLimit
+        ? `This request is ${preparedOutgoingMessage.text.length} characters after adding Memo retrieval references. Shorten the prompt so the references fit within ${memoReferenceLimit} characters.`
+        : outgoingMessageLengthError(preparedOutgoingMessage.text);
+    if (outgoingLengthError !== null) {
+      // Reject before local dispatch is latched. The composer therefore stays
+      // immediately sendable after the user edits or removes the large input.
+      setThreadError(activeThread.id, outgoingLengthError);
+      if (queuedRequestForSend !== null) {
+        queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
+        queuedDispatchRef.current = null;
+      }
+      return;
+    }
+    const notifyAttachedTextPrepared = () => {
+      if (memoBackedAttachmentCount > 0) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Full text saved to local Memo",
+            description: `${memoBackedAttachmentCount} attachment${memoBackedAttachmentCount === 1 ? " was" : "s were"} stored locally as bounded chunks.`,
+          }),
+        );
+        return;
+      }
+    };
+    if (phase === "running" && queuedRequestForSend === null) {
+      const queuedText = composeUserMessageContexts({
+        prompt: promptForSend,
+        pastedContexts: preparedOutgoingMessage.contexts,
+        terminalContexts: sendableComposerTerminalContexts,
+        elementContexts: composerElementContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+      }).trim();
+      enqueueRequest(routeThreadKey, {
+        id: randomUUID(),
+        // Store the context-composed prompt, not a provider-specific effort
+        // prefix; the queued turn may use a different selected model later.
+        text: queuedText,
+        createdAt: new Date().toISOString(),
+      });
+      setThreadError(activeThread.id, null);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      notifyAttachedTextPrepared();
       return;
     }
 
@@ -5032,14 +5131,6 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPastedContextsSnapshot = [...composerPastedContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
-    const messageTextForSend = composeUserMessageContexts({
-      prompt: promptForSend,
-      pastedContexts: composerPastedContextsSnapshot,
-      terminalContexts: composerTerminalContextsSnapshot,
-      elementContexts: composerElementContextsSnapshot,
-      previewAnnotations: composerPreviewAnnotationsSnapshot,
-      reviewComments: composerReviewCommentsSnapshot,
-    });
     // Research runs in its own thread. Firing `!research` inside an ongoing
     // conversation splices the whole pipeline transcript (and every delegate
     // relay) into this thread's context and hijacks it. When the active thread
@@ -5052,20 +5143,7 @@ function ChatViewContent(props: ChatViewProps) {
       const researchThreadId = newThreadId();
       const researchCreatedAt = new Date().toISOString();
       const researchTitle = truncate(trimmed || "Research");
-      const researchOutgoingText = formatOutgoingPrompt({
-        provider: ctxSelectedProvider,
-        model: ctxSelectedModel,
-        models: ctxSelectedProviderModels,
-        effort: ctxSelectedPromptEffort,
-        text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
-      });
-      const researchLengthError = outgoingMessageLengthError(researchOutgoingText);
-      if (researchLengthError !== null) {
-        setThreadError(activeThread.id, researchLengthError);
-        sendInFlightRef.current = false;
-        resetLocalDispatch();
-        return;
-      }
+      const researchOutgoingText = preparedOutgoingMessage.text;
       const researchAttachmentsResult = await settlePromise(() =>
         Promise.all(
           composerImages.map(async (image) => ({
@@ -5133,6 +5211,7 @@ function ChatViewContent(props: ChatViewProps) {
         });
         researchFailure = startResult._tag === "Failure" ? startResult : null;
         researchTurnStarted = startResult._tag === "Success";
+        if (researchTurnStarted) notifyAttachedTextPrepared();
       }
       if (researchFailure === null) {
         const startedResult = await settlePromise(() =>
@@ -5205,18 +5284,7 @@ function ChatViewContent(props: ChatViewProps) {
 
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
-    const outgoingMessageText = formatOutgoingPrompt({
-      provider: ctxSelectedProvider,
-      model: ctxSelectedModel,
-      models: ctxSelectedProviderModels,
-      effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
-    });
-    const outgoingLengthError = outgoingMessageLengthError(outgoingMessageText);
-    if (outgoingLengthError !== null) {
-      setThreadError(threadIdForSend, outgoingLengthError);
-      return;
-    }
+    const outgoingMessageText = preparedOutgoingMessage.text;
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
         type: "image" as const,
@@ -5398,6 +5466,7 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        notifyAttachedTextPrepared();
       }
     }
 

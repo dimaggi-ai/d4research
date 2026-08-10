@@ -46,10 +46,14 @@ export interface PastedContextDraft {
   id: string;
   /** Display name: the dropped file's name, or a generated paste label. */
   name: string;
-  /** Full text content. */
+  /** Provider-visible text, capped only when the full source is held in memory. */
   content: string;
   /** True when it came from a file drop rather than a paste. */
   fromFile: boolean;
+  /** Full normalized source while this browser session remains alive. Never persisted. */
+  sourceContent?: string;
+  /** True when `content` is only the persisted preview of a larger source. */
+  contentTruncated?: boolean;
 }
 
 export interface ParsedPastedContextEntry {
@@ -93,9 +97,9 @@ function sanitizeName(name: string): string {
 }
 
 /**
- * Builds a draft entry from raw text. Content longer than the cap is truncated
- * with an explicit marker rather than silently trimmed, so the model is never
- * told it has content it does not.
+ * Builds a draft entry from raw text. The local-storage-safe preview remains
+ * bounded, while the full source stays in memory long enough to be persisted
+ * to Memo at send time.
  */
 export function makePastedContext(input: {
   readonly name: string;
@@ -114,6 +118,9 @@ export function makePastedContext(input: {
     name: sanitizeName(input.name),
     content,
     fromFile: input.fromFile,
+    ...(normalized.length > PASTED_CONTEXT_MAX_CHARS
+      ? { sourceContent: normalized, contentTruncated: true }
+      : {}),
   };
 }
 

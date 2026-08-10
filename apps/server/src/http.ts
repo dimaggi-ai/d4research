@@ -63,8 +63,11 @@ import {
   installSkillFromGit,
 } from "./skillsInventory.ts";
 import { makeConfiguredMemoryConnector } from "./mcp/toolkits/memory/localConnector.ts";
+import type { LocalMemoConnector, MemoryConnectorError } from "./mcp/toolkits/memory/connectors.ts";
 import {
+  deleteMemoAttachment,
   isMemoAttachmentDocumentToken,
+  listMemoAttachments,
   MEMO_ATTACHMENT_MAX_CHARACTERS,
   persistMemoAttachment,
 } from "./memoAttachment.ts";
@@ -79,6 +82,8 @@ const SKILLS_SHARE_PATH = "/api/skills/share";
 const SKILLS_INSTALL_PATH = "/api/skills/install";
 const HANDOFF_MEMORY_PATH = "/api/memory/handoff";
 const MEMO_ATTACHMENT_PATH = "/api/memory/attachment";
+const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
+const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -540,95 +545,196 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
   ),
 );
 
-export const memoAttachmentRouteLayer = HttpRouter.add(
-  "POST",
-  MEMO_ATTACHMENT_PATH,
-  Effect.gen(function* () {
-    yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    return yield* Effect.gen(function* () {
-      const body = cast<
-        unknown,
-        { documentToken?: unknown; name?: unknown; content?: unknown; project?: unknown }
-      >(yield* request.json);
-      const documentToken = typeof body.documentToken === "string" ? body.documentToken.trim() : "";
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      const content = typeof body.content === "string" ? body.content : "";
-      const project = typeof body.project === "string" ? body.project.trim() : undefined;
-      if (!isMemoAttachmentDocumentToken(documentToken)) {
-        return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Invalid Memo attachment document token." },
-          { status: 400 },
-        );
-      }
-      if (!name || name.length > 80) {
-        return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Memo attachment name must contain 1-80 characters." },
-          { status: 400 },
-        );
-      }
-      if (!content || content.length > MEMO_ATTACHMENT_MAX_CHARACTERS) {
-        return HttpServerResponse.jsonUnsafe(
-          {
-            ok: false,
-            message: `Memo attachment must contain 1-${MEMO_ATTACHMENT_MAX_CHARACTERS.toLocaleString()} characters.`,
-          },
-          { status: 400 },
-        );
-      }
-      if (project && project.length > 200) {
-        return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Memo attachment project must not exceed 200 characters." },
-          { status: 400 },
-        );
-      }
+const memoAttachmentJson = (body: unknown, status = 200) =>
+  HttpServerResponse.jsonUnsafe(body, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
 
-      const connector = yield* makeConfiguredMemoryConnector();
-      const stored = yield* persistMemoAttachment({
-        connector,
-        documentToken,
-        name,
-        content,
-        project,
-      });
-      return HttpServerResponse.jsonUnsafe(
-        {
-          ok: true,
-          ...stored,
-        },
-        { headers: { "cache-control": "no-store" } },
+const memoConnectorErrorResponse = (error: MemoryConnectorError) =>
+  Effect.succeed(
+    memoAttachmentJson(
+      { ok: false, message: error.message },
+      error.operation === "configure" ? 409 : 503,
+    ),
+  );
+
+export const makeMemoAttachmentRouteLayer = <R>(
+  makeConnector: () => Effect.Effect<LocalMemoConnector, MemoryConnectorError, R>,
+) => {
+  const createRoute = HttpRouter.add(
+    "POST",
+    MEMO_ATTACHMENT_PATH,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      return yield* Effect.gen(function* () {
+        const decoded = yield* request.json.pipe(
+          Effect.map((body) => ({ ok: true as const, body })),
+          Effect.orElseSucceed(() => ({ ok: false as const })),
+        );
+        if (!decoded.ok) {
+          return memoAttachmentJson({ ok: false, message: "Malformed request body." }, 400);
+        }
+        const body = cast<
+          unknown,
+          { documentToken?: unknown; name?: unknown; content?: unknown; project?: unknown }
+        >(decoded.body);
+        const documentToken =
+          typeof body.documentToken === "string" ? body.documentToken.trim() : "";
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        const content = typeof body.content === "string" ? body.content : "";
+        const project = typeof body.project === "string" ? body.project.trim() : undefined;
+        if (!isMemoAttachmentDocumentToken(documentToken)) {
+          return memoAttachmentJson(
+            { ok: false, message: "Invalid Memo attachment document token." },
+            400,
+          );
+        }
+        if (!name || name.length > 80) {
+          return memoAttachmentJson(
+            { ok: false, message: "Memo attachment name must contain 1-80 characters." },
+            400,
+          );
+        }
+        if (!content || content.length > MEMO_ATTACHMENT_MAX_CHARACTERS) {
+          return memoAttachmentJson(
+            {
+              ok: false,
+              message: `Memo attachment must contain 1-${MEMO_ATTACHMENT_MAX_CHARACTERS.toLocaleString()} characters.`,
+            },
+            400,
+          );
+        }
+        if (project && project.length > 200) {
+          return memoAttachmentJson(
+            { ok: false, message: "Memo attachment project must not exceed 200 characters." },
+            400,
+          );
+        }
+
+        const connector = yield* makeConnector();
+        const stored = yield* persistMemoAttachment({
+          connector,
+          documentToken,
+          name,
+          content,
+          project,
+        });
+        return memoAttachmentJson({ ok: true, ...stored });
+      }).pipe(
+        Effect.catchTags({
+          MemoAttachmentPersistenceError: (error) =>
+            Effect.succeed(memoAttachmentJson({ ok: false, message: error.message }, 503)),
+          MemoryConnectorError: memoConnectorErrorResponse,
+        }),
+        Effect.orElseSucceed(() =>
+          memoAttachmentJson(
+            { ok: false, message: "Local Memo could not store the attachment." },
+            503,
+          ),
+        ),
       );
     }).pipe(
       Effect.catchTags({
-        MemoAttachmentPersistenceError: (error) =>
-          Effect.succeed(
-            HttpServerResponse.jsonUnsafe(
-              { ok: false, message: error.message },
-              { status: 503, headers: { "cache-control": "no-store" } },
-            ),
-          ),
-        MemoryConnectorError: (error) =>
-          Effect.succeed(
-            HttpServerResponse.jsonUnsafe(
-              { ok: false, message: error.message },
-              { status: 503, headers: { "cache-control": "no-store" } },
-            ),
-          ),
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
       }),
-      Effect.orElseSucceed(() =>
-        HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Local Memo could not store the attachment." },
-          { status: 503, headers: { "cache-control": "no-store" } },
+    ),
+  );
+
+  const listRoute = HttpRouter.add(
+    "GET",
+    MEMO_ATTACHMENTS_PATH,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      return yield* Effect.gen(function* () {
+        const connector = yield* makeConnector();
+        const listed = yield* listMemoAttachments(connector);
+        return memoAttachmentJson({
+          ok: true,
+          backend: listed.supported ? "builtin" : "memo-rest",
+          ...listed,
+        });
+      }).pipe(
+        Effect.catchTag("MemoryConnectorError", memoConnectorErrorResponse),
+        Effect.orElseSucceed(() =>
+          memoAttachmentJson(
+            { ok: false, message: "Local Memo could not list stored attachments." },
+            503,
+          ),
         ),
-      ),
-    );
-  }).pipe(
-    Effect.catchTags({
-      EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-      EnvironmentInternalError: HttpServerRespondable.toResponse,
-      EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-    }),
-  ),
+      );
+    }).pipe(
+      Effect.catchTags({
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+      }),
+    ),
+  );
+
+  const deleteRoute = HttpRouter.add(
+    "POST",
+    MEMO_ATTACHMENT_DELETE_PATH,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      return yield* Effect.gen(function* () {
+        const decoded = yield* request.json.pipe(
+          Effect.map((body) => ({ ok: true as const, body })),
+          Effect.orElseSucceed(() => ({ ok: false as const })),
+        );
+        if (!decoded.ok) {
+          return memoAttachmentJson({ ok: false, message: "Malformed request body." }, 400);
+        }
+        const body = cast<unknown, { documentToken?: unknown }>(decoded.body);
+        const documentToken =
+          typeof body.documentToken === "string" ? body.documentToken.trim() : "";
+        if (!isMemoAttachmentDocumentToken(documentToken)) {
+          return memoAttachmentJson(
+            { ok: false, message: "Invalid Memo attachment document token." },
+            400,
+          );
+        }
+        const connector = yield* makeConnector();
+        const deleted = yield* deleteMemoAttachment({ connector, documentToken });
+        if (!deleted.supported) {
+          return memoAttachmentJson(
+            {
+              ok: false,
+              supported: false,
+              message:
+                "The configured Memo REST backend cannot delete stored attachments. Remove them in that service.",
+            },
+            501,
+          );
+        }
+        return memoAttachmentJson({ ok: true, ...deleted });
+      }).pipe(
+        Effect.catchTag("MemoryConnectorError", memoConnectorErrorResponse),
+        Effect.orElseSucceed(() =>
+          memoAttachmentJson(
+            { ok: false, message: "Local Memo could not delete the attachment." },
+            503,
+          ),
+        ),
+      );
+    }).pipe(
+      Effect.catchTags({
+        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
+        EnvironmentInternalError: HttpServerRespondable.toResponse,
+        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
+      }),
+    ),
+  );
+
+  return Layer.mergeAll(createRoute, listRoute, deleteRoute);
+};
+
+export const memoAttachmentRouteLayer = makeMemoAttachmentRouteLayer(() =>
+  makeConfiguredMemoryConnector(),
 );
 
 export const handoffCompressRouteLayer = HttpRouter.add(

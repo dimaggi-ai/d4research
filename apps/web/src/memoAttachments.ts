@@ -7,10 +7,11 @@ import type { PastedContextDraft } from "./lib/pastedContext";
 import { runtime } from "./lib/runtime";
 
 export const MEMO_ATTACHMENT_PERSIST_TIMEOUT_MS = 60_000;
+export const MEMO_ATTACHMENT_MANAGE_TIMEOUT_MS = 20_000;
 export const MEMO_ATTACHMENT_SEND_RESERVE_CHARS = Math.floor(
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS * 0.1,
 );
-const MEMO_ATTACHMENT_PREVIEW_CHARACTERS = 4_000;
+const MEMO_ATTACHMENT_PREVIEW_CHARACTERS = 3_800;
 
 export interface StoredMemoAttachment {
   readonly documentToken: string;
@@ -25,12 +26,28 @@ export interface MemoAttachmentPersistenceInput {
   readonly project: string;
 }
 
+export interface StoredMemoAttachmentSummary {
+  readonly documentToken: string;
+  readonly name: string | null;
+  readonly project: string | null;
+  readonly characterCount: number | null;
+  readonly chunkCount: number | null;
+  readonly storedAt: string;
+  readonly incomplete: boolean;
+}
+
+export interface MemoAttachmentListResult {
+  readonly backend: "builtin" | "memo-rest";
+  readonly supported: boolean;
+  readonly attachments: ReadonlyArray<StoredMemoAttachmentSummary>;
+}
+
 export type MemoAttachmentPersistence = (
   input: MemoAttachmentPersistenceInput,
 ) => Promise<StoredMemoAttachment>;
 
-export function memoAttachmentDocumentToken(contextId: string, content: string): string {
-  return `memoattachment${sha256Hex(`${contextId}\0${content}`)}`;
+export function memoAttachmentDocumentToken(documentIdentity: string, content: string): string {
+  return `memoattachment${sha256Hex(`${documentIdentity}\0${content}`)}`;
 }
 
 function memoAttachmentPreview(content: string): string {
@@ -85,6 +102,7 @@ export function buildMemoAttachmentReference(input: {
     `query="${firstChunkToken}" (then increment through "${lastChunkToken}")`,
     "limit=1",
     "Use as many chunk calls as needed for the user's task.",
+    "If an exact chunk query returns no results, the document was removed from Memo. Say so instead of inferring missing content from the preview.",
     "If memory_search is unavailable, use only this preview and tell the user that the full local copy requires a capable same-thread handoff.",
     "<preview>",
     memoAttachmentPreview(input.content),
@@ -117,6 +135,7 @@ export async function replacePastedContextsWithMemoReferences(input: {
   readonly project: string;
   readonly persist: MemoAttachmentPersistence;
 }): Promise<ReadonlyArray<PastedContextDraft>> {
+  const pendingDocuments = new Map<string, Promise<StoredMemoAttachment>>();
   return Promise.all(
     input.contexts.map(async (context) => {
       if (context.contentTruncated && context.sourceContent === undefined) {
@@ -125,12 +144,21 @@ export async function replacePastedContextsWithMemoReferences(input: {
         );
       }
       const content = context.sourceContent ?? context.content;
-      const stored = await input.persist({
-        documentToken: memoAttachmentDocumentToken(context.id, content),
-        name: context.name,
+      const documentToken = memoAttachmentDocumentToken(
+        `${input.project}\0${context.name}`,
         content,
-        project: input.project,
-      });
+      );
+      let storedDocument = pendingDocuments.get(documentToken);
+      if (storedDocument === undefined) {
+        storedDocument = input.persist({
+          documentToken,
+          name: context.name,
+          content,
+          project: input.project,
+        });
+        pendingDocuments.set(documentToken, storedDocument);
+      }
+      const stored = await storedDocument;
       return {
         id: context.id,
         name: context.name,
@@ -205,4 +233,111 @@ export function makeMemoAttachmentPersistence(
       clearTimeout(timer);
     }
   };
+}
+
+async function memoAttachmentManagementRequest(
+  preparedConnection: PreparedConnection,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const endpoint = new URL(path, preparedConnection.httpBaseUrl).toString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MEMO_ATTACHMENT_MANAGE_TIMEOUT_MS);
+  try {
+    const auth = await runtime.runPromise(
+      preparedEnvironmentFetchAuthorization(preparedConnection, method, endpoint),
+    );
+    const response = await fetch(endpoint, {
+      method,
+      cache: "no-store",
+      ...(auth.credentials ? { credentials: auth.credentials } : {}),
+      headers: {
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...auth.headers,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: controller.signal,
+    });
+    const result = (await response.json().catch(() => null)) as {
+      readonly message?: unknown;
+    } | null;
+    if (!response.ok) {
+      throw new Error(
+        typeof result?.message === "string" ? result.message : "Local Memo request failed.",
+      );
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("The Local Memo request timed out.", { cause: error });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isStoredMemoAttachmentSummary(value: unknown): value is StoredMemoAttachmentSummary {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.documentToken === "string" &&
+    (typeof entry.name === "string" || entry.name === null) &&
+    (typeof entry.project === "string" || entry.project === null) &&
+    (typeof entry.characterCount === "number" || entry.characterCount === null) &&
+    (typeof entry.chunkCount === "number" || entry.chunkCount === null) &&
+    typeof entry.storedAt === "string" &&
+    typeof entry.incomplete === "boolean"
+  );
+}
+
+export async function listStoredMemoAttachments(
+  preparedConnection: PreparedConnection,
+): Promise<MemoAttachmentListResult> {
+  const result = (await memoAttachmentManagementRequest(
+    preparedConnection,
+    "GET",
+    "/api/memory/attachments",
+  )) as {
+    readonly ok?: unknown;
+    readonly backend?: unknown;
+    readonly supported?: unknown;
+    readonly attachments?: unknown;
+  } | null;
+  if (
+    result?.ok !== true ||
+    (result.backend !== "builtin" && result.backend !== "memo-rest") ||
+    typeof result.supported !== "boolean" ||
+    !Array.isArray(result.attachments) ||
+    !result.attachments.every(isStoredMemoAttachmentSummary)
+  ) {
+    throw new Error("Local Memo returned an invalid attachment list.");
+  }
+  return {
+    backend: result.backend,
+    supported: result.supported,
+    attachments: result.attachments,
+  };
+}
+
+export async function deleteStoredMemoAttachment(
+  preparedConnection: PreparedConnection,
+  documentToken: string,
+): Promise<number> {
+  const result = (await memoAttachmentManagementRequest(
+    preparedConnection,
+    "POST",
+    "/api/memory/attachment/delete",
+    { documentToken },
+  )) as { readonly ok?: unknown; readonly deleted?: unknown } | null;
+  if (
+    result?.ok !== true ||
+    typeof result.deleted !== "number" ||
+    !Number.isSafeInteger(result.deleted) ||
+    result.deleted < 0
+  ) {
+    throw new Error("Local Memo returned an invalid deletion result.");
+  }
+  return result.deleted;
 }

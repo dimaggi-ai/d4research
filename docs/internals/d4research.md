@@ -58,9 +58,25 @@ Grok/Junie, and server-managed OpenCode sessions receive it. Agy and externally 
 currently receive the compact preview but cannot fetch the Memo chunks during that turn. The full
 copy remains local and becomes retrievable after a capable same-thread handoff.
 
-Attachment rows use a document-specific source label, but the composer does not currently expose a
-per-document deletion lifecycle. Treat them as durable connector data until that reverse path is
-implemented.
+Attachment rows use the source label
+`d4research-composer-attachment:<validated-document-token>`. The authenticated operate-scope list
+and delete routes expose the reverse lifecycle only when the connector structurally supports it.
+The built-in store groups rows by that source and deletes with an exact equality predicate; the
+route accepts only a document token and derives the source server-side, so handoff and ordinary
+memory rows are unreachable. Delete is atomic and idempotent, and the existing SQLite FTS delete
+trigger removes the searchable shadow. Interrupted writes remain listable even without a manifest.
+
+The external Memo REST contract exposes only add, search, stats, and health. Its list response is
+therefore explicitly `supported: false`, and delete returns 501 rather than probing an undocumented
+operation. There are no tombstones or automatic TTL: the built-in store has no replication consumer
+for a tombstone, and silent expiry would make older transcript tokens fail without a user action.
+The transcript is never rewritten when storage is deleted.
+
+Research delegation searches the same project-scoped memory pool, but automatic shared context
+filters composer-attachment rows by source label and record signature before joining results. The
+remaining verbatim context is capped at 24,000 characters with an explicit truncation marker. Raw
+documents are retrieved only through the exact chunk-token instructions in the turn that attached
+them.
 
 ### Tool Guard lifecycle
 

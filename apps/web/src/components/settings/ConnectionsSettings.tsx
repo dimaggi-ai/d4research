@@ -108,6 +108,7 @@ import {
 } from "~/versionSkew";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
+import { usePreparedConnection } from "~/state/session";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
 import {
@@ -132,6 +133,7 @@ import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ServerUpdateAction, ServerUpdateProgress } from "../ServerUpdateAction";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
+import { MemoAttachmentsPanel } from "./MemoAttachmentsPanel";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1731,6 +1733,7 @@ export function ConnectionsSettings() {
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  const preparedConnection = Option.getOrNull(usePreparedConnection(primaryEnvironmentId));
   const primarySessionState = usePrimarySessionState();
   const currentSessionScopes = desktopBridge
     ? AuthAdministrativeScopes
@@ -3006,22 +3009,57 @@ export function ConnectionsSettings() {
           }
         />
         <SettingsRow
-          title="Local Memo URL"
-          description="Defaults to the local agent-memory service. T3CODE_LOCAL_MEMO_URL overrides this value on the server."
+          title="Memo backend"
+          description="Built-in stores data in this environment's SQLite database. Memo REST connects to an external local service. T3CODE_LOCAL_MEMO_URL still overrides this choice on the server."
           control={
-            <Input
-              className="w-full sm:w-72"
-              defaultValue={settings.memory.localBaseUrl}
+            <Select
+              value={settings.memory.localBackend}
               disabled={!settings.memory.localEnabled}
-              aria-label="Local Memo URL"
-              onBlur={(event) => {
-                const localBaseUrl = event.currentTarget.value.trim();
-                if (localBaseUrl && localBaseUrl !== settings.memory.localBaseUrl) {
-                  updateSettings({ memory: { localBaseUrl } });
+              onValueChange={(value) => {
+                if (value === "builtin" || value === "memo-rest") {
+                  updateSettings({ memory: { localBackend: value } });
                 }
               }}
-            />
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Memo backend">
+                <SelectValue>
+                  {settings.memory.localBackend === "builtin" ? "Built-in SQLite" : "Memo REST"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="builtin">
+                  Built-in SQLite
+                </SelectItem>
+                <SelectItem hideIndicator value="memo-rest">
+                  Memo REST
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
+        />
+        {settings.memory.localBackend === "memo-rest" ? (
+          <SettingsRow
+            title="Local Memo URL"
+            description="Base URL for the external Memo REST service. T3CODE_LOCAL_MEMO_URL overrides this value on the server."
+            control={
+              <Input
+                className="w-full sm:w-72"
+                defaultValue={settings.memory.localBaseUrl}
+                disabled={!settings.memory.localEnabled}
+                aria-label="Local Memo URL"
+                onBlur={(event) => {
+                  const localBaseUrl = event.currentTarget.value.trim();
+                  if (localBaseUrl && localBaseUrl !== settings.memory.localBaseUrl) {
+                    updateSettings({ memory: { localBaseUrl } });
+                  }
+                }}
+              />
+            }
+          />
+        ) : null}
+        <MemoAttachmentsPanel
+          enabled={settings.memory.localEnabled}
+          preparedConnection={preparedConnection}
         />
       </SettingsSection>
 

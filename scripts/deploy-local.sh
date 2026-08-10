@@ -5,9 +5,10 @@ SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPOSITORY_ROOT="${T3CODE_DEPLOY_REPOSITORY_ROOT:-$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)}"
 readonly APP_URL="${T3CODE_DEPLOY_APP_URL:-http://127.0.0.1:3773}"
 readonly VOICE_URL="${T3CODE_DEPLOY_VOICE_URL:-http://127.0.0.1:8093/health}"
-readonly READY_TIMEOUT_SECONDS="${T3CODE_DEPLOY_READY_TIMEOUT_SECONDS:-20}"
+readonly READY_TIMEOUT_SECONDS="${T3CODE_DEPLOY_READY_TIMEOUT_SECONDS:-180}"
 readonly RESTART_MODE="${T3CODE_DEPLOY_RESTART_MODE:-systemd}"
 readonly REQUIRE_VOICE="${T3CODE_DEPLOY_REQUIRE_VOICE:-1}"
+readonly RESTART_UNIT="d4research-restart"
 CURRENT_RUNNER_PID=""
 
 cleanup_runner() {
@@ -71,14 +72,52 @@ wait_for_url() {
   local name="$1"
   local url="$2"
   local deadline=$((SECONDS + READY_TIMEOUT_SECONDS))
+  local started_at=$SECONDS
+  local last_report_at=$SECONDS
 
-  until curl --fail --silent --show-error --max-time 2 "$url" >/dev/null; do
+  until curl --fail --silent --show-error --connect-timeout 2 --max-time 10 "$url" >/dev/null; do
     if ((SECONDS >= deadline)); then
       echo "$name did not become ready within ${READY_TIMEOUT_SECONDS}s: $url" >&2
       return 1
     fi
+    if ((SECONDS - last_report_at >= 5)); then
+      last_report_at=$SECONDS
+      echo "$name: waiting for readiness ($((SECONDS - started_at))s elapsed)"
+    fi
     sleep 0.25
   done
+  echo "$name: ready after $((SECONDS - started_at))s"
+}
+
+restart_worker_loaded() {
+  local unit load_state
+  for unit in "${RESTART_UNIT}.timer" "${RESTART_UNIT}.service"; do
+    load_state="$(systemctl --user show --property=LoadState --value "$unit" 2>/dev/null || true)"
+    if [[ -n "$load_state" && "$load_state" != "not-found" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+run_under_deploy_lock() {
+  if [[ "${T3CODE_DEPLOY_LOCK_HELD:-0}" == "1" ]]; then
+    return
+  fi
+  local runtime_directory="${XDG_RUNTIME_DIR:-/tmp}"
+  local lock_path="${runtime_directory}/d4research-deploy-${UID}.lock"
+  local exit_code=0
+  flock \
+    --conflict-exit-code 75 \
+    --nonblock \
+    --close \
+    "$lock_path" \
+    /usr/bin/env T3CODE_DEPLOY_LOCK_HELD=1 /usr/bin/bash "$SCRIPT_DIRECTORY/deploy-local.sh" "$@" ||
+    exit_code=$?
+  if [[ "$exit_code" == "75" ]]; then
+    echo "pre-deploy: another d4research build or deploy is already running" >&2
+  fi
+  exit "$exit_code"
 }
 
 cd "$REPOSITORY_ROOT"
@@ -90,13 +129,20 @@ if [[ "${1:-}" == "--complete-restart" ]]; then
   fi
   echo "restart-worker: restarting d4research outside the active T3 session"
   systemctl --user restart d4research.service
-  wait_for_url "d4research" "$APP_URL/"
   wait_for_url "d4research manifest" "$APP_URL/manifest.webmanifest"
+  wait_for_url "d4research" "$APP_URL/"
   if [[ "$REQUIRE_VOICE" == "1" ]]; then
     wait_for_url "Local voice service" "$VOICE_URL"
   fi
   echo "restart-worker: d4research and local voice are ready"
   exit 0
+fi
+
+run_under_deploy_lock "$@"
+
+if [[ "$RESTART_MODE" == "systemd" ]] && restart_worker_loaded; then
+  echo "pre-deploy: ${RESTART_UNIT} is still scheduled or running; retry after it completes" >&2
+  exit 75
 fi
 
 if [[ "$REQUIRE_VOICE" == "1" ]]; then
@@ -124,14 +170,14 @@ if [[ "$RESTART_MODE" != "systemd" ]]; then
   exit 2
 fi
 
-restart_unit="d4research-restart-$(date +%s)-$$"
-echo "restart: scheduling detached readiness worker ${restart_unit} in 5s"
+echo "restart: scheduling detached readiness worker ${RESTART_UNIT} in 5s"
 systemd-run \
   --user \
   --quiet \
-  --unit "$restart_unit" \
+  --collect \
+  --unit "$RESTART_UNIT" \
   --on-active=5s \
   /usr/bin/bash "$REPOSITORY_ROOT/scripts/deploy-local.sh" --complete-restart
 
 echo "deployed: build complete; detached restart scheduled"
-echo "restart logs: journalctl --user -u ${restart_unit}.service --no-pager"
+echo "restart logs: journalctl --user -u ${RESTART_UNIT}.service --no-pager"

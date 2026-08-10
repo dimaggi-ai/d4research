@@ -9,7 +9,11 @@ import { makeBuiltinMemoryConnector } from "./mcp/toolkits/memory/builtinStore.t
 import type { LocalMemoConnector } from "./mcp/toolkits/memory/connectors.ts";
 import {
   buildMemoAttachmentRecords,
+  deleteMemoAttachment,
+  listMemoAttachments,
   MEMO_ATTACHMENT_CHUNK_CHARACTERS,
+  memoAttachmentSource,
+  parseMemoAttachmentDocumentToken,
   persistMemoAttachment,
 } from "./memoAttachment.ts";
 
@@ -129,4 +133,109 @@ describe("Memo-backed composer attachments", () => {
       }),
     );
   });
+
+  it.effect("lists and idempotently deletes only one source-scoped document", () =>
+    Effect.gen(function* () {
+      const connector = makeBuiltinMemoryConnector(NodePath.join(dir, "memory.sqlite"));
+      const deleteToken = "memoattachmentdelete0123456789";
+      const keepToken = "memoattachmentkeep0123456789ab";
+      const deleteRecords = buildMemoAttachmentRecords({
+        documentToken: deleteToken,
+        name: "delete-me.txt",
+        content: "deletemarker ".repeat(2_000),
+      });
+      yield* persistMemoAttachment({
+        connector,
+        documentToken: deleteToken,
+        name: "delete-me.txt",
+        content: "deletemarker ".repeat(2_000),
+        project: "lifecycle",
+      });
+      yield* persistMemoAttachment({
+        connector,
+        documentToken: keepToken,
+        name: "keep-me.txt",
+        content: "keepmarker",
+        project: "lifecycle",
+      });
+      yield* connector.add("handoffmarker", "t3research-provider-handoff", "lifecycle");
+
+      const before = yield* connector.stats();
+      const listed = yield* listMemoAttachments(connector);
+      expect(listed.supported).toBe(true);
+      expect(
+        listed.attachments.find((attachment) => attachment.documentToken === deleteToken),
+      ).toMatchObject({
+        name: "delete-me.txt",
+        project: "lifecycle",
+        characterCount: "deletemarker ".repeat(2_000).length,
+        chunkCount: deleteRecords.chunks.length,
+        incomplete: false,
+      });
+
+      const deleted = yield* deleteMemoAttachment({ connector, documentToken: deleteToken });
+      const deletedAgain = yield* deleteMemoAttachment({ connector, documentToken: deleteToken });
+      expect(deleted).toEqual({ supported: true, deleted: deleteRecords.chunks.length + 1 });
+      expect(deletedAgain).toEqual({ supported: true, deleted: 0 });
+
+      const after = yield* connector.stats();
+      expect((before.count ?? 0) - (after.count ?? 0)).toBe(deleteRecords.chunks.length + 1);
+      expect(
+        (yield* connector.search(deleteRecords.chunks[0]!.token, 1, "lifecycle")).results,
+      ).toEqual([]);
+      expect((yield* connector.search("keepmarker", 1, "lifecycle")).results).toHaveLength(1);
+      expect((yield* connector.search("handoffmarker", 1, "lifecycle")).results).toHaveLength(1);
+    }),
+  );
+
+  it.effect("keeps an incomplete write visible so it can be deleted", () =>
+    Effect.gen(function* () {
+      const connector = makeBuiltinMemoryConnector(NodePath.join(dir, "memory.sqlite"));
+      const documentToken = "memoattachmentpartial0123456789";
+      const records = buildMemoAttachmentRecords({
+        documentToken,
+        name: "partial.txt",
+        content: "partialmarker",
+      });
+      yield* connector.add(
+        records.chunks[0]!.text,
+        memoAttachmentSource(documentToken),
+        "lifecycle",
+      );
+
+      const listed = yield* listMemoAttachments(connector);
+      expect(
+        listed.attachments.find((attachment) => attachment.documentToken === documentToken),
+      ).toMatchObject({
+        name: "partial.txt",
+        project: "lifecycle",
+        characterCount: "partialmarker".length,
+        chunkCount: 1,
+        incomplete: true,
+      });
+    }),
+  );
+
+  it("round-trips only valid attachment sources", () => {
+    expect(parseMemoAttachmentDocumentToken(memoAttachmentSource(DOCUMENT_TOKEN))).toBe(
+      DOCUMENT_TOKEN,
+    );
+    expect(parseMemoAttachmentDocumentToken("t3research-provider-handoff")).toBeNull();
+    expect(parseMemoAttachmentDocumentToken("d4research-composer-attachment:")).toBeNull();
+    expect(parseMemoAttachmentDocumentToken("d4research-composer-attachment:invalid")).toBeNull();
+  });
+
+  it.effect("returns a typed failure for an invalid deletion token", () =>
+    Effect.gen(function* () {
+      const connector = makeBuiltinMemoryConnector(NodePath.join(dir, "memory.sqlite"));
+      const error = yield* Effect.flip(
+        deleteMemoAttachment({ connector, documentToken: "invalid" }),
+      );
+      expect(error).toMatchObject({
+        _tag: "MemoryConnectorError",
+        operation: "deleteBySource",
+        message: "Invalid Memo attachment document token.",
+      });
+    }),
+  );
 });

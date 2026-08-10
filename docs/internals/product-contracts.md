@@ -5,6 +5,13 @@
 > are Effect Schema; `index.ts` re-exports every module listed here (plus `./settings` and
 > `./relay` as dedicated subpath exports).
 
+## index
+
+`packages/contracts/src/index.ts` is the public aggregation boundary for the contracts package. It
+re-exports the module-level schemas, branded identifiers, HTTP API declarations, and RPC method
+maps consumed by the server, web, desktop, mobile, and client-runtime packages; it does not define
+a second wire model of its own.
+
 ## baseSchemas
 
 Shared primitive schemas and branded identifiers used by every other module: `TrimmedString`,

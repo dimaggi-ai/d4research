@@ -64,9 +64,18 @@ providers still see the compact preview, while the full local Memo copy remains 
 handoff to a provider with `memory_search`. For a workspace file the agent can read directly, an
 `@` mention remains the simplest unabridged option.
 
-Memo-backed attachments use durable local storage. The composer does not currently provide a
-per-document delete control, so do not use this path for text you do not want retained in the
-configured Memo backend.
+Memo-backed attachments use durable local storage. With the built-in SQLite backend, open
+**Settings → Connections → Stored composer documents** to see complete and interrupted writes and
+permanently delete one document's Memo rows. The original message and bounded preview remain in the
+authoritative transcript, but later agents can no longer retrieve deleted chunks. Deletion is
+idempotent, so retrying an already-completed delete is safe.
+
+The external Memo REST contract does not provide list or delete operations. d4research identifies
+that effective backend in Settings and directs you to manage retention in the external service
+instead of pretending its rows were removed. Switching backends hides the other backend's rows; it
+does not delete them. Sequentially reattaching unchanged content with the same name and project
+title reuses the committed document; duplicate copies can still arise across simultaneous sends or
+after a project rename, and deleting that document removes every copy with its exact document key.
 
 ## Queued follow-ups
 

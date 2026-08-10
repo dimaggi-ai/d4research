@@ -122,7 +122,7 @@ const normalizeStats = (value: unknown, fallbackStatus = "ok"): MemoryStats => {
 
 const normalizeAdd = (value: unknown): MemoryAddResult => {
   const record = asRecord(value);
-  if (!record) return { ok: true };
+  if (!record) return { ok: false };
   const id = stringField(record, "id");
   const hash = stringField(record, "hash");
   return {
@@ -138,6 +138,14 @@ export interface LocalMemoConfig {
   readonly timeoutMs?: number | undefined;
 }
 
+export interface MemorySourceGroup {
+  readonly source: string;
+  readonly project: string | null;
+  readonly rowCount: number;
+  readonly createdAt: string;
+  readonly latestText: string;
+}
+
 export interface LocalMemoConnector {
   readonly search: (
     query: string,
@@ -151,6 +159,16 @@ export interface LocalMemoConnector {
   ) => Effect.Effect<MemoryAddResult, MemoryConnectorError>;
   readonly stats: () => Effect.Effect<MemoryStats, MemoryConnectorError>;
   readonly health: () => Effect.Effect<MemoryStats, MemoryConnectorError>;
+  /** Optional because the external Memo REST contract has no deletion endpoint. */
+  readonly deleteBySource?: (
+    source: string,
+    project?: string,
+  ) => Effect.Effect<{ readonly deleted: number }, MemoryConnectorError>;
+  /** Optional because the external Memo REST contract cannot enumerate source groups. */
+  readonly listBySourcePrefix?: (
+    prefix: string,
+    project?: string,
+  ) => Effect.Effect<ReadonlyArray<MemorySourceGroup>, MemoryConnectorError>;
 }
 
 export const makeLocalMemoConnector = Effect.fn("memory.makeLocalMemoConnector")(function* (

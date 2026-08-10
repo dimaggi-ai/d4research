@@ -30,6 +30,7 @@ import * as Cause from "effect/Cause";
 
 import {
   type DelegateThreadSnapshot,
+  buildResearchSharedMemoContext,
   buildDelegateThreadId,
   DELEGATE_RUNTIME_MODE,
   delegateApprovalDecision,
@@ -72,6 +73,33 @@ describe("delegate session isolation", () => {
     expect(delegateApprovalDecision("exec_command_approval")).toBe("decline");
     expect(delegateApprovalDecision("file_change_approval")).toBe("decline");
     expect(delegateApprovalDecision("unknown")).toBe("decline");
+  });
+});
+
+describe("research shared Memo context", () => {
+  it("excludes composer attachments by source and text signature", () => {
+    const shared = buildResearchSharedMemoContext([
+      {
+        text: "d4research provider handoff.\nUseful bounded finding.",
+        metadata: { source: "t3research-provider-handoff" },
+      },
+      {
+        text: "d4research Memo attachment chunk.\nSensitive source-labeled text.",
+        metadata: { source: "d4research-composer-attachment:memoattachment0123456789abcdef" },
+      },
+      {
+        text: "d4research Memo attachment manifest.\nSensitive signature-only text.",
+      },
+    ]);
+
+    expect(shared).toContain("Useful bounded finding");
+    expect(shared).not.toContain("Sensitive");
+  });
+
+  it("bounds automatic context with an explicit marker", () => {
+    const shared = buildResearchSharedMemoContext([{ text: "x".repeat(1_000) }], 200);
+    expect(shared).toHaveLength(200);
+    expect(shared).toContain("Shared Memo context truncated at 200 characters");
   });
 });
 

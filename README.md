@@ -134,7 +134,10 @@ Install a skill from a Git repository and it is shared with compatible coding CL
 
 Providers exchange durable findings through a local shared-memory connector. Handoff context, evidence, file paths, commands, and uncertainty survive across provider switches and sessions. The default backend is a built-in SQLite store (FTS5 keyword search) inside the server itself — zero external dependencies. An external Memo REST server can be selected instead via the `memo-rest` backend in settings.
 
-When shared-memory injection is on, each delegate also receives the top local matches for its request **verbatim** — no summarization between what one model learned and what the next one reads.
+When shared-memory injection is on, each delegate also receives a bounded set of local matches for
+its request **verbatim** — no summarization between what one model learned and what the next one
+reads. Raw composer-attachment chunks are excluded from that automatic path; agents retrieve those
+only through the exact chunk tokens carried by the turn that attached them.
 
 ### Managed Tool Guard
 
@@ -167,7 +170,11 @@ Large text attachments do not have to fit inside one provider request. When the 
 
 Memo must confirm the write before the draft can be cleared. Normal sends clear optimistically during dispatch and restore the draft if the server rejects the turn start; queued sends clear after the Memo-backed request enters the local queue. If memory is disabled, unavailable, or times out, the draft remains intact and Send is released for a retry instead of requiring a page reload. Providers with the injected d4research MCP toolkit can fetch chunks during the turn; Agy and externally managed OpenCode currently receive the preview only, while the full local copy remains available after a same-thread handoff to a capable provider.
 
-Memo-backed attachments use durable local storage. There is currently no per-document delete control in the composer, so do not use this path for text you do not want retained in the configured Memo backend.
+Memo-backed attachments use durable local storage. With the built-in SQLite backend, **Settings →
+Connections → Stored composer documents** lists complete and interrupted writes and can permanently
+delete one document's Memo rows. Deletion never rewrites the authoritative chat transcript. The
+external Memo REST contract cannot enumerate or delete these rows, so d4research reports that
+limitation explicitly and leaves retention management to that service.
 
 ---
 

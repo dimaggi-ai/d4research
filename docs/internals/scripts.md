@@ -2,6 +2,9 @@
 
 > For maintainers. Using d4research? See [docs/user](../user/).
 
+Production-style local builds and restarts use `scripts/deploy-local.sh`. Its readiness and systemd
+ownership rules are documented in the [local deployment runbook](../operations/local-deployment.md).
+
 ## First checkout
 
 d4research uses [Vite+](https://viteplus.dev/guide/). Install the global `vp` command, install

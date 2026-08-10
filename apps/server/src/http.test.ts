@@ -1,5 +1,9 @@
 import { NodeHttpServer } from "@effect/platform-node";
-import { AuthOrchestrationOperateScope, AuthSessionId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthSessionId,
+} from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,11 +15,14 @@ import {
   buildHandoffMemoryText,
   isBuildAssetPath,
   isLoopbackHostname,
+  makeMemoAttachmentRouteLayer,
   makeSkillsInstallRouteLayer,
   resolveDevRedirectUrl,
   readHandoffEnabledSkills,
   selectHandoffCompressionPlan,
 } from "./http.ts";
+import { MemoryConnectorError, type LocalMemoConnector } from "./mcp/toolkits/memory/connectors.ts";
+import { memoAttachmentSource } from "./memoAttachment.ts";
 import { PortableSkillsInventory, type InstallSkillResult } from "./skillsInventory.ts";
 
 const authenticatedRouteLayer = Layer.mock(EnvironmentAuth.EnvironmentAuth)({
@@ -304,6 +311,260 @@ describe("skill install HTTP boundary", () => {
         expect(response.status).toBe(500);
         expect(response.body).toEqual({ ok: false, message: "Could not install the skill." });
         expect(calls).toBe(0);
+      }),
+    );
+  });
+});
+
+const DOCUMENT_TOKEN = "memoattachment0123456789abcdef";
+
+const memoryConnector = (overrides: Partial<LocalMemoConnector> = {}): LocalMemoConnector => ({
+  search: () => Effect.succeed({ results: [] }),
+  add: () => Effect.succeed({ ok: true }),
+  stats: () => Effect.succeed({ status: "ok" }),
+  health: () => Effect.succeed({ status: "ok" }),
+  ...overrides,
+});
+
+const authLayerWithScopes = (
+  scopes: ReadonlyArray<typeof AuthOrchestrationOperateScope | typeof AuthOrchestrationReadScope>,
+) =>
+  Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+    authenticateHttpRequest: () =>
+      Effect.succeed({
+        sessionId: AuthSessionId.make("memo-route-test"),
+        subject: "memo-route-test",
+        method: "bearer-access-token",
+        scopes,
+      }),
+  });
+
+const missingCredentialLayer = Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+  authenticateHttpRequest: () =>
+    Effect.fail(new EnvironmentAuth.ServerAuthMissingCredentialError({})),
+});
+
+const withMemoAttachmentRoutes = <A, E, R>(
+  authLayer: Layer.Layer<EnvironmentAuth.EnvironmentAuth>,
+  makeConnector: () => Effect.Effect<LocalMemoConnector, MemoryConnectorError>,
+  run: Effect.Effect<A, E, R | HttpClient.HttpClient>,
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* HttpRouter.serve(makeMemoAttachmentRouteLayer(makeConnector), {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.provide(authLayer), Layer.build);
+      return yield* run;
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest));
+
+const memoRequest = (method: "GET" | "POST", path: string, body?: unknown) =>
+  Effect.gen(function* () {
+    const httpClient = yield* HttpClient.HttpClient;
+    const response = yield* method === "GET"
+      ? httpClient.get(path)
+      : httpClient.post(path, {
+          body: HttpBody.jsonUnsafe(body),
+        });
+    return {
+      status: response.status,
+      cacheControl: response.headers["cache-control"],
+      body: (yield* response.json) as Record<string, unknown>,
+    };
+  });
+
+describe("Memo attachment HTTP boundary", () => {
+  it.effect("requires operate scope before constructing the connector", () => {
+    let connectorCalls = 0;
+    return withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationReadScope]),
+      () => {
+        connectorCalls += 1;
+        return Effect.succeed(memoryConnector());
+      },
+      Effect.gen(function* () {
+        const response = yield* memoRequest("POST", "/api/memory/attachment", {
+          documentToken: DOCUMENT_TOKEN,
+          name: "large.txt",
+          content: "complete text",
+          project: "d4research",
+        });
+        expect(response.status).toBe(403);
+        expect(response.body).toMatchObject({
+          code: "insufficient_scope",
+          requiredScope: AuthOrchestrationOperateScope,
+        });
+        expect(connectorCalls).toBe(0);
+      }),
+    );
+  });
+
+  it.effect("rejects an unauthenticated request before constructing the connector", () => {
+    let connectorCalls = 0;
+    return withMemoAttachmentRoutes(
+      missingCredentialLayer,
+      () => {
+        connectorCalls += 1;
+        return Effect.succeed(memoryConnector());
+      },
+      Effect.gen(function* () {
+        const response = yield* memoRequest("GET", "/api/memory/attachments");
+        expect(response.status).toBe(401);
+        expect(response.body).toMatchObject({
+          code: "auth_invalid",
+          reason: "missing_credential",
+        });
+        expect(connectorCalls).toBe(0);
+      }),
+    );
+  });
+
+  it.effect("persists an attachment and returns a no-store success response", () => {
+    const added: Array<{ text: string; source?: string; project?: string }> = [];
+    return withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationOperateScope]),
+      () =>
+        Effect.succeed(
+          memoryConnector({
+            add: (text, source, project) => {
+              added.push({
+                text,
+                ...(source === undefined ? {} : { source }),
+                ...(project === undefined ? {} : { project }),
+              });
+              return Effect.succeed({ ok: true });
+            },
+          }),
+        ),
+      Effect.gen(function* () {
+        const response = yield* memoRequest("POST", "/api/memory/attachment", {
+          documentToken: DOCUMENT_TOKEN,
+          name: "large.txt",
+          content: "complete text",
+          project: "d4research",
+        });
+        expect(response).toMatchObject({
+          status: 200,
+          cacheControl: "no-store",
+          body: {
+            ok: true,
+            documentToken: DOCUMENT_TOKEN,
+            characterCount: 13,
+            chunkCount: 1,
+          },
+        });
+        expect(added).toHaveLength(2);
+        expect(added.every((entry) => entry.source === memoAttachmentSource(DOCUMENT_TOKEN))).toBe(
+          true,
+        );
+        expect(added.every((entry) => entry.project === "d4research")).toBe(true);
+      }),
+    );
+  });
+
+  it.effect("maps malformed JSON and invalid fields to non-retryable 400 responses", () => {
+    let connectorCalls = 0;
+    return withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationOperateScope]),
+      () => {
+        connectorCalls += 1;
+        return Effect.succeed(memoryConnector());
+      },
+      Effect.gen(function* () {
+        const httpClient = yield* HttpClient.HttpClient;
+        const malformed = yield* httpClient.post("/api/memory/attachment", {
+          body: HttpBody.text("{", "application/json"),
+        });
+        expect(malformed.status).toBe(400);
+        expect(malformed.headers["cache-control"]).toBe("no-store");
+        expect(yield* malformed.json).toEqual({ ok: false, message: "Malformed request body." });
+
+        const invalid = yield* memoRequest("POST", "/api/memory/attachment", {
+          documentToken: "invalid",
+          name: "large.txt",
+          content: "complete text",
+        });
+        expect(invalid.status).toBe(400);
+        expect(invalid.cacheControl).toBe("no-store");
+        expect(connectorCalls).toBe(0);
+      }),
+    );
+  });
+
+  it.effect("maps disabled Memo configuration to 409", () =>
+    withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationOperateScope]),
+      () =>
+        Effect.fail(
+          new MemoryConnectorError({
+            connector: "local",
+            operation: "configure",
+            message: "Local memory is disabled in Settings.",
+          }),
+        ),
+      Effect.gen(function* () {
+        const response = yield* memoRequest("GET", "/api/memory/attachments");
+        expect(response).toMatchObject({
+          status: 409,
+          cacheControl: "no-store",
+          body: { ok: false, message: "Local memory is disabled in Settings." },
+        });
+      }),
+    ),
+  );
+
+  it.effect("reports unsupported external lifecycle operations honestly", () =>
+    withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationOperateScope]),
+      () => Effect.succeed(memoryConnector()),
+      Effect.gen(function* () {
+        expect(yield* memoRequest("GET", "/api/memory/attachments")).toMatchObject({
+          status: 200,
+          body: { ok: true, backend: "memo-rest", supported: false, attachments: [] },
+        });
+        expect(
+          yield* memoRequest("POST", "/api/memory/attachment/delete", {
+            documentToken: DOCUMENT_TOKEN,
+          }),
+        ).toMatchObject({
+          status: 501,
+          body: { ok: false, supported: false },
+        });
+      }),
+    ),
+  );
+
+  it.effect("deletes by derived source and treats a retry as success", () => {
+    const sources: string[] = [];
+    let remaining = 2;
+    return withMemoAttachmentRoutes(
+      authLayerWithScopes([AuthOrchestrationOperateScope]),
+      () =>
+        Effect.succeed(
+          memoryConnector({
+            deleteBySource: (source) => {
+              sources.push(source);
+              const deleted = remaining;
+              remaining = 0;
+              return Effect.succeed({ deleted });
+            },
+          }),
+        ),
+      Effect.gen(function* () {
+        const body = { documentToken: DOCUMENT_TOKEN };
+        expect(yield* memoRequest("POST", "/api/memory/attachment/delete", body)).toMatchObject({
+          status: 200,
+          body: { ok: true, supported: true, deleted: 2 },
+        });
+        expect(yield* memoRequest("POST", "/api/memory/attachment/delete", body)).toMatchObject({
+          status: 200,
+          body: { ok: true, supported: true, deleted: 0 },
+        });
+        expect(sources).toEqual([
+          memoAttachmentSource(DOCUMENT_TOKEN),
+          memoAttachmentSource(DOCUMENT_TOKEN),
+        ]);
       }),
     );
   });

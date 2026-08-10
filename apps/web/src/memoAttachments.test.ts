@@ -18,14 +18,12 @@ function context(overrides: Partial<PastedContextDraft> = {}): PastedContextDraf
 }
 
 describe("Memo-backed composer attachments", () => {
-  it("uses content-bound stable FTS-safe document tokens", () => {
-    const first = memoAttachmentDocumentToken("paste_0123456789abcdef", "content");
-    expect(first).toBe(memoAttachmentDocumentToken("paste_0123456789abcdef", "content"));
+  it("uses identity-and-content-bound stable FTS-safe document tokens", () => {
+    const first = memoAttachmentDocumentToken("d4research\0trace.log", "content");
+    expect(first).toBe(memoAttachmentDocumentToken("d4research\0trace.log", "content"));
     expect(first).toMatch(/^memoattachment[a-z0-9]{16,80}$/);
-    expect(first).not.toBe(memoAttachmentDocumentToken("paste_fedcba9876543210", "content"));
-    expect(first).not.toBe(
-      memoAttachmentDocumentToken("paste_0123456789abcdef", "changed content"),
-    );
+    expect(first).not.toBe(memoAttachmentDocumentToken("other\0trace.log", "content"));
+    expect(first).not.toBe(memoAttachmentDocumentToken("d4research\0trace.log", "changed content"));
   });
 
   it("requires Memo for an in-memory full source or a combined overflow", () => {
@@ -70,10 +68,15 @@ describe("Memo-backed composer attachments", () => {
     });
 
     expect(persist).toHaveBeenCalledWith(
-      expect.objectContaining({ content: sourceContent, project: "d4research" }),
+      expect.objectContaining({
+        documentToken: memoAttachmentDocumentToken("d4research\0trace.log", sourceContent),
+        content: sourceContent,
+        project: "d4research",
+      }),
     );
     expect(prepared?.content).toContain("complete attachment is preserved in local Memo");
     expect(prepared?.content).toContain("When memory_search is available");
+    expect(prepared?.content).toContain("document was removed from Memo");
     expect(prepared?.content).toContain("If memory_search is unavailable");
     expect(prepared?.content).toContain('project="d4research"');
     expect(prepared?.content).toContain("chunk0001");
@@ -82,6 +85,30 @@ describe("Memo-backed composer attachments", () => {
     expect(prepared?.content).toContain("-TAIL");
     expect(prepared?.content.length).toBeLessThan(5_000);
     expect(prepared?.sourceContent).toBeUndefined();
+  });
+
+  it("persists identical attachments only once within one send", async () => {
+    const sourceContent = "same complete document";
+    const persist = vi.fn(async (input) => ({
+      documentToken: input.documentToken,
+      characterCount: input.content.length,
+      chunkCount: 1,
+    }));
+
+    const prepared = await replacePastedContextsWithMemoReferences({
+      contexts: [
+        context({ id: "paste_first", sourceContent }),
+        context({ id: "paste_second", sourceContent }),
+      ],
+      project: "d4research",
+      persist,
+    });
+
+    expect(persist).toHaveBeenCalledOnce();
+    expect(prepared).toHaveLength(2);
+    expect(prepared[0]?.id).toBe("paste_first");
+    expect(prepared[1]?.id).toBe("paste_second");
+    expect(prepared[0]?.content).toBe(prepared[1]?.content);
   });
 
   it("does not send a truncated persisted preview after a reload", async () => {

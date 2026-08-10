@@ -1,7 +1,11 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
-import type { LocalMemoConnector, MemoryConnectorError } from "./mcp/toolkits/memory/connectors.ts";
+import {
+  type LocalMemoConnector,
+  MemoryConnectorError,
+  type MemorySourceGroup,
+} from "./mcp/toolkits/memory/connectors.ts";
 
 export const MEMO_ATTACHMENT_MAX_CHARACTERS = 2_000_000;
 export const MEMO_ATTACHMENT_CHUNK_CHARACTERS = 16_000;
@@ -28,6 +32,26 @@ export interface PersistedMemoAttachment {
   readonly chunkCount: number;
 }
 
+export interface MemoAttachmentSummary {
+  readonly documentToken: string;
+  readonly name: string | null;
+  readonly project: string | null;
+  readonly characterCount: number | null;
+  readonly chunkCount: number | null;
+  readonly storedAt: string;
+  readonly incomplete: boolean;
+}
+
+export interface ListedMemoAttachments {
+  readonly supported: boolean;
+  readonly attachments: ReadonlyArray<MemoAttachmentSummary>;
+}
+
+export interface DeletedMemoAttachment {
+  readonly supported: boolean;
+  readonly deleted: number;
+}
+
 export class MemoAttachmentPersistenceError extends Data.TaggedError(
   "MemoAttachmentPersistenceError",
 )<{ readonly message: string }> {}
@@ -40,8 +64,60 @@ export function memoAttachmentChunkToken(documentToken: string, index: number): 
   return `${documentToken}chunk${String(index + 1).padStart(4, "0")}`;
 }
 
-function memoAttachmentSource(documentToken: string): string {
+export function memoAttachmentSource(documentToken: string): string {
   return `${MEMO_ATTACHMENT_SOURCE}:${documentToken}`;
+}
+
+export function parseMemoAttachmentDocumentToken(source: string): string | null {
+  const prefix = `${MEMO_ATTACHMENT_SOURCE}:`;
+  if (!source.startsWith(prefix)) return null;
+  const documentToken = source.slice(prefix.length);
+  return isMemoAttachmentDocumentToken(documentToken) ? documentToken : null;
+}
+
+function parseIntegerField(text: string, label: string): number | null {
+  const match = text.match(new RegExp(`^${label}: (\\d+)$`, "mu"));
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function parseDocumentName(text: string): string | null {
+  const match = text.match(/^Document name: (.+)$/mu);
+  if (!match?.[1]) return null;
+  try {
+    const value: unknown = JSON.parse(match[1]);
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseAttachmentSummary(group: MemorySourceGroup): MemoAttachmentSummary | null {
+  const documentToken = parseMemoAttachmentDocumentToken(group.source);
+  if (documentToken === null) return null;
+  const isManifest = group.latestText.startsWith("d4research Memo attachment manifest.");
+  const chunkCount = isManifest
+    ? parseIntegerField(group.latestText, "Chunk count")
+    : (() => {
+        const match = group.latestText.match(/^Chunk: \d+ of (\d+)$/mu);
+        return match?.[1] ? Number(match[1]) : null;
+      })();
+  const characterCount = isManifest
+    ? parseIntegerField(group.latestText, "Character count")
+    : (() => {
+        const match = group.latestText.match(/^Character range: \d+-\d+ of (\d+)$/mu);
+        return match?.[1] ? Number(match[1]) : null;
+      })();
+  return {
+    documentToken,
+    name: parseDocumentName(group.latestText),
+    project: group.project,
+    characterCount,
+    chunkCount,
+    storedAt: group.createdAt,
+    incomplete: !isManifest,
+  };
 }
 
 interface MemoAttachmentSlice {
@@ -212,3 +288,34 @@ export const persistMemoAttachment = Effect.fn("memory.persistComposerAttachment
     };
   },
 );
+
+export const listMemoAttachments = Effect.fn("memory.listComposerAttachments")(function* (
+  connector: LocalMemoConnector,
+): Effect.fn.Return<ListedMemoAttachments, MemoryConnectorError> {
+  if (connector.listBySourcePrefix === undefined) {
+    return { supported: false, attachments: [] };
+  }
+  const groups = yield* connector.listBySourcePrefix(`${MEMO_ATTACHMENT_SOURCE}:`);
+  return {
+    supported: true,
+    attachments: groups.map(parseAttachmentSummary).filter((attachment) => attachment !== null),
+  };
+});
+
+export const deleteMemoAttachment = Effect.fn("memory.deleteComposerAttachment")(function* (input: {
+  readonly connector: LocalMemoConnector;
+  readonly documentToken: string;
+}): Effect.fn.Return<DeletedMemoAttachment, MemoryConnectorError> {
+  if (!isMemoAttachmentDocumentToken(input.documentToken)) {
+    return yield* new MemoryConnectorError({
+      connector: "local",
+      operation: "deleteBySource",
+      message: "Invalid Memo attachment document token.",
+    });
+  }
+  if (input.connector.deleteBySource === undefined) {
+    return { supported: false, deleted: 0 };
+  }
+  const result = yield* input.connector.deleteBySource(memoAttachmentSource(input.documentToken));
+  return { supported: true, deleted: result.deleted };
+});

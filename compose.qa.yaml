@@ -5,7 +5,7 @@ services:
       dockerfile: ops/docker/Dockerfile.qa
     environment:
       HOME: /home/node
-      T3CODE_DEPLOY_READY_TIMEOUT_SECONDS: "20"
+      T3CODE_DEPLOY_READY_TIMEOUT_SECONDS: "180"
     healthcheck:
       test:
         [

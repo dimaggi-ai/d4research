@@ -24,6 +24,8 @@ import { ProjectionSnapshotQuery } from "../../../orchestration/Services/Project
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
 import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
+import type { MemoryEntry } from "../memory/connectors.ts";
+import { parseMemoAttachmentDocumentToken } from "../../../memoAttachment.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 import { ResearchDelegateError, type ResearchDelegateInput, ResearchToolkit } from "./tools.ts";
 
@@ -78,8 +80,40 @@ const SESSION_STOP_TIMEOUT_MILLIS = 10_000;
 const DELEGATE_WARMUP_TIMEOUT_MILLIS = 360_000;
 /** Cap what flows back into the orchestrator context per delegation. */
 export const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
+/** Keep automatic shared memory smaller than one full composer attachment chunk set. */
+export const RESEARCH_SHARED_MEMO_MAX_CHARS = 24_000;
 /** Delegates advise only; write operations must remain provider-gated. */
 export const DELEGATE_RUNTIME_MODE: RuntimeMode = "approval-required";
+
+function memoryEntrySource(entry: MemoryEntry): string | null {
+  if (typeof entry.metadata !== "object" || entry.metadata === null) return null;
+  const source = (entry.metadata as { readonly source?: unknown }).source;
+  return typeof source === "string" ? source : null;
+}
+
+function isComposerAttachmentMemory(entry: MemoryEntry): boolean {
+  const source = memoryEntrySource(entry);
+  return (
+    (source !== null && parseMemoAttachmentDocumentToken(source) !== null) ||
+    entry.text.startsWith("d4research Memo attachment chunk.") ||
+    entry.text.startsWith("d4research Memo attachment manifest.")
+  );
+}
+
+export function buildResearchSharedMemoContext(
+  entries: ReadonlyArray<MemoryEntry>,
+  maxCharacters = RESEARCH_SHARED_MEMO_MAX_CHARS,
+): string | null {
+  const joined = entries
+    .filter((entry) => !isComposerAttachmentMemory(entry))
+    .map((entry) => entry.text)
+    .join("\n---\n");
+  if (joined.length === 0) return null;
+  if (joined.length <= maxCharacters) return joined;
+  const marker = `\n[Shared Memo context truncated at ${maxCharacters.toLocaleString()} characters.]`;
+  const available = Math.max(0, maxCharacters - marker.length);
+  return `${joined.slice(0, available)}${marker}`;
+}
 
 /**
  * Headless delegates cannot surface an approval prompt to the orchestrating
@@ -396,8 +430,7 @@ export const makeResearchDelegateHandler =
         sharedContext = yield* Effect.gen(function* () {
           const connector = yield* makeConfiguredMemoryConnector();
           const found = yield* connector.search(input.prompt, 5, memoProject);
-          if (found.results.length === 0) return null;
-          return found.results.map((entry) => entry.text).join("\n---\n");
+          return buildResearchSharedMemoContext(found.results);
         }).pipe(Effect.orElseSucceed(() => null));
       }
 

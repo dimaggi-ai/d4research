@@ -2,7 +2,12 @@ import * as NodeSqlite from "node:sqlite";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
-import { MemoryConnectorError, type LocalMemoConnector, type MemoryEntry } from "./connectors.ts";
+import {
+  MemoryConnectorError,
+  type LocalMemoConnector,
+  type MemoryEntry,
+  type MemorySourceGroup,
+} from "./connectors.ts";
 
 /**
  * The zero-dependency local shared-memory store: one SQLite file inside the
@@ -21,6 +26,8 @@ CREATE TABLE IF NOT EXISTS memories (
   project TEXT,
   created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS memories_source_idx ON memories(source);
+CREATE INDEX IF NOT EXISTS memories_project_idx ON memories(project);
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
   text,
   content='memories',
@@ -63,6 +70,14 @@ interface MemoryRow {
   readonly project: string | null;
   readonly created_at: string;
   readonly score?: number | null;
+}
+
+interface MemorySourceGroupRow {
+  readonly source: string;
+  readonly project: string | null;
+  readonly row_count: number | bigint;
+  readonly created_at: string;
+  readonly latest_text: string;
 }
 
 const rowToEntry = (row: MemoryRow): MemoryEntry => ({
@@ -162,6 +177,64 @@ export function makeBuiltinMemoryConnector(dbPath: string): LocalMemoConnector {
           backend: BUILTIN_MEMORY_BACKEND,
           count: Number(row?.count ?? 0),
         };
+      }),
+    deleteBySource: (source, project) =>
+      withDb("deleteBySource", (db) => {
+        const result =
+          project !== undefined && project.length > 0
+            ? db
+                .prepare("DELETE FROM memories WHERE source = ? AND project = ?")
+                .run(source, project)
+            : db.prepare("DELETE FROM memories WHERE source = ?").run(source);
+        return { deleted: Number(result.changes) };
+      }),
+    listBySourcePrefix: (prefix, project) =>
+      withDb("listBySourcePrefix", (db) => {
+        const lastCharacter = prefix.charCodeAt(prefix.length - 1);
+        if (prefix.length === 0 || lastCharacter === 0xffff) {
+          throw new Error("Memory source prefix cannot define an indexed range.");
+        }
+        const prefixEnd = `${prefix.slice(0, -1)}${String.fromCharCode(lastCharacter + 1)}`;
+        const rows = (project !== undefined && project.length > 0
+          ? db
+              .prepare(
+                `SELECT grouped.source, grouped.project, grouped.row_count, grouped.created_at,
+                        latest.text AS latest_text
+                   FROM (
+                     SELECT source, project, COUNT(*) AS row_count, MIN(created_at) AS created_at,
+                            MAX(id) AS latest_id
+                       FROM memories
+                      WHERE source >= ? AND source < ? AND project = ?
+                      GROUP BY source, project
+                   ) grouped
+                   JOIN memories latest ON latest.id = grouped.latest_id
+                  ORDER BY grouped.created_at DESC`,
+              )
+              .all(prefix, prefixEnd, project)
+          : db
+              .prepare(
+                `SELECT grouped.source, grouped.project, grouped.row_count, grouped.created_at,
+                        latest.text AS latest_text
+                   FROM (
+                     SELECT source, project, COUNT(*) AS row_count, MIN(created_at) AS created_at,
+                            MAX(id) AS latest_id
+                       FROM memories
+                      WHERE source >= ? AND source < ?
+                      GROUP BY source, project
+                   ) grouped
+                   JOIN memories latest ON latest.id = grouped.latest_id
+                  ORDER BY grouped.created_at DESC`,
+              )
+              .all(prefix, prefixEnd)) as unknown as ReadonlyArray<MemorySourceGroupRow>;
+        return rows.map(
+          (row): MemorySourceGroup => ({
+            source: row.source,
+            project: row.project,
+            rowCount: Number(row.row_count),
+            createdAt: row.created_at,
+            latestText: row.latest_text,
+          }),
+        );
       }),
   };
 }

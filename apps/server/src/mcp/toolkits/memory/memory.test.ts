@@ -60,4 +60,11 @@ describe("local Memo connector", () => {
       ),
     );
   });
+
+  it.effect("never treats a non-object add response as persisted", () =>
+    Effect.gen(function* () {
+      const connector = yield* makeLocalMemoConnector({ baseUrl: "http://127.0.0.1:8099" });
+      expect(yield* connector.add("Remember this", "t3code", "project-a")).toEqual({ ok: false });
+    }).pipe(Effect.provide(fakeHttpLayer(() => null))),
+  );
 });

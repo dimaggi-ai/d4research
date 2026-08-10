@@ -43,12 +43,14 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Server updates](./internals/server-updates.md)
 - [Resource telemetry](./internals/resource-telemetry.md)
 - [Environment auth](./internals/environment-auth.md)
+- [T3 Connect auth-flow diagram](./internals/t3-code-connect-auth-flow.html)
 - [T3 Connect](./internals/t3-connect.md)
 - [CI gates](./internals/ci.md)
 
 ### Runbooks
 
 - [Docker QA stack](./operations/docker-qa.md)
+- [Local deployment](./operations/local-deployment.md)
 - [Release](./operations/release.md)
 - [Observability](./operations/observability.md)
 - [Relay observability](./operations/relay-observability.md)

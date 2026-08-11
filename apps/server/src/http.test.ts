@@ -13,10 +13,12 @@ import { describe } from "vite-plus/test";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
   buildHandoffMemoryText,
+  isValidHandoffMemoryText,
   isBuildAssetPath,
   isLoopbackHostname,
   makeMemoAttachmentRouteLayer,
   makeSkillsInstallRouteLayer,
+  MAX_HANDOFF_MEMORY_CHARACTERS,
   resolveDevRedirectUrl,
   readHandoffEnabledSkills,
   selectHandoffCompressionPlan,
@@ -193,6 +195,20 @@ describe("handoff prepare", () => {
     const text = buildHandoffMemoryText({ summary: "Just the summary." });
     expect(text).toContain("d4research provider handoff.");
     expect(text).toContain("Just the summary.");
+  });
+
+  it("accepts a complete bounded research handoff record", () => {
+    const text = buildHandoffMemoryText({
+      summary: "x".repeat(60_000),
+      sourceThreadId: "thread-source",
+      sourceThreadTitle: "Research thread",
+      target: { instanceId: "codex", model: "gpt-5.6" },
+      enabledSkills: Array.from({ length: 12 }, (_, index) => `skill-${index}`),
+    });
+
+    expect(isValidHandoffMemoryText(text)).toBe(true);
+    expect(text.length).toBeGreaterThan(20_000);
+    expect(isValidHandoffMemoryText("x".repeat(MAX_HANDOFF_MEMORY_CHARACTERS + 1))).toBe(false);
   });
 });
 

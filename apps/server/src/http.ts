@@ -86,6 +86,16 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
+/**
+ * The prepare endpoint accepts a 60k-character transcript. A persisted
+ * handoff adds bounded thread, target, and skill metadata, so the fallback
+ * Memo endpoint must accept the complete resulting record as well.
+ */
+export const MAX_HANDOFF_MEMORY_CHARACTERS = 64_000;
+const MAX_HANDOFF_TRANSCRIPT_CHARACTERS = 60_000;
+
+export const isValidHandoffMemoryText = (text: string): boolean =>
+  text.length > 0 && text.length <= MAX_HANDOFF_MEMORY_CHARACTERS;
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
@@ -528,9 +538,12 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
       const body = cast<unknown, { text?: unknown; project?: unknown }>(yield* request.json);
       const text = typeof body.text === "string" ? body.text.trim() : "";
       const project = typeof body.project === "string" ? body.project.trim() : undefined;
-      if (!text || text.length > 20_000) {
+      if (!isValidHandoffMemoryText(text)) {
         return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Handoff memory must contain 1–20,000 characters." },
+          {
+            ok: false,
+            message: `Handoff memory must contain 1–${MAX_HANDOFF_MEMORY_CHARACTERS.toLocaleString()} characters.`,
+          },
           { status: 400 },
         );
       }
@@ -935,9 +948,12 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
     return yield* Effect.gen(function* () {
       const body = cast<unknown, HandoffPrepareBody>(yield* request.json);
       const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
-      if (!transcript || transcript.length > 60_000) {
+      if (!transcript || transcript.length > MAX_HANDOFF_TRANSCRIPT_CHARACTERS) {
         return HttpServerResponse.jsonUnsafe(
-          { ok: false, message: "Handoff transcript must contain 1–60,000 characters." },
+          {
+            ok: false,
+            message: `Handoff transcript must contain 1–${MAX_HANDOFF_TRANSCRIPT_CHARACTERS.toLocaleString()} characters.`,
+          },
           { status: 400 },
         );
       }

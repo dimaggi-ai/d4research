@@ -1314,7 +1314,9 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
-  const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
+  const autoOpenPlanSidebar = useClientSettings(
+    (clientSettings) => clientSettings.autoOpenPlanSidebar,
+  );
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   // Granular store selectors — avoid subscribing to prompt changes.
@@ -2076,10 +2078,7 @@ function ChatViewContent(props: ChatViewProps) {
             : "Client and server versions differ",
         description:
           updateInProgress || updateFailed ? (
-            <ServerUpdateProgress
-              fromVersion={serverUpdateState.fromVersion}
-              state={serverUpdateState}
-            />
+            <ServerUpdateProgress state={serverUpdateState} />
           ) : versionMismatch ? (
             <>
               Client {versionMismatch.clientVersion} is connected to {versionMismatchServerLabel}{" "}
@@ -6404,15 +6403,8 @@ function ChatViewContent(props: ChatViewProps) {
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
-      systemMonitorOpen={rightPanelOpen && activeRightPanelKind === "system"}
-      tasksOpen={planSidebarOpen}
-      tasksLabel={planSidebarLabel}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      onOpenSystemMonitor={() => {
-        if (activeThreadRef) useRightPanelStore.getState().toggle(activeThreadRef, "system");
-      }}
-      onOpenFiles={addFilesSurface}
-      onToggleTasks={togglePlanSidebar}
+      liveAgentCount={0}
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -6551,13 +6543,18 @@ function ChatViewContent(props: ChatViewProps) {
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
+            isServerThread={isServerThread}
+            changeRequestState={activeThreadPr?.state ?? null}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
+            activeProjectFaviconPath={activeProject?.faviconPath ?? null}
+            openInCwd={gitCwd}
             activeProjectScripts={activeProject?.scripts}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
             }
             keybindings={keybindings}
+            availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
@@ -6825,6 +6822,7 @@ function ChatViewContent(props: ChatViewProps) {
                               <BranchToolbar
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
+                                showGitControls
                                 {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                 onEnvModeChange={onEnvModeChange}
                                 startFromOrigin={startFromOrigin}
@@ -6960,9 +6958,15 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddPullRequest={() => undefined}
+          onAddAgents={() => undefined}
           browserAvailable={isPreviewSupportedInRuntime()}
+          terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
+          pullRequestAvailable={false}
+          agentsAvailable={false}
+          liveAgentCount={0}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -6987,9 +6991,15 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddPullRequest={() => undefined}
+            onAddAgents={() => undefined}
             browserAvailable={isPreviewSupportedInRuntime()}
+            terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
+            pullRequestAvailable={false}
+            agentsAvailable={false}
+            liveAgentCount={0}
           >
             {rightPanelContent}
           </RightPanelTabs>

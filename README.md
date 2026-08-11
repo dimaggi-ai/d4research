@@ -228,6 +228,13 @@ docs/           User guides, internals, and runbooks
 - [Architecture overview](./docs/internals/overview.md)
 - [d4research scope](./docs/internals/d4research.md)
 - [Docker QA stack](./docs/operations/docker-qa.md)
+- [Keyboard shortcuts](./docs/user/keybindings.md)
+- [Customize a project icon](./docs/user/project-settings.md)
+- [Remote access from a phone or another machine](./docs/user/remote-access.md)
+- [Keeping app and server in sync](./docs/user/updating.md)
+- [Source control integrations](./docs/user/source-control.md)
+- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
+- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
 
 ## Contributing
 

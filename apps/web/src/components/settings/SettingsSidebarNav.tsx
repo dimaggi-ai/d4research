@@ -12,7 +12,6 @@ import {
   ArrowLeftIcon,
   BotIcon,
   BracesIcon,
-  FlaskConicalIcon,
   GitBranchIcon,
   KeyboardIcon,
   Link2Icon,
@@ -60,7 +59,6 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/connections": Link2Icon,
   "/settings/tool-guard": ShieldCheckIcon,
   "/settings/skills": SparklesIcon,
-  "/settings/beta": FlaskConicalIcon,
   "/settings/archived": ArchiveIcon,
 };
 

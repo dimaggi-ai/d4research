@@ -1,37 +1,13 @@
-import {
-  ChevronDownIcon,
-  FilesIcon,
-  ListTodoIcon,
-  Maximize2Icon,
-  Minimize2Icon,
-  MonitorCogIcon,
-  PanelBottomIcon,
-  PanelRightIcon,
-} from "lucide-react";
+import { Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
 import { memo } from "react";
 
-import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-interface PanelLayoutControlsProps {
-  terminalAvailable: boolean;
-  terminalOpen: boolean;
-  terminalShortcutLabel: string | null;
-  rightPanelAvailable: boolean;
-  rightPanelOpen: boolean;
-  systemMonitorOpen: boolean;
-  tasksOpen: boolean;
-  tasksLabel: string;
-  rightPanelShortcutLabel: string | null;
-  onOpenSystemMonitor: () => void;
-  onOpenFiles: () => void;
-  onToggleTasks: () => void;
-  onToggleTerminal: () => void;
-  onToggleRightPanel: () => void;
-}
-
+/**
+ * Retained for consumers that offer the d4research local-tools menu alongside
+ * the compact upstream panel controls.
+ */
 export function getLocalToolsMenuItems(input: {
   readonly systemMonitorOpen: boolean;
   readonly filesAvailable: boolean;
@@ -53,67 +29,38 @@ export function getLocalToolsMenuItems(input: {
   ] as const;
 }
 
+interface PanelLayoutControlsProps {
+  showTerminalControl?: boolean;
+  terminalAvailable: boolean;
+  terminalOpen: boolean;
+  terminalShortcutLabel: string | null;
+  rightPanelAvailable: boolean;
+  rightPanelOpen: boolean;
+  rightPanelShortcutLabel: string | null;
+  /** Running + waiting subagents in this thread; badges the right panel toggle. */
+  liveAgentCount: number;
+  onToggleTerminal: () => void;
+  onToggleRightPanel: () => void;
+}
+
 export const PanelLayoutControls = memo(function PanelLayoutControls({
+  showTerminalControl = true,
   terminalAvailable,
   terminalOpen,
   terminalShortcutLabel,
   rightPanelAvailable,
   rightPanelOpen,
-  systemMonitorOpen,
-  tasksOpen,
-  tasksLabel,
   rightPanelShortcutLabel,
-  onOpenSystemMonitor,
-  onOpenFiles,
-  onToggleTasks,
+  liveAgentCount,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  const [monitorItem, filesItem, tasksItem] = getLocalToolsMenuItems({
-    systemMonitorOpen,
-    filesAvailable: rightPanelAvailable,
-    tasksOpen,
-    tasksLabel,
-  });
   return (
     <div
-      className="flex h-full shrink-0 items-center gap-3 [-webkit-app-region:no-drag]"
+      className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
-      <div className="flex items-center gap-2" data-system-controls>
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                className="shrink-0 gap-1.5 px-2 [-webkit-app-region:no-drag]"
-                aria-label="Open local tools"
-                variant="outline"
-                size="xs"
-              />
-            }
-          >
-            <MonitorCogIcon className="size-3.5" />
-            <span className="hidden sm:inline">Monitor</span>
-            <ChevronDownIcon className="size-3" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuItem onClick={onOpenSystemMonitor}>
-              <MonitorCogIcon className="size-4" />
-              {monitorItem.label}
-            </MenuItem>
-            <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
-              <FilesIcon className="size-4" />
-              {filesItem.label}
-            </MenuItem>
-            <MenuItem onClick={onToggleTasks}>
-              <ListTodoIcon className="size-4" />
-              {tasksItem.label}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
-      </div>
-      <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
-      <div className="flex items-center gap-2" data-panel-toggle-controls>
+      {showTerminalControl ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -136,29 +83,45 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               : "Terminal drawer is unavailable"}
           </TooltipPopup>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0 [-webkit-app-region:no-drag]"
-                pressed={rightPanelOpen}
-                onPressedChange={onToggleRightPanel}
-                aria-label="Toggle right panel"
-                variant="ghost"
-                size="sm"
-                disabled={!rightPanelAvailable}
-              >
-                <PanelRightIcon className="size-3.5" />
-              </Toggle>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {rightPanelAvailable
-              ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}`
-              : "Right panel is unavailable"}
-          </TooltipPopup>
-        </Tooltip>
-      </div>
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              pressed={rightPanelOpen}
+              onPressedChange={onToggleRightPanel}
+              aria-label={
+                liveAgentCount > 0
+                  ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+                  : "Toggle right panel"
+              }
+              variant="ghost"
+              size="sm"
+              disabled={!rightPanelAvailable}
+            >
+              <PanelRightIcon className="size-3.5" />
+              {liveAgentCount > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+                >
+                  {liveAgentCount}
+                </span>
+              ) : null}
+            </Toggle>
+          }
+        />
+        <TooltipPopup side="bottom">
+          {rightPanelAvailable
+            ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
+                liveAgentCount > 0
+                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+                  : ""
+              }`
+            : "Right panel is unavailable"}
+        </TooltipPopup>
+      </Tooltip>
     </div>
   );
 });

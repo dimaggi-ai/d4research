@@ -9,7 +9,6 @@ export type SettingsPath =
   | "/settings/connections"
   | "/settings/tool-guard"
   | "/settings/skills"
-  | "/settings/beta"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -34,7 +33,6 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/connections": "Connections",
   "/settings/tool-guard": "Tool Guard",
   "/settings/skills": "Skills",
-  "/settings/beta": "Beta",
   "/settings/archived": "Archive",
 };
 
@@ -121,11 +119,6 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "provider-update-checks",
     title: "Provider update checks",
-    to: "/settings/general",
-  },
-  {
-    id: "auto-open-task-panel",
-    title: "Auto-open task panel",
     to: "/settings/general",
   },
   {
@@ -256,17 +249,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",
-  },
-  {
-    id: "sidebar-v2",
-    title: "Sidebar v2",
-    to: "/settings/beta",
-  },
-  {
-    id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
-    to: "/settings/beta",
-    targetId: "sidebar-v2",
   },
   {
     id: "archive",

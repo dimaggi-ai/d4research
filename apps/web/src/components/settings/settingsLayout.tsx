@@ -1,4 +1,4 @@
-import { Undo2Icon } from "lucide-react";
+import { InfoIcon, Undo2Icon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -83,6 +83,28 @@ function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) 
   return targetRef;
 }
 
+/** Info affordance explaining how a setting interacts with the shared background policy. */
+export function PolicyTooltip({ children }: { readonly children: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+            aria-label="Background policy details"
+          >
+            <InfoIcon className="size-3.5" />
+          </button>
+        }
+      />
+      <TooltipPopup side="top" className="max-w-72">
+        {children}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
 /** Re-render every `intervalMs`; return a stable timestamp snapshot for render-time relative labels. */
 export function useRelativeTimeTick(intervalMs = 1_000) {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -138,7 +160,7 @@ export function SettingsRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
-  description: ReactNode;
+  description?: ReactNode;
   status?: ReactNode;
   resetAction?: ReactNode;
   control?: ReactNode;
@@ -161,9 +183,11 @@ export function SettingsRow({
               {resetAction}
             </span>
           </div>
-          <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/80">
-            {description}
-          </p>
+          {description ? (
+            <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/80">
+              {description}
+            </p>
+          ) : null}
           {status ? <div className="pt-0.5 text-xs text-muted-foreground">{status}</div> : null}
         </div>
         {control ? (
@@ -177,7 +201,15 @@ export function SettingsRow({
   );
 }
 
-export function SettingResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+export function SettingResetButton({
+  label,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -186,6 +218,7 @@ export function SettingResetButton({ label, onClick }: { label: string; onClick:
             size="icon-xs"
             variant="ghost"
             aria-label={`Reset ${label} to default`}
+            disabled={disabled}
             className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();

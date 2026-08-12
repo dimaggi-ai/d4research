@@ -260,8 +260,8 @@ Snapshots may also carry `usage: ServerProviderUsage` — plan type, rolling usa
 - **Codex** — `CodexProvider.ts` maps the app-server rate-limit report (`mapCodexRateLimits`),
   including plan detection; an unauthenticated account reports `support: "unauthenticated"`.
 
-The web System panel renders supported providers in its **Usage limits** section
-(`UsageLimitsMonitor` in `apps/web/src/components/SystemPanel.tsx`).
+The normalized snapshot remains available to provider-readiness and orchestration consumers. The
+System Monitor no longer renders provider or thread usage; it is reserved for environment health.
 
 ## Ollama models through the Claude driver
 

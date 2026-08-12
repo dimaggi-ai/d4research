@@ -160,7 +160,9 @@ Optional local speech-to-text, summarization, and text-to-speech for voice-drive
 
 ### System Monitor
 
-Mission Control panel for environment health. Requires the local `sysmon` service.
+Open **System Monitor** from the lower-left navigation to inspect environment health, including
+CPU, memory, GPU, disks, services, processes, and Tool Guard status. Usage and context data stay in
+the dedicated Usage page and thread context meter. Requires the local `sysmon` service.
 
 ### Composer Additions
 

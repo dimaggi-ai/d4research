@@ -1,4 +1,5 @@
 import {
+  ActivityIcon,
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
@@ -129,9 +130,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     select: (location) =>
       location.pathname === "/usage"
         ? "usage"
-        : location.pathname === "/pull-requests"
-          ? "pull-requests"
-          : null,
+        : location.pathname === "/system"
+          ? "system"
+          : location.pathname === "/pull-requests"
+            ? "pull-requests"
+            : null,
   });
   const primaryEnvironment = usePrimaryEnvironment();
   const pullRequestsSupported =
@@ -156,6 +159,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     }
     void navigate({ to: "/usage" });
   }, [isMobile, navigate, setOpenMobile]);
+
+  const handleSystemClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/system" });
+  }, [closeMobileSidebar, navigate]);
 
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
@@ -198,6 +206,21 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
             <SidebarMenuButton onClick={handleUsageClick}>
               <ChartNoAxesColumnIcon />
               <span>Usage</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
+        {currentFooterPage === "system" ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={handleBackClick}>
+              <ArrowLeftIcon />
+              <span>Back</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ) : (
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={handleSystemClick}>
+              <ActivityIcon />
+              <span>System Monitor</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}

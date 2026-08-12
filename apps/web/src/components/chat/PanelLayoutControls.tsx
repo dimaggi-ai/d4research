@@ -4,9 +4,9 @@ import {
   ListTodoIcon,
   Maximize2Icon,
   Minimize2Icon,
-  MonitorCogIcon,
   PanelBottomIcon,
   PanelRightIcon,
+  WrenchIcon,
 } from "lucide-react";
 import { memo } from "react";
 
@@ -16,17 +16,11 @@ import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function getLocalToolsMenuItems(input: {
-  readonly systemMonitorOpen: boolean;
   readonly filesAvailable: boolean;
   readonly tasksOpen: boolean;
   readonly tasksLabel: string;
 }) {
   return [
-    {
-      id: "monitor",
-      label: input.systemMonitorOpen ? "Close Monitor" : "Monitor",
-      disabled: false,
-    },
     { id: "files", label: "Files", disabled: !input.filesAvailable },
     {
       id: "tasks",
@@ -45,12 +39,10 @@ interface PanelLayoutControlsProps {
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
   rightPanelShortcutLabel: string | null;
-  systemMonitorOpen?: boolean;
   tasksOpen?: boolean;
   tasksLabel?: string;
   /** Running + waiting subagents in this thread; badges the right panel toggle. */
   liveAgentCount: number;
-  onOpenSystemMonitor?: () => void;
   onOpenFiles?: () => void;
   onToggleTasks?: () => void;
   onToggleTerminal: () => void;
@@ -66,18 +58,15 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelAvailable,
   rightPanelOpen,
   rightPanelShortcutLabel,
-  systemMonitorOpen = false,
   tasksOpen = false,
   tasksLabel = "Tasks",
   liveAgentCount,
-  onOpenSystemMonitor = () => undefined,
   onOpenFiles = () => undefined,
   onToggleTasks = () => undefined,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  const [monitorItem, filesItem, tasksItem] = getLocalToolsMenuItems({
-    systemMonitorOpen,
+  const [filesItem, tasksItem] = getLocalToolsMenuItems({
     filesAvailable: rightPanelAvailable,
     tasksOpen,
     tasksLabel,
@@ -93,20 +82,16 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             render={
               <Button
                 className="shrink-0 gap-1 px-1.5 [-webkit-app-region:no-drag]"
-                aria-label="Open local tools"
+                aria-label="Open thread tools"
                 variant="ghost"
                 size="xs"
               />
             }
           >
-            <MonitorCogIcon className="size-3.5" />
+            <WrenchIcon className="size-3.5" />
             <ChevronDownIcon className="size-3" />
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem onClick={onOpenSystemMonitor}>
-              <MonitorCogIcon className="size-4" />
-              {monitorItem.label}
-            </MenuItem>
             <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
               <FilesIcon className="size-4" />
               {filesItem.label}

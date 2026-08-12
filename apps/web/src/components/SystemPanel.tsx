@@ -1,30 +1,16 @@
 import {
   Activity,
-  CoinsIcon,
   Cpu,
-  Gauge,
   HardDrive,
   MemoryStick,
   RefreshCw,
   Server,
   ShieldCheck,
 } from "lucide-react";
-import { useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  ServerProvider,
-  ThreadId,
-  ThreadTurnUsageRow,
-} from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "./ui/button";
 import { cn } from "~/lib/utils";
-import type { ContextWindowSnapshot } from "~/lib/contextWindow";
-import { formatContextWindowTokens } from "~/lib/contextWindow";
-import { primaryServerProvidersAtom } from "~/state/server";
-import { orchestrationEnvironment } from "~/state/orchestration";
-import { useEnvironmentQuery } from "~/state/query";
 
 export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
 const SYSTEM_MONITOR_URL = "/api/system-monitor";
@@ -98,263 +84,6 @@ function ToolGuardMonitor({ snapshot }: { snapshot: ToolGuardSnapshot | null }) 
   );
 }
 
-function formatUsageReset(resetsAt: string | null): string {
-  if (!resetsAt) return "Reset time unavailable";
-  const reset = new Date(resetsAt);
-  return Number.isNaN(reset.getTime())
-    ? "Reset time unavailable"
-    : `Resets ${reset.toLocaleString()}`;
-}
-
-function UsageLimitsMonitor({ providers }: { providers: ReadonlyArray<ServerProvider> }) {
-  const supportedProviders = providers.filter(
-    (provider) => provider.usage?.support === "supported",
-  );
-  if (supportedProviders.length === 0) return null;
-
-  return (
-    <section className="mb-5 rounded-lg border border-border/70 p-3">
-      <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Gauge className="size-3.5" /> Usage limits
-      </div>
-      <div className="space-y-3">
-        {supportedProviders.map((provider) => {
-          const usage = provider.usage;
-          if (!usage || usage.support !== "supported") return null;
-          return (
-            <div key={provider.instanceId} className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-3 text-xs">
-                <span className="font-medium text-foreground">
-                  {provider.displayName ?? provider.driver}
-                </span>
-                {usage.planType ? (
-                  <span className="text-muted-foreground">{usage.planType}</span>
-                ) : null}
-              </div>
-              {usage.windows.map((window) => (
-                <div key={window.id} className="text-xs text-muted-foreground">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span>{window.label}</span>
-                    <span className="tabular-nums">
-                      {window.utilizationPercent === null ? "—" : `${window.utilizationPercent}%`}
-                    </span>
-                  </div>
-                  <div className="text-[11px]">{formatUsageReset(window.resetsAt)}</div>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
-function TokenUsageMonitor({ usage }: { usage: ContextWindowSnapshot }) {
-  const usedPct = usage.usedPercentage ?? 0;
-  return (
-    <section className="mb-5 rounded-lg border border-border/70 p-3">
-      <div className="mb-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-2 font-medium">
-          <CoinsIcon className="size-3.5" /> Token Usage
-        </span>
-        {(usage.totalCostUsd ?? 0) > 0 ? (
-          <span className="font-medium tabular-nums">{formatCost(usage.totalCostUsd!)}</span>
-        ) : null}
-      </div>
-      {usage.maxTokens !== null ? (
-        <Meter
-          label="Context window"
-          value={usedPct}
-          detail={`${formatContextWindowTokens(usage.usedTokens)} / ${formatContextWindowTokens(usage.maxTokens ?? null)}`}
-        />
-      ) : (
-        <div className="text-xs text-muted-foreground">
-          {formatContextWindowTokens(usage.usedTokens)} tokens used
-        </div>
-      )}
-      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {(usage.inputTokens ?? 0) > 0 ? (
-          <span>Input: {formatContextWindowTokens(usage.inputTokens ?? null)}</span>
-        ) : null}
-        {(usage.cachedInputTokens ?? 0) > 0 ? (
-          <span>Cached: {formatContextWindowTokens(usage.cachedInputTokens ?? null)}</span>
-        ) : null}
-        {(usage.outputTokens ?? 0) > 0 ? (
-          <span>Output: {formatContextWindowTokens(usage.outputTokens ?? null)}</span>
-        ) : null}
-        {(usage.reasoningOutputTokens ?? 0) > 0 ? (
-          <span>Reasoning: {formatContextWindowTokens(usage.reasoningOutputTokens ?? null)}</span>
-        ) : null}
-        {(usage.toolUses ?? 0) > 0 ? <span>Tool uses: {usage.toolUses}</span> : null}
-        {(usage.durationMs ?? 0) > 0 ? (
-          <span>Duration: {Math.round((usage.durationMs ?? 0) / 1000)}s</span>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-interface ThreadTurnUsageTotals {
-  readonly inputTokens: number;
-  readonly cachedInputTokens: number;
-  readonly outputTokens: number;
-  readonly reasoningOutputTokens: number;
-  readonly totalProcessedTokens: number;
-  readonly toolUses: number;
-  readonly durationMs: number;
-  readonly totalCostUsd: number;
-}
-
-export function sortThreadTurnUsageRows(
-  rows: ReadonlyArray<ThreadTurnUsageRow>,
-): ReadonlyArray<ThreadTurnUsageRow> {
-  return [...rows].toSorted(
-    (left, right) =>
-      (left.startedAt ?? left.updatedAt).localeCompare(right.startedAt ?? right.updatedAt) ||
-      left.updatedAt.localeCompare(right.updatedAt) ||
-      left.turnId.localeCompare(right.turnId),
-  );
-}
-
-export function sumThreadTurnUsageRows(
-  rows: ReadonlyArray<ThreadTurnUsageRow>,
-): ThreadTurnUsageTotals {
-  return rows.reduce<ThreadTurnUsageTotals>(
-    (totals, row) => ({
-      inputTokens: totals.inputTokens + (row.inputTokens ?? 0),
-      cachedInputTokens: totals.cachedInputTokens + (row.cachedInputTokens ?? 0),
-      outputTokens: totals.outputTokens + (row.outputTokens ?? 0),
-      reasoningOutputTokens: totals.reasoningOutputTokens + (row.reasoningOutputTokens ?? 0),
-      totalProcessedTokens: totals.totalProcessedTokens + (row.totalProcessedTokens ?? 0),
-      toolUses: totals.toolUses + (row.toolUses ?? 0),
-      durationMs: totals.durationMs + (row.durationMs ?? 0),
-      totalCostUsd: totals.totalCostUsd + (row.totalCostUsd ?? 0),
-    }),
-    {
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
-      reasoningOutputTokens: 0,
-      totalProcessedTokens: 0,
-      toolUses: 0,
-      durationMs: 0,
-      totalCostUsd: 0,
-    },
-  );
-}
-
-function formatDuration(durationMs: number | null): string {
-  if (durationMs === null) return "—";
-  if (durationMs < 1_000) return `${durationMs}ms`;
-  return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
-}
-
-function formatTokenCount(value: number | null): string {
-  return value === null ? "—" : formatContextWindowTokens(value);
-}
-
-function ThreadTurnUsageMonitor({
-  rows,
-  error,
-  isPending,
-}: {
-  rows: ReadonlyArray<ThreadTurnUsageRow>;
-  error: string | null;
-  isPending: boolean;
-}) {
-  const orderedRows = useMemo(() => sortThreadTurnUsageRows(rows), [rows]);
-  const totals = useMemo(() => sumThreadTurnUsageRows(orderedRows), [orderedRows]);
-
-  return (
-    <section className="mb-5 rounded-lg border border-border/70 p-3">
-      <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <CoinsIcon className="size-3.5" /> Per-turn token usage
-      </div>
-      {isPending && orderedRows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Loading token usage...</p>
-      ) : error ? (
-        <p className="text-xs text-amber-600">Token usage could not be loaded.</p>
-      ) : orderedRows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No token usage recorded for this thread yet.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border/60">
-          <table className="w-full min-w-[780px] text-left text-xs tabular-nums">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="px-2 py-1.5 font-medium">Turn</th>
-                <th className="px-2 py-1.5 font-medium">Model</th>
-                <th className="px-2 py-1.5 text-right font-medium">Input</th>
-                <th className="px-2 py-1.5 text-right font-medium">Cached</th>
-                <th className="px-2 py-1.5 text-right font-medium">Output</th>
-                <th className="px-2 py-1.5 text-right font-medium">Reasoning</th>
-                <th className="px-2 py-1.5 text-right font-medium">Processed</th>
-                <th className="px-2 py-1.5 text-right font-medium">Tools</th>
-                <th className="px-2 py-1.5 text-right font-medium">Duration</th>
-                <th className="px-2 py-1.5 text-right font-medium">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orderedRows.map((row, index) => (
-                <tr key={row.turnId} className="border-t border-border/60 text-muted-foreground">
-                  <td className="px-2 py-1.5 text-foreground">{index + 1}</td>
-                  <td className="max-w-40 truncate px-2 py-1.5 text-foreground">
-                    {row.model ?? "—"}
-                  </td>
-                  <td className="px-2 py-1.5 text-right">{formatTokenCount(row.inputTokens)}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    {formatTokenCount(row.cachedInputTokens)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right">{formatTokenCount(row.outputTokens)}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    {formatTokenCount(row.reasoningOutputTokens)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right">
-                    {formatTokenCount(row.totalProcessedTokens)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right">{row.toolUses ?? "—"}</td>
-                  <td className="px-2 py-1.5 text-right">{formatDuration(row.durationMs)}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    {row.totalCostUsd === null ? "—" : formatCost(row.totalCostUsd)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="border-t border-border bg-muted/30 font-medium text-foreground">
-              <tr>
-                <td className="px-2 py-1.5">Total</td>
-                <td className="px-2 py-1.5">—</td>
-                <td className="px-2 py-1.5 text-right">{formatTokenCount(totals.inputTokens)}</td>
-                <td className="px-2 py-1.5 text-right">
-                  {formatTokenCount(totals.cachedInputTokens)}
-                </td>
-                <td className="px-2 py-1.5 text-right">{formatTokenCount(totals.outputTokens)}</td>
-                <td className="px-2 py-1.5 text-right">
-                  {formatTokenCount(totals.reasoningOutputTokens)}
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  {formatTokenCount(totals.totalProcessedTokens)}
-                </td>
-                <td className="px-2 py-1.5 text-right">{totals.toolUses}</td>
-                <td className="px-2 py-1.5 text-right">{formatDuration(totals.durationMs)}</td>
-                <td className="px-2 py-1.5 text-right">{formatCost(totals.totalCostUsd)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function gib(kib: number): string {
   return `${(kib / 1024 / 1024).toFixed(1)} GB`;
 }
@@ -388,38 +117,12 @@ function Meter(props: { label: string; value: number; detail: string }) {
   );
 }
 
-export function SystemPanel({
-  environmentId,
-  threadId,
-  tokenUsage,
-}: {
-  environmentId: EnvironmentId | null;
-  threadId: ThreadId | null;
-  tokenUsage?: ContextWindowSnapshot | null;
-}) {
-  const providers = useAtomValue(primaryServerProvidersAtom);
-  const threadTurnUsage = useEnvironmentQuery(
-    environmentId !== null && threadId !== null
-      ? orchestrationEnvironment.threadTurnUsage({
-          environmentId,
-          input: { threadId },
-        })
-      : null,
-  );
+export function SystemPanel() {
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [toolGuard, setToolGuard] = useState<ToolGuardSnapshot | null>(null);
   const toolGuardReadAtRef = useRef(0);
-  const latestTokenUsageUpdatedAtRef = useRef(tokenUsage?.updatedAt ?? null);
-
-  useEffect(() => {
-    const updatedAt = tokenUsage?.updatedAt ?? null;
-    if (updatedAt !== null && latestTokenUsageUpdatedAtRef.current !== updatedAt) {
-      threadTurnUsage.refresh();
-    }
-    latestTokenUsageUpdatedAtRef.current = updatedAt;
-  }, [threadTurnUsage.refresh, tokenUsage?.updatedAt]);
 
   const refresh = useCallback(async () => {
     const now = Date.now();
@@ -463,13 +166,6 @@ export function SystemPanel({
   if (!snapshot) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        {tokenUsage ? <TokenUsageMonitor usage={tokenUsage} /> : null}
-        <ThreadTurnUsageMonitor
-          rows={threadTurnUsage.data ?? []}
-          error={threadTurnUsage.error}
-          isPending={threadTurnUsage.isPending}
-        />
-        <UsageLimitsMonitor providers={providers} />
         <ToolGuardMonitor snapshot={toolGuard} />
         <div className="flex flex-col items-center justify-center gap-3 text-center">
           <Activity className="size-6 text-muted-foreground" />
@@ -509,13 +205,6 @@ export function SystemPanel({
         <p className="mb-4 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600">{error}</p>
       ) : null}
 
-      {tokenUsage ? <TokenUsageMonitor usage={tokenUsage} /> : null}
-      <ThreadTurnUsageMonitor
-        rows={threadTurnUsage.data ?? []}
-        error={threadTurnUsage.error}
-        isPending={threadTurnUsage.isPending}
-      />
-      <UsageLimitsMonitor providers={providers} />
       <ToolGuardMonitor snapshot={toolGuard} />
 
       <section className="grid gap-3 sm:grid-cols-2">

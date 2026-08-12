@@ -1,7 +1,8 @@
 # Context Window and Usage
 
-d4research surfaces three kinds of consumption data: the active thread's context window, the
-thread's token/cost totals, and your account-level provider usage limits.
+d4research keeps consumption data separate from environment health: the active thread shows its
+context window beside the composer, while **Usage** in the lower-left navigation summarizes token
+and cost history.
 
 ## Context window meter
 
@@ -15,18 +16,11 @@ not necessarily mean an imminent failure.
 
 If the provider does not report a maximum, the meter falls back to a plain used-token count.
 
-## Token usage
+## Usage page
 
-The System panel's **Token Usage** section (`TokenUsageMonitor` in
-`apps/web/src/components/SystemPanel.tsx`) expands the same snapshot: the context-window bar plus a
-breakdown of input, cached input, output, and reasoning tokens, tool uses, turn duration, and —
-when the provider reports it — the accumulated cost in USD.
+The **Usage** page aggregates processed tokens, cache reads, output, sessions, and estimated raw API
+cost over selectable time windows. It is intentionally separate from **System Monitor**, which is
+reserved for CPU, memory, GPU, disk, service, process, and Tool Guard health.
 
-## Usage limits
-
-Providers that expose account rate limits appear in the System panel's **Usage limits** section
-(`UsageLimitsMonitor`). For each supported provider instance it shows the plan type and each rolling
-usage window with its utilization percentage and reset time. Today Claude (via the Agent SDK's usage
-API) and Codex (via the app-server rate-limit report) support this; other providers simply do not
-appear in the section. A provider that is installed but not signed in reports its usage as
-unauthenticated rather than showing stale numbers.
+System Monitor does not query thread token history, so opening it is independent of the active
+thread and does not duplicate the Usage page.

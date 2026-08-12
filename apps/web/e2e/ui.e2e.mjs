@@ -987,22 +987,21 @@ spec("model picker hides malformed model slugs", async ({ page, webUrl, workspac
   await page.waitForTimeout(500);
 });
 
-spec("system panel renders monitors for the active thread", async ({ page, webUrl, workspace }) => {
-  await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-  await openProject(page, workspace);
-  // The control is labelled "Open local tools"; "Monitor" is only its visible text.
-  await page
-    .getByRole("button", { name: /open local tools/i })
-    .first()
-    .click();
-  await page.getByRole("menuitem").first().click();
-  await page.waitForTimeout(2500);
-  const body = await page.locator("body").innerText();
-  NodeAssert.ok(
-    /Per-turn token usage|Tool Guard|CPU|Memory/i.test(body),
-    "expected the system panel monitors",
-  );
-});
+spec(
+  "system monitor opens from the lower-left navigation without usage data",
+  async ({ page, webUrl }) => {
+    await page.goto(webUrl, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "System Monitor", exact: true }).click();
+    await page.waitForURL(/\/system$/, { timeout: 20_000 });
+    await page
+      .getByText("CPU", { exact: true })
+      .first()
+      .waitFor({ state: "visible", timeout: 20_000 });
+    const body = await page.locator("body").innerText();
+    NodeAssert.ok(/Tool Guard|CPU|Memory/i.test(body), "expected the system health monitors");
+    NodeAssert.ok(!/Token Usage|Per-turn token usage|Usage limits/i.test(body));
+  },
+);
 
 spec(
   "tasks panel opens from local tools for a fresh thread",
@@ -1010,7 +1009,7 @@ spec(
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
     await page
-      .getByRole("button", { name: /open local tools/i })
+      .getByRole("button", { name: /open thread tools/i })
       .first()
       .click();
     await page.getByRole("menuitem", { name: /^Tasks/ }).click();
@@ -1037,7 +1036,7 @@ spec("files panel opens a workspace file", async ({ page, webUrl, workspace }) =
     await page.getByRole("menuitem", { name: /files/i }).first().click();
   } else {
     // A closed panel exposes Files through the persistent local-tools menu.
-    await page.getByRole("button", { name: /open local tools/i }).click();
+    await page.getByRole("button", { name: /open thread tools/i }).click();
     await page.getByRole("menuitem", { name: /^Files/ }).click();
   }
 

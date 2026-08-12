@@ -1609,7 +1609,6 @@ function ChatViewContent(props: ChatViewProps) {
     selectActiveRightPanel(state.byThreadKey, activeThreadRef),
   );
   const diffOpen = activeRightPanelKind === "diff";
-  const systemPanelOpen = activeRightPanelKind === "system";
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
@@ -2174,7 +2173,7 @@ function ChatViewContent(props: ChatViewProps) {
       }),
     [agentSessionLive, threadActivities],
   );
-  const activeContextWindowForMonitor = useMemo(
+  const activeContextWindow = useMemo(
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
   );
@@ -3374,10 +3373,6 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().close(activeThreadRef);
     dismissPlanSidebarForCurrentTurn();
   }, [activeThreadRef, dismissPlanSidebarForCurrentTurn]);
-  const toggleSystemPanel = useCallback(() => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().toggle(activeThreadRef, "system");
-  }, [activeThreadRef]);
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
@@ -6552,7 +6547,6 @@ function ChatViewContent(props: ChatViewProps) {
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      systemMonitorOpen={systemPanelOpen}
       tasksOpen={planSidebarOpen}
       tasksLabel={planSidebarLabel}
       liveAgentCount={
@@ -6560,7 +6554,6 @@ function ChatViewContent(props: ChatViewProps) {
       }
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
-      onOpenSystemMonitor={toggleSystemPanel}
       onOpenFiles={addFilesSurface}
       onToggleTasks={togglePlanSidebar}
     />
@@ -6661,11 +6654,7 @@ function ChatViewContent(props: ChatViewProps) {
         mode="embedded"
       />
     ) : activeRightPanelSurface?.kind === "system" ? (
-      <SystemPanel
-        environmentId={activeThreadRef?.environmentId ?? null}
-        threadId={activeThreadRef?.threadId ?? null}
-        tokenUsage={activeContextWindowForMonitor}
-      />
+      <SystemPanel />
     ) : activeRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -6891,7 +6880,7 @@ function ChatViewContent(props: ChatViewProps) {
                             delegations={researchDelegations}
                             steps={researchBannerSteps}
                             isRunning
-                            contextTokens={activeContextWindowForMonitor?.usedTokens ?? null}
+                            contextTokens={activeContextWindow?.usedTokens ?? null}
                           />
                         ) : null}
                         {activeThreadId !== null && visibleAudioArtifacts.length > 0 ? (

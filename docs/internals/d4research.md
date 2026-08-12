@@ -87,9 +87,9 @@ The managed installation copies versioned binaries, platform-native wrappers, an
 ### Readiness and usage visibility
 
 Provider snapshots carry optional account usage data (`ServerProviderUsage`): plan type and rolling
-rate-limit windows with utilization and reset times, probed from the Claude Agent SDK and the Codex
-app-server. The System panel shows them beside token usage and the context-window meter, so a
-handoff target can be chosen with limits in view.
+rate-limit windows with utilization and reset times. Context and cost history are presented through
+the thread context meter and lower-left Usage page. The lower-left System Monitor is intentionally
+limited to environment health and Tool Guard status.
 
 ### Local environment integrations
 

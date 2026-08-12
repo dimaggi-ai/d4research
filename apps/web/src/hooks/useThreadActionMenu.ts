@@ -63,8 +63,9 @@ export function useThreadActionMenu(input: {
   /** PR state feeding auto-settle classification, as resolved by the caller. */
   readonly changeRequestState: ChangeRequestStateLike | null;
   readonly onStartRename: () => void;
+  readonly onExportMarkdown?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, changeRequestState, onStartRename } = input;
+  const { threadRef, projectCwd, changeRequestState, onStartRename, onExportMarkdown } = input;
   const {
     settleThread,
     unsettleThread,
@@ -137,6 +138,7 @@ export function useThreadActionMenu(input: {
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
+          canExportMarkdown: onExportMarkdown !== undefined,
           supports,
           snoozePresets,
         });
@@ -251,6 +253,9 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "export-markdown":
+            onExportMarkdown?.();
+            return;
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -293,6 +298,7 @@ export function useThreadActionMenu(input: {
       handleNewThread,
       markThreadUnread,
       onStartRename,
+      onExportMarkdown,
       pinThread,
       projectCwd,
       settleThread,

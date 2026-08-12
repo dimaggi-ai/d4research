@@ -21,6 +21,7 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "export-markdown"
   | "delete";
 
 export interface ThreadActionMenuState {
@@ -30,6 +31,7 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
+  readonly canExportMarkdown?: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -102,6 +104,9 @@ export function buildThreadActionMenuItems(
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    ...(state.canExportMarkdown
+      ? [{ id: "export-markdown" as const, label: "Export thread as Markdown" }]
+      : []),
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 }

@@ -63,4 +63,9 @@ describe("buildThreadActionMenuItems", () => {
     const items = buildThreadActionMenuItems({ ...baseState, branch: "main" });
     expect(items.at(-1)).toMatchObject({ id: "delete", destructive: true });
   });
+
+  it("adds Markdown export only when the caller supports it", () => {
+    expect(ids(baseState)).not.toContain("export-markdown");
+    expect(ids({ ...baseState, canExportMarkdown: true })).toContain("export-markdown");
+  });
 });

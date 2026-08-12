@@ -1,17 +1,11 @@
-import {
-  type EnvironmentId,
-  type EditorId,
-  type ProjectScript,
-  type ResolvedKeybindingsConfig,
-  type ThreadId,
-} from "@t3tools/contracts";
+import { type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon, DownloadIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -21,18 +15,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import GitActionsControl from "../GitActionsControl";
-import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
-import { OpenInPicker } from "./OpenInPicker";
-import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -47,7 +31,6 @@ import { cn } from "~/lib/utils";
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
-  draftId?: DraftId;
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
@@ -56,23 +39,9 @@ interface ChatHeaderProps {
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
-  openInCwd: string | null;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
-  preferredScriptId: string | null;
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
-  gitCwd: string | null;
-  readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   readonly onExportResearch?: (() => void) | undefined;
   onNewThreadInProject: () => void;
-  onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
 /**
@@ -89,53 +58,19 @@ export function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-export function shouldShowOpenInPicker(input: {
-  readonly activeProjectName: string | undefined;
-  readonly activeThreadEnvironmentId: EnvironmentId;
-  readonly primaryEnvironmentId: EnvironmentId | null;
-}): boolean {
-  return (
-    Boolean(input.activeProjectName) &&
-    input.primaryEnvironmentId !== null &&
-    input.activeThreadEnvironmentId === input.primaryEnvironmentId
-  );
-}
-
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
-  draftId,
   activeThreadTitle,
   isServerThread,
   changeRequestState,
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
-  openInCwd,
-  activeProjectScripts,
-  preferredScriptId,
-  keybindings,
-  availableEditors,
   rightPanelOpen,
-  gitCwd,
-  onOpenPullRequest,
   onExportResearch,
   onNewThreadInProject,
-  onRunProjectScript,
-  onAddProjectScript,
-  onUpdateProjectScript,
-  onDeleteProjectScript,
 }: ChatHeaderProps) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const fileScripts = useT3ProjectFileScripts(
-    activeThreadEnvironmentId,
-    activeProjectScripts ? activeProjectCwd : null,
-  );
-  const showOpenInPicker = shouldShowOpenInPicker({
-    activeProjectName,
-    activeThreadEnvironmentId,
-    primaryEnvironmentId,
-  });
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -186,6 +121,7 @@ export const ChatHeader = memo(function ChatHeader({
     projectCwd: activeProjectCwd,
     changeRequestState,
     onStartRename: startRename,
+    onExportMarkdown: isServerThread ? onExportResearch : undefined,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const openMenuFromTitle = useCallback(() => {
@@ -196,9 +132,6 @@ export const ChatHeader = memo(function ChatHeader({
   const handleHeaderContextMenu = useCallback(
     (event: ReactMouseEvent) => {
       if (!isServerThread || renamingTitle !== null) return;
-      // The right-side controls (git, scripts, open-in) keep their own
-      // behavior; only the breadcrumb area opens the thread menu.
-      if ((event.target as HTMLElement).closest("[data-chat-header-actions]")) return;
       event.preventDefault();
       openMenu({ x: event.clientX, y: event.clientY });
     },
@@ -218,7 +151,10 @@ export const ChatHeader = memo(function ChatHeader({
   );
   return (
     <div
-      className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
+      className={cn(
+        "@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
+        !rightPanelOpen && "pr-16",
+      )}
       onContextMenu={handleHeaderContextMenu}
     >
       <WorkspaceBreadcrumb ariaLabel="Thread breadcrumb" className="flex-1">
@@ -303,61 +239,6 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
-      <div
-        data-chat-header-actions
-        className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
-        )}
-      >
-        {isServerThread && onExportResearch ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                  aria-label="Export thread as Markdown"
-                  onClick={onExportResearch}
-                >
-                  <DownloadIcon className="size-3.5" aria-hidden />
-                </Button>
-              }
-            />
-            <TooltipPopup side="bottom">Export research as Markdown</TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            onOpenPullRequest={onOpenPullRequest}
-            {...(draftId ? { draftId } : {})}
-          />
-        )}
-      </div>
     </div>
   );
 });

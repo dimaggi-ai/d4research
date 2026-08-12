@@ -1,34 +1,16 @@
 import {
-  ChevronDownIcon,
   FilesIcon,
   ListTodoIcon,
   Maximize2Icon,
   Minimize2Icon,
   PanelBottomIcon,
   PanelRightIcon,
-  WrenchIcon,
 } from "lucide-react";
 import { memo } from "react";
 
 import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-export function getLocalToolsMenuItems(input: {
-  readonly filesAvailable: boolean;
-  readonly tasksOpen: boolean;
-  readonly tasksLabel: string;
-}) {
-  return [
-    { id: "files", label: "Files", disabled: !input.filesAvailable },
-    {
-      id: "tasks",
-      label: input.tasksOpen ? `Close ${input.tasksLabel}` : input.tasksLabel,
-      disabled: false,
-    },
-  ] as const;
-}
 
 interface PanelLayoutControlsProps {
   showLocalTools?: boolean;
@@ -66,42 +48,51 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  const [filesItem, tasksItem] = getLocalToolsMenuItems({
-    filesAvailable: rightPanelAvailable,
-    tasksOpen,
-    tasksLabel,
-  });
+  const tasksActionLabel = tasksOpen ? `Close ${tasksLabel}` : `Open ${tasksLabel}`;
   return (
     <div
       className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
       {showLocalTools ? (
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                className="shrink-0 gap-1 px-1.5 [-webkit-app-region:no-drag]"
-                aria-label="Open thread tools"
-                variant="ghost"
-                size="xs"
-              />
-            }
-          >
-            <WrenchIcon className="size-3.5" />
-            <ChevronDownIcon className="size-3" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
-              <FilesIcon className="size-4" />
-              {filesItem.label}
-            </MenuItem>
-            <MenuItem onClick={onToggleTasks}>
-              <ListTodoIcon className="size-4" />
-              {tasksItem.label}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  className="shrink-0 [-webkit-app-region:no-drag]"
+                  aria-label="Open Files"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!rightPanelAvailable}
+                  onClick={onOpenFiles}
+                >
+                  <FilesIcon className="size-3.5" />
+                </Button>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {rightPanelAvailable ? "Open Files" : "Files are unavailable"}
+            </TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0 [-webkit-app-region:no-drag]"
+                  pressed={tasksOpen}
+                  onPressedChange={onToggleTasks}
+                  aria-label={tasksActionLabel}
+                  variant="ghost"
+                  size="sm"
+                >
+                  <ListTodoIcon className="size-3.5" />
+                </Toggle>
+              }
+            />
+            <TooltipPopup side="bottom">{tasksActionLabel}</TooltipPopup>
+          </Tooltip>
+        </>
       ) : null}
       {showTerminalControl ? (
         <Tooltip>

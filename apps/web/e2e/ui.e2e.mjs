@@ -1030,15 +1030,23 @@ spec(
 );
 
 spec(
-  "tasks panel opens from local tools for a fresh thread",
+  "tasks panel opens from its direct header control for a fresh thread",
   async ({ page, webUrl, workspace }) => {
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
-    await page
-      .getByRole("button", { name: /open thread tools/i })
-      .first()
-      .click();
-    await page.getByRole("menuitem", { name: /^Tasks/ }).click();
+    for (const obsoleteAction of [
+      "Add action",
+      "Open project with preferred app",
+      "Initialize Git",
+      "Export thread as Markdown",
+    ]) {
+      NodeAssert.equal(
+        await page.getByRole("button", { name: obsoleteAction, exact: true }).count(),
+        0,
+        `obsolete thread-header action remained visible: ${obsoleteAction}`,
+      );
+    }
+    await page.getByRole("button", { name: "Open Tasks", exact: true }).first().click();
     await page.getByText("No active plan yet.", { exact: true }).waitFor({
       state: "visible",
       timeout: 20_000,
@@ -1061,9 +1069,8 @@ spec("files panel opens a workspace file", async ({ page, webUrl, workspace }) =
     await addSurface.click();
     await page.getByRole("menuitem", { name: /files/i }).first().click();
   } else {
-    // A closed panel exposes Files through the persistent local-tools menu.
-    await page.getByRole("button", { name: /open thread tools/i }).click();
-    await page.getByRole("menuitem", { name: /^Files/ }).click();
+    // A closed panel exposes Files as a direct persistent header action.
+    await page.getByRole("button", { name: "Open Files", exact: true }).click();
   }
 
   await page.waitForFunction(

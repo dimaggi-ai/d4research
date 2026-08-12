@@ -905,6 +905,7 @@ function PullRequestsRouteView() {
   );
   const panelToggleControls = (
     <PanelLayoutControls
+      showLocalTools={false}
       showTerminalControl={false}
       terminalAvailable={false}
       terminalOpen={false}

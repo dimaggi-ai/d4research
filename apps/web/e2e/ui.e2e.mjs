@@ -87,6 +87,7 @@ spec("general settings expose handoff and auto-resume controls", async ({ page, 
   await page.getByText("Context compression").waitFor({ timeout: 20_000 });
   const body = await page.locator("body").innerText();
   NodeAssert.ok(body.includes("Resume after usage limits"), "expected the auto-resume toggle");
+  NodeAssert.ok(body.includes("Auto-open task panel"), "expected the task-panel toggle");
   NodeAssert.ok(body.includes("Open Tool Guard settings"), "expected the Tool Guard deep link");
 });
 
@@ -743,6 +744,124 @@ spec(
   },
 );
 
+spec(
+  "oversized Memo failure releases send and a retry persists a bounded reference",
+  async ({ page, webUrl, workspace, baseDir, consoleErrors }) => {
+    await page.goto(webUrl, { waitUntil: "domcontentloaded" });
+    await openProject(page, workspace);
+    await startNewLocalThread(page);
+
+    const oversized = "memo overflow\n".padEnd(132_277, "m");
+    const attachOversizedFile = async () => {
+      const editor = page.getByTestId("composer-editor");
+      await editor.evaluate((element, text) => {
+        const data = new DataTransfer();
+        data.items.add(new File([text], "oversized.md", { type: "text/markdown" }));
+        element.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }),
+        );
+      }, oversized);
+      await page.getByRole("button", { name: "Remove oversized.md" }).waitFor({
+        state: "visible",
+        timeout: 20_000,
+      });
+      return editor;
+    };
+    const sendButton = () =>
+      page.locator('[data-chat-composer-form="true"] button[type="submit"]').last();
+
+    const firstEditor = await attachOversizedFile();
+    await firstEditor.pressSequentially("summarize the complete attachment");
+    let failMemoRequest = true;
+    await page.route("**/api/memory/attachment", async (route) => {
+      if (failMemoRequest) {
+        failMemoRequest = false;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false, message: "Simulated Memo persistence failure." }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await sendButton().click();
+    await page.getByText("Simulated Memo persistence failure.", { exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    const expectedMemoErrorIndex = consoleErrors.findIndex((message) =>
+      /status of 503 \(Service Unavailable\)/i.test(message),
+    );
+    if (expectedMemoErrorIndex >= 0) consoleErrors.splice(expectedMemoErrorIndex, 1);
+    NodeAssert.ok(
+      (await firstEditor.innerText()).includes("summarize the complete attachment"),
+      "a failed Memo write must preserve the draft",
+    );
+    NodeAssert.equal(
+      await sendButton().isEnabled(),
+      true,
+      "the failed send must release its latch",
+    );
+
+    await page.getByRole("button", { name: "Remove oversized.md" }).click();
+    const failedDraftUrl = page.url();
+    await sendButton().click();
+    await page
+      .waitForURL((url) => url.href !== failedDraftUrl && !/\/draft\//u.test(url.pathname), {
+        timeout: 30_000,
+      })
+      .catch(async (cause) => {
+        throw new Error(
+          `the same-page retry did not commit; url=${page.url()} body=${(await page.locator("body").innerText()).slice(-1_000)}`,
+          { cause },
+        );
+      });
+    await stopRunningTurnForIsolation(page);
+
+    await startNewLocalThread(page);
+    const secondEditor = await attachOversizedFile();
+    await secondEditor.pressSequentially("use Memo for the complete attachment");
+    const memoDraftUrl = page.url();
+    await sendButton().click();
+    await page
+      .waitForURL((url) => url.href !== memoDraftUrl && !/\/draft\//u.test(url.pathname), {
+        timeout: 30_000,
+      })
+      .catch(async (cause) => {
+        throw new Error(
+          `the real-Memo send did not commit; url=${page.url()} body=${(await page.locator("body").innerText()).slice(-1_000)}`,
+          { cause },
+        );
+      });
+    await page.getByText("Full text saved to local Memo", { exact: true }).waitFor({
+      state: "visible",
+      timeout: 60_000,
+    });
+
+    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
+      readOnly: true,
+    });
+    try {
+      const sent = database
+        .prepare(
+          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
+        )
+        .get();
+      NodeAssert.equal(typeof sent?.text, "string");
+      NodeAssert.ok(sent.text.includes("<memo_document>"));
+      NodeAssert.ok(sent.text.includes("Characters: 132277"));
+      NodeAssert.ok(sent.text.includes('connector="local"'));
+      NodeAssert.ok(sent.text.length < 120_000, "the provider payload must stay below its limit");
+      NodeAssert.ok(!sent.text.includes(oversized), "the full document must not be sent inline");
+    } finally {
+      database.close();
+    }
+    await stopRunningTurnForIsolation(page);
+  },
+);
+
 spec("podcast transport works in a real browser", async ({ page }) => {
   await page.evaluate(async () => {
     const container = document.createElement("div");
@@ -870,7 +989,6 @@ spec("model picker hides malformed model slugs", async ({ page, webUrl, workspac
 
 spec("system panel renders monitors for the active thread", async ({ page, webUrl, workspace }) => {
   await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-  await page.reload({ waitUntil: "domcontentloaded" });
   await openProject(page, workspace);
   // The control is labelled "Open local tools"; "Monitor" is only its visible text.
   await page
@@ -885,6 +1003,23 @@ spec("system panel renders monitors for the active thread", async ({ page, webUr
     "expected the system panel monitors",
   );
 });
+
+spec(
+  "tasks panel opens from local tools for a fresh thread",
+  async ({ page, webUrl, workspace }) => {
+    await page.goto(webUrl, { waitUntil: "domcontentloaded" });
+    await openProject(page, workspace);
+    await page
+      .getByRole("button", { name: /open local tools/i })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: /^Tasks/ }).click();
+    await page.getByText("No active plan yet.", { exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+  },
+);
 
 // The Ollama preset is the only path from a stock install to Ollama-served
 // models, so assert against the *live* daemon roster rather than the bundled

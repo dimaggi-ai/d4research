@@ -188,8 +188,13 @@ export async function openProject(page, workspacePath) {
       .getByRole("button", { name: /add project/i })
       .first()
       .click();
-    await page.locator("input:visible").first().fill(workspacePath);
-    await page.keyboard.press("Enter");
+    const localFolder = page.getByText("Local folder", { exact: true });
+    await localFolder.waitFor({ state: "visible", timeout: 10_000 });
+    await localFolder.click();
+    const pathInput = page.getByPlaceholder("Enter path (e.g. ~/projects/my-app)");
+    await pathInput.waitFor({ state: "visible", timeout: 10_000 });
+    await pathInput.fill(workspacePath);
+    await pathInput.press("Enter");
     await page.waitForURL(/\/(draft|thread)\//, { timeout: 30_000 });
   }
   // The route resolves before the thread chrome mounts; wait for a control that

@@ -5,7 +5,10 @@ import {
   type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
-import { applyDevTrigger } from "@t3tools/shared/devPipeline";
+import {
+  applyDevTrigger,
+  providerDriverSupportsPipelineOrchestration,
+} from "@t3tools/shared/devPipeline";
 import { stripResearchTrigger } from "@t3tools/shared/researchPipeline";
 
 export function mobilePromptForInteractionMode(
@@ -20,7 +23,7 @@ export function mobilePromptForDevPipeline(prompt: string, scenarioName: string 
 }
 
 export function mobileProviderSupportsDelegationPipelines(driver: string | undefined): boolean {
-  return driver !== "agy" && driver !== "junie";
+  return providerDriverSupportsPipelineOrchestration(driver ?? "");
 }
 
 export function projectSkillNamesFromInventory(

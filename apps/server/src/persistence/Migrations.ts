@@ -11,6 +11,7 @@
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -49,12 +50,12 @@ import Migration0033 from "./Migrations/033_ProjectionThreadsSettled.ts";
 import Migration0034 from "./Migrations/034_ProjectionThreadsSnoozed.ts";
 import Migration0035 from "./Migrations/035_ProjectionThreadTitleRegeneration.ts";
 import Migration0036 from "./Migrations/036_ProjectionThreadsPinned.ts";
-import Migration0037 from "./Migrations/037_ProjectionTurnsKeysetIndex.ts";
-import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
 import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_ProjectionThreadTurnUsage.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadResumeSchedule.ts";
+import Migration0043 from "./Migrations/043_ProjectionThreadsPinOrderKey.ts";
+import Migration0044 from "./Migrations/044_ProjectionTurnsKeysetIndex.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -103,12 +104,12 @@ export const migrationEntries = [
   [34, "ProjectionThreadsSnoozed", Migration0034],
   [35, "ProjectionThreadTitleRegeneration", Migration0035],
   [36, "ProjectionThreadsPinned", Migration0036],
-  [37, "ProjectionTurnsKeysetIndex", Migration0037],
-  [38, "ProjectionThreadsPinOrderKey", Migration0038],
   [39, "ProjectionProjectsDefaultThreadEnvMode", Migration0039],
   [40, "ProjectionProjectFaviconPath", Migration0040],
   [41, "ProjectionThreadTurnUsage", Migration0041],
   [42, "ProjectionThreadResumeSchedule", Migration0042],
+  [43, "ProjectionThreadsPinOrderKey", Migration0043],
+  [44, "ProjectionTurnsKeysetIndex", Migration0044],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -145,6 +146,24 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  // Create the migration ledger without applying application migrations so an
+  // incompatible historical slot is rejected before any schema can change.
+  yield* run({ loader: makeMigrationLoader(0) });
+  const sql = yield* SqlClient.SqlClient;
+  const applied = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+    SELECT migration_id, name FROM effect_sql_migrations
+  `;
+  const appliedById = new Map(applied.map((row) => [Number(row.migration_id), row.name]));
+  for (const [id, expectedName] of migrationManifest) {
+    const appliedName = appliedById.get(id);
+    if (appliedName !== undefined && appliedName !== expectedName) {
+      return yield* Effect.die(
+        new Error(
+          `Migration slot ${id} is recorded as ${appliedName}, but this build expects ${expectedName}`,
+        ),
+      );
+    }
+  }
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0

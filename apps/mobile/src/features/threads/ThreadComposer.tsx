@@ -8,12 +8,19 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
+import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
   type ComposerTrigger,
 } from "@t3tools/shared/composerTrigger";
+import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
+import {
+  activeDevScenarioName,
+  listDevScenarios,
+  shouldExitPlanForDevPipelineSelection,
+} from "@t3tools/shared/devPipeline";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -72,6 +79,19 @@ import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerComm
 import { buildThreadSettingsMenu } from "./thread-settings-menu";
 import { ThreadSettingsSheet, threadSettingsSummaryLabel } from "./ThreadSettingsSheet";
 import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-presentation";
+import {
+  listMobileSessionSkillNames,
+  mobileProviderSupportsDelegationPipelines,
+  mobilePromptForDevPipeline,
+  mobilePromptForInteractionMode,
+  mobileSessionSkillSettingsPatch,
+  toggleMobileSessionSkill,
+} from "./mobileSessionSkills";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useProjectSkillNames } from "../../state/use-project-skills";
+
+const EMPTY_SKILL_NAMES: ReadonlyArray<string> = Object.freeze([]);
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -284,6 +304,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const wasExpandedBeforePreviewRef = useRef(false);
   const inFlightThreadIdsRef = useRef(new Set<string>());
   const { onExpandedChange } = props;
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: true,
+  });
+  const projectSkillNames = useProjectSkillNames(props.environmentId, props.projectCwd);
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
@@ -572,7 +596,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           "",
         );
         setComposerSelection({ start: result.cursor, end: result.cursor });
-        onChangeDraftMessage(result.text);
+        onChangeDraftMessage(mobilePromptForInteractionMode(result.text, item.command));
         onUpdateInteractionMode(item.command);
         return;
       }
@@ -626,6 +650,53 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       }),
     [currentModelOption?.capabilities, currentModelSelection.options],
   );
+  const devPipelineNames = useMemo(
+    () => listDevScenarios(props.serverConfig?.settings.dev).map((pipeline) => pipeline.name),
+    [props.serverConfig?.settings.dev],
+  );
+  const activeDevPipeline = activeDevScenarioName(props.draftMessage);
+  const devPipelinesSupported = mobileProviderSupportsDelegationPipelines(
+    selectedProviderStatus?.driver,
+  );
+  const globalSkillNames =
+    props.serverConfig?.settings.skills.enabledByDefault ?? EMPTY_SKILL_NAMES;
+  const configuredSessionSkillNames =
+    props.serverConfig?.settings.skills.enabledByThread[props.selectedThread.id] ??
+    EMPTY_SKILL_NAMES;
+  const sessionSkillNames = useMemo(
+    () => configuredSessionSkillNames.filter((name) => !globalSkillNames.includes(name)),
+    [configuredSessionSkillNames, globalSkillNames],
+  );
+  const effectiveSkillNames = useMemo(
+    () => mergeEnabledSkillNames(globalSkillNames, sessionSkillNames),
+    [globalSkillNames, sessionSkillNames],
+  );
+  const selectableSkillNames = useMemo(
+    () =>
+      listMobileSessionSkillNames({
+        providers: props.serverConfig?.providers ?? [],
+        globalNames: globalSkillNames,
+        sessionNames: sessionSkillNames,
+        projectNames: projectSkillNames,
+      }),
+    [globalSkillNames, projectSkillNames, props.serverConfig?.providers, sessionSkillNames],
+  );
+  const sessionSkillSettings = useMemo(
+    () =>
+      selectableSkillNames.map((name) => {
+        const globallyEnabled = globalSkillNames.includes(name);
+        const enabled = effectiveSkillNames.includes(name);
+        return {
+          name,
+          enabled,
+          globallyEnabled,
+          disabled:
+            globallyEnabled ||
+            (!enabled && effectiveSkillNames.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT),
+        };
+      }),
+    [effectiveSkillNames, globalSkillNames, selectableSkillNames],
+  );
   const settingsSummaryLabel = threadSettingsSummaryLabel({
     modelLabel: currentModelOption?.label ?? currentModelSelection.model,
     optionDescriptors: providerOptionDescriptors,
@@ -644,13 +715,71 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             selectedModel: currentModelSelection,
             optionDescriptors: providerOptionDescriptors,
             runtimeMode: currentRuntimeMode,
+            sessionSkills: sessionSkillSettings,
+            devPipelines: {
+              names: devPipelineNames,
+              activeName: activeDevPipeline,
+              supported: devPipelinesSupported,
+            },
           })
         : null,
-    [threadProviderGroups, currentModelSelection, providerOptionDescriptors, currentRuntimeMode],
+    [
+      activeDevPipeline,
+      currentModelSelection,
+      currentRuntimeMode,
+      devPipelineNames,
+      devPipelinesSupported,
+      providerOptionDescriptors,
+      sessionSkillSettings,
+      threadProviderGroups,
+    ],
   );
 
   const onUpdateModelSelection = props.onUpdateModelSelection;
   const onUpdateRuntimeMode = props.onUpdateRuntimeMode;
+  const toggleSessionSkill = useCallback(
+    (name: string) => {
+      const nextSessionNames = toggleMobileSessionSkill({
+        globalNames: globalSkillNames,
+        sessionNames: sessionSkillNames,
+        name,
+      });
+      if (nextSessionNames === null) return;
+      void updateSettings({
+        environmentId: props.environmentId,
+        input: {
+          patch: mobileSessionSkillSettingsPatch(
+            props.selectedThread.id,
+            name,
+            nextSessionNames.includes(name),
+          ),
+        },
+      });
+    },
+    [
+      globalSkillNames,
+      props.environmentId,
+      props.selectedThread.id,
+      sessionSkillNames,
+      updateSettings,
+    ],
+  );
+  const selectDevPipeline = useCallback(
+    (scenarioName: string | null) => {
+      if (scenarioName !== null && !devPipelinesSupported) return;
+      if (shouldExitPlanForDevPipelineSelection(currentInteractionMode, scenarioName)) {
+        props.onUpdateInteractionMode("default");
+      }
+      props.onChangeDraftMessage(mobilePromptForDevPipeline(props.draftMessage, scenarioName));
+    },
+    [
+      currentInteractionMode,
+      devPipelinesSupported,
+      props.draftMessage,
+      props.onChangeDraftMessage,
+      props.onUpdateInteractionMode,
+    ],
+  );
   const handleSettingsMenuAction = useCallback(
     (eventId: string) => {
       const event = settingsMenu?.events.get(eventId);
@@ -677,6 +806,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           void Haptics.selectionAsync();
           onUpdateRuntimeMode(event.mode);
           return;
+        case "toggle-session-skill":
+          void Haptics.selectionAsync();
+          toggleSessionSkill(event.name);
+          return;
+        case "set-dev-pipeline":
+          void Haptics.selectionAsync();
+          selectDevPipeline(event.scenarioName);
+          return;
       }
     },
     [
@@ -684,7 +821,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       onUpdateModelSelection,
       onUpdateRuntimeMode,
       providerOptionDescriptors,
+      selectDevPipeline,
       settingsMenu,
+      toggleSessionSkill,
     ],
   );
 
@@ -928,6 +1067,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         }
         runtimeMode={currentRuntimeMode}
         onUpdateRuntimeMode={props.onUpdateRuntimeMode}
+        sessionSkills={sessionSkillSettings}
+        onToggleSessionSkill={toggleSessionSkill}
+        devPipelines={{
+          names: devPipelineNames,
+          activeName: activeDevPipeline,
+          supported: devPipelinesSupported,
+        }}
+        onSelectDevPipeline={selectDevPipeline}
       />
 
       <ImageViewing

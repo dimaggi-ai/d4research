@@ -35,7 +35,7 @@ export default mergeConfig(
       entry: ["src/bin.ts"],
       outDir: "dist",
       sourcemap: true,
-      clean: true,
+      clean: false,
       deps: {
         alwaysBundle: shouldBundleCliDependency,
         onlyBundle: false,

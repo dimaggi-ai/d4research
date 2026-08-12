@@ -174,6 +174,25 @@ export async function replacePastedContextsWithMemoReferences(input: {
   );
 }
 
+/**
+ * Send-path boundary for Memo preparation. The pending callback is always
+ * released, including persistence failures, so a user can remove or retry an
+ * attachment without reloading the chat page.
+ */
+export async function prepareMemoPastedContextsForSend(input: {
+  readonly contexts: ReadonlyArray<PastedContextDraft>;
+  readonly project: string;
+  readonly persist: MemoAttachmentPersistence;
+  readonly onPreparingChange: (preparing: boolean) => void;
+}): Promise<ReadonlyArray<PastedContextDraft>> {
+  input.onPreparingChange(true);
+  try {
+    return await replacePastedContextsWithMemoReferences(input);
+  } finally {
+    input.onPreparingChange(false);
+  }
+}
+
 export function makeMemoAttachmentPersistence(
   preparedConnection: PreparedConnection,
 ): MemoAttachmentPersistence {

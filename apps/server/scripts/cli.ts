@@ -25,6 +25,7 @@ import {
   ServerCliPublishIconSourceMissingError,
   ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
+import { verifyServerBuildArtifacts } from "./server-build-artifacts.ts";
 
 interface PackageJson {
   name: string;
@@ -144,6 +145,8 @@ const buildCmd = Command.make(
       } else {
         yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");
       }
+      yield* Effect.promise(() => verifyServerBuildArtifacts(serverDir));
+      yield* Effect.log("[cli] Verified complete server, client, and Tool Guard artifacts");
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));
 

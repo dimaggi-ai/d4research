@@ -233,6 +233,41 @@ describe("buildThreadSettingsMenu", () => {
     );
   });
 
+  it("exposes chat skills and named dev pipelines through real menu events", () => {
+    const menu = buildThreadSettingsMenu({
+      ...baseInput(),
+      sessionSkills: [
+        { name: "global-review", enabled: true, globallyEnabled: true, disabled: true },
+        { name: "chat-review", enabled: false, globallyEnabled: false, disabled: false },
+      ],
+      devPipelines: {
+        names: ["review", "release"],
+        activeName: "review",
+        supported: true,
+      },
+    });
+
+    const skillRows =
+      menu.actions.find((action) => action.title === "Chat skills")?.subactions ?? [];
+    expect(skillRows.map((action) => action.title)).toEqual([
+      "global-review (Global)",
+      "chat-review",
+    ]);
+    expect(skillRows[0]?.attributes?.disabled).toBe(true);
+    expect(eventFor(menu, skillRows[1]?.id)).toEqual({
+      type: "toggle-session-skill",
+      name: "chat-review",
+    });
+
+    const pipelineRows =
+      menu.actions.find((action) => action.title === "Dev pipeline")?.subactions ?? [];
+    expect(pipelineRows.find((action) => action.title === "review")?.state).toBe("on");
+    expect(eventFor(menu, pipelineRows.find((action) => action.title === "release")?.id)).toEqual({
+      type: "set-dev-pipeline",
+      scenarioName: "release",
+    });
+  });
+
   it("sections models by provider only when multiple groups are offered", () => {
     const codexModels = [modelOption("gpt-current", { isDefault: true })];
     const claudeModels = [modelOption("fable-5", { providerKey: "claude" })];

@@ -1,13 +1,20 @@
-import { Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  FilesIcon,
+  ListTodoIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  MonitorCogIcon,
+  PanelBottomIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import { memo } from "react";
 
+import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-/**
- * Retained for consumers that offer the d4research local-tools menu alongside
- * the compact upstream panel controls.
- */
 export function getLocalToolsMenuItems(input: {
   readonly systemMonitorOpen: boolean;
   readonly filesAvailable: boolean;
@@ -30,6 +37,7 @@ export function getLocalToolsMenuItems(input: {
 }
 
 interface PanelLayoutControlsProps {
+  showLocalTools?: boolean;
   showTerminalControl?: boolean;
   terminalAvailable: boolean;
   terminalOpen: boolean;
@@ -37,13 +45,20 @@ interface PanelLayoutControlsProps {
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
   rightPanelShortcutLabel: string | null;
+  systemMonitorOpen?: boolean;
+  tasksOpen?: boolean;
+  tasksLabel?: string;
   /** Running + waiting subagents in this thread; badges the right panel toggle. */
   liveAgentCount: number;
+  onOpenSystemMonitor?: () => void;
+  onOpenFiles?: () => void;
+  onToggleTasks?: () => void;
   onToggleTerminal: () => void;
   onToggleRightPanel: () => void;
 }
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
+  showLocalTools = true,
   showTerminalControl = true,
   terminalAvailable,
   terminalOpen,
@@ -51,15 +66,58 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelAvailable,
   rightPanelOpen,
   rightPanelShortcutLabel,
+  systemMonitorOpen = false,
+  tasksOpen = false,
+  tasksLabel = "Tasks",
   liveAgentCount,
+  onOpenSystemMonitor = () => undefined,
+  onOpenFiles = () => undefined,
+  onToggleTasks = () => undefined,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  const [monitorItem, filesItem, tasksItem] = getLocalToolsMenuItems({
+    systemMonitorOpen,
+    filesAvailable: rightPanelAvailable,
+    tasksOpen,
+    tasksLabel,
+  });
   return (
     <div
       className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
+      {showLocalTools ? (
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                className="shrink-0 gap-1 px-1.5 [-webkit-app-region:no-drag]"
+                aria-label="Open local tools"
+                variant="ghost"
+                size="xs"
+              />
+            }
+          >
+            <MonitorCogIcon className="size-3.5" />
+            <ChevronDownIcon className="size-3" />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem onClick={onOpenSystemMonitor}>
+              <MonitorCogIcon className="size-4" />
+              {monitorItem.label}
+            </MenuItem>
+            <MenuItem disabled={filesItem.disabled} onClick={onOpenFiles}>
+              <FilesIcon className="size-4" />
+              {filesItem.label}
+            </MenuItem>
+            <MenuItem onClick={onToggleTasks}>
+              <ListTodoIcon className="size-4" />
+              {tasksItem.label}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      ) : null}
       {showTerminalControl ? (
         <Tooltip>
           <TooltipTrigger

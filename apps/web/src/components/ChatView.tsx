@@ -121,6 +121,7 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
+  pullRequestSurfaceId,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -141,7 +142,15 @@ import {
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
 } from "../previewMiniPlayerStore";
-import { RightPanelTabs } from "./RightPanelTabs";
+import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
+import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
+import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
+import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
+import { AgentsPanel } from "./AgentsPanel";
+import {
+  deriveAgentPanelModel,
+  foldSubagentActivities,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import { SystemPanel } from "./SystemPanel";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
@@ -187,7 +196,7 @@ import {
   makeMemoAttachmentPersistence,
   MEMO_ATTACHMENT_SEND_RESERVE_CHARS,
   pastedContextsNeedMemo,
-  replacePastedContextsWithMemoReferences,
+  prepareMemoPastedContextsForSend,
 } from "../memoAttachments";
 import { lazyWithReload } from "../lazyWithReload";
 import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
@@ -1600,12 +1609,24 @@ function ChatViewContent(props: ChatViewProps) {
     selectActiveRightPanel(state.byThreadKey, activeThreadRef),
   );
   const diffOpen = activeRightPanelKind === "diff";
+  const systemPanelOpen = activeRightPanelKind === "system";
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
   const activeRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
+    Record<string, PullRequestTabStatus>
+  >({});
+  const handlePullRequestTabStatusChange = useCallback((status: PullRequestTabStatus) => {
+    const id = pullRequestSurfaceId(status);
+    setPullRequestTabStatuses((current) =>
+      current[id]?.state === status.state && current[id]?.isDraft === status.isDraft
+        ? current
+        : { ...current, [id]: status },
+    );
+  }, []);
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const activePreviewState = useThreadPreviewState(activeThreadRef);
@@ -1962,6 +1983,8 @@ function ChatViewContent(props: ChatViewProps) {
   const serverConfig = activeThread
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
+  const pullRequestsCapabilityKnown = serverConfig !== null;
+  const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -2143,6 +2166,14 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const agentSessionLive = phase !== "disconnected";
+  const agentPanelModel = useMemo(
+    () =>
+      deriveAgentPanelModel({
+        agents: foldSubagentActivities(threadActivities, { sessionLive: agentSessionLive }),
+      }),
+    [agentSessionLive, threadActivities],
+  );
   const activeContextWindowForMonitor = useMemo(
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
@@ -3343,6 +3374,10 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().close(activeThreadRef);
     dismissPlanSidebarForCurrentTurn();
   }, [activeThreadRef, dismissPlanSidebarForCurrentTurn]);
+  const toggleSystemPanel = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().toggle(activeThreadRef, "system");
+  }, [activeThreadRef]);
   const createBrowserSurface = useCallback(() => {
     if (!activeThreadRef) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
@@ -3366,6 +3401,29 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef]);
+  const addAgentsSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "agents");
+  }, [activeThreadRef]);
+  const threadRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const openThreadPullRequest = useCallback(
+    (number: number) => {
+      if (
+        !supportsPullRequests ||
+        !activeThreadRef ||
+        !activeProject ||
+        threadRepository === null
+      ) {
+        return;
+      }
+      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+        projectId: activeProject.id,
+        repository: threadRepository,
+        number,
+      });
+    },
+    [activeProject, activeThreadRef, supportsPullRequests, threadRepository],
+  );
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -4217,6 +4275,12 @@ function ChatViewContent(props: ChatViewProps) {
     threadBranch: activeThread?.branch ?? null,
     gitStatus: gitStatusQuery.data ?? null,
   });
+  const addPullRequestSurface = useCallback(() => {
+    if (activeThreadPr === null) return;
+    openThreadPullRequest(activeThreadPr.number);
+  }, [activeThreadPr, openThreadPullRequest]);
+  const pullRequestSurfaceAvailable =
+    supportsPullRequests && activeThreadPr !== null && threadRepository !== null;
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const nowMinute = useNowMinute();
@@ -4416,6 +4480,73 @@ function ChatViewContent(props: ChatViewProps) {
     switchGitRef,
     updateThreadMetadata,
   ]);
+  const activeBackgroundLiveness =
+    !isWorking && activeThread ? (activeThreadShell?.backgroundLiveness ?? null) : null;
+  const [isStoppingBackgroundWork, setIsStoppingBackgroundWork] = useState(false);
+  useEffect(() => {
+    if (activeBackgroundLiveness === null) {
+      setIsStoppingBackgroundWork(false);
+    }
+  }, [activeBackgroundLiveness]);
+  useEffect(() => {
+    setIsStoppingBackgroundWork(false);
+  }, [activeThreadId]);
+  const handleStopBackgroundWork = useCallback(async () => {
+    if (!activeThread) return;
+    setIsStoppingBackgroundWork(true);
+    const result = await interruptThreadTurn({
+      environmentId,
+      input: buildThreadTurnInterruptInput(activeThread),
+    });
+    if (result._tag === "Failure") {
+      setIsStoppingBackgroundWork(false);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to stop background work.",
+        );
+      }
+    }
+  }, [activeThread, environmentId, interruptThreadTurn, setThreadError]);
+  const backgroundLivenessBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (activeBackgroundLiveness === null || !activeThread) {
+      return null;
+    }
+    const working = activeBackgroundLiveness === "working";
+    const liveCount = agentPanelModel.liveCount;
+    return {
+      id: `background-liveness:${activeThread.id}`,
+      variant: "default",
+      icon: (
+        <span
+          className={cn("size-1.5 rounded-full bg-foreground", working && "animate-status-pulse")}
+          aria-hidden="true"
+        />
+      ),
+      title: working
+        ? liveCount > 0
+          ? `${liveCount} ${liveCount === 1 ? "agent" : "agents"} working in the background`
+          : "Background work running"
+        : "Monitoring in the background",
+      actions: (
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={isStoppingBackgroundWork}
+          onClick={() => void handleStopBackgroundWork()}
+        >
+          {isStoppingBackgroundWork ? "Stopping..." : "Stop"}
+        </Button>
+      ),
+    };
+  }, [
+    activeBackgroundLiveness,
+    activeThread,
+    agentPanelModel.liveCount,
+    handleStopBackgroundWork,
+    isStoppingBackgroundWork,
+  ]);
   // The stack renders items[0] front-most and tucks the rest behind hover, so
   // ordering is priority: system banners, then the branch-mismatch notice,
   // and the informational parked-thread banner last — it must never cover another.
@@ -4468,12 +4599,25 @@ function ChatViewContent(props: ChatViewProps) {
     void handleSwitchCheckoutToThread();
   }, [gitStatusQuery.data?.hasWorkingTreeChanges, handleSwitchCheckoutToThread]);
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
+    const urgentSystemBannerItems = systemComposerBannerItems.filter(
+      (item) => item.urgent || item.variant === "error" || item.variant === "warning",
+    );
+    const calmSystemBannerItems = systemComposerBannerItems.filter(
+      (item) => !item.urgent && item.variant !== "error" && item.variant !== "warning",
+    );
+    const backgroundLivenessItems =
+      backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const prioritizedItems = [
+      ...urgentSystemBannerItems,
+      ...backgroundLivenessItems,
+      ...calmSystemBannerItems,
+    ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
-      return [...systemComposerBannerItems, ...parkedThreadItems];
+      return [...prioritizedItems, ...parkedThreadItems];
     }
     return [
-      ...systemComposerBannerItems,
+      ...prioritizedItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
         variant: "info",
@@ -4517,6 +4661,7 @@ function ChatViewContent(props: ChatViewProps) {
     ];
   }, [
     activeBranchMismatchKey,
+    backgroundLivenessBannerItem,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
@@ -5024,13 +5169,19 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
-      sendInFlightRef.current = true;
-      beginLocalDispatch({ preparingWorktree: false });
       try {
-        preparedPastedContexts = await replacePastedContextsWithMemoReferences({
+        preparedPastedContexts = await prepareMemoPastedContextsForSend({
           contexts: composerPastedContexts,
           project: activeProject.title,
           persist: makeMemoAttachmentPersistence(preparedConnection),
+          onPreparingChange: (preparing) => {
+            sendInFlightRef.current = preparing;
+            if (preparing) {
+              beginLocalDispatch({ preparingWorktree: false });
+            } else {
+              resetLocalDispatch();
+            }
+          },
         });
         memoBackedAttachmentCount = preparedPastedContexts.length;
       } catch (error) {
@@ -5045,9 +5196,6 @@ function ChatViewContent(props: ChatViewProps) {
           queuedDispatchRef.current = null;
         }
         return;
-      } finally {
-        sendInFlightRef.current = false;
-        resetLocalDispatch();
       }
     }
     const preparedOutgoingMessage = {
@@ -6404,9 +6552,17 @@ function ChatViewContent(props: ChatViewProps) {
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      liveAgentCount={0}
+      systemMonitorOpen={systemPanelOpen}
+      tasksOpen={planSidebarOpen}
+      tasksLabel={planSidebarLabel}
+      liveAgentCount={
+        rightPanelOpen && activeRightPanelSurface?.kind === "agents" ? 0 : agentPanelModel.liveCount
+      }
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
+      onOpenSystemMonitor={toggleSystemPanel}
+      onOpenFiles={addFilesSurface}
+      onToggleTasks={togglePlanSidebar}
     />
   );
   const panelLayoutControls = (
@@ -6468,6 +6624,30 @@ function ChatViewContent(props: ChatViewProps) {
           initialGitScope={initialDiffPanelGitScope}
         />
       </Suspense>
+    ) : activeRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
+      <PullRequestDetailGhost />
+    ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
+      <PullRequestsUnavailableState
+        title="Pull requests unavailable"
+        error="Update this environment's d4research server to browse pull requests."
+      />
+    ) : activeRightPanelSurface?.kind === "pull-request" ? (
+      <PullRequestDetailPanel
+        key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
+        environmentId={activeThread.environmentId}
+        reference={{
+          projectId: activeRightPanelSurface.projectId as ProjectId,
+          repository: activeRightPanelSurface.repository,
+          number: activeRightPanelSurface.number,
+        }}
+        context={
+          activeThreadPr?.number === activeRightPanelSurface.number &&
+          threadRepository === activeRightPanelSurface.repository
+            ? "thread"
+            : "page"
+        }
+        onStateChange={handlePullRequestTabStatusChange}
+      />
     ) : activeRightPanelSurface?.kind === "plan" ? (
       <PlanSidebar
         activePlan={activePlan}
@@ -6485,6 +6665,12 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
         tokenUsage={activeContextWindowForMonitor}
+      />
+    ) : activeRightPanelSurface?.kind === "agents" ? (
+      <AgentsPanel
+        model={agentPanelModel}
+        environmentId={activeThreadRef.environmentId}
+        threadId={activeThreadRef.threadId}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -6539,6 +6725,9 @@ function ChatViewContent(props: ChatViewProps) {
         >
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
+            {...(!supportsPullRequests || threadRepository === null
+              ? {}
+              : { onOpenPullRequest: openThreadPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
@@ -6584,6 +6773,8 @@ function ChatViewContent(props: ChatViewProps) {
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
+                agentPanelModel={agentPanelModel}
+                onOpenAgents={addAgentsSurface}
                 key={activeThread.id}
                 isWorking={isWorking}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
@@ -6958,15 +7149,16 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
-          onAddPullRequest={() => undefined}
-          onAddAgents={() => undefined}
+          onAddPullRequest={addPullRequestSurface}
+          onAddAgents={addAgentsSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
-          pullRequestAvailable={false}
-          agentsAvailable={false}
-          liveAgentCount={0}
+          pullRequestAvailable={pullRequestSurfaceAvailable}
+          agentsAvailable
+          pullRequestStatuses={pullRequestTabStatuses}
+          liveAgentCount={agentPanelModel.liveCount}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -6991,15 +7183,16 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
-            onAddPullRequest={() => undefined}
-            onAddAgents={() => undefined}
+            onAddPullRequest={addPullRequestSurface}
+            onAddAgents={addAgentsSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
-            pullRequestAvailable={false}
-            agentsAvailable={false}
-            liveAgentCount={0}
+            pullRequestAvailable={pullRequestSurfaceAvailable}
+            agentsAvailable
+            pullRequestStatuses={pullRequestTabStatuses}
+            liveAgentCount={agentPanelModel.liveCount}
           >
             {rightPanelContent}
           </RightPanelTabs>

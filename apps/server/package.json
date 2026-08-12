@@ -16,7 +16,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/bin.ts",
-    "build:bundle": "vp pack && vp pack src/service-launcher.ts --out-dir dist --no-clean && node scripts/copy-tool-guard-assets.ts",
+    "build:bundle": "node scripts/prepare-server-dist.ts && vp pack --no-clean && vp pack src/service-launcher.ts --out-dir dist --no-clean && node scripts/copy-tool-guard-assets.ts",
     "start": "node dist/bin.mjs",
     "typecheck": "tsgo --noEmit",
     "test": "vp test run",

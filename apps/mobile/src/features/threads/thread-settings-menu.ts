@@ -39,7 +39,22 @@ export function selectableChoices(
 export type ThreadSettingsMenuEvent =
   | { readonly type: "select-model"; readonly option: ModelOption }
   | { readonly type: "set-option"; readonly optionId: string; readonly value: string | boolean }
-  | { readonly type: "set-runtime"; readonly mode: RuntimeMode };
+  | { readonly type: "set-runtime"; readonly mode: RuntimeMode }
+  | { readonly type: "toggle-session-skill"; readonly name: string }
+  | { readonly type: "set-dev-pipeline"; readonly scenarioName: string | null };
+
+export interface ThreadSettingsSessionSkill {
+  readonly name: string;
+  readonly enabled: boolean;
+  readonly globallyEnabled: boolean;
+  readonly disabled: boolean;
+}
+
+export interface ThreadSettingsDevPipelines {
+  readonly names: ReadonlyArray<string>;
+  readonly activeName: string | null;
+  readonly supported: boolean;
+}
 
 export type ThreadSettingsMenu = {
   readonly actions: MenuAction[];
@@ -63,6 +78,8 @@ export function buildThreadSettingsMenu(input: {
   readonly selectedModel: ModelSelection | null;
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly runtimeMode: RuntimeMode;
+  readonly sessionSkills?: ReadonlyArray<ThreadSettingsSessionSkill>;
+  readonly devPipelines?: ThreadSettingsDevPipelines;
 }): ThreadSettingsMenu {
   const events = new Map<string, ThreadSettingsMenuEvent>();
   const actions: MenuAction[] = [];
@@ -197,6 +214,53 @@ export function buildThreadSettingsMenu(input: {
       };
     }),
   });
+
+  if (input.sessionSkills && input.sessionSkills.length > 0) {
+    actions.push({
+      id: "session-skills",
+      title: "Chat skills",
+      subtitle: `${input.sessionSkills.filter((skill) => skill.enabled).length} enabled`,
+      subactions: input.sessionSkills.map((skill): MenuAction => {
+        const id = `session-skill:${encodeURIComponent(skill.name)}`;
+        events.set(id, { type: "toggle-session-skill", name: skill.name });
+        return {
+          id,
+          title: skill.globallyEnabled ? `${skill.name} (Global)` : skill.name,
+          state: skill.enabled ? "on" : "off",
+          ...(skill.disabled ? { attributes: { disabled: true } } : {}),
+        };
+      }),
+    });
+  }
+
+  if (input.devPipelines && input.devPipelines.names.length > 0) {
+    const choices: MenuAction[] = [];
+    const offId = "dev-pipeline:off";
+    events.set(offId, { type: "set-dev-pipeline", scenarioName: null });
+    choices.push({
+      id: offId,
+      title: "Off",
+      state: input.devPipelines.activeName === null ? "on" : "off",
+    });
+    for (const name of input.devPipelines.names) {
+      const id = `dev-pipeline:${encodeURIComponent(name)}`;
+      events.set(id, { type: "set-dev-pipeline", scenarioName: name });
+      choices.push({
+        id,
+        title: name,
+        state: input.devPipelines.activeName === name ? "on" : "off",
+        ...(input.devPipelines.supported ? {} : { attributes: { disabled: true } }),
+      });
+    }
+    actions.push({
+      id: "dev-pipeline",
+      title: "Dev pipeline",
+      subtitle: input.devPipelines.supported
+        ? (input.devPipelines.activeName ?? "Off")
+        : "Unavailable",
+      subactions: choices,
+    });
+  }
 
   return { actions, events };
 }

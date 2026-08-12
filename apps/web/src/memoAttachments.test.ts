@@ -4,6 +4,7 @@ import type { PastedContextDraft } from "./lib/pastedContext";
 import {
   memoAttachmentDocumentToken,
   pastedContextsNeedMemo,
+  prepareMemoPastedContextsForSend,
   replacePastedContextsWithMemoReferences,
 } from "./memoAttachments";
 
@@ -151,5 +152,41 @@ describe("Memo-backed composer attachments", () => {
       }),
     ).rejects.toThrow("Memo is disabled");
     expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("releases the send latch after failure so the same page can retry", async () => {
+    const sourceContent = `HEAD-${"x".repeat(132_267)}-TAIL`;
+    let sendLatched = false;
+    const pendingStates: boolean[] = [];
+    const onPreparingChange = (preparing: boolean) => {
+      sendLatched = preparing;
+      pendingStates.push(preparing);
+    };
+
+    await expect(
+      prepareMemoPastedContextsForSend({
+        contexts: [context({ sourceContent })],
+        project: "d4research",
+        persist: async () => {
+          throw new Error("Memo unavailable");
+        },
+        onPreparingChange,
+      }),
+    ).rejects.toThrow("Memo unavailable");
+    expect(sendLatched).toBe(false);
+
+    const retried = await prepareMemoPastedContextsForSend({
+      contexts: [context({ sourceContent })],
+      project: "d4research",
+      persist: async (input) => ({
+        documentToken: input.documentToken,
+        characterCount: input.content.length,
+        chunkCount: 9,
+      }),
+      onPreparingChange,
+    });
+    expect(sendLatched).toBe(false);
+    expect(retried[0]?.content.length).toBeLessThan(5_000);
+    expect(pendingStates).toEqual([true, false, true, false]);
   });
 });

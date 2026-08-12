@@ -30,7 +30,12 @@ import { cn } from "../../lib/cn";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection, providerOptionValueLabels } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { RUNTIME_MODE_CHOICES, selectableChoices } from "./thread-settings-menu";
+import {
+  RUNTIME_MODE_CHOICES,
+  selectableChoices,
+  type ThreadSettingsDevPipelines,
+  type ThreadSettingsSessionSkill,
+} from "./thread-settings-menu";
 import { pendingModelAfterPress } from "./thread-settings-sheet-state";
 import type { ThreadSettingsSheetCloseReason } from "./use-thread-settings-sheet-presentation";
 
@@ -193,6 +198,7 @@ function DisclosureRow(props: {
 function ChoiceRow(props: {
   readonly label: string;
   readonly selected: boolean;
+  readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
   const primaryFg = useThemeColor("--color-primary-foreground");
@@ -200,10 +206,12 @@ function ChoiceRow(props: {
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: props.selected }}
+      disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
         "mx-2.5 flex-row items-center rounded-xl px-3 py-3.5 active:opacity-70",
         props.selected ? "bg-primary" : "bg-transparent",
+        props.disabled && "opacity-40",
       )}
     >
       <Text
@@ -251,7 +259,9 @@ function SwitchRow(props: {
 
 type SubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
-  | { readonly kind: "runtime" };
+  | { readonly kind: "runtime" }
+  | { readonly kind: "session-skills" }
+  | { readonly kind: "dev-pipeline" };
 
 /**
  * Unified thread settings: the sheet is the provider-grouped model list
@@ -286,6 +296,10 @@ export function ThreadSettingsSheet(props: {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  readonly sessionSkills?: ReadonlyArray<ThreadSettingsSessionSkill>;
+  readonly onToggleSessionSkill?: (name: string) => void;
+  readonly devPipelines?: ThreadSettingsDevPipelines;
+  readonly onSelectDevPipeline?: (scenarioName: string | null) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -417,36 +431,86 @@ export function ThreadSettingsSheet(props: {
         )
       : undefined;
 
-  const submenuContent =
-    submenu?.kind === "runtime"
-      ? {
-          title: "Runtime",
-          rows: RUNTIME_MODE_CHOICES.map((choice) => ({
-            id: choice.mode,
-            label: choice.label,
-            selected: choice.mode === props.runtimeMode,
+  const submenuContent = (() => {
+    if (submenu?.kind === "runtime") {
+      return {
+        title: "Runtime",
+        rows: RUNTIME_MODE_CHOICES.map((choice) => ({
+          id: choice.mode,
+          label: choice.label,
+          selected: choice.mode === props.runtimeMode,
+          onPress: () => {
+            void Haptics.selectionAsync();
+            props.onUpdateRuntimeMode(choice.mode);
+            setSubmenu(null);
+          },
+        })),
+      };
+    }
+    if (submenu?.kind === "session-skills") {
+      return {
+        title: "Chat skills",
+        rows: (props.sessionSkills ?? []).map((skill) => ({
+          id: skill.name,
+          label: skill.globallyEnabled ? `${skill.name} (Global)` : skill.name,
+          selected: skill.enabled,
+          disabled: skill.disabled,
+          onPress: () => {
+            void Haptics.selectionAsync();
+            props.onToggleSessionSkill?.(skill.name);
+          },
+        })),
+      };
+    }
+    if (submenu?.kind === "dev-pipeline") {
+      const devPipelines = props.devPipelines;
+      if (!devPipelines) return null;
+      return {
+        title: "Dev pipeline",
+        rows: [
+          {
+            id: "off",
+            label: "Off",
+            selected: devPipelines.activeName === null,
+            disabled: false,
             onPress: () => {
               void Haptics.selectionAsync();
-              props.onUpdateRuntimeMode(choice.mode);
+              props.onSelectDevPipeline?.(null);
+              setSubmenu(null);
+            },
+          },
+          ...devPipelines.names.map((name) => ({
+            id: name,
+            label: name,
+            selected: devPipelines.activeName === name,
+            disabled: !devPipelines.supported,
+            onPress: () => {
+              void Haptics.selectionAsync();
+              props.onSelectDevPipeline?.(name);
               setSubmenu(null);
             },
           })),
-        }
-      : activeDescriptor?.type === "select"
-        ? {
-            title: activeDescriptor.label,
-            rows: selectableChoices(activeDescriptor).map((choice) => ({
-              id: choice.id,
-              label: choice.label,
-              selected: choice.id === getProviderOptionCurrentValue(activeDescriptor),
-              onPress: () => {
-                void Haptics.selectionAsync();
-                handleOptionChange(activeDescriptor.id, choice.id);
-                setSubmenu(null);
-              },
-            })),
-          }
-        : null;
+        ],
+      };
+    }
+    if (activeDescriptor?.type === "select") {
+      return {
+        title: activeDescriptor.label,
+        rows: selectableChoices(activeDescriptor).map((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          selected: choice.id === getProviderOptionCurrentValue(activeDescriptor),
+          disabled: false,
+          onPress: () => {
+            void Haptics.selectionAsync();
+            handleOptionChange(activeDescriptor.id, choice.id);
+            setSubmenu(null);
+          },
+        })),
+      };
+    }
+    return null;
+  })();
 
   return (
     <Modal
@@ -595,6 +659,24 @@ export function ThreadSettingsSheet(props: {
               }
               onPress={() => setSubmenu({ kind: "runtime" })}
             />
+            {(props.sessionSkills?.length ?? 0) > 0 ? (
+              <DisclosureRow
+                label="Chat skills"
+                value={`${props.sessionSkills?.filter((skill) => skill.enabled).length ?? 0} enabled`}
+                onPress={() => setSubmenu({ kind: "session-skills" })}
+              />
+            ) : null}
+            {(props.devPipelines?.names.length ?? 0) > 0 ? (
+              <DisclosureRow
+                label="Dev pipeline"
+                value={
+                  props.devPipelines?.supported
+                    ? (props.devPipelines.activeName ?? "Off")
+                    : "Unavailable"
+                }
+                onPress={() => setSubmenu({ kind: "dev-pipeline" })}
+              />
+            ) : null}
             <Pressable
               accessibilityRole="button"
               onPress={handleSave}
@@ -639,6 +721,7 @@ export function ThreadSettingsSheet(props: {
                     key={row.id}
                     label={row.label}
                     selected={row.selected}
+                    disabled={"disabled" in row ? row.disabled : false}
                     onPress={row.onPress}
                   />
                 ))}

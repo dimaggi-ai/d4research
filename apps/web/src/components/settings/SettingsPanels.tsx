@@ -631,6 +631,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
+      ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
+        ? ["Auto-open task panel"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -663,6 +666,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     [
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
+      settings.autoOpenPlanSidebar,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -709,6 +713,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       autoResumeAfterUsageLimit: DEFAULT_UNIFIED_SETTINGS.autoResumeAfterUsageLimit,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1955,6 +1960,32 @@ export function GeneralSettingsPanel() {
                 onOpenChange={setBackgroundActivityDialogOpen}
               />
             </>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("auto-open-task-panel")}
+          description="Open the right-side plan and task panel automatically when steps appear."
+          resetAction={
+            settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar ? (
+              <SettingResetButton
+                label="auto-open task panel"
+                onClick={() =>
+                  updateSettings({
+                    autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.autoOpenPlanSidebar}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoOpenPlanSidebar: Boolean(checked) })
+              }
+              aria-label="Open the task panel automatically"
+            />
           }
         />
 

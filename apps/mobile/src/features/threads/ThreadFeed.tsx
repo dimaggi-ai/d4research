@@ -4,6 +4,10 @@ import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
+import {
+  stripUserMessageTransport,
+  type UserMessageTransportSummary,
+} from "@t3tools/shared/userMessageTransport";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -103,6 +107,16 @@ import {
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { useAssetUrl } from "../../state/assets";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
+
+function keyedTransportContexts(contexts: ReadonlyArray<UserMessageTransportSummary>) {
+  const occurrences = new Map<string, number>();
+  return contexts.map((context) => {
+    const base = `${context.kind}:${context.label}`;
+    const occurrence = (occurrences.get(base) ?? 0) + 1;
+    occurrences.set(base, occurrence);
+    return { context, key: `${base}:${occurrence}` };
+  });
+}
 
 const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
@@ -879,16 +893,25 @@ function renderFeedEntry(
   if (entry.type === "message") {
     const { message } = entry;
     const isUser = message.role === "user";
+    const displayedUserMessage = isUser
+      ? stripUserMessageTransport(message.text)
+      : {
+          promptText: message.text,
+          skills: [],
+          globalSkills: [],
+          sessionSkills: [],
+          contexts: [],
+        };
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
     const attachments = message.attachments ?? [];
-    const hasReviewCommentContext = message.text.includes("<review_comment");
+    const hasReviewCommentContext = displayedUserMessage.promptText.includes("<review_comment");
     // A bubble that sizes itself from its content cannot lay out a block whose
     // intrinsic width overflows `maxWidth`: Android positions the bubble's
     // children during the unclamped pass and never moves them once the width
     // is clamped, so the paragraphs around the block end up drawn on top of
     // each other. Pinning the width removes that pass.
-    const hasWideBlock = hasWideMarkdownBlock(message.text);
+    const hasWideBlock = hasWideMarkdownBlock(displayedUserMessage.promptText);
     const assistantTurnStillInProgress =
       message.role === "assistant" &&
       props.unsettledTurnId !== null &&
@@ -918,9 +941,43 @@ function renderFeedEntry(
                   : null),
             }}
           >
-            {message.text.trim().length > 0 ? (
+            {displayedUserMessage.skills.length > 0 ? (
+              <View className="flex-row flex-wrap gap-1.5" accessibilityLabel="Enabled skills">
+                {displayedUserMessage.globalSkills.map((name) => (
+                  <View
+                    key={name}
+                    className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1"
+                  >
+                    <Text className="font-t3-medium text-xs text-primary">Global: {name}</Text>
+                  </View>
+                ))}
+                {displayedUserMessage.sessionSkills.map((name) => (
+                  <View
+                    key={name}
+                    className="rounded-md border border-primary/20 bg-primary/10 px-2 py-1"
+                  >
+                    <Text className="font-t3-medium text-xs text-primary">Chat: {name}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {displayedUserMessage.contexts.length > 0 ? (
+              <View className="flex-row flex-wrap gap-1.5" accessibilityLabel="Attached contexts">
+                {keyedTransportContexts(displayedUserMessage.contexts).map(({ context, key }) => (
+                  <View
+                    key={key}
+                    className="rounded-md border border-neutral-500/20 bg-neutral-500/10 px-2 py-1"
+                  >
+                    <Text className="font-t3-medium text-xs text-foreground-muted">
+                      {context.kind}: {context.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {displayedUserMessage.promptText.trim().length > 0 ? (
               <UserMessageContent
-                text={message.text}
+                text={displayedUserMessage.promptText}
                 markdownStyles={styles}
                 reviewCommentColors={props.reviewCommentColors}
                 skills={props.skills}
@@ -943,10 +1000,10 @@ function renderFeedEntry(
             <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
               {timestampLabel}
             </Text>
-            {message.text.trim().length > 0 ? (
+            {displayedUserMessage.promptText.trim().length > 0 ? (
               <CopyTextButton
                 accessibilityLabel="Copy message"
-                text={message.text}
+                text={displayedUserMessage.promptText}
                 tintColor={iconSubtleColor}
                 buttonSize={28}
                 iconSize={13}

@@ -9,26 +9,38 @@ import { usePreparedConnection } from "./session";
 const EMPTY_SKILL_NAMES: ReadonlyArray<string> = Object.freeze([]);
 const PROJECT_SKILLS_POLL_INTERVAL_MS = 30_000;
 
+interface LoadedProjectSkillNames {
+  readonly environmentId: EnvironmentId;
+  readonly cwd: string;
+  readonly names: ReadonlyArray<string>;
+}
+
 export function useProjectSkillNames(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): ReadonlyArray<string> {
   const preparedOption = usePreparedConnection(environmentId);
   const prepared = preparedOption._tag === "Some" ? preparedOption.value : null;
-  const [names, setNames] = useState<ReadonlyArray<string>>(EMPTY_SKILL_NAMES);
+  const [loaded, setLoaded] = useState<LoadedProjectSkillNames | null>(null);
 
   useEffect(() => {
     if (!prepared || !cwd) {
-      setNames(EMPTY_SKILL_NAMES);
+      setLoaded(null);
       return;
     }
     let active = true;
     const load = async () => {
       try {
         const result = await runtime.runPromise(fetchEnvironmentSkillsInventory({ prepared, cwd }));
-        if (active) setNames(projectSkillNamesFromInventory(result.skills));
+        if (active) {
+          setLoaded({
+            environmentId,
+            cwd,
+            names: projectSkillNamesFromInventory(result.skills),
+          });
+        }
       } catch {
-        if (active) setNames(EMPTY_SKILL_NAMES);
+        if (active) setLoaded({ environmentId, cwd, names: EMPTY_SKILL_NAMES });
       }
     };
     void load();
@@ -37,7 +49,9 @@ export function useProjectSkillNames(
       active = false;
       clearInterval(interval);
     };
-  }, [cwd, prepared]);
+  }, [cwd, environmentId, prepared]);
 
-  return names;
+  return loaded?.environmentId === environmentId && loaded.cwd === cwd
+    ? loaded.names
+    : EMPTY_SKILL_NAMES;
 }

@@ -4,7 +4,9 @@ A multi-provider coding agent workspace for structured research, built on the [T
 
 ## Installation
 
-**Run this fork from source** — see [Setup](#setup) below. No prebuilt binaries are published yet: the [releases page](https://github.com/dimaggi-ai/d4research/releases) is currently empty, and there is no npm package or Docker image. The upstream `npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
+**Run this fork from source** — see [Setup](#setup) below. The `v0.1.0` GitHub release is
+source-only; no d4research binaries, npm package, or Docker image are published yet. The upstream
+`npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
 Desktop artifacts are cut on a maintainer machine rather than in CI, so when they do land the platform set tracks whatever that machine can build — a Linux `x86_64` AppImage via `vp run dist:desktop:linux` — and the binaries are unsigned. macOS and Windows installers are not published; build them from source with the matching `dist:desktop:*` script, or run from source on any platform.
 
@@ -105,6 +107,12 @@ Both are configured as **named scenarios** — create one per kind of work (`blo
 Dev pipelines ship with a working default — a plan → build → review + verify chain that picks distinct model families for each role from whatever providers you have ready, so the reviewer is never the author.
 
 **Directives.** Inside a pipeline, `!provider:model` names a delegation target and `!provider:model:file.md` also hands that delegate one of your attached prompt files. The provider matches by name and the model fragment can be partial as long as it is unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then their models, then your attached files; live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
+
+The composer's **Workflows** menu combines Chat/Plan, named Dev and Research scenarios, and one
+shared target policy. **Exact targets only** fails an unavailable step. **Use labeled fallback**
+accepts only a `FALLBACK directive: !provider:model` authored in that scenario. Delegation results
+always record the requested and actual target, so a fallback never impersonates the unavailable
+model.
 
 **Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. Contents are inlined server-side into the delegated request, so the orchestrator's own context never carries the file bodies — and a file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
 

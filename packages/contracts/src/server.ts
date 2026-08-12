@@ -184,6 +184,17 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+export const ServerProviderReadiness = Schema.Struct({
+  installation: Schema.Literals(["ready", "missing", "disabled"]),
+  authentication: Schema.Literals(["ready", "required", "unknown"]),
+  reachability: Schema.Literals(["ready", "failed", "unknown"]),
+  modelCatalog: Schema.Literals(["ready", "missing", "unknown"]),
+  canStart: Schema.Boolean,
+  checkedAt: IsoDateTime,
+  remediation: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerProviderReadiness = typeof ServerProviderReadiness.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -221,6 +232,8 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
   usage: Schema.optionalKey(ServerProviderUsage),
+  /** Explicit pre-turn contract; optional so older servers remain decodable. */
+  readiness: Schema.optionalKey(ServerProviderReadiness),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
@@ -239,6 +252,16 @@ export type ServerProviders = typeof ServerProviders.Type;
  */
 export const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
+
+/** One shared strict readiness rule for server, web, desktop, and mobile. */
+export const canStartProviderTurn = (snapshot: ServerProvider): boolean =>
+  snapshot.readiness?.canStart ??
+  (snapshot.enabled &&
+    snapshot.installed &&
+    isProviderAvailable(snapshot) &&
+    snapshot.status === "ready" &&
+    snapshot.auth.status !== "unauthenticated" &&
+    snapshot.models.length > 0);
 
 export const ServerObservability = Schema.Struct({
   logsDirectoryPath: TrimmedNonEmptyString,

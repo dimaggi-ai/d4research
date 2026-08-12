@@ -668,6 +668,36 @@ export function ProviderInstanceCard({
     </p>
   );
 
+  const readinessNode = liveProvider?.readiness ? (
+    <div className="flex flex-wrap items-center gap-1.5" aria-label="Provider readiness">
+      {[
+        ["Install", liveProvider.readiness.installation],
+        ["Auth", liveProvider.readiness.authentication],
+        ["Reach", liveProvider.readiness.reachability],
+        ["Models", liveProvider.readiness.modelCatalog],
+      ].map(([label, state]) => {
+        const ready = state === "ready";
+        const blocked = state === "missing" || state === "required" || state === "failed";
+        return (
+          <span
+            key={label}
+            className={cn(
+              "rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none",
+              ready
+                ? "border-success/25 bg-success/8 text-success"
+                : blocked
+                  ? "border-destructive/25 bg-destructive/8 text-destructive"
+                  : "border-warning/25 bg-warning/8 text-warning",
+            )}
+            title={`${label}: ${state}`}
+          >
+            {label} · {state}
+          </span>
+        );
+      })}
+    </div>
+  ) : null;
+
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
@@ -778,6 +808,7 @@ export function ProviderInstanceCard({
               {titleTailNode}
             </div>
             {authRowNode}
+            {readinessNode}
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             <ProviderDetailsButton

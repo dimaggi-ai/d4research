@@ -46,14 +46,14 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
   if (!provider.installed) {
     return {
       headline: "Not found",
-      detail: provider.message ?? "CLI not detected on PATH.",
+      detail: provider.readiness?.remediation ?? provider.message ?? "CLI not detected on PATH.",
     };
   }
   if (provider.auth.status === "authenticated") {
     const authLabel = provider.auth.label ?? provider.auth.type;
     return {
       headline: authLabel ? `Authenticated · ${authLabel}` : "Authenticated",
-      detail: provider.message ?? null,
+      detail: provider.readiness?.remediation ?? provider.message ?? null,
     };
   }
   if (provider.auth.status === "unauthenticated") {
@@ -66,13 +66,18 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Needs attention",
       detail:
-        provider.message ?? "The provider is installed, but the server could not fully verify it.",
+        provider.readiness?.remediation ??
+        provider.message ??
+        "The provider is installed, but the server could not fully verify it.",
     };
   }
   if (provider.status === "error") {
     return {
       headline: "Unavailable",
-      detail: provider.message ?? "The provider failed its startup checks.",
+      detail:
+        provider.readiness?.remediation ??
+        provider.message ??
+        "The provider failed its startup checks.",
     };
   }
   return {

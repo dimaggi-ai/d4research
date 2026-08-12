@@ -159,6 +159,17 @@ export interface LocalMemoConnector {
   ) => Effect.Effect<MemoryAddResult, MemoryConnectorError>;
   readonly stats: () => Effect.Effect<MemoryStats, MemoryConnectorError>;
   readonly health: () => Effect.Effect<MemoryStats, MemoryConnectorError>;
+  /**
+   * Optional because the external Memo REST contract cannot constrain a
+   * search to one source. Composer documents require this boundary so a
+   * query can never return a similarly worded chunk from another document.
+   */
+  readonly searchBySource?: (
+    query: string,
+    k: number,
+    source: string,
+    project?: string,
+  ) => Effect.Effect<MemorySearchResult, MemoryConnectorError>;
   /** Optional because the external Memo REST contract has no deletion endpoint. */
   readonly deleteBySource?: (
     source: string,

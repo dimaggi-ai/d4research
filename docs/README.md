@@ -5,7 +5,11 @@ d4research is a private workspace for long-running research across models and co
 ## Using d4research
 
 - [Research workflows](./user/research-workflows.md)
+- [Starter research scenario](./user/starter-research.md)
+- [Starter sample corpus](./user/samples/kitten-fluffiness.md)
 - [Install and first run](./user/install.md)
+- [Product concepts](./user/concepts.md)
+- [Troubleshooting](./user/troubleshooting.md)
 - [The composer](./user/composer.md)
 - [Settings](./user/settings.md)
 - [Context window and usage](./user/context-and-usage.md)

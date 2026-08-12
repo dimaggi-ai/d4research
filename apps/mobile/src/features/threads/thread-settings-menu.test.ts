@@ -73,6 +73,7 @@ function baseInput() {
     selectedModel: models[0]?.selection ?? null,
     optionDescriptors: [effortDescriptor, fastModeDescriptor],
     runtimeMode: "auto",
+    pipelineTargetPolicy: "labeled-fallback",
   } as const;
 }
 
@@ -89,6 +90,7 @@ describe("buildThreadSettingsMenu", () => {
       "Reasoning",
       "Fast mode",
       "Runtime",
+      "Pipeline targets",
     ]);
   });
 
@@ -268,6 +270,20 @@ describe("buildThreadSettingsMenu", () => {
     });
   });
 
+  it("uses one honest target policy for research and dev pipeline delegates", () => {
+    const menu = buildThreadSettingsMenu(baseInput());
+    const targetRows =
+      menu.actions.find((action) => action.title === "Pipeline targets")?.subactions ?? [];
+
+    expect(targetRows.find((action) => action.title === "Use labeled fallback")?.state).toBe("on");
+    expect(
+      eventFor(menu, targetRows.find((action) => action.title === "Exact targets only")?.id),
+    ).toEqual({
+      type: "set-pipeline-target-policy",
+      policy: "exact",
+    });
+  });
+
   it("sections models by provider only when multiple groups are offered", () => {
     const codexModels = [modelOption("gpt-current", { isDefault: true })];
     const claudeModels = [modelOption("fable-5", { providerKey: "claude" })];
@@ -276,6 +292,7 @@ describe("buildThreadSettingsMenu", () => {
       selectedModel: codexModels[0]?.selection ?? null,
       optionDescriptors: [],
       runtimeMode: "auto",
+      pipelineTargetPolicy: "exact",
     });
 
     const modelItems = menu.actions.find((action) => action.title === "Model")?.subactions ?? [];
@@ -314,6 +331,8 @@ describe("buildThreadSettingsMenu", () => {
     for (const id of leafIds) {
       expect(menu.events.get(id), `missing event for ${id}`).toBeDefined();
     }
-    expect(eventTypes(menu)).toEqual(new Set(["select-model", "set-option", "set-runtime"]));
+    expect(eventTypes(menu)).toEqual(
+      new Set(["select-model", "set-option", "set-runtime", "set-pipeline-target-policy"]),
+    );
   });
 });

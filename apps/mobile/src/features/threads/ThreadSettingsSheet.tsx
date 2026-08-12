@@ -1,5 +1,6 @@
 import type {
   ModelSelection,
+  PipelineTargetPolicy,
   ProviderInteractionMode,
   ProviderOptionDescriptor,
   ProviderOptionSelection,
@@ -261,7 +262,8 @@ type SubmenuPage =
   | { readonly kind: "descriptor"; readonly id: string }
   | { readonly kind: "runtime" }
   | { readonly kind: "session-skills" }
-  | { readonly kind: "dev-pipeline" };
+  | { readonly kind: "dev-pipeline" }
+  | { readonly kind: "pipeline-target-policy" };
 
 /**
  * Unified thread settings: the sheet is the provider-grouped model list
@@ -296,6 +298,8 @@ export function ThreadSettingsSheet(props: {
   readonly onUpdateOptionSelections: (selections: ReadonlyArray<ProviderOptionSelection>) => void;
   readonly runtimeMode: RuntimeMode;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
+  readonly pipelineTargetPolicy: PipelineTargetPolicy;
+  readonly onUpdatePipelineTargetPolicy: (policy: PipelineTargetPolicy) => void;
   readonly sessionSkills?: ReadonlyArray<ThreadSettingsSessionSkill>;
   readonly onToggleSessionSkill?: (name: string) => void;
   readonly devPipelines?: ThreadSettingsDevPipelines;
@@ -493,6 +497,35 @@ export function ThreadSettingsSheet(props: {
         ],
       };
     }
+    if (submenu?.kind === "pipeline-target-policy") {
+      return {
+        title: "Pipeline targets",
+        rows: [
+          {
+            id: "labeled-fallback",
+            label: "Use labeled fallback",
+            selected: props.pipelineTargetPolicy === "labeled-fallback",
+            disabled: false,
+            onPress: () => {
+              void Haptics.selectionAsync();
+              props.onUpdatePipelineTargetPolicy("labeled-fallback");
+              setSubmenu(null);
+            },
+          },
+          {
+            id: "exact",
+            label: "Exact targets only",
+            selected: props.pipelineTargetPolicy === "exact",
+            disabled: false,
+            onPress: () => {
+              void Haptics.selectionAsync();
+              props.onUpdatePipelineTargetPolicy("exact");
+              setSubmenu(null);
+            },
+          },
+        ],
+      };
+    }
     if (activeDescriptor?.type === "select") {
       return {
         title: activeDescriptor.label,
@@ -677,6 +710,15 @@ export function ThreadSettingsSheet(props: {
                 onPress={() => setSubmenu({ kind: "dev-pipeline" })}
               />
             ) : null}
+            <DisclosureRow
+              label="Pipeline targets"
+              value={
+                props.pipelineTargetPolicy === "labeled-fallback"
+                  ? "Labeled fallback"
+                  : "Exact only"
+              }
+              onPress={() => setSubmenu({ kind: "pipeline-target-policy" })}
+            />
             <Pressable
               accessibilityRole="button"
               onPress={handleSave}

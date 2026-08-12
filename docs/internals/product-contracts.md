@@ -128,6 +128,8 @@ expression depth), and count/length maximums.
 The provider snapshot clients render: `ServerProvider` (instanceId, driver, display metadata,
 enabled/installed, `ServerProviderState` status, `ServerProviderAuth`, models
 (`ServerProviderModel`), `slashCommands`, `skills` (`ServerProviderSkill`), availability,
+typed `ServerProviderReadiness` (installation, authentication, reachability, model state,
+freshness, `canStart`, and remediation),
 `versionAdvisory` (`ServerProviderVersionAdvisory`), `updateState`
 (`ServerProviderUpdateStatus`), and `usage: ServerProviderUsage` — plan type, rolling
 `ServerProviderUsageWindow`s with utilization/reset, credits, `limitReached`). Plus
@@ -137,7 +139,8 @@ enabled/installed, `ServerProviderState` status, `ServerProviderAuth`, models
 
 `ServerSettings` — the server-persisted configuration tree: appearance (font sizes/families,
 smoothing), sidebar ordering/grouping/preview counts and auto-settle, timestamp format, thread
-defaults, `MemoryConnectorSettings` (`memory.localEnabled`, local Memo base URL), and
+defaults, `MemoryConnectorSettings` (`memory.localEnabled`, built-in or external backend, local
+Memo base URL), shared `PipelineTargetPolicy` (`exact` or `labeled-fallback`), and
 `HandoffSettings` with `HandoffContextCompressionSettings` (`enabled`, `instanceId`, `model`,
 `maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions are
 decoded forward-compatibly so older clients survive newer config.

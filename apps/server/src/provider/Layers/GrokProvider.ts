@@ -305,8 +305,14 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     probe: {
       installed: true,
       version,
-      status: "ready",
+      status: discoveredModels.length > 0 ? "ready" : "warning",
       auth: { status: "unknown" },
+      ...(discoveredModels.length === 0
+        ? {
+            message:
+              "Grok ACP started but reported no models. Authenticate the CLI and refresh provider status.",
+          }
+        : {}),
     },
   });
 });

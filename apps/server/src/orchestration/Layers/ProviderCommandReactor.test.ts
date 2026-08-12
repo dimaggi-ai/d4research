@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 
 import {
   ModelSelection,
+  type OrchestrationSession,
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderDriverKind,
@@ -57,6 +58,8 @@ import {
   expandProviderDevMessage,
   expandProviderResearchMessage,
   ProviderCommandReactorLive,
+  withProviderSessionStartDeadline,
+  withProviderTurnSendDeadline,
 } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
@@ -199,6 +202,50 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  effectIt.effect("bounds provider startup and turn acceptance", () =>
+    Effect.gen(function* () {
+      const startup = yield* Effect.exit(
+        withProviderSessionStartDeadline(Effect.never, {
+          provider: "codex",
+          threadId: ThreadId.make("thread-1"),
+          timeoutMillis: 0,
+        }),
+      );
+      const send = yield* Effect.exit(
+        withProviderTurnSendDeadline(Effect.never, {
+          provider: "codex",
+          timeoutMillis: 0,
+        }),
+      );
+
+      expect(startup._tag).toBe("Failure");
+      expect(send._tag).toBe("Failure");
+    }),
+  );
+
+  it("reconciles a projected running session that did not survive server restart", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      sessionBeforeStart: {
+        threadId: ThreadId.make("thread-1"),
+        status: "running",
+        providerName: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "approval-required",
+        activeTurnId: asTurnId("turn-before-restart"),
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+
+    const thread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    expect(thread?.session?.status).toBe("error");
+    expect(thread?.session?.activeTurnId).toBeNull();
+    expect(thread?.session?.lastError).toContain("ended while d4research was offline");
+  });
+
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
@@ -208,6 +255,7 @@ describe("ProviderCommandReactor", () => {
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly providerSnapshots?: ReadonlyArray<ServerProvider>;
     readonly serverSettings?: Parameters<typeof ServerSettingsService.layerTest>[0];
+    readonly sessionBeforeStart?: OrchestrationSession;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -359,32 +407,59 @@ describe("ProviderCommandReactor", () => {
     const defaultDriver = ProviderDriverKind.make(
       String(modelSelection.instanceId).startsWith("claude") ? "claudeAgent" : "codex",
     );
+    const makeReadyProviderSnapshot = (
+      selection: ModelSelection,
+      driver: "codex" | "claudeAgent",
+    ): ServerProvider => ({
+      instanceId: selection.instanceId,
+      driver: ProviderDriverKind.make(driver),
+      displayName: driver === "codex" ? "Codex" : "Claude",
+      ...(input?.requiresNewThreadForModelChange === true
+        ? { requiresNewThreadForModelChange: true }
+        : {}),
+      enabled: true,
+      installed: true,
+      version: "test",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: now,
+      availability: "available",
+      models: [
+        {
+          slug: selection.model,
+          name: selection.model,
+          isCustom: false,
+          capabilities: null,
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    });
+    const defaultProviderSnapshots = new Map<string, ServerProvider>();
+    for (const snapshot of [
+      makeReadyProviderSnapshot(
+        {
+          instanceId: ProviderInstanceId.make("codex_work"),
+          model: "gpt-5-codex",
+        },
+        "codex",
+      ),
+      makeReadyProviderSnapshot(
+        {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-4-6",
+        },
+        "claudeAgent",
+      ),
+      makeReadyProviderSnapshot(
+        modelSelection,
+        defaultDriver === ProviderDriverKind.make("codex") ? "codex" : "claudeAgent",
+      ),
+    ]) {
+      defaultProviderSnapshots.set(String(snapshot.instanceId), snapshot);
+    }
     const providerSnapshots: ReadonlyArray<ServerProvider> = input?.providerSnapshots ?? [
-      {
-        instanceId: modelSelection.instanceId,
-        driver: defaultDriver,
-        displayName: defaultDriver === ProviderDriverKind.make("codex") ? "Codex" : "Claude",
-        ...(input?.requiresNewThreadForModelChange === true
-          ? { requiresNewThreadForModelChange: true }
-          : {}),
-        enabled: true,
-        installed: true,
-        version: "test",
-        status: "ready",
-        auth: { status: "authenticated" },
-        checkedAt: now,
-        availability: "available",
-        models: [
-          {
-            slug: modelSelection.model,
-            name: modelSelection.model,
-            isCustom: false,
-            capabilities: null,
-          },
-        ],
-        slashCommands: [],
-        skills: [],
-      },
+      ...defaultProviderSnapshots.values(),
     ];
 
     const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
@@ -530,6 +605,17 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
+    if (input?.sessionBeforeStart !== undefined) {
+      await runEffect(
+        engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-before-reactor-start"),
+          threadId: ThreadId.make("thread-1"),
+          session: input.sessionBeforeStart,
+          createdAt: now,
+        }),
+      );
+    }
     if (input?.titleRegenerationBeforeStart === "two") {
       await Effect.runPromise(
         engine.dispatch({
@@ -816,6 +902,53 @@ describe("ProviderCommandReactor", () => {
 
       yield* Deferred.succeed(releaseStart, undefined);
       yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+    }),
+  );
+
+  effectIt.effect("stops a thread while provider startup is still blocked", () =>
+    Effect.gen(function* () {
+      const releaseStart = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) => Deferred.await(releaseStart).pipe(Effect.as(session)),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-blocked-provider"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-blocked-provider"),
+          role: "user",
+          text: "start and then stop",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.stop",
+        commandId: CommandId.make("cmd-session-stop-blocked-provider"),
+        threadId: ThreadId.make("thread-1"),
+        createdAt: now,
+      });
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const readModel = await harness.readModel();
+          return (
+            readModel.threads.find((thread) => thread.id === ThreadId.make("thread-1"))?.session
+              ?.status === "stopped"
+          );
+        }),
+      );
+
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+      yield* Effect.promise(() => harness.drain());
     }),
   );
 

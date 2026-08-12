@@ -52,6 +52,17 @@ export interface DeletedMemoAttachment {
   readonly deleted: number;
 }
 
+export interface SearchedMemoAttachment {
+  readonly documentToken: string;
+  readonly status: "ok" | "missing" | "incomplete";
+  readonly results: ReadonlyArray<{
+    readonly id?: string | undefined;
+    readonly text: string;
+    readonly score?: number | undefined;
+    readonly metadata?: unknown;
+  }>;
+}
+
 export class MemoAttachmentPersistenceError extends Data.TaggedError(
   "MemoAttachmentPersistenceError",
 )<{ readonly message: string }> {}
@@ -318,4 +329,49 @@ export const deleteMemoAttachment = Effect.fn("memory.deleteComposerAttachment")
   }
   const result = yield* input.connector.deleteBySource(memoAttachmentSource(input.documentToken));
   return { supported: true, deleted: result.deleted };
+});
+
+/** Search one committed attachment without allowing cross-document matches. */
+export const searchMemoAttachment = Effect.fn("memory.searchComposerAttachment")(function* (input: {
+  readonly connector: LocalMemoConnector;
+  readonly documentToken: string;
+  readonly query: string;
+  readonly limit: number;
+  readonly project?: string | undefined;
+}): Effect.fn.Return<SearchedMemoAttachment, MemoryConnectorError> {
+  if (!isMemoAttachmentDocumentToken(input.documentToken)) {
+    return yield* new MemoryConnectorError({
+      connector: "local",
+      operation: "searchAttachment",
+      message: "Invalid Memo attachment document token.",
+    });
+  }
+  if (
+    input.connector.searchBySource === undefined ||
+    input.connector.listBySourcePrefix === undefined
+  ) {
+    return yield* new MemoryConnectorError({
+      connector: "local",
+      operation: "searchAttachment",
+      message:
+        "This Memo backend cannot perform document-scoped attachment search. Switch Local Memo to the built-in backend in Settings → Connections.",
+    });
+  }
+  const source = memoAttachmentSource(input.documentToken);
+  const groups = yield* input.connector.listBySourcePrefix(source, input.project);
+  const group = groups.find((candidate) => candidate.source === source);
+  if (group === undefined) {
+    return { documentToken: input.documentToken, status: "missing", results: [] };
+  }
+  if (!group.latestText.startsWith("d4research Memo attachment manifest.")) {
+    return { documentToken: input.documentToken, status: "incomplete", results: [] };
+  }
+  const searched = yield* input.connector.searchBySource(input.query, 50, source, input.project);
+  return {
+    documentToken: input.documentToken,
+    status: "ok",
+    results: searched.results
+      .filter((entry) => entry.text.startsWith("d4research Memo attachment chunk."))
+      .slice(0, Math.max(1, Math.min(input.limit, 12))),
+  };
 });

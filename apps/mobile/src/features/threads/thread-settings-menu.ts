@@ -1,5 +1,10 @@
 import type { MenuAction } from "@react-native-menu/menu";
-import type { ModelSelection, ProviderOptionDescriptor, RuntimeMode } from "@t3tools/contracts";
+import type {
+  ModelSelection,
+  PipelineTargetPolicy,
+  ProviderOptionDescriptor,
+  RuntimeMode,
+} from "@t3tools/contracts";
 import {
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
@@ -41,7 +46,8 @@ export type ThreadSettingsMenuEvent =
   | { readonly type: "set-option"; readonly optionId: string; readonly value: string | boolean }
   | { readonly type: "set-runtime"; readonly mode: RuntimeMode }
   | { readonly type: "toggle-session-skill"; readonly name: string }
-  | { readonly type: "set-dev-pipeline"; readonly scenarioName: string | null };
+  | { readonly type: "set-dev-pipeline"; readonly scenarioName: string | null }
+  | { readonly type: "set-pipeline-target-policy"; readonly policy: PipelineTargetPolicy };
 
 export interface ThreadSettingsSessionSkill {
   readonly name: string;
@@ -78,6 +84,7 @@ export function buildThreadSettingsMenu(input: {
   readonly selectedModel: ModelSelection | null;
   readonly optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly runtimeMode: RuntimeMode;
+  readonly pipelineTargetPolicy: PipelineTargetPolicy;
   readonly sessionSkills?: ReadonlyArray<ThreadSettingsSessionSkill>;
   readonly devPipelines?: ThreadSettingsDevPipelines;
 }): ThreadSettingsMenu {
@@ -261,6 +268,32 @@ export function buildThreadSettingsMenu(input: {
       subactions: choices,
     });
   }
+
+  const fallbackPolicyId = "pipeline-target-policy:labeled-fallback";
+  const exactPolicyId = "pipeline-target-policy:exact";
+  events.set(fallbackPolicyId, {
+    type: "set-pipeline-target-policy",
+    policy: "labeled-fallback",
+  });
+  events.set(exactPolicyId, { type: "set-pipeline-target-policy", policy: "exact" });
+  actions.push({
+    id: "pipeline-target-policy",
+    title: "Pipeline targets",
+    subtitle: input.pipelineTargetPolicy === "labeled-fallback" ? "Labeled fallback" : "Exact only",
+    subactions: [
+      {
+        id: fallbackPolicyId,
+        title: "Use labeled fallback",
+        subtitle: "Only when the pipeline lists it",
+        state: input.pipelineTargetPolicy === "labeled-fallback" ? "on" : "off",
+      },
+      {
+        id: exactPolicyId,
+        title: "Exact targets only",
+        state: input.pipelineTargetPolicy === "exact" ? "on" : "off",
+      },
+    ],
+  });
 
   return { actions, events };
 }

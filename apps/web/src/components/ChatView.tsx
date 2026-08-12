@@ -105,6 +105,11 @@ import {
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
 import {
+  buildResearchMarkdownExport,
+  downloadResearchMarkdown,
+  researchMarkdownFilename,
+} from "../researchExport";
+import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
@@ -212,7 +217,11 @@ import {
   type QueuedChatRequest,
   useRequestQueueStore,
 } from "../requestQueueStore";
-import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+} from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -1307,6 +1316,13 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
   const settings = useEnvironmentSettings(environmentId);
+  const updateEnvironmentSettings = useUpdateEnvironmentSettings(environmentId);
+  const handlePipelineTargetPolicyChange = useCallback(
+    (pipelineTargetPolicy: typeof settings.pipelineTargetPolicy) => {
+      updateEnvironmentSettings({ pipelineTargetPolicy });
+    },
+    [updateEnvironmentSettings],
+  );
   const effectiveEnabledSkills = useMemo(
     () =>
       mergeEnabledSkillNames(
@@ -2302,6 +2318,12 @@ function ChatViewContent(props: ChatViewProps) {
     activePendingUserInput: activePendingUserInput?.requestId ?? null,
     threadError,
   });
+  const [memoAttachmentPersistenceState, setMemoAttachmentPersistenceState] = useState<
+    "idle" | "saving" | "failed"
+  >("idle");
+  useEffect(() => {
+    setMemoAttachmentPersistenceState("idle");
+  }, [activeThreadId]);
   const rateLimitResumeState = useMemo(() => {
     const state = deriveRateLimitResumeState(threadActivities);
     if (
@@ -5165,6 +5187,7 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
       try {
+        setMemoAttachmentPersistenceState("saving");
         preparedPastedContexts = await prepareMemoPastedContextsForSend({
           contexts: composerPastedContexts,
           project: activeProject.title,
@@ -5178,8 +5201,10 @@ function ChatViewContent(props: ChatViewProps) {
             }
           },
         });
+        setMemoAttachmentPersistenceState("idle");
         memoBackedAttachmentCount = preparedPastedContexts.length;
       } catch (error) {
+        setMemoAttachmentPersistenceState("failed");
         setThreadError(
           activeThread.id,
           error instanceof Error
@@ -6533,6 +6558,26 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
+  const onExportResearch = useCallback(() => {
+    if (!activeThread) return;
+    const markdown = buildResearchMarkdownExport({
+      title: activeThread.title,
+      project: activeProject?.title ?? null,
+      environmentId: String(activeThread.environmentId),
+      threadId: String(activeThread.id),
+      modelSelection: activeThread.modelSelection,
+      latestTurn: activeThread.latestTurn,
+      messages: displayServerMessages,
+      activities: threadActivities,
+      exportedAt: new Date().toISOString(),
+    });
+    downloadResearchMarkdown(researchMarkdownFilename(activeThread.title), markdown);
+    toastManager.add({
+      type: "success",
+      title: "Research exported",
+      description: "The authoritative thread and run provenance were saved as Markdown.",
+    });
+  }, [activeProject?.title, activeThread, displayServerMessages, threadActivities]);
 
   // Empty state: no active thread
   if (!activeThread) {
@@ -6735,6 +6780,7 @@ function ChatViewContent(props: ChatViewProps) {
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            onExportResearch={onExportResearch}
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
@@ -6925,6 +6971,7 @@ function ChatViewContent(props: ChatViewProps) {
                             isSendBusy={isSendBusy}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
+                            memoAttachmentPersistenceState={memoAttachmentPersistenceState}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
@@ -6976,6 +7023,7 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            onPipelineTargetPolicyChange={handlePipelineTargetPolicyChange}
                             onStartDeepResearch={onStartDeepResearch}
                             canStartResearch={canStartResearch}
                             researchScenarios={researchScenarioNames}

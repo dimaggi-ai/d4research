@@ -188,6 +188,8 @@ export class AcpSessionRuntime extends Context.Service<
      * Concurrent calls share the same in-flight startup and a failed startup may be retried.
      */
     readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
+    /** Resolves when the owned ACP child process exits. */
+    readonly exitCode: Effect.Effect<number, never>;
     /** Stream of parsed ACP session events emitted after startup. */
     readonly getEvents: () => Stream.Stream<AcpSessionRuntimeEvent, never>;
     /** Waits until the current event consumer has processed every queued event. */
@@ -838,6 +840,10 @@ export const make = (
       request: (method, payload) =>
         runLoggedRequest(method, payload, acp.raw.request(method, payload)),
       notify: acp.raw.notify,
+      exitCode: child.exitCode.pipe(
+        Effect.map(Number),
+        Effect.orElseSucceed(() => -1),
+      ),
     } satisfies AcpSessionRuntime["Service"];
   });
 

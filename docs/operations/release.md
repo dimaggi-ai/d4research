@@ -339,7 +339,7 @@ Checklist:
 
 ## 4) Ongoing release checklist
 
-1. Ensure `main` is green in CI.
+1. Ensure the repository default branch is green in CI.
 2. Bump app version as needed.
 3. Create release tag: `vX.Y.Z`.
 4. Push tag.
@@ -349,6 +349,22 @@ Checklist:
    - `publish_cli` publishes the exact release version before the release job
    - release job uploads expected files
 6. Smoke test downloaded artifacts.
+
+For every release candidate, attach an applicability record instead of assuming upstream parity:
+
+| Area        | Required decision and evidence                                                             |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Web         | Local and remote first-run journey, affected browser tests, supported browsers             |
+| Desktop     | Each published OS/architecture, clean install, first launch, update, uninstall             |
+| Mobile      | iOS/Android behavior for affected states, or an explicit unsupported note                  |
+| Providers   | Supported adapter list, opt-in live-probe result, requested/resolved target evidence       |
+| Connections | Local, relay/tunnel, reconnect, and version-skew behavior                                  |
+| Memo        | Built-in vs external backend, oversized attachment, handoff, reload, missing-data recovery |
+| Workflows   | Research and Dev target policy, actual delegate provenance, budget termination             |
+
+Do not publish an artifact or product claim without a link to its matching test, smoke log, or
+manual verification record. A source-only dogfood deployment is not evidence for signed desktop or
+mobile distribution.
 
 ## 5) Troubleshooting
 

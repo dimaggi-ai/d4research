@@ -142,6 +142,30 @@ export function makeBuiltinMemoryConnector(dbPath: string): LocalMemoConnector {
               .all(ftsQuery, limit)) as unknown as ReadonlyArray<MemoryRow>;
         return { results: rows.map(rowToEntry) };
       }),
+    searchBySource: (query, k, source, project) =>
+      withDb("searchBySource", (db) => {
+        const ftsQuery = toFtsQuery(query);
+        if (!ftsQuery) return { results: [] };
+        const limit = Math.max(1, Math.min(k, 50));
+        const rows = (project !== undefined && project.length > 0
+          ? db
+              .prepare(
+                `SELECT m.id, m.text, m.source, m.project, m.created_at, bm25(memories_fts) AS score
+                   FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid
+                   WHERE memories_fts MATCH ? AND m.source = ? AND m.project = ?
+                   ORDER BY score LIMIT ?`,
+              )
+              .all(ftsQuery, source, project, limit)
+          : db
+              .prepare(
+                `SELECT m.id, m.text, m.source, m.project, m.created_at, bm25(memories_fts) AS score
+                   FROM memories_fts JOIN memories m ON m.id = memories_fts.rowid
+                   WHERE memories_fts MATCH ? AND m.source = ?
+                   ORDER BY score LIMIT ?`,
+              )
+              .all(ftsQuery, source, limit)) as unknown as ReadonlyArray<MemoryRow>;
+        return { results: rows.map(rowToEntry) };
+      }),
     add: (text, source, project) =>
       DateTime.now.pipe(
         Effect.map(DateTime.formatIso),

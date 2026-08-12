@@ -1,11 +1,17 @@
 import type {
+  PipelineTargetPolicy,
   ResearchPromptFile,
   ResearchScenario,
   ResearchSettings,
   ServerProvider,
 } from "@t3tools/contracts";
-import { RESEARCH_DELEGATION_BUDGET_PER_TURN, RESEARCH_STEP_VISIT_LIMIT } from "@t3tools/contracts";
+import {
+  RESEARCH_DELEGATION_BUDGET_PER_TURN,
+  RESEARCH_STEP_VISIT_LIMIT,
+  STARTER_RESEARCH_SCENARIO,
+} from "@t3tools/contracts";
 import { stripDevTrigger } from "./devPipeline.ts";
+import { sha256Hex } from "./hash.ts";
 
 // The legacy `#deep-research` spelling is still parsed (see the regex below) so
 // old threads and muscle memory keep working, but nothing writes it any more —
@@ -23,6 +29,29 @@ export interface ResearchTrigger {
   readonly scenarioName: string | null;
   /** The research task with the trigger stripped. */
   readonly task: string;
+}
+
+export interface ResearchRunManifestStep {
+  readonly number: number;
+  readonly title: string;
+  readonly delegation: "local" | "planned" | "skipped-no-target";
+  readonly targets: ReadonlyArray<string>;
+}
+
+export interface ResearchRunManifest {
+  readonly scenario: string;
+  readonly task: string;
+  readonly pipelineHash: string;
+  readonly targetPolicy: PipelineTargetPolicy;
+  readonly steps: ReadonlyArray<ResearchRunManifestStep>;
+  readonly targets: ReadonlyArray<
+    | { readonly directive: string; readonly status: "resolved"; readonly target: string }
+    | { readonly directive: string; readonly status: "unresolved"; readonly error: string }
+  >;
+  readonly budget: {
+    readonly maxDelegations: number;
+    readonly maxVisitsPerStep: number;
+  };
 }
 
 export function parseResearchTrigger(prompt: string): ResearchTrigger | null {
@@ -174,6 +203,26 @@ export function parseResearchDirectives(text: string): ReadonlyArray<ResearchMod
   return directives;
 }
 
+/**
+ * A fallback is authorized only when its directive appears on a pipeline line
+ * that explicitly labels it FALLBACK. Keeping this parser narrow lets the
+ * server verify model-authored tool arguments against the user-authored
+ * pipeline instead of trusting the orchestrator's claim.
+ */
+export function parsePipelineFallbackDirectives(
+  text: string,
+): ReadonlyArray<ResearchModelDirective> {
+  const seen = new Set<string>();
+  return text.split(/\r?\n/gu).flatMap((line) => {
+    if (!/\bFALLBACK\b/iu.test(line)) return [];
+    return parseResearchDirectives(line).filter((directive) => {
+      if (seen.has(directive.raw)) return false;
+      seen.add(directive.raw);
+      return true;
+    });
+  });
+}
+
 export type ResearchDirectiveResolution =
   | {
       readonly directive: ResearchModelDirective;
@@ -291,6 +340,69 @@ export function resolveResearchDirectives(
   );
 }
 
+/** Controller-owned snapshot of what a research turn was asked to execute. */
+export function buildResearchRunManifest(
+  prompt: string,
+  settings: ResearchSettingsLike | undefined,
+  candidates: ReadonlyArray<ResearchProviderCandidate>,
+  targetPolicy: PipelineTargetPolicy = "labeled-fallback",
+): ResearchRunManifest | null {
+  const trigger = parseResearchTrigger(prompt);
+  if (trigger === null) return null;
+  const scenario = findResearchScenario(settings, trigger.scenarioName);
+  if (scenario === null || scenario.pipelinePrompt.trim().length === 0) return null;
+
+  const resolutions = resolveResearchDirectives(
+    scenario.pipelinePrompt,
+    candidates,
+    scenario.promptFiles,
+  );
+  const steps = scenario.pipelinePrompt.split(/\r?\n/gu).flatMap((line) => {
+    const match = /^\s*(\d+)[.)]\s+(.+)$/u.exec(line);
+    if (!match?.[1] || !match[2]) return [];
+    const lineTargets = parseResearchDirectives(line).map((directive) => directive.raw);
+    const describesDelegation = /\bdelegate|delegation|reviewer\b/iu.test(match[2]);
+    return [
+      {
+        number: Number(match[1]),
+        title: match[2].trim(),
+        delegation:
+          lineTargets.length > 0
+            ? ("planned" as const)
+            : describesDelegation
+              ? ("skipped-no-target" as const)
+              : ("local" as const),
+        targets: lineTargets,
+      },
+    ];
+  });
+
+  return {
+    scenario: scenario.name,
+    task: trigger.task,
+    pipelineHash: sha256Hex(scenario.pipelinePrompt),
+    targetPolicy,
+    steps,
+    targets: resolutions.map((resolution) =>
+      resolution.ok
+        ? {
+            directive: resolution.directive.raw,
+            status: "resolved" as const,
+            target: `${resolution.instanceId}:${resolution.model}`,
+          }
+        : {
+            directive: resolution.directive.raw,
+            status: "unresolved" as const,
+            error: resolution.error,
+          },
+    ),
+    budget: {
+      maxDelegations: RESEARCH_DELEGATION_BUDGET_PER_TURN,
+      maxVisitsPerStep: RESEARCH_STEP_VISIT_LIMIT,
+    },
+  };
+}
+
 // ── Directive autocomplete ─────────────────────────────────────────────────
 
 export interface DirectiveSuggestion {
@@ -393,7 +505,20 @@ export function listResearchScenarios(
   settings: ResearchSettingsLike | undefined,
 ): ReadonlyArray<ResearchScenario> {
   const scenarios = settings?.scenarios ?? [];
-  if (scenarios.length > 0) return scenarios;
+  if (
+    scenarios.length > 0 &&
+    !(
+      scenarios.length === 1 &&
+      scenarios[0]?.name === DEFAULT_RESEARCH_SCENARIO_NAME &&
+      scenarios[0].pipelinePrompt.trim().length === 0 &&
+      scenarios[0].promptFiles.length === 0
+    )
+  ) {
+    return scenarios;
+  }
+  if (!(settings?.pipelinePrompt?.trim() || settings?.promptFiles?.length)) {
+    return [STARTER_RESEARCH_SCENARIO];
+  }
   return [
     {
       name: DEFAULT_RESEARCH_SCENARIO_NAME,
@@ -437,6 +562,7 @@ export function expandResearchPipelinePrompt(
   prompt: string,
   settings: ResearchSettingsLike | undefined,
   candidates: ReadonlyArray<ResearchProviderCandidate>,
+  targetPolicy: PipelineTargetPolicy = "labeled-fallback",
 ): string {
   const trigger = parseResearchTrigger(prompt);
   if (!trigger) return prompt;
@@ -501,9 +627,12 @@ export function expandResearchPipelinePrompt(
     RESEARCH_ORCHESTRATOR_SENTINEL,
     "1. TRACE — Maintain the plan tool as your step ledger: one entry per pipeline step titled `Step N: <title>`. Exactly one entry is in-progress at any time. On a revisit, append ` (visit K)` to the entry text. Begin every message with the marker `[step N | visit K]`.",
     `2. DELEGATE — A \`!provider:model[:file.md]\` directive is executed only by calling the \`research_delegate\` tool. Its \`target\` argument must be the resolved \`instanceId:model\` string from the "Delegation targets" list below, copied exactly — never the \`!\` directive itself. Pass your request as \`prompt\`, the file name as \`promptFileName\` when the directive names one, \`scenario\` as \`${scenario.name}\`, and the current \`step\`/\`visit\`. Never claim a delegation ran unless the tool returned its answer. Never delegate to yourself recursively.`,
-    `3. LOOP GUARD — A step may run at most ${RESEARCH_STEP_VISIT_LIMIT} visits and the whole turn has a hard budget of ${RESEARCH_DELEGATION_BUDGET_PER_TURN} delegations, enforced by the server. When a guard trips, stop looping, synthesize from what you have, and state plainly which loop was cut and why.`,
-    "4. HONESTY — Preserve links, file paths, commands, disagreements, and uncertainty when summarizing delegate answers. A delegate that failed or timed out is reported as failed, not paraphrased into a result. When delegates disagree, record both positions as competing claims; never let a later answer silently overwrite an earlier one.",
-    "5. RUN STATE — End the run with a `RUN STATE` section listing every step: its targets, visits used, and outcome (`SUCCESS`, or the failure the tool reported: refusal, timeout, error, empty). The synthesis must state which conclusions rest on failed or missing steps. A run report that hides a failure is a failed run.",
+    targetPolicy === "labeled-fallback"
+      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass `fallbackTargets` only for targets the PIPELINE explicitly labels as fallbacks for this step, in authored order. The tool returns `requestedTarget`, `resolvedTarget`, and `substituted`; report the resolved target and never describe a fallback as the requested model."
+      : "3. TARGET POLICY — Exact targets only. Do not pass or invent fallbacks. If a target is unavailable, report that step as failed.",
+    `4. LOOP GUARD — A step may run at most ${RESEARCH_STEP_VISIT_LIMIT} visits and the whole turn has a hard budget of ${RESEARCH_DELEGATION_BUDGET_PER_TURN} delegations, enforced by the server. When a guard trips, stop looping, synthesize from what you have, and state plainly which loop was cut and why.`,
+    "5. HONESTY — Preserve links, file paths, commands, disagreements, and uncertainty when summarizing delegate answers. A delegate that failed or timed out is reported as failed, not paraphrased into a result. When delegates disagree, record both positions as competing claims; never let a later answer silently overwrite an earlier one.",
+    "6. RUN STATE — End the run with a `RUN STATE` section listing every step: requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome (`SUCCESS`, or the failure the tool reported: refusal, timeout, error, empty). The synthesis must state which conclusions rest on failed or missing steps. A run report that hides a failure is a failed run.",
     "",
     "Delegation targets referenced by the pipeline:",
     ...(targetLines.length > 0

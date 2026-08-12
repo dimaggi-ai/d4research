@@ -19,6 +19,7 @@ import {
   RESEARCH_STEP_VISIT_LIMIT,
   ThreadId,
   TurnId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 
 import {
@@ -41,6 +42,8 @@ import {
   isTimeoutCause,
   makeResearchDelegateHandler,
   parseDelegateTarget,
+  resolveAuthoredPipelineFallbackTargets,
+  resolveDelegateTarget,
   settleDelegateThread,
 } from "./handlers.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -50,6 +53,7 @@ import {
   type ProjectionThreadCheckpointContext,
 } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+import { makeProviderRegistryLayer } from "../../../provider/testUtils/providerRegistryMock.ts";
 import {
   ProviderService,
   type ProviderServiceShape,
@@ -267,6 +271,32 @@ describe("research delegate handler", () => {
       const delegateTurns = yield* Ref.make<ReadonlyArray<{ id: TurnId; items: unknown[] }>>([]);
       const instanceId = ProviderInstanceId.make("codex");
       const provider = ProviderDriverKind.make("codex");
+      const providerSnapshot = {
+        instanceId,
+        driver: provider,
+        enabled: true,
+        installed: true,
+        version: "test",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-08-08T00:00:00.000Z",
+        models: [
+          {
+            slug: "gpt-5.6-sol",
+            name: "GPT-5.6-Sol",
+            isCustom: false,
+            capabilities: null,
+          },
+          {
+            slug: "glm-5.2:cloud",
+            name: "GLM 5.2 Cloud",
+            isCustom: false,
+            capabilities: null,
+          },
+        ],
+        slashCommands: [],
+        skills: [],
+      } satisfies ServerProvider;
       const adapter = {
         provider,
         capabilities: { sessionModelSwitch: "in-session" as const },
@@ -472,6 +502,7 @@ describe("research delegate handler", () => {
       const layer = Layer.mergeAll(
         settingsLayer,
         registryLayer,
+        makeProviderRegistryLayer([providerSnapshot]),
         providerServiceLayer,
         projectionLayer,
         ResearchDelegationBudgetLive,
@@ -748,6 +779,139 @@ describe("parseDelegateTarget", () => {
     expect(parseDelegateTarget("claudeAgent")).toBeNull();
     expect(parseDelegateTarget(":model")).toBeNull();
     expect(parseDelegateTarget("claudeAgent:")).toBeNull();
+  });
+});
+
+const readyDelegateProvider = (input: {
+  readonly instanceId: string;
+  readonly driver: string;
+  readonly model: string;
+}): ServerProvider => ({
+  instanceId: ProviderInstanceId.make(input.instanceId),
+  driver: ProviderDriverKind.make(input.driver),
+  enabled: true,
+  installed: true,
+  version: "test",
+  status: "ready",
+  auth: { status: "authenticated" },
+  checkedAt: "2026-08-08T00:00:00.000Z",
+  models: [
+    {
+      slug: input.model,
+      name: input.model,
+      isCustom: false,
+      capabilities: null,
+    },
+  ],
+  slashCommands: [],
+  skills: [],
+});
+
+describe("resolveDelegateTarget", () => {
+  const providers = [
+    readyDelegateProvider({
+      instanceId: "claudeAgent",
+      driver: "claudeAgent",
+      model: "claude-fable-5",
+    }),
+    readyDelegateProvider({
+      instanceId: "codex",
+      driver: "codex",
+      model: "gpt-5.6-sol",
+    }),
+  ];
+
+  it("uses the exact requested model when it is ready", () => {
+    expect(
+      resolveDelegateTarget({
+        target: "claudeAgent:claude-fable-5",
+        fallbackTargets: ["codex:gpt-5.6-sol"],
+        policy: "labeled-fallback",
+        providers,
+      }),
+    ).toMatchObject({
+      ok: true,
+      requestedTarget: "claudeAgent:claude-fable-5",
+      resolvedTarget: "claudeAgent:claude-fable-5",
+      substituted: false,
+    });
+  });
+
+  it("uses only an explicitly listed fallback and labels the actual model", () => {
+    expect(
+      resolveDelegateTarget({
+        target: "claudeAgent:claude-opus-5",
+        fallbackTargets: ["codex:gpt-5.6-sol"],
+        policy: "labeled-fallback",
+        providers,
+      }),
+    ).toMatchObject({
+      ok: true,
+      requestedTarget: "claudeAgent:claude-opus-5",
+      resolvedTarget: "codex:gpt-5.6-sol",
+      substituted: true,
+    });
+  });
+
+  it("never invents an equivalent model or bypasses Exact policy", () => {
+    const noAuthoredFallback = resolveDelegateTarget({
+      target: "claudeAgent:claude-opus-5",
+      policy: "labeled-fallback",
+      providers,
+    });
+    const exact = resolveDelegateTarget({
+      target: "claudeAgent:claude-opus-5",
+      fallbackTargets: ["codex:gpt-5.6-sol"],
+      policy: "exact",
+      providers,
+    });
+
+    expect(noAuthoredFallback).toMatchObject({ ok: false });
+    expect(noAuthoredFallback.ok ? "" : noAuthoredFallback.detail).toContain(
+      "No explicit fallback targets",
+    );
+    expect(exact).toMatchObject({ ok: false });
+    expect(exact.ok ? "" : exact.detail).toContain("Exact");
+  });
+});
+
+describe("resolveAuthoredPipelineFallbackTargets", () => {
+  const providers = [
+    readyDelegateProvider({ instanceId: "codex", driver: "codex", model: "gpt-5.6-sol" }),
+  ];
+
+  it("authorizes only directives on explicitly labeled FALLBACK lines", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      research: {
+        ...DEFAULT_SERVER_SETTINGS.research,
+        scenarios: [
+          {
+            name: "review",
+            pipelinePrompt: "PRIMARY: !codex:missing-model\nFALLBACK directive: !codex:gpt-5.6-sol",
+            promptFiles: [],
+          },
+        ],
+        activeScenario: "review",
+      },
+    };
+
+    expect(
+      resolveAuthoredPipelineFallbackTargets({
+        pipelineKind: "research",
+        scenario: "review",
+        settings,
+        providers,
+      }),
+    ).toEqual(["codex:gpt-5.6-sol"]);
+    expect(
+      resolveAuthoredPipelineFallbackTargets({
+        pipelineKind: "research",
+        scenario: undefined,
+        settings,
+        providers,
+      }),
+    ).toEqual([]);
   });
 });
 

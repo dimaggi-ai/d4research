@@ -54,7 +54,7 @@ describe("Memo-backed composer attachments", () => {
     ).toBe(false);
   });
 
-  it("persists the full source and sends bounded exact chunk instructions", async () => {
+  it("persists the full source and sends bounded document-scoped search instructions", async () => {
     const sourceContent = `HEAD-${"x".repeat(132_267)}-TAIL`;
     const persist = vi.fn(async (input) => ({
       documentToken: input.documentToken,
@@ -76,12 +76,13 @@ describe("Memo-backed composer attachments", () => {
       }),
     );
     expect(prepared?.content).toContain("complete attachment is preserved in local Memo");
-    expect(prepared?.content).toContain("When memory_search is available");
-    expect(prepared?.content).toContain("document was removed from Memo");
-    expect(prepared?.content).toContain("If memory_search is unavailable");
+    expect(prepared?.content).toContain("When memory_attachment_search is available");
+    expect(prepared?.content).toContain('status is "missing" or "incomplete"');
+    expect(prepared?.content).toContain("If memory_attachment_search is unavailable");
     expect(prepared?.content).toContain('project="d4research"');
-    expect(prepared?.content).toContain("chunk0001");
-    expect(prepared?.content).toContain("chunk0009");
+    expect(prepared?.content).toContain("documentToken=");
+    expect(prepared?.content).toContain('query="keywords describing the evidence you need"');
+    expect(prepared?.content).not.toContain("then increment");
     expect(prepared?.content).toContain("HEAD-");
     expect(prepared?.content).toContain("-TAIL");
     expect(prepared?.content.length).toBeLessThan(5_000);

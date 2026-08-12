@@ -6,9 +6,17 @@ import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  return !status || status.status === "ready" || status.status === "disabled"
+  return !status ||
+    (status.status === "ready" && status.readiness?.canStart !== false) ||
+    status.status === "disabled"
     ? null
-    : [status.instanceId, status.status, status.auth.status, status.message ?? ""].join("\u0000");
+    : [
+        status.instanceId,
+        status.status,
+        status.auth.status,
+        status.readiness?.canStart ?? "legacy",
+        status.message ?? "",
+      ].join("\u0000");
 }
 
 export function shouldShowProviderStatusBanner(
@@ -26,32 +34,39 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss: () => void;
   status: ServerProvider | null;
 }) {
-  if (!status || status.status === "ready" || status.status === "disabled") {
+  if (
+    !status ||
+    (status.status === "ready" && status.readiness?.canStart !== false) ||
+    status.status === "disabled"
+  ) {
     return null;
   }
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
+  const warning = status.status === "warning" || status.status === "ready";
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const title = isUnauthenticated
     ? `${providerName} is unauthenticated`
     : `${providerName} provider status`;
-  const message = isUnauthenticated
-    ? "Sign in via the CLI to authenticate again."
-    : (status.message ??
-      (status.status === "error"
-        ? `${providerName} provider is unavailable.`
-        : `${providerName} provider has limited availability.`));
+  const message =
+    status.readiness?.remediation ??
+    (isUnauthenticated
+      ? "Sign in via the CLI to authenticate again."
+      : (status.message ??
+        (status.status === "error"
+          ? `${providerName} provider is unavailable.`
+          : `${providerName} provider has limited availability.`)));
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
       <div
         className={cn(
           "alert-glass relative inline-flex items-center gap-3 rounded-xl border py-3 ps-3.5 pe-10 text-card-foreground text-sm",
-          status.status === "warning"
+          warning
             ? "border-warning/32 [&_svg]:text-warning"
             : "border-destructive/32 text-destructive-foreground [&_svg]:text-destructive",
         )}
-        data-variant={status.status === "warning" ? "warning" : "error"}
+        data-variant={warning ? "warning" : "error"}
         role="alert"
       >
         <InfoIcon className="size-4 shrink-0" aria-hidden />

@@ -53,6 +53,62 @@ export interface ProviderProbeResult {
   readonly message?: string;
 }
 
+function providerReadiness(input: {
+  readonly enabled: boolean;
+  readonly checkedAt: string;
+  readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly probe: ProviderProbeResult;
+}) {
+  const installation = !input.enabled
+    ? ("disabled" as const)
+    : input.probe.installed
+      ? ("ready" as const)
+      : ("missing" as const);
+  const authentication =
+    input.probe.auth.status === "authenticated"
+      ? ("ready" as const)
+      : input.probe.auth.status === "unauthenticated"
+        ? ("required" as const)
+        : ("unknown" as const);
+  const reachability =
+    input.enabled && input.probe.installed && input.probe.status === "ready"
+      ? ("ready" as const)
+      : input.probe.status === "error"
+        ? ("failed" as const)
+        : ("unknown" as const);
+  const modelCatalog =
+    input.models.length === 0
+      ? ("missing" as const)
+      : reachability === "ready"
+        ? ("ready" as const)
+        : ("unknown" as const);
+  const canStart =
+    installation === "ready" &&
+    authentication !== "required" &&
+    reachability === "ready" &&
+    modelCatalog === "ready";
+  const remediation = canStart
+    ? undefined
+    : !input.enabled
+      ? "Enable this provider in Settings → Providers."
+      : !input.probe.installed
+        ? (input.probe.message ?? "Install the provider CLI and refresh its status.")
+        : authentication === "required"
+          ? (input.probe.message ?? "Authenticate the provider CLI, then refresh its status.")
+          : modelCatalog === "missing"
+            ? "No usable models were discovered. Check the provider endpoint and credentials, then refresh."
+            : (input.probe.message ?? "The provider probe did not confirm a usable connection.");
+  return {
+    installation,
+    authentication,
+    reachability,
+    modelCatalog,
+    canStart,
+    checkedAt: input.checkedAt,
+    ...(remediation ? { remediation } : {}),
+  };
+}
+
 export interface ServerProviderPresentation {
   readonly displayName: string;
   readonly badgeLabel?: string;
@@ -267,6 +323,7 @@ export function buildServerProvider(input: {
     skills: [...(input.skills ?? [])],
     ...(versionAdvisory ? { versionAdvisory } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
+    readiness: providerReadiness(input),
   };
 }
 

@@ -53,6 +53,8 @@ import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { useCreateProjectThread } from "./use-project-actions";
 import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 
 function formatWorkspaceLabel(input: {
   readonly workspaceMode: string;
@@ -96,6 +98,9 @@ export function NewTaskDraftScreen(props: {
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
     selectedProject?.environmentId ?? null,
   );
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: true,
+  });
   const environmentConnected =
     selectedProject !== null &&
     connectedEnvironments.find(
@@ -969,6 +974,16 @@ export function NewTaskDraftScreen(props: {
       onUpdateOptionSelections={flow.setSelectedModelOptions}
       runtimeMode={flow.runtimeMode}
       onUpdateRuntimeMode={flow.setRuntimeMode}
+      pipelineTargetPolicy={
+        selectedEnvironmentServerConfig?.settings.pipelineTargetPolicy ?? "labeled-fallback"
+      }
+      onUpdatePipelineTargetPolicy={(pipelineTargetPolicy) => {
+        if (!selectedProject) return;
+        void updateSettings({
+          environmentId: selectedProject.environmentId,
+          input: { patch: { pipelineTargetPolicy } },
+        });
+      }}
     />
   );
 

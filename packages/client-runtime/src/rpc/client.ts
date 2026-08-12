@@ -21,6 +21,18 @@ export class EnvironmentRpcUnavailableError extends Schema.TaggedErrorClass<Envi
   },
 ) {}
 
+export class EnvironmentRpcTimeoutError extends Schema.TaggedErrorClass<EnvironmentRpcTimeoutError>()(
+  "EnvironmentRpcTimeoutError",
+  {
+    environmentId: Schema.String,
+    method: Schema.String,
+    timeoutMillis: Schema.Number,
+    message: Schema.String,
+  },
+) {}
+
+export const ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS = 120_000;
+
 export interface EnvironmentRpcRequestObservation {
   readonly environmentId: string;
   readonly method: string;
@@ -140,7 +152,20 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
     environmentId: supervisor.target.environmentId,
     method: tag,
   });
-  return yield* method(input).pipe(Effect.ensuring(completeObservation));
+  return yield* method(input).pipe(
+    Effect.timeout(ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS),
+    Effect.catchTag("TimeoutError", () =>
+      Effect.fail(
+        new EnvironmentRpcTimeoutError({
+          environmentId: supervisor.target.environmentId,
+          method: tag,
+          timeoutMillis: ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS,
+          message: `${supervisor.target.label} did not answer ${tag} within ${ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS / 1_000} seconds. Reconnect and retry; the original request was not retried with a new command id.`,
+        }),
+      ),
+    ),
+    Effect.ensuring(completeObservation),
+  );
 });
 
 export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(

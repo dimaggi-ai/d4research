@@ -2,6 +2,7 @@ import {
   RESEARCH_DELEGATION_BUDGET_PER_TURN,
   RESEARCH_STEP_VISIT_LIMIT,
   type DevSettings,
+  type PipelineTargetPolicy,
   type ResearchPromptFile,
   type ResearchScenario,
   type ProviderInteractionMode,
@@ -419,6 +420,7 @@ export function expandDevPipelinePrompt(
   prompt: string,
   settings: Pick<DevSettings, "scenarios" | "activeScenario"> | undefined,
   candidates: ReadonlyArray<DevProviderCandidate>,
+  targetPolicy: PipelineTargetPolicy = "labeled-fallback",
 ): string {
   if (prompt.includes(DEV_PROTOCOL_SENTINEL) && prompt.includes(DEV_PIPELINE_SENTINEL)) {
     return prompt;
@@ -450,10 +452,12 @@ export function expandDevPipelinePrompt(
     DEV_PROTOCOL_SENTINEL,
     "1. TRACE — Keep one plan entry per pipeline step. Begin every status with `[step N | visit K]`.",
     `2. DELEGATE — Call \`research_delegate\` with the resolved target, \`pipelineKind: "dev"\`, \`scenario: "${scenario.name}"\`, and current \`step\` and \`visit\`. Never simulate a delegate.`,
-    `3. FALLBACK — After two equivalent failures, switch to the step's FALLBACK target on visit 3.`,
+    targetPolicy === "labeled-fallback"
+      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass the step's explicitly authored FALLBACK directive in `fallbackTargets`. The tool identifies requested and resolved targets; always name the actual model that ran."
+      : "3. TARGET POLICY — Exact targets only. Do not pass or invent fallbacks; report an unavailable target as FAILED.",
     `4. BUDGET — The server enforces ${RESEARCH_DELEGATION_BUDGET_PER_TURN} calls per run and ${RESEARCH_STEP_VISIT_LIMIT} visits per step-target.`,
     "5. HONESTY — A delegate that timed out, refused, returned empty, or answered with intent only is reported as FAILED. Never invent its answer.",
-    "6. RUN STATE — End with target, visits, and outcome for every step, including failed dependencies.",
+    "6. RUN STATE — End with requested target, actual resolved target, whether a labeled fallback was used, visits, and outcome for every step, including failed dependencies.",
     "",
     "Delegation targets referenced by the pipeline:",
     ...(targets.length > 0 ? targets : ["- No delegation targets. Execute with this model only."]),

@@ -14,6 +14,7 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
@@ -40,6 +41,18 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+export const CHECKPOINT_OPERATION_TIMEOUT_MILLIS = 120_000;
+
+type CheckpointDomainEvent = Extract<
+  OrchestrationEvent,
+  {
+    readonly type:
+      | "thread.turn-start-requested"
+      | "thread.message-sent"
+      | "thread.checkpoint-revert-requested"
+      | "thread.turn-diff-completed";
+  }
+>;
 
 type ReactorInput =
   | {
@@ -48,7 +61,7 @@ type ReactorInput =
     }
   | {
       readonly source: "domain";
-      readonly event: OrchestrationEvent;
+      readonly event: CheckpointDomainEvent;
     };
 
 function toTurnId(value: string | undefined): TurnId | null {
@@ -88,6 +101,7 @@ const make = Effect.gen(function* () {
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
+  const activeCheckpointFibers = new Map<ThreadId, Fiber.Fiber<void, unknown>>();
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -896,11 +910,31 @@ const make = Effect.gen(function* () {
   > =>
     input.source === "domain" ? processDomainEvent(input.event) : processRuntimeEvent(input.event);
 
+  const inputThreadId = (input: ReactorInput): ThreadId =>
+    input.source === "runtime" ? input.event.threadId : input.event.payload.threadId;
+
   const processInputSafely = (input: ReactorInput) =>
-    processInput(input).pipe(
+    Effect.gen(function* () {
+      const threadId = inputThreadId(input);
+      const fiber = yield* Effect.yieldNow.pipe(
+        Effect.andThen(processInput(input)),
+        Effect.timeout(CHECKPOINT_OPERATION_TIMEOUT_MILLIS),
+        Effect.forkChild,
+      );
+      activeCheckpointFibers.set(threadId, fiber);
+      yield* Fiber.join(fiber).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (activeCheckpointFibers.get(threadId) === fiber) {
+              activeCheckpointFibers.delete(threadId);
+            }
+          }),
+        ),
+      );
+    }).pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.failCause(cause);
+          return Effect.void;
         }
         return Effect.logWarning("checkpoint reactor failed to process input", {
           source: input.source,
@@ -910,11 +944,22 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  const cancelCheckpointForThread = (threadId: ThreadId) => {
+    const fiber = activeCheckpointFibers.get(threadId);
+    return fiber === undefined ? Effect.void : Fiber.interrupt(fiber).pipe(Effect.ignore);
+  };
+
   const worker = yield* makeDrainableWorker(processInputSafely);
 
   const start: CheckpointReactorShape["start"] = Effect.fn("start")(function* () {
     yield* forkParked(
       Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+        if (
+          event.type === "thread.turn-interrupt-requested" ||
+          event.type === "thread.session-stop-requested"
+        ) {
+          return cancelCheckpointForThread(event.payload.threadId);
+        }
         if (
           event.type !== "thread.turn-start-requested" &&
           event.type !== "thread.message-sent" &&

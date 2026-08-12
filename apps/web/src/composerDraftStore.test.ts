@@ -60,6 +60,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   COMPOSER_DRAFT_STORAGE_KEY,
   clearComposerDraftsEnvironment,
+  composerDraftHasUserContent,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThread,
   markPromotedDraftThreadByRef,
@@ -1856,6 +1857,11 @@ describe("composerDraftStore pastedContexts", () => {
 
   beforeEach(() => {
     resetComposerDraftStore();
+  });
+
+  it("treats an attachment-only draft as user-authored content", () => {
+    useComposerDraftStore.getState().addPastedContexts(threadRef, [pasted("p1", "notes.md")]);
+    expect(composerDraftHasUserContent(draftFor(threadId, TEST_ENVIRONMENT_ID))).toBe(true);
   });
 
   it("adds attachments and preserves order across batches", () => {

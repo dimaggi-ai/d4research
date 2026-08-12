@@ -216,6 +216,14 @@ describe("expandDevPipelinePrompt", () => {
     expect(expanded).toContain("reported as FAILED");
     // The exact failure that burned real runs: an intent-only reply.
     expect(expanded).toContain("intent only");
+    expect(expanded).toContain("requested target, actual resolved target");
+    expect(expanded).not.toContain("equivalent model");
+  });
+
+  it("can prohibit every fallback for the same pipeline", () => {
+    const expanded = expandDevPipelinePrompt("!dev:fix go", settings, CANDIDATES, "exact");
+    expect(expanded).toContain("Exact targets only");
+    expect(expanded).toContain("Do not pass or invent fallbacks");
   });
 
   it("is idempotent, so a resend never wraps the pipeline twice", () => {

@@ -10,10 +10,58 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  buildServerProvider,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
+
+describe("provider readiness", () => {
+  it("exposes each readiness dimension and an actionable remediation", () => {
+    const checkedAt = "2026-08-11T20:00:00.000Z";
+    const ready = buildServerProvider({
+      presentation: { displayName: "Test provider" },
+      enabled: true,
+      checkedAt,
+      models: [{ slug: "model", name: "Model", isCustom: false, capabilities: null }],
+      probe: {
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+      },
+    });
+    expect(ready.readiness).toEqual({
+      installation: "ready",
+      authentication: "ready",
+      reachability: "ready",
+      modelCatalog: "ready",
+      canStart: true,
+      checkedAt,
+    });
+
+    const empty = buildServerProvider({
+      presentation: { displayName: "Test provider" },
+      enabled: true,
+      checkedAt,
+      models: [],
+      probe: {
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+      },
+    });
+    expect(empty.readiness).toMatchObject({
+      installation: "ready",
+      authentication: "ready",
+      reachability: "ready",
+      modelCatalog: "missing",
+      canStart: false,
+    });
+    expect(empty.readiness?.remediation).toContain("No usable models");
+  });
+});
 
 const OPENCODE_CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [

@@ -9,11 +9,14 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
   ApprovalRequestId,
+  canStartProviderTurn,
   type CanonicalRequestType,
+  type PipelineTargetPolicy,
   ProviderInstanceId,
   ThreadId,
   type ResearchPromptFile,
   type RuntimeMode,
+  type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
 
@@ -22,10 +25,18 @@ import { resolveResearchDelegateTimeoutMillis } from "../../researchDelegateTimi
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 import type { MemoryEntry } from "../memory/connectors.ts";
 import { parseMemoAttachmentDocumentToken } from "../../../memoAttachment.ts";
+import { deriveDevProviderCandidates, findDevScenario } from "@t3tools/shared/devPipeline";
+import {
+  deriveResearchProviderCandidatesFromProviders,
+  findResearchScenario,
+  parsePipelineFallbackDirectives,
+  resolveResearchDirective,
+} from "@t3tools/shared/researchPipeline";
 import { ResearchDelegationBudget } from "./budget.ts";
 import { ResearchDelegateError, type ResearchDelegateInput, ResearchToolkit } from "./tools.ts";
 
@@ -267,6 +278,97 @@ export function parseDelegateTarget(
   return { instanceId, model };
 }
 
+export type DelegateTargetResolution =
+  | {
+      readonly ok: true;
+      readonly requestedTarget: string;
+      readonly resolvedTarget: string;
+      readonly parsedTarget: { readonly instanceId: string; readonly model: string };
+      readonly substituted: boolean;
+    }
+  | { readonly ok: false; readonly detail: string };
+
+/**
+ * Resolve only targets the pipeline explicitly named. "Labeled fallback"
+ * means the runtime may select the first ready fallback in the provided list;
+ * it never infers that another model is equivalent to the requested one.
+ */
+export function resolveDelegateTarget(input: {
+  readonly target: string;
+  readonly fallbackTargets?: ReadonlyArray<string>;
+  readonly policy: PipelineTargetPolicy;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}): DelegateTargetResolution {
+  const requested = parseDelegateTarget(input.target);
+  if (requested === null) {
+    return {
+      ok: false,
+      detail: `Target "${input.target}" is not "instanceId:model". Use the exact target strings from the pipeline briefing.`,
+    };
+  }
+  const candidates = [
+    input.target,
+    ...(input.policy === "labeled-fallback" ? (input.fallbackTargets ?? []) : []),
+  ];
+  for (const [index, target] of candidates.entries()) {
+    const parsed = parseDelegateTarget(target);
+    if (parsed === null) continue;
+    const provider = input.providers.find(
+      (entry) => String(entry.instanceId) === parsed.instanceId,
+    );
+    if (provider === undefined || !canStartProviderTurn(provider)) continue;
+    const model = provider.models.find(
+      (entry) => entry.slug.toLowerCase() === parsed.model.toLowerCase(),
+    )?.slug;
+    if (model === undefined) continue;
+    const resolvedTarget = `${parsed.instanceId}:${model}`;
+    return {
+      ok: true,
+      requestedTarget: input.target,
+      resolvedTarget,
+      parsedTarget: { instanceId: parsed.instanceId, model },
+      substituted: index > 0,
+    };
+  }
+  const fallbackDetail =
+    input.policy === "exact"
+      ? "Target policy is Exact; no substitution was attempted."
+      : input.fallbackTargets?.length
+        ? `None of the explicitly listed fallbacks are ready: ${input.fallbackTargets.join(", ")}.`
+        : "No explicit fallback targets were supplied.";
+  return {
+    ok: false,
+    detail: `Requested target "${input.target}" is not ready or does not expose that model. ${fallbackDetail}`,
+  };
+}
+
+export function resolveAuthoredPipelineFallbackTargets(input: {
+  readonly pipelineKind: "research" | "dev";
+  readonly scenario: string | undefined;
+  readonly settings: ServerSettings;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}): ReadonlyArray<string> {
+  if (input.scenario === undefined) return [];
+  const researchCandidates = deriveResearchProviderCandidatesFromProviders(input.providers);
+  const scenario =
+    input.pipelineKind === "dev"
+      ? findDevScenario(
+          input.settings.dev,
+          input.scenario,
+          deriveDevProviderCandidates(input.providers),
+        )
+      : findResearchScenario(input.settings.research, input.scenario);
+  if (scenario === null) return [];
+  return parsePipelineFallbackDirectives(scenario.pipelinePrompt).flatMap((directive) => {
+    const resolution = resolveResearchDirective(
+      directive,
+      researchCandidates,
+      scenario.promptFiles,
+    );
+    return resolution.ok ? [`${resolution.instanceId}:${resolution.model}`] : [];
+  });
+}
+
 /**
  * Prompt files one named scenario may inline, and the only set a delegate of
  * that scenario can ever read. Scoping is a disclosure boundary, not a
@@ -320,12 +422,49 @@ export const makeResearchDelegateHandler =
         });
       }
       const crypto = yield* Crypto.Crypto;
-      const parsedTarget = parseDelegateTarget(input.target);
-      if (!parsedTarget) {
+      const settingsService = yield* ServerSettingsService;
+      const settings = yield* settingsService.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ResearchDelegateError({ detail: `Could not read settings: ${String(cause)}` }),
+        ),
+      );
+      const providerRegistry = yield* ProviderRegistry;
+      const providers = yield* providerRegistry.getProviders;
+      const authoredFallbackTargets = resolveAuthoredPipelineFallbackTargets({
+        pipelineKind: input.pipelineKind ?? "research",
+        scenario: input.scenario,
+        settings,
+        providers,
+      });
+      const unauthorizedFallback = input.fallbackTargets?.find(
+        (target) =>
+          !authoredFallbackTargets.some(
+            (authorized) => authorized.toLowerCase() === target.toLowerCase(),
+          ),
+      );
+      if (unauthorizedFallback !== undefined) {
         return yield* new ResearchDelegateError({
-          detail: `Target "${input.target}" is not "instanceId:model". Use the exact target strings from the research briefing.`,
+          detail: `Fallback target "${unauthorizedFallback}" is not labeled FALLBACK in the ${input.pipelineKind ?? "research"} pipeline scenario. No substitution was attempted.`,
+          failureKind: "authorization",
         });
       }
+      const targetResolution = resolveDelegateTarget({
+        target: input.target,
+        ...(input.fallbackTargets === undefined ? {} : { fallbackTargets: input.fallbackTargets }),
+        policy: settings.pipelineTargetPolicy,
+        providers,
+      });
+      if (!targetResolution.ok) {
+        return yield* new ResearchDelegateError({
+          detail: targetResolution.detail,
+          failureKind: "start",
+        });
+      }
+      const parsedTarget = targetResolution.parsedTarget;
+      const targetLabel = targetResolution.substituted
+        ? `${targetResolution.resolvedTarget} (labeled fallback for ${targetResolution.requestedTarget})`
+        : targetResolution.resolvedTarget;
 
       // The delegate must never be this thread's own session — that is the
       // recursive-delegation door the product contract keeps shut.
@@ -336,7 +475,7 @@ export const makeResearchDelegateHandler =
           invocation.turnId ?? `${invocation.providerSessionId}:${invocation.issuedAt}`,
         )}`,
         step: input.step,
-        target: input.target,
+        target: targetResolution.resolvedTarget,
       });
       if (!charge.ok) {
         return yield* new ResearchDelegateError({
@@ -346,13 +485,6 @@ export const makeResearchDelegateHandler =
         });
       }
 
-      const settingsService = yield* ServerSettingsService;
-      const settings = yield* settingsService.getSettings.pipe(
-        Effect.mapError(
-          (cause) =>
-            new ResearchDelegateError({ detail: `Could not read settings: ${String(cause)}` }),
-        ),
-      );
       let promptFileContent: string | null = null;
       if (input.promptFileName !== undefined) {
         const pipelineKind = input.pipelineKind ?? "research";
@@ -477,7 +609,7 @@ export const makeResearchDelegateHandler =
                     ? Effect.failCause(cause as Cause.Cause<never>)
                     : Effect.fail(
                         new ResearchDelegateError({
-                          detail: `Failed to answer an approval request from ${input.target}: ${describeCause(cause)}`,
+                          detail: `Failed to answer an approval request from ${targetLabel}: ${describeCause(cause)}`,
                           failureKind: "error",
                         }),
                       ),
@@ -494,7 +626,7 @@ export const makeResearchDelegateHandler =
                     ? Effect.failCause(cause as Cause.Cause<never>)
                     : Effect.fail(
                         new ResearchDelegateError({
-                          detail: `Failed to answer a user-input request from ${input.target}: ${describeCause(cause)}`,
+                          detail: `Failed to answer a user-input request from ${targetLabel}: ${describeCause(cause)}`,
                           failureKind: "error",
                         }),
                       ),
@@ -504,7 +636,7 @@ export const makeResearchDelegateHandler =
           return Effect.void;
         });
         return yield* new ResearchDelegateError({
-          detail: `The interaction event stream for ${input.target} ended before the delegate completed.`,
+          detail: `The interaction event stream for ${targetLabel} ended before the delegate completed.`,
           failureKind: "error",
         });
       }).pipe(Effect.forkChild);
@@ -530,7 +662,7 @@ export const makeResearchDelegateHandler =
             Effect.mapError(
               (cause) =>
                 new ResearchDelegateError({
-                  detail: `Failed to start ${input.target}: ${cause instanceof Error ? cause.message : String(cause)}`,
+                  detail: `Failed to start ${targetLabel}: ${cause instanceof Error ? cause.message : String(cause)}`,
                   failureKind: "start",
                 }),
             ),
@@ -582,8 +714,8 @@ export const makeResearchDelegateHandler =
                 : Effect.fail(
                     new ResearchDelegateError({
                       detail: isTimeoutCause(cause)
-                        ? `Warm-up for ${input.target} did not settle within ${Math.round(DELEGATE_WARMUP_TIMEOUT_MILLIS / 60_000)} minutes. Switch to the fallback target; do not send the real prompt into this session.`
-                        : `Warm-up for ${input.target} failed: ${describeCause(cause)}. Switch to the fallback target.`,
+                        ? `Warm-up for ${targetLabel} did not settle within ${Math.round(DELEGATE_WARMUP_TIMEOUT_MILLIS / 60_000)} minutes. Report the actual target as timed out.`
+                        : `Warm-up for ${targetLabel} failed: ${describeCause(cause)}.`,
                       failureKind: isTimeoutCause(cause) ? "timeout" : "error",
                     }),
                   ),
@@ -633,10 +765,10 @@ export const makeResearchDelegateHandler =
               : Effect.fail(
                   new ResearchDelegateError({
                     detail: isTimeoutCause(cause)
-                      ? `Delegate ${input.target} did not answer within ${Math.round(
+                      ? `Delegate ${targetLabel} did not answer within ${Math.round(
                           DELEGATE_TURN_TIMEOUT_MILLIS / 60_000,
                         )} minutes. Report the step as timed out; do not write its answer yourself. Retry once, then switch targets.`
-                      : `Delegate turn on ${input.target} failed: ${describeCause(cause)}`,
+                      : `Delegate turn on ${targetLabel} failed: ${describeCause(cause)}`,
                     failureKind: isTimeoutCause(cause) ? "timeout" : "error",
                   }),
                 ),
@@ -669,7 +801,7 @@ export const makeResearchDelegateHandler =
 
       if (!text) {
         return yield* new ResearchDelegateError({
-          detail: `Empty response from ${input.target}. Report the step as failed rather than inventing its answer.`,
+          detail: `Empty response from ${targetLabel}. Report the step as failed rather than inventing its answer.`,
           failureKind: "empty",
         });
       }
@@ -677,7 +809,10 @@ export const makeResearchDelegateHandler =
       const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
       const completedMs = yield* Clock.currentTimeMillis;
       return {
-        target: input.target,
+        requestedTarget: targetResolution.requestedTarget,
+        resolvedTarget: targetResolution.resolvedTarget,
+        substituted: targetResolution.substituted,
+        target: targetResolution.resolvedTarget,
         step: input.step,
         visit: input.visit,
         remainingBudget: charge.remaining,

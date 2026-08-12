@@ -110,7 +110,6 @@ import {
   getComposerPromptInjectionState,
   getComposerProviderState,
   renderProviderTraitsMenuContent,
-  renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -690,6 +689,7 @@ export interface ChatComposerProps {
   isSendBusy: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
+  memoAttachmentPersistenceState: "idle" | "saving" | "failed";
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -769,6 +769,7 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onPipelineTargetPolicyChange: (policy: UnifiedSettings["pipelineTargetPolicy"]) => void;
   onStartDeepResearch: (scenarioName?: string) => void;
   /** Research opens its own thread, so it is only offered on a chat that has not started. */
   canStartResearch: boolean;
@@ -809,6 +810,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     sendDisabledReason,
     isPreparingWorktree,
+    memoAttachmentPersistenceState,
     environmentUnavailable,
     activePendingApproval,
     pendingApprovals,
@@ -849,6 +851,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onPipelineTargetPolicyChange,
     onStartDeepResearch,
     canStartResearch,
     researchScenarios,
@@ -1458,17 +1461,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
 
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    prompt,
-    onPromptChange: setPromptFromTraits,
-  });
-  const providerTraitsPicker = renderProviderTraitsPicker({
     provider: selectedProvider,
     instanceId: selectedInstanceId,
     ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
@@ -3334,6 +3326,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               composerPastedContexts.length > 0 && (
                 <ComposerPendingPastedContexts
                   contexts={composerPastedContexts}
+                  memoPersistenceState={memoAttachmentPersistenceState}
                   onRemove={(contextId) =>
                     removeComposerDraftPastedContext(composerDraftTarget, contextId)
                   }
@@ -3568,48 +3561,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onOpenChange={setIsSessionSkillsOpen}
                 />
 
-                {isComposerFooterCompact ? (
-                  <CompactComposerControlsMenu
-                    interactionMode={interactionMode}
-                    runtimeMode={runtimeMode}
-                    isResearchMode={isResearchMode}
-                    canStartResearch={canStartResearch}
-                    researchScenarios={researchScenarios}
-                    activeResearchScenario={activeResearchScenario}
-                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                    traitsMenuContent={providerTraitsMenuContent}
-                    onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
-                    onSelectResearchScenario={selectResearchScenario}
-                    devPipelines={devPipelines}
-                    activeDevPipeline={activeDevPipeline}
-                    onSelectDevPipeline={selectDevPipeline}
-                  />
-                ) : (
-                  <>
-                    {providerTraitsPicker ? (
-                      <>
-                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-                        {providerTraitsPicker}
-                      </>
-                    ) : null}
-                    <ComposerFooterModeControls
-                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                      interactionMode={interactionMode}
-                      runtimeMode={runtimeMode}
-                      isResearchMode={isResearchMode}
-                      canStartResearch={canStartResearch}
-                      researchScenarios={researchScenarios}
-                      activeResearchScenario={activeResearchScenario}
-                      onToggleInteractionMode={toggleInteractionMode}
-                      onRuntimeModeChange={handleRuntimeModeChange}
-                      onSelectResearchScenario={selectResearchScenario}
-                      devPipelines={devPipelines}
-                      activeDevPipeline={activeDevPipeline}
-                      onSelectDevPipeline={selectDevPipeline}
-                    />
-                  </>
-                )}
+                <CompactComposerControlsMenu
+                  compact={isComposerFooterCompact}
+                  interactionMode={interactionMode}
+                  runtimeMode={runtimeMode}
+                  pipelineTargetPolicy={settings.pipelineTargetPolicy}
+                  isResearchMode={isResearchMode}
+                  canStartResearch={canStartResearch}
+                  researchScenarios={researchScenarios}
+                  activeResearchScenario={activeResearchScenario}
+                  showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                  traitsMenuContent={providerTraitsMenuContent}
+                  onToggleInteractionMode={toggleInteractionMode}
+                  onRuntimeModeChange={handleRuntimeModeChange}
+                  onPipelineTargetPolicyChange={onPipelineTargetPolicyChange}
+                  onSelectResearchScenario={selectResearchScenario}
+                  devPipelines={devPipelines}
+                  activeDevPipeline={activeDevPipeline}
+                  onSelectDevPipeline={selectDevPipeline}
+                />
               </div>
 
               {/* Right side: send / stop button */}

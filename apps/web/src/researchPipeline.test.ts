@@ -2,10 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyResearchTrigger,
+  buildResearchRunManifest,
   deriveDirectiveSuggestions,
   expandResearchPipelinePrompt,
   findResearchScenario,
+  listResearchScenarios,
   isDeepResearchPrompt,
+  parsePipelineFallbackDirectives,
   parseResearchDirectives,
   PIPELINE_DIRECTIVE_MAX_COUNT,
   parseResearchTrigger,
@@ -121,6 +124,14 @@ describe("parseResearchDirectives", () => {
     expect(parseResearchDirectives(prompt)).toEqual([
       { raw: "!codex:terra", provider: "codex", model: "terra", promptFile: undefined },
     ]);
+  });
+
+  it("treats only explicitly labeled lines as authored fallbacks", () => {
+    expect(
+      parsePipelineFallbackDirectives(
+        "PRIMARY: !claude:opus\nFALLBACK directive: !codex:sol\nreview !codex:terra",
+      ).map((directive) => directive.raw),
+    ).toEqual(["!codex:sol"]);
   });
 });
 
@@ -262,6 +273,21 @@ describe("findResearchScenario", () => {
     expect(migrated?.name).toBe("default");
     expect(migrated?.pipelinePrompt).toBe("Step 1: legacy.");
   });
+
+  it("gives an empty fresh or legacy-default configuration the bounded starter", () => {
+    const fresh = listResearchScenarios(undefined);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]?.name).toBe("starter");
+    expect(fresh[0]?.pipelinePrompt).toContain("Stop after one evidence pass");
+
+    const historicalEmpty = listResearchScenarios({
+      scenarios: [{ name: "default", pipelinePrompt: "", promptFiles: [] }],
+      activeScenario: "default",
+      pipelinePrompt: "",
+      promptFiles: [],
+    });
+    expect(historicalEmpty[0]?.name).toBe("starter");
+  });
 });
 
 describe("expandResearchPipelinePrompt", () => {
@@ -298,6 +324,19 @@ describe("expandResearchPipelinePrompt", () => {
     expect(expanded).toContain("RUN STATE");
     expect(expanded).toContain("A run report that hides a failure is a failed run.");
     expect(expanded).toContain("competing claims");
+    expect(expanded).toContain("requested target, actual resolved target");
+    expect(expanded).not.toContain("equivalent model");
+  });
+
+  it("shares the exact-target policy with development pipelines", () => {
+    const expanded = expandResearchPipelinePrompt(
+      "!research:blog go",
+      pipeline,
+      CANDIDATES,
+      "exact",
+    );
+    expect(expanded).toContain("Exact targets only");
+    expect(expanded).toContain("Do not pass or invent fallbacks");
   });
 
   it("surfaces unresolved directives instead of dropping them", () => {
@@ -314,8 +353,12 @@ describe("expandResearchPipelinePrompt", () => {
 
   it("refuses to improvise when no pipeline is configured", () => {
     const expanded = expandResearchPipelinePrompt(
-      "#deep-research go",
-      { ...pipeline, scenarios: [], pipelinePrompt: "" },
+      "!research:empty go",
+      {
+        ...pipeline,
+        scenarios: [{ name: "empty", pipelinePrompt: "", promptFiles: [] }],
+        activeScenario: "empty",
+      },
       CANDIDATES,
     );
     expect(expanded).toContain("Settings → Research");
@@ -332,5 +375,31 @@ describe("expandResearchPipelinePrompt", () => {
 
   it("still detects the research tag case-insensitively", () => {
     expect(isDeepResearchPrompt("  #DEEP-research topic")).toBe(true);
+  });
+});
+
+describe("research run manifest", () => {
+  it("freezes the scenario, budget, targets, and intentional skips before execution", () => {
+    const manifest = buildResearchRunManifest(
+      "!research:blog compare X",
+      RESEARCH_SETTINGS,
+      CANDIDATES,
+    );
+    expect(manifest).not.toBeNull();
+    expect(manifest?.scenario).toBe("blog");
+    expect(manifest?.task).toBe("compare X");
+    expect(manifest?.pipelineHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(manifest?.targetPolicy).toBe("labeled-fallback");
+    expect(manifest?.budget).toEqual({ maxDelegations: 24, maxVisitsPerStep: 3 });
+    expect(manifest?.targets).toContainEqual({
+      directive: "!claude:fable:OPTIONAL_prompt.md",
+      status: "resolved",
+      target: "claudeAgent:claude-fable-5",
+    });
+  });
+
+  it("marks a delegate step without an explicit target as skipped", () => {
+    const manifest = buildResearchRunManifest("!research:starter inspect", undefined, CANDIDATES);
+    expect(manifest?.steps.find((step) => step.number === 4)?.delegation).toBe("skipped-no-target");
   });
 });

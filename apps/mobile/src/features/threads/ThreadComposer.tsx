@@ -4,11 +4,13 @@ import type {
   MessageId,
   ModelSelection,
   OrchestrationThreadShell,
+  PipelineTargetPolicy,
   ProviderInteractionMode,
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
 import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
+import { canStartProviderTurn } from "@t3tools/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -314,7 +316,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // Opening and closing count as active so the composer stays expanded while
   // focus moves between its native editor and the settings modal.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
-  const canSend = hasContent;
 
   // Notify the parent from the derived value, not focus events: the parent
   // sizes the feed inset from this, and blur-during-sheet would otherwise
@@ -375,6 +376,14 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ) ?? null
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
+  const selectedProviderReady =
+    selectedProviderStatus === null || canStartProviderTurn(selectedProviderStatus);
+  const canSend = hasContent && selectedProviderReady;
+  const providerReadinessMessage = selectedProviderReady
+    ? null
+    : (selectedProviderStatus?.readiness?.remediation ??
+      selectedProviderStatus?.message ??
+      "This provider is not ready. Check it in web or desktop Settings → Providers.");
 
   // ── Trigger detection ────────────────────────────────────
   const [composerSelection, setComposerSelection] = useState(() => ({
@@ -658,6 +667,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const devPipelinesSupported = mobileProviderSupportsDelegationPipelines(
     selectedProviderStatus?.driver,
   );
+  const pipelineTargetPolicy =
+    props.serverConfig?.settings.pipelineTargetPolicy ?? "labeled-fallback";
   const globalSkillNames =
     props.serverConfig?.settings.skills.enabledByDefault ?? EMPTY_SKILL_NAMES;
   const configuredSessionSkillNames =
@@ -715,6 +726,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             selectedModel: currentModelSelection,
             optionDescriptors: providerOptionDescriptors,
             runtimeMode: currentRuntimeMode,
+            pipelineTargetPolicy,
             sessionSkills: sessionSkillSettings,
             devPipelines: {
               names: devPipelineNames,
@@ -730,6 +742,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       devPipelineNames,
       devPipelinesSupported,
       providerOptionDescriptors,
+      pipelineTargetPolicy,
       sessionSkillSettings,
       threadProviderGroups,
     ],
@@ -780,6 +793,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       props.onUpdateInteractionMode,
     ],
   );
+  const updatePipelineTargetPolicy = useCallback(
+    (policy: PipelineTargetPolicy) => {
+      void updateSettings({
+        environmentId: props.environmentId,
+        input: { patch: { pipelineTargetPolicy: policy } },
+      });
+    },
+    [props.environmentId, updateSettings],
+  );
   const handleSettingsMenuAction = useCallback(
     (eventId: string) => {
       const event = settingsMenu?.events.get(eventId);
@@ -814,6 +836,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           void Haptics.selectionAsync();
           selectDevPipeline(event.scenarioName);
           return;
+        case "set-pipeline-target-policy":
+          void Haptics.selectionAsync();
+          updatePipelineTargetPolicy(event.policy);
+          return;
       }
     },
     [
@@ -824,6 +850,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       selectDevPipeline,
       settingsMenu,
       toggleSessionSkill,
+      updatePipelineTargetPolicy,
     ],
   );
 
@@ -1044,6 +1071,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         ) : null}
 
         {/* Queue count */}
+        {providerReadinessMessage ? (
+          <Text className="pt-2 text-xs text-danger-foreground">{providerReadinessMessage}</Text>
+        ) : null}
         {props.queueCount > 0 ? (
           <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
             <Text className="pt-2 text-xs text-foreground-muted">
@@ -1067,6 +1097,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         }
         runtimeMode={currentRuntimeMode}
         onUpdateRuntimeMode={props.onUpdateRuntimeMode}
+        pipelineTargetPolicy={pipelineTargetPolicy}
+        onUpdatePipelineTargetPolicy={updatePipelineTargetPolicy}
         sessionSkills={sessionSkillSettings}
         onToggleSessionSkill={toggleSessionSkill}
         devPipelines={{

@@ -907,6 +907,41 @@ export function makeCursorAdapter(
             payload: { providerThreadId: started.sessionId },
           });
 
+          yield* acp.exitCode.pipe(
+            Effect.flatMap((exitCode) =>
+              withThreadLock(
+                ctx.threadId,
+                Effect.gen(function* () {
+                  if (ctx.stopped || sessions.get(ctx.threadId) !== ctx) return;
+                  ctx.stopped = true;
+                  yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+                  yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+                  sessions.delete(ctx.threadId);
+                  const reason = `Cursor ACP process exited unexpectedly with code ${String(exitCode)}.`;
+                  yield* offerRuntimeEvent({
+                    type: "session.exited",
+                    ...(yield* makeEventStamp()),
+                    provider: PROVIDER,
+                    threadId: ctx.threadId,
+                    payload: {
+                      reason,
+                      recoverable: false,
+                      exitKind: "error",
+                    },
+                  });
+                  if (ctx.notificationFiber) {
+                    yield* Fiber.interrupt(ctx.notificationFiber);
+                  }
+                  yield* Scope.close(ctx.scope, Exit.void);
+                }),
+              ),
+            ),
+            Effect.catchCause((cause) =>
+              Effect.logError("Failed to reconcile an exited Cursor ACP process.", { cause }),
+            ),
+            Effect.forkIn(sessionScope),
+          );
+
           return session;
         }).pipe(Effect.scoped),
       );

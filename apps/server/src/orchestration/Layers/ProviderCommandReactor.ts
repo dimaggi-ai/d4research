@@ -1,10 +1,12 @@
 import {
+  canStartProviderTurn,
   type ChatAttachment,
   CommandId,
   type DevSettings,
   type ResearchSettings,
   EventId,
   type ModelSelection,
+  type PipelineTargetPolicy,
   type OrchestrationEvent,
   ProviderDriverKind,
   type ProjectId,
@@ -23,6 +25,7 @@ import {
   type DevProviderCandidate,
 } from "@t3tools/shared/devPipeline";
 import {
+  buildResearchRunManifest,
   deriveResearchProviderCandidatesFromProviders,
   expandResearchPipelinePrompt,
   parseResearchTrigger,
@@ -31,9 +34,11 @@ import {
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -83,6 +88,53 @@ function toNonEmptyProviderInput(value: string | undefined): string | undefined 
 }
 
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
+export const PROVIDER_SESSION_START_TIMEOUT_MILLIS = 180_000;
+export const PROVIDER_TURN_SEND_TIMEOUT_MILLIS = 180_000;
+
+export function withProviderSessionStartDeadline<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  input: {
+    readonly provider: string;
+    readonly threadId: ThreadId;
+    readonly timeoutMillis?: number;
+  },
+): Effect.Effect<A, E | ProviderAdapterRequestError, R> {
+  const timeoutMillis = input.timeoutMillis ?? PROVIDER_SESSION_START_TIMEOUT_MILLIS;
+  return effect.pipe(
+    Effect.timeout(timeoutMillis),
+    Effect.catchTag("TimeoutError", () =>
+      Effect.fail(
+        new ProviderAdapterRequestError({
+          provider: input.provider,
+          method: "thread.turn.start",
+          detail: `Provider session startup timed out after ${timeoutMillis}ms. Check the provider process and retry the turn.`,
+        }),
+      ),
+    ),
+  );
+}
+
+export function withProviderTurnSendDeadline<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  input: {
+    readonly provider: string;
+    readonly timeoutMillis?: number;
+  },
+): Effect.Effect<A, E | ProviderAdapterRequestError, R> {
+  const timeoutMillis = input.timeoutMillis ?? PROVIDER_TURN_SEND_TIMEOUT_MILLIS;
+  return effect.pipe(
+    Effect.timeout(timeoutMillis),
+    Effect.catchTag("TimeoutError", () =>
+      Effect.fail(
+        new ProviderAdapterRequestError({
+          provider: input.provider,
+          method: "thread.turn.start",
+          detail: `Provider did not accept the turn within ${timeoutMillis}ms. The session was stopped; retry when the provider is responsive.`,
+        }),
+      ),
+    ),
+  );
+}
 
 /**
  * Expand only the provider-bound copy of a dev trigger. The persisted message
@@ -93,11 +145,12 @@ export function expandProviderDevMessage(
   messageText: string,
   settings: Pick<DevSettings, "scenarios" | "activeScenario"> | undefined,
   candidates: ReadonlyArray<DevProviderCandidate>,
+  targetPolicy: PipelineTargetPolicy = "labeled-fallback",
 ): string {
   const hasEffortPrefix = messageText.startsWith(CLAUDE_ULTRATHINK_PREFIX);
   const prompt = hasEffortPrefix ? messageText.slice(CLAUDE_ULTRATHINK_PREFIX.length) : messageText;
   if (parseDevTrigger(prompt) === null) return messageText;
-  const expanded = expandDevPipelinePrompt(prompt, settings, candidates);
+  const expanded = expandDevPipelinePrompt(prompt, settings, candidates, targetPolicy);
   return hasEffortPrefix ? `${CLAUDE_ULTRATHINK_PREFIX}${expanded}` : expanded;
 }
 
@@ -111,11 +164,12 @@ export function expandProviderResearchMessage(
     | Pick<ResearchSettings, "scenarios" | "activeScenario" | "pipelinePrompt" | "promptFiles">
     | undefined,
   candidates: ReadonlyArray<ResearchProviderCandidate>,
+  targetPolicy: PipelineTargetPolicy = "labeled-fallback",
 ): string {
   const hasEffortPrefix = messageText.startsWith(CLAUDE_ULTRATHINK_PREFIX);
   const prompt = hasEffortPrefix ? messageText.slice(CLAUDE_ULTRATHINK_PREFIX.length) : messageText;
   if (parseResearchTrigger(prompt) === null) return messageText;
-  const expanded = expandResearchPipelinePrompt(prompt, settings, candidates);
+  const expanded = expandResearchPipelinePrompt(prompt, settings, candidates, targetPolicy);
   return hasEffortPrefix ? `${CLAUDE_ULTRATHINK_PREFIX}${expanded}` : expanded;
 }
 
@@ -389,6 +443,9 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
+  const pendingSessionStarts = new Map<ThreadId, Fiber.Fiber<ProviderSession, unknown>>();
+  const cancelledTurnStarts = new Set<ThreadId>();
+  const activeTurnStartFibers = new Set<Fiber.Fiber<void, unknown>>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -423,6 +480,70 @@ const make = Effect.gen(function* () {
               ...(input.requestId ? { requestId: input.requestId } : {}),
             },
             turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  const appendResearchRunStartedActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: string;
+    readonly manifest: NonNullable<ReturnType<typeof buildResearchRunManifest>>;
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("research-run-started"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "research.run.started",
+            summary: `Research scenario ${input.manifest.scenario} started`,
+            payload: { messageId: input.messageId, ...input.manifest },
+            turnId: null,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  const appendProviderTargetActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly requested: ModelSelection;
+    readonly resolved: ModelSelection;
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("provider-target-selected"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "provider.target.selected",
+            summary: "Provider target selected",
+            payload: {
+              requestedInstanceId: input.requested.instanceId,
+              requestedModel: input.requested.model,
+              resolvedInstanceId: input.resolved.instanceId,
+              resolvedModel: input.resolved.model,
+              resolutionSource: "d4research-adapter-target",
+            },
+            turnId: null,
             createdAt: input.createdAt,
           },
           createdAt: input.createdAt,
@@ -653,16 +774,39 @@ const make = Effect.gen(function* () {
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
-    }) =>
-      providerService.startSession(threadId, {
-        threadId,
-        ...(preferredProvider ? { provider: preferredProvider } : {}),
-        providerInstanceId: desiredInstanceId,
-        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        modelSelection: desiredModelSelection,
-        ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
-        runtimeMode: desiredRuntimeMode,
+    }) => {
+      const start = withProviderSessionStartDeadline(
+        providerService.startSession(threadId, {
+          threadId,
+          ...(preferredProvider ? { provider: preferredProvider } : {}),
+          providerInstanceId: desiredInstanceId,
+          ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+          modelSelection: desiredModelSelection,
+          ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+          runtimeMode: desiredRuntimeMode,
+        }),
+        {
+          provider: providerErrorLabel(String(desiredInstanceId)),
+          threadId,
+        },
+      );
+      if (options?.pendingTurnStart !== true) {
+        return start;
+      }
+      return Effect.gen(function* () {
+        const fiber = yield* start.pipe(Effect.forkScoped);
+        pendingSessionStarts.set(threadId, fiber);
+        return yield* Fiber.join(fiber).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (pendingSessionStarts.get(threadId) === fiber) {
+                pendingSessionStarts.delete(threadId);
+              }
+            }),
+          ),
+        );
       });
+    };
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {
@@ -1214,9 +1358,26 @@ const make = Effect.gen(function* () {
     const desiredInstanceId =
       event.payload.modelSelection?.instanceId ?? thread.modelSelection.instanceId;
     const desiredProvider = providers.find((provider) => provider.instanceId === desiredInstanceId);
+    if (desiredProvider === undefined || !canStartProviderTurn(desiredProvider)) {
+      const providerName =
+        desiredProvider?.displayName ?? String(desiredProvider?.instanceId ?? desiredInstanceId);
+      const remediation =
+        desiredProvider?.readiness?.remediation ??
+        desiredProvider?.message ??
+        "Open Settings → Providers, refresh this provider, and resolve its setup status.";
+      yield* handleTurnStartFailure(
+        Cause.fail(
+          new ProviderAdapterRequestError({
+            provider: String(desiredInstanceId),
+            method: "thread.turn.start",
+            detail: `${providerName} is not ready to start a turn. ${remediation}`,
+          }),
+        ),
+      );
+      return;
+    }
     if (
       pipelineKind !== null &&
-      desiredProvider !== undefined &&
       !providerDriverSupportsPipelineOrchestration(String(desiredProvider.driver))
     ) {
       yield* handleTurnStartFailure(
@@ -1230,15 +1391,32 @@ const make = Effect.gen(function* () {
       );
       return;
     }
+    const researchCandidates = deriveResearchProviderCandidatesFromProviders(providers);
+    const researchRunManifest = buildResearchRunManifest(
+      promptWithoutEffort,
+      settings.research,
+      researchCandidates,
+      settings.pipelineTargetPolicy,
+    );
+    if (researchRunManifest !== null) {
+      yield* appendResearchRunStartedActivity({
+        threadId: event.payload.threadId,
+        messageId: String(event.payload.messageId),
+        manifest: researchRunManifest,
+        createdAt: event.payload.createdAt,
+      });
+    }
     const devExpandedMessageText = expandProviderDevMessage(
       message.text,
       settings.dev,
       deriveDevProviderCandidates(providers),
+      settings.pipelineTargetPolicy,
     );
     const providerMessageText = expandProviderResearchMessage(
       devExpandedMessageText,
       settings.research,
-      deriveResearchProviderCandidatesFromProviders(providers),
+      researchCandidates,
+      settings.pipelineTargetPolicy,
     );
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
@@ -1256,12 +1434,56 @@ const make = Effect.gen(function* () {
     );
 
     if (Option.isNone(sendTurnRequest)) {
+      cancelledTurnStarts.delete(event.payload.threadId);
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+    if (cancelledTurnStarts.delete(event.payload.threadId)) {
+      yield* providerService
+        .stopSession({ threadId: event.payload.threadId })
+        .pipe(Effect.catchCause(() => Effect.void));
+      const cancelledThread = yield* resolveThread(event.payload.threadId);
+      if (cancelledThread !== undefined) {
+        yield* setThreadSession({
+          threadId: event.payload.threadId,
+          session: {
+            ...(cancelledThread.session ?? {
+              threadId: event.payload.threadId,
+              providerName: desiredProvider.driver,
+              providerInstanceId: desiredProvider.instanceId,
+              runtimeMode: cancelledThread.runtimeMode,
+            }),
+            status: "stopped",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: event.payload.createdAt,
+          },
+          createdAt: event.payload.createdAt,
+        });
+      }
+      return;
+    }
+
+    const requestedModelSelection = event.payload.modelSelection ?? thread.modelSelection;
+    const resolvedModelSelection = sendTurnRequest.value.modelSelection ?? requestedModelSelection;
+    yield* appendProviderTargetActivity({
+      threadId: event.payload.threadId,
+      requested: requestedModelSelection,
+      resolved: resolvedModelSelection,
+      createdAt: event.payload.createdAt,
+    });
+
+    yield* withProviderTurnSendDeadline(providerService.sendTurn(sendTurnRequest.value), {
+      provider: String(desiredProvider.instanceId),
+    }).pipe(
+      Effect.catchCause((cause) =>
+        providerService.stopSession({ threadId: event.payload.threadId }).pipe(
+          Effect.catchCause(() => Effect.void),
+          Effect.andThen(recoverTurnStartFailure(cause)),
+        ),
+      ),
+      Effect.forkScoped,
+    );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (
@@ -1283,8 +1505,55 @@ const make = Effect.gen(function* () {
       });
     }
 
+    if (thread.session?.status === "starting") {
+      cancelledTurnStarts.add(event.payload.threadId);
+      const pendingStart = pendingSessionStarts.get(event.payload.threadId);
+      if (pendingStart !== undefined) {
+        yield* Fiber.interrupt(pendingStart).pipe(Effect.ignore);
+      }
+      yield* setThreadSession({
+        threadId: event.payload.threadId,
+        session: {
+          ...thread.session,
+          status: "stopped",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: event.payload.createdAt,
+        },
+        createdAt: event.payload.createdAt,
+      });
+      return;
+    }
+
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    yield* providerService.interruptTurn({ threadId: event.payload.threadId }).pipe(
+      Effect.catchCause((cause) => {
+        const detail = formatFailureDetail(cause);
+        return setThreadSession({
+          threadId: event.payload.threadId,
+          session: {
+            ...thread.session!,
+            status: "error",
+            activeTurnId: null,
+            lastError: detail,
+            updatedAt: event.payload.createdAt,
+          },
+          createdAt: event.payload.createdAt,
+        }).pipe(
+          Effect.andThen(
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.turn.interrupt.failed",
+              summary: "Provider turn interrupt failed",
+              detail,
+              turnId: event.payload.turnId ?? null,
+              createdAt: event.payload.createdAt,
+            }),
+          ),
+          Effect.asVoid,
+        );
+      }),
+    );
   });
 
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
@@ -1384,8 +1653,17 @@ const make = Effect.gen(function* () {
     }
 
     const now = event.payload.createdAt;
+    if (thread.session?.status === "starting") {
+      cancelledTurnStarts.add(event.payload.threadId);
+      const pendingStart = pendingSessionStarts.get(event.payload.threadId);
+      if (pendingStart !== undefined) {
+        yield* Fiber.interrupt(pendingStart).pipe(Effect.ignore);
+      }
+    }
     if (thread.session && thread.session.status !== "stopped") {
-      yield* providerService.stopSession({ threadId: thread.id });
+      yield* providerService
+        .stopSession({ threadId: thread.id })
+        .pipe(Effect.catchCause(() => Effect.void));
     }
 
     yield* setThreadSession({
@@ -1435,7 +1713,27 @@ const make = Effect.gen(function* () {
         return;
       }
       case "thread.turn-start-requested":
-        yield* processTurnStartRequested(event);
+        {
+          const fiber = yield* processTurnStartRequested(event).pipe(
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+              return Effect.logWarning("provider turn-start fiber failed", {
+                threadId: event.payload.threadId,
+                cause: Cause.pretty(cause),
+              });
+            }),
+            Effect.forkScoped,
+          );
+          activeTurnStartFibers.add(fiber);
+          yield* Fiber.await(fiber).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                activeTurnStartFibers.delete(fiber);
+              }),
+            ),
+            Effect.forkScoped,
+          );
+        }
         return;
       case "thread.turn-interrupt-requested":
         yield* processTurnInterruptRequested(event);
@@ -1468,6 +1766,43 @@ const make = Effect.gen(function* () {
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
+    yield* Effect.gen(function* () {
+      const [readModel, liveSessions] = yield* Effect.all([
+        projectionSnapshotQuery.getCommandReadModel(),
+        providerService.listSessions(),
+      ]);
+      const liveThreadIds = new Set(liveSessions.map((session) => session.threadId));
+      const staleThreads = Object.values(readModel.threads).filter(
+        (thread) =>
+          thread.session !== null &&
+          thread.session.status !== "stopped" &&
+          !liveThreadIds.has(thread.id),
+      );
+      const reconciledAt = DateTime.formatIso(yield* DateTime.now);
+      yield* Effect.forEach(
+        staleThreads,
+        (thread) =>
+          setThreadSession({
+            threadId: thread.id,
+            session: {
+              ...thread.session!,
+              status: "error",
+              activeTurnId: null,
+              lastError:
+                "The provider session ended while d4research was offline. Retry the turn to continue.",
+              updatedAt: reconciledAt,
+            },
+            createdAt: reconciledAt,
+          }),
+        { discard: true },
+      );
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider command reactor could not reconcile stale sessions", {
+          cause: Cause.pretty(cause),
+        }),
+      ),
+    );
     const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
@@ -1525,6 +1860,7 @@ const make = Effect.gen(function* () {
     start,
     drain: Effect.gen(function* () {
       yield* worker.drain;
+      yield* Effect.forEach([...activeTurnStartFibers], Fiber.await, { discard: true });
       yield* threadTitleRegenerationWorker.drain;
     }),
   } satisfies ProviderCommandReactorShape;

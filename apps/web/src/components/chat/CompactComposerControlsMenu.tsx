@@ -1,4 +1,8 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import {
+  type PipelineTargetPolicy,
+  ProviderInteractionMode,
+  RuntimeMode,
+} from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -37,6 +41,8 @@ export function compactInteractionModeSelection(input: {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  compact: boolean;
+  pipelineTargetPolicy: PipelineTargetPolicy;
   isResearchMode: boolean;
   showInteractionModeToggle: boolean;
   canStartResearch: boolean;
@@ -47,6 +53,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   traitsMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
+  onPipelineTargetPolicyChange: (policy: PipelineTargetPolicy) => void;
   onSelectResearchScenario: (scenarioName: string | null) => void;
   onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
@@ -57,12 +64,13 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <Button
             size="sm"
             variant="ghost"
-            className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
-            aria-label="More composer controls"
+            className="shrink-0 gap-1.5 px-2 text-muted-foreground/70 hover:text-foreground/80"
+            aria-label="Workflows and agent controls"
           />
         }
       >
         <EllipsisIcon aria-hidden="true" className="size-4" />
+        {props.compact ? null : <span>Workflows</span>}
       </MenuTrigger>
       <MenuPopup align="start">
         {props.traitsMenuContent ? (
@@ -141,6 +149,24 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+          Pipeline targets
+        </div>
+        <MenuRadioGroup
+          value={props.pipelineTargetPolicy}
+          onValueChange={(value) => {
+            if (!value || value === props.pipelineTargetPolicy) return;
+            props.onPipelineTargetPolicyChange(value as PipelineTargetPolicy);
+          }}
+        >
+          <MenuRadioItem value="labeled-fallback">Use labeled fallback</MenuRadioItem>
+          <MenuRadioItem value="exact">Exact targets only</MenuRadioItem>
+        </MenuRadioGroup>
+        <div className="max-w-64 px-2 pb-2 text-muted-foreground text-xs leading-4">
+          Fallbacks must be listed by the pipeline. Run history records the requested and actual
+          model.
+        </div>
+        <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Agent access</div>
         <MenuRadioGroup
           value={props.runtimeMode}

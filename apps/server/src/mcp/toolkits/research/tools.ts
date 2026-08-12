@@ -10,6 +10,7 @@ import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
 import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 
@@ -42,6 +43,7 @@ const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProviderAdapterRegistry,
+  ProviderRegistry,
   ProviderService,
   ProjectionSnapshotQuery,
   ServerConfig.ServerConfig,
@@ -56,6 +58,12 @@ export const ResearchDelegateInput = Schema.Struct({
     Schema.annotate({
       description:
         'Delegation target as "instanceId:model", exactly as listed in the research briefing (e.g. "claudeAgent:claude-fable-5").',
+    }),
+  ),
+  fallbackTargets: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(4))).pipe(
+    Schema.annotate({
+      description:
+        'Ordered, explicitly authored fallback targets as "instanceId:model". The server may use one only when pipeline target policy allows labeled fallback, and reports the actual target.',
     }),
   ),
   prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_000)).pipe(
@@ -94,6 +102,9 @@ export const ResearchDelegateInput = Schema.Struct({
 export type ResearchDelegateInput = typeof ResearchDelegateInput.Type;
 
 export const ResearchDelegateOutput = Schema.Struct({
+  requestedTarget: Schema.String,
+  resolvedTarget: Schema.String,
+  substituted: Schema.Boolean,
   target: Schema.String,
   step: Schema.String,
   visit: Schema.Int,
@@ -109,7 +120,7 @@ export type ResearchDelegateOutput = typeof ResearchDelegateOutput.Type;
 
 export const ResearchDelegateTool = Tool.make("research_delegate", {
   description:
-    "Send one bounded request to another provider/model named by the research pipeline and return its answer. Every call is budgeted and traced by step; use the exact targets from the research briefing.",
+    "Send one bounded request to another provider/model named by the research or development pipeline and return its answer. Explicit fallbacks may be used only under the shared labeled-fallback policy. The result always identifies the requested and actual model.",
   parameters: ResearchDelegateInput,
   success: ResearchDelegateOutput,
   failure: ResearchDelegateError,

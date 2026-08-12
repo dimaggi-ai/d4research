@@ -1,5 +1,7 @@
 # Research workflows
 
+New to d4research? Run the checked-in [starter research scenario](./starter-research.md) before authoring a custom pipeline.
+
 d4research is a research workspace for evidence-heavy work across models and providers. Its research
 mode structures an investigation, while provider handoff preserves one continuous chat when the
 active model changes.
@@ -30,6 +32,21 @@ Provider matches by name (`claude`, `codex`, `junie`, …); the model fragment c
 as it is unambiguous (`fable` → `claude-fable-5`). The settings screen validates every directive
 live and shows what it resolved to — or exactly why it did not.
 
+The composer's **Workflows** menu keeps Chat/Plan, named development pipelines, named research
+scenarios, and delegation target policy in one place. **Use labeled fallback** permits only a
+fallback written into the active pipeline; **Exact targets only** stops the step when its requested
+model is unavailable.
+
+Label a fallback on its own pipeline line so the server can verify it:
+
+```
+PRIMARY: !claude:opus
+FALLBACK directive: !codex:sol
+```
+
+Every delegation result records the requested target, the actual target, and whether the fallback
+was used. A Codex fallback is therefore reported as Codex; it is never presented as if Opus ran.
+
 A pipeline can fan out and loop:
 
 ```
@@ -43,8 +60,8 @@ Step 5: Validate and deliver.
 ## Start deep research
 
 Type `!research:<scenario>` at the very start of your prompt — or bare `!research` for the
-scenario selected in Settings. Clicking the **telescope icon** inserts the selected scenario's
-trigger. The provider and model already selected in the composer orchestrate the run.
+scenario selected in Settings. You can also select the scenario from the composer's **Workflows**
+menu. The provider and model already selected in the composer orchestrate the run.
 
 ```
 !research:blog Write a post comparing FTS5 and embedding search.
@@ -73,7 +90,8 @@ cannot orchestrate it themselves.
    target at most 3 times, and a research run has a hard ceiling of 24 delegations. When a guard
    trips, the orchestrator must say which loop was cut and synthesize from what it has.
 4. **Honesty** — failed or timed-out delegates are reported as failed; links, commands, and
-   uncertainty survive summarization.
+   uncertainty survive summarization. If a labeled fallback runs, the report names both the
+   requested and actual model.
 
 Prompt file contents are inlined **server-side** into the delegated request, so the orchestrator's
 own context never carries the file bodies. A file is readable only by the scenario it is attached
@@ -163,9 +181,10 @@ uncompressed transcript goes in Memo (preserves accuracy). See
 
 ### Fallback behavior
 
-If compression is disabled, not configured, or returns an error, the handoff falls back to
-`summarizeReplyForSpeech()` — the same voice-gateway summarizer used for speech output. The handoff
-never hard-fails; it always degrades gracefully.
+If compression is disabled, not configured, or returns an error, the handoff falls back to a
+structured transcript. Compression itself does not block a handoff. The durable Memo bridge does:
+if both the prepared handoff write and the local fallback write fail, d4research keeps the original
+provider selected and does not start the receiving provider.
 
 ## Boundaries
 
@@ -183,10 +202,10 @@ never hard-fails; it always degrades gracefully.
 
 | File                                            | Role                                                        |
 | ----------------------------------------------- | ----------------------------------------------------------- |
-| `apps/web/src/researchPipeline.ts`              | Tag detection, directive parsing, orchestrator brief        |
+| `packages/shared/src/researchPipeline.ts`       | Tag detection, directive parsing, orchestrator brief        |
 | `apps/server/src/mcp/toolkits/research/`        | `research_delegate` tool, delegation budgets                |
 | `apps/web/src/providerHandoff.ts`               | Handoff transcript, prompt, memory, compression client      |
 | `apps/web/src/components/ChatView.tsx`          | `onProviderHandoff` orchestration, `onStartDeepResearch`    |
-| `apps/web/src/components/chat/ChatComposer.tsx` | Telescope button UI                                         |
+| `apps/web/src/components/chat/ChatComposer.tsx` | Workflows menu and composer integration                     |
 | `apps/server/src/handoffCompression.ts`         | Server-side compression via provider adapters               |
 | `apps/server/src/http.ts`                       | `/api/handoff/compress` and `/api/memory/handoff` endpoints |

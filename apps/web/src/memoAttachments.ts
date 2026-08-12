@@ -84,10 +84,6 @@ export function buildMemoAttachmentReference(input: {
   readonly content: string;
   readonly stored: StoredMemoAttachment;
 }): string {
-  const firstChunkToken = `${input.stored.documentToken}chunk0001`;
-  const lastChunkToken = `${input.stored.documentToken}chunk${String(
-    input.stored.chunkCount,
-  ).padStart(4, "0")}`;
   return [
     "<memo_document>",
     "The complete attachment is preserved in local Memo; the preview below is not authoritative.",
@@ -96,14 +92,15 @@ export function buildMemoAttachmentReference(input: {
     `Document token: ${input.stored.documentToken}`,
     `Characters: ${input.stored.characterCount}`,
     `Chunks: ${input.stored.chunkCount}`,
-    "When memory_search is available in this provider session, retrieve one exact piece at a time:",
+    "When memory_attachment_search is available, retrieve only passages relevant to the task:",
     'connector="local"',
     `project=${JSON.stringify(input.project)}`,
-    `query="${firstChunkToken}" (then increment through "${lastChunkToken}")`,
-    "limit=1",
-    "Use as many chunk calls as needed for the user's task.",
-    "If an exact chunk query returns no results, the document was removed from Memo. Say so instead of inferring missing content from the preview.",
-    "If memory_search is unavailable, use only this preview and tell the user that the full local copy requires a capable same-thread handoff.",
+    `documentToken="${input.stored.documentToken}"`,
+    'query="keywords describing the evidence you need"',
+    "limit=4",
+    "Refine the query when necessary; do not load every chunk unless the task truly requires the whole document.",
+    'If status is "missing" or "incomplete", say that the full document is unavailable instead of inferring missing content from the preview.',
+    "If memory_attachment_search is unavailable, use only this preview and tell the user that the full local copy requires a capable same-thread handoff.",
     "<preview>",
     memoAttachmentPreview(input.content),
     "</preview>",

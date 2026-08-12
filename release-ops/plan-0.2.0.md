@@ -6,6 +6,37 @@
 
 **Release theme:** Stability, quality, and productization
 
+## Dogfood checkpoint — 2026-08-11
+
+The source/Caddy dogfood candidate now includes the complete product feature tranche:
+
+- the composer's unified **Workflows** menu owns Chat/Plan, named Dev pipelines, named Research
+  scenarios, agent access, and one Research/Dev target policy;
+- target substitution is literal and auditable: **Exact targets only** fails closed, while
+  **Use labeled fallback** accepts only an authored `FALLBACK directive`; requested and actual
+  provider/model identifiers are recorded separately;
+- normal provider startup and sends, connected unary RPCs, and checkpoint work have deadlines;
+  blocked startup can be stopped, restart reconciliation terminates orphaned projected sessions,
+  failed interrupts become session errors, and Cursor/Grok/Junie unexpected ACP exits remove the
+  stale session with the real exit code;
+- provider snapshots expose installation, authentication, reachability, model state, freshness,
+  `canStart`, and remediation, with shared web/mobile/server enforcement;
+- oversized documents support source-constrained relevant-chunk search, visible Memo lifecycle,
+  same-page retry, attachment-only draft retention, and missing/incomplete document results;
+- a generic bounded `starter` research scenario, checked-in kitten-fluffiness corpus,
+  controller-owned run manifest, and web/desktop Markdown export are present;
+- source-only first run, concepts, troubleshooting, background deployment, remote source commands,
+  and release applicability are documented without borrowing the upstream `npx t3` distribution.
+
+Focused validation recorded for this checkpoint: 462 affected unit/integration tests, five affected
+package typechecks, and 19/19 isolated Playwright product specs. Native mobile UI and signed desktop
+artifact verification are not available on this Linux host.
+
+This checkpoint authorizes the local Caddy dogfood deployment requested by the CEO. It does not
+authorize a public `v0.2.0` tag or artifact publication. P0 distribution identity, checksums,
+provenance, clean native install/update/uninstall smoke, the real-provider cross-handoff acceptance
+journey, and public website promotion remain explicit release-approval gates.
+
 ## Implementation checkpoint — 2026-08-11
 
 The post-upstream regression tranche is closed in the working tree:

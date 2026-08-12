@@ -11,6 +11,7 @@ import type { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import {
   type EnvironmentRpcFailure,
   type EnvironmentRpcSuccess,
+  type EnvironmentRpcTimeoutError,
   type EnvironmentRpcUnavailableError,
   request,
 } from "../rpc/client.ts";
@@ -55,7 +56,7 @@ export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
 type DispatchTag = typeof ORCHESTRATION_WS_METHODS.dispatchCommand;
 type CommandEffect = Effect.Effect<
   EnvironmentRpcSuccess<DispatchTag>,
-  EnvironmentRpcFailure<DispatchTag> | EnvironmentRpcUnavailableError,
+  EnvironmentRpcFailure<DispatchTag> | EnvironmentRpcUnavailableError | EnvironmentRpcTimeoutError,
   Crypto.Crypto | EnvironmentSupervisor
 >;
 

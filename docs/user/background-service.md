@@ -1,49 +1,52 @@
 # Running d4research in the Background
 
-On a Linux host, d4research can run as a background service for your user. It starts when the machine
-boots and keeps running after you log out.
+d4research can run as a user-level systemd service on Linux. The current source distribution uses
+the repository-owned unit and build artifacts; the upstream `npx t3 service` commands manage T3
+Code, not this fork.
 
-## Manage the Service
+This is a maintainer-managed deployment. From the d4research checkout:
 
-Install it with the latest T3 Code release:
+```bash
+T3CODE_DEPLOY_RESTART_MODE=build-only \
+T3CODE_DEPLOY_REQUIRE_VOICE=0 \
+bash scripts/deploy-local.sh --build-only
 
-```sh
-npx t3@latest service install
+install -d ~/.local/share/d4research
+ln -sfn "$(pwd -P)" ~/.local/share/d4research/current
+install -Dm644 ops/systemd/d4research.service \
+  ~/.config/systemd/user/d4research.service
+systemctl --user daemon-reload
+systemctl --user enable --now d4research.service
 ```
 
-Check whether it is installed:
+Check the service and recent logs:
 
-```sh
-npx t3@latest service status
+```bash
+systemctl --user status d4research.service
+journalctl --user -u d4research.service -n 100 --no-pager
 ```
 
-Update or repair it:
+Update an existing installation from its checkout with:
 
-```sh
-npx t3@latest service update
+```bash
+bash scripts/deploy-local.sh
 ```
 
-Stop it and remove it from startup:
+The deployment script builds first, then schedules a detached restart and waits for the web
+manifest and app root to become ready. Let active provider and terminal work finish before an
+update. The stable `~/.local/share/d4research/current` link keeps the unit independent of a
+developer-specific checkout path.
 
-```sh
-npx t3@latest service uninstall
+Disable and remove the user unit with:
+
+```bash
+systemctl --user disable --now d4research.service
+rm ~/.config/systemd/user/d4research.service
+systemctl --user daemon-reload
 ```
 
-Updating restarts d4research briefly. Let active agent work and terminal commands finish first.
-If a remote update is already in progress, wait for it to finish before retrying a local update.
+This does not delete the checkout or its d4research state. Back up the configured T3 home before
+removing local data. The background service currently requires Linux with systemd.
 
-The systemd unit runs a small stable launcher. Exact d4research versions are installed separately, so
-a failed remote candidate can return to the previous version without rewriting the unit. The
-launcher snapshots the database before a remote candidate starts, so database updates roll back
-with the server version. An older launcher may require one local `service update` before this is
-available.
-
-## Using It with T3 Connect
-
-T3 Connect may offer to install the service during setup so the host stays reachable after you log
-out. This is only an onboarding shortcut: the service and T3 Connect are managed separately.
-
-Signing out of T3 Connect does not remove the service. Use `t3 service uninstall` when you no longer
-want d4research to start in the background.
-
-The background service currently requires Linux with systemd.
+Detailed readiness, voice-service, and worker-log behavior is in
+[Local Deployment](../operations/local-deployment.md).

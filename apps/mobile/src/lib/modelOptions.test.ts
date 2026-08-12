@@ -19,6 +19,7 @@ describe("mobile model options", () => {
           displayName: "Codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             {
@@ -60,6 +61,7 @@ describe("mobile model options", () => {
           displayName: "Codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             {
@@ -104,14 +106,18 @@ describe("mobile model options", () => {
           driver: "codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
-          models: [],
+          models: [
+            { slug: "gpt-5.6-sol", name: "GPT-5.6 Sol", isCustom: false, capabilities: null },
+          ],
         },
         {
           instanceId: "claudeAgent",
           driver: "claudeAgent",
           enabled: false,
           installed: true,
+          status: "disabled",
           auth: { status: "authenticated" },
           models: [],
         },
@@ -138,6 +144,33 @@ describe("mobile model options", () => {
     expect(resolveSelectableModelSelection(null, disabled)).toBe(disabled);
   });
 
+  it("hides cached models when the server readiness contract cannot start", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "codex",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          readiness: {
+            installation: "ready",
+            authentication: "ready",
+            reachability: "unknown",
+            modelCatalog: "unknown",
+            canStart: false,
+            checkedAt: "2026-08-11T20:00:00.000Z",
+            remediation: "Refresh provider status.",
+          },
+          models: [{ slug: "cached", name: "Cached", isCustom: false, capabilities: null }],
+        },
+      ],
+    } as unknown as ServerConfig;
+
+    expect(buildModelOptions(config, null)).toEqual([]);
+  });
+
   it("keeps legacy models out of implicit defaults", () => {
     const config = {
       providers: [
@@ -147,6 +180,7 @@ describe("mobile model options", () => {
           displayName: "Codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             { slug: "gpt-5.6-sol", name: "GPT-5.6 Sol", isCustom: false, capabilities: null },

@@ -324,7 +324,7 @@ spec(
 );
 
 spec(
-  "dev pipeline settings persist into the composer Build picker",
+  "dev pipeline settings persist into the unified Workflows menu",
   async ({ page, webUrl, workspace, baseDir }) => {
     await page.goto(`${webUrl}/settings/dev-pipelines`, { waitUntil: "domcontentloaded" });
     const prompt = page.getByRole("textbox", { name: "Dev pipeline prompt" });
@@ -424,15 +424,39 @@ spec(
 
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
-    await page.getByRole("combobox", { name: "Build mode" }).click();
-    await page.getByRole("option", { name: "e2e-review", exact: true }).click();
-    await page
-      .getByRole("combobox", { name: "Dev pipeline: e2e-review" })
-      .waitFor({ state: "visible", timeout: 20_000 });
+    const workflows = page.getByRole("button", { name: "Workflows and agent controls" });
+    await workflows.waitFor({ state: "visible", timeout: 20_000 });
+    await workflows.click();
+    await page.getByRole("menuitemradio", { name: "e2e-review", exact: true }).click();
     NodeAssert.ok(
       (await page.locator("body").innerText()).includes("!dev:e2e-review"),
       "expected choosing a dev pipeline to arm its !dev trigger in the composer",
     );
+
+    await workflows.click();
+    const exactTargets = page.getByRole("menuitemradio", {
+      name: "Exact targets only",
+      exact: true,
+    });
+    await exactTargets.waitFor({ state: "visible", timeout: 20_000 });
+    await exactTargets.evaluate((element) => element.click());
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      persistedSettings = JSON.parse(await NodeFSP.readFile(settingsPath, "utf8"));
+      if (persistedSettings.pipelineTargetPolicy === "exact") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    NodeAssert.equal(
+      persistedSettings.pipelineTargetPolicy,
+      "exact",
+      "expected the shared Research/Dev target policy to persist",
+    );
+    await workflows.click();
+    const labeledFallback = page.getByRole("menuitemradio", {
+      name: "Use labeled fallback",
+      exact: true,
+    });
+    await labeledFallback.waitFor({ state: "visible", timeout: 20_000 });
+    await labeledFallback.evaluate((element) => element.click());
 
     await page.getByTestId("composer-editor").pressSequentially("fix the e2e regression");
     await page.getByRole("button", { name: "Send message" }).click();
@@ -474,7 +498,7 @@ spec(
     await startNewLocalThread(page);
     await page.setViewportSize({ width: 560, height: 800 });
 
-    const more = page.getByRole("button", { name: "More composer controls" });
+    const more = page.getByRole("button", { name: "Workflows and agent controls" });
     await more.waitFor({ state: "visible", timeout: 20_000 });
     await more.click();
     const planItem = page.getByRole("menuitemradio", { name: "Plan", exact: true });
@@ -991,7 +1015,9 @@ spec(
   "system monitor opens from the lower-left navigation without usage data",
   async ({ page, webUrl }) => {
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "System Monitor", exact: true }).click();
+    const systemMonitor = page.getByRole("button", { name: "System Monitor", exact: true });
+    await systemMonitor.waitFor({ state: "visible", timeout: 20_000 });
+    await systemMonitor.evaluate((element) => element.click());
     await page.waitForURL(/\/system$/, { timeout: 20_000 });
     await page
       .getByText("CPU", { exact: true })

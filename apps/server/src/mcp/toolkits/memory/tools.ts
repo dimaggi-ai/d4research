@@ -53,6 +53,24 @@ export type MemoryRememberInput = typeof MemoryRememberInput.Type;
 export const MemoryStatusInput = Schema.Struct({ connector: Connector });
 export type MemoryStatusInput = typeof MemoryStatusInput.Type;
 
+export const MemoryAttachmentSearchInput = Schema.Struct({
+  connector: Connector,
+  documentToken: Schema.String.pipe(
+    Schema.annotate({ description: "Exact document token from a <memo_document> reference." }),
+  ),
+  query: Schema.String.check(Schema.isMinLength(1)).pipe(
+    Schema.annotate({ description: "Keywords for the relevant passage inside this document." }),
+  ),
+  limit: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(12)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(4)),
+    Schema.annotate({ description: "Maximum relevant chunks to return. Defaults to 4." }),
+  ),
+  project: Schema.optional(Schema.String).pipe(
+    Schema.annotate({ description: "Project scope copied from the document reference." }),
+  ),
+});
+export type MemoryAttachmentSearchInput = typeof MemoryAttachmentSearchInput.Type;
+
 export const MemorySearchOutput = Schema.Struct({
   connector: Schema.Literal("local"),
   results: Schema.Array(MemoryEntry),
@@ -76,6 +94,15 @@ export const MemoryStatusOutput = Schema.Struct({
   extra: Schema.optional(Schema.Unknown),
 });
 export type MemoryStatusOutput = typeof MemoryStatusOutput.Type;
+
+export const MemoryAttachmentSearchOutput = Schema.Struct({
+  connector: Schema.Literal("local"),
+  documentToken: Schema.String,
+  status: Schema.Literals(["ok", "missing", "incomplete"]),
+  results: Schema.Array(MemoryEntry),
+  count: Schema.Int,
+});
+export type MemoryAttachmentSearchOutput = typeof MemoryAttachmentSearchOutput.Type;
 
 const readonlyMemoryTool = <T extends Tool.Any>(tool: T): T =>
   tool
@@ -118,4 +145,20 @@ export const MemoryStatusTool = readonlyMemoryTool(
   }).annotate(Tool.Title, "Memory status"),
 );
 
-export const MemoryToolkit = Toolkit.make(MemorySearchTool, MemoryRememberTool, MemoryStatusTool);
+export const MemoryAttachmentSearchTool = readonlyMemoryTool(
+  Tool.make("memory_attachment_search", {
+    description:
+      "Search relevant chunks inside one complete local Memo document. Use the exact document token and project from <memo_document>; results cannot cross into another attachment.",
+    parameters: MemoryAttachmentSearchInput,
+    success: MemoryAttachmentSearchOutput,
+    failure: MemoryConnectorError,
+    dependencies,
+  }).annotate(Tool.Title, "Search Memo document"),
+);
+
+export const MemoryToolkit = Toolkit.make(
+  MemorySearchTool,
+  MemoryRememberTool,
+  MemoryStatusTool,
+  MemoryAttachmentSearchTool,
+);

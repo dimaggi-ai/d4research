@@ -15,6 +15,7 @@ import {
   memoAttachmentSource,
   parseMemoAttachmentDocumentToken,
   persistMemoAttachment,
+  searchMemoAttachment,
 } from "./memoAttachment.ts";
 
 const DOCUMENT_TOKEN = "memoattachment0123456789abcdef";
@@ -102,6 +103,88 @@ describe("Memo-backed composer attachments", () => {
       expect(retrievedChunks[1]!.length).toBeLessThan(content.length);
       const stats = yield* connector.stats();
       expect(stats.count).toBe(records.chunks.length + 1);
+    }),
+  );
+
+  it.effect("returns only relevant chunks from the requested complete document", () =>
+    Effect.gen(function* () {
+      const connector = makeBuiltinMemoryConnector(NodePath.join(dir, "memory.sqlite"));
+      const documentToken = "memoattachmentrelevant0123456789";
+      const otherToken = "memoattachmentother0123456789abc";
+      const content = [
+        "kitten undercoat softness evidence ".repeat(700),
+        "veterinary coat health caveat ".repeat(700),
+        "unrelated feeding schedule ".repeat(700),
+      ].join("");
+      yield* persistMemoAttachment({
+        connector,
+        documentToken,
+        name: "kitten-study.md",
+        content,
+        project: "d4research",
+      });
+      yield* persistMemoAttachment({
+        connector,
+        documentToken: otherToken,
+        name: "other.md",
+        content: "undercoat softness evidence from the wrong document",
+        project: "d4research",
+      });
+
+      const found = yield* searchMemoAttachment({
+        connector,
+        documentToken,
+        query: "veterinary caveat",
+        limit: 2,
+        project: "d4research",
+      });
+      expect(found.status).toBe("ok");
+      expect(found.results.length).toBeGreaterThan(0);
+      expect(found.results.length).toBeLessThan(
+        buildMemoAttachmentRecords({ documentToken, name: "kitten-study.md", content }).chunks
+          .length,
+      );
+      expect(
+        found.results.every((entry) => entry.text.includes(`Document token: ${documentToken}`)),
+      ).toBe(true);
+      expect(found.results.some((entry) => entry.text.includes("veterinary coat health"))).toBe(
+        true,
+      );
+    }),
+  );
+
+  it.effect("reports missing and incomplete documents without using the preview as truth", () =>
+    Effect.gen(function* () {
+      const connector = makeBuiltinMemoryConnector(NodePath.join(dir, "memory.sqlite"));
+      const missing = yield* searchMemoAttachment({
+        connector,
+        documentToken: "memoattachmentmissing0123456789",
+        query: "anything",
+        limit: 4,
+        project: "lifecycle",
+      });
+      expect(missing).toEqual({
+        documentToken: "memoattachmentmissing0123456789",
+        status: "missing",
+        results: [],
+      });
+
+      const incompleteToken = "memoattachmentincomplete01234567";
+      const [chunk] = buildMemoAttachmentRecords({
+        documentToken: incompleteToken,
+        name: "partial.md",
+        content: "partial evidence",
+      }).chunks;
+      yield* connector.add(chunk!.text, memoAttachmentSource(incompleteToken), "lifecycle");
+      const incomplete = yield* searchMemoAttachment({
+        connector,
+        documentToken: incompleteToken,
+        query: "evidence",
+        limit: 4,
+        project: "lifecycle",
+      });
+      expect(incomplete.status).toBe("incomplete");
+      expect(incomplete.results).toEqual([]);
     }),
   );
 

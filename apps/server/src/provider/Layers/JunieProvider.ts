@@ -239,6 +239,17 @@ export const checkJunieProviderStatus = Effect.fn("checkJunieProviderStatus")(fu
       settings.customModels,
       discovered.length ? discovered : BUILT_IN_MODELS,
     ),
-    probe: { installed: true, version, status: "ready", auth: { status: "unknown" } },
+    probe: {
+      installed: true,
+      version,
+      status: discovered.length > 0 ? "ready" : "warning",
+      auth: { status: "unknown" },
+      ...(discovered.length === 0
+        ? {
+            message:
+              "Junie ACP started but reported no models. Authenticate Junie and refresh provider status.",
+          }
+        : {}),
+    },
   });
 });

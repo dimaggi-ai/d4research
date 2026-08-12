@@ -14,7 +14,7 @@
  */
 import {
   DEFAULT_SERVER_SETTINGS,
-  DEFAULT_MODEL_BY_PROVIDER,
+  canStartProviderTurn,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
   type ModelSelection,
@@ -73,7 +73,7 @@ export interface ProviderInstanceEntry {
  * `ready` probe status can remain in the streamed snapshot until reconciliation.
  */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.isAvailable && entry.status === "ready";
+  return entry.isAvailable && canStartProviderTurn(entry.snapshot);
 }
 
 /** Picker rails contain configured, enabled instances only. */
@@ -334,7 +334,7 @@ export function getProviderInstanceModels(
 
 /**
  * Default model slug for a specific instance: its declared built-in default,
- * then its first built-in model, then any model it reports, then the driver-level default. Custom
+ * then its first built-in model, then any model it reports. Custom
  * instances can serve a different model list than the default instance of
  * the same driver kind, so the lookup must be instance-scoped rather than
  * kind-scoped.
@@ -348,13 +348,12 @@ export function getDefaultProviderInstanceModel(
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
-    entry.models[0]?.slug ??
-    DEFAULT_MODEL_BY_PROVIDER[entry.driverKind]
+    entry.models[0]?.slug
   );
 }
 
 const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolean =>
-  entry.enabled && entry.isAvailable;
+  entry.isAvailable && canStartProviderTurn(entry.snapshot);
 
 /**
  * Resolve an exact stored instance when it remains enabled and available.
@@ -373,10 +372,7 @@ export function resolveSelectableProviderInstanceEntry(
       return requested;
     }
   }
-  return (
-    entries.find(isProviderInstancePickerReady) ??
-    entries.find((entry) => isSelectableProviderInstanceEntry(entry) && entry.status !== "error")
-  );
+  return entries.find(isProviderInstancePickerReady);
 }
 
 /**

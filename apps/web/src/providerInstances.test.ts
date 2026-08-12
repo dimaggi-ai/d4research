@@ -32,7 +32,9 @@ function provider(input: {
     ...(input.availability ? { availability: input.availability } : {}),
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
-    models: input.models ?? [],
+    models: input.models ?? [
+      { slug: "test-model", name: "Test model", isCustom: false, capabilities: null },
+    ],
     slashCommands: [],
     skills: [],
   };
@@ -233,7 +235,7 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, undefined)).toBe(ready);
   });
 
-  it("prefers an unprobed (warning) instance over one whose probe errored", () => {
+  it("rejects unprobed and errored instances until readiness is confirmed", () => {
     const notInstalled = ProviderInstanceId.make("codex");
     const unprobed = ProviderInstanceId.make("claudeAgent");
     const providers = [
@@ -249,10 +251,10 @@ describe("resolveSelectableProviderInstance", () => {
       }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, undefined)).toBe(unprobed);
+    expect(resolveSelectableProviderInstance(providers, undefined)).toBeUndefined();
   });
 
-  it("keeps a requested instance even when its probe errored", () => {
+  it("falls back from a requested errored instance to a ready instance", () => {
     const requested = ProviderInstanceId.make("codex");
     const providers = [
       provider({
@@ -263,7 +265,7 @@ describe("resolveSelectableProviderInstance", () => {
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
+    expect(resolveSelectableProviderInstance(providers, requested)).toBe("claudeAgent");
   });
 
   it("does not invent an errored instance as a new-user default", () => {
@@ -360,17 +362,20 @@ describe("getDefaultProviderInstanceModel", () => {
     ).toBe("claude-opus-4-8");
   });
 
-  it("falls back to the driver default when the instance reports no models", () => {
+  it("does not fabricate a driver default when the instance reports no models", () => {
     const providers = [
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [],
+      }),
     ];
 
     const resolved = getDefaultProviderInstanceModel(
       providers,
       ProviderInstanceId.make("claudeAgent"),
     );
-    expect(typeof resolved).toBe("string");
-    expect(resolved?.length).toBeGreaterThan(0);
+    expect(resolved).toBeUndefined();
   });
 
   it("honors the instance's declared default before model-list order", () => {

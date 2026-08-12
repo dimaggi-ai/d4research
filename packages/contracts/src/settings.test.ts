@@ -103,6 +103,19 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
+describe("ServerSettings pipeline target policy", () => {
+  it("defaults to explicit labeled fallbacks and accepts Exact mode", () => {
+    expect(decodeServerSettings({}).pipelineTargetPolicy).toBe("labeled-fallback");
+    expect(decodeServerSettingsPatch({ pipelineTargetPolicy: "exact" })).toEqual({
+      pipelineTargetPolicy: "exact",
+    });
+  });
+
+  it("rejects untracked or equivalence-claiming substitution modes", () => {
+    expect(() => decodeServerSettingsPatch({ pipelineTargetPolicy: "equivalent-model" })).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({

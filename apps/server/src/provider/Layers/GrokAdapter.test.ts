@@ -228,6 +228,48 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("removes the session and reports the actual unexpected ACP process exit", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-unexpected-process-exit");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({
+          T3_ACP_EXIT_ON_PROMPT: "1",
+        }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const sessionExited =
+        yield* Deferred.make<Extract<ProviderRuntimeEvent, { readonly type: "session.exited" }>>();
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        event.type === "session.exited"
+          ? Deferred.succeed(sessionExited, event).pipe(Effect.asVoid)
+          : Effect.void,
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const sendFiber = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "exit now",
+          attachments: [],
+        })
+        .pipe(Effect.ignore, Effect.forkChild);
+
+      const exited = yield* Deferred.await(sessionExited);
+      assert.equal(exited.payload.exitKind, "error");
+      assert.equal(exited.payload.recoverable, false);
+      assert.include(exited.payload.reason ?? "", "code 7");
+      assert.isFalse(yield* adapter.hasSession(threadId));
+
+      yield* Fiber.interrupt(sendFiber);
+      yield* Fiber.interrupt(runtimeEventsFiber);
+    }),
+  );
+
   it.effect("reports a Grok session running only while the prompt is in flight", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-session-ready-after-prompt");

@@ -3,6 +3,7 @@ import type {
   ModelSelection,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
+import { canStartProviderTurn } from "@t3tools/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
@@ -76,12 +77,7 @@ export function resolveSelectableModelSelection(
   const provider = config.providers.find(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
-  return provider &&
-    provider.enabled &&
-    provider.installed &&
-    provider.auth.status !== "unauthenticated"
-    ? selection
-    : null;
+  return provider && canStartProviderTurn(provider) ? selection : null;
 }
 
 /**
@@ -111,7 +107,7 @@ export function buildModelOptions(
   const options = new Map<string, ModelOption>();
 
   for (const provider of config?.providers ?? []) {
-    if (!provider.enabled || !provider.installed || provider.auth.status === "unauthenticated") {
+    if (!canStartProviderTurn(provider)) {
       continue;
     }
 

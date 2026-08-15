@@ -1,3 +1,4 @@
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -149,9 +150,27 @@ export const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make
     const handlers = notificationHandlers.get(notification.method) ?? [];
 
     if (schema) {
+      // Each handler is isolated: one failing (or throwing) handler must not
+      // starve the handlers registered after it — the runtime registers both
+      // state-tracking handlers and the event-pump handler for the same
+      // method, and losing the pump silently deafens the whole session.
       return decodeNotificationPayload(notification.method, schema, notification.params).pipe(
         Effect.flatMap((decoded) =>
-          Effect.forEach(handlers, (handler) => handler(decoded), { discard: true }),
+          Effect.forEach(
+            handlers,
+            (handler) =>
+              handler(decoded).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logWarning("codex app-server notification handler failed", {
+                        method: notification.method,
+                        cause,
+                      }),
+                ),
+              ),
+            { discard: true },
+          ),
         ),
         Effect.catch(() => Effect.void),
       );

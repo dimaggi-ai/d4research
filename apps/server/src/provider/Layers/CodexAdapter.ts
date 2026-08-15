@@ -26,6 +26,7 @@ import {
   ThreadId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
@@ -1645,6 +1646,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const managedNativeEventLogger =
     options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventStream = Stream.fromQueue(runtimeEventQueue);
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>
@@ -1744,8 +1746,32 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               return;
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
-          }),
-        ).pipe(Effect.forkChild);
+          }).pipe(
+            // A single unmappable or unloggable event skips; it must not kill
+            // delivery for the rest of the session. A dead pump is the
+            // 2026-08-14 outage: thread stuck "starting", Codex child working
+            // unheard to completion.
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logError("codex event pump: event failed, skipping", {
+                    threadId: input.threadId,
+                    method: event.method,
+                    cause,
+                  }),
+            ),
+          ),
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.void
+              : Effect.logError("codex event pump died; session events lost", {
+                  threadId: input.threadId,
+                  cause,
+                }),
+          ),
+          Effect.forkChild,
+        );
 
         const started = yield* runtime.start().pipe(
           Effect.mapError(
@@ -1998,9 +2024,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     listSessions,
     hasSession,
     stopAll,
-    get streamEvents() {
-      return Stream.fromQueue(runtimeEventQueue);
-    },
+    // One stable stream: Stream.fromQueue takes destructively, so minting a
+    // fresh stream per property access would let two accidental subscribers
+    // silently steal events from each other.
+    streamEvents: runtimeEventStream,
   } satisfies CodexAdapterShape;
 });
 

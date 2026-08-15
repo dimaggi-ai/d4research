@@ -123,6 +123,58 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       ]);
     }),
   );
+  it.effect("a failing notification handler does not starve later handlers for the method", () =>
+    Effect.gen(function* () {
+      const laterHandlerPayloads = yield* Ref.make<Array<unknown>>([]);
+      const handle = yield* makeHandle();
+      const scope = yield* Scope.make();
+      const clientLayer = CodexClient.layerChildProcess(handle);
+      const context = yield* Layer.buildWithScope(clientLayer, scope);
+
+      yield* Effect.gen(function* () {
+        const client = yield* CodexClient.CodexAppServerClient;
+
+        yield* client.handleServerRequest("item/tool/requestUserInput", () =>
+          Effect.succeed({ answers: { approved: { answers: ["yes"] } } }),
+        );
+        // First handler dies outright — the pathological case that silently
+        // deafened production sessions when dispatch aborted the remaining
+        // handlers (the event pump) for the same method.
+        yield* client.handleServerNotification("item/agentMessage/delta", () =>
+          Effect.die(new Error("poison handler")),
+        );
+        yield* client.handleServerNotification("item/agentMessage/delta", (payload) =>
+          Ref.update(laterHandlerPayloads, (current) => [...current, payload]),
+        );
+
+        yield* client.request("initialize", {
+          clientInfo: {
+            name: "effect-codex-app-server-test",
+            title: "Effect Codex App Server Test",
+            version: "0.0.0",
+          },
+          capabilities: {
+            experimentalApi: true,
+            optOutNotificationMethods: null,
+          },
+        });
+        yield* client.notify("initialized", undefined);
+
+        const path = yield* Path.Path;
+        const peerCwd = path.join(import.meta.dirname, "..");
+        yield* client.request("skills/list", { cwds: [peerCwd] });
+      }).pipe(Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
+
+      assert.deepEqual(yield* Ref.get(laterHandlerPayloads), [
+        {
+          delta: "Mock server is ready.",
+          itemId: "item-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      ]);
+    }),
+  );
   it.effect("drains child stderr so large diagnostics cannot block protocol responses", () =>
     Effect.gen(function* () {
       const handle = yield* makeHandle({

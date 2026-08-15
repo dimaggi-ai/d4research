@@ -21,6 +21,7 @@ import { normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -1623,7 +1624,30 @@ export const makeCodexSessionRuntime = (
     );
 
     yield* Stream.fromQueue(serverNotifications).pipe(
-      Stream.runForEach(handleRawNotification),
+      Stream.runForEach((notification) =>
+        handleRawNotification(notification).pipe(
+          // One poison notification skips; it must not kill the pump. A dead
+          // pump leaves the thread stuck "starting" while the Codex child
+          // keeps working unheard (2026-08-14 production deafness).
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logError("codex notification pump: event failed, skipping", {
+                  threadId: options.threadId,
+                  method: notification.method,
+                  cause,
+                }),
+          ),
+        ),
+      ),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : Effect.logError("codex notification pump died", {
+              threadId: options.threadId,
+              cause,
+            }),
+      ),
       Effect.forkIn(runtimeScope),
     );
 

@@ -13,6 +13,7 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
 | `@`     | Files and folders in the workspace | A path mention. Paths with spaces are quoted automatically.                             |
 | `$`     | Skills                             | `$<skill-name>` — the provider's own skills, or your installed ones                     |
 | `/`     | Commands                           | Built-in `/model`, `/plan`, `/default`, plus the selected provider's own slash commands |
+| `!`     | Delegation targets                 | `!provider:model` — only at the very start of a message                                 |
 
 - **File mentions** search the project's entries as you type. Dragging a file from the workspace
   file tree into the composer inserts a markdown-style file link (`[name](path)`) — mentions and
@@ -77,6 +78,14 @@ does not delete them. Sequentially reattaching unchanged content with the same n
 title reuses the committed document; duplicate copies can still arise across simultaneous sends or
 after a project rename, and deleting that document removes every copy with its exact document key.
 
+## Switching provider mid-chat
+
+Picking a different provider or model in a chat that has already started does not restart anything
+on its own. The pick is held, and a banner above the composer reads **Next message hands off to …**.
+Send, and that one message goes to the new provider with this chat's context attached. **Cancel
+switch** in the banner puts the selection back on the provider the chat is running and clears the
+hint. See [Handoff](./concepts.md#handoff).
+
 ## Queued follow-ups
 
 Sending while a turn is still running does not interrupt the agent: the request is queued and shown
@@ -95,6 +104,38 @@ the next message.
 
 Press `⌘S` (Ctrl+S) with a prompt in the composer to stash it. The stash badge opens a popover of
 stashed prompts to restore or delete; stashed entries keep their attached images.
+
+## Ask another model one question
+
+Open a message with `!provider:model` and that one message is answered by the model you named,
+inside this chat:
+
+```
+!codex:gpt-5.6-sol explain this stack trace
+```
+
+The `!` menu completes the target in two steps — provider first, then its models — and only opens at
+the very start of a message, so `!` in ordinary prose stays ordinary prose. If the target does not
+resolve to a ready provider and model, Send says so and keeps your draft.
+
+What this does and does not do:
+
+- The chat's own model does not change, and no session is restarted or forked. The next message goes
+  back to the model the chat was already using.
+- The delegate answers once. It reads, it does not write: file changes and commands are declined for
+  it, so it cannot touch your worktree.
+- Images and files attached to the message go to the delegate too.
+- Delegation budgets apply. It is the same bounded delegation a pipeline step uses, drawing on the
+  same per-turn ceiling.
+- The answer is labeled with the provider and model that actually ran. When that differs from what
+  you typed — you wrote `!claude:fable` and `claude-fable-5` answered — the label shows both.
+- One at a time per chat. Sending a second delegation while one is running is refused rather than
+  quietly replacing it.
+- Nothing is hidden. The message stays exactly as you typed it, and stopping the chat stops the
+  delegation.
+
+If you have a provider switch staged, a delegation does not consume it: the banner says the handoff
+waits for your next normal message, and the switch happens then.
 
 ## Pipeline triggers
 

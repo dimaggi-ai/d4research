@@ -15,6 +15,7 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { stripInlineDelegateTrigger } from "@t3tools/shared/researchPipeline";
 import {
   createContext,
   Fragment,
@@ -47,6 +48,8 @@ import {
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  ArrowRightIcon,
+  ArrowRightLeftIcon,
   BotIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -137,6 +140,7 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
+  onToggleHandoffFold: (messageId: MessageId, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
 }
@@ -280,6 +284,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
+  const [expandedHandoffMessageIds, setExpandedHandoffMessageIds] = useState<
+    ReadonlySet<MessageId>
+  >(new Set());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const disclosureAnchorKeyRef = useRef<string | null>(null);
@@ -360,6 +367,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     },
     [suspendEndScrollMaintenanceForDisclosure],
   );
+  const onToggleHandoffFold = useCallback(
+    (messageId: MessageId, anchorKey: string) => {
+      suspendEndScrollMaintenanceForDisclosure(anchorKey);
+      setExpandedHandoffMessageIds((existing) => {
+        const next = new Set(existing);
+        if (next.has(messageId)) {
+          next.delete(messageId);
+        } else {
+          next.add(messageId);
+        }
+        return next;
+      });
+    },
+    [suspendEndScrollMaintenanceForDisclosure],
+  );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
   // place; the next turn (or a reload, since this is local state) folds it.
@@ -398,6 +420,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningTurnId,
         expandedTurnIds,
         expandedWorkGroupIds,
+        expandedHandoffMessageIds,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
@@ -409,6 +432,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       runningTurnId,
       expandedTurnIds,
       expandedWorkGroupIds,
+      expandedHandoffMessageIds,
       isWorking,
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
@@ -522,6 +546,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onToggleHandoffFold,
       agentPanelModel,
       onOpenAgents,
     }),
@@ -538,6 +563,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onToggleHandoffFold,
       agentPanelModel,
       onOpenAgents,
     ],
@@ -672,7 +698,7 @@ function deriveTimelineMinimapItems(
     items.push({
       id: row.id,
       rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
+      userText: minimapUserPreview(row),
       assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
     });
   }
@@ -702,6 +728,40 @@ function resolveFinalAssistantTextForTurn(
 function compactMinimapPreview(text: string | null | undefined) {
   const compact = text?.replace(/\s+/g, " ").trim() ?? "";
   return compact.length > 0 ? compact : null;
+}
+
+/**
+ * Previews are derived from the peeled bubble text, which costs a full transport
+ * strip per user row, and minimap items are rebuilt on every streaming tick. The
+ * result is memoized on the message object, which unchanged rows keep — except
+ * for messages carrying attachments, which the projection re-wraps with fresh
+ * preview URLs each tick and so can never hit a cache keyed on identity.
+ */
+const minimapUserPreviewByMessage = new WeakMap<TimelineMessage, string | null>();
+
+/**
+ * Every transport block the peel can remove announces itself with one of these.
+ * The extractors are pure block-strippers, so text without any marker peels to
+ * itself and the whole chain can be skipped — which is what keeps the
+ * uncacheable attachment rows cheap.
+ */
+const USER_MESSAGE_TRANSPORT_MARKERS = ["_context", "<enabled_skills", "<preview_annotation"];
+
+function minimapUserPreview(row: Extract<MessagesTimelineRow, { kind: "message" }>) {
+  // Preview what the bubble shows, not the wire text: a legacy handoff is a
+  // machine prompt with no user prose, and a combined one carries transport
+  // markup after the instruction.
+  if (row.handoff?.kind === "legacy") return `Handed off to ${row.handoff.target}`;
+  const cached = minimapUserPreviewByMessage.get(row.message);
+  if (cached !== undefined) return cached;
+  const { text } = row.message;
+  const preview = compactMinimapPreview(
+    USER_MESSAGE_TRANSPORT_MARKERS.some((marker) => text.includes(marker))
+      ? extractUserMessageContexts(text).visibleText
+      : text,
+  );
+  minimapUserPreviewByMessage.set(row.message, preview);
+  return preview;
 }
 
 function resolveTimelineRowTop(state: TimelinePositionState, rowIndex: number) {
@@ -979,7 +1039,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
 
-  return (
+  const bubble = (
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
         {regularImages.length > 0 && (
@@ -1044,6 +1104,17 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
+        {row.delegate ? (
+          <div className="mb-2 flex">
+            <span
+              data-inline-delegate-target={row.delegate.label}
+              className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+            >
+              <ArrowRightIcon className="size-3" aria-hidden />
+              {row.delegate.label}
+            </span>
+          </div>
+        ) : null}
         {globalEnabledSkills.length + sessionEnabledSkills.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Enabled skills">
             {globalEnabledSkills.map((name) => (
@@ -1069,7 +1140,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </div>
         ) : null}
         <CollapsibleUserMessageBody
-          text={displayedUserMessage.visibleText}
+          // The chip above already shows the trigger; the bubble shows the
+          // task. Copy still yields the authoritative text.
+          text={
+            row.delegate
+              ? stripInlineDelegateTrigger(displayedUserMessage.visibleText)
+              : displayedUserMessage.visibleText
+          }
           terminalContexts={terminalContexts}
           skills={ctx.skills}
           markdownCwd={ctx.markdownCwd}
@@ -1095,6 +1172,52 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
     </div>
   );
+
+  // A handoff folds to one line: the switch is a thread milestone, not
+  // something the user wrote. The persisted message stays authoritative and the
+  // machine text expands in place.
+  if (row.handoff) {
+    const Icon = row.handoffExpanded ? ChevronDownIcon : ChevronRightIcon;
+    const foldRow = (
+      <div className="border-b border-border/60 pb-2 pt-1">
+        <button
+          type="button"
+          aria-expanded={row.handoffExpanded}
+          data-scroll-anchor-ignore
+          data-provider-handoff-fold
+          onClick={() => ctx.onToggleHandoffFold(row.message.id, row.id)}
+          className="flex cursor-pointer select-none items-center gap-1.5 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        >
+          <ArrowRightLeftIcon className="size-3.5" />
+          <span>Handed off to {row.handoff.target}</span>
+          <Icon className="size-3.5" />
+        </button>
+      </div>
+    );
+    // Combined handoffs carry the user's real instruction, so the bubble is
+    // never hidden — only the attached context block folds.
+    if (row.handoff.kind === "combined") {
+      return (
+        <div className="flex flex-col gap-1">
+          {foldRow}
+          {row.handoffExpanded && displayedUserMessage.handoff ? (
+            <div className="whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
+              {displayedUserMessage.handoff.summary}
+            </div>
+          ) : null}
+          {bubble}
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-1">
+        {foldRow}
+        {row.handoffExpanded ? bubble : null}
+      </div>
+    );
+  }
+
+  return bubble;
 }
 
 function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
@@ -1148,7 +1271,28 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
+      <div
+        className={cn(
+          "relative min-w-0 px-1 py-0.5",
+          // A delegate answer is not this thread's model talking; the accent
+          // and badge keep that visible without reformatting the answer.
+          row.delegate ? "ms-1 border-s-2 border-primary/35 ps-3" : null,
+        )}
+      >
+        {row.delegate ? (
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span
+              data-inline-delegate-answer={row.delegate.label}
+              className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-medium text-primary"
+            >
+              <ArrowRightIcon className="size-3" aria-hidden />
+              {row.delegate.label}
+            </span>
+            {row.delegate.substituted ? (
+              <span className="text-muted-foreground">requested {row.delegate.requested}</span>
+            ) : null}
+          </div>
+        ) : null}
         <ChatMarkdown
           text={messageText}
           cwd={ctx.markdownCwd}

@@ -42,6 +42,10 @@ A single user-to-assistant work cycle inside a thread. It starts with user input
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
 
+#### Inline delegation
+
+A turn whose prompt opens with a bare `!provider:model` directive and is answered by that target instead of the thread's provider. It reuses the bounded-delegation engine (`runBoundedDelegation`), charges the same per-run budget under the synthetic step `inline`, and leaves the thread's model selection, provider session, and history untouched. The divert lives in [ProviderCommandReactor.ts][12]; the grammar is `parseInlineDelegateTrigger` in `packages/shared/src/researchPipeline.ts`.
+
 ### Orchestration
 
 Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
@@ -99,6 +103,14 @@ The backend agent runtime that actually performs work. Seven drivers ship built 
 #### Session
 
 The live provider-backed runtime attached to a thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
+
+#### Provider handoff
+
+Replacing the provider-native session attached to a thread without replacing the thread. Same thread id, route, transcript, branch, and worktree; carried context is written to local Memo before the switch. See [handoff-compression.md][25].
+
+#### Staged handoff
+
+A cross-provider model pick in a started chat that is held in the composer draft instead of acted on. Nothing runs until the next send, which performs the switch and carries the user's instruction plus a trailing `<handoff_context>` block to the target. Cancelling the stage restores the running provider's selection. See [handoff-compression.md][25].
 
 #### Runtime mode
 
@@ -179,3 +191,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ./handoff-compression.md

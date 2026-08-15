@@ -9,6 +9,15 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import {
+  extractTrailingProviderHandoffContext,
+  parseProviderHandoffPrompt,
+} from "@t3tools/shared/providerHandoffPrompt";
+import {
+  mightBeInlineDelegateTrigger,
+  parseInlineDelegateTrigger,
+} from "@t3tools/shared/researchPipeline";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -160,6 +169,144 @@ export type TimelineLatestTurn = Pick<
   "turnId" | "state" | "startedAt" | "completedAt"
 >;
 
+export interface TimelineHandoff {
+  /** Display headline, e.g. `Claude Code / claude-sonnet-5`. */
+  readonly target: string;
+  /**
+   * `combined` messages carry the user's instruction plus a trailing context
+   * block, so the bubble stays visible under the fold. `legacy` messages are
+   * whole context-sync turns from before staged handoff and fold entirely.
+   */
+  readonly kind: "legacy" | "combined";
+}
+
+/**
+ * Cheap for ordinary messages: both shapes are gated on a substring the text
+ * almost never contains. Enabled skills are stripped first because the server
+ * appends that block to every user turn, which would otherwise break the legacy
+ * parser's end-anchored trailer check on historical handoffs.
+ */
+function deriveUserMessageHandoff(text: string): TimelineHandoff | null {
+  const looksLegacy = text.startsWith("Handoff to ");
+  const looksCombined = text.includes("<handoff_context>");
+  if (!looksLegacy && !looksCombined) return null;
+
+  const promptText = text.includes("<enabled_skills")
+    ? extractTrailingEnabledSkillsContext(text).promptText
+    : text;
+  if (looksLegacy) {
+    const legacy = parseProviderHandoffPrompt(promptText);
+    if (legacy) return { target: legacy.target, kind: "legacy" };
+  }
+  if (!looksCombined) return null;
+  const { handoff } = extractTrailingProviderHandoffContext(promptText);
+  return handoff ? { target: handoff.target, kind: "combined" } : null;
+}
+
+export interface TimelineDelegate {
+  /** Directive as typed, e.g. `!codex:sol`, for the "requested" disclosure. */
+  readonly requested: string;
+  /** Chip/badge label: `Codex · gpt-5.6-sol`, or the typed target verbatim. */
+  readonly label: string;
+  /** True when the model that ran differs from what the trigger named. */
+  readonly substituted: boolean;
+}
+
+/**
+ * Parsed once per message object, like the minimap's preview cache: the rows
+ * are re-derived on every streaming tick, and a delegate trigger cannot change
+ * without the message being replaced.
+ */
+const delegateByUserMessage = new WeakMap<object, TimelineDelegate | null>();
+
+/**
+ * Cheap for ordinary messages: the shared gate rejects anything that cannot
+ * open with a directive before the full parse runs, and the parser then
+ * rejects pipeline triggers and mid-text mentions.
+ */
+function deriveUserMessageDelegate(message: ChatMessage): TimelineDelegate | null {
+  const cached = delegateByUserMessage.get(message);
+  if (cached !== undefined) return cached;
+  const trigger = mightBeInlineDelegateTrigger(message.text)
+    ? parseInlineDelegateTrigger(message.text)
+    : null;
+  const delegate: TimelineDelegate | null =
+    trigger === null
+      ? null
+      : {
+          requested: trigger.directive.raw,
+          label: `${trigger.directive.provider} · ${trigger.directive.model}`,
+          substituted: false,
+        };
+  delegateByUserMessage.set(message, delegate);
+  return delegate;
+}
+
+/** Shared empty result so a timeline with no delegations allocates nothing. */
+const NO_TIMELINE_DELEGATES: ReadonlyMap<string, TimelineDelegate> = new Map();
+
+/**
+ * Pairs each delegate turn's user message with the assistant message that
+ * answered it, in ONE forward pass, allocating only once a delegation is
+ * actually present. Resolved targets come from the `research_delegate` ledger
+ * rows, which the server writes before the answer, so a single pass sees them.
+ */
+function deriveTimelineDelegates(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+): ReadonlyMap<string, TimelineDelegate> {
+  let byMessageId: Map<string, TimelineDelegate> | null = null;
+  let pending: TimelineDelegate | null = null;
+  let targetByTurnId: Map<TurnId, string> | null = null;
+  for (const entry of timelineEntries) {
+    if (entry.kind === "work") {
+      const target = entry.entry.researchDelegateTarget;
+      const turnId = entry.entry.turnId;
+      if (target !== undefined && turnId) {
+        targetByTurnId ??= new Map();
+        targetByTurnId.set(turnId, target);
+      }
+      continue;
+    }
+    if (entry.kind !== "message") continue;
+    if (entry.message.role === "user") {
+      pending = deriveUserMessageDelegate(entry.message);
+      if (pending !== null) {
+        byMessageId ??= new Map();
+        byMessageId.set(entry.message.id, pending);
+      }
+      continue;
+    }
+    if (entry.message.role !== "assistant" || pending === null) continue;
+    byMessageId ??= new Map();
+    byMessageId.set(
+      entry.message.id,
+      resolveTurnDelegate(
+        pending,
+        entry.message.turnId ? targetByTurnId?.get(entry.message.turnId) : undefined,
+      ),
+    );
+  }
+  return byMessageId ?? NO_TIMELINE_DELEGATES;
+}
+
+/**
+ * The delegate that actually answered, from the turn's `research_delegate`
+ * ledger when the activity carried one, falling back to what the user typed.
+ * Never claims a target the ledger did not report.
+ */
+function resolveTurnDelegate(
+  requested: TimelineDelegate,
+  resolvedTarget: string | undefined,
+): TimelineDelegate {
+  if (resolvedTarget === undefined) return requested;
+  const separator = resolvedTarget.indexOf(":");
+  const label =
+    separator > 0
+      ? `${resolvedTarget.slice(0, separator)} · ${resolvedTarget.slice(separator + 1)}`
+      : resolvedTarget;
+  return { requested: requested.requested, label, substituted: label !== requested.label };
+}
+
 export type MessagesTimelineRow =
   | {
       kind: "work";
@@ -195,6 +342,14 @@ export type MessagesTimelineRow =
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
+      /** Set when this user message carries a provider handoff. */
+      handoff: TimelineHandoff | null;
+      handoffExpanded: boolean;
+      /**
+       * Set on both halves of an inline delegation: the user message that
+       * named the target, and the assistant answer that target authored.
+       */
+      delegate: TimelineDelegate | null;
     }
   | {
       kind: "proposed-plan";
@@ -448,6 +603,7 @@ export function deriveMessagesTimelineRows(input: {
   runningTurnId?: TurnId | null;
   expandedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
+  expandedHandoffMessageIds?: ReadonlySet<MessageId>;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
@@ -468,6 +624,10 @@ export function deriveMessagesTimelineRows(input: {
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId,
   });
+  // Delegation is a property of the turn, not of one message: the user message
+  // names the target and the assistant message its answer.
+  const delegateByMessageId = deriveTimelineDelegates(input.timelineEntries);
+
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedTurnIds?.has(fold.turnId)) {
@@ -609,6 +769,11 @@ export function deriveMessagesTimelineRows(input: {
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
       !assistantTurnStillInProgress;
 
+    const handoff =
+      timelineEntry.message.role === "user"
+        ? deriveUserMessageHandoff(timelineEntry.message.text)
+        : null;
+
     nextRows.push({
       kind: "message",
       id: timelineEntry.id,
@@ -626,6 +791,11 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "user"
           ? input.revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
+      handoff,
+      handoffExpanded:
+        handoff !== null &&
+        (input.expandedHandoffMessageIds?.has(timelineEntry.message.id) ?? false),
+      delegate: delegateByMessageId.get(timelineEntry.message.id) ?? null,
     });
   }
 
@@ -699,6 +869,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "message": {
       const bm = b as typeof a;
+      // `handoff` is derived purely from the message text, so message identity
+      // already covers it; only the expansion flag needs its own comparison.
+      // `delegate` does not: an assistant row's badge sharpens from the typed
+      // directive to the resolved target once the ledger lands, without the
+      // message object changing.
       return (
         a.message === bm.message &&
         a.durationStart === bm.durationStart &&
@@ -706,7 +881,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
-        a.revertTurnCount === bm.revertTurnCount
+        a.revertTurnCount === bm.revertTurnCount &&
+        a.handoffExpanded === bm.handoffExpanded &&
+        a.delegate?.label === bm.delegate?.label &&
+        a.delegate?.requested === bm.delegate?.requested
       );
     }
   }

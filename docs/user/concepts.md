@@ -39,11 +39,24 @@ A **delegation** is a real, bounded provider call made by the orchestrator. Dele
 delegate again. A skipped or failed call remains skipped or failed in the run record; model-written
 prose cannot turn it into a successful call.
 
+An **inline delegation** is the same bounded call made without a pipeline: open a message with
+`!provider:model` and that one message is answered by the model you named, leaving the chat's own
+model, session, and history untouched.
+
 ## Handoff
 
 A handoff changes the provider/model attached to the same thread. The visible transcript remains
-authoritative. d4research first stores recoverable context in local Memo; if that durable bridge
-cannot be established, the switch does not happen.
+authoritative.
+
+Choosing another provider in a chat that has already started only _stages_ the switch — nothing runs
+yet, and the composer tells you the next message will hand off. That next message is the handoff:
+d4research stores recoverable context in local Memo, attaches it to what you wrote, and the new
+provider answers your actual instruction. If that durable bridge cannot be established, the switch
+does not happen, the message is not sent, and your text stays in the composer.
+
+In the thread, a handed-off message carries a compact **Handed off to …** row above your normal
+message bubble; expand it to read the context that travelled with it. Handoffs from older versions
+of d4research were a separate machine-written turn, and those still fold away behind the same row.
 
 ## Memo
 

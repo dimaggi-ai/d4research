@@ -11,6 +11,7 @@ import {
   ApprovalRequestId,
   canStartProviderTurn,
   type CanonicalRequestType,
+  type ChatAttachment,
   type PipelineTargetPolicy,
   ProviderInstanceId,
   ThreadId,
@@ -410,10 +411,384 @@ export function findPipelinePromptFile(
   };
 }
 
+/**
+ * One bounded delegation, from budget charge to settled answer. Callers own
+ * capability, fallback authorization, target policy, and prompt-file scoping
+ * and hand this function an already-resolved target — the MCP tool does that
+ * from a pipeline's arguments, the inline `!provider:model` turn does it from
+ * the user's own directive. Everything below the target is identical, and so
+ * is the failure taxonomy both surfaces report.
+ */
+export interface BoundedDelegationRequest {
+  /** Thread whose workspace and Memo scope the delegate inherits. */
+  readonly orchestratorThreadId: ThreadId;
+  /** Budget key. One run shares a ceiling across every delegation it makes. */
+  readonly runId: string;
+  readonly requestedTarget: string;
+  readonly resolvedTarget: string;
+  readonly substituted: boolean;
+  readonly parsedTarget: { readonly instanceId: string; readonly model: string };
+  readonly prompt: string;
+  /**
+   * Images and files the user attached to the turn. Delivered to the delegate
+   * exactly as a normal turn delivers them; dropping them silently would let a
+   * delegate answer about a screenshot it never saw.
+   */
+  readonly attachments: ReadonlyArray<ChatAttachment>;
+  /**
+   * Resolved AFTER the budget charge, deliberately. "Every research_delegate
+   * call burns budget" is the loop guard: a model that keeps naming an invalid
+   * prompt file must run out of budget rather than retry for free.
+   */
+  readonly resolvePromptFile: Effect.Effect<
+    { readonly name: string; readonly content: string } | null,
+    ResearchDelegateError
+  >;
+  readonly shareMemoContext: boolean;
+  readonly step: string;
+  readonly visit: number;
+  readonly pollDelay?: Effect.Effect<void>;
+}
+
+export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
+  Effect.gen(function* () {
+    const delegatePollDelay = input.pollDelay ?? Effect.sleep(DELEGATE_POLL_DELAY);
+    const crypto = yield* Crypto.Crypto;
+    const parsedTarget = input.parsedTarget;
+    const targetLabel = input.substituted
+      ? `${input.resolvedTarget} (labeled fallback for ${input.requestedTarget})`
+      : input.resolvedTarget;
+
+    // The delegate must never be this thread's own session — that is the
+    // recursive-delegation door the product contract keeps shut.
+    const nowMs = yield* Clock.currentTimeMillis;
+    const budget = yield* ResearchDelegationBudget;
+    const charge = yield* budget.charge({
+      runId: input.runId,
+      step: input.step,
+      target: input.resolvedTarget,
+    });
+    if (!charge.ok) {
+      return yield* new ResearchDelegateError({
+        detail: charge.reason ?? "Delegation budget exhausted.",
+        budgetExhausted: true,
+        failureKind: "budget",
+      });
+    }
+
+    const promptFile = yield* input.resolvePromptFile;
+
+    const registry = yield* ProviderAdapterRegistry;
+    const providerService = yield* ProviderService;
+    const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
+    const adapter = yield* registry.getByInstance(instanceId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ResearchDelegateError({
+            detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
+          }),
+      ),
+    );
+
+    // Run the delegate in the orchestrator thread's workspace, not the
+    // server process dir. Without this the CLI inherits the server's cwd
+    // (e.g. the user's home), loads whatever agent memory/scope lives there,
+    // and can refuse or misjudge work that is in-scope for the actual
+    // project. Falls back to the default cwd when the thread has no
+    // resolvable workspace yet.
+    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+    const orchestratorContext = yield* projectionSnapshotQuery
+      .getThreadCheckpointContext(input.orchestratorThreadId)
+      .pipe(Effect.orElseSucceed(() => Option.none<never>()));
+    const delegateCwd = Option.match(orchestratorContext, {
+      onNone: () => undefined,
+      onSome: (context) => context.worktreePath ?? context.workspaceRoot,
+    });
+
+    // Memo records written by provider handoff are scoped by the project
+    // title. Resolve that title through the server-owned thread→project
+    // relationship; never accept a scope from the MCP caller and never fall
+    // back to an unscoped search when the authoritative project is missing.
+    const memoProject = Option.isNone(orchestratorContext)
+      ? null
+      : yield* projectionSnapshotQuery
+          .getProjectShellById(orchestratorContext.value.projectId)
+          .pipe(
+            Effect.map(Option.match({ onNone: () => null, onSome: (project) => project.title })),
+            Effect.orElseSucceed(() => null),
+          );
+
+    // Shared context rides along as-is — no summarization between what one
+    // model learned and what the next one reads. Best-effort: a memory
+    // outage degrades to a delegate without context, never a failed step.
+    let sharedContext: string | null = null;
+    if (input.shareMemoContext && memoProject !== null) {
+      sharedContext = yield* Effect.gen(function* () {
+        const connector = yield* makeConfiguredMemoryConnector();
+        const found = yield* connector.search(input.prompt, 5, memoProject);
+        return buildResearchSharedMemoContext(found.results);
+      }).pipe(Effect.orElseSucceed(() => null));
+    }
+
+    const turnInput = [
+      ...(sharedContext !== null
+        ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
+        : []),
+      ...(promptFile !== null
+        ? [`--- PROMPT FILE: ${promptFile.name} ---`, promptFile.content, ""]
+        : []),
+      input.prompt,
+    ].join("\n");
+
+    const modelSelection = { instanceId, model: parsedTarget.model };
+    const entropy = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(
+        () =>
+          new ResearchDelegateError({
+            detail: "Could not allocate a unique delegate session id.",
+            failureKind: "start",
+          }),
+      ),
+    );
+    const threadId = buildDelegateThreadId(nowMs, entropy);
+
+    const interactionScope = yield* Scope.make();
+    const providerEvents = yield* providerService.subscribeEvents.pipe(
+      Effect.provideService(Scope.Scope, interactionScope),
+    );
+    const delegateInteractionFiber = yield* Effect.gen(function* () {
+      yield* Stream.runForEach(providerEvents, (event) => {
+        if (String(event.threadId) !== String(threadId)) return Effect.void;
+        if (event.type === "request.opened") {
+          if (event.requestId === undefined) return Effect.void;
+          return adapter
+            .respondToRequest(
+              threadId,
+              ApprovalRequestId.make(String(event.requestId)),
+              delegateApprovalDecision(event.payload.requestType),
+            )
+            .pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause as Cause.Cause<never>)
+                  : Effect.fail(
+                      new ResearchDelegateError({
+                        detail: `Failed to answer an approval request from ${targetLabel}: ${describeCause(cause)}`,
+                        failureKind: "error",
+                      }),
+                    ),
+              ),
+            );
+        }
+        if (event.type === "user-input.requested") {
+          if (event.requestId === undefined) return Effect.void;
+          return adapter
+            .respondToUserInput(threadId, ApprovalRequestId.make(String(event.requestId)), {})
+            .pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause as Cause.Cause<never>)
+                  : Effect.fail(
+                      new ResearchDelegateError({
+                        detail: `Failed to answer a user-input request from ${targetLabel}: ${describeCause(cause)}`,
+                        failureKind: "error",
+                      }),
+                    ),
+              ),
+            );
+        }
+        return Effect.void;
+      });
+      return yield* new ResearchDelegateError({
+        detail: `The interaction event stream for ${targetLabel} ended before the delegate completed.`,
+        failureKind: "error",
+      });
+    }).pipe(Effect.forkChild);
+
+    const finalThread = yield* Effect.gen(function* () {
+      // Delegate sessions are intentionally adapter-local. ProviderService is
+      // the durable user-session facade: starting through it mints an MCP
+      // credential, persists a routing binding, and can make an advisory
+      // child recursively callable. A delegate needs none of those things.
+      yield* adapter
+        .startSession({
+          threadId,
+          provider: adapter.provider,
+          // Delegates are advisers. Read-only tools can run, while any attempt
+          // to mutate the shared worktree remains provider-gated instead of
+          // silently bypassing the user's permission mode.
+          runtimeMode: DELEGATE_RUNTIME_MODE,
+          modelSelection,
+          ...(delegateCwd ? { cwd: delegateCwd } : {}),
+        })
+        .pipe(
+          Effect.timeout(DELEGATE_START_TIMEOUT_MILLIS),
+          Effect.mapError(
+            (cause) =>
+              new ResearchDelegateError({
+                detail: `Failed to start ${targetLabel}: ${cause instanceof Error ? cause.message : String(cause)}`,
+                failureKind: "start",
+              }),
+          ),
+        );
+
+      const delegateIsBusy = adapter
+        .listSessions()
+        .pipe(
+          Effect.map((sessions) =>
+            sessions.some(
+              (session) =>
+                String(session.threadId) === String(threadId) && session.status === "running",
+            ),
+          ),
+        );
+
+      // Warm a cold cloud model with a throwaway turn in THIS session, so the
+      // model is loaded before the real turn's clock starts. A failed warm-up
+      // must fail this delegation: continuing could overlap two turns in the
+      // same provider session and attribute the wrong answer to the real step.
+      if (isColdStartProne(parsedTarget.model)) {
+        yield* Effect.gen(function* () {
+          const warmBefore = yield* adapter.readThread(threadId).pipe(
+            Effect.map((thread) => thread.turns.length),
+            Effect.orElseSucceed(() => 0),
+          );
+          yield* adapter.sendTurn({
+            threadId,
+            input: "Reply with the single word: OK",
+            attachments: [],
+            modelSelection,
+          });
+          // A turn row appears at turn start, not completion. Wait for the
+          // provider's running signal to clear so the real prompt cannot
+          // collide with a warm-up that is still loading the model.
+          yield* settleDelegateThread({
+            readThread: adapter.readThread(threadId),
+            turnsBefore: warmBefore,
+            maxAttempts: DELEGATE_WARMUP_POLL_ATTEMPTS,
+            stableReads: 1,
+            pollDelay: delegatePollDelay,
+            isBusy: delegateIsBusy,
+          });
+        }).pipe(
+          Effect.timeout(DELEGATE_WARMUP_TIMEOUT_MILLIS),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause as Cause.Cause<never>)
+              : Effect.fail(
+                  new ResearchDelegateError({
+                    detail: isTimeoutCause(cause)
+                      ? `Warm-up for ${targetLabel} did not settle within ${Math.round(DELEGATE_WARMUP_TIMEOUT_MILLIS / 60_000)} minutes. Report the actual target as timed out.`
+                      : `Warm-up for ${targetLabel} failed: ${describeCause(cause)}.`,
+                    failureKind: isTimeoutCause(cause) ? "timeout" : "error",
+                  }),
+                ),
+          ),
+        );
+      }
+
+      const turnsBefore = yield* adapter.readThread(threadId).pipe(
+        Effect.map((thread) => thread.turns.length),
+        Effect.orElseSucceed(() => 0),
+      );
+
+      return yield* Effect.gen(function* () {
+        yield* adapter.sendTurn({
+          threadId,
+          input: turnInput,
+          attachments: input.attachments,
+          modelSelection,
+        });
+        // Wait for the answer to SETTLE, not merely to appear. A reasoning model
+        // (Codex gpt-5.6-sol) streams a short intent preamble ("I'll verify…")
+        // before the real answer; returning on first text hands the preamble
+        // back as the result. This keeps reading while the text grows and only
+        // accepts it once it has been stable, bounded by DELEGATE_POLL_ATTEMPTS.
+        return yield* settleDelegateThread({
+          readThread: adapter.readThread(threadId),
+          turnsBefore,
+          maxAttempts: DELEGATE_POLL_ATTEMPTS,
+          stableReads: DELEGATE_SETTLE_READS,
+          pollDelay: delegatePollDelay,
+          // "Session still running" is the provider's own completion signal —
+          // every adapter flips status running→ready at turn end.
+          isBusy: delegateIsBusy,
+        });
+      }).pipe(
+        Effect.timeout(DELEGATE_TURN_TIMEOUT_MILLIS),
+        // Catch the whole cause, not just typed failures. A spawn-level defect
+        // (E2BIG on an oversized prompt, a missing binary) would otherwise die
+        // outside the declared failure channel and reach the orchestrator as an
+        // opaque "internal server error" — which is exactly how every agy
+        // delegation failed silently instead of naming its reason.
+        Effect.catchCause((cause) =>
+          // An interrupt carries no typed failure, so re-raising it keeps
+          // cancellation semantics without widening the error channel.
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause as Cause.Cause<never>)
+            : Effect.fail(
+                new ResearchDelegateError({
+                  detail: isTimeoutCause(cause)
+                    ? `Delegate ${targetLabel} did not answer within ${Math.round(
+                        DELEGATE_TURN_TIMEOUT_MILLIS / 60_000,
+                      )} minutes. Report the step as timed out; do not write its answer yourself. Retry once, then switch targets.`
+                    : `Delegate turn on ${targetLabel} failed: ${describeCause(cause)}`,
+                  failureKind: isTimeoutCause(cause) ? "timeout" : "error",
+                }),
+              ),
+        ),
+      );
+    }).pipe(
+      // A failed headless approval/user-input response can leave sendTurn
+      // blocked forever. Observe the interaction fiber as part of the same
+      // lifecycle so its typed failure interrupts the turn immediately.
+      Effect.raceFirst(Fiber.join(delegateInteractionFiber)),
+      // Cleanup wraps the race rather than either competitor. Interrupting
+      // the interaction fiber from inside the delegate competitor would make
+      // that competitor wait on the very fiber raceFirst is also stopping.
+      Effect.ensuring(
+        Effect.all(
+          [
+            adapter
+              .stopSession(threadId)
+              .pipe(Effect.timeout(SESSION_STOP_TIMEOUT_MILLIS), Effect.ignore),
+            Fiber.interrupt(delegateInteractionFiber).pipe(
+              Effect.andThen(Scope.close(interactionScope, Exit.void)),
+            ),
+          ],
+          { concurrency: "unbounded", discard: true },
+        ),
+      ),
+    );
+
+    const text = extractAssistantText(finalThread);
+
+    if (!text) {
+      return yield* new ResearchDelegateError({
+        detail: `Empty response from ${targetLabel}. Report the step as failed rather than inventing its answer.`,
+        failureKind: "empty",
+      });
+    }
+
+    const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
+    const completedMs = yield* Clock.currentTimeMillis;
+    return {
+      requestedTarget: input.requestedTarget,
+      resolvedTarget: input.resolvedTarget,
+      substituted: input.substituted,
+      target: input.resolvedTarget,
+      step: input.step,
+      visit: input.visit,
+      remainingBudget: charge.remaining,
+      durationMs: Math.max(0, completedMs - nowMs),
+      truncated,
+      text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
+    };
+  });
+
 export const makeResearchDelegateHandler =
   (options?: { readonly pollDelay?: Effect.Effect<void> }) => (input: ResearchDelegateInput) =>
     Effect.gen(function* () {
-      const delegatePollDelay = options?.pollDelay ?? Effect.sleep(DELEGATE_POLL_DELAY);
       const invocation = yield* McpInvocationContext.McpInvocationContext;
       if (!invocation.capabilities.has("research")) {
         return yield* new ResearchDelegateError({
@@ -421,7 +796,6 @@ export const makeResearchDelegateHandler =
           failureKind: "authorization",
         });
       }
-      const crypto = yield* Crypto.Crypto;
       const settingsService = yield* ServerSettingsService;
       const settings = yield* settingsService.getSettings.pipe(
         Effect.mapError(
@@ -461,32 +835,11 @@ export const makeResearchDelegateHandler =
           failureKind: "start",
         });
       }
-      const parsedTarget = targetResolution.parsedTarget;
-      const targetLabel = targetResolution.substituted
-        ? `${targetResolution.resolvedTarget} (labeled fallback for ${targetResolution.requestedTarget})`
-        : targetResolution.resolvedTarget;
 
-      // The delegate must never be this thread's own session — that is the
-      // recursive-delegation door the product contract keeps shut.
-      const nowMs = yield* Clock.currentTimeMillis;
-      const budget = yield* ResearchDelegationBudget;
-      const charge = yield* budget.charge({
-        runId: `${String(invocation.threadId)}:${String(
-          invocation.turnId ?? `${invocation.providerSessionId}:${invocation.issuedAt}`,
-        )}`,
-        step: input.step,
-        target: targetResolution.resolvedTarget,
-      });
-      if (!charge.ok) {
-        return yield* new ResearchDelegateError({
-          detail: charge.reason ?? "Delegation budget exhausted.",
-          budgetExhausted: true,
-          failureKind: "budget",
-        });
-      }
-
-      let promptFileContent: string | null = null;
-      if (input.promptFileName !== undefined) {
+      // Deferred so the budget is charged first: an invalid prompt-file
+      // argument must still cost the model a delegation.
+      const resolvePromptFile = Effect.gen(function* () {
+        if (input.promptFileName === undefined) return null;
         const pipelineKind = input.pipelineKind ?? "research";
         // `scenario` is what scopes the lookup, so a missing one cannot fall
         // back to searching every scenario — that would hand this run the
@@ -511,315 +864,30 @@ export const makeResearchDelegateHandler =
             }.`,
           });
         }
-        promptFileContent = file.content;
-      }
-
-      const registry = yield* ProviderAdapterRegistry;
-      const providerService = yield* ProviderService;
-      const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
-      const adapter = yield* registry.getByInstance(instanceId).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ResearchDelegateError({
-              detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
-            }),
-        ),
-      );
-
-      // Run the delegate in the orchestrator thread's workspace, not the
-      // server process dir. Without this the CLI inherits the server's cwd
-      // (e.g. the user's home), loads whatever agent memory/scope lives there,
-      // and can refuse or misjudge work that is in-scope for the actual
-      // project. Falls back to the default cwd when the thread has no
-      // resolvable workspace yet.
-      const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-      const orchestratorContext = yield* projectionSnapshotQuery
-        .getThreadCheckpointContext(invocation.threadId)
-        .pipe(Effect.orElseSucceed(() => Option.none<never>()));
-      const delegateCwd = Option.match(orchestratorContext, {
-        onNone: () => undefined,
-        onSome: (context) => context.worktreePath ?? context.workspaceRoot,
+        return { name: input.promptFileName, content: file.content };
       });
 
-      // Memo records written by provider handoff are scoped by the project
-      // title. Resolve that title through the server-owned thread→project
-      // relationship; never accept a scope from the MCP caller and never fall
-      // back to an unscoped search when the authoritative project is missing.
-      const memoProject = Option.isNone(orchestratorContext)
-        ? null
-        : yield* projectionSnapshotQuery
-            .getProjectShellById(orchestratorContext.value.projectId)
-            .pipe(
-              Effect.map(Option.match({ onNone: () => null, onSome: (project) => project.title })),
-              Effect.orElseSucceed(() => null),
-            );
-
-      // Shared context rides along as-is — no summarization between what one
-      // model learned and what the next one reads. Best-effort: a memory
-      // outage degrades to a delegate without context, never a failed step.
-      let sharedContext: string | null = null;
-      if (settings.research.shareMemoContext && memoProject !== null) {
-        sharedContext = yield* Effect.gen(function* () {
-          const connector = yield* makeConfiguredMemoryConnector();
-          const found = yield* connector.search(input.prompt, 5, memoProject);
-          return buildResearchSharedMemoContext(found.results);
-        }).pipe(Effect.orElseSucceed(() => null));
-      }
-
-      const turnInput = [
-        ...(sharedContext !== null
-          ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
-          : []),
-        ...(promptFileContent !== null
-          ? [`--- PROMPT FILE: ${input.promptFileName} ---`, promptFileContent, ""]
-          : []),
-        input.prompt,
-      ].join("\n");
-
-      const modelSelection = { instanceId, model: parsedTarget.model };
-      const entropy = yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError(
-          () =>
-            new ResearchDelegateError({
-              detail: "Could not allocate a unique delegate session id.",
-              failureKind: "start",
-            }),
-        ),
-      );
-      const threadId = buildDelegateThreadId(nowMs, entropy);
-
-      const interactionScope = yield* Scope.make();
-      const providerEvents = yield* providerService.subscribeEvents.pipe(
-        Effect.provideService(Scope.Scope, interactionScope),
-      );
-      const delegateInteractionFiber = yield* Effect.gen(function* () {
-        yield* Stream.runForEach(providerEvents, (event) => {
-          if (String(event.threadId) !== String(threadId)) return Effect.void;
-          if (event.type === "request.opened") {
-            if (event.requestId === undefined) return Effect.void;
-            return adapter
-              .respondToRequest(
-                threadId,
-                ApprovalRequestId.make(String(event.requestId)),
-                delegateApprovalDecision(event.payload.requestType),
-              )
-              .pipe(
-                Effect.catchCause((cause) =>
-                  Cause.hasInterruptsOnly(cause)
-                    ? Effect.failCause(cause as Cause.Cause<never>)
-                    : Effect.fail(
-                        new ResearchDelegateError({
-                          detail: `Failed to answer an approval request from ${targetLabel}: ${describeCause(cause)}`,
-                          failureKind: "error",
-                        }),
-                      ),
-                ),
-              );
-          }
-          if (event.type === "user-input.requested") {
-            if (event.requestId === undefined) return Effect.void;
-            return adapter
-              .respondToUserInput(threadId, ApprovalRequestId.make(String(event.requestId)), {})
-              .pipe(
-                Effect.catchCause((cause) =>
-                  Cause.hasInterruptsOnly(cause)
-                    ? Effect.failCause(cause as Cause.Cause<never>)
-                    : Effect.fail(
-                        new ResearchDelegateError({
-                          detail: `Failed to answer a user-input request from ${targetLabel}: ${describeCause(cause)}`,
-                          failureKind: "error",
-                        }),
-                      ),
-                ),
-              );
-          }
-          return Effect.void;
-        });
-        return yield* new ResearchDelegateError({
-          detail: `The interaction event stream for ${targetLabel} ended before the delegate completed.`,
-          failureKind: "error",
-        });
-      }).pipe(Effect.forkChild);
-
-      const finalThread = yield* Effect.gen(function* () {
-        // Delegate sessions are intentionally adapter-local. ProviderService is
-        // the durable user-session facade: starting through it mints an MCP
-        // credential, persists a routing binding, and can make an advisory
-        // child recursively callable. A delegate needs none of those things.
-        yield* adapter
-          .startSession({
-            threadId,
-            provider: adapter.provider,
-            // Delegates are advisers. Read-only tools can run, while any attempt
-            // to mutate the shared worktree remains provider-gated instead of
-            // silently bypassing the user's permission mode.
-            runtimeMode: DELEGATE_RUNTIME_MODE,
-            modelSelection,
-            ...(delegateCwd ? { cwd: delegateCwd } : {}),
-          })
-          .pipe(
-            Effect.timeout(DELEGATE_START_TIMEOUT_MILLIS),
-            Effect.mapError(
-              (cause) =>
-                new ResearchDelegateError({
-                  detail: `Failed to start ${targetLabel}: ${cause instanceof Error ? cause.message : String(cause)}`,
-                  failureKind: "start",
-                }),
-            ),
-          );
-
-        const delegateIsBusy = adapter
-          .listSessions()
-          .pipe(
-            Effect.map((sessions) =>
-              sessions.some(
-                (session) =>
-                  String(session.threadId) === String(threadId) && session.status === "running",
-              ),
-            ),
-          );
-
-        // Warm a cold cloud model with a throwaway turn in THIS session, so the
-        // model is loaded before the real turn's clock starts. A failed warm-up
-        // must fail this delegation: continuing could overlap two turns in the
-        // same provider session and attribute the wrong answer to the real step.
-        if (isColdStartProne(parsedTarget.model)) {
-          yield* Effect.gen(function* () {
-            const warmBefore = yield* adapter.readThread(threadId).pipe(
-              Effect.map((thread) => thread.turns.length),
-              Effect.orElseSucceed(() => 0),
-            );
-            yield* adapter.sendTurn({
-              threadId,
-              input: "Reply with the single word: OK",
-              attachments: [],
-              modelSelection,
-            });
-            // A turn row appears at turn start, not completion. Wait for the
-            // provider's running signal to clear so the real prompt cannot
-            // collide with a warm-up that is still loading the model.
-            yield* settleDelegateThread({
-              readThread: adapter.readThread(threadId),
-              turnsBefore: warmBefore,
-              maxAttempts: DELEGATE_WARMUP_POLL_ATTEMPTS,
-              stableReads: 1,
-              pollDelay: delegatePollDelay,
-              isBusy: delegateIsBusy,
-            });
-          }).pipe(
-            Effect.timeout(DELEGATE_WARMUP_TIMEOUT_MILLIS),
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.failCause(cause as Cause.Cause<never>)
-                : Effect.fail(
-                    new ResearchDelegateError({
-                      detail: isTimeoutCause(cause)
-                        ? `Warm-up for ${targetLabel} did not settle within ${Math.round(DELEGATE_WARMUP_TIMEOUT_MILLIS / 60_000)} minutes. Report the actual target as timed out.`
-                        : `Warm-up for ${targetLabel} failed: ${describeCause(cause)}.`,
-                      failureKind: isTimeoutCause(cause) ? "timeout" : "error",
-                    }),
-                  ),
-            ),
-          );
-        }
-
-        const turnsBefore = yield* adapter.readThread(threadId).pipe(
-          Effect.map((thread) => thread.turns.length),
-          Effect.orElseSucceed(() => 0),
-        );
-
-        return yield* Effect.gen(function* () {
-          yield* adapter.sendTurn({
-            threadId,
-            input: turnInput,
-            attachments: [],
-            modelSelection,
-          });
-          // Wait for the answer to SETTLE, not merely to appear. A reasoning model
-          // (Codex gpt-5.6-sol) streams a short intent preamble ("I'll verify…")
-          // before the real answer; returning on first text hands the preamble
-          // back as the result. This keeps reading while the text grows and only
-          // accepts it once it has been stable, bounded by DELEGATE_POLL_ATTEMPTS.
-          return yield* settleDelegateThread({
-            readThread: adapter.readThread(threadId),
-            turnsBefore,
-            maxAttempts: DELEGATE_POLL_ATTEMPTS,
-            stableReads: DELEGATE_SETTLE_READS,
-            pollDelay: delegatePollDelay,
-            // "Session still running" is the provider's own completion signal —
-            // every adapter flips status running→ready at turn end.
-            isBusy: delegateIsBusy,
-          });
-        }).pipe(
-          Effect.timeout(DELEGATE_TURN_TIMEOUT_MILLIS),
-          // Catch the whole cause, not just typed failures. A spawn-level defect
-          // (E2BIG on an oversized prompt, a missing binary) would otherwise die
-          // outside the declared failure channel and reach the orchestrator as an
-          // opaque "internal server error" — which is exactly how every agy
-          // delegation failed silently instead of naming its reason.
-          Effect.catchCause((cause) =>
-            // An interrupt carries no typed failure, so re-raising it keeps
-            // cancellation semantics without widening the error channel.
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause as Cause.Cause<never>)
-              : Effect.fail(
-                  new ResearchDelegateError({
-                    detail: isTimeoutCause(cause)
-                      ? `Delegate ${targetLabel} did not answer within ${Math.round(
-                          DELEGATE_TURN_TIMEOUT_MILLIS / 60_000,
-                        )} minutes. Report the step as timed out; do not write its answer yourself. Retry once, then switch targets.`
-                      : `Delegate turn on ${targetLabel} failed: ${describeCause(cause)}`,
-                    failureKind: isTimeoutCause(cause) ? "timeout" : "error",
-                  }),
-                ),
-          ),
-        );
-      }).pipe(
-        // A failed headless approval/user-input response can leave sendTurn
-        // blocked forever. Observe the interaction fiber as part of the same
-        // lifecycle so its typed failure interrupts the turn immediately.
-        Effect.raceFirst(Fiber.join(delegateInteractionFiber)),
-        // Cleanup wraps the race rather than either competitor. Interrupting
-        // the interaction fiber from inside the delegate competitor would make
-        // that competitor wait on the very fiber raceFirst is also stopping.
-        Effect.ensuring(
-          Effect.all(
-            [
-              adapter
-                .stopSession(threadId)
-                .pipe(Effect.timeout(SESSION_STOP_TIMEOUT_MILLIS), Effect.ignore),
-              Fiber.interrupt(delegateInteractionFiber).pipe(
-                Effect.andThen(Scope.close(interactionScope, Exit.void)),
-              ),
-            ],
-            { concurrency: "unbounded", discard: true },
-          ),
-        ),
-      );
-
-      const text = extractAssistantText(finalThread);
-
-      if (!text) {
-        return yield* new ResearchDelegateError({
-          detail: `Empty response from ${targetLabel}. Report the step as failed rather than inventing its answer.`,
-          failureKind: "empty",
-        });
-      }
-
-      const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
-      const completedMs = yield* Clock.currentTimeMillis;
-      return {
+      return yield* runBoundedDelegation({
+        orchestratorThreadId: invocation.threadId,
+        // One orchestrator turn is one run. Without a turn id the provider
+        // session plus its issue time is the next-best run identity.
+        runId: `${String(invocation.threadId)}:${String(
+          invocation.turnId ?? `${invocation.providerSessionId}:${invocation.issuedAt}`,
+        )}`,
         requestedTarget: targetResolution.requestedTarget,
         resolvedTarget: targetResolution.resolvedTarget,
         substituted: targetResolution.substituted,
-        target: targetResolution.resolvedTarget,
+        parsedTarget: targetResolution.parsedTarget,
+        prompt: input.prompt,
+        // The MCP tool takes a text prompt only; a pipeline step has no
+        // attachments of its own.
+        attachments: [],
+        resolvePromptFile,
+        shareMemoContext: settings.research.shareMemoContext,
         step: input.step,
         visit: input.visit,
-        remainingBudget: charge.remaining,
-        durationMs: Math.max(0, completedMs - nowMs),
-        truncated,
-        text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
-      };
+        ...(options?.pollDelay === undefined ? {} : { pollDelay: options.pollDelay }),
+      });
     });
 
 const handlers = {

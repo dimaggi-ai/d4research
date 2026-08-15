@@ -324,6 +324,55 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
 
+  it("carries the delegation ledger's resolved target onto the feed activity", () => {
+    const turnId = TurnId.make("turn-delegate");
+    const thread = makeThread({
+      id: ThreadId.make("thread-delegate"),
+      projectId: ProjectId.make("project-1"),
+      title: "Inline delegation",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: "2026-04-01T00:00:03.000Z",
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("delegate-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Delegated to codex:gpt-5.6-sol",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            title: "research_delegate",
+            itemType: "mcp_tool_call",
+            status: "completed",
+            // Shape produced by the server-side activity projection.
+            data: {
+              researchDelegate: {
+                callId: "inline-delegate:user-1",
+                step: "inline",
+                target: "codex:gpt-5.6-sol",
+                visit: 1,
+                failed: false,
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+    expect(group.activities[0]?.researchDelegateTarget).toBe("codex:gpt-5.6-sol");
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>

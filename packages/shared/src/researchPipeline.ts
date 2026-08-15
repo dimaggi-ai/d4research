@@ -6,11 +6,12 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import {
+  canStartProviderTurn,
   RESEARCH_DELEGATION_BUDGET_PER_TURN,
   RESEARCH_STEP_VISIT_LIMIT,
   STARTER_RESEARCH_SCENARIO,
 } from "@t3tools/contracts";
-import { stripDevTrigger } from "./devPipeline.ts";
+import { parseDevTrigger, stripDevTrigger } from "./devPipeline.ts";
 import { sha256Hex } from "./hash.ts";
 
 // The legacy `#deep-research` spelling is still parsed (see the regex below) so
@@ -141,14 +142,11 @@ export function deriveResearchProviderCandidates(
 export function deriveResearchProviderCandidatesFromProviders(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ResearchProviderCandidate> {
+  // The same strict readiness rule the delegation target resolver enforces.
+  // A looser list here would let a composer accept a target the server then
+  // rejects — after the draft is already cleared.
   return providers
-    .filter(
-      (provider) =>
-        provider.enabled &&
-        provider.installed &&
-        provider.status === "ready" &&
-        provider.availability !== "unavailable",
-    )
+    .filter(canStartProviderTurn)
     .map((provider) => ({
       instanceId: String(provider.instanceId),
       name: provider.displayName ?? String(provider.instanceId),
@@ -221,6 +219,89 @@ export function parsePipelineFallbackDirectives(
       return true;
     });
   });
+}
+
+// ── Inline delegation ──────────────────────────────────────────────────────
+
+/**
+ * Anchored twin of DIRECTIVE_REGEX. Only a leading directive turns a message
+ * into a delegation, so `see !codex:gpt-5.6-sol for context` stays prose. The
+ * provider name stops at the FIRST colon; everything after it is the model,
+ * because real slugs carry colons (`glm-5.2:cloud`).
+ */
+const INLINE_DELEGATE_TRIGGER_REGEX =
+  /^\s*!([A-Za-z0-9][A-Za-z0-9_-]*):([A-Za-z0-9][A-Za-z0-9._:/-]*)(?=\s|$)/;
+
+/**
+ * Pipeline triggers are directive-shaped (`!research:blog`, `!dev:review`) and
+ * would otherwise resolve as a provider named `research`. The pipeline parsers
+ * run first; these names are refused as well so a scenario rename can never
+ * reopen the ambiguity.
+ */
+const INLINE_DELEGATE_RESERVED_PROVIDERS: ReadonlySet<string> = new Set([
+  "deep-research",
+  "dev",
+  "research",
+]);
+
+export interface InlineDelegateTrigger {
+  /** Reuses the pipeline directive shape so resolution and error prose match. */
+  readonly directive: ResearchModelDirective;
+  /** The single request to send to the delegate, trigger stripped. */
+  readonly task: string;
+}
+
+/**
+ * Claude prompt effort prepends this transport-only marker client-side, so the
+ * trigger it wraps is still the first thing the user wrote. Peeling it here
+ * makes one parser authoritative: composers, timelines, and the server all see
+ * the same delegation instead of each re-deriving the peel and disagreeing.
+ */
+const CLAUDE_EFFORT_PREFIX_REGEX = /^\s*Ultrathink:\s*\n/;
+
+function peelInlineDelegatePrefixes(prompt: string): string {
+  const effort = CLAUDE_EFFORT_PREFIX_REGEX.exec(prompt);
+  return effort === null ? prompt : prompt.slice(effort[0].length);
+}
+
+/**
+ * Cheap gate callers use before the full parse. A message that cannot possibly
+ * open with a directive skips the work entirely, which matters on timelines
+ * that re-derive per streaming tick.
+ */
+export function mightBeInlineDelegateTrigger(prompt: string): boolean {
+  // Bounded slice: only the head can carry whitespace and the effort marker.
+  const head = prompt.slice(0, 32);
+  return head.includes("!") && /^\s*(?:Ultrathink:\s*\n\s*)?!/.test(head);
+}
+
+/**
+ * Reads a leading `!provider:model <task>` message as one bounded delegation.
+ * Tolerates leading whitespace and the Claude effort marker, because both sit
+ * in front of text the user authored as a trigger. Returns null for anything
+ * that is not one, including a bare trigger with no task: a delegation with
+ * nothing to ask is not a delegation.
+ */
+export function parseInlineDelegateTrigger(prompt: string): InlineDelegateTrigger | null {
+  if (!mightBeInlineDelegateTrigger(prompt)) return null;
+  const text = peelInlineDelegatePrefixes(prompt);
+  if (parseDevTrigger(text) !== null || parseResearchTrigger(text) !== null) return null;
+  const match = INLINE_DELEGATE_TRIGGER_REGEX.exec(text);
+  const provider = match?.[1];
+  const model = match?.[2];
+  if (!match || provider === undefined || model === undefined) return null;
+  if (INLINE_DELEGATE_RESERVED_PROVIDERS.has(provider.toLowerCase())) return null;
+  const task = text.slice((match.index ?? 0) + match[0].length).trim();
+  if (task.length === 0) return null;
+  return {
+    directive: { raw: `!${provider}:${model}`, provider, model, promptFile: undefined },
+    task,
+  };
+}
+
+/** Drops a leading inline delegate trigger, keeping the task the user typed. */
+export function stripInlineDelegateTrigger(prompt: string): string {
+  return parseInlineDelegateTrigger(prompt)?.task ?? prompt;
 }
 
 export type ResearchDirectiveResolution =

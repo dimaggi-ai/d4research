@@ -1,5 +1,9 @@
 import type { PreviewAnnotationPayload } from "@t3tools/contracts";
 import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import {
+  extractTrailingProviderHandoffContext,
+  type ProviderHandoffContext,
+} from "@t3tools/shared/providerHandoffPrompt";
 
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { appendReviewCommentsToPrompt } from "../reviewCommentContext";
@@ -45,6 +49,8 @@ export interface DisplayedUserMessageContexts {
   readonly enabledSkills: ReadonlyArray<string>;
   readonly globalEnabledSkills: ReadonlyArray<string>;
   readonly sessionEnabledSkills: ReadonlyArray<string>;
+  /** Carried context when this turn also performed a provider handoff. */
+  readonly handoff: ProviderHandoffContext | null;
 }
 
 /**
@@ -69,8 +75,12 @@ export function extractUserMessageContexts(prompt: string): DisplayedUserMessage
   // The server appends enabled skills after all client-authored context, so it
   // is the outermost layer and must be removed first.
   const enabled = extractTrailingEnabledSkillsContext(prompt);
+  // A staged handoff appends its context block after every composer block, so
+  // it is the outermost client-authored layer and peels next. Copy text drops
+  // it too: what the user wrote is the instruction, not the machine block.
+  const handoff = extractTrailingProviderHandoffContext(enabled.promptText);
   const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let withoutPreviews = enabled.promptText;
+  let withoutPreviews = handoff.promptText;
   while (true) {
     const extracted = extractTrailingPreviewAnnotation(withoutPreviews);
     if (!extracted.annotation) break;
@@ -82,7 +92,7 @@ export function extractUserMessageContexts(prompt: string): DisplayedUserMessage
   const pasted = extractTrailingPastedContexts(displayed.visibleText);
   return {
     visibleText: pasted.promptText,
-    copyText: enabled.promptText,
+    copyText: handoff.promptText,
     pastedContexts: pasted.contexts,
     terminalContexts: displayed.contexts,
     elementContexts: displayed.elementContexts,
@@ -90,5 +100,6 @@ export function extractUserMessageContexts(prompt: string): DisplayedUserMessage
     enabledSkills: enabled.skills,
     globalEnabledSkills: enabled.globalSkills,
     sessionEnabledSkills: enabled.sessionSkills,
+    handoff: handoff.handoff,
   };
 }

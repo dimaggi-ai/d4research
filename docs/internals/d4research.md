@@ -27,6 +27,35 @@ This is intentionally prompt-level orchestration. It works with a provider's rea
 
 Prompt files attached to a scenario are inlined server-side into the delegated request and are scoped to that scenario. A lookup for an unknown scenario resolves to nothing rather than widening across scenarios, and a delegation naming a prompt file without its scenario is refused — scoping is a disclosure boundary, and an optional tool argument is not an access control.
 
+### Inline delegation (`!provider:model`)
+
+A prompt whose first token is a bare `!provider:model` directive — with a task after it — is an **inline delegation**: that one turn is answered by the named target instead of the thread's provider. Parse order is load-bearing, because `!research:blog` and `!dev:review` are directive-shaped: `parseDevTrigger`, then `parseResearchTrigger`, then `parseInlineDelegateTrigger`, which additionally refuses `research`, `dev`, and `deep-research` as provider names. A bare trigger with no task is not a delegation.
+
+`parseInlineDelegateTrigger` owns the whole peel — leading whitespace and the client-side `Ultrathink:` effort marker — so composers, timelines, and the server cannot disagree about what parses. `mightBeInlineDelegateTrigger` is its cheap gate for callers that re-derive per render. Nothing else re-implements the peel.
+
+`ProviderCommandReactor` diverts at the same point it detects a pipeline kind, before any expansion. The thread's provider is never consulted: no session is started, no model selection changes, and the persisted user message stays the compact trigger. Resolution reuses `resolveResearchDirective` against the live provider snapshots, then re-checks readiness with `exact` target policy — inline delegation authors no scenario, so `resolveAuthoredPipelineFallbackTargets` legitimately returns nothing and no fallback may be synthesized. An unresolvable directive terminates the turn in a visible error state; nothing stays running.
+
+The divert refuses before opening a turn when a delegation is already running in the thread (one per thread; the registry reserves the slot synchronously, so two concurrent turn-start fibers cannot orphan each other) or when the message carries a `<handoff_context>` block (impossible from a correct client, and the carried context would be labeled for a provider that is not answering).
+
+The **delegate turn** is a normal turn shape assembled from existing commands, not a new lifecycle:
+
+1. `thread.session.set` → `running` with a synthetic `activeTurnId` of `inline-delegate:<messageId>`, which is what makes the projector publish a running `latestTurn` and the clients show their ordinary working indicator. The record keeps the thread's existing `providerName`, or `null` when the thread never had a session — `providerName === null` is the pre-existing "no native session was ever established" marker, and the client's handoff-staging predicate reads it so a delegate-only thread never stages a pointless Memo bridge.
+2. A `tool.started` activity carrying the same MCP tool-call payload shape a pipeline's `research_delegate` call emits, so `projectResearchDelegate` derives the compact `data.researchDelegate` ledger unchanged.
+3. `runBoundedDelegation` — the execution core shared with the MCP handler — charges the budget under run id `<threadId>:<turnId>` and synthetic step `inline`, then starts an **adapter-local** delegate session. That locality is the structural non-recursion guarantee, inherited as-is: no MCP credential is minted for the delegate, so it has no delegation tool. The turn's attachments ride along on `sendTurn`, exactly as a normal turn delivers them.
+4. On success, a `tool.completed` activity with the ledger, then `thread.message.assistant.delta` + `thread.message.assistant.complete` on the synthetic turn — the same commands adapters author assistant output with. Attribution lives in the ledger and the clients' badge; no machine text is prepended to the answer body.
+5. `thread.session.set` → `ready` when the thread had a session, `stopped` when it did not (or `error` with the typed `failureKind`, or `stopped` on interrupt), which settles the turn.
+6. A placeholder `thread.turn.diff.complete` records the turn boundary. The delegate changes no files, so this is not about the diff: revert retention keeps only turns carrying a checkpoint, and an assistant message is never rescued by the user-message fallback — a delegate turn without one loses its answer to any later revert. `CheckpointReactor` replaces the placeholder with a real git ref, exactly as it does for provider-reported diffs.
+
+Every settle dispatch is retried on transient engine failure, and a force-settle fallback clears the turn even when the richer rows cannot be written. Nothing may stay "running": restart reconciliation recognizes an `inline-delegate:*` `activeTurnId` and settles it as an interrupted delegation with a failed ledger row, instead of reporting a provider session that never existed.
+
+Cancellation interrupts the delegation fiber; the delegation's own `ensuring` cleanup stops the delegate session, and the fiber's `onExit` finalizer settles the turn. `providerService.interruptTurn` is deliberately not called — there is no thread session to interrupt.
+
+On the client, a send whose prompt parses as a delegation skips `applyStagedProviderHandoff` entirely and omits `modelSelection` from both `thread.turn.start` and the settings persist: a delegation must not consume a staged handoff, and it must not change the thread's model for an answer it did not write. The staged pick survives for the next normal send, and the banner says so.
+
+The budget `Ref` is provided once at the server runtime layer and merged, so the MCP `research_delegate` tool and the reactor share one accounting map. Mixing the two entry points cannot double a thread's ceiling.
+
+Prompt-file resolution is deferred behind the charge (`resolvePromptFile`), not moved in front of it: "every `research_delegate` call burns budget" is the loop guard that stops a model retrying an invalid prompt-file argument for free.
+
 ### Same-thread provider handoff
 
 An active chat can move to another model without creating a new thread. This is a permanent product invariant, not an implementation preference: a handoff may replace the provider-native session, but it must never create another d4research thread, change the thread ID or route, fork the visible transcript, branch, or worktree, or present the receiving provider as a separate chat. Any proposed change that does so is a regression.

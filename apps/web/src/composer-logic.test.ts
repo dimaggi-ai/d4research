@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
+  describeStagedHandoffBanner,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
@@ -104,6 +105,31 @@ describe("detectComposerTrigger", () => {
       rangeStart: "Use ".length,
       rangeEnd: text.length,
     });
+  });
+
+  it("detects a directive trigger only at the start of the message", () => {
+    const text = "!cod";
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "directive",
+      query: "cod",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+
+    const provider = "!codex:gpt";
+    expect(detectComposerTrigger(provider, provider.length)).toEqual({
+      kind: "directive",
+      query: "codex:gpt",
+      rangeStart: 0,
+      rangeEnd: provider.length,
+    });
+  });
+
+  it("leaves a mid-message ! as prose", () => {
+    const text = "compare with !codex";
+    expect(detectComposerTrigger(text, text.length)).toBeNull();
+    const secondLine = "ask\n!codex";
+    expect(detectComposerTrigger(secondLine, secondLine.length)).toBeNull();
   });
 
   it("detects @path trigger in the middle of existing text", () => {
@@ -370,5 +396,29 @@ describe("parseStandaloneComposerSlashCommand", () => {
 
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
+  });
+});
+
+describe("describeStagedHandoffBanner", () => {
+  const base = { displayName: "Claude Code", currentDisplayName: "Codex", paused: false };
+
+  it("promises the switch for an ordinary draft", () => {
+    expect(describeStagedHandoffBanner({ ...base, draftIsInlineDelegate: false })).toEqual({
+      title: "Next message hands off to Claude Code",
+      description: "This chat's context will be attached to it.",
+    });
+  });
+
+  it("does not promise a switch the delegation will not perform", () => {
+    const copy = describeStagedHandoffBanner({ ...base, draftIsInlineDelegate: true });
+    expect(copy.title).toBe("Handoff to Claude Code waits for your next normal message");
+    expect(copy.description).toContain("without switching");
+    expect(copy.title).not.toContain("Next message hands off");
+  });
+
+  it("keeps the paused copy regardless of the draft", () => {
+    expect(
+      describeStagedHandoffBanner({ ...base, paused: true, draftIsInlineDelegate: true }).title,
+    ).toBe("Handoff to Claude Code paused — provider unavailable");
   });
 });

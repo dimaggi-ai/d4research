@@ -23,6 +23,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
+import { UsageLimits } from "./UsageLimits";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
@@ -166,6 +167,10 @@ export function UsagePage() {
                 </button>
               </div>
             </div>
+
+            {/* Limits come from the provider snapshot, not the transcript scan,
+            so they land immediately and stay put while the totals settle. */}
+            <UsageLimits />
 
             {settling ? (
               <>

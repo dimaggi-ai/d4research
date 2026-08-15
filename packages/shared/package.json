@@ -231,6 +231,10 @@
       "types": "./src/userMessageTransport.ts",
       "import": "./src/userMessageTransport.ts"
     },
+    "./providerHandoffPrompt": {
+      "types": "./src/providerHandoffPrompt.ts",
+      "import": "./src/providerHandoffPrompt.ts"
+    },
     "./usageMerge": {
       "types": "./src/usageMerge.ts",
       "import": "./src/usageMerge.ts"

@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import {
+  appendProviderHandoffContext,
+  buildProviderHandoffPromptText,
+} from "@t3tools/shared/providerHandoffPrompt";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
@@ -1011,6 +1016,361 @@ describe("deriveMessagesTimelineRows", () => {
       expanded: true,
     });
   });
+
+  it("marks provider-handoff prompts for folding and honors the expanded set", () => {
+    const handoffText = buildProviderHandoffPromptText({
+      sourceThreadId: "thread-1",
+      sourceThreadTitle: "Ship the fix",
+      summary: "USER: fix it\n\nASSISTANT: fixed.",
+      targetInstanceId: "claude",
+      targetModel: "claude-sonnet-5",
+      targetLabel: "Claude Code",
+    });
+    const baseInput = {
+      timelineEntries: [
+        {
+          id: "user-plain-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-plain" as never,
+            role: "user" as const,
+            text: "Handoff to the night shift.",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "user-handoff-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:01:00Z",
+          message: {
+            id: "user-handoff" as never,
+            role: "user" as const,
+            text: handoffText,
+            turnId: null,
+            createdAt: "2026-01-01T00:01:00Z",
+            updatedAt: "2026-01-01T00:01:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const collapsedRows = deriveMessagesTimelineRows(baseInput);
+    const messageRows = collapsedRows.filter(
+      (row): row is Extract<(typeof collapsedRows)[number], { kind: "message" }> =>
+        row.kind === "message",
+    );
+    expect(messageRows[0]?.handoff).toBeNull();
+    expect(messageRows[1]?.handoff).toEqual({
+      target: "Claude Code / claude-sonnet-5",
+      kind: "legacy",
+    });
+    expect(messageRows[1]?.handoffExpanded).toBe(false);
+
+    const expandedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      expandedHandoffMessageIds: new Set(["user-handoff" as never]),
+    });
+    const expandedHandoffRow = expandedRows.find(
+      (row) => row.kind === "message" && row.message.id === ("user-handoff" as never),
+    );
+    expect(expandedHandoffRow).toMatchObject({ handoffExpanded: true });
+  });
+
+  it("marks both halves of an inline delegation and prefers the ledger's resolved target", () => {
+    const baseInput = {
+      timelineEntries: [
+        {
+          id: "user-plain-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-plain" as never,
+            role: "user" as const,
+            text: "compare against !codex:sol later",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "assistant-plain-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:30Z",
+          message: {
+            id: "assistant-plain" as never,
+            role: "assistant" as const,
+            text: "sure",
+            turnId: "turn-plain" as never,
+            createdAt: "2026-01-01T00:00:30Z",
+            updatedAt: "2026-01-01T00:00:30Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "user-delegate-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:01:00Z",
+          message: {
+            id: "user-delegate" as never,
+            role: "user" as const,
+            text: "!codex:sol explain this stack trace",
+            turnId: null,
+            createdAt: "2026-01-01T00:01:00Z",
+            updatedAt: "2026-01-01T00:01:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "delegate-work-entry",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:01:05Z",
+          entry: {
+            id: "delegate-work",
+            createdAt: "2026-01-01T00:01:05Z",
+            turnId: "turn-delegate" as never,
+            label: "Delegated to codex:gpt-5.6-sol",
+            tone: "tool" as const,
+            researchDelegateTarget: "codex:gpt-5.6-sol",
+          },
+        },
+        {
+          id: "assistant-delegate-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:02:00Z",
+          message: {
+            id: "assistant-delegate" as never,
+            role: "assistant" as const,
+            text: "the adapter is null",
+            turnId: "turn-delegate" as never,
+            createdAt: "2026-01-01T00:02:00Z",
+            updatedAt: "2026-01-01T00:02:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      // Keep the delegate turn unsettled so its rows are not folded away.
+      runningTurnId: "turn-delegate" as never,
+    };
+
+    const rows = deriveMessagesTimelineRows(baseInput);
+    const messageRows = rows.filter(
+      (row): row is Extract<(typeof rows)[number], { kind: "message" }> => row.kind === "message",
+    );
+    const byId = new Map(messageRows.map((row) => [String(row.message.id), row]));
+    // A mid-text mention is prose, not a delegation.
+    expect(byId.get("user-plain")?.delegate).toBeNull();
+    expect(byId.get("assistant-plain")?.delegate).toBeNull();
+    expect(byId.get("user-delegate")?.delegate).toEqual({
+      requested: "!codex:sol",
+      label: "codex · sol",
+      substituted: false,
+    });
+    // The assistant badge names the model that actually ran.
+    expect(byId.get("assistant-delegate")?.delegate).toEqual({
+      requested: "!codex:sol",
+      label: "codex · gpt-5.6-sol",
+      substituted: true,
+    });
+  });
+
+  it("falls back to the typed target while the delegation ledger is still missing", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-delegate-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:01:00Z",
+          message: {
+            id: "user-delegate" as never,
+            role: "user" as const,
+            text: "!claude:fable review this",
+            turnId: null,
+            createdAt: "2026-01-01T00:01:00Z",
+            updatedAt: "2026-01-01T00:01:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "assistant-delegate-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:02:00Z",
+          message: {
+            id: "assistant-delegate" as never,
+            role: "assistant" as const,
+            text: "looks fine",
+            turnId: "turn-delegate" as never,
+            createdAt: "2026-01-01T00:02:00Z",
+            updatedAt: "2026-01-01T00:02:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      runningTurnId: "turn-delegate" as never,
+    });
+    const assistantRow = rows.find(
+      (row) => row.kind === "message" && row.message.id === ("assistant-delegate" as never),
+    );
+    expect(assistantRow).toMatchObject({
+      delegate: { requested: "!claude:fable", label: "claude · fable", substituted: false },
+    });
+  });
+
+  it("still folds handoffs that the server wrapped in an enabled-skills block", () => {
+    const skills = [{ name: "review", path: "/skills/review/SKILL.md" }];
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "legacy-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "legacy" as never,
+            role: "user" as const,
+            text: appendEnabledSkillsContext(
+              buildProviderHandoffPromptText({
+                sourceThreadId: "thread-1",
+                sourceThreadTitle: "Ship the fix",
+                summary: "USER: fix it",
+                targetInstanceId: "claude",
+                targetModel: "claude-sonnet-5",
+                targetLabel: "Claude Code",
+              }),
+              skills,
+            ),
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "combined-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:01:00Z",
+          message: {
+            id: "combined" as never,
+            role: "user" as const,
+            text: appendEnabledSkillsContext(
+              appendProviderHandoffContext("Rerun the suite.", {
+                sourceThreadId: "thread-1",
+                sourceThreadTitle: "Ship the fix",
+                summary: "USER: fix it",
+                targetInstanceId: "claude",
+                targetModel: "claude-sonnet-5",
+                targetLabel: "Claude Code",
+              }),
+              skills,
+            ),
+            turnId: null,
+            createdAt: "2026-01-01T00:01:00Z",
+            updatedAt: "2026-01-01T00:01:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+    const messageRows = rows.filter(
+      (row): row is Extract<(typeof rows)[number], { kind: "message" }> => row.kind === "message",
+    );
+    expect(messageRows[0]?.handoff).toEqual({
+      target: "Claude Code / claude-sonnet-5",
+      kind: "legacy",
+    });
+    expect(messageRows[1]?.handoff).toEqual({
+      target: "Claude Code / claude-sonnet-5",
+      kind: "combined",
+    });
+  });
+
+  it("recognizes a combined handoff message and honors the expanded set", () => {
+    const combinedText = appendProviderHandoffContext("Rerun the failing suite.", {
+      sourceThreadId: "thread-1",
+      sourceThreadTitle: "Ship the fix",
+      summary: "USER: fix it\n\nASSISTANT: fixed.",
+      targetInstanceId: "claude",
+      targetModel: "claude-sonnet-5",
+      targetLabel: "Claude Code",
+    });
+    const baseInput = {
+      timelineEntries: [
+        {
+          id: "user-combined-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-combined" as never,
+            role: "user" as const,
+            text: combinedText,
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "user-mentions-entry",
+          kind: "message" as const,
+          createdAt: "2026-01-01T00:01:00Z",
+          message: {
+            id: "user-mentions" as never,
+            role: "user" as const,
+            text: "What does a <handoff_context> block contain?",
+            turnId: null,
+            createdAt: "2026-01-01T00:01:00Z",
+            updatedAt: "2026-01-01T00:01:00Z",
+            streaming: false,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const rows = deriveMessagesTimelineRows(baseInput);
+    const messageRows = rows.filter(
+      (row): row is Extract<(typeof rows)[number], { kind: "message" }> => row.kind === "message",
+    );
+    expect(messageRows[0]?.handoff).toEqual({
+      target: "Claude Code / claude-sonnet-5",
+      kind: "combined",
+    });
+    expect(messageRows[0]?.handoffExpanded).toBe(false);
+    expect(messageRows[1]?.handoff).toBeNull();
+
+    const expandedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      expandedHandoffMessageIds: new Set(["user-combined" as never]),
+    });
+    expect(
+      expandedRows.find(
+        (row) => row.kind === "message" && row.message.id === ("user-combined" as never),
+      ),
+    ).toMatchObject({ handoffExpanded: true });
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {
@@ -1064,6 +1424,86 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(repeated).toBe(initial);
     expect(repeated.result).toBe(initial.result);
+  });
+
+  it("repaints a delegate answer when its ledger sharpens the resolved target", () => {
+    const userMessage = {
+      id: "user-delegate" as never,
+      role: "user" as const,
+      text: "!codex:sol explain this",
+      turnId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      streaming: false,
+    };
+    const assistantMessage = {
+      id: "assistant-delegate" as never,
+      role: "assistant" as const,
+      text: "the adapter is null",
+      turnId: "turn-delegate" as never,
+      createdAt: "2026-01-01T00:00:20Z",
+      updatedAt: "2026-01-01T00:00:20Z",
+      streaming: false,
+    };
+    const entries = [
+      {
+        id: "entry-user",
+        kind: "message" as const,
+        createdAt: userMessage.createdAt,
+        message: userMessage,
+      },
+      {
+        id: "entry-assistant",
+        kind: "message" as const,
+        createdAt: assistantMessage.createdAt,
+        message: assistantMessage,
+      },
+    ];
+    const withoutLedger = deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      runningTurnId: "turn-delegate" as never,
+    });
+    const withLedger = deriveMessagesTimelineRows({
+      timelineEntries: [
+        entries[0]!,
+        {
+          id: "entry-delegate-work",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:10Z",
+          entry: {
+            id: "delegate-work",
+            createdAt: "2026-01-01T00:00:10Z",
+            turnId: "turn-delegate" as never,
+            label: "Delegated to codex:gpt-5.6-sol",
+            tone: "tool" as const,
+            researchDelegateTarget: "codex:gpt-5.6-sol",
+          },
+        },
+        entries[1]!,
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      runningTurnId: "turn-delegate" as never,
+    });
+
+    const initial = computeStableMessagesTimelineRows(withoutLedger, {
+      byId: new Map(),
+      result: [],
+    });
+    const updated = computeStableMessagesTimelineRows(withLedger, initial);
+    const assistantRow = updated.result.find((row) => row.id === "entry-assistant");
+    // The message object is identical; only the badge changed, so the row must
+    // still be replaced rather than reused.
+    expect(assistantRow).toMatchObject({
+      delegate: { label: "codex · gpt-5.6-sol", substituted: true },
+    });
+    expect(assistantRow).not.toBe(initial.result.find((row) => row.id === "entry-assistant"));
   });
 
   it("reuses work rows when equivalent timeline derivations create new grouped arrays", () => {

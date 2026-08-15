@@ -1,4 +1,8 @@
 import { extractTrailingEnabledSkillsContext } from "./enabledSkillsContext.ts";
+import {
+  extractTrailingProviderHandoffContext,
+  type ProviderHandoffContext,
+} from "./providerHandoffPrompt.ts";
 
 export type UserMessageTransportKind = "pasted" | "terminal" | "element" | "preview";
 
@@ -13,6 +17,8 @@ export interface StrippedUserMessageTransport {
   readonly globalSkills: ReadonlyArray<string>;
   readonly sessionSkills: ReadonlyArray<string>;
   readonly contexts: ReadonlyArray<UserMessageTransportSummary>;
+  /** Set when this message carried a provider handoff alongside its instruction. */
+  readonly handoff: ProviderHandoffContext | null;
 }
 
 const trailingBlock = (tag: string) =>
@@ -103,8 +109,11 @@ function stripHeaderBlock(
  */
 export function stripUserMessageTransport(prompt: string): StrippedUserMessageTransport {
   const enabled = extractTrailingEnabledSkillsContext(prompt);
+  // The handoff block is the outermost client-authored layer (appended after
+  // every composer context), so it peels first.
+  const handoff = extractTrailingProviderHandoffContext(enabled.promptText);
   const contexts: Array<UserMessageTransportSummary> = [];
-  let remaining = stripRepeatedPreview(enabled.promptText, contexts);
+  let remaining = stripRepeatedPreview(handoff.promptText, contexts);
   remaining = stripHeaderBlock(remaining, ELEMENT_PATTERN, "element", contexts);
   remaining = stripHeaderBlock(remaining, TERMINAL_PATTERN, "terminal", contexts);
 
@@ -123,5 +132,6 @@ export function stripUserMessageTransport(prompt: string): StrippedUserMessageTr
     globalSkills: enabled.globalSkills,
     sessionSkills: enabled.sessionSkills,
     contexts,
+    handoff: handoff.handoff,
   };
 }

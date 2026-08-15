@@ -1,9 +1,22 @@
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
-import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  MessageId,
+  OrchestrationThread,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
+import { parseProviderHandoffPrompt } from "@t3tools/shared/providerHandoffPrompt";
+import {
+  mightBeInlineDelegateTrigger,
+  parseInlineDelegateTrigger,
+  stripInlineDelegateTrigger,
+} from "@t3tools/shared/researchPipeline";
 import {
   stripUserMessageTransport,
   type UserMessageTransportSummary,
@@ -828,17 +841,121 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
   ]);
 }
 
+interface ThreadFeedDelegate {
+  /** Directive as typed, e.g. `!codex:sol`, for the "requested" disclosure. */
+  readonly requested: string;
+  /** Chip/badge label: `codex · gpt-5.6-sol`, or the typed target verbatim. */
+  readonly label: string;
+  /** True when the model that ran differs from what the trigger named. */
+  readonly substituted: boolean;
+}
+
+/** Shared empty result so a feed with no delegations allocates nothing. */
+const NO_FEED_DELEGATES: ReadonlyMap<string, ThreadFeedDelegate> = new Map();
+
+/**
+ * Parsed once per message object: the feed re-derives on every streaming tick,
+ * and a delegate trigger cannot change without the message being replaced.
+ */
+const delegateByFeedMessage = new WeakMap<object, ThreadFeedDelegate | null>();
+
+/**
+ * Cheap for ordinary messages: the shared gate rejects anything that cannot
+ * open with a directive before the full parse runs, and the parser then
+ * rejects pipeline triggers and mid-text mentions.
+ */
+function deriveFeedMessageDelegate(
+  message: OrchestrationThread["messages"][number],
+): ThreadFeedDelegate | null {
+  const cached = delegateByFeedMessage.get(message);
+  if (cached !== undefined) return cached;
+  const trigger = mightBeInlineDelegateTrigger(message.text)
+    ? parseInlineDelegateTrigger(message.text)
+    : null;
+  const delegate: ThreadFeedDelegate | null =
+    trigger === null
+      ? null
+      : {
+          requested: trigger.directive.raw,
+          label: `${trigger.directive.provider} · ${trigger.directive.model}`,
+          substituted: false,
+        };
+  delegateByFeedMessage.set(message, delegate);
+  return delegate;
+}
+
+/**
+ * Pairs each delegate turn's user message with the assistant message that
+ * answered it, in ONE forward pass, allocating only once a delegation is
+ * actually present. A freshly allocated map every pass would invalidate every
+ * visible row through `extraData` on threads that have no delegations at all.
+ */
+function deriveFeedDelegates(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+): ReadonlyMap<string, ThreadFeedDelegate> {
+  let byMessageId: Map<string, ThreadFeedDelegate> | null = null;
+  let targetByTurnId: Map<TurnId, string> | null = null;
+  let pending: ThreadFeedDelegate | null = null;
+  for (const entry of feed) {
+    if (entry.type === "activity-group") {
+      for (const activity of entry.activities) {
+        if (activity.researchDelegateTarget !== undefined && activity.turnId) {
+          targetByTurnId ??= new Map();
+          targetByTurnId.set(activity.turnId, activity.researchDelegateTarget);
+        }
+      }
+      continue;
+    }
+    if (entry.type !== "message") continue;
+    if (entry.message.role === "user") {
+      pending = deriveFeedMessageDelegate(entry.message);
+      if (pending !== null) {
+        byMessageId ??= new Map();
+        byMessageId.set(entry.message.id, pending);
+      }
+      continue;
+    }
+    if (entry.message.role !== "assistant" || pending === null) continue;
+    byMessageId ??= new Map();
+    byMessageId.set(
+      entry.message.id,
+      resolveFeedTurnDelegate(
+        pending,
+        entry.message.turnId ? targetByTurnId?.get(entry.message.turnId) : undefined,
+      ),
+    );
+  }
+  return byMessageId ?? NO_FEED_DELEGATES;
+}
+
+/** Prefers the delegate the ledger reported; never claims one it did not. */
+function resolveFeedTurnDelegate(
+  requested: ThreadFeedDelegate,
+  resolvedTarget: string | undefined,
+): ThreadFeedDelegate {
+  if (resolvedTarget === undefined) return requested;
+  const separator = resolvedTarget.indexOf(":");
+  const label =
+    separator > 0
+      ? `${resolvedTarget.slice(0, separator)} · ${resolvedTarget.slice(separator + 1)}`
+      : resolvedTarget;
+  return { requested: requested.requested, label, substituted: label !== requested.label };
+}
+
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
   props: Pick<ThreadFeedProps, "environmentId" | "skills"> & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
+    readonly expandedHandoffMessages: Record<string, boolean>;
+    readonly delegateByMessageId: ReadonlyMap<string, ThreadFeedDelegate>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
     readonly unsettledTurnId: TurnId | null;
     readonly onCopyWorkRow: (rowId: string, value: string) => void;
     readonly onToggleWorkGroup: (groupId: string) => void;
     readonly onToggleWorkRow: (rowId: string) => void;
     readonly onToggleTurnFold: (turnId: TurnId) => void;
+    readonly onToggleHandoffMessage: (messageId: string, anchorKey: string) => void;
     readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
     readonly onMarkdownLinkPress: (href: string) => void;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
@@ -901,10 +1018,32 @@ function renderFeedEntry(
           globalSkills: [],
           sessionSkills: [],
           contexts: [],
+          handoff: null,
         };
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
     const attachments = message.attachments ?? [];
+    // The legacy prompt is parsed against the skills-stripped text: the server
+    // appends <enabled_skills> to user turns, which would otherwise fail the
+    // legacy parser's end-anchored trailer check on historical handoffs.
+    const legacyHandoff =
+      isUser && message.text.startsWith("Handoff to ")
+        ? parseProviderHandoffPrompt(extractTrailingEnabledSkillsContext(message.text).promptText)
+        : null;
+    const handoff = legacyHandoff
+      ? { target: legacyHandoff.target, summary: legacyHandoff.summary, kind: "legacy" as const }
+      : displayedUserMessage.handoff
+        ? { ...displayedUserMessage.handoff, kind: "combined" as const }
+        : null;
+    const handoffExpanded =
+      handoff !== null && (props.expandedHandoffMessages[message.id] ?? false);
+    const delegate = props.delegateByMessageId.get(message.id) ?? null;
+    // The chip above the bubble already shows the trigger; the bubble shows
+    // the task. Copy still yields the authoritative text.
+    const userBodyText =
+      delegate === null
+        ? displayedUserMessage.promptText
+        : stripInlineDelegateTrigger(displayedUserMessage.promptText);
     const hasReviewCommentContext = displayedUserMessage.promptText.includes("<review_comment");
     // A bubble that sizes itself from its content cannot lay out a block whose
     // intrinsic width overflows `maxWidth`: Android positions the bubble's
@@ -924,7 +1063,7 @@ function renderFeedEntry(
 
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      return (
+      const bubble = (
         <Animated.View
           className="mb-5 items-end"
           {...(enterAnimated ? { entering: FadeInUp.duration(220) } : {})}
@@ -941,6 +1080,13 @@ function renderFeedEntry(
                   : null),
             }}
           >
+            {delegate !== null ? (
+              <View className="flex-row">
+                <View className="rounded-md border border-primary/25 bg-primary/10 px-2 py-1">
+                  <Text className="font-t3-medium text-xs text-primary">→ {delegate.label}</Text>
+                </View>
+              </View>
+            ) : null}
             {displayedUserMessage.skills.length > 0 ? (
               <View className="flex-row flex-wrap gap-1.5" accessibilityLabel="Enabled skills">
                 {displayedUserMessage.globalSkills.map((name) => (
@@ -975,9 +1121,9 @@ function renderFeedEntry(
                 ))}
               </View>
             ) : null}
-            {displayedUserMessage.promptText.trim().length > 0 ? (
+            {userBodyText.trim().length > 0 ? (
               <UserMessageContent
-                text={displayedUserMessage.promptText}
+                text={userBodyText}
                 markdownStyles={styles}
                 reviewCommentColors={props.reviewCommentColors}
                 skills={props.skills}
@@ -1012,6 +1158,53 @@ function renderFeedEntry(
           </View>
         </Animated.View>
       );
+
+      // A handoff folds to one line, matching the web timeline: the switch is a
+      // thread milestone, not user prose. A combined handoff keeps the user's
+      // instruction in the bubble and reveals the carried context above it; a
+      // legacy context-sync turn has no instruction, so the whole bubble folds.
+      if (handoff) {
+        return (
+          <View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: handoffExpanded }}
+              onPress={() => props.onToggleHandoffMessage(message.id, entry.id)}
+              hitSlop={4}
+              className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-neutral-200/80 px-2 dark:border-white/[0.08]"
+            >
+              <SymbolView
+                name="arrow.left.arrow.right"
+                size={13}
+                tintColor={iconSubtleColor}
+                type="monochrome"
+              />
+              <Text
+                className="flex-shrink font-t3-medium text-sm text-foreground-muted"
+                numberOfLines={1}
+              >
+                Handed off to {handoff.target}
+              </Text>
+              <SymbolView
+                name={handoffExpanded ? "chevron.down" : "chevron.right"}
+                size={15}
+                tintColor={iconSubtleColor}
+                type="monochrome"
+              />
+            </Pressable>
+            {handoff.kind === "combined" && handoffExpanded && handoff.summary.length > 0 ? (
+              <View className="mb-3 rounded-[14px] border border-neutral-200/80 px-3 py-2 dark:border-white/[0.08]">
+                <Text className="font-t3-regular text-xs text-foreground-muted">
+                  {handoff.summary}
+                </Text>
+              </View>
+            ) : null}
+            {handoff.kind === "combined" || handoffExpanded ? bubble : null}
+          </View>
+        );
+      }
+
+      return bubble;
     }
 
     // Skip empty assistant messages (no text, no attachments) — they would
@@ -1023,9 +1216,26 @@ function renderFeedEntry(
     const enterAnimated = isFreshTimestamp(message.createdAt);
     return (
       <Animated.View
-        className={cn(showAssistantMeta ? "mb-5 px-1" : "mb-2 px-1")}
+        className={cn(
+          showAssistantMeta ? "mb-5 px-1" : "mb-2 px-1",
+          // A delegate answer is not this thread's model talking; the accent
+          // and badge keep that visible without reformatting the answer.
+          delegate !== null ? "ml-1 border-l-2 border-primary/35 pl-3" : null,
+        )}
         {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
       >
+        {delegate !== null ? (
+          <View className="mb-1.5 flex-row flex-wrap items-center gap-1.5">
+            <View className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5">
+              <Text className="font-t3-medium text-xs text-primary">→ {delegate.label}</Text>
+            </View>
+            {delegate.substituted ? (
+              <Text className="font-t3-regular text-xs text-foreground-muted">
+                requested {delegate.requested}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         {message.text.trim().length > 0 ? (
           hasNativeSelectableMarkdownText() ? (
             <SelectableMarkdownText
@@ -1428,13 +1638,21 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly expandedWorkGroups: Record<string, boolean>;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedTurnIds: ReadonlySet<TurnId>;
+    readonly expandedHandoffMessages: Record<string, boolean>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
+    expandedHandoffMessages: {},
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds } = interactionState;
+  const {
+    copiedRowId,
+    expandedWorkGroups,
+    expandedWorkRows,
+    expandedTurnIds,
+    expandedHandoffMessages,
+  } = interactionState;
   const [expandedImage, setExpandedImage] = useState<{
     uri: string;
     headers?: Record<string, string>;
@@ -1493,6 +1711,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
     [props.environmentId, props.threadId, props.workspaceRoot, navigation],
   );
+  // Delegation belongs to the turn: the user message names the target and the
+  // assistant message carries its answer.
+  const delegateByMessageId = useMemo(() => deriveFeedDelegates(props.feed), [props.feed]);
   const markdownStyles = useMarkdownStyles(onMarkdownLinkPress);
   const reviewCommentColors = useReviewCommentColors();
   // LegendList does not invalidate visible rows when only the renderItem closure changes.
@@ -1500,6 +1721,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const listAppearanceData = useMemo(
     () => ({
       copiedRowId,
+      delegateByMessageId,
+      expandedHandoffMessages,
       expandedWorkRows,
       iconSubtleColor,
       markdownStyles,
@@ -1509,6 +1732,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }),
     [
       copiedRowId,
+      delegateByMessageId,
+      expandedHandoffMessages,
       expandedWorkRows,
       iconSubtleColor,
       markdownStyles,
@@ -1834,6 +2059,20 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     [suspendEndScrollMaintenanceForDisclosure],
   );
 
+  const onToggleHandoffMessage = useCallback(
+    (messageId: string, anchorKey: string) => {
+      suspendEndScrollMaintenanceForDisclosure(anchorKey);
+      setInteractionState((current) => ({
+        ...current,
+        expandedHandoffMessages: {
+          ...current.expandedHandoffMessages,
+          [messageId]: !(current.expandedHandoffMessages[messageId] ?? false),
+        },
+      }));
+    },
+    [suspendEndScrollMaintenanceForDisclosure],
+  );
+
   const onPressImage = useCallback((uri: string, headers?: Record<string, string>) => {
     setExpandedImage({ uri, headers });
   }, []);
@@ -1876,12 +2115,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         environmentId: props.environmentId,
         copiedRowId,
         expandedWorkRows,
+        expandedHandoffMessages,
+        delegateByMessageId,
         terminalAssistantMessageIds,
         unsettledTurnId,
         onCopyWorkRow,
         onToggleWorkGroup,
         onToggleWorkRow,
         onToggleTurnFold,
+        onToggleHandoffMessage,
         onPressImage,
         onMarkdownLinkPress,
         iconSubtleColor,
@@ -1895,6 +2137,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     [
       copiedRowId,
       expandedWorkRows,
+      expandedHandoffMessages,
+      delegateByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
       iconSubtleColor,
@@ -1907,6 +2151,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onMarkdownLinkPress,
       onPressImage,
       onToggleTurnFold,
+      onToggleHandoffMessage,
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,

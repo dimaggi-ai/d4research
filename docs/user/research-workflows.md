@@ -109,6 +109,36 @@ done, and the full list when expanded. Delegations appear in the thread as ordin
 their step and visit numbers, so a cycling pipeline is visible — and provably terminated — rather
 than a mystery.
 
+## Inline delegation
+
+A pipeline is not required to ask another model one question. Open a message with
+`!provider:model` and that single message is answered by the target you named:
+
+```
+!codex:gpt-5.6-sol explain this stack trace
+```
+
+It is the same bounded delegation a pipeline step makes, with the same guarantees:
+
+- **Exact target only.** No fallbacks are attempted or invented. An unknown or ambiguous provider or
+  model, or one that is not ready, fails the turn with the reason instead of substituting a
+  different model.
+- **Same budget.** The call draws on the same per-turn delegation ceiling and visit accounting a
+  pipeline run uses, so mixing the two cannot double either.
+- **Read-only adviser.** The delegate runs with approvals declined; it cannot edit files or run
+  commands.
+- **No recursion.** A delegate has no delegation tool of its own.
+- **Honest attribution.** The answer is labeled with the provider and model that actually ran, and a
+  failed or timed-out delegation is reported as failed rather than paraphrased.
+- **One per chat.** A second delegation started while one is running is refused, so a running one is
+  never silently abandoned.
+- **Nothing left running.** If d4research restarts mid-delegation, the turn is closed with a visible
+  failure rather than left spinning.
+
+The chat's model selection, provider session, and history are untouched — the next message goes back
+to the model the chat was already using. Stopping the chat stops the delegation. A staged provider
+switch is not consumed by a delegation; it waits for the next normal message.
+
 ## Provider handoff
 
 Choose a different model while a provider session is active. d4research keeps the same thread and

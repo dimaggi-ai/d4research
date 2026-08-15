@@ -54,6 +54,12 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
+  /**
+   * Resolved instanceId:model of a delegation, from the activity projection's
+   * compact researchDelegate ledger. Lets the feed attribute a
+   * delegate-authored assistant message to the model that actually ran.
+   */
+  readonly researchDelegateTarget?: string;
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -75,6 +81,7 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  researchDelegateTarget?: string;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -420,6 +427,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  const delegateTarget = asRecord(asRecord(payload?.data)?.researchDelegate)?.target;
+  if (typeof delegateTarget === "string" && delegateTarget.length > 0) {
+    entry.researchDelegateTarget = delegateTarget;
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -503,6 +514,7 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const researchDelegateTarget = next.researchDelegateTarget ?? previous.researchDelegateTarget;
   return {
     ...previous,
     ...next,
@@ -516,6 +528,7 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(researchDelegateTarget !== undefined ? { researchDelegateTarget } : {}),
   };
 }
 
@@ -1566,6 +1579,9 @@ export function buildThreadFeed(
               icon: workEntryIcon(entry),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
+              ...(entry.researchDelegateTarget === undefined
+                ? {}
+                : { researchDelegateTarget: entry.researchDelegateTarget }),
             },
           };
         }),

@@ -79,6 +79,13 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
+  /**
+   * Resolved instanceId:model of a delegation, from the activity projection's
+   * compact researchDelegate ledger. Present on research_delegate rows only;
+   * the timeline uses it to attribute a delegate-authored assistant message to
+   * the model that actually ran.
+   */
+  researchDelegateTarget?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -914,6 +921,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  const delegateTarget = asRecord(asRecord(payload?.data)?.researchDelegate)?.target;
+  if (typeof delegateTarget === "string" && delegateTarget.length > 0) {
+    entry.researchDelegateTarget = delegateTarget;
+  }
   if (itemType) {
     entry.itemType = itemType;
   }
@@ -1089,6 +1100,7 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const researchDelegateTarget = next.researchDelegateTarget ?? previous.researchDelegateTarget;
   return {
     ...previous,
     ...next,
@@ -1103,6 +1115,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(researchDelegateTarget !== undefined ? { researchDelegateTarget } : {}),
   };
 }
 

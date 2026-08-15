@@ -12,6 +12,12 @@ import type {
 import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
 import { canStartProviderTurn } from "@t3tools/contracts";
 import {
+  deriveDirectiveSuggestions,
+  deriveResearchProviderCandidatesFromProviders,
+  parseInlineDelegateTrigger,
+  resolveResearchDirective,
+} from "@t3tools/shared/researchPipeline";
+import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
@@ -28,6 +34,7 @@ import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   Pressable,
@@ -418,8 +425,30 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     query: composerTrigger?.kind === "path" ? composerTrigger.query : null,
   });
 
+  // Delegation targets are the same ready providers the server resolves
+  // against, so the composer accepts exactly what the server will run.
+  const delegateCandidates = useMemo(
+    () => deriveResearchProviderCandidatesFromProviders(props.serverConfig?.providers ?? []),
+    [props.serverConfig?.providers],
+  );
+
   const composerMenuItems: ComposerCommandItem[] = useMemo(() => {
     if (!composerTrigger) return [];
+
+    if (composerTrigger.kind === "directive") {
+      // Two stages only — provider, then model. Inline delegation authors no
+      // scenario, so there are no prompt files to offer as a third stage.
+      return deriveDirectiveSuggestions(`!${composerTrigger.query}`, delegateCandidates, []).map(
+        (suggestion) => ({
+          id: `directive:${suggestion.insert}`,
+          type: "directive" as const,
+          insert: suggestion.insert,
+          complete: !suggestion.insert.endsWith(":"),
+          label: suggestion.insert,
+          description: suggestion.label,
+        }),
+      );
+    }
 
     if (composerTrigger.kind === "slash-command") {
       const q = composerTrigger.query.toLowerCase();
@@ -561,12 +590,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
 
     return [];
-  }, [composerTrigger, pathSearch.entries, selectedProviderStatus]);
+  }, [composerTrigger, delegateCandidates, pathSearch.entries, selectedProviderStatus]);
 
   // ── Handle command selection ──────────────────────────────
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
 
   const handleSend = useCallback(async () => {
+    // A delegation is answered by the model the message names, so an
+    // unresolvable one would fail the whole turn on the server. Say so here
+    // and keep the draft instead of spending a turn to find out.
+    const inlineDelegate = parseInlineDelegateTrigger(draftMessage);
+    if (inlineDelegate !== null) {
+      const resolution = resolveResearchDirective(inlineDelegate.directive, delegateCandidates, []);
+      if (!resolution.ok) {
+        Alert.alert(`Cannot delegate to ${inlineDelegate.directive.raw}`, resolution.error);
+        return;
+      }
+    }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
@@ -584,6 +624,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       inFlightThreadIdsRef.current.delete(threadKey);
     }
   }, [
+    delegateCandidates,
+    draftMessage,
     onSendMessage,
     props.environmentId,
     props.environmentLabel,
@@ -619,6 +661,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         replacement = `/${item.command} `;
       } else if (item.type === "provider-slash-command") {
         replacement = `/${item.command.name} `;
+      } else if (item.type === "directive") {
+        // A provider-stage pick stops at the colon so the model list opens
+        // next; a complete target gets the space before the task.
+        replacement = item.complete ? `${item.insert} ` : item.insert;
       }
 
       const result = replaceTextRange(

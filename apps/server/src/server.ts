@@ -73,6 +73,8 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { RateLimitResumeReactorLive } from "./orchestration/Layers/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactorLive } from "./orchestration/Layers/ResearchIntegrityReactor.ts";
+import { ResearchDelegationBudgetLive } from "./mcp/toolkits/research/budget.ts";
+import { InlineDelegationRunner } from "./mcp/toolkits/research/inlineDelegation.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
@@ -266,6 +268,13 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
+  // The delegation budget Ref is merged rather than hidden so the reactor's
+  // inline `!provider:model` turns and the MCP `research_delegate` tool share
+  // one accounting map — a thread cannot double its ceiling by mixing the two
+  // entry points. Last in the chain: it provides to every reactor above it.
+  Layer.provideMerge(
+    InlineDelegationRunner.layer.pipe(Layer.provideMerge(ResearchDelegationBudgetLive)),
+  ),
 );
 
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(

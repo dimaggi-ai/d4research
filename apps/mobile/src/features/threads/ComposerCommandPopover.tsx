@@ -36,6 +36,16 @@ export type ComposerCommandItem =
       readonly skill: ServerProviderSkill;
       readonly label: string;
       readonly description: string;
+    }
+  | {
+      readonly id: string;
+      readonly type: "directive";
+      /** Full replacement for the `!` token, e.g. `!codex:` or `!codex:sol`. */
+      readonly insert: string;
+      /** True once the insert names a model, so the composer adds the space. */
+      readonly complete: boolean;
+      readonly label: string;
+      readonly description: string;
     };
 
 interface ComposerCommandPopoverProps {

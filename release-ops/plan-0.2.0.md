@@ -1,6 +1,6 @@
 # d4research v0.2.0 — Dependable First Run
 
-**Status:** In progress — post-upstream stabilization tranche closed; release approval pending
+**Status:** In progress — post-upstream stabilization tranche closed and committed; codex event-pipeline fix landed; release approval pending
 
 **Planning input:** CEO product-readiness review, 2026-08-10
 
@@ -64,6 +64,30 @@ This checkpoint does **not** close the release. P0 distribution smoke tests, the
 full P1/P2 lifecycle and provider-readiness matrices, the cross-provider P3
 handoff journey, the P4 starter scenario/export, P5 documentation, clean-machine
 packaging, and explicit tag/publish/deploy approval remain open gates.
+
+## Dogfood stabilization checkpoint — 2026-08-14
+
+Dogfooding surfaced a P1-gate violation: every codex turn since the 2026-08-11
+deployment hung indefinitely in "starting" while the Codex CLI ran the turn to
+completion unheard. Three pipeline links could die silently and totally when a
+single event misbehaved. All three are fixed and regression-covered:
+
+- the app-server client isolates notification handlers, so one failing or
+  throwing handler no longer starves the handlers registered after it
+  (including the event pump); a client test drives the poison-handler case
+  against the mock peer;
+- the session runtime's notification pump and the adapter's event fiber now
+  skip-and-log poison events and log pump death loudly instead of vanishing;
+- the adapter's `streamEvents` is one stable stream rather than a fresh
+  destructive queue consumer per property access.
+
+This closes the "no known turn can remain indefinitely running after its
+provider exits" quality gate for the codex path specifically; the P1 matrix
+across the other providers remains open. Focused validation for this
+checkpoint: 321 unit/integration tests across the 13 touched test files, 53
+codex-path tests, and clean typechecks for the server, web, shared, and
+effect-codex-app-server packages. The served artifact is rebuilt from this
+tree and verified complete.
 
 ## Executive decision
 

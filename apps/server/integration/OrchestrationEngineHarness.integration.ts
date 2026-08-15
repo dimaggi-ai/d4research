@@ -65,6 +65,7 @@ import {
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../src/orchestration/Services/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactor } from "../src/orchestration/Services/ResearchIntegrityReactor.ts";
+import { InlineDelegationRunner } from "../src/mcp/toolkits/research/inlineDelegation.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -394,6 +395,14 @@ export const makeOrchestrationIntegrationHarness = (
           publishThread: () => Effect.void,
           start: () => Effect.void,
         }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(
+          InlineDelegationRunner,
+          InlineDelegationRunner.of({
+            run: () => Effect.die("inline delegation is out of scope for this harness"),
+          }),
+        ),
       ),
     );
     const layer = Layer.empty.pipe(

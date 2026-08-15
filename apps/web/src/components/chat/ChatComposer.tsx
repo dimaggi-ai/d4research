@@ -215,7 +215,14 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { parseResearchTrigger, stripResearchTrigger } from "../../researchPipeline";
+import {
+  deriveDirectiveSuggestions,
+  deriveResearchProviderCandidatesFromProviders,
+  parseInlineDelegateTrigger,
+  parseResearchTrigger,
+  resolveResearchDirective,
+  stripResearchTrigger,
+} from "../../researchPipeline";
 import {
   type PastedContextDraft,
   PASTED_CONTEXT_MAX_COUNT,
@@ -775,7 +782,6 @@ export interface ChatComposerProps {
   canStartResearch: boolean;
   researchScenarios: ReadonlyArray<string>;
   devPipelines: ReadonlyArray<string>;
-  getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
@@ -856,7 +862,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     canStartResearch,
     researchScenarios,
     devPipelines,
-    getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
@@ -1292,6 +1297,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     query: isPathTrigger ? pathTriggerQuery : null,
   });
 
+  // Delegation targets are the same ready providers a pipeline can name, so a
+  // `!provider:model` mention resolves identically in the composer and on the
+  // server.
+  const delegateCandidates = useMemo(
+    () => deriveResearchProviderCandidatesFromProviders(providerStatuses),
+    [providerStatuses],
+  );
+
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -1345,6 +1358,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       return searchSlashCommandItems(slashCommandItems, query);
     }
+    if (composerTrigger.kind === "directive") {
+      // Two stages only — provider, then model. Inline delegation authors no
+      // scenario, so there are no prompt files to offer as a third stage.
+      return deriveDirectiveSuggestions(`!${composerTrigger.query}`, delegateCandidates, []).map(
+        (suggestion) => ({
+          id: `directive:${suggestion.insert}`,
+          type: "directive" as const,
+          insert: suggestion.insert,
+          complete: !suggestion.insert.endsWith(":"),
+          label: suggestion.insert,
+          description: suggestion.label,
+        }),
+      );
+    }
     if (composerTrigger.kind === "skill") {
       return searchProviderSkills(composerSkills, composerTrigger.query).map((skill) => ({
         id: `skill:${selectedProvider}:${skill.name}`,
@@ -1363,6 +1390,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     composerSkills,
     composerTrigger,
+    delegateCandidates,
     providerReportsSkills,
     selectedProvider,
     selectedProviderStatus,
@@ -1435,6 +1463,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerMenuEmptyState = useMemo(() => {
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
+    }
+    if (composerTriggerKind === "directive") {
+      return "No ready provider or model matches.";
     }
     return composerTriggerKind === "path"
       ? "No matching files or folders."
@@ -1999,6 +2030,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      if (item.type === "directive") {
+        // A provider-stage pick leaves the caret right after the colon so the
+        // model list opens immediately; a complete target gets the space that
+        // separates it from the task.
+        const replacement = item.complete ? `${item.insert} ` : item.insert;
+        const replacementRangeEnd = item.complete
+          ? extendReplacementRangeForTrailingSpace(snapshot.value, trigger.rangeEnd, replacement)
+          : trigger.rangeEnd;
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       if (item.type === "skill") {
         const replacement = `$${item.skill.name} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -2120,6 +2170,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
+      // An inline delegation is answered by the named target, so an
+      // unresolvable one would fail the whole turn on the server. Say so here
+      // and keep the draft editable instead of spending a turn to find out.
+      const inlineDelegate = parseInlineDelegateTrigger(promptRef.current);
+      if (inlineDelegate !== null) {
+        const resolution = resolveResearchDirective(
+          inlineDelegate.directive,
+          delegateCandidates,
+          [],
+        );
+        if (!resolution.ok) {
+          event?.preventDefault();
+          toastManager.add({
+            type: "error",
+            title: `Cannot delegate to ${inlineDelegate.directive.raw}`,
+            description: resolution.error,
+          });
+          return;
+        }
+      }
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
@@ -2129,9 +2199,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeThreadId,
       blurMobileComposerAfterSend,
       composerDraftTarget,
+      delegateCandidates,
       isSendDisabled,
       noProviderAvailable,
       onSend,
+      promptRef,
       shouldBlurMobileComposerOnSubmit,
     ],
   );
@@ -3544,7 +3616,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onOpenChange={(open) => {
                       setIsComposerModelPickerOpen(open);
                     }}
-                    getModelDisabledReason={getModelDisabledReason}
                     onInstanceModelChange={onProviderModelSelect}
                     allowCrossProviderSelection={isServerThread}
                   />

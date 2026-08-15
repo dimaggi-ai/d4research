@@ -1,7 +1,7 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "skill";
+export type ComposerTriggerKind = "path" | "slash-command" | "skill" | "directive";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -250,6 +250,16 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
       rangeEnd: cursor,
     };
   }
+  // `!provider:model` only delegates when it opens the message, so the menu
+  // only offers targets there. A `!` mid-prose stays prose.
+  if (token.startsWith("!") && tokenStart === 0) {
+    return {
+      kind: "directive",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   if (!token.startsWith("@")) {
     return null;
   }
@@ -259,6 +269,37 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     query: token.slice(1),
     rangeStart: tokenStart,
     rangeEnd: cursor,
+  };
+}
+
+/**
+ * Banner copy for a staged provider handoff. A draft that opens with
+ * `!provider:model` will NOT pick the handoff up — the delegation is answered
+ * by the model it names and the thread keeps its own — so the banner has to
+ * say so rather than promise a switch that this send will not perform.
+ */
+export function describeStagedHandoffBanner(input: {
+  readonly displayName: string;
+  readonly currentDisplayName: string;
+  readonly paused: boolean;
+  readonly draftIsInlineDelegate: boolean;
+}): { readonly title: string; readonly description: string } {
+  if (input.paused) {
+    return {
+      title: `Handoff to ${input.displayName} paused — provider unavailable`,
+      description: `Messages continue on ${input.currentDisplayName} until it returns, or cancel the switch.`,
+    };
+  }
+  if (input.draftIsInlineDelegate) {
+    return {
+      title: `Handoff to ${input.displayName} waits for your next normal message`,
+      description:
+        "Delegations run without switching, so this message keeps the chat on its current model.",
+    };
+  }
+  return {
+    title: `Next message hands off to ${input.displayName}`,
+    description: "This chat's context will be attached to it.",
   };
 }
 

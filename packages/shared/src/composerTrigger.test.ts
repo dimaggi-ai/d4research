@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { serializeComposerFileLink, serializeComposerMentionPath } from "./composerTrigger.ts";
+import {
+  detectComposerTrigger,
+  serializeComposerFileLink,
+  serializeComposerMentionPath,
+} from "./composerTrigger.ts";
 
 describe("serializeComposerMentionPath", () => {
   it("keeps simple mention paths unquoted", () => {
@@ -39,5 +43,22 @@ describe("serializeComposerFileLink", () => {
     expect(serializeComposerFileLink("@scope/package.json")).toBe(
       "[package.json](@scope/package.json)",
     );
+  });
+});
+
+describe("detectComposerTrigger", () => {
+  it("detects an anchored directive trigger, matching web", () => {
+    const text = "!codex:gpt";
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "directive",
+      query: "codex:gpt",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("leaves a mid-message ! as prose", () => {
+    const text = "compare with !codex";
+    expect(detectComposerTrigger(text, text.length)).toBeNull();
   });
 });

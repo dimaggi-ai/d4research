@@ -4,14 +4,18 @@ import {
   applyResearchTrigger,
   buildResearchRunManifest,
   deriveDirectiveSuggestions,
+  deriveResearchProviderCandidatesFromProviders,
   expandResearchPipelinePrompt,
   findResearchScenario,
   listResearchScenarios,
   isDeepResearchPrompt,
+  mightBeInlineDelegateTrigger,
+  parseInlineDelegateTrigger,
   parsePipelineFallbackDirectives,
   parseResearchDirectives,
   PIPELINE_DIRECTIVE_MAX_COUNT,
   parseResearchTrigger,
+  stripInlineDelegateTrigger,
   stripResearchTrigger,
   resolveResearchDirective,
   sanitizeResearchModelSlugs,
@@ -375,6 +379,131 @@ describe("expandResearchPipelinePrompt", () => {
 
   it("still detects the research tag case-insensitively", () => {
     expect(isDeepResearchPrompt("  #DEEP-research topic")).toBe(true);
+  });
+});
+
+describe("deriveResearchProviderCandidatesFromProviders", () => {
+  const readyProvider = {
+    instanceId: "codex",
+    driver: "codex",
+    displayName: "Codex",
+    enabled: true,
+    installed: true,
+    version: "test",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-08-08T00:00:00.000Z",
+    availability: "available",
+    models: [{ slug: "gpt-5.6-sol", name: "gpt-5.6-sol", isCustom: false, capabilities: null }],
+    slashCommands: [],
+    skills: [],
+  } as unknown as Parameters<typeof deriveResearchProviderCandidatesFromProviders>[0][number];
+
+  it("offers a target the server would accept", () => {
+    expect(deriveResearchProviderCandidatesFromProviders([readyProvider])).toHaveLength(1);
+  });
+
+  it("hides a provider the server's readiness rule would reject", () => {
+    // Unauthenticated and explicitly not-startable providers both fail
+    // canStartProviderTurn on the server; offering them would let a composer
+    // accept a target the server rejects after the draft is cleared.
+    const unauthenticated = { ...readyProvider, auth: { status: "unauthenticated" } } as never;
+    const blocked = { ...readyProvider, readiness: { canStart: false } } as never;
+    expect(deriveResearchProviderCandidatesFromProviders([unauthenticated])).toEqual([]);
+    expect(deriveResearchProviderCandidatesFromProviders([blocked])).toEqual([]);
+  });
+});
+
+describe("parseInlineDelegateTrigger", () => {
+  it("reads a leading provider:model mention as one bounded delegation", () => {
+    expect(parseInlineDelegateTrigger("!codex:gpt-5.6-sol explain this stack trace")).toEqual({
+      directive: {
+        raw: "!codex:gpt-5.6-sol",
+        provider: "codex",
+        model: "gpt-5.6-sol",
+        promptFile: undefined,
+      },
+      task: "explain this stack trace",
+    });
+  });
+
+  it("splits provider at the first colon so colon-bearing slugs survive", () => {
+    expect(parseInlineDelegateTrigger("!claude:glm-5.2:cloud summarize")?.directive).toEqual({
+      raw: "!claude:glm-5.2:cloud",
+      provider: "claude",
+      model: "glm-5.2:cloud",
+      promptFile: undefined,
+    });
+  });
+
+  it("never claims a pipeline trigger — !dev and !research win", () => {
+    expect(parseInlineDelegateTrigger("!dev:review fix the bug")).toBeNull();
+    expect(parseInlineDelegateTrigger("!research:blog compare X")).toBeNull();
+    expect(parseInlineDelegateTrigger("#deep-research:blog compare X")).toBeNull();
+  });
+
+  it("refuses reserved provider names even without a pipeline scenario", () => {
+    expect(parseInlineDelegateTrigger("!research:something ask")).toBeNull();
+    expect(parseInlineDelegateTrigger("!DEV:something ask")).toBeNull();
+    expect(parseInlineDelegateTrigger("!deep-research:x ask")).toBeNull();
+  });
+
+  it("is anchored — a mid-text mention stays prose", () => {
+    expect(parseInlineDelegateTrigger("compare against !codex:gpt-5.6-sol later")).toBeNull();
+    expect(parseInlineDelegateTrigger("ask\n!codex:gpt-5.6-sol why")).toBeNull();
+  });
+
+  it("rejects a trigger with no task", () => {
+    expect(parseInlineDelegateTrigger("!codex:gpt-5.6-sol")).toBeNull();
+    expect(parseInlineDelegateTrigger("  !codex:gpt-5.6-sol   ")).toBeNull();
+  });
+
+  it("requires the trigger to end on a boundary", () => {
+    expect(parseInlineDelegateTrigger("!codex:gpt-5.6-sol,explain")).toBeNull();
+  });
+
+  it("sees through the Claude effort marker, so every surface parses alike", () => {
+    // The marker is transport-only and prepended client-side; the trigger it
+    // wraps is still the first thing the user wrote.
+    const withEffort = "Ultrathink:\n!codex:gpt-5.6-sol explain this stack trace";
+    expect(parseInlineDelegateTrigger(withEffort)).toEqual(
+      parseInlineDelegateTrigger("!codex:gpt-5.6-sol explain this stack trace"),
+    );
+    expect(mightBeInlineDelegateTrigger(withEffort)).toBe(true);
+  });
+
+  it("sees through leading whitespace", () => {
+    expect(parseInlineDelegateTrigger("   !codex:gpt-5.6-sol explain")).toEqual(
+      parseInlineDelegateTrigger("!codex:gpt-5.6-sol explain"),
+    );
+    expect(mightBeInlineDelegateTrigger("   !codex:gpt-5.6-sol explain")).toBe(true);
+  });
+
+  it("still refuses a pipeline trigger behind the effort marker", () => {
+    expect(parseInlineDelegateTrigger("Ultrathink:\n!dev:review fix it")).toBeNull();
+    expect(parseInlineDelegateTrigger("Ultrathink:\n!research:blog compare")).toBeNull();
+  });
+
+  it("gates cheaply without rejecting anything the parser accepts", () => {
+    expect(mightBeInlineDelegateTrigger("plain prompt")).toBe(false);
+    expect(mightBeInlineDelegateTrigger("compare with !codex:sol")).toBe(false);
+    // A long effort-marker-free head with no bang cannot be a trigger.
+    expect(mightBeInlineDelegateTrigger("x".repeat(200))).toBe(false);
+  });
+
+  it("keeps the task recoverable for the composer", () => {
+    expect(stripInlineDelegateTrigger("!codex:gpt-5.6-sol explain this")).toBe("explain this");
+    expect(stripInlineDelegateTrigger("plain prompt")).toBe("plain prompt");
+  });
+
+  it("resolves through the same directive resolver as pipelines", () => {
+    const trigger = parseInlineDelegateTrigger("!claude:fable what changed?");
+    expect(trigger).not.toBeNull();
+    expect(resolveResearchDirective(trigger!.directive, CANDIDATES, [])).toMatchObject({
+      ok: true,
+      instanceId: "claudeAgent",
+      model: "claude-fable-5",
+    });
   });
 });
 

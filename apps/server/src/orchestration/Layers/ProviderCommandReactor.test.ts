@@ -69,6 +69,13 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import {
+  InlineDelegationRunner,
+  type InlineDelegationResult,
+} from "../../mcp/toolkits/research/inlineDelegation.ts";
+import type { BoundedDelegationRequest } from "../../mcp/toolkits/research/handlers.ts";
+import { ResearchDelegateError } from "../../mcp/toolkits/research/tools.ts";
+import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -246,6 +253,64 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.lastError).toContain("ended while d4research was offline");
   });
 
+  it("settles an inline delegation that did not survive a restart", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      sessionBeforeStart: {
+        threadId: ThreadId.make("thread-1"),
+        status: "running",
+        // An inline delegation owns no native session, which is exactly why the
+        // generic "provider session ended" reconciliation message is a lie.
+        providerName: null,
+        runtimeMode: "approval-required",
+        activeTurnId: asTurnId("inline-delegate:user-message-1"),
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+
+    const thread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    // Nothing may stay running across a restart.
+    expect(thread?.session?.status).toBe("error");
+    expect(thread?.session?.activeTurnId).toBeNull();
+    expect(thread?.session?.lastError).toContain("did not survive a d4research restart");
+    expect(thread?.session?.lastError).not.toContain("ended while d4research was offline");
+    const completion = (thread?.activities ?? []).findLast(
+      (activity) => activity.kind === "tool.completed",
+    );
+    expect(
+      (
+        projectActivityPayload(completion!).payload as {
+          readonly data: { readonly researchDelegate: { readonly failed: boolean } };
+        }
+      ).data.researchDelegate.failed,
+    ).toBe(true);
+  });
+
+  it("does not report a completed inline delegation as an offline-ended session", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      sessionBeforeStart: {
+        threadId: ThreadId.make("thread-1"),
+        // The resting state a delegate-only thread settles into.
+        status: "stopped",
+        providerName: null,
+        runtimeMode: "approval-required",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+
+    const thread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    expect(thread?.session?.status).toBe("stopped");
+    expect(thread?.session?.lastError).toBeNull();
+  });
+
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
@@ -259,6 +324,10 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly inlineDelegation?: (
+      request: BoundedDelegationRequest,
+    ) => Effect.Effect<InlineDelegationResult, ResearchDelegateError>;
+    readonly failAssistantMessageDispatch?: boolean;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -267,6 +336,7 @@ describe("ProviderCommandReactor", () => {
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+    const inlineDelegationRequests: Array<BoundedDelegationRequest> = [];
     let nextSessionIndex = 1;
     const runtimeSessions: Array<ProviderSession> = [];
     const modelSelection = input?.threadModelSelection ?? {
@@ -525,6 +595,12 @@ describe("ProviderCommandReactor", () => {
         return {
           readEvents: engine.readEvents,
           dispatch: (command) => {
+            if (
+              input?.failAssistantMessageDispatch === true &&
+              command.type.startsWith("thread.message.assistant.")
+            ) {
+              return Effect.die(new Error("Injected assistant message dispatch failure"));
+            }
             if (command.type === "thread.title.regeneration.complete") {
               titleRegenerationCompletionDispatchAttempts += 1;
               if (
@@ -567,6 +643,20 @@ describe("ProviderCommandReactor", () => {
           generateBranchName,
           generateThreadTitle,
         }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(
+          InlineDelegationRunner,
+          InlineDelegationRunner.of({
+            run: (request) => {
+              inlineDelegationRequests.push(request);
+              return (
+                input?.inlineDelegation?.(request) ??
+                Effect.die("no inline delegation was expected in this test")
+              );
+            },
+          }),
+        ),
       ),
       Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
@@ -670,6 +760,7 @@ describe("ProviderCommandReactor", () => {
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
+      inlineDelegationRequests,
       stateDir,
       drain,
       runEffect,
@@ -866,6 +957,524 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.status).toBe("error");
     expect(thread?.session?.lastError).toContain("does not expose MCP tools");
   });
+
+  const inlineDelegateResult = (
+    overrides?: Partial<InlineDelegationResult>,
+  ): InlineDelegationResult => ({
+    requestedTarget: "codex:gpt-5-codex",
+    resolvedTarget: "codex:gpt-5-codex",
+    substituted: false,
+    target: "codex:gpt-5-codex",
+    step: "inline",
+    visit: 1,
+    remainingBudget: 23,
+    durationMs: 1_234,
+    truncated: false,
+    text: "The stack trace points at a null adapter.",
+    ...overrides,
+  });
+
+  effectIt.effect(
+    "answers an inline !provider:model turn from the delegate without touching the thread session",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({ inlineDelegation: () => Effect.succeed(inlineDelegateResult()) }),
+        );
+        const now = "2026-01-01T00:00:00.000Z";
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-turn-start-inline-delegate"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("user-message-inline-delegate"),
+            role: "user",
+            text: "!codex:gpt-5-codex explain this stack trace",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
+        yield* Effect.promise(() => harness.drain());
+        yield* Effect.promise(() =>
+          waitFor(async () => {
+            const snapshot = (await harness.readModel()).threads.find(
+              (entry) => entry.id === ThreadId.make("thread-1"),
+            );
+            return (
+              snapshot?.session?.activeTurnId === null && snapshot.session.status !== "running"
+            );
+          }),
+        );
+
+        // The thread's own provider never runs: no session start, no turn send.
+        expect(harness.startSession).not.toHaveBeenCalled();
+        expect(harness.sendTurn).not.toHaveBeenCalled();
+
+        const request = harness.inlineDelegationRequests[0];
+        expect(request).toMatchObject({
+          prompt: "explain this stack trace",
+          step: "inline",
+          visit: 1,
+          substituted: false,
+          attachments: [],
+          requestedTarget: "codex:gpt-5-codex",
+          resolvedTarget: "codex:gpt-5-codex",
+        });
+        expect(request?.runId).toBe("thread-1:inline-delegate:user-message-inline-delegate");
+
+        const snapshot = yield* Effect.promise(() => harness.readModel());
+        const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+        // The persisted user message stays the compact trigger the user typed.
+        expect(
+          thread?.messages.find((entry) => entry.id === asMessageId("user-message-inline-delegate"))
+            ?.text,
+        ).toBe("!codex:gpt-5-codex explain this stack trace");
+        const assistant = thread?.messages.find((entry) => entry.role === "assistant");
+        expect(assistant?.text).toBe("The stack trace points at a null adapter.");
+        expect(assistant?.streaming).toBe(false);
+        expect(assistant?.turnId).toBe("inline-delegate:user-message-inline-delegate");
+        // The thread's model selection is untouched by the delegation.
+        expect(thread?.modelSelection).toEqual({
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        });
+        // The thread never had a provider session, so it must not be left
+        // holding a synthetic one: "stopped" with no provider name is the
+        // sessionless resting state, and it settles the turn all the same.
+        expect(thread?.session?.status).toBe("stopped");
+        expect(thread?.session?.providerName).toBeNull();
+        expect(thread?.session?.activeTurnId).toBeNull();
+        expect(thread?.latestTurn).toMatchObject({
+          turnId: "inline-delegate:user-message-inline-delegate",
+          completedAt: expect.any(String),
+        });
+        // Revert retention keeps only checkpointed turns, so the delegate turn
+        // must carry one or a later revert would delete its answer.
+        expect(
+          thread?.checkpoints.some(
+            (checkpoint) => checkpoint.turnId === "inline-delegate:user-message-inline-delegate",
+          ),
+        ).toBe(true);
+
+        const ledgerRows = (thread?.activities ?? []).filter(
+          (activity) => activity.kind === "tool.started" || activity.kind === "tool.completed",
+        );
+        expect(ledgerRows).toHaveLength(2);
+        // The rows carry the MCP tool-call shape the activity projection reads,
+        // so the clients' delegation ledger derives with no new payload contract.
+        const completion = projectActivityPayload(ledgerRows.at(-1)!);
+        expect(
+          (completion.payload as { readonly data: { readonly researchDelegate: unknown } }).data
+            .researchDelegate,
+        ).toMatchObject({
+          callId: "inline-delegate:user-message-inline-delegate",
+          step: "inline",
+          target: "codex:gpt-5-codex",
+          visit: 1,
+          remainingBudget: 23,
+          durationMs: 1_234,
+          failed: false,
+        });
+      }),
+  );
+
+  effectIt.effect("fails an inline delegate turn visibly when the directive does not resolve", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-unresolved"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-unresolved"),
+          role: "user",
+          text: "!nosuchprovider:some-model explain this",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.inlineDelegationRequests).toHaveLength(0);
+      expect(harness.startSession).not.toHaveBeenCalled();
+      const snapshot = yield* Effect.promise(() => harness.readModel());
+      const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      // Nothing may stay running on an unresolvable directive.
+      expect(thread?.session?.status).toBe("error");
+      expect(thread?.session?.activeTurnId).toBeNull();
+      expect(thread?.session?.lastError).toContain("!nosuchprovider:some-model");
+      expect(thread?.messages.some((entry) => entry.role === "assistant")).toBe(false);
+    }),
+  );
+
+  effectIt.effect(
+    "reports a failed inline delegation with its typed reason instead of an answer",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            inlineDelegation: () =>
+              new ResearchDelegateError({
+                detail: "Delegate codex:gpt-5-codex did not answer within 30 minutes.",
+                failureKind: "timeout",
+              }),
+          }),
+        );
+        const now = "2026-01-01T00:00:00.000Z";
+
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-turn-start-inline-delegate-failed"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("user-message-inline-delegate-failed"),
+            role: "user",
+            text: "!codex:gpt-5-codex explain this stack trace",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
+        yield* Effect.promise(() => harness.drain());
+        yield* Effect.promise(() =>
+          waitFor(async () => {
+            const current = (await harness.readModel()).threads.find(
+              (entry) => entry.id === ThreadId.make("thread-1"),
+            );
+            return current?.session?.status === "error";
+          }),
+        );
+
+        const snapshot = yield* Effect.promise(() => harness.readModel());
+        const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+        expect(thread?.messages.some((entry) => entry.role === "assistant")).toBe(false);
+        expect(thread?.session?.lastError).toContain("did not answer within 30 minutes");
+        const failureRow = (thread?.activities ?? []).find(
+          (activity) => activity.kind === "provider.turn.delegate.failed",
+        );
+        expect(failureRow?.payload).toMatchObject({ detail: expect.stringContaining("timeout:") });
+        const completion = (thread?.activities ?? []).findLast(
+          (activity) => activity.kind === "tool.completed",
+        );
+        expect(completion).toBeDefined();
+        expect(
+          (
+            projectActivityPayload(completion!).payload as {
+              readonly data: { readonly researchDelegate: { readonly failed: boolean } };
+            }
+          ).data.researchDelegate.failed,
+        ).toBe(true);
+      }),
+  );
+
+  effectIt.effect("stops a running inline delegation on interrupt", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          inlineDelegation: () =>
+            Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-interrupt"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-interrupt"),
+          role: "user",
+          text: "!codex:gpt-5-codex explain this stack trace",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Deferred.await(started);
+      const running = yield* Effect.promise(() => harness.readModel());
+      expect(
+        running.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.session?.status,
+      ).toBe("running");
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.interrupt",
+        commandId: CommandId.make("cmd-turn-interrupt-inline-delegate"),
+        threadId: ThreadId.make("thread-1"),
+        createdAt: now,
+      });
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const snapshot = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return snapshot?.session?.status === "stopped";
+        }),
+      );
+
+      // Interrupting a delegate turn never reaches the provider facade.
+      expect(harness.interruptTurn).not.toHaveBeenCalled();
+      const settled = yield* Effect.promise(() => harness.readModel());
+      const thread = settled.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      expect(thread?.session?.activeTurnId).toBeNull();
+      expect(thread?.messages.some((entry) => entry.role === "assistant")).toBe(false);
+    }),
+  );
+
+  effectIt.effect("delivers the turn's attachments to the delegate", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({ inlineDelegation: () => Effect.succeed(inlineDelegateResult()) }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      const attachment = {
+        type: "image" as const,
+        id: "attachment-1",
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 128,
+      };
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-attachments"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-attachments"),
+          role: "user",
+          text: "!codex:gpt-5-codex what is in this screenshot?",
+          attachments: [attachment],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+      yield* Effect.promise(() => waitFor(() => harness.inlineDelegationRequests.length === 1));
+
+      // Silently dropping them would let the delegate answer about an image it
+      // never saw.
+      expect(harness.inlineDelegationRequests[0]?.attachments).toEqual([attachment]);
+    }),
+  );
+
+  effectIt.effect("keeps a preceding delegate turn's answer across a revert", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({ inlineDelegation: () => Effect.succeed(inlineDelegateResult()) }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-revert"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-revert"),
+          role: "user",
+          text: "!codex:gpt-5-codex explain this",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const current = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return (current?.checkpoints.length ?? 0) > 0;
+        }),
+      );
+
+      yield* harness.engine.dispatch({
+        type: "thread.revert.complete",
+        commandId: CommandId.make("cmd-revert-across-inline-delegate"),
+        threadId: ThreadId.make("thread-1"),
+        turnCount: 1,
+        createdAt: now,
+      });
+
+      const snapshot = yield* Effect.promise(() => harness.readModel());
+      const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      // Revert retention keeps only checkpointed turns, and an assistant
+      // message is never rescued by the user-message fallback. Without the
+      // delegate turn's checkpoint this answer disappears.
+      expect(thread?.messages.find((entry) => entry.role === "assistant")?.text).toBe(
+        "The stack trace points at a null adapter.",
+      );
+    }),
+  );
+
+  effectIt.effect("refuses a delegation that arrives carrying a provider handoff", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-handoff"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-handoff"),
+          role: "user",
+          text: "!codex:gpt-5-codex explain this\n\n<handoff_context>carried</handoff_context>",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+
+      // The combination is impossible from a correct client; carrying context
+      // labeled for another provider into this delegate would misattribute it.
+      expect(harness.inlineDelegationRequests).toHaveLength(0);
+      expect(harness.startSession).not.toHaveBeenCalled();
+      const snapshot = yield* Effect.promise(() => harness.readModel());
+      const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      expect(thread?.session?.status).toBe("error");
+      expect(thread?.session?.lastError).toContain("cannot carry a provider handoff");
+    }),
+  );
+
+  effectIt.effect("refuses a second concurrent delegation instead of orphaning the first", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          inlineDelegation: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(inlineDelegateResult()),
+            ),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-first"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-first"),
+          role: "user",
+          text: "!codex:gpt-5-codex first question",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Deferred.await(started);
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-second"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-second"),
+          role: "user",
+          text: "!codex:gpt-5-codex second question",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+
+      // The running delegation keeps the thread; the second is refused rather
+      // than replacing it in the registry and orphaning it.
+      expect(harness.inlineDelegationRequests).toHaveLength(1);
+      const duringSecond = yield* Effect.promise(() => harness.readModel());
+      const refusedThread = duringSecond.threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(
+        (refusedThread?.activities ?? []).some(
+          (activity) =>
+            activity.kind === "provider.turn.start.failed" &&
+            String((activity.payload as { readonly detail?: unknown }).detail).includes(
+              "already running",
+            ),
+        ),
+      ).toBe(true);
+
+      // The first delegation is still interruptible and still owns the turn.
+      yield* Deferred.succeed(release, undefined);
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const current = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return current?.session?.activeTurnId === null;
+        }),
+      );
+      const settled = yield* Effect.promise(() => harness.readModel());
+      const thread = settled.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      expect(
+        thread?.messages.filter((entry) => entry.role === "assistant").map((entry) => entry.turnId),
+      ).toEqual(["inline-delegate:user-message-inline-delegate-first"]);
+    }),
+  );
+
+  effectIt.effect("force-settles a delegate turn whose result could not be recorded", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          inlineDelegation: () => Effect.succeed(inlineDelegateResult()),
+          // Every assistant-message dispatch fails, so the rich settle path
+          // cannot complete and the fallback must clear the turn anyway.
+          failAssistantMessageDispatch: true,
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-inline-delegate-dispatch-failure"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-inline-delegate-dispatch-failure"),
+          role: "user",
+          text: "!codex:gpt-5-codex explain this",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => harness.drain());
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const current = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return current?.session?.activeTurnId === null;
+        }),
+      );
+
+      const snapshot = yield* Effect.promise(() => harness.readModel());
+      const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      // Nothing stays running, and the failure is visible rather than silent.
+      expect(thread?.session?.status).toBe("error");
+      expect(thread?.session?.lastError).toContain("could not be recorded");
+      expect(thread?.messages.some((entry) => entry.role === "assistant")).toBe(false);
+    }),
+  );
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>
     Effect.gen(function* () {

@@ -40,6 +40,7 @@ import {
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
+import { appendProviderHandoffContext } from "@t3tools/shared/providerHandoffPrompt";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
@@ -74,6 +75,7 @@ import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
+  describeStagedHandoffBanner,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -164,6 +166,7 @@ import PlanSidebar from "./PlanSidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
+  ArrowRightLeftIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   GitBranchIcon,
@@ -192,7 +195,7 @@ import {
 } from "../providerInstances";
 import {
   buildProviderHandoffTranscript,
-  buildProviderHandoffPrompt,
+  isProviderHandoffCandidate,
   prepareDurableProviderHandoff,
   runSameThreadProviderHandoffTransition,
   shouldHandoffModelSelection,
@@ -211,6 +214,8 @@ import {
   findResearchScenario,
   isDeepResearchPrompt,
   listResearchScenarios,
+  mightBeInlineDelegateTrigger,
+  parseInlineDelegateTrigger,
 } from "../researchPipeline";
 import {
   canAutoDispatchQueuedRequest,
@@ -1221,6 +1226,19 @@ function chatActionErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An error occurred.";
 }
 
+/**
+ * Whether an outgoing model selection would hand off, and whether its target can
+ * actually receive one. `unavailable` exists so the dispatch can refuse: a
+ * required handoff whose target is unhealthy must abort, never downgrade to a
+ * plain send that switches the provider-native session behind Memo's back.
+ */
+type ProviderHandoffResolution =
+  | { readonly kind: "none" }
+  | { readonly kind: "ready"; readonly target: ModelSelection; readonly displayName: string }
+  | { readonly kind: "unavailable"; readonly displayName: string };
+
+const NO_PROVIDER_HANDOFF: ProviderHandoffResolution = { kind: "none" };
+
 function ChatViewContent(props: ChatViewProps) {
   const {
     environmentId,
@@ -1240,6 +1258,10 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  // This component is not remounted per thread, so a dispatch that awaits must
+  // compare against the thread currently on screen before touching view state.
+  const routeThreadKeyRef = useRef(routeThreadKey);
+  routeThreadKeyRef.current = routeThreadKey;
   const queuedRequests = useRequestQueueStore(
     (state) => state.byThreadKey[routeThreadKey] ?? EMPTY_QUEUED_REQUESTS,
   );
@@ -1354,6 +1376,14 @@ function ChatViewContent(props: ChatViewProps) {
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
+  const composerDraftModelSelectionByProvider = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.modelSelectionByProvider ?? null,
+  );
+  // Only the boolean is selected, so a keystroke re-renders this view solely
+  // when the draft crosses the delegation boundary.
+  const composerDraftIsInlineDelegate = useComposerDraftStore((store) =>
+    mightBeInlineDelegateTrigger(store.getComposerDraft(composerDraftTarget)?.prompt ?? ""),
+  );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
@@ -1401,7 +1431,6 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
-  const [providerHandoffBusy, setProviderHandoffBusy] = useState(false);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -1988,7 +2017,9 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
-  const lockedProvider = deriveLockedProvider({
+  // The provider the running session is pinned to. A staged handoff releases
+  // this lock below so the composer can show (and send on) the target.
+  const sessionLockedProvider = deriveLockedProvider({
     thread: activeThread,
     selectedProvider: selectedProviderByThreadId,
     threadProvider,
@@ -2171,6 +2202,86 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [providerStatuses, settings],
   );
+  /**
+   * A started chat can still target another provider: the pick is staged and
+   * the next send performs the handoff. The composer, the staged-handoff
+   * banner, and every dispatch read this one resolver so they can never
+   * disagree about whether a message will switch providers.
+   */
+  const resolveProviderHandoffForSelection = useCallback(
+    (nextModelSelection: ModelSelection): ProviderHandoffResolution => {
+      if (routeKind !== "server" || !activeThread) return NO_PROVIDER_HANDOFF;
+      const currentInstanceId =
+        activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
+      // A session record with no provider name was never a native session:
+      // an inline delegation synthesizes one purely to say "this thread is
+      // busy". Handing off from a provider that never ran would stage a
+      // pointless Memo bridge, so it does not count as started.
+      const hasStartedSession =
+        activeThread.session !== null && activeThread.session.providerName !== null;
+      const driverKind =
+        providerStatuses.find((snapshot) => snapshot.instanceId === nextModelSelection.instanceId)
+          ?.driver ?? null;
+      // Whether a handoff is REQUIRED is a fact about the thread and the
+      // outgoing selection alone. Target health must never soften it: the
+      // provider lock only constrains driver kind, so a sibling instance of the
+      // running driver would otherwise resolve to "no handoff" and be
+      // dispatched plain — switching the native session with no Memo proof.
+      const requiresHandoff = shouldHandoffModelSelection({
+        hasStartedSession,
+        currentInstanceId,
+        nextInstanceId: nextModelSelection.instanceId,
+        modelChangeRequiresNewThread:
+          getStartedThreadModelChangeBlockReason({
+            providers: providerStatuses,
+            hasStartedSession,
+            currentModelSelection: activeThread.modelSelection,
+            currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
+            nextModelSelection,
+          }) !== null,
+        providerChanged:
+          sessionLockedProvider !== null &&
+          driverKind !== null &&
+          driverKind !== sessionLockedProvider,
+      });
+      if (!requiresHandoff) return NO_PROVIDER_HANDOFF;
+
+      const entry = providerHandoffEntries.find(
+        (candidate) => candidate.instanceId === nextModelSelection.instanceId,
+      );
+      const displayName = entry?.displayName ?? String(nextModelSelection.instanceId);
+      // Target health decides whether the handoff can happen, not whether one is
+      // needed. Staging hides an unhealthy target (the banner would promise a
+      // switch the composer silently declines) and the dispatch refuses it.
+      // Same-instance model changes skip this: there is no other target to vet.
+      const targetUnusable =
+        nextModelSelection.instanceId !== currentInstanceId &&
+        (!entry || !isProviderHandoffCandidate(entry, currentInstanceId));
+      return targetUnusable
+        ? { kind: "unavailable", displayName }
+        : { kind: "ready", target: nextModelSelection, displayName };
+    },
+    [activeThread, providerHandoffEntries, providerStatuses, routeKind, sessionLockedProvider],
+  );
+  // Resolved from the RAW draft pick, never from the composer's effective
+  // selection: when the target goes unavailable the composer substitutes the
+  // running instance, and reading that back would erase every trace of the
+  // pick the user is still waiting on.
+  const stagedProviderHandoffResolution = useMemo(() => {
+    const staged = composerActiveProvider
+      ? composerDraftModelSelectionByProvider?.[composerActiveProvider]
+      : undefined;
+    return staged ? resolveProviderHandoffForSelection(staged) : NO_PROVIDER_HANDOFF;
+  }, [
+    composerActiveProvider,
+    composerDraftModelSelectionByProvider,
+    resolveProviderHandoffForSelection,
+  ]);
+  const stagedProviderHandoff =
+    stagedProviderHandoffResolution.kind === "ready" ? stagedProviderHandoffResolution : null;
+  // Releasing the session lock is what lets the composer display and dispatch
+  // the staged target; cancelling the staged pick restores it.
+  const lockedProvider = stagedProviderHandoff !== null ? null : sessionLockedProvider;
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -4608,6 +4719,80 @@ function ChatViewContent(props: ChatViewProps) {
     isUnsnoozing,
     isUnsettling,
   ]);
+  // Reverse state for staging: put the draft selection back on the provider and
+  // model this chat is actually running, which clears the staged handoff. A
+  // cached per-provider draft entry is deliberately ignored — restoring a model
+  // the session is not on would leave the banner stuck on providers that need a
+  // new session for a model change.
+  const handleCancelStagedProviderHandoff = useCallback(() => {
+    // Once a send captured the staged target, reverting the picker would only
+    // make the UI disagree with the turn already on its way.
+    if (!activeThread || sendInFlightRef.current) return;
+    const currentInstanceId =
+      activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
+    const currentSelection =
+      currentInstanceId === activeThread.modelSelection.instanceId
+        ? activeThread.modelSelection
+        : createModelSelection(currentInstanceId, activeThread.modelSelection.model);
+    setComposerDraftModelSelection(
+      scopeThreadRef(activeThread.environmentId, activeThread.id),
+      currentSelection,
+      { replaceOptions: true },
+    );
+    setStickyComposerModelSelection(currentSelection);
+    scheduleComposerFocus();
+  }, [
+    activeThread,
+    scheduleComposerFocus,
+    setComposerDraftModelSelection,
+    setStickyComposerModelSelection,
+  ]);
+  const stagedProviderHandoffBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    const resolution = stagedProviderHandoffResolution;
+    if (resolution.kind === "none" || !activeThread) {
+      return null;
+    }
+    // A pick whose target went unavailable keeps its banner, in a warning
+    // state. The composer quietly substitutes the running provider for the
+    // send, so hiding this would let the promise and the behavior diverge with
+    // nothing on screen to explain it.
+    const paused = resolution.kind === "unavailable";
+    const currentInstanceId =
+      activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
+    const currentDisplayName =
+      providerHandoffEntries.find((entry) => entry.instanceId === currentInstanceId)?.displayName ??
+      String(currentInstanceId);
+    const copy = describeStagedHandoffBanner({
+      displayName: resolution.displayName,
+      currentDisplayName,
+      paused,
+      draftIsInlineDelegate: composerDraftIsInlineDelegate,
+    });
+    return {
+      id: `staged-provider-handoff:${activeThread.id}`,
+      variant: paused ? "warning" : "info",
+      icon: <ArrowRightLeftIcon />,
+      title: copy.title,
+      description: copy.description,
+      actions: (
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={isSendBusy}
+          onClick={handleCancelStagedProviderHandoff}
+        >
+          Cancel switch
+        </Button>
+      ),
+    };
+  }, [
+    activeThread,
+    composerDraftIsInlineDelegate,
+    handleCancelStagedProviderHandoff,
+    isSendBusy,
+    providerHandoffEntries,
+    stagedProviderHandoffResolution,
+  ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -4625,9 +4810,12 @@ function ChatViewContent(props: ChatViewProps) {
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const stagedHandoffItems =
+      stagedProviderHandoffBannerItem === null ? [] : [stagedProviderHandoffBannerItem];
     const prioritizedItems = [
       ...urgentSystemBannerItems,
       ...backgroundLivenessItems,
+      ...stagedHandoffItems,
       ...calmSystemBannerItems,
     ];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
@@ -4684,6 +4872,7 @@ function ChatViewContent(props: ChatViewProps) {
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
     showBranchMismatchBanner,
+    stagedProviderHandoffBannerItem,
     systemComposerBannerItems,
   ]);
 
@@ -4973,6 +5162,97 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  /**
+   * Performs the staged handoff for one outgoing message, or reports why it
+   * cannot happen. Returns null only when the outgoing selection needs no
+   * handoff at all, so a caller that skips this is a bug: EVERY dispatch path
+   * that sends the composer's own model selection must route through here.
+   *
+   * PRODUCT INVARIANT: no dispatch may change the thread's provider-native
+   * session without a proven local-Memo write. That is enforced here, at the
+   * dispatch boundary, rather than at staging time — an unhealthy target
+   * returns `error` so the send aborts, and never degrades into a plain send
+   * that switches instances silently. A handoff still replaces only the
+   * session: same thread id, transcript, route, branch, and worktree.
+   * Callers must abort on `error`.
+   */
+  const applyStagedProviderHandoff = useCallback(
+    async (
+      modelSelection: ModelSelection,
+      composedText: string,
+    ): Promise<{ readonly text: string } | { readonly error: string } | null> => {
+      const staged = resolveProviderHandoffForSelection(modelSelection);
+      if (staged.kind === "none" || !activeThread) return null;
+      if (staged.kind === "unavailable") {
+        return { error: `${staged.displayName} is not available to receive a handoff.` };
+      }
+
+      const compression = settings.handoff.contextCompression;
+      // Research handoffs carry the transcript as-is: pipeline evidence must
+      // not be summarized away between steps. 60k is the server's transport
+      // guard for the prepare route.
+      const bypassCompression = isResearchThread && settings.research.bypassCompression;
+      const transcript = buildProviderHandoffTranscript(
+        displayServerMessages.map((message) => ({ role: message.role, text: message.text })),
+        bypassCompression ? 60_000 : compression.maxInputCharacters,
+      );
+      let text = composedText;
+      const result = await settlePromise(() =>
+        runSameThreadProviderHandoffTransition({
+          // One round-trip normally compresses and persists to local Memo. If
+          // that combined path does not prove persistence, the durable helper
+          // writes the structured transcript through the dedicated Memo route,
+          // and rejects when neither write lands.
+          prepare: () =>
+            prepareDurableProviderHandoff({
+              transcript,
+              project: activeProject?.title,
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              target: staged.target,
+              bypassCompression,
+              enabledSkills: effectiveEnabledSkills,
+              ...(preparedConnection ? { preparedConnection } : {}),
+            }),
+          // The receiving turn is the caller's own send: the user's instruction
+          // with the carried context appended as the outermost client block.
+          startReceivingTurn: async (summary) => {
+            text = appendProviderHandoffContext(text, {
+              sourceThreadId: activeThread.id,
+              sourceThreadTitle: activeThread.title,
+              summary,
+              targetInstanceId: String(staged.target.instanceId),
+              targetModel: staged.target.model,
+              project: activeProject?.title,
+              targetLabel: staged.displayName,
+              enabledSkills: effectiveEnabledSkills,
+            });
+          },
+        }),
+      );
+      if (result._tag === "Failure") {
+        const failure = squashAtomCommandFailure(result);
+        return {
+          error: failure instanceof Error ? failure.message : "The provider handoff failed.",
+        };
+      }
+      // The attached context can push an already-long message past the turn
+      // limit, so re-check the combined text while aborting is still free.
+      const lengthError = outgoingMessageLengthError(text);
+      return lengthError !== null ? { error: lengthError } : { text };
+    },
+    [
+      activeProject?.title,
+      activeThread,
+      displayServerMessages,
+      effectiveEnabledSkills,
+      isResearchThread,
+      preparedConnection,
+      resolveProviderHandoffForSelection,
+      settings,
+    ],
+  );
+
   const onSend = async (
     e?: { preventDefault: () => void },
     directAnnotation?: {
@@ -5079,9 +5359,9 @@ function ChatViewContent(props: ChatViewProps) {
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      // The composer is cleared inside the dispatch, once its staged handoff
+      // (if any) has durably prepared. Clearing here would eat the refinement
+      // whenever that preparation fails or the thread changes underneath.
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
@@ -5449,9 +5729,55 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
+    let outgoingMessageText = preparedOutgoingMessage.text;
+    // A delegation is answered by the model the message names, so it must
+    // not pick up a staged handoff: doing so would attach context labeled
+    // for a provider that never receives a turn, and switch the thread's
+    // model for an answer it did not write. The staged pick survives for
+    // the next normal message.
+    const sendIsInlineDelegate = parseInlineDelegateTrigger(outgoingMessageText) !== null;
+    const handoffForSend = sendIsInlineDelegate
+      ? null
+      : await applyStagedProviderHandoff(ctxSelectedModelSelection, outgoingMessageText);
+    if (handoffForSend !== null) {
+      // Nothing has been cleared or dispatched yet, so abandoning here keeps
+      // the composer's message and the thread's current provider intact.
+      const abandonSend = () => {
+        if (queuedRequestForSend !== null) {
+          queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
+          queuedDispatchRef.current = null;
+        }
+        sendInFlightRef.current = false;
+        setDockedDraftHeroThreadKey((currentThreadKey) =>
+          currentThreadKey === activeThreadKey ? null : currentThreadKey,
+        );
+        resetLocalDispatch();
+      };
+      if ("error" in handoffForSend) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not change provider",
+            description: `${handoffForSend.error} Your message was not sent.`,
+          }),
+        );
+        abandonSend();
+        return;
+      }
+      // Memo preparation can run for minutes, and everything below drives
+      // view-local state (optimistic rows, anchors, the live composer ref) that
+      // belongs to whichever thread is on screen. A send whose thread was
+      // navigated away from stops here instead of writing into another thread's
+      // view; the draft and the staged pick both survive the trip back.
+      if (routeThreadKeyRef.current !== routeThreadKey) {
+        abandonSend();
+        return;
+      }
+      outgoingMessageText = handoffForSend.text;
+    }
+
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
-    const outgoingMessageText = preparedOutgoingMessage.text;
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
         type: "image" as const,
@@ -5561,7 +5887,9 @@ function ChatViewContent(props: ChatViewProps) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId: threadIdForSend,
         createdAt: messageCreatedAt,
-        ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
+        ...(ctxSelectedModel && !sendIsInlineDelegate
+          ? { modelSelection: ctxSelectedModelSelection }
+          : {}),
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
@@ -5621,7 +5949,8 @@ function ChatViewContent(props: ChatViewProps) {
             text: outgoingMessageText,
             attachments: turnAttachmentsResult.value,
           },
-          modelSelection: ctxSelectedModelSelection,
+          // Omitted for a delegation: the thread keeps the model it had.
+          ...(sendIsInlineDelegate ? {} : { modelSelection: ctxSelectedModelSelection }),
           titleSeed: title,
           runtimeMode,
           interactionMode,
@@ -5964,7 +6293,7 @@ function ChatViewContent(props: ChatViewProps) {
       const threadIdForSend = activeThread.id;
       const messageIdForSend = newMessageId();
       const messageCreatedAt = new Date().toISOString();
-      const outgoingMessageText = formatOutgoingPrompt({
+      const composedFollowUpText = formatOutgoingPrompt({
         provider: ctxSelectedProvider,
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
@@ -5973,6 +6302,37 @@ function ChatViewContent(props: ChatViewProps) {
       });
 
       sendInFlightRef.current = true;
+      const followUpIsInlineDelegate = parseInlineDelegateTrigger(composedFollowUpText) !== null;
+      // A plan follow-up dispatches the composer's own model selection, so it
+      // is a send like any other: it must carry a staged handoff through the
+      // same fail-closed Memo bridge instead of silently switching provider.
+      // A delegation is the one exception — see the main send path.
+      const handoffForFollowUp = followUpIsInlineDelegate
+        ? null
+        : await applyStagedProviderHandoff(ctxSelectedModelSelection, composedFollowUpText);
+      if (handoffForFollowUp !== null && "error" in handoffForFollowUp) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not change provider",
+            description: `${handoffForFollowUp.error} Your message was not sent.`,
+          }),
+        );
+        sendInFlightRef.current = false;
+        return;
+      }
+      if (handoffForFollowUp !== null && routeThreadKeyRef.current !== routeThreadKey) {
+        sendInFlightRef.current = false;
+        return;
+      }
+      const outgoingMessageText = handoffForFollowUp?.text ?? composedFollowUpText;
+
+      // Clearing happens here, not at the call site: every abort above leaves
+      // the user's refinement in the composer, exactly like a normal send.
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+
       beginLocalDispatch({ preparingWorktree: false });
       setThreadError(threadIdForSend, null);
 
@@ -6005,7 +6365,7 @@ function ChatViewContent(props: ChatViewProps) {
       const settingsResult = await persistThreadSettingsForNextTurn({
         threadId: threadIdForSend,
         createdAt: messageCreatedAt,
-        modelSelection: ctxSelectedModelSelection,
+        ...(followUpIsInlineDelegate ? {} : { modelSelection: ctxSelectedModelSelection }),
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
@@ -6033,7 +6393,8 @@ function ChatViewContent(props: ChatViewProps) {
               text: outgoingMessageText,
               attachments: [],
             },
-            modelSelection: ctxSelectedModelSelection,
+            // Omitted for a delegation: the thread keeps the model it had.
+            ...(followUpIsInlineDelegate ? {} : { modelSelection: ctxSelectedModelSelection }),
             titleSeed: activeThread.title,
             runtimeMode,
             interactionMode: nextInteractionMode,
@@ -6081,13 +6442,17 @@ function ChatViewContent(props: ChatViewProps) {
     [
       activeThread,
       activeProposedPlan,
+      applyStagedProviderHandoff,
       beginLocalDispatch,
+      clearComposerDraftContent,
+      composerDraftTarget,
       isConnecting,
       isSendBusy,
       isServerThread,
       localCheckoutBranchMismatch,
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
+      routeThreadKey,
       runtimeMode,
       setComposerDraftInteractionMode,
       setThreadError,
@@ -6258,128 +6623,6 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
-  const onProviderHandoff = useCallback(
-    async (targetModelSelection: ModelSelection) => {
-      // PRODUCT INVARIANT: provider handoff replaces only the provider-native
-      // session. It MUST keep activeThread.id, the visible transcript, route,
-      // branch, and worktree. Never create or navigate to another T3 thread
-      // here. Context must be durably written to local Memo before switching.
-      if (
-        routeKind !== "server" ||
-        !activeThread ||
-        !activeProject ||
-        !preparedConnection ||
-        providerHandoffBusy ||
-        isSendBusy ||
-        sendInFlightRef.current
-      ) {
-        return;
-      }
-
-      const targetEntry = providerHandoffEntries.find(
-        (entry) => entry.instanceId === targetModelSelection.instanceId,
-      );
-      toastManager.add(
-        stackedThreadToast({
-          type: "info",
-          title: `Handing off to ${targetEntry?.displayName ?? targetModelSelection.instanceId}`,
-          description: "Saving context to local Memo, then switching providers in this chat.",
-        }),
-      );
-      setProviderHandoffBusy(true);
-      sendInFlightRef.current = true;
-      const createdAt = new Date().toISOString();
-
-      try {
-        const compression = settings.handoff.contextCompression;
-        // Research handoffs carry the transcript as-is: pipeline evidence must
-        // not be summarized away between steps. 60k is the server's transport
-        // guard for the prepare route.
-        const bypassCompression = isResearchThread && settings.research.bypassCompression;
-        const transcript = buildProviderHandoffTranscript(
-          displayServerMessages.map((message) => ({
-            role: message.role,
-            text: message.text,
-          })),
-          bypassCompression ? 60_000 : compression.maxInputCharacters,
-        );
-        // One round-trip normally compresses and persists to local Memo. If
-        // that combined path does not prove persistence, the durable helper
-        // writes the structured transcript through the dedicated Memo route.
-        // The provider session is not changed unless one write succeeds.
-        await runSameThreadProviderHandoffTransition({
-          prepare: async () => {
-            const summary = await prepareDurableProviderHandoff({
-              transcript,
-              project: activeProject.title,
-              sourceThreadId: activeThread.id,
-              sourceThreadTitle: activeThread.title,
-              target: targetModelSelection,
-              bypassCompression,
-              enabledSkills: effectiveEnabledSkills,
-              preparedConnection,
-            });
-            return buildProviderHandoffPrompt({
-              sourceThreadId: activeThread.id,
-              sourceThreadTitle: activeThread.title,
-              summary,
-              target: targetModelSelection,
-              project: activeProject.title,
-              targetLabel: targetEntry?.displayName,
-              enabledSkills: effectiveEnabledSkills,
-            });
-          },
-          startReceivingTurn: async (handoffPrompt) => {
-            const result = await startThreadTurn({
-              environmentId,
-              input: {
-                threadId: activeThread.id,
-                message: {
-                  messageId: newMessageId(),
-                  role: "user",
-                  text: handoffPrompt,
-                  attachments: [],
-                },
-                modelSelection: targetModelSelection,
-                runtimeMode,
-                interactionMode: "default",
-                createdAt,
-              },
-            });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-          },
-        });
-      } catch (error) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not change provider",
-            description: error instanceof Error ? error.message : "The provider handoff failed.",
-          }),
-        );
-      } finally {
-        sendInFlightRef.current = false;
-        setProviderHandoffBusy(false);
-      }
-    },
-    [
-      activeProject,
-      activeThread,
-      displayServerMessages,
-      effectiveEnabledSkills,
-      environmentId,
-      preparedConnection,
-      isResearchThread,
-      isSendBusy,
-      providerHandoffBusy,
-      providerHandoffEntries,
-      routeKind,
-      runtimeMode,
-      settings,
-      startThreadTurn,
-    ],
-  );
-
   // Picking a scenario swaps the trigger in place, so switching scenarios does
   // not require clearing the prompt first. The pipeline runs on the thread's
   // current model — what you see in the composer is what orchestrates.
@@ -6417,19 +6660,15 @@ function ChatViewContent(props: ChatViewProps) {
     selectedProviderSupportsPipelines &&
     (routeKind === "draft" || (routeKind === "server" && !threadHasStarted(activeThread)));
 
-  const getModelDisabledReason = useCallback(
-    (): string | null => (providerHandoffBusy ? "Handoff in progress." : null),
-    [providerHandoffBusy],
-  );
-
+  // Every pick is staged, including one that will hand off to another provider.
+  // The switch itself happens on the next send (see onSend), so the user writes
+  // their instruction once instead of waiting through an acknowledgement turn.
   const onProviderModelSelect = useCallback(
     (instanceId: ProviderInstanceId, model: string) => {
       if (!activeThread) return;
       // Look up the configured instance so model normalization and custom
       // model lookup stay scoped to that exact instance. Unknown instance ids
       // are rejected by returning early; the server remains authoritative too.
-      const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
-      const resolvedDriverKind = entry?.driver ?? null;
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
         settings,
@@ -6440,45 +6679,15 @@ function ChatViewContent(props: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
-      const nextModelSelection: ModelSelection = {
+      setComposerDraftModelSelection(scopeThreadRef(activeThread.environmentId, activeThread.id), {
         instanceId,
         model: resolvedModel,
-      };
-      const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection,
       });
-      const currentInstanceId =
-        activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
-      const requiresHandoff = shouldHandoffModelSelection({
-        hasStartedSession: activeThread.session !== null,
-        currentInstanceId,
-        nextInstanceId: instanceId,
-        modelChangeRequiresNewThread: modelChangeBlockReason !== null,
-        providerChanged:
-          lockedProvider !== null &&
-          resolvedDriverKind !== null &&
-          resolvedDriverKind !== lockedProvider,
-      });
-      if (requiresHandoff) {
-        void onProviderHandoff(nextModelSelection);
-        scheduleComposerFocus();
-        return;
-      }
-      setComposerDraftModelSelection(
-        scopeThreadRef(activeThread.environmentId, activeThread.id),
-        nextModelSelection,
-      );
-      setStickyComposerModelSelection(nextModelSelection);
+      setStickyComposerModelSelection({ instanceId, model: resolvedModel });
       scheduleComposerFocus();
     },
     [
       activeThread,
-      lockedProvider,
-      onProviderHandoff,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -7012,7 +7221,6 @@ function ChatViewContent(props: ChatViewProps) {
                             canStartResearch={canStartResearch}
                             researchScenarios={researchScenarioNames}
                             devPipelines={devPipelineNames}
-                            getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}

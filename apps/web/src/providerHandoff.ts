@@ -2,6 +2,7 @@ import { ThreadId, type ModelSelection, type ProviderInstanceId } from "@t3tools
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { preparedEnvironmentFetchAuthorization } from "@t3tools/client-runtime/state/skills";
 import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import { buildProviderHandoffPromptText } from "@t3tools/shared/providerHandoffPrompt";
 
 import { runtime } from "./lib/runtime";
 
@@ -162,37 +163,18 @@ export function buildProviderHandoffPrompt(input: {
   readonly targetLabel?: string | undefined;
   readonly enabledSkills?: ReadonlyArray<string> | undefined;
 }): string {
-  const project = input.project?.trim();
-  const targetLabel = input.targetLabel?.trim() || String(input.target.instanceId);
-  const enabledSkills = [...new Set(input.enabledSkills ?? [])].filter(
-    (name) => name.trim().length > 0,
-  );
-  return [
-    `Handoff to ${targetLabel} / ${input.target.model}.`,
-    "📎 Context attached: local Memo (shared agent memory).",
-    "This provider handoff stays in the same d4research chat.",
-    "",
-    `Source thread: ${input.sourceThreadTitle} (${input.sourceThreadId})`,
-    `Target model: ${input.target.instanceId} / ${input.target.model}`,
-    "The transcript above remains the authoritative conversation history.",
-    "",
-    'Use memory_search with connector="local" whenever more shared context is needed',
-    project ? `using project="${project}".` : "for the current project.",
-    ...(enabledSkills.length > 0
-      ? [
-          "",
-          `Configured global and chat skills: ${enabledSkills.join(", ")}.`,
-          "Keep these preferences after the handoff; available SKILL.md references are attached to each turn.",
-        ]
-      : []),
-    "",
-    "Handoff context (reference only):",
-    input.summary.trim(),
-    "",
-    "This is context synchronization only, not a request to continue or resume any prior job or task.",
-    "Do not edit files, run tools, or advance prior work because of this handoff.",
-    "Acknowledge briefly that the context is loaded, then wait for the user's next instruction.",
-  ].join("\n");
+  // The format lives in @t3tools/shared/providerHandoffPrompt next to its
+  // parser, so the compact timeline rendering can never drift from this text.
+  return buildProviderHandoffPromptText({
+    sourceThreadId: input.sourceThreadId,
+    sourceThreadTitle: input.sourceThreadTitle,
+    summary: input.summary,
+    targetInstanceId: String(input.target.instanceId),
+    targetModel: input.target.model,
+    project: input.project,
+    targetLabel: input.targetLabel,
+    enabledSkills: input.enabledSkills,
+  });
 }
 
 export function buildProviderHandoffMemory(input: {

@@ -4,18 +4,22 @@ import {
   CommandId,
   type DevSettings,
   type ResearchSettings,
+  CheckpointRef,
   EventId,
+  MessageId,
   type ModelSelection,
   type PipelineTargetPolicy,
   type OrchestrationEvent,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
+  type ServerProvider,
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
-  type TurnId,
+  TurnId,
 } from "@t3tools/contracts";
+import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import {
   deriveDevProviderCandidates,
@@ -28,7 +32,9 @@ import {
   buildResearchRunManifest,
   deriveResearchProviderCandidatesFromProviders,
   expandResearchPipelinePrompt,
+  parseInlineDelegateTrigger,
   parseResearchTrigger,
+  type InlineDelegateTrigger,
   type ResearchProviderCandidate,
 } from "@t3tools/shared/researchPipeline";
 import * as Cache from "effect/Cache";
@@ -38,14 +44,25 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import {
+  INLINE_DELEGATE_TURN_PREFIX,
+  INLINE_DELEGATION_STEP,
+  InlineDelegationRunner,
+  isInlineDelegateTurnId,
+  resolveInlineDelegateTarget,
+  type InlineDelegationResult,
+} from "../../mcp/toolkits/research/inlineDelegation.ts";
+import type { ResearchDelegateError } from "../../mcp/toolkits/research/tools.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -425,6 +442,7 @@ const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
+  const inlineDelegationRunner = yield* InlineDelegationRunner;
   const serverSettingsService = yield* ServerSettingsService;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
@@ -446,11 +464,23 @@ const make = Effect.gen(function* () {
   const pendingSessionStarts = new Map<ThreadId, Fiber.Fiber<ProviderSession, unknown>>();
   const cancelledTurnStarts = new Set<ThreadId>();
   const activeTurnStartFibers = new Set<Fiber.Fiber<void, unknown>>();
+  /**
+   * Inline `!provider:model` turns run without a thread provider session, so
+   * `providerService.interruptTurn` has nothing to interrupt. Stopping one
+   * means interrupting its fiber; the delegation's own cleanup then stops the
+   * adapter-local delegate session. A `null` value reserves the thread while
+   * the turn is opening, which keeps a second concurrent delegation from
+   * replacing (and orphaning) the first.
+   */
+  const activeInlineDelegations = new Map<ThreadId, Fiber.Fiber<void, unknown> | null>();
+  /** Stops that arrived while a delegation was still opening. */
+  const cancelledInlineDelegations = new Set<ThreadId>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
     readonly kind:
       | "provider.turn.start.failed"
+      | "provider.turn.delegate.failed"
       | "provider.turn.interrupt.failed"
       | "provider.approval.respond.failed"
       | "provider.user-input.respond.failed"
@@ -617,6 +647,506 @@ const make = Effect.gen(function* () {
     return yield* projectionSnapshotQuery
       .getThreadDetailById(threadId)
       .pipe(Effect.map(Option.getOrUndefined));
+  });
+
+  /**
+   * Tool-lifecycle rows for an inline delegation, shaped exactly like the MCP
+   * `research_delegate` calls a pipeline emits. The activity projection then
+   * derives the same compact `data.researchDelegate` ledger, so the delegation
+   * banner on web and the work log on mobile need no new payload shape.
+   */
+  const appendInlineDelegateActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly callId: string;
+    readonly target: string;
+    readonly settled: boolean;
+    readonly failed: boolean;
+    readonly detail: string | null;
+    readonly output: { readonly remainingBudget: number; readonly durationMs: number } | null;
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("inline-delegate-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: input.failed ? "error" : "tool",
+            kind: input.settled ? "tool.completed" : "tool.started",
+            summary: `Delegated to ${input.target}`,
+            payload: {
+              itemType: "mcp_tool_call",
+              title: "research_delegate",
+              status: input.failed ? "failed" : input.settled ? "completed" : "in_progress",
+              ...(input.detail === null ? {} : { detail: input.detail }),
+              data: {
+                toolName: "research_delegate",
+                toolCallId: input.callId,
+                input: { target: input.target, step: INLINE_DELEGATION_STEP, visit: 1 },
+                ...(input.output === null ? {} : { output: input.output }),
+              },
+            },
+            turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  /**
+   * Session identity for an inline delegate turn. The thread's own provider is
+   * never started, so the record keeps whatever provider the thread already
+   * names — it exists to say "this thread is busy", not to claim a session. A
+   * thread that never had one keeps `providerName: null`, which is the
+   * existing "no native session was ever established" marker.
+   */
+  const inlineDelegateSessionBase = (input: {
+    readonly threadId: ThreadId;
+    readonly session: OrchestrationSession | null;
+    readonly runtimeMode: RuntimeMode;
+  }) => ({
+    threadId: input.threadId,
+    providerName: input.session?.providerName ?? null,
+    ...(input.session?.providerInstanceId !== undefined
+      ? { providerInstanceId: input.session.providerInstanceId }
+      : {}),
+    runtimeMode: input.session?.runtimeMode ?? input.runtimeMode,
+  });
+
+  /**
+   * A settle dispatch must land: leaving it undone strands the turn "running"
+   * forever. Transient engine failures get a bounded retry before the caller's
+   * force-settle fallback takes over.
+   */
+  const withSettleRetry = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.retry(effect, { times: 2, schedule: Schedule.exponential(50) });
+
+  /**
+   * Records a delegation as a checkpointed turn boundary. Inline delegates run
+   * headless with every approval declined, so the capture finds no file
+   * changes — the point is the turn ROW: revert retention keeps only turns that
+   * carry a checkpoint, so a turn without one has its messages deleted by any
+   * later revert. CheckpointReactor replaces this placeholder with a real git
+   * ref, exactly as it does for provider-reported diffs.
+   */
+  const appendInlineDelegateCheckpoint = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly assistantMessageId: MessageId;
+    readonly completedAt: string;
+  }) {
+    const thread = yield* resolveThread(input.threadId);
+    if (!thread) return;
+    const nextTurnCount =
+      thread.checkpoints.reduce(
+        (highest, checkpoint) => Math.max(highest, checkpoint.checkpointTurnCount),
+        0,
+      ) + 1;
+    yield* orchestrationEngine.dispatch({
+      type: "thread.turn.diff.complete",
+      commandId: yield* serverCommandId("inline-delegate-turn-diff-complete"),
+      threadId: input.threadId,
+      turnId: input.turnId,
+      completedAt: input.completedAt,
+      checkpointRef: CheckpointRef.make(`inline-delegate:${String(input.turnId)}`),
+      status: "missing",
+      files: [],
+      assistantMessageId: input.assistantMessageId,
+      checkpointTurnCount: nextTurnCount,
+      createdAt: input.completedAt,
+    });
+  });
+
+  const settleInlineDelegateTurn = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly callId: string;
+    readonly target: string;
+    readonly sessionBase: ReturnType<typeof inlineDelegateSessionBase>;
+    /** A thread with no session before the turn must not keep a synthetic one. */
+    readonly hadSession: boolean;
+    readonly exit: Exit.Exit<InlineDelegationResult, ResearchDelegateError>;
+  }) {
+    const settledAt = DateTime.formatIso(yield* DateTime.now);
+    if (Exit.isSuccess(input.exit)) {
+      const result = input.exit.value;
+      // The delegate's answer is authored through the same assistant
+      // delta/complete commands every adapter uses, so it lands in the visible
+      // thread as an ordinary assistant message. Attribution stays in the
+      // ledger below; the body is the delegate's own words, unprefixed.
+      const messageId = MessageId.make(`assistant:inline-delegate:${String(input.turnId)}`);
+      yield* withSettleRetry(
+        Effect.gen(function* () {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.message.assistant.delta",
+            commandId: yield* serverCommandId("inline-delegate-assistant-delta"),
+            threadId: input.threadId,
+            messageId,
+            delta: result.text,
+            turnId: input.turnId,
+            createdAt: settledAt,
+          });
+          yield* orchestrationEngine.dispatch({
+            type: "thread.message.assistant.complete",
+            commandId: yield* serverCommandId("inline-delegate-assistant-complete"),
+            threadId: input.threadId,
+            messageId,
+            turnId: input.turnId,
+            createdAt: settledAt,
+          });
+        }),
+      );
+      yield* withSettleRetry(
+        appendInlineDelegateActivity({
+          threadId: input.threadId,
+          turnId: input.turnId,
+          callId: input.callId,
+          target: input.target,
+          settled: true,
+          failed: false,
+          detail: null,
+          output: { remainingBudget: result.remainingBudget, durationMs: result.durationMs },
+          createdAt: settledAt,
+        }),
+      );
+      yield* withSettleRetry(
+        setThreadSession({
+          threadId: input.threadId,
+          session: {
+            ...input.sessionBase,
+            // A thread that had no provider session keeps none: "stopped" is
+            // the sessionless resting state, and it settles the turn just as
+            // "ready" does.
+            status: input.hadSession ? "ready" : "stopped",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: settledAt,
+          },
+          createdAt: settledAt,
+        }),
+      );
+      // Best effort and last: a missing checkpoint costs revert fidelity, but
+      // failing here must not undo an answer the user can already read.
+      yield* appendInlineDelegateCheckpoint({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        assistantMessageId: messageId,
+        completedAt: settledAt,
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider command reactor could not checkpoint an inline delegation", {
+            threadId: input.threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+      return;
+    }
+
+    const interrupted = Cause.hasInterruptsOnly(input.exit.cause);
+    const failure = input.exit.cause.reasons.find(Cause.isFailReason)?.error;
+    const detail = interrupted
+      ? "You stopped this delegation."
+      : (failure?.detail ?? Cause.pretty(input.exit.cause));
+    yield* withSettleRetry(
+      appendInlineDelegateActivity({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        callId: input.callId,
+        target: input.target,
+        settled: true,
+        failed: true,
+        detail,
+        output: null,
+        createdAt: settledAt,
+      }),
+    );
+    if (!interrupted) {
+      yield* withSettleRetry(
+        appendProviderFailureActivity({
+          threadId: input.threadId,
+          kind: "provider.turn.delegate.failed",
+          summary: `Delegation to ${input.target} failed`,
+          // The typed failureKind keeps "timed out" distinguishable from
+          // "refused" in the thread, exactly as a pipeline run reports it.
+          detail: failure?.failureKind ? `${failure.failureKind}: ${detail}` : detail,
+          turnId: input.turnId,
+          createdAt: settledAt,
+        }),
+      );
+    }
+    yield* withSettleRetry(
+      setThreadSession({
+        threadId: input.threadId,
+        session: {
+          ...input.sessionBase,
+          status: interrupted ? "stopped" : "error",
+          activeTurnId: null,
+          lastError: interrupted ? null : detail,
+          updatedAt: settledAt,
+        },
+        createdAt: settledAt,
+      }),
+    );
+  });
+
+  /**
+   * Last resort when the settle sequence itself could not be written. Nothing
+   * may stay "running": this clears the turn even if the richer rows are lost.
+   */
+  const forceSettleInlineDelegateTurn = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly sessionBase: ReturnType<typeof inlineDelegateSessionBase>;
+    readonly detail: string;
+  }) {
+    const settledAt = DateTime.formatIso(yield* DateTime.now);
+    yield* setThreadSession({
+      threadId: input.threadId,
+      session: {
+        ...input.sessionBase,
+        status: "error",
+        activeTurnId: null,
+        lastError: input.detail,
+        updatedAt: settledAt,
+      },
+      createdAt: settledAt,
+    });
+  });
+
+  /**
+   * Answers one `!provider:model <task>` message with a bounded delegation to
+   * the mentioned target. The thread's model selection, provider session, and
+   * history are untouched: no session is started, nothing is expanded, and the
+   * persisted user message stays the compact trigger the user typed.
+   *
+   * The delegate runs headless with approval-required runtime mode and every
+   * request auto-declined, so it cannot edit the worktree.
+   */
+  const startInlineDelegateTurn = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: string;
+    readonly messageText: string;
+    readonly attachments: ReadonlyArray<ChatAttachment>;
+    readonly createdAt: string;
+    readonly trigger: InlineDelegateTrigger;
+    readonly providers: ReadonlyArray<ServerProvider>;
+    readonly session: OrchestrationSession | null;
+    readonly runtimeMode: RuntimeMode;
+    readonly shareMemoContext: boolean;
+  }) {
+    const refuse = (detail: string) => ({
+      refused: new ProviderAdapterRequestError({
+        provider: input.trigger.directive.provider,
+        method: "thread.turn.start",
+        detail,
+      }),
+    });
+
+    // Reserved synchronously, before the first yield: two turn-start fibers for
+    // one thread run concurrently, and a second delegation would otherwise
+    // replace the first in the registry — orphaning it, uninterruptible.
+    if (activeInlineDelegations.has(input.threadId)) {
+      return refuse(
+        "A delegation is already running in this thread. Wait for it to finish or stop it first.",
+      );
+    }
+    // A correct client never sends both, because a delegate turn skips the
+    // staged handoff. If the combination arrives anyway, the carried context is
+    // labeled for a provider that is not the one about to answer.
+    if (input.messageText.includes("<handoff_context>")) {
+      return refuse(
+        "A delegation cannot carry a provider handoff. Send the handoff as a normal message first.",
+      );
+    }
+    const resolved = resolveInlineDelegateTarget(input.trigger.directive, input.providers);
+    if (!resolved.ok) {
+      // Nothing may stay "running" on an unresolvable directive: the caller
+      // ends the turn visibly, naming the directive that could not resolve.
+      return refuse(
+        `\`${input.trigger.directive.raw}\` could not be delegated. ${resolved.detail}`,
+      );
+    }
+    activeInlineDelegations.set(input.threadId, null);
+
+    const turnId = TurnId.make(`${INLINE_DELEGATE_TURN_PREFIX}${input.messageId}`);
+    // The clients fold a tool lifecycle's rows together by call id; one
+    // delegation per turn means the turn id is already that identity.
+    const callId = String(turnId);
+    const hadSession = input.session !== null;
+    const sessionBase = inlineDelegateSessionBase({
+      threadId: input.threadId,
+      session: input.session,
+      runtimeMode: input.runtimeMode,
+    });
+    const releaseSlot = Effect.sync(() => {
+      activeInlineDelegations.delete(input.threadId);
+      cancelledInlineDelegations.delete(input.threadId);
+    });
+    const opened = yield* Effect.gen(function* () {
+      yield* setThreadSession({
+        threadId: input.threadId,
+        session: {
+          ...sessionBase,
+          status: "running",
+          activeTurnId: turnId,
+          lastError: null,
+          updatedAt: input.createdAt,
+        },
+        createdAt: input.createdAt,
+      });
+      yield* appendInlineDelegateActivity({
+        threadId: input.threadId,
+        turnId,
+        callId,
+        target: resolved.target.resolvedTarget,
+        settled: false,
+        failed: false,
+        detail: null,
+        output: null,
+        createdAt: input.createdAt,
+      });
+    }).pipe(
+      Effect.as(true),
+      Effect.catchCause((cause) =>
+        releaseSlot.pipe(
+          Effect.andThen(
+            Effect.logWarning("provider command reactor could not open an inline delegate turn", {
+              threadId: input.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+          Effect.as(false),
+        ),
+      ),
+    );
+    if (!opened) {
+      return refuse("The delegation could not be started. Try again.");
+    }
+
+    const fiber = yield* inlineDelegationRunner
+      .run({
+        orchestratorThreadId: input.threadId,
+        // One user turn is one run, so an inline delegation draws on the same
+        // per-run ceiling a pipeline turn would.
+        runId: `${String(input.threadId)}:${String(turnId)}`,
+        requestedTarget: resolved.target.resolvedTarget,
+        resolvedTarget: resolved.target.resolvedTarget,
+        substituted: false,
+        parsedTarget: { instanceId: resolved.target.instanceId, model: resolved.target.model },
+        prompt: input.trigger.task,
+        attachments: input.attachments,
+        // Inline delegation authors no scenario, so it has no prompt files.
+        resolvePromptFile: Effect.succeed(null),
+        shareMemoContext: input.shareMemoContext,
+        step: INLINE_DELEGATION_STEP,
+        visit: 1,
+      })
+      .pipe(
+        // A finalizer, so a cancelled delegation still records its outcome
+        // instead of leaving the thread stuck on a running turn.
+        Effect.onExit((exit) =>
+          settleInlineDelegateTurn({
+            threadId: input.threadId,
+            turnId,
+            callId,
+            target: resolved.target.resolvedTarget,
+            sessionBase,
+            hadSession,
+            exit,
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("provider command reactor failed to settle inline delegation", {
+                threadId: input.threadId,
+                cause: Cause.pretty(cause),
+              }).pipe(
+                Effect.andThen(
+                  forceSettleInlineDelegateTurn({
+                    threadId: input.threadId,
+                    sessionBase,
+                    detail: `The delegation to ${resolved.target.resolvedTarget} ended, but its result could not be recorded. Send the message again.`,
+                  }).pipe(Effect.catchCause(() => Effect.void)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("provider command reactor inline delegation failed", {
+                threadId: input.threadId,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+        Effect.asVoid,
+        Effect.forkScoped,
+      );
+    activeInlineDelegations.set(input.threadId, fiber);
+    yield* Fiber.await(fiber).pipe(Effect.ensuring(releaseSlot), Effect.forkScoped);
+    // A stop that landed while this turn was opening still applies.
+    if (cancelledInlineDelegations.delete(input.threadId)) {
+      yield* Fiber.interrupt(fiber).pipe(Effect.ignore);
+    }
+    return { refused: null };
+  });
+
+  /** Stops a running inline delegation; true when one was actually stopped. */
+  const interruptInlineDelegation = Effect.fnUntraced(function* (threadId: ThreadId) {
+    if (!activeInlineDelegations.has(threadId)) return false;
+    const fiber = activeInlineDelegations.get(threadId) ?? null;
+    if (fiber === null) {
+      // Still opening: the starter honors this the moment its fiber exists.
+      cancelledInlineDelegations.add(threadId);
+      return true;
+    }
+    activeInlineDelegations.delete(threadId);
+    yield* Fiber.interrupt(fiber).pipe(Effect.ignore);
+    return true;
+  });
+
+  /**
+   * A delegation cannot survive a restart: its fiber and the delegate process
+   * are both gone. Any thread still projected as running one is settled here
+   * with a visible failure, because nothing may stay "running" across a
+   * restart.
+   */
+  const reconcileInterruptedInlineDelegation = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly session: OrchestrationSession;
+    readonly reconciledAt: string;
+  }) {
+    const turnId = input.session.activeTurnId;
+    if (turnId !== null) {
+      yield* appendInlineDelegateActivity({
+        threadId: input.threadId,
+        turnId,
+        callId: String(turnId),
+        target: "delegate",
+        settled: true,
+        failed: true,
+        detail: "The delegation did not survive a d4research restart.",
+        output: null,
+        createdAt: input.reconciledAt,
+      }).pipe(Effect.catchCause(() => Effect.void));
+    }
+    yield* setThreadSession({
+      threadId: input.threadId,
+      session: {
+        ...input.session,
+        status: "error",
+        activeTurnId: null,
+        lastError: "The delegation did not survive a d4research restart. Send the message again.",
+        updatedAt: input.reconciledAt,
+      },
+      createdAt: input.reconciledAt,
+    });
   });
 
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
@@ -1355,6 +1885,41 @@ const make = Effect.gen(function* () {
         : parseResearchTrigger(promptWithoutEffort) !== null
           ? "research"
           : null;
+    // A leading `!provider:model` answers this one message from that target
+    // instead of the thread's provider. Diverted before any pipeline expansion
+    // and before the thread's provider is even consulted: nothing about the
+    // thread's session or model selection takes part in this turn.
+    // The normalizer appends the thread's enabled-skills block to every user
+    // turn. That is wiring for the thread's own agent, not part of the single
+    // question a delegate is being asked, so it is peeled off first. The
+    // effort marker is NOT peeled here — `parseInlineDelegateTrigger` owns
+    // that, so clients and server can never disagree about what parses.
+    const inlineDelegateTrigger =
+      pipelineKind === null
+        ? parseInlineDelegateTrigger(
+            message.text.includes("<enabled_skills")
+              ? extractTrailingEnabledSkillsContext(message.text).promptText
+              : message.text,
+          )
+        : null;
+    if (inlineDelegateTrigger !== null) {
+      const inlineDelegate = yield* startInlineDelegateTurn({
+        threadId: event.payload.threadId,
+        messageId: String(event.payload.messageId),
+        messageText: message.text,
+        attachments: message.attachments ?? [],
+        createdAt: event.payload.createdAt,
+        trigger: inlineDelegateTrigger,
+        providers,
+        session: thread.session ?? null,
+        runtimeMode: thread.runtimeMode,
+        shareMemoContext: settings.research.shareMemoContext,
+      });
+      if (inlineDelegate.refused !== null) {
+        yield* handleTurnStartFailure(Cause.fail(inlineDelegate.refused));
+      }
+      return;
+    }
     const desiredInstanceId =
       event.payload.modelSelection?.instanceId ?? thread.modelSelection.instanceId;
     const desiredProvider = providers.find((provider) => provider.instanceId === desiredInstanceId);
@@ -1491,6 +2056,11 @@ const make = Effect.gen(function* () {
   ) {
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
+      return;
+    }
+    // An inline delegate turn owns no thread provider session, so it is
+    // stopped by interrupting its fiber; its finalizer settles the turn.
+    if (yield* interruptInlineDelegation(event.payload.threadId)) {
       return;
     }
     const hasSession = thread.session && thread.session.status !== "stopped";
@@ -1653,6 +2223,11 @@ const make = Effect.gen(function* () {
     }
 
     const now = event.payload.createdAt;
+    // Stopping the thread stops an inline delegation too; its finalizer marks
+    // the turn stopped, so this handler must not also rewrite that state.
+    if (yield* interruptInlineDelegation(event.payload.threadId)) {
+      return;
+    }
     if (thread.session?.status === "starting") {
       cancelledTurnStarts.add(event.payload.threadId);
       const pendingStart = pendingSessionStarts.get(event.payload.threadId);
@@ -1782,18 +2357,27 @@ const make = Effect.gen(function* () {
       yield* Effect.forEach(
         staleThreads,
         (thread) =>
-          setThreadSession({
-            threadId: thread.id,
-            session: {
-              ...thread.session!,
-              status: "error",
-              activeTurnId: null,
-              lastError:
-                "The provider session ended while d4research was offline. Retry the turn to continue.",
-              updatedAt: reconciledAt,
-            },
-            createdAt: reconciledAt,
-          }),
+          // An inline delegation owns no provider session, so the generic
+          // "the provider session ended" message would be a lie. Settle it as
+          // the interrupted delegation it is.
+          isInlineDelegateTurnId(thread.session!.activeTurnId)
+            ? reconcileInterruptedInlineDelegation({
+                threadId: thread.id,
+                session: thread.session!,
+                reconciledAt,
+              })
+            : setThreadSession({
+                threadId: thread.id,
+                session: {
+                  ...thread.session!,
+                  status: "error",
+                  activeTurnId: null,
+                  lastError:
+                    "The provider session ended while d4research was offline. Retry the turn to continue.",
+                  updatedAt: reconciledAt,
+                },
+                createdAt: reconciledAt,
+              }),
         { discard: true },
       );
     }).pipe(

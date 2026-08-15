@@ -24,7 +24,6 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
-import { ResearchDelegationBudgetLive } from "./toolkits/research/budget.ts";
 import { ResearchToolkitHandlersLive } from "./toolkits/research/handlers.ts";
 import { ResearchToolkit } from "./toolkits/research/tools.ts";
 import { SkillsToolkitHandlersLive } from "./toolkits/skills/handlers.ts";
@@ -228,9 +227,6 @@ const SkillsToolkitRegistrationLive = McpServer.toolkit(SkillsToolkit).pipe(
 
 const ResearchToolkitRegistrationLive = McpServer.toolkit(ResearchToolkit).pipe(
   Layer.provide(ResearchToolkitHandlersLive),
-  // The budget Ref lives at the registration layer so every research thread
-  // shares one accounting map for the server's lifetime.
-  Layer.provide(ResearchDelegationBudgetLive),
 );
 
 export const PreviewToolkitRegistrationLive = Layer.mergeAll(

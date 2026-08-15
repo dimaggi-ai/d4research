@@ -42,6 +42,7 @@ import {
   isTimeoutCause,
   makeResearchDelegateHandler,
   parseDelegateTarget,
+  runBoundedDelegation,
   resolveAuthoredPipelineFallbackTargets,
   resolveDelegateTarget,
   settleDelegateThread,
@@ -755,6 +756,212 @@ describe("research delegate handler", () => {
         }
       }
       expect(yield* Ref.get(stopped)).toHaveLength(8);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+  });
+});
+
+/**
+ * One adapter + layer for the inline-delegation contract tests. Built once per
+ * test so the budget Ref is shared exactly as the server runtime shares it
+ * between the MCP toolkit and the orchestration reactor.
+ */
+const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
+  const instanceId = ProviderInstanceId.make("codex");
+  const provider = ProviderDriverKind.make("codex");
+  const providerSnapshot = {
+    instanceId,
+    driver: provider,
+    enabled: true,
+    installed: true,
+    version: "test",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-08-08T00:00:00.000Z",
+    models: [{ slug: "gpt-5.6-sol", name: "GPT-5.6-Sol", isCustom: false, capabilities: null }],
+    slashCommands: [],
+    skills: [],
+  } satisfies ServerProvider;
+  const runtimeEvents = yield* PubSub.unbounded<never>();
+  const fileSystem = yield* FileSystem.FileSystem;
+  const configBaseDir = yield* fileSystem.makeTempDirectoryScoped({
+    prefix: "inline-delegation-test-",
+  });
+  const turns = yield* Ref.make<ReadonlyArray<{ items: ReadonlyArray<unknown> }>>([]);
+  const sentAttachments = yield* Ref.make<ReadonlyArray<unknown>>([]);
+  const adapter = {
+    provider,
+    startSession: () => Effect.void,
+    sendTurn: (sendInput: { readonly attachments?: ReadonlyArray<unknown> }) =>
+      Ref.set(sentAttachments, sendInput.attachments ?? []).pipe(
+        Effect.andThen(
+          Ref.update(turns, (all) => [...all, { items: [{ text: "delegate answer" }] }]),
+        ),
+      ),
+    readThread: (threadId: string) =>
+      Ref.get(turns).pipe(Effect.map((all) => ({ threadId, turns: all }))),
+    listSessions: () => Effect.succeed([]),
+    stopSession: () => Effect.void,
+    respondToRequest: () => Effect.void,
+    respondToUserInput: () => Effect.void,
+  } as never;
+  const layer = Layer.mergeAll(
+    Layer.succeed(
+      ServerSettingsService,
+      ServerSettingsService.of({
+        start: Effect.void,
+        ready: Effect.void,
+        getSettings: Effect.succeed({
+          ...DEFAULT_SERVER_SETTINGS,
+          research: { ...DEFAULT_SERVER_SETTINGS.research, shareMemoContext: false },
+        }),
+        updateSettings: () => Effect.die("unused"),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.succeed(Stream.empty),
+      }),
+    ),
+    Layer.succeed(
+      ProviderAdapterRegistry,
+      ProviderAdapterRegistry.of({
+        getByInstance: () => Effect.succeed(adapter),
+        getInstanceInfo: () => Effect.die("unused"),
+        listInstances: () => Effect.succeed([instanceId]),
+        listProviders: () => Effect.succeed([provider]),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.die("unused"),
+      }),
+    ),
+    makeProviderRegistryLayer([providerSnapshot]),
+    Layer.succeed(
+      ProviderService,
+      ProviderService.of({
+        streamEvents: Stream.fromPubSub(runtimeEvents),
+        subscribeEvents: Effect.succeed(Stream.never),
+      } as unknown as ProviderServiceShape),
+    ),
+    Layer.mock(ProjectionSnapshotQuery)({
+      getThreadCheckpointContext: () =>
+        Effect.succeed(Option.none<ProjectionThreadCheckpointContext>()),
+    }),
+    ResearchDelegationBudgetLive,
+    NodeServices.layer,
+    FetchHttpClient.layer,
+    ServerConfig.layerTest(process.cwd(), configBaseDir).pipe(Layer.provide(NodeServices.layer)),
+  );
+  const invocation = {
+    environmentId: EnvironmentId.make("environment"),
+    threadId: ThreadId.make("orchestrator-thread"),
+    providerSessionId: "provider-session",
+    providerInstanceId: instanceId,
+    turnId: TurnId.make("turn-1"),
+    capabilities: new Set(["research"] as const),
+    issuedAt: 0,
+  };
+  return { layer, invocation, sentAttachments };
+});
+
+describe("inline delegation shares the pipeline delegation budget", () => {
+  it("draws both entry points from one per-run ceiling and one accounting map", async () => {
+    await Effect.gen(function* () {
+      const harness = yield* makeInlineDelegationHarness();
+      // One `Effect.provide` builds the budget Ref once, exactly as the server
+      // runtime does for the MCP toolkit and the orchestration reactor.
+      const charged = yield* Effect.gen(function* () {
+        const pipelineCall = yield* makeResearchDelegateHandler({ pollDelay: Effect.void })({
+          target: "codex:gpt-5.6-sol",
+          prompt: "pipeline step",
+          step: "2",
+          visit: 1,
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, harness.invocation),
+        );
+        const inlineCall = yield* runBoundedDelegation({
+          orchestratorThreadId: ThreadId.make("orchestrator-thread"),
+          runId: "orchestrator-thread:turn-1",
+          requestedTarget: "codex:gpt-5.6-sol",
+          resolvedTarget: "codex:gpt-5.6-sol",
+          substituted: false,
+          parsedTarget: { instanceId: "codex", model: "gpt-5.6-sol" },
+          prompt: "inline question",
+          attachments: [],
+          resolvePromptFile: Effect.succeed(null),
+          shareMemoContext: false,
+          step: "inline",
+          visit: 1,
+          pollDelay: Effect.void,
+        });
+        return { pipelineCall, inlineCall };
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(charged.pipelineCall.remainingBudget).toBe(RESEARCH_DELEGATION_BUDGET_PER_TURN - 1);
+      // The inline turn is charged against the same run, not a fresh ceiling.
+      expect(charged.inlineCall.remainingBudget).toBe(RESEARCH_DELEGATION_BUDGET_PER_TURN - 2);
+      expect(charged.inlineCall.text).toBe("delegate answer");
+      expect(charged.inlineCall.step).toBe("inline");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+  });
+
+  it("delivers a turn's attachments to the delegate instead of dropping them", async () => {
+    await Effect.gen(function* () {
+      const harness = yield* makeInlineDelegationHarness();
+      const attachment = {
+        type: "image" as const,
+        id: "attachment-1",
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 128,
+      };
+      yield* runBoundedDelegation({
+        orchestratorThreadId: ThreadId.make("orchestrator-thread"),
+        runId: "orchestrator-thread:turn-attachments",
+        requestedTarget: "codex:gpt-5.6-sol",
+        resolvedTarget: "codex:gpt-5.6-sol",
+        substituted: false,
+        parsedTarget: { instanceId: "codex", model: "gpt-5.6-sol" },
+        prompt: "what is in this screenshot?",
+        attachments: [attachment],
+        resolvePromptFile: Effect.succeed(null),
+        shareMemoContext: false,
+        step: "inline",
+        visit: 1,
+        pollDelay: Effect.void,
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(yield* Ref.get(harness.sentAttachments)).toEqual([attachment]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+  });
+
+  it("still burns budget when the model names a prompt file that does not exist", async () => {
+    await Effect.gen(function* () {
+      const harness = yield* makeInlineDelegationHarness();
+      // "Every research_delegate call burns budget" is the loop guard: a model
+      // retrying an invalid argument must run out of budget, not retry free.
+      const charged = yield* Effect.gen(function* () {
+        const rejected = yield* Effect.exit(
+          makeResearchDelegateHandler({ pollDelay: Effect.void })({
+            target: "codex:gpt-5.6-sol",
+            prompt: "pipeline step",
+            promptFileName: "does-not-exist.md",
+            scenario: "missing-scenario",
+            step: "2",
+            visit: 1,
+          }).pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, harness.invocation),
+          ),
+        );
+        const accepted = yield* makeResearchDelegateHandler({ pollDelay: Effect.void })({
+          target: "codex:gpt-5.6-sol",
+          prompt: "pipeline step",
+          step: "3",
+          visit: 1,
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, harness.invocation),
+        );
+        return { rejected, accepted };
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(charged.rejected._tag).toBe("Failure");
+      // Two calls, two charges — the rejected one included.
+      expect(charged.accepted.remainingBudget).toBe(RESEARCH_DELEGATION_BUDGET_PER_TURN - 2);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
   });
 });

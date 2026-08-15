@@ -4,6 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
 import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import {
+  appendProviderHandoffContext,
+  buildProviderHandoffPromptText,
+} from "@t3tools/shared/providerHandoffPrompt";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -463,6 +467,63 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Show full message");
     expect(markup).toContain('data-user-message-collapsible="false"');
     expect(markup).toContain("rounded-2xl bg-message p-3");
+  });
+
+  it("folds provider handoff prompts to a compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry(
+            buildProviderHandoffPromptText({
+              sourceThreadId: "thread-1",
+              sourceThreadTitle: "Ship the fix",
+              summary: "USER: fix it\n\nASSISTANT: fixed.",
+              targetInstanceId: "claude",
+              targetModel: "claude-sonnet-5",
+              targetLabel: "Claude Code",
+            }),
+          ),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("data-provider-handoff-fold");
+    expect(markup).toContain("Handed off to Claude Code / claude-sonnet-5");
+    expect(markup).toContain('aria-expanded="false"');
+    // The boilerplate prompt body stays behind the fold until expanded.
+    expect(markup).not.toContain("context synchronization only");
+    expect(markup).not.toContain("rounded-2xl bg-message p-3");
+  });
+
+  it("keeps the instruction visible and the attached context folded on a combined handoff", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry(
+            appendProviderHandoffContext("Rerun the failing suite and report what broke.", {
+              sourceThreadId: "thread-1",
+              sourceThreadTitle: "Ship the fix",
+              summary: "USER: fix it\n\nASSISTANT: fixed.",
+              targetInstanceId: "claude",
+              targetModel: "claude-sonnet-5",
+              targetLabel: "Claude Code",
+            }),
+          ),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("data-provider-handoff-fold");
+    expect(markup).toContain("Handed off to Claude Code / claude-sonnet-5");
+    expect(markup).toContain('aria-expanded="false"');
+    // The user's instruction keeps its normal bubble; the machine block does not.
+    expect(markup).toContain("rounded-2xl bg-message p-3");
+    expect(markup).toContain("Rerun the failing suite and report what broke.");
+    expect(markup).not.toContain("Context summary (reference only)");
+    expect(markup).not.toContain("ASSISTANT: fixed.");
+    expect(markup).not.toContain("handoff_context");
   });
 
   it("renders inline terminal labels with the composer chip UI", () => {

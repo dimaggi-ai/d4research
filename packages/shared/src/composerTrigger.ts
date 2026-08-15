@@ -1,4 +1,4 @@
-export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill" | "directive";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -107,6 +107,16 @@ export function detectComposerTrigger(
   if (token.startsWith("$")) {
     return {
       kind: "skill",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
+  // `!provider:model` only delegates when it opens the message, so the menu
+  // only offers targets there. A `!` mid-prose stays prose.
+  if (token.startsWith("!") && tokenStart === 0) {
+    return {
+      kind: "directive",
       query: token.slice(1),
       rangeStart: tokenStart,
       rangeEnd: cursor,

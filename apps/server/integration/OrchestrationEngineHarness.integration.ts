@@ -40,6 +40,15 @@ import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSes
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
+import { makeClaudeAdapter } from "../src/provider/Layers/ClaudeAdapter.ts";
+import { makeAgyAdapter } from "../src/provider/Layers/AgyAdapter.ts";
+import { AgySettings, ClaudeSettings, OpenCodeSettings } from "@t3tools/contracts";
+import { makeOpenCodeAdapter } from "../src/provider/Layers/OpenCodeAdapter.ts";
+import { OpenCodeRuntimeLive } from "../src/provider/opencodeRuntime.ts";
+import type { ProviderAdapterShape } from "../src/provider/Services/ProviderAdapter.ts";
+import type { ProviderAdapterError } from "../src/provider/Errors.ts";
+
+export type RealProviderName = "codex" | "claudeAgent" | "agy" | "opencode";
 import {
   NoOpProviderEventLoggers,
   ProviderEventLoggers,
@@ -233,6 +242,7 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  readonly realProviders?: ReadonlyArray<RealProviderName>;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -243,7 +253,9 @@ export const makeOrchestrationIntegrationHarness = (
     const fileSystem = yield* FileSystem.FileSystem;
 
     const provider = options?.provider ?? ProviderDriverKind.make("codex");
-    const useRealCodex = options?.realCodex === true;
+    const realProviders: ReadonlyArray<RealProviderName> =
+      options?.realProviders ?? (options?.realCodex === true ? ["codex"] : []);
+    const useRealCodex = realProviders.length > 0;
     const adapterHarness = useRealCodex
       ? null
       : yield* makeTestProviderAdapterHarness({
@@ -278,13 +290,40 @@ export const makeOrchestrationIntegrationHarness = (
     const realCodexRegistry = Layer.effect(
       ProviderAdapterRegistry,
       Effect.gen(function* () {
-        const codexSettings = yield* decodeCodexSettings({});
-        const codexAdapter = yield* makeCodexAdapter(codexSettings);
-        return makeAdapterRegistryMock({
-          [ProviderDriverKind.make("codex")]: codexAdapter,
-        });
+        const adapters: Partial<Record<string, ProviderAdapterShape<ProviderAdapterError>>> = {};
+        for (const name of realProviders) {
+          switch (name) {
+            case "codex": {
+              const codexSettings = yield* decodeCodexSettings({});
+              adapters[ProviderDriverKind.make("codex")] = (yield* makeCodexAdapter(
+                codexSettings,
+              )) as ProviderAdapterShape<ProviderAdapterError>;
+              break;
+            }
+            case "claudeAgent": {
+              adapters[ProviderDriverKind.make("claudeAgent")] = (yield* makeClaudeAdapter(
+                yield* Schema.decodeUnknownEffect(ClaudeSettings)({}).pipe(Effect.orDie),
+              )) as ProviderAdapterShape<ProviderAdapterError>;
+              break;
+            }
+            case "agy": {
+              adapters[ProviderDriverKind.make("agy")] = (yield* makeAgyAdapter(
+                yield* Schema.decodeUnknownEffect(AgySettings)({}).pipe(Effect.orDie),
+              )) as ProviderAdapterShape<ProviderAdapterError>;
+              break;
+            }
+            case "opencode": {
+              adapters[ProviderDriverKind.make("opencode")] = (yield* makeOpenCodeAdapter(
+                yield* Schema.decodeUnknownEffect(OpenCodeSettings)({}).pipe(Effect.orDie),
+              )) as ProviderAdapterShape<ProviderAdapterError>;
+              break;
+            }
+          }
+        }
+        return makeAdapterRegistryMock(adapters);
       }),
     ).pipe(
+      Layer.provideMerge(OpenCodeRuntimeLive),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(providerSessionDirectoryLayer),
@@ -304,12 +343,19 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(providerEventLoggersLayer),
         );
     const readyProviderSnapshot = (
-      driver: "claudeAgent" | "codex",
+      driver: "claudeAgent" | "codex" | "agy" | "opencode",
       model: string,
     ): ServerProvider => ({
       instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make(driver)),
       driver: ProviderDriverKind.make(driver),
-      displayName: driver === "codex" ? "Codex" : "Claude",
+      displayName:
+        driver === "codex"
+          ? "Codex"
+          : driver === "agy"
+            ? "Antigravity"
+            : driver === "opencode"
+              ? "OpenCode"
+              : "Claude",
       enabled: true,
       installed: true,
       version: "test",
@@ -328,6 +374,8 @@ export const makeOrchestrationIntegrationHarness = (
     const providerRegistryLayer = makeProviderRegistryLayer([
       readyProviderSnapshot("claudeAgent", "claude-opus-4-6"),
       readyProviderSnapshot("codex", "gpt-5-codex"),
+      readyProviderSnapshot("agy", "gemini-3.6-flash-low"),
+      readyProviderSnapshot("opencode", "ollama/gemma4:e2b-it-qat"),
     ]);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));

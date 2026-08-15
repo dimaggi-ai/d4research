@@ -315,7 +315,7 @@ export const makeOrchestrationIntegrationHarness = (
       version: "test",
       status: "ready",
       auth: { status: "authenticated" },
-      checkedAt: new Date().toISOString(),
+      checkedAt: "2026-08-14T00:00:00.000Z",
       availability: "available",
       models: [{ slug: model, name: model, isCustom: false, capabilities: null }],
       slashCommands: [],

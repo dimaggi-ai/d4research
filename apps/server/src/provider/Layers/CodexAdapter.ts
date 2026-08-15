@@ -1770,7 +1770,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   cause,
                 }),
           ),
-          Effect.forkChild,
+          // The pump must live as long as the SESSION, not the caller: a
+          // child fork of the reactor's turn-start fiber is interrupted the
+          // moment that fiber completes after sendTurn returns. Mock
+          // adapters emit their events synchronously inside sendTurn, which
+          // is why every test passed while real Codex sessions delivered
+          // minutes of events into an interrupted pump (2026-08-15 outage:
+          // zero adapter log lines while the CLI ran a 151k-token review).
+          Effect.forkIn(sessionScope),
         );
 
         const started = yield* runtime.start().pipe(

@@ -89,6 +89,29 @@ codex-path tests, and clean typechecks for the server, web, shared, and
 effect-codex-app-server packages. The served artifact is rebuilt from this
 tree and verified complete.
 
+## Full-suite gate checkpoint — 2026-08-14 (late)
+
+Running the complete repository suite for the first time since the upstream
+sync surfaced 12 failures in three groups; all are fixed:
+
+- migrate-dev-db slot-collision reporting: the server migration runner's
+  new die-loudly slot guard fired before the script's typed pre-check; the
+  snapshot is now verified before it is migrated, restoring the
+  MigrateDevDbSlotCollisionError contract.
+- 10 orchestration-engine integration tests and the server transfer-budget
+  test: the fail-closed provider-readiness gate (a deliberate deliverable of
+  the dogfood candidate) correctly refuses turns whose provider is missing
+  from the registry, and the integration harness registered no providers,
+  so every turn silently failed into a 40-second receipt timeout. The
+  harness now registers ready claudeAgent and codex snapshots. Bisected
+  root-cause: green at the upstream merge, red at the dogfood-candidate
+  commit, pinned to the readiness gate in ProviderCommandReactor combined
+  with an empty registry mock.
+
+Lesson recorded for the test spec: integration waits observe success
+receipts only; a fail-closed rejection is indistinguishable from a hang
+until the timeout. Failure events deserve assertions of their own.
+
 ## Executive decision
 
 `v0.2.0` will make the existing research product dependable before expanding

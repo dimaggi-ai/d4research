@@ -35,6 +35,7 @@ import { ProjectionPendingApprovalRepository } from "../src/persistence/Services
 import { makeAdapterRegistryMock } from "../src/provider/testUtils/providerAdapterRegistryMock.ts";
 import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapterRegistry.ts";
 import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerRegistryMock.ts";
+import { defaultInstanceIdForDriver, type ServerProvider } from "@t3tools/contracts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
@@ -302,7 +303,32 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         );
-    const providerRegistryLayer = makeProviderRegistryLayer();
+    const readyProviderSnapshot = (
+      driver: "claudeAgent" | "codex",
+      model: string,
+    ): ServerProvider => ({
+      instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make(driver)),
+      driver: ProviderDriverKind.make(driver),
+      displayName: driver === "codex" ? "Codex" : "Claude",
+      enabled: true,
+      installed: true,
+      version: "test",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: new Date().toISOString(),
+      availability: "available",
+      models: [{ slug: model, name: model, isCustom: false, capabilities: null }],
+      slashCommands: [],
+      skills: [],
+    });
+    // The turn-start readiness gate fails closed on providers missing from
+    // the registry; an empty registry silently failed every integration turn
+    // once that gate landed. These snapshots keep the gate honest and open
+    // for the drivers this suite drives.
+    const providerRegistryLayer = makeProviderRegistryLayer([
+      readyProviderSnapshot("claudeAgent", "claude-opus-4-6"),
+      readyProviderSnapshot("codex", "gpt-5-codex"),
+    ]);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
     const projectionSnapshotQueryLayer = OrchestrationProjectionSnapshotQueryLive;

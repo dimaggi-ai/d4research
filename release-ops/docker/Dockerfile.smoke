@@ -1,0 +1,19 @@
+# P0 distribution smoke environment: a clean machine as a container.
+# The image build itself is the clean-install test — `npm install -g` of the
+# packed artifact on a stock Node image with no repo checkout present.
+FROM node:24-bookworm
+
+WORKDIR /smoke
+
+# The packed server artifact (npm pack of apps/server), staged by smoke.sh.
+COPY t3-artifact.tgz /smoke/t3-artifact.tgz
+
+# Clean install: declared dependencies resolve from the registry, native
+# modules (node-pty) compile with the stock toolchain, and the `t3` bin lands
+# on PATH. A failure here fails the image build, which fails the smoke.
+RUN npm install -g /smoke/t3-artifact.tgz
+
+COPY container-smoke.sh /smoke/container-smoke.sh
+RUN chmod +x /smoke/container-smoke.sh
+
+ENTRYPOINT ["/smoke/container-smoke.sh"]

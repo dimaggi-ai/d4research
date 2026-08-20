@@ -106,7 +106,7 @@ The live provider-backed runtime attached to a thread. Session shape is in [the 
 
 #### Provider handoff
 
-Replacing the provider-native session attached to a thread without replacing the thread. Same thread id, route, transcript, branch, and worktree; carried context is written to local Memo before the switch. See [handoff-compression.md][25].
+Replacing the provider-native session attached to a thread without replacing the thread. Same thread id, route, transcript, branch, and worktree; carried context is attached to the receiving message and mirrored to local Memo when available. See [handoff-compression.md][25].
 
 #### Staged handoff
 

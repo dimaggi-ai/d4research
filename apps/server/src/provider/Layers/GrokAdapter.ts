@@ -807,7 +807,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             status: "ready",
             runtimeMode: input.runtimeMode,
             cwd,
-            ...(boundModelId ? { model: resolveGrokAcpBaseModelId(boundModelId) } : {}),
+            // boundModelId comes from the agent itself, so it is already a
+            // real model id; re-normalizing could only erase it.
+            ...(boundModelId ? { model: boundModelId } : {}),
             threadId: input.threadId,
             resumeCursor: {
               schemaVersion: GROK_RESUME_VERSION,

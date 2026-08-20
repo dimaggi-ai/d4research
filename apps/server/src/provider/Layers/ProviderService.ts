@@ -998,19 +998,29 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "ProviderService.listSessions",
           binding,
         );
-        if (binding.provider !== session.provider) {
-          return yield* Effect.die(
-            new Error(
-              `ProviderService.listSessions: thread '${session.threadId}' is active on provider '${session.provider}' but persisted binding names provider '${binding.provider}'.`,
-            ),
+        // A same-thread provider switch starts the new session, then updates
+        // the persisted binding a step later. A listSessions landing in that
+        // window used to see active=new / binding=old and Effect.die, killing
+        // the in-flight turn so it never quiesced (the provider-handoff
+        // timeout). The LIVE active session is authoritative for identity;
+        // trust it, skip the stale binding's overrides, and let the binding
+        // converge — a mismatch is a transient restart, not corruption.
+        if (
+          binding.provider !== session.provider ||
+          overrides.providerInstanceId !== session.providerInstanceId
+        ) {
+          yield* Effect.logWarning(
+            "ProviderService.listSessions: session/binding mid-restart mismatch; trusting live session",
+            {
+              threadId: session.threadId,
+              sessionProvider: session.provider,
+              bindingProvider: binding.provider,
+              sessionInstanceId: session.providerInstanceId,
+              bindingInstanceId: overrides.providerInstanceId,
+            },
           );
-        }
-        if (overrides.providerInstanceId !== session.providerInstanceId) {
-          return yield* Effect.die(
-            new Error(
-              `ProviderService.listSessions: thread '${session.threadId}' is active on provider instance '${session.providerInstanceId}' but persisted binding names '${overrides.providerInstanceId}'.`,
-            ),
-          );
+          sessions.push(session);
+          continue;
         }
         if (session.resumeCursor === undefined && binding.resumeCursor !== undefined) {
           overrides.resumeCursor = binding.resumeCursor;

@@ -18,6 +18,7 @@ import {
   prepareDurableProviderHandoff,
   prepareProviderHandoff,
   runSameThreadProviderHandoffTransition,
+  shouldBypassProviderHandoffCompression,
   shouldHandoffModelSelection,
 } from "./providerHandoff";
 
@@ -42,6 +43,23 @@ function preparedConnection(
 }
 
 describe("provider handoff", () => {
+  it("never makes a handoff depend on compression by the provider being replaced", () => {
+    expect(
+      shouldBypassProviderHandoffCompression({
+        requiredByWorkflow: false,
+        sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionInstanceId: ProviderInstanceId.make("claude"),
+      }),
+    ).toBe(true);
+    expect(
+      shouldBypassProviderHandoffCompression({
+        requiredByWorkflow: false,
+        sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionInstanceId: ProviderInstanceId.make("ollama"),
+      }),
+    ).toBe(false);
+  });
+
   it("persists first, then dispatches one receiving turn on the existing thread", async () => {
     const events: string[] = [];
 
@@ -414,7 +432,7 @@ describe("provider handoff", () => {
     }
   });
 
-  it("never falls back to the browser host while the thread environment is disconnected", async () => {
+  it("uses the transcript without falling back to the browser host while disconnected", async () => {
     const original = globalThis.fetch;
     const fetcher = vi.fn<typeof fetch>();
     globalThis.fetch = fetcher;
@@ -430,7 +448,7 @@ describe("provider handoff", () => {
           sourceThreadTitle: "Disconnected remote thread",
           target: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
         }),
-      ).rejects.toThrow("Local Memo could not store");
+      ).resolves.toBe("remote transcript");
       expect(fetcher).not.toHaveBeenCalled();
     } finally {
       globalThis.fetch = original;
@@ -499,7 +517,7 @@ describe("provider handoff", () => {
     }
   });
 
-  it("blocks the provider switch when neither local Memo path can persist context", async () => {
+  it("keeps the handoff working when neither local Memo path can persist context", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = ((input: RequestInfo | URL) =>
       Promise.resolve(
@@ -523,7 +541,7 @@ describe("provider handoff", () => {
           target: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
           preparedConnection: preparedConnection(),
         }),
-      ).rejects.toThrow("Local Memo could not store");
+      ).resolves.toBe("authoritative transcript");
     } finally {
       globalThis.fetch = original;
     }

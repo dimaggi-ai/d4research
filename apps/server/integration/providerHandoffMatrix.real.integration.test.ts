@@ -32,22 +32,24 @@ import {
   type RealProviderName,
 } from "./OrchestrationEngineHarness.integration.ts";
 import type { TurnProcessingQuiescedReceipt } from "../src/orchestration/Services/RuntimeReceiptBus.ts";
+import { appendProviderHandoffContext } from "@t3tools/shared/providerHandoffPrompt";
 
 const ENABLED = process.env.T3_REAL_HANDOFF === "1";
 const PROVIDERS: ReadonlyArray<RealProviderName> = (
-  process.env.T3_REAL_HANDOFF_PROVIDERS ?? "claudeAgent,codex,agy,opencode"
+  process.env.T3_REAL_HANDOFF_PROVIDERS ?? "claudeAgent,codex,agy,opencode,grok"
 )
   .split(",")
   .map((name) => name.trim())
   .filter((name): name is RealProviderName =>
-    ["claudeAgent", "codex", "agy", "opencode"].includes(name),
+    ["claudeAgent", "codex", "agy", "opencode", "grok"].includes(name),
   );
 
 const CHEAP_MODEL: Record<RealProviderName, string> = {
   claudeAgent: "claude-haiku-4-5",
   codex: "gpt-5.4-mini",
   agy: "gemini-3.6-flash-low",
-  opencode: "ollama/gemma4:e2b-it-qat",
+  opencode: "ollama/gemma4:e4b-it-qat",
+  grok: "grok-4.6",
 };
 
 const TURN_TIMEOUT_MS = 180_000;
@@ -65,6 +67,7 @@ const startRealTurn = (input: {
   readonly harness: OrchestrationIntegrationHarness;
   readonly n: number;
   readonly provider: RealProviderName;
+  readonly text: string;
 }) =>
   input.harness.engine.dispatch({
     type: "thread.turn.start",
@@ -73,7 +76,7 @@ const startRealTurn = (input: {
     message: {
       messageId: MessageId.make(`msg-real-${input.n}`),
       role: "user",
-      text: "Reply with exactly: pong. Do not use any tools.",
+      text: input.text,
       attachments: [],
     },
     modelSelection: selection(input.provider),
@@ -133,15 +136,58 @@ describe.skipIf(!ENABLED)("real provider handoff matrix", () => {
                 createdAt: nowIso(),
               });
 
-              yield* startRealTurn({ harness, n: 1, provider: from });
+              // Turn 1 plants a fact only the carried context can deliver to
+              // the receiving provider: the engine dispatch below attaches the
+              // same <handoff_context> block the web client sends, so a correct
+              // recall on turn 2 is end-to-end proof the handoff carries.
+              const phrase = `zephyr-${from}-${to}-742`;
+              yield* startRealTurn({
+                harness,
+                n: 1,
+                provider: from,
+                text: `Remember this code phrase: "${phrase}". Reply with exactly: stored. Do not use any tools.`,
+              });
               const first = yield* waitQuiesced(harness, 1);
               assert.equal(first.type, "turn.processing.quiesced");
 
+              const beforeHandoff = yield* harness.waitForThread(String(THREAD_ID), (thread) =>
+                thread.messages.some((message) => message.role === "assistant"),
+              );
+              const transcript = beforeHandoff.messages
+                .map((message) => `${message.role.toUpperCase()}: ${message.text.trim()}`)
+                .join("\n\n");
+              const handoffText = appendProviderHandoffContext(
+                "What is the code phrase? Reply with exactly the code phrase and nothing else. Do not use any tools.",
+                {
+                  sourceThreadId: String(THREAD_ID),
+                  sourceThreadTitle: "Real Handoff Thread",
+                  summary: transcript,
+                  targetInstanceId: String(selection(to).instanceId),
+                  targetModel: selection(to).model,
+                  targetLabel: to,
+                },
+              );
+
               // The handoff: same thread, next turn on the other provider.
-              yield* startRealTurn({ harness, n: 2, provider: to });
+              yield* startRealTurn({ harness, n: 2, provider: to, text: handoffText });
               const second = yield* waitQuiesced(harness, 2);
               assert.equal(second.type, "turn.processing.quiesced");
               assert.equal(second.checkpointTurnCount, 2);
+
+              const afterHandoff = yield* harness.waitForThread(
+                String(THREAD_ID),
+                (thread) =>
+                  thread.messages.filter((message) => message.role === "assistant").length >= 2,
+              );
+              const reply = afterHandoff.messages
+                .filter((message) => message.role === "assistant")
+                .at(-1)!
+                .text.toLowerCase();
+              assert.include(
+                reply,
+                phrase.toLowerCase(),
+                `receiving provider did not recall the carried code phrase; reply: ${reply.slice(0, 200)}`,
+              );
             }),
           (harness) => harness.dispose,
         ).pipe(Effect.provide(NodeServices.layer)),

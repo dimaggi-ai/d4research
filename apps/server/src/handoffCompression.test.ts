@@ -207,7 +207,9 @@ describe("compressHandoffContextLocal", () => {
       expect(requests[0]!.url).toBe(`${DEFAULT_OLLAMA_BASE_URL}/api/chat`);
       expect(requests[0]!.body["model"]).toBe("gemma4:e4b-it-qat");
       expect(requests[0]!.body["stream"]).toBe(false);
-      expect(requests[0]!.body["keep_alive"]).toBe("2m");
+      // 30m: handoffs cluster within a session but rarely within two minutes,
+      // so the short keep_alive made nearly every handoff pay the cold load.
+      expect(requests[0]!.body["keep_alive"]).toBe("30m");
       expect((requests[0]!.body["options"] as { num_ctx: number }).num_ctx).toBeGreaterThan(1_024);
     }),
   );

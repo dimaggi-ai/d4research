@@ -46,8 +46,8 @@ const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "grok-build",
-    name: "Grok Build",
+    slug: "grok-4.6",
+    name: "Grok 4.6",
     isCustom: false,
     capabilities: EMPTY_CAPABILITIES,
   },

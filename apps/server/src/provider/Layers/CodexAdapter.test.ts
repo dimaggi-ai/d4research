@@ -42,6 +42,7 @@ import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import {
+  type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
@@ -138,7 +139,16 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     return Effect.promise(() => this.interruptTurnImpl(turnId));
   }
 
-  readThread = Effect.promise(() => this.readThreadImpl());
+  // When set, readThread fails with this typed error instead of resolving —
+  // lets a test reproduce codex's thread-store read failure on an aborted
+  // session so the adapter's empty-history recovery can be exercised.
+  public readThreadFailure: CodexSessionRuntimeError | null = null;
+
+  get readThread(): Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError> {
+    return this.readThreadFailure
+      ? Effect.fail(this.readThreadFailure)
+      : Effect.promise(() => this.readThreadImpl());
+  }
 
   rollbackThread(numTurns: number) {
     return Effect.promise(() => this.rollbackThreadImpl(numTurns));
@@ -473,6 +483,91 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       const runtime = runtimeFactory.lastRuntime;
       NodeAssert.ok(runtime);
       NodeAssert.equal(runtime.options.launchArgs, "--strict-config --enable env-feature");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("recovers with empty history when codex cannot read an aborted session", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-unreadable-history");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      // The exact thread-store failure a session aborted after task_started
+      // produces on read (2026-08-16 soak run). Before the fix this failed the
+      // whole turn and wedged the thread; now it degrades to empty history.
+      runtime.readThreadFailure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage:
+          "thread-store internal error: failed to read session metadata /home/x/.codex/sessions/2026/08/16/rollout-2026-08-16T08-23-11-01a00b2b.jsonl",
+        method: "thread/read",
+      });
+
+      const snapshot = yield* adapter.readThread(threadId);
+      NodeAssert.deepEqual(snapshot.turns, []);
+      NodeAssert.equal(String(snapshot.threadId), String(threadId));
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("still fails readThread on an unrelated transport error", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-transport-error");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      // A genuine transport failure is not an unreadable-history condition and
+      // must still surface — the recovery is scoped, not a blanket swallow.
+      runtime.readThreadFailure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "connection reset while reading response",
+        method: "thread/read",
+      });
+
+      const result = yield* Effect.exit(adapter.readThread(threadId));
+      NodeAssert.equal(result._tag, "Failure");
     }).pipe(Effect.provide(layer));
   });
 

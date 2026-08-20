@@ -250,6 +250,51 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("keeps pumping ACP notifications after the starting fiber completes", () =>
+    Effect.gen(function* () {
+      // Production starts sessions from the reactor's short-lived turn-start
+      // fiber. A notification pump forked as that fiber's child dies the
+      // moment the fiber completes, and everything the real ACP process emits
+      // afterwards is lost while the thread sits "starting" forever — the
+      // same lifetime bug fixed in CodexAdapter after the 2026-08-15 outage.
+      // The starting fiber here completes before the turn runs; the prompt
+      // flow must still deliver.
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-late-pump-thread");
+
+      const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper());
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const turnEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "content.delta" || event.type === "turn.completed"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const starter = yield* adapter
+        .startSession({
+          threadId,
+          provider: ProviderDriverKind.make("cursor"),
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+        })
+        .pipe(Effect.forkChild);
+      yield* Fiber.join(starter);
+
+      yield* adapter.sendTurn({ threadId, input: "hello mock", attachments: [] });
+
+      const events = Array.from(yield* Fiber.join(turnEventsFiber));
+      const types = events.map((event) => event.type);
+      assert.include(types, "content.delta");
+      assert.include(types, "turn.completed");
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("steers a running turn instead of opening a new one on mid-turn sendTurn", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

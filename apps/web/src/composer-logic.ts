@@ -283,7 +283,18 @@ export function describeStagedHandoffBanner(input: {
   readonly currentDisplayName: string;
   readonly paused: boolean;
   readonly draftIsInlineDelegate: boolean;
+  /** True while the send is running the context prepare (compression + Memo). */
+  readonly preparing?: boolean;
 }): { readonly title: string; readonly description: string } {
+  // Preparation happens inside the send, after the user pressed Enter but
+  // before their message row appears. Without this state the composer looks
+  // dead for the seconds compression takes, and users press send again.
+  if (input.preparing) {
+    return {
+      title: `Handing off to ${input.displayName} — preparing context…`,
+      description: "Compressing and storing this chat's context. Your message sends right after.",
+    };
+  }
   if (input.paused) {
     return {
       title: `Handoff to ${input.displayName} paused — provider unavailable`,

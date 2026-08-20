@@ -86,6 +86,11 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
+// A provider selected for compression may be the provider whose usage limit
+// triggered the handoff. Bound the entire attempt well inside the client's
+// request deadline so quota errors and wedged CLIs always reach the model-free
+// fallback while the user is still waiting on the same send.
+export const PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS = 30_000;
 /**
  * The prepare endpoint accepts a 60k-character transcript. A persisted
  * handoff adds bounded thread, target, and skill metadata, so the fallback
@@ -990,7 +995,9 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
           customPrompt: compression.customPrompt,
           cwd: config.cwd,
         }).pipe(
-          // Handoff must never block on compression.
+          Effect.timeout(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS),
+          // Handoff must never block on compression or depend on the quota of
+          // the provider the user is trying to leave.
           Effect.orElseSucceed(() =>
             truncateHandoffTranscript(clipped, compression.maxOutputCharacters),
           ),
@@ -1005,10 +1012,10 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
         });
       }
 
-      // Attempt to persist the compressed summary to local Memo and report the
-      // result explicitly. The client treats memoryPersisted:false as a failed
-      // prepare and must complete the dedicated memory fallback before it
-      // changes the existing thread's provider session.
+      // Persist the compressed summary to local Memo when it is enabled, and
+      // report the result. The client still attaches the summary to the
+      // receiving turn when memoryPersisted is false — Memo is a search
+      // mirror, not a gate on the switch.
       let memoryPersisted = false;
       if (settings.memory.localEnabled) {
         memoryPersisted = yield* Effect.gen(function* () {

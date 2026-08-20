@@ -212,9 +212,10 @@ uncompressed transcript goes in Memo (preserves accuracy). See
 ### Fallback behavior
 
 If compression is disabled, not configured, or returns an error, the handoff falls back to a
-structured transcript. Compression itself does not block a handoff. The durable Memo bridge does:
-if both the prepared handoff write and the local fallback write fail, d4research keeps the original
-provider selected and does not start the receiving provider.
+structured transcript. Provider-backed compression has a 30-second total budget, so an exhausted
+provider cannot hold the switch open. Compression and Memo persistence are both best-effort: if
+neither Memo write succeeds, d4research attaches the structured transcript directly and continues
+the handoff.
 
 ## Boundaries
 

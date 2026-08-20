@@ -73,6 +73,21 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
   CodexSessionRuntimeThreadIdMissingError,
 );
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
+const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+
+// codex's thread-store returns these when a session's rollout cannot be
+// reconstructed — most often a session aborted after `task_started` but before
+// any turn content was written (meta + one line on disk). The history is
+// genuinely unrecoverable, not transiently unavailable, so reading it must not
+// wedge the thread: every later turn would re-read the same broken rollout and
+// fail identically. We recover with empty history instead. Scoped to this
+// signature so real transport/protocol errors still surface.
+const UNREADABLE_THREAD_HISTORY_PATTERN =
+  /thread-store|failed to read session metadata|failed to load thread history/iu;
+const isUnreadableThreadHistoryError = (
+  error: unknown,
+): error is CodexErrors.CodexAppServerRequestError =>
+  isCodexAppServerRequestError(error) && UNREADABLE_THREAD_HISTORY_PATTERN.test(error.errorMessage);
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
@@ -1902,6 +1917,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const readThread: CodexAdapterShape["readThread"] = (threadId) =>
     requireSession(threadId).pipe(
       Effect.flatMap((session) => session.runtime.readThread),
+      // An aborted/incomplete codex session cannot be read back. Recover with
+      // empty history so the turn proceeds instead of the thread staying
+      // permanently wedged on an unreadable rollout.
+      Effect.catchIf(isUnreadableThreadHistoryError, (error) =>
+        Effect.logWarning("codex thread history is unreadable; recovering with empty history", {
+          threadId,
+          detail: error.errorMessage,
+        }).pipe(Effect.as({ threadId: String(threadId), turns: [] })),
+      ),
       Effect.mapError((cause) =>
         cause._tag === "ProviderAdapterSessionNotFoundError"
           ? cause

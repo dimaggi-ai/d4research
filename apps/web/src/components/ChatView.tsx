@@ -198,6 +198,7 @@ import {
   isProviderHandoffCandidate,
   prepareDurableProviderHandoff,
   runSameThreadProviderHandoffTransition,
+  shouldBypassProviderHandoffCompression,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
 import {
@@ -4747,6 +4748,10 @@ function ChatViewContent(props: ChatViewProps) {
     setComposerDraftModelSelection,
     setStickyComposerModelSelection,
   ]);
+  // Visible truth for the seconds the prepare takes: compression plus the
+  // Memo write run inside the send, before the message row exists, and a
+  // silent composer reads as a failed send.
+  const [handoffPreparing, setHandoffPreparing] = useState(false);
   const stagedProviderHandoffBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     const resolution = stagedProviderHandoffResolution;
     if (resolution.kind === "none" || !activeThread) {
@@ -4767,6 +4772,7 @@ function ChatViewContent(props: ChatViewProps) {
       currentDisplayName,
       paused,
       draftIsInlineDelegate: composerDraftIsInlineDelegate,
+      preparing: handoffPreparing,
     });
     return {
       id: `staged-provider-handoff:${activeThread.id}`,
@@ -4792,6 +4798,7 @@ function ChatViewContent(props: ChatViewProps) {
     isSendBusy,
     providerHandoffEntries,
     stagedProviderHandoffResolution,
+    handoffPreparing,
   ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
@@ -5168,13 +5175,12 @@ function ChatViewContent(props: ChatViewProps) {
    * handoff at all, so a caller that skips this is a bug: EVERY dispatch path
    * that sends the composer's own model selection must route through here.
    *
-   * PRODUCT INVARIANT: no dispatch may change the thread's provider-native
-   * session without a proven local-Memo write. That is enforced here, at the
-   * dispatch boundary, rather than at staging time — an unhealthy target
-   * returns `error` so the send aborts, and never degrades into a plain send
-   * that switches instances silently. A handoff still replaces only the
-   * session: same thread id, transcript, route, branch, and worktree.
-   * Callers must abort on `error`.
+   * PRODUCT INVARIANT: a handoff always carries context from the authoritative
+   * visible thread. Local Memo mirrors that context when available, but a
+   * quota-limited source provider or unavailable Memo cannot trap the user on
+   * the old provider. An unhealthy target still returns `error`, and a handoff
+   * replaces only the session: same thread id, transcript, route, branch, and
+   * worktree. Callers must abort on `error`.
    */
   const applyStagedProviderHandoff = useCallback(
     async (
@@ -5186,60 +5192,68 @@ function ChatViewContent(props: ChatViewProps) {
       if (staged.kind === "unavailable") {
         return { error: `${staged.displayName} is not available to receive a handoff.` };
       }
-
-      const compression = settings.handoff.contextCompression;
-      // Research handoffs carry the transcript as-is: pipeline evidence must
-      // not be summarized away between steps. 60k is the server's transport
-      // guard for the prepare route.
-      const bypassCompression = isResearchThread && settings.research.bypassCompression;
-      const transcript = buildProviderHandoffTranscript(
-        displayServerMessages.map((message) => ({ role: message.role, text: message.text })),
-        bypassCompression ? 60_000 : compression.maxInputCharacters,
-      );
-      let text = composedText;
-      const result = await settlePromise(() =>
-        runSameThreadProviderHandoffTransition({
-          // One round-trip normally compresses and persists to local Memo. If
-          // that combined path does not prove persistence, the durable helper
-          // writes the structured transcript through the dedicated Memo route,
-          // and rejects when neither write lands.
-          prepare: () =>
-            prepareDurableProviderHandoff({
-              transcript,
-              project: activeProject?.title,
-              sourceThreadId: activeThread.id,
-              sourceThreadTitle: activeThread.title,
-              target: staged.target,
-              bypassCompression,
-              enabledSkills: effectiveEnabledSkills,
-              ...(preparedConnection ? { preparedConnection } : {}),
-            }),
-          // The receiving turn is the caller's own send: the user's instruction
-          // with the carried context appended as the outermost client block.
-          startReceivingTurn: async (summary) => {
-            text = appendProviderHandoffContext(text, {
-              sourceThreadId: activeThread.id,
-              sourceThreadTitle: activeThread.title,
-              summary,
-              targetInstanceId: String(staged.target.instanceId),
-              targetModel: staged.target.model,
-              project: activeProject?.title,
-              targetLabel: staged.displayName,
-              enabledSkills: effectiveEnabledSkills,
-            });
-          },
-        }),
-      );
-      if (result._tag === "Failure") {
-        const failure = squashAtomCommandFailure(result);
-        return {
-          error: failure instanceof Error ? failure.message : "The provider handoff failed.",
-        };
+      setHandoffPreparing(true);
+      try {
+        const compression = settings.handoff.contextCompression;
+        // Research handoffs carry the transcript as-is: pipeline evidence must
+        // not be summarized away between steps. 60k is the server's transport
+        // guard for the prepare route.
+        const bypassCompression = shouldBypassProviderHandoffCompression({
+          requiredByWorkflow: isResearchThread && settings.research.bypassCompression,
+          sourceInstanceId: activeThread.modelSelection.instanceId,
+          compressionInstanceId: compression.instanceId,
+        });
+        const transcript = buildProviderHandoffTranscript(
+          displayServerMessages.map((message) => ({ role: message.role, text: message.text })),
+          bypassCompression ? 60_000 : compression.maxInputCharacters,
+        );
+        let text = composedText;
+        const result = await settlePromise(() =>
+          runSameThreadProviderHandoffTransition({
+            // One round-trip normally compresses and persists to local Memo. If
+            // that combined path fails, the helper attempts the dedicated Memo
+            // route and still returns the structured transcript for direct
+            // attachment when Memo is unavailable.
+            prepare: () =>
+              prepareDurableProviderHandoff({
+                transcript,
+                project: activeProject?.title,
+                sourceThreadId: activeThread.id,
+                sourceThreadTitle: activeThread.title,
+                target: staged.target,
+                bypassCompression,
+                enabledSkills: effectiveEnabledSkills,
+                ...(preparedConnection ? { preparedConnection } : {}),
+              }),
+            // The receiving turn is the caller's own send: the user's instruction
+            // with the carried context appended as the outermost client block.
+            startReceivingTurn: async (summary) => {
+              text = appendProviderHandoffContext(text, {
+                sourceThreadId: activeThread.id,
+                sourceThreadTitle: activeThread.title,
+                summary,
+                targetInstanceId: String(staged.target.instanceId),
+                targetModel: staged.target.model,
+                project: activeProject?.title,
+                targetLabel: staged.displayName,
+                enabledSkills: effectiveEnabledSkills,
+              });
+            },
+          }),
+        );
+        if (result._tag === "Failure") {
+          const failure = squashAtomCommandFailure(result);
+          return {
+            error: failure instanceof Error ? failure.message : "The provider handoff failed.",
+          };
+        }
+        // The attached context can push an already-long message past the turn
+        // limit, so re-check the combined text while aborting is still free.
+        const lengthError = outgoingMessageLengthError(text);
+        return lengthError !== null ? { error: lengthError } : { text };
+      } finally {
+        setHandoffPreparing(false);
       }
-      // The attached context can push an already-long message past the turn
-      // limit, so re-check the combined text while aborting is still free.
-      const lengthError = outgoingMessageLengthError(text);
-      return lengthError !== null ? { error: lengthError } : { text };
     },
     [
       activeProject?.title,
@@ -5281,6 +5295,20 @@ function ChatViewContent(props: ChatViewProps) {
       sendInFlightRef.current ||
       (queuedRequestForSend !== null && phase === "running")
     ) {
+      // A re-press while the previous send is still preparing (handoff
+      // compression, Memo writes) must not vanish silently: the user reads a
+      // quiet composer as a failed send and keeps pressing.
+      if (sendInFlightRef.current && queuedRequestForSend === null && !directAnnotation) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: "Already sending",
+            description: handoffPreparing
+              ? "Preparing the provider handoff — your message sends when it finishes."
+              : "The previous send is still in progress.",
+          }),
+        );
+      }
       queuedDispatchRef.current = null;
       notifyDirectAnnotationAttached();
       return;

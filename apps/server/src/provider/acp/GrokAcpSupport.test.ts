@@ -10,9 +10,14 @@ import {
 
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
-    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
-    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
+    // Empty and the retired built-in default resolve to undefined: the agent
+    // keeps its own default model instead of a set_model that the current
+    // grok CLI rejects with "unknown model id".
+    expect(resolveGrokAcpBaseModelId(undefined)).toBeUndefined();
+    expect(resolveGrokAcpBaseModelId("   ")).toBeUndefined();
+    expect(resolveGrokAcpBaseModelId("grok-build")).toBeUndefined();
     expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
+    expect(resolveGrokAcpBaseModelId("grok-4.6")).toBe("grok-4.6");
   });
 });
 

@@ -13,6 +13,11 @@ Environment=T3CODE_PORT=3773
 Environment=T3CODE_NO_BROWSER=1
 Environment="PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=/usr/bin/env node %h/.local/share/d4research/current/apps/server/dist/bin.mjs
+# Effect's Node runtime reports an interrupt-driven clean shutdown using the
+# conventional shell signal exit codes. Treat those as clean service exits so
+# `systemctl restart` does not mislabel a completed graceful shutdown as a
+# service failure.
+SuccessExitStatus=130 143 SIGINT SIGTERM
 # Provider sessions and SQLite checkpoints need longer than the workstation's
 # ten-second manager default to close cleanly during a production restart.
 TimeoutStopSec=45s

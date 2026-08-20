@@ -89,6 +89,17 @@ wait_for_url() {
   echo "$name: ready after $((SECONDS - started_at))s"
 }
 
+restart_journal_has_forced_shutdown() {
+  local journal_cursor="$1"
+  journalctl \
+    --user \
+    --unit d4research.service \
+    --after-cursor "$journal_cursor" \
+    --no-pager \
+    --output cat 2>/dev/null | grep -Eq \
+    "State 'stop-sigterm' timed out|Killing process .* with signal SIGKILL|Main process exited, code=killed|Failed with result 'timeout'"
+}
+
 restart_worker_loaded() {
   local unit load_state
   for unit in "${RESTART_UNIT}.timer" "${RESTART_UNIT}.service"; do
@@ -127,8 +138,23 @@ if [[ "${1:-}" == "--complete-restart" ]]; then
     echo "restart-worker: unsupported restart mode '$RESTART_MODE'" >&2
     exit 2
   fi
+  restart_journal_cursor="$(journalctl --user --unit d4research.service --show-cursor --lines=0 --no-pager | sed -n 's/^-- cursor: //p')"
+  if [[ -z "$restart_journal_cursor" ]]; then
+    echo "restart-worker: could not capture the pre-restart journal cursor" >&2
+    exit 1
+  fi
   echo "restart-worker: restarting d4research outside the active T3 session"
   systemctl --user restart d4research.service
+  if restart_journal_has_forced_shutdown "$restart_journal_cursor"; then
+    echo "restart-worker: old d4research process required a forced shutdown" >&2
+    journalctl \
+      --user \
+      --unit d4research.service \
+      --after-cursor "$restart_journal_cursor" \
+      --no-pager \
+      --lines=80 >&2
+    exit 1
+  fi
   wait_for_url "d4research manifest" "$APP_URL/manifest.webmanifest"
   wait_for_url "d4research" "$APP_URL/"
   if [[ "$REQUIRE_VOICE" == "1" ]]; then

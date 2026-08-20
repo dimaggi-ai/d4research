@@ -81,7 +81,11 @@ export const compressHandoffContextLocal = Effect.fn("compressHandoffContextLoca
         body: JSON.stringify({
           model: input.model,
           stream: false,
-          keep_alive: "2m",
+          // Handoffs cluster within a work session but rarely land twice in
+          // two minutes, so a short keep_alive made nearly every handoff pay
+          // the model cold-load inside the user's send. Half an hour keeps
+          // the compressor warm across a session (~3 GB residency).
+          keep_alive: "30m",
           options: { num_ctx: numCtx },
           messages: [
             {

@@ -129,7 +129,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
       expect(snapshot.status).toBe("error");
       expect(snapshot.installed).toBe(true);
-      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6"]);
       expect(snapshot.message).toContain("ACP startup failed");
     }),
   );
@@ -142,7 +142,9 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       );
 
       expect(snapshot.status).toBe("ready");
-      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build", "grok-mock-alt"]);
+      // The mock CLI still advertises the retired grok-build slug; discovery
+      // must drop it so the picker never offers an id session/set_model rejects.
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-mock-alt"]);
     }),
   );
 });

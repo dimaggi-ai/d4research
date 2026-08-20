@@ -60,8 +60,10 @@ Each turn spawns a fresh `agy --print <text>` process; conversation continuity u
 **Cursor** — discovers models via the ACP extension method `cursor/list_available_models`. Supports
 self-update via `cursor-agent update`.
 
-**Grok** — ships with a built-in `grok-build` model. Additional models are discovered via ACP
-session model state. Model changes require a new thread.
+**Grok** — ships with a built-in `grok-4.6` model. Additional models are discovered via ACP
+session model state. The retired `grok-build` slug is treated as "keep the CLI default" so old
+threads do not call `session/set_model` with an id current grok CLIs reject. Model changes require
+a new thread.
 
 **Junie** — reuses the Grok adapter and text generation with a Junie-specific ACP runtime. Ships
 with a `default` model. Supports custom Ollama models (e.g. `custom:t3-local-ollama`). Model

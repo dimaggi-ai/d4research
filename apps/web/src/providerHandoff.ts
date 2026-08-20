@@ -45,6 +45,23 @@ export function shouldHandoffModelSelection(input: {
   );
 }
 
+/**
+ * Compression is optional; switching away from an exhausted provider is not.
+ * Never ask the currently running provider to summarize the handoff that is
+ * replacing it, because quota/auth/runtime failures on that provider are the
+ * most common reason for the switch.
+ */
+export function shouldBypassProviderHandoffCompression(input: {
+  readonly requiredByWorkflow: boolean;
+  readonly sourceInstanceId: ProviderInstanceId;
+  readonly compressionInstanceId: ProviderInstanceId | null | undefined;
+}): boolean {
+  return (
+    input.requiredByWorkflow ||
+    (input.compressionInstanceId != null && input.compressionInstanceId === input.sourceInstanceId)
+  );
+}
+
 export function isProviderHandoffCandidate(
   entry: {
     readonly instanceId: ProviderInstanceId;
@@ -243,9 +260,10 @@ async function authorizedEnvironmentPost(input: {
  * Returns the compressed summary, or null when preparation failed (callers
  * fall back to the structured transcript — handoff never blocks on this).
  */
-// Compression is bounded server-side (60 s local, 120 s provider), so a
-// request outliving both is stuck, not slow. The fallback path is free.
-const PREPARE_TIMEOUT_MS = 150_000;
+// Compression is bounded server-side (60 s local, 30 s provider attempt plus
+// cleanup), so a request outliving this is stuck, not slow. The fallback path
+// does not need the source provider.
+const PREPARE_TIMEOUT_MS = 90_000;
 export const PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS = 15_000;
 
 export async function prepareProviderHandoff(
@@ -285,11 +303,12 @@ export async function prepareProviderHandoff(
 }
 
 /**
- * Prepares a provider handoff and proves that its context reached local Memo.
+ * Prepares a provider handoff and attempts to mirror its context to local Memo.
  *
  * INVARIANT: a provider handoff may replace the provider-native session, but
- * it must never replace the d4research thread. The receiving turn starts on
- * the existing thread only after this durable local-memory bridge succeeds.
+ * it must never replace the d4research thread. The visible thread transcript
+ * is authoritative and is attached directly when compression or Memo is
+ * unavailable, so an exhausted source provider cannot block the switch.
  */
 export async function prepareDurableProviderHandoff(
   input: PrepareProviderHandoffInput & {
@@ -301,7 +320,7 @@ export async function prepareDurableProviderHandoff(
   const prepared = await prepareProviderHandoff(input);
   if (prepared !== null) return prepared;
 
-  const stored = await persistProviderHandoffMemoryFallback({
+  await persistProviderHandoffMemoryFallback({
     text: buildProviderHandoffMemory({
       sourceThreadId: ThreadId.make(input.sourceThreadId),
       sourceThreadTitle: input.sourceThreadTitle,
@@ -312,16 +331,17 @@ export async function prepareDurableProviderHandoff(
     project: input.project,
     preparedConnection: input.preparedConnection,
   });
-  if (!stored) {
-    throw new Error("Local Memo could not store the provider handoff context.");
-  }
+  // Memo is a local recovery/search mirror, not the transport for the
+  // receiving turn. The caller appends this authoritative transcript to the
+  // outgoing message, so failing closed here only traps users on an exhausted
+  // provider without preserving any additional context.
   return input.transcript;
 }
 
 /**
- * Memo write for the prepare-failure path. The durable handoff boundary awaits
- * this result and blocks the provider switch when it fails, so a receiving
- * native session is never started without recoverable local context.
+ * Best-effort Memo mirror for the prepare-failure path. The handoff awaits the
+ * bounded attempt, then uses the directly attached transcript regardless of
+ * the result so the receiving session always has context.
  */
 export async function persistProviderHandoffMemoryFallback(input: {
   readonly text: string;

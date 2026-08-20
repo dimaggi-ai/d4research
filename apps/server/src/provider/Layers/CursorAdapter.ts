@@ -878,7 +878,14 @@ export function makeCursorAdapter(
             Effect.catch((cause) =>
               Effect.logError("Failed to process Cursor runtime notification.", { cause }),
             ),
-            Effect.forkChild,
+            // The notification pump must live as long as the SESSION, not the
+            // caller: a child fork of the reactor's ephemeral turn-start fiber
+            // is interrupted the moment that fiber completes, and every
+            // notification the real ACP process emits afterwards is lost while
+            // the thread sits "starting" forever — the same lifetime bug fixed
+            // in CodexAdapter after the 2026-08-15 outage. The exit watcher
+            // below already forks into this scope for the same reason.
+            Effect.forkIn(sessionScope),
           );
 
           ctx.notificationFiber = nf;

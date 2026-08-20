@@ -42,13 +42,14 @@ import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
 import { makeClaudeAdapter } from "../src/provider/Layers/ClaudeAdapter.ts";
 import { makeAgyAdapter } from "../src/provider/Layers/AgyAdapter.ts";
-import { AgySettings, ClaudeSettings, OpenCodeSettings } from "@t3tools/contracts";
+import { AgySettings, ClaudeSettings, GrokSettings, OpenCodeSettings } from "@t3tools/contracts";
 import { makeOpenCodeAdapter } from "../src/provider/Layers/OpenCodeAdapter.ts";
+import { makeGrokAdapter } from "../src/provider/Layers/GrokAdapter.ts";
 import { OpenCodeRuntimeLive } from "../src/provider/opencodeRuntime.ts";
 import type { ProviderAdapterShape } from "../src/provider/Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../src/provider/Errors.ts";
 
-export type RealProviderName = "codex" | "claudeAgent" | "agy" | "opencode";
+export type RealProviderName = "codex" | "claudeAgent" | "agy" | "opencode" | "grok";
 import {
   NoOpProviderEventLoggers,
   ProviderEventLoggers,
@@ -95,6 +96,14 @@ import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
+import * as NodeHttp from "node:http";
+import { NodeHttpServer } from "@effect/platform-node";
+import * as Context from "effect/Context";
+import { HttpRouter, HttpServer } from "effect/unstable/http";
+import * as McpHttpServer from "../src/mcp/McpHttpServer.ts";
+import * as McpSessionRegistry from "../src/mcp/McpSessionRegistry.ts";
+import * as PreviewAutomationBroker from "../src/mcp/PreviewAutomationBroker.ts";
+import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
@@ -236,6 +245,10 @@ export interface OrchestrationIntegrationHarness {
   };
   readonly drainProviderRuntime: Effect.Effect<void>;
   readonly drainCheckpointReactor: Effect.Effect<void>;
+  /** Bound `http://127.0.0.1:<port>/mcp` endpoint when `mcp: true`, else null. */
+  readonly mcpEndpoint: string | null;
+  /** Requests the t3-code MCP endpoint actually served — proof a tool call crossed the wire. */
+  readonly mcpRequestCount: () => number;
   readonly dispose: Effect.Effect<void, never>;
 }
 
@@ -243,6 +256,14 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
   readonly realProviders?: ReadonlyArray<RealProviderName>;
+  /**
+   * Serve the real t3-code MCP stack (session registry + /mcp transport +
+   * toolkits) on an ephemeral loopback port. Booting the registry is what
+   * makes ProviderService mint MCP credentials into provider sessions — the
+   * production link the 2026-08-15 codex outage broke, which the matrix
+   * could not exercise while the harness ran MCP-less.
+   */
+  readonly mcp?: boolean;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -318,6 +339,12 @@ export const makeOrchestrationIntegrationHarness = (
               )) as ProviderAdapterShape<ProviderAdapterError>;
               break;
             }
+            case "grok": {
+              adapters[ProviderDriverKind.make("grok")] = (yield* makeGrokAdapter(
+                yield* Schema.decodeUnknownEffect(GrokSettings)({}).pipe(Effect.orDie),
+              )) as ProviderAdapterShape<ProviderAdapterError>;
+              break;
+            }
           }
         }
         return makeAdapterRegistryMock(adapters);
@@ -343,7 +370,7 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(providerEventLoggersLayer),
         );
     const readyProviderSnapshot = (
-      driver: "claudeAgent" | "codex" | "agy" | "opencode",
+      driver: "claudeAgent" | "codex" | "agy" | "opencode" | "grok",
       model: string,
     ): ServerProvider => ({
       instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make(driver)),
@@ -355,7 +382,9 @@ export const makeOrchestrationIntegrationHarness = (
             ? "Antigravity"
             : driver === "opencode"
               ? "OpenCode"
-              : "Claude",
+              : driver === "grok"
+                ? "Grok"
+                : "Claude",
       enabled: true,
       installed: true,
       version: "test",
@@ -375,7 +404,8 @@ export const makeOrchestrationIntegrationHarness = (
       readyProviderSnapshot("claudeAgent", "claude-opus-4-6"),
       readyProviderSnapshot("codex", "gpt-5-codex"),
       readyProviderSnapshot("agy", "gemini-3.6-flash-low"),
-      readyProviderSnapshot("opencode", "ollama/gemma4:e2b-it-qat"),
+      readyProviderSnapshot("opencode", "ollama/gemma4:e4b-it-qat"),
+      readyProviderSnapshot("grok", "grok-4.6"),
     ]);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
@@ -479,6 +509,45 @@ export const makeOrchestrationIntegrationHarness = (
         ),
       ),
     );
+    // Optional real MCP stack. Building McpSessionRegistry.layer sets the
+    // module-global registry, which is the exact switch that makes
+    // ProviderService mint t3-code credentials into real provider sessions.
+    // The endpoint URL inside those credentials derives from the bound
+    // ephemeral port automatically.
+    let mcpEndpoint: string | null = null;
+    let mcpRequestCount = 0;
+    if (options?.mcp === true) {
+      const countingHttpServer = () => {
+        const server = NodeHttp.createServer();
+        server.on("request", (request) => {
+          if (request.url?.startsWith("/mcp")) mcpRequestCount += 1;
+        });
+        return server;
+      };
+      const mcpContext = yield* HttpRouter.serve(
+        McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+        { disableListenLog: true, disableLogger: true },
+      ).pipe(
+        Layer.provideMerge(NodeHttpServer.layer(countingHttpServer, { port: 0 })),
+        Layer.provide(
+          Layer.mergeAll(
+            ServerEnvironment.layer,
+            PreviewAutomationBroker.layer,
+            providerRegistryLayer,
+            useRealCodex ? realCodexRegistry : fakeRegistry!,
+            providerSessionDirectoryLayer,
+            serverSettingsLayer,
+          ),
+        ),
+        Layer.provide(persistenceLayer),
+        Layer.provide(ServerConfig.layerTest(workspaceDir, rootDir)),
+        Layer.provide(NodeServices.layer),
+        Layer.build,
+      );
+      const address = Context.get(mcpContext, HttpServer.HttpServer).address;
+      mcpEndpoint = address._tag === "TcpAddress" ? `http://127.0.0.1:${address.port}/mcp` : null;
+    }
+
     const layer = Layer.empty.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
@@ -670,6 +739,8 @@ export const makeOrchestrationIntegrationHarness = (
       waitForReceipt,
       drainProviderRuntime: providerRuntimeIngestion.drain,
       drainCheckpointReactor: checkpointReactor.drain,
+      mcpEndpoint,
+      mcpRequestCount: () => mcpRequestCount,
       dispose,
     } satisfies OrchestrationIntegrationHarness;
   });

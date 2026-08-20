@@ -1110,7 +1110,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
-  it.effect("dies when an active session conflicts with its persisted binding", () =>
+  it.effect("trusts the live session when it conflicts with a mid-restart binding", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -1130,8 +1130,17 @@ routing.layer("ProviderServiceLive routing", (it) => {
         runtimeMode: "full-access",
       });
 
-      const exit = yield* Effect.exit(provider.listSessions());
-      assert.equal(Exit.hasDies(exit), true);
+      // A same-thread provider switch briefly leaves the live session on the
+      // new provider while the persisted binding still names the old one. This
+      // window must not kill listSessions (which would strand the in-flight
+      // turn); the live session is authoritative and the binding converges.
+      const sessions = yield* provider.listSessions();
+      assert.deepEqual(
+        sessions
+          .filter((session) => session.threadId === threadId)
+          .map((session) => session.provider),
+        ["codex"],
+      );
       yield* directory.upsert({
         threadId,
         provider: ProviderDriverKind.make("codex"),

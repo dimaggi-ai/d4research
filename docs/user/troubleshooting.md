@@ -47,9 +47,10 @@ The built-in file is `memory.sqlite` in the environment state directory. Develop
 the repository's `.t3/dev` directory; production uses `userdata` under the configured T3 home. Back
 up state before moving or deleting this file.
 
-A provider handoff is fail-closed at the durable context boundary. If both the prepared handoff write
-and its local fallback write fail, d4research keeps the original provider selected and does not start
-the receiving provider.
+A provider handoff does not depend on Memo availability. If both the prepared handoff write and its
+local fallback write fail, d4research attaches the size-bounded visible-thread transcript directly
+and continues the switch. The receiving provider therefore still gets context; only Memo search and
+recovery lose that handoff record.
 
 ## The Browser Disconnects or a Request Times Out
 

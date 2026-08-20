@@ -60,7 +60,7 @@ Prompt-file resolution is deferred behind the charge (`resolvePromptFile`), not 
 
 An active chat can move to another model without creating a new thread. This is a permanent product invariant, not an implementation preference: a handoff may replace the provider-native session, but it must never create another d4research thread, change the thread ID or route, fork the visible transcript, branch, or worktree, or present the receiving provider as a separate chat. Any proposed change that does so is a regression.
 
-The client constructs a size-bounded recent transcript and requests a local compact summary with a deterministic excerpt fallback. Before stopping the old provider session or updating its model selection, it must prove that the handoff context was written through the server to the configured local Memo connector. The combined prepare route normally performs that write; the dedicated memory route is the recovery path. If neither local-memory write succeeds, the handoff stops without changing provider or thread. Once persistence succeeds, the client stops the old provider-native session, updates the existing thread's model selection, and starts the receiving provider on that same thread ID. Selection is rolled back if the later session transition fails.
+The client constructs a size-bounded recent transcript and requests a local compact summary with a deterministic excerpt fallback. The combined prepare route normally writes that context to the configured local Memo connector; the dedicated memory route is the recovery path. If neither local-memory write succeeds, the client attaches the structured visible-thread transcript directly and continues instead of trapping the user on an exhausted provider. The client then updates the existing thread's model selection and starts the receiving provider on that same thread ID. Selection is rolled back if the later session transition fails.
 
 The visible transcript remains authoritative. Memo supplements it with a compact bridge that can be recovered by another provider through `memory_search` using the local connector and project name.
 
@@ -140,7 +140,7 @@ Research changes must continue to account for:
 
 - The repository is public and normally installed from source. Desktop builds are cut on a maintainer machine and attached to GitHub releases; there is no `d4research` npm package.
 - A pipeline executes the scenario the user wrote. It does not guarantee delegation: a pipeline with no `!provider:model` directives runs entirely on the orchestrating model, and a step may resolve in fewer visits than its budget allows.
-- Provider handoff requires a working configured local Memo connector. The built-in local SQLite backend satisfies this contract by default; an unavailable or disabled connector prevents the provider switch rather than creating a contextless receiving session.
+- Provider handoff mirrors context to the configured local Memo connector when available. An unavailable or disabled connector does not prevent the switch because the receiving message carries the structured visible-thread transcript directly.
 - Memo-backed composer documents require the same connector. Providers without the injected d4research MCP toolkit receive only the bounded preview during their turn.
 - Voice and Mission Control require the matching local deployment services.
 - Tool Guard is optional and environment-scoped on macOS, Linux, and Windows.
@@ -151,7 +151,7 @@ Research changes must continue to account for:
 When extending the research layer, verify that:
 
 - the user can see, reverse, or recover every lifecycle transition;
-- a provider handoff keeps the exact thread ID, route, transcript, branch, and worktree, and cannot start the receiving provider until local Memo persistence succeeds;
+- a provider handoff keeps the exact thread ID, route, transcript, branch, and worktree, and cannot start the receiving provider without an attached visible-thread context block;
 - displayed provider readiness matches the server's actual configured state;
 - claims distinguish suggested work from completed work;
 - local integrations fail clearly and do not become undeclared hosted dependencies;

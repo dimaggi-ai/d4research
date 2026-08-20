@@ -76,10 +76,20 @@ export const makeGrokAcpRuntime = (
     return yield* makeXAiPromptCompletionRuntime(runtime);
   });
 
-export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
+/**
+ * The historical built-in default "grok-build" no longer exists on current
+ * grok CLIs — session/set_model rejects it with "unknown model id", which
+ * left every default-model Grok session dead. Legacy and empty selections
+ * resolve to undefined, which means "keep the agent's own default model"
+ * (applyGrokAcpModelSelection skips set_model for undefined).
+ */
+const GROK_LEGACY_DEFAULT_MODEL_ID = "grok-build";
+
+export function resolveGrokAcpBaseModelId(model: string | null | undefined): string | undefined {
   const trimmed = model?.trim();
-  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-build";
-  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-build";
+  if (!trimmed) return undefined;
+  const normalized = normalizeModelSlug(trimmed, GROK_DRIVER_KIND) ?? trimmed;
+  return normalized === GROK_LEGACY_DEFAULT_MODEL_ID ? undefined : normalized;
 }
 
 export function currentGrokModelIdFromSessionSetup(

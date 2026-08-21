@@ -160,17 +160,17 @@ does not trigger a handoff — it's a simple model swap.
 ```
 1. Build transcript     buildProviderHandoffTranscript(messages, maxChars)
                         → tail-truncated plain text of the conversation
-2. Summarize/compress   Either:
-                        a. Compression enabled → POST /api/handoff/compress
-                        b. Compression disabled or failed → summarizeReplyForSpeech()
-3. Persist to Memo      POST /api/memory/handoff
-                        → stored with tag "t3research-provider-handoff"
-                        → when compression is on, the FULL transcript goes to Memo
-4. Stop old session     adapter.stopSession()
-5. Update model         thread metadata updated to new model selection
-6. Sync receiving model context-only handoff prompt injected on the same thread
-                        → acknowledge context and wait; do not resume prior work
-7. Rollback on failure  model selection reverted if anything fails
+2. Prepare context      POST /api/handoff/prepare
+                        → optional compression or deterministic truncation
+                        → best-effort Memo mirror
+3. Fallback mirror      if persistence was not confirmed, attempt
+                        POST /api/memory/handoff with the prepared summary
+                        (or the structured transcript if preparation failed)
+4. Attach context       append <handoff_context> to the user's pending message
+5. Update model         thread metadata updated to the target model selection
+6. Start receiving turn the user's instruction and context run as one turn on
+                        the same thread; no acknowledgement-only turn
+7. Rollback on failure  model selection reverted if the session transition fails
 ```
 
 ### What the receiving provider sees
@@ -179,13 +179,14 @@ The handoff prompt tells the receiving provider:
 
 - Which thread and source provider it is continuing from
 - That the visible transcript is the authoritative conversation history
-- That shared context is available via `memory_search` with connector `"local"`
+- That shared context may be available via `memory_search` with connector `"local"`
 - Which global and chat skills are active, so the receiving provider keeps them active
 - A compact summary of the conversation so far
-- That the handoff is context synchronization only, not permission to resume a prior task, edit
-  files, or run tools; it should acknowledge context and wait for the next user instruction
+- That it must act on the user's instruction outside the handoff block and not resume unrelated
+  prior work
 
-The merged global and chat skill names are also written into the durable local Memo handoff record.
+The merged global and chat skill names are included in the attached handoff block and, when the
+local mirror succeeds, in the Memo handoff record.
 Chat selections are keyed by the same durable thread id, so a provider switch does not change their
 scope. The receiving turn gets the normal per-turn skill references after compression, so
 compression cannot silently remove either preference.
@@ -194,7 +195,8 @@ compression cannot silently remove either preference.
 
 When enabled in **Settings → General → Handoff → Context compression**, the transcript is sent
 through a chosen provider to produce a dense summary before handoff. This saves tokens on the
-receiving side while preserving full context in Memo.
+receiving side; Memo receives the prepared summary on either path when one exists, or the structured
+transcript if preparation failed.
 
 | Setting                   | Default   | Description                                                     |
 | ------------------------- | --------- | --------------------------------------------------------------- |
@@ -205,8 +207,10 @@ receiving side while preserving full context in Memo.
 | **Max output characters** | 2 000     | Max length of the compressed summary                            |
 | **Custom prompt**         | _(empty)_ | Override the default compression system prompt                  |
 
-The dual-write pattern: compressed summary goes in the handoff prompt (saves tokens), full
-uncompressed transcript goes in Memo (preserves accuracy). See
+The prepared summary goes in the handoff prompt and is mirrored to Memo when the primary write
+succeeds. If that write is not confirmed, the client separately offers the prepared summary (or the
+structured transcript if preparation failed) to Memo without replacing a usable prepared summary in
+the receiving message. See
 [handoff-compression.md](../internals/handoff-compression.md) for implementation details.
 
 ### Fallback behavior
@@ -214,8 +218,8 @@ uncompressed transcript goes in Memo (preserves accuracy). See
 If compression is disabled, not configured, or returns an error, the handoff falls back to a
 structured transcript. Provider-backed compression has a 30-second total budget, so an exhausted
 provider cannot hold the switch open. Compression and Memo persistence are both best-effort: if
-neither Memo write succeeds, d4research attaches the structured transcript directly and continues
-the handoff.
+neither Memo write succeeds, d4research still attaches the prepared summary when one exists (or the
+structured transcript after a preparation failure) and continues the handoff.
 
 ## Boundaries
 

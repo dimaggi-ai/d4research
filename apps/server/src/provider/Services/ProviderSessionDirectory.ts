@@ -28,6 +28,8 @@ export interface ProviderRuntimeBinding {
   readonly resumeCursor?: unknown | null;
   readonly runtimePayload?: unknown | null;
   readonly runtimeMode?: RuntimeMode;
+  /** Storage timestamp carried through exact compensation writes. */
+  readonly lastSeenAt?: string;
 }
 
 export interface ProviderRuntimeBindingWithMetadata extends ProviderRuntimeBinding {
@@ -42,6 +44,15 @@ export type ProviderSessionDirectoryWriteError =
 
 export interface ProviderSessionDirectoryShape {
   readonly upsert: (
+    binding: ProviderRuntimeBinding,
+  ) => Effect.Effect<void, ProviderSessionDirectoryWriteError>;
+
+  /**
+   * Replace a row without merging optional fields from the current record.
+   * Transition compensation uses this so failed provider state cannot leave
+   * new model/runtime payload keys behind in an older binding.
+   */
+  readonly replace: (
     binding: ProviderRuntimeBinding,
   ) => Effect.Effect<void, ProviderSessionDirectoryWriteError>;
 

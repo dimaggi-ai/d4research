@@ -226,6 +226,7 @@ function makeScopedRuntimeFactory(options?: { readonly failConstruction?: boolea
 
 const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory, {
   upsert: () => Effect.void,
+  replace: () => Effect.void,
   getProvider: () =>
     Effect.die(new Error("ProviderSessionDirectory.getProvider is not used in test")),
   getBinding: () => Effect.succeed(Option.none()),
@@ -571,6 +572,76 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.effect("still fails readThread on a generic thread-store error", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-generic-thread-store-error");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.readThreadFailure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "thread-store temporarily unavailable",
+        method: "thread/read",
+      });
+
+      const result = yield* Effect.exit(adapter.readThread(threadId));
+      NodeAssert.equal(result._tag, "Failure");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("still fails a matching history message with a non-internal error code", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-history-wrong-code");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.readThreadFailure = new CodexErrors.CodexAppServerRequestError({
+        code: -32602,
+        errorMessage: "failed to read session metadata /private/session.jsonl",
+        method: "thread/read",
+      });
+
+      const result = yield* Effect.exit(adapter.readThread(threadId));
+      NodeAssert.equal(result._tag, "Failure");
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("maps codex model options for the adapter's bound custom instance id", () => {
     const customInstanceId = ProviderInstanceId.make("codex_personal");
     const customRuntimeFactory = makeRuntimeFactory();
@@ -669,13 +740,13 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       // adapter log lines). The starting fiber here completes before the
       // runtime emits anything; the pump must still deliver.
       const adapter = yield* CodexAdapter;
-      const starter = yield* Effect.gen(function* () {
-        yield* adapter.startSession({
+      const starter = yield* adapter
+        .startSession({
           provider: ProviderDriverKind.make("codex"),
           threadId: asThreadId("thread-1"),
           runtimeMode: "full-access",
-        });
-      }).pipe(Effect.forkChild);
+        })
+        .pipe(Effect.asVoid, Effect.forkChild);
       yield* Fiber.join(starter);
       const runtime = lifecycleRuntimeFactory.lastRuntime;
       NodeAssert.ok(runtime);

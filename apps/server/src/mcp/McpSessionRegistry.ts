@@ -31,8 +31,16 @@ export interface McpSessionRegistryShape {
    * credential even when it goes a long time without touching an MCP tool.
    */
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
-  readonly setActiveTurn: (threadId: ThreadId, turnId: TurnId) => Effect.Effect<void>;
+  /** Refresh exactly one provider credential without reviving retired tokens. */
+  readonly touchProviderSession: (providerSessionId: string) => Effect.Effect<void>;
+  /** Attach turn metadata to the credential for the committed provider session. */
+  readonly setActiveTurn: (providerSessionId: string, turnId: TurnId) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
+  /** Revoke every credential for a thread except the committed one. */
+  readonly revokeThreadExcept: (
+    threadId: ThreadId,
+    providerSessionId: string | undefined,
+  ) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeAll: Effect.Effect<void>;
 }
@@ -182,12 +190,28 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     },
   );
 
-  const setActiveTurn: McpSessionRegistryShape["setActiveTurn"] = (threadId, turnId) =>
+  const touchProviderSession: McpSessionRegistryShape["touchProviderSession"] = Effect.fn(
+    "McpSessionRegistry.touchProviderSession",
+  )(function* (providerSessionId) {
+    const timestamp = yield* currentTimeMillis;
+    yield* SynchronizedRef.update(state, ({ records }) => {
+      const current = pruneDead(records, timestamp);
+      const next = new Map(current);
+      for (const [tokenHash, record] of current) {
+        if (record.scope.providerSessionId === providerSessionId) {
+          next.set(tokenHash, { ...record, lastAliveAt: timestamp });
+        }
+      }
+      return { records: next };
+    });
+  });
+
+  const setActiveTurn: McpSessionRegistryShape["setActiveTurn"] = (providerSessionId, turnId) =>
     SynchronizedRef.update(state, ({ records }) => ({
       records: new Map(
         Array.from(records, ([key, record]) => [
           key,
-          record.scope.threadId === threadId
+          record.scope.providerSessionId === providerSessionId
             ? { ...record, scope: { ...record.scope, turnId } }
             : record,
         ]),
@@ -203,10 +227,21 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     issue,
     resolve,
     touch,
+    touchProviderSession,
     setActiveTurn,
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
         yield* revokeWhere((record) => record.scope.providerSessionId === providerSessionId);
+      },
+    ),
+    revokeThreadExcept: Effect.fn("McpSessionRegistry.revokeThreadExcept")(
+      function* (threadId, providerSessionId) {
+        yield* revokeWhere(
+          (record) =>
+            record.scope.threadId === threadId &&
+            (providerSessionId === undefined ||
+              record.scope.providerSessionId !== providerSessionId),
+        );
       },
     ),
     revokeThread: Effect.fn("McpSessionRegistry.revokeThread")(function* (threadId) {
@@ -246,14 +281,61 @@ export const issueActiveMcpCredential = (
     : Effect.sync((): McpIssuedCredential | undefined => undefined);
 
 /**
+ * Issue a second credential while keeping the current thread credential
+ * usable. Session replacement uses this during its commit window and revokes
+ * the previous provider session only after the new binding is durable.
+ */
+export const issueActiveMcpCredentialPreserving = (
+  request: McpCredentialRequest,
+): Effect.Effect<McpIssuedCredential | undefined> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.issue(request)
+    : Effect.sync((): McpIssuedCredential | undefined => undefined);
+
+/**
+ * Revoke one credential without disturbing another credential for the same
+ * thread. ProviderService uses this to make session replacement reversible:
+ * the old process keeps its token until the new routing binding is durable and
+ * stale-session cleanup has succeeded.
+ */
+export const revokeActiveMcpProviderSession = (providerSessionId: string): Effect.Effect<void> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.revokeProviderSession(providerSessionId)
+    : Effect.void;
+
+/**
+ * Revoke every credential for a thread except the credential currently used by
+ * the committed provider session. This closes over credentials left by an
+ * interrupted or failed replacement, including credentials no longer present
+ * in the in-memory MCP routing slot.
+ */
+export const revokeActiveMcpThreadExcept = (
+  threadId: ThreadId,
+  providerSessionId: string | undefined,
+): Effect.Effect<void> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.revokeThreadExcept(threadId, providerSessionId)
+    : Effect.void;
+
+/**
  * Refreshes the liveness of a thread's MCP credential. Called on every provider
  * turn so an active session is never mistaken for an abandoned one.
  */
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
-  activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
+  activeMcpSessionRegistry
+    ? Effect.sync(() => McpProviderSession.readMcpProviderSession(threadId)).pipe(
+        Effect.flatMap((session) =>
+          session
+            ? activeMcpSessionRegistry!.touchProviderSession(session.providerSessionId)
+            : Effect.void,
+        ),
+      )
+    : Effect.void;
 
-export const setActiveMcpTurn = (threadId: ThreadId, turnId: TurnId): Effect.Effect<void> =>
-  activeMcpSessionRegistry ? activeMcpSessionRegistry.setActiveTurn(threadId, turnId) : Effect.void;
+export const setActiveMcpTurn = (providerSessionId: string, turnId: TurnId): Effect.Effect<void> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.setActiveTurn(providerSessionId, turnId)
+    : Effect.void;
 
 export const revokeActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.revokeThread(threadId) : Effect.void;

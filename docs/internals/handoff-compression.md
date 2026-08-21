@@ -1,6 +1,6 @@
 # Handoff Context Compression
 
-When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. The transcript is structured — the first user message (the task statement) is kept verbatim, the middle is marked as omitted, and the most recent messages fill the remaining budget — and then compressed into a dense summary before it travels. Compression defaults to a local Ollama model, so a handoff costs no cloud tokens and no provider cold start.
+When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. The transcript is structured — the first user message (the task statement) is kept verbatim, the middle is marked as omitted, and the most recent messages fill the remaining budget. When compression is enabled, it is condensed before it travels; otherwise the bounded structured transcript travels directly. Local Ollama is the default compression backend, so enabling compression does not require cloud tokens.
 
 ## Non-negotiable thread invariant
 
@@ -8,7 +8,7 @@ A provider handoff stays on the existing d4research thread. Only the provider-na
 
 Picking a cross-provider model in a started chat **stages** the switch; it starts nothing. The user's next send performs it, and the receiving turn is that send: one turn whose message is the user's own instruction with a `<handoff_context>` block appended. There is no acknowledgement round-trip and no machine-authored turn. The block names the target, the source thread, the configured skills, and the carried summary, and it tells the receiving agent to act on the instruction above it rather than resume unrelated prior work.
 
-The visible thread transcript is the authoritative context bridge between provider-native sessions. Local Memo mirrors the carried summary for later search and recovery, but it is not the transport for the receiving turn. The client first asks `/api/handoff/prepare` to compress and persist the summary, then attempts `/api/memory/handoff` with the structured transcript when that is not proven. If both writes fail, the same structured transcript is still attached directly to the receiving message. This keeps an exhausted source provider or unavailable Memo from trapping the user on the old session without creating a contextless receiving turn.
+The visible thread transcript is the authoritative context bridge between provider-native sessions. Local Memo mirrors the carried summary for later search and recovery, but it is not the transport for the receiving turn. The client first asks `/api/handoff/prepare` to compress and persist the summary, then attempts `/api/memory/handoff` with the prepared summary (or the structured transcript when preparation itself failed) if persistence is not proven. If both writes fail, whichever context was selected remains attached directly to the receiving message. This keeps an exhausted source provider or unavailable Memo from trapping the user on the old session without creating a contextless receiving turn.
 
 ## Settings
 
@@ -43,29 +43,32 @@ ChatView (onSend, staged handoff pending)
   │     │
   │     ├─ reads compression settings from ServerSettings
   │     ├─ backend "local"    → compressHandoffContextLocal (Ollama /api/chat,
-  │     │                       stream:false, keep_alive 2m, 60 s timeout;
+  │     │                       stream:false, keep_alive 30m, 60 s timeout;
   │     │                       any failure → truncateHandoffTranscript)
   │     ├─ backend "provider" → compressHandoffContext (ephemeral provider
   │     │                       session, 30 s total prepare-route budget)
-  │     └─ persists the COMPRESSED summary to local Memo, then returns it
+  │     └─ attempts to persist the prepared summary to local Memo, then
+  │        returns both the summary and whether persistence succeeded
   │
-  ├─ Fallback: prepare did not prove persistence → the structured transcript
-  │  becomes the summary and the client writes it via
-  │  POST /api/memory/handoff; write failure does not block the switch
+  ├─ Fallback mirror: prepare did not prove persistence → the client writes
+  │  the prepared summary (or the structured transcript when preparation
+  │  itself failed) via POST /api/memory/handoff. The receiving context stays
+  │  the prepared summary whenever one exists. Mirror failure does not block
+  │  the switch.
   │
   └─ Start ONE turn on the same thread, on the target model
         → message = user's instruction + trailing <handoff_context> block
 ```
 
-One round-trip does both jobs. The browser uploads the transcript once; Memo stores the compressed summary (the local memory service applies its own curation on top), not a duplicate of the raw transcript.
+The primary round trip does both jobs. If it returns without proof of persistence, the browser makes one bounded fallback write with the prepared summary when one exists, otherwise the structured transcript. The local memory service applies its own curation.
 
 ## Server endpoints
 
 **`POST /api/handoff/prepare`** — the primary path.
 
 - **Auth:** `AuthOrchestrationOperateScope`
-- **Request:** `{ transcript, project?, sourceThreadId?, sourceThreadTitle?, target? }`
-- **Response:** `{ ok: true, compressed: string }` — `compressed` falls back to structured truncation when the compressor fails; the route only errors on an empty transcript or an internal fault.
+- **Request:** `{ transcript, project?, sourceThreadId?, sourceThreadTitle?, target?, bypassCompression? }`
+- **Response:** `{ ok: true, compressed: string, memoryPersisted: boolean }` — `compressed` falls back to structured truncation when the compressor fails; `memoryPersisted` reports the optional Memo mirror independently.
 
 **`POST /api/handoff/compress`** — retained for compatibility; compresses without persisting. Same auth scope, request `{ transcript }`.
 
@@ -73,7 +76,7 @@ One round-trip does both jobs. The browser uploads the transcript once; Memo sto
 
 Both live in `apps/server/src/handoffCompression.ts`:
 
-- `compressHandoffContextLocal` — POSTs Ollama's `/api/chat` with the compression prompt, `stream: false`, `keep_alive: "2m"`, and a `num_ctx` sized to the input budget. Total by design: daemon down, non-200, malformed JSON, empty content, or timeout (60 s) all fall back to `truncateHandoffTranscript` instead of erroring.
+- `compressHandoffContextLocal` — POSTs Ollama's `/api/chat` with the compression prompt, `stream: false`, `keep_alive: "30m"`, and a `num_ctx` sized to the input budget. Total by design: daemon down, non-200, malformed JSON, empty content, or timeout (60 s) all fall back to `truncateHandoffTranscript` instead of erroring.
 - `compressHandoffContext` — resolves the provider adapter by `instanceId`, runs `startSession → sendTurn → readThread → stopSession` on an ephemeral thread; cleanup always runs via `Effect.ensuring`. Its internal operations remain bounded, and the prepare route additionally caps the complete provider attempt at 30 seconds before using deterministic truncation. Errors are wrapped in `HandoffCompressionError`.
 - `truncateHandoffTranscript` — head+tail truncation with an omission marker; never exceeds the budget, even when the budget is smaller than the marker.
 
@@ -88,7 +91,7 @@ Output only the compressed summary, no preamble.
 
 ## Client integration
 
-`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and returns the compressed summary only when the response also proves `memoryPersisted: true`. `prepareDurableProviderHandoff` owns the complete fallback: on network error, non-ok response, malformed JSON, or an unconfirmed write, it attempts to store the structured transcript through `persistProviderHandoffMemoryFallback`. Whether or not that mirror write succeeds, it returns the structured transcript for direct attachment to the receiving message.
+`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and preserves both the prepared summary and whether Memo persistence was confirmed. `prepareDurableProviderHandoff` owns the complete fallback: on network error, non-ok response, malformed JSON, or an unconfirmed write, it attempts to store the prepared summary when available (or the structured transcript when preparation itself failed) through `persistProviderHandoffMemoryFallback`. A successful prepared summary is still attached even when the optional mirror write fails; only a failed prepare falls back to the structured transcript.
 
 `onProviderModelSelect` treats every pick the same way: it writes the selection into the composer draft. `resolveProviderHandoffForSelection` is the single predicate that decides whether a selection would hand off; the composer banner, the released provider lock, and the send path all read it, so they cannot disagree. Releasing `deriveLockedProvider` while a handoff is staged is what lets the composer show and dispatch the target instance in a started chat.
 
@@ -114,8 +117,9 @@ authentication, or wedged runtime cannot prevent the user from switching away. T
 
 1. Compression succeeds → compressed summary in the attached block, same summary in Memo.
 2. Compressor fails server-side → structured truncation in the block and in Memo.
-3. The prepare round-trip does not prove persistence → structured transcript in the block; the client writes it to Memo via `/api/memory/handoff`.
-4. Both Memo paths fail → the structured transcript remains in the attached block and the handoff continues; only the searchable Memo mirror is missing.
+3. Prepare returns a usable summary but does not prove persistence → that summary remains in the block; the client separately writes the same prepared summary to Memo via `/api/memory/handoff`.
+4. Prepare itself fails → the structured transcript becomes the block summary and the client attempts the same fallback Memo write.
+5. Both Memo paths fail → whichever context was selected above remains in the attached block and the handoff continues; only the searchable Memo mirror is missing.
 
 A staged target can go unavailable while it waits for the next send. The dispatch is safe on its own — the lock is restored, the composer substitutes the running instance, and the message goes out on the source provider with no unprepared switch — but silence there would let the banner's promise and the send's behavior diverge. So the banner is driven by the **raw draft pick**, not the composer's substituted selection, and an `unavailable` resolution keeps it on screen in a warning state: _“Handoff to … paused — provider unavailable. Messages continue on … until it returns, or cancel the switch.”_ Cancel still works, and the switch resumes by itself once the target reports ready. `applyStagedProviderHandoff` keeps refusing an `unavailable` target as defence in depth, for any future path that reaches dispatch without the substitution.
 

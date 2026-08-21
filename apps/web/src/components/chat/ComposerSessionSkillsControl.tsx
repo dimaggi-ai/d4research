@@ -5,7 +5,7 @@ import {
 } from "@t3tools/contracts";
 import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
 import { CheckIcon, SearchIcon, SparklesIcon } from "lucide-react";
-import { memo, type ComponentProps, useMemo, useState } from "react";
+import { memo, type ComponentProps, useEffect, useMemo, useState } from "react";
 
 import {
   type SkillsInventoryEntry,
@@ -91,6 +91,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
   readonly enabledByThread: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly inventoryEntries: ReadonlyArray<SkillsInventoryEntry>;
   readonly inventoryState: "loading" | "ready" | "error";
+  readonly disabled?: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
@@ -108,6 +109,9 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
     () => mergeEnabledSkillNames(props.globalNames, sessionNames),
     [props.globalNames, sessionNames],
   );
+  useEffect(() => {
+    if (props.disabled && props.open) props.onOpenChange(false);
+  }, [props.disabled, props.onOpenChange, props.open]);
   const options = useMemo(
     () => buildSessionSkillOptions(props.inventoryEntries, [...props.globalNames, ...sessionNames]),
     [props.globalNames, props.inventoryEntries, sessionNames],
@@ -123,7 +127,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
   }, [options, query]);
 
   const toggleSessionSkill = async (name: string) => {
-    if (globalSet.has(name) || savingName !== null) return;
+    if (props.disabled || globalSet.has(name) || savingName !== null) return;
     const enabled = !sessionSet.has(name);
     setSavingName(name);
     try {
@@ -143,10 +147,16 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
 
   const activeSessionCount = sessionNames.filter((name) => !globalSet.has(name)).length;
   return (
-    <Popover open={props.open} onOpenChange={props.onOpenChange}>
+    <Popover
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!props.disabled) props.onOpenChange(open);
+      }}
+    >
       <PopoverTrigger
         render={
           <ComposerSessionSkillsTriggerButton
+            disabled={props.disabled}
             effectiveCount={effectiveNames.length}
             hasSessionSkills={activeSessionCount > 0}
           />
@@ -183,6 +193,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
               type="search"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
+              disabled={props.disabled}
               placeholder="Find a skill"
               aria-label="Find a skill"
               className="ps-7.5"
@@ -208,20 +219,21 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
               const limitReached =
                 !selected && effectiveNames.length >= ENABLED_BY_DEFAULT_SKILL_MAX_COUNT;
               const disabled = globallyEnabled || limitReached || savingName !== null;
+              const itemDisabled = props.disabled || disabled;
               return (
                 <button
                   key={option.name}
                   type="button"
                   role="checkbox"
                   aria-checked={selected}
-                  disabled={disabled}
+                  disabled={itemDisabled}
                   data-chat-session-skill={option.name}
                   data-chat-session-skill-scope={
                     globallyEnabled ? "global" : sessionEnabled ? "session" : "off"
                   }
                   className={cn(
                     "flex w-full items-start gap-2 rounded-md px-2 py-2 text-start outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50",
-                    disabled && !globallyEnabled && "opacity-50",
+                    itemDisabled && !globallyEnabled && "opacity-50",
                   )}
                   onClick={() => void toggleSessionSkill(option.name)}
                 >

@@ -148,6 +148,30 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
       .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:upsert")));
   });
 
+  const replace: ProviderSessionDirectoryShape["replace"] = Effect.fn(function* (binding) {
+    const providerInstanceId = binding.providerInstanceId;
+    if (providerInstanceId === null || providerInstanceId === undefined) {
+      return yield* new ProviderValidationError({
+        operation: "ProviderSessionDirectory.replace",
+        issue: "providerInstanceId is required for provider session runtime bindings.",
+      });
+    }
+    const now = binding.lastSeenAt ?? DateTime.formatIso(yield* DateTime.now);
+    yield* repository
+      .upsert({
+        threadId: binding.threadId,
+        providerName: binding.provider,
+        providerInstanceId,
+        adapterKey: binding.adapterKey ?? binding.provider,
+        runtimeMode: binding.runtimeMode ?? "full-access",
+        status: binding.status ?? "running",
+        lastSeenAt: now,
+        resumeCursor: binding.resumeCursor ?? null,
+        runtimePayload: binding.runtimePayload ?? null,
+      })
+      .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.replace:upsert")));
+  });
+
   const getProvider: ProviderSessionDirectoryShape["getProvider"] = (threadId) =>
     getBinding(threadId).pipe(
       Effect.flatMap((binding) =>
@@ -184,6 +208,7 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
 
   return {
     upsert,
+    replace,
     getProvider,
     getBinding,
     listThreadIds,

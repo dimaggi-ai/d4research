@@ -17,6 +17,11 @@ const LOCAL_COMPRESSION_TIMEOUT_MILLIS = 60_000;
 const PROVIDER_COMPRESSION_TIMEOUT_MILLIS = 120_000;
 const SESSION_STOP_TIMEOUT_MILLIS = 10_000;
 
+// Compression sessions are hidden provider sessions, not durable threads. A
+// wall-clock-only id lets two handoff requests started in the same millisecond
+// stop or steer one another, so keep a process-local monotonic suffix as well.
+let handoffCompressionSequence = 0;
+
 /**
  * Deterministic, model-free fallback: keeps the head (task statement) and the
  * most recent tail of the transcript within the character budget. Used whenever
@@ -155,65 +160,75 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
     input.transcript,
   ].join("\n");
 
-  const threadId = ThreadId.make(`handoff-compress-${yield* Clock.currentTimeMillis}`);
+  const sequence = yield* Effect.sync(() => {
+    handoffCompressionSequence += 1;
+    return handoffCompressionSequence;
+  });
+  const threadId = ThreadId.make(`handoff-compress-${yield* Clock.currentTimeMillis}-${sequence}`);
 
-  yield* adapter
-    .startSession({
-      threadId,
-      provider: adapter.provider,
-      cwd: input.cwd,
-      runtimeMode: "approval-required",
-      modelSelection: { instanceId: input.instanceId, model: input.model },
-    })
-    .pipe(
-      // The turn timeout below cannot help if the startup handshake itself
-      // hangs — bound it separately so a wedged provider CLI cannot hold
-      // /api/handoff/prepare open forever.
-      Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
-      Effect.mapError(
-        (cause) =>
-          new HandoffCompressionError({
-            detail: `Failed to start compression session: ${cause instanceof Error ? cause.message : String(cause)}`,
-          }),
-      ),
-    );
+  const compressed = yield* Effect.gen(function* () {
+    yield* adapter
+      .startSession({
+        threadId,
+        provider: adapter.provider,
+        cwd: input.cwd,
+        runtimeMode: "approval-required",
+        modelSelection: { instanceId: input.instanceId, model: input.model },
+      })
+      .pipe(
+        // The turn timeout below cannot help if the startup handshake itself
+        // hangs — bound it separately so a wedged provider CLI cannot hold
+        // /api/handoff/prepare open forever.
+        Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
+        Effect.mapError(
+          (cause) =>
+            new HandoffCompressionError({
+              detail: `Failed to start compression session: ${cause instanceof Error ? cause.message : String(cause)}`,
+            }),
+        ),
+      );
 
-  const compressed = yield* adapter
-    .sendTurn({
-      threadId,
-      input: turnInput,
-      attachments: [],
-      modelSelection: { instanceId: input.instanceId, model: input.model },
-    })
-    .pipe(
-      Effect.flatMap(() => adapter.readThread(threadId)),
-      Effect.map((thread) => {
-        const lastTurn = thread.turns[thread.turns.length - 1];
-        if (!lastTurn) return "";
-        return lastTurn.items
-          .map((item) => {
-            if (typeof item === "string") return item;
-            if (typeof item === "object" && item !== null && "text" in item) {
-              return String((item as { text: unknown }).text);
-            }
-            return "";
-          })
-          .join("")
-          .trim();
-      }),
-      Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
-      Effect.mapError(
-        (cause) =>
-          new HandoffCompressionError({
-            detail: `Compression turn failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          }),
-      ),
-      Effect.ensuring(
-        adapter
-          .stopSession(threadId)
-          .pipe(Effect.timeout(SESSION_STOP_TIMEOUT_MILLIS), Effect.ignore),
-      ),
-    );
+    return yield* adapter
+      .sendTurn({
+        threadId,
+        input: turnInput,
+        attachments: [],
+        modelSelection: { instanceId: input.instanceId, model: input.model },
+      })
+      .pipe(
+        Effect.flatMap(() => adapter.readThread(threadId)),
+        Effect.map((thread) => {
+          const lastTurn = thread.turns[thread.turns.length - 1];
+          if (!lastTurn) return "";
+          return lastTurn.items
+            .map((item) => {
+              if (typeof item === "string") return item;
+              if (typeof item === "object" && item !== null && "text" in item) {
+                return String((item as { text: unknown }).text);
+              }
+              return "";
+            })
+            .join("")
+            .trim();
+        }),
+        Effect.timeout(PROVIDER_COMPRESSION_TIMEOUT_MILLIS),
+        Effect.mapError(
+          (cause) =>
+            new HandoffCompressionError({
+              detail: `Compression turn failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+            }),
+        ),
+      );
+  }).pipe(
+    // Cleanup covers startup failures and startup timeouts as well as turn
+    // failures. A timed-out CLI handshake may have spawned a process before
+    // its promise was interrupted.
+    Effect.ensuring(
+      adapter
+        .stopSession(threadId)
+        .pipe(Effect.timeout(SESSION_STOP_TIMEOUT_MILLIS), Effect.ignore),
+    ),
+  );
 
   if (!compressed) {
     return yield* new HandoffCompressionError({

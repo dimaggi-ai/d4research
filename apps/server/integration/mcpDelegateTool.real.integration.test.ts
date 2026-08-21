@@ -21,14 +21,18 @@ import {
   ProjectId,
   ProviderDriverKind,
   ThreadId,
+  type OrchestrationEvent,
   type ModelSelection,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import { assert, describe } from "vite-plus/test";
+import * as Layer from "effect/Layer";
+import { FetchHttpClient, HttpBody, HttpClient } from "effect/unstable/http";
+import { assert, describe, test } from "vite-plus/test";
 
 import { makeOrchestrationIntegrationHarness } from "./OrchestrationEngineHarness.integration.ts";
 import type { TurnProcessingQuiescedReceipt } from "../src/orchestration/Services/RuntimeReceiptBus.ts";
+import { issueActiveMcpCredential } from "../src/mcp/McpSessionRegistry.ts";
 
 const ENABLED = process.env.T3_REAL_MCP === "1";
 const TURN_TIMEOUT_MS = 240_000;
@@ -40,6 +44,151 @@ const CODEX_SELECTION: ModelSelection = {
   instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make("codex")),
   model: "gpt-5.4-mini",
 };
+
+export function isMemoryStatusToolStartedEvent(
+  event: OrchestrationEvent,
+  threadId: ThreadId,
+): boolean {
+  if (event.type !== "thread.activity-appended" || event.payload.threadId !== threadId)
+    return false;
+  const payload = event.payload.activity.payload;
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "itemType" in payload &&
+    payload.itemType === "mcp_tool_call" &&
+    event.payload.activity.kind === "tool.started" &&
+    event.payload.activity.summary.includes("memory_status")
+  );
+}
+
+describe("MCP tool-call evidence", () => {
+  const event = (input: {
+    readonly type?: string;
+    readonly threadId?: ThreadId;
+    readonly kind?: string;
+    readonly summary?: string;
+    readonly itemType?: string;
+  }) =>
+    ({
+      type: input.type ?? "thread.activity-appended",
+      payload: {
+        threadId: input.threadId ?? THREAD_ID,
+        activity: {
+          kind: input.kind ?? "tool.started",
+          summary: input.summary ?? "t3-code · memory_status started",
+          payload: { itemType: input.itemType ?? "mcp_tool_call" },
+        },
+      },
+    }) as unknown as OrchestrationEvent;
+
+  test("accepts only the expected thread's typed memory_status tool-start event", () => {
+    assert.isTrue(isMemoryStatusToolStartedEvent(event({}), THREAD_ID));
+    assert.isFalse(
+      isMemoryStatusToolStartedEvent(
+        event({ threadId: ThreadId.make("another-thread") }),
+        THREAD_ID,
+      ),
+    );
+    assert.isFalse(isMemoryStatusToolStartedEvent(event({ kind: "message.appended" }), THREAD_ID));
+    assert.isFalse(
+      isMemoryStatusToolStartedEvent(event({ itemType: "assistant_message" }), THREAD_ID),
+    );
+    assert.isFalse(
+      isMemoryStatusToolStartedEvent(
+        event({
+          type: "thread.turn-started",
+          summary: "User requested memory_status",
+        }),
+        THREAD_ID,
+      ),
+    );
+  });
+
+  it.live(
+    "counts named tools/call requests and closes the endpoint on dispose",
+    () =>
+      Effect.acquireUseRelease(
+        makeOrchestrationIntegrationHarness({ mcp: true }),
+        (harness) =>
+          Effect.gen(function* () {
+            assert.isNotNull(harness.mcpEndpoint);
+            const endpoint = harness.mcpEndpoint;
+            const issued = yield* issueActiveMcpCredential({
+              threadId: THREAD_ID,
+              providerInstanceId: CODEX_SELECTION.instanceId,
+            });
+            assert.isDefined(issued);
+            if (!issued) return;
+
+            const initialize = yield* HttpClient.post(endpoint, {
+              headers: {
+                accept: "application/json, text/event-stream",
+                authorization: issued.config.authorizationHeader,
+              },
+              body: yield* HttpBody.json({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "initialize",
+                params: {
+                  protocolVersion: "2025-06-18",
+                  capabilities: {},
+                  clientInfo: { name: "harness-evidence-test", version: "1.0.0" },
+                },
+              }),
+            });
+            const sessionId = initialize.headers["mcp-session-id"];
+            assert.equal(initialize.status, 200);
+            assert.isString(sessionId);
+
+            const initialized = yield* HttpClient.post(endpoint, {
+              headers: {
+                accept: "application/json, text/event-stream",
+                authorization: issued.config.authorizationHeader,
+                "mcp-session-id": sessionId!,
+                "mcp-protocol-version": "2025-06-18",
+              },
+              body: yield* HttpBody.json({
+                jsonrpc: "2.0",
+                method: "notifications/initialized",
+              }),
+            });
+            const initializedBody = yield* initialized.text;
+            assert.equal(initialized.status, 202, initializedBody);
+
+            const toolCall = yield* HttpClient.post(endpoint, {
+              headers: {
+                accept: "application/json, text/event-stream",
+                authorization: issued.config.authorizationHeader,
+                "mcp-session-id": sessionId!,
+                "mcp-protocol-version": "2025-06-18",
+              },
+              body: yield* HttpBody.json({
+                jsonrpc: "2.0",
+                id: 2,
+                method: "tools/call",
+                params: { name: "memory_status", arguments: {} },
+              }),
+            });
+            assert.equal(toolCall.status, 200);
+            assert.equal(harness.mcpToolCallCount("memory_status"), 1);
+            assert.equal(harness.mcpToolCallCount("memory_search"), 0);
+
+            yield* harness.dispose;
+            const afterDispose = yield* Effect.exit(
+              HttpClient.get(endpoint).pipe(Effect.timeout(2_000)),
+            );
+            assert.equal(
+              afterDispose._tag,
+              "Failure",
+              "disposed MCP endpoint still accepted traffic",
+            );
+          }),
+        (harness) => harness.dispose,
+      ).pipe(Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer))),
+    15_000,
+  );
+});
 
 describe.skipIf(!ENABLED)("real t3-code MCP tool call", () => {
   it.live(
@@ -78,12 +227,11 @@ describe.skipIf(!ENABLED)("real t3-code MCP tool call", () => {
               createdAt: nowIso(),
             });
 
-            // The domain-event watcher must be armed before the turn: the
-            // tool-call activity lands mid-turn, and waitForDomainEvent
-            // replays nothing.
+            // Arm the watcher before the turn so it observes the tool activity
+            // as it lands and can be joined after the quiescence receipt.
             const toolCallSeen = yield* harness
               .waitForDomainEvent(
-                (event) => JSON.stringify(event).includes("memory_status"),
+                (event) => isMemoryStatusToolStartedEvent(event, THREAD_ID),
                 TURN_TIMEOUT_MS,
               )
               .pipe(Effect.forkChild);
@@ -123,6 +271,20 @@ describe.skipIf(!ENABLED)("real t3-code MCP tool call", () => {
             // domain events — a connected-but-toolless run must fail here.
             const events = yield* Fiber.join(toolCallSeen);
             assert.isAbove(events.length, 0, "no domain event mentioned memory_status");
+            // The harness counts request bodies asynchronously. Joining the
+            // typed domain-event watcher first gives the observer time to
+            // process the same tools/call body before asserting its counter.
+            assert.isAbove(
+              harness.mcpToolCallCount("memory_status"),
+              0,
+              "codex connected to /mcp but never issued memory_status",
+            );
+
+            const thread = yield* harness.waitForThread(String(THREAD_ID), (candidate) =>
+              candidate.messages.some((message) => message.role === "assistant"),
+            );
+            const reply = thread.messages.findLast((message) => message.role === "assistant");
+            assert.equal(reply?.text.trim().toLowerCase(), "done");
           }),
         (harness) => harness.dispose,
       ).pipe(Effect.provide(NodeServices.layer)),

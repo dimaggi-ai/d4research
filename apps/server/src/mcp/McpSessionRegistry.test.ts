@@ -55,6 +55,73 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("keeps the previous credential valid while a replacement is prepared", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("thread-transition");
+    const first = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const second = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect((yield* registry.resolve(firstToken))?.providerInstanceId).toBe(
+      ProviderInstanceId.make("codex"),
+    );
+    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+      ProviderInstanceId.make("claudeAgent"),
+    );
+
+    yield* registry.revokeProviderSession(first.config.providerSessionId);
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+      ProviderInstanceId.make("claudeAgent"),
+    );
+  }),
+);
+
+it.effect("refreshes and commits only the selected provider credential", () =>
+  Effect.gen(function* () {
+    let timestamp = 1_000;
+    const registry = yield* makeRegistry(() => timestamp);
+    const threadId = ThreadId.make("thread-credential-generation");
+    const first = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const second = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    timestamp += 90;
+    yield* registry.touchProviderSession(second.config.providerSessionId);
+    timestamp += 20;
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+      ProviderInstanceId.make("claudeAgent"),
+    );
+
+    const third = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("grok"),
+    });
+    yield* registry.revokeThreadExcept(threadId, third.config.providerSessionId);
+    expect(yield* registry.resolve(secondToken)).toBeUndefined();
+    expect(
+      (yield* registry.resolve(third.config.authorizationHeader.replace(/^Bearer\s+/, "")))
+        ?.providerInstanceId,
+    ).toBe(ProviderInstanceId.make("grok"));
+  }),
+);
+
 it.effect("builds MCP endpoints from the bound server host", () =>
   Effect.gen(function* () {
     const cases = [
@@ -121,10 +188,40 @@ it.effect("updates a long-lived credential with the current orchestrator turn", 
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
-    yield* registry.setActiveTurn(threadId, TurnId.make("turn-a"));
+    yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-a"));
     expect((yield* registry.resolve(token))?.turnId).toBe(TurnId.make("turn-a"));
-    yield* registry.setActiveTurn(threadId, TurnId.make("turn-b"));
+    yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-b"));
     expect((yield* registry.resolve(token))?.turnId).toBe(TurnId.make("turn-b"));
+  }),
+);
+
+it.effect("does not attach a turn to a retired provider credential", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("thread-turn-owner");
+    const oldCredential = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const currentCredential = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+
+    yield* registry.setActiveTurn(
+      currentCredential.config.providerSessionId,
+      TurnId.make("turn-current"),
+    );
+
+    expect(
+      (yield* registry.resolve(oldCredential.config.authorizationHeader.replace(/^Bearer\s+/, "")))
+        ?.turnId,
+    ).toBeUndefined();
+    expect(
+      (yield* registry.resolve(
+        currentCredential.config.authorizationHeader.replace(/^Bearer\s+/, ""),
+      ))?.turnId,
+    ).toBe(TurnId.make("turn-current"));
   }),
 );
 

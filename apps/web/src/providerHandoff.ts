@@ -12,7 +12,7 @@ export interface ProviderHandoffMessage {
 }
 
 export interface SameThreadProviderHandoffTransition<Prepared> {
-  /** Must durably persist context before returning. */
+  /** Must prepare context for direct attachment before returning. */
   readonly prepare: () => Promise<Prepared>;
   /** One server command persists the target model, message, and turn intent. */
   readonly startReceivingTurn: (prepared: Prepared) => Promise<void>;
@@ -54,11 +54,14 @@ export function shouldHandoffModelSelection(input: {
 export function shouldBypassProviderHandoffCompression(input: {
   readonly requiredByWorkflow: boolean;
   readonly sourceInstanceId: ProviderInstanceId;
+  readonly compressionBackend: "local" | "provider";
   readonly compressionInstanceId: ProviderInstanceId | null | undefined;
 }): boolean {
   return (
     input.requiredByWorkflow ||
-    (input.compressionInstanceId != null && input.compressionInstanceId === input.sourceInstanceId)
+    (input.compressionBackend === "provider" &&
+      input.compressionInstanceId != null &&
+      input.compressionInstanceId === input.sourceInstanceId)
   );
 }
 
@@ -235,14 +238,45 @@ function environmentApiUrl(path: string, prepared?: PreparedConnection): string 
   return prepared ? new URL(path, prepared.httpBaseUrl).toString() : null;
 }
 
+async function awaitWithAbort<T>(promise: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw new DOMException("The request was aborted.", "AbortError");
+  }
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException("The request was aborted.", "AbortError"));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    Promise.resolve(promise).then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
 async function authorizedEnvironmentPost(input: {
   readonly prepared: PreparedConnection;
   readonly endpoint: string;
   readonly body: unknown;
   readonly signal: AbortSignal;
 }): Promise<Response> {
-  const auth = await runtime.runPromise(
-    preparedEnvironmentFetchAuthorization(input.prepared, "POST", input.endpoint),
+  const auth = await awaitWithAbort(
+    runtime.runPromise(
+      preparedEnvironmentFetchAuthorization(input.prepared, "POST", input.endpoint),
+    ),
+    input.signal,
   );
   return fetch(input.endpoint, {
     method: "POST",
@@ -256,21 +290,26 @@ async function authorizedEnvironmentPost(input: {
 
 /**
  * Single round-trip handoff preparation: the server compresses the transcript
- * per the handoff settings AND persists the compressed summary to local Memo.
- * Returns the compressed summary, or null when preparation failed (callers
- * fall back to the structured transcript — handoff never blocks on this).
+ * per the handoff settings and attempts to persist the summary to local Memo.
+ * Returns both the usable summary and persistence status, or null when
+ * preparation failed (callers then fall back to the structured transcript).
  */
 // Compression is bounded server-side (60 s local, 30 s provider attempt plus
 // cleanup), so a request outliving this is stuck, not slow. The fallback path
 // does not need the source provider.
-const PREPARE_TIMEOUT_MS = 90_000;
+export const PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS = 90_000;
 export const PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS = 15_000;
+
+export interface PreparedProviderHandoff {
+  readonly summary: string;
+  readonly memoryPersisted: boolean;
+}
 
 export async function prepareProviderHandoff(
   input: PrepareProviderHandoffInput,
-): Promise<string | null> {
+): Promise<PreparedProviderHandoff | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PREPARE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS);
   try {
     const { preparedConnection, ...body } = input;
     const endpoint = environmentApiUrl("/api/handoff/prepare", preparedConnection);
@@ -281,18 +320,17 @@ export async function prepareProviderHandoff(
       body,
       signal: controller.signal,
     });
+    if (!response.ok) return null;
     const result = (await response.json().catch(() => null)) as {
       ok?: unknown;
       compressed?: unknown;
       memoryPersisted?: unknown;
     } | null;
-    if (
-      result?.ok === true &&
-      result.memoryPersisted === true &&
-      typeof result.compressed === "string" &&
-      result.compressed.trim()
-    ) {
-      return result.compressed;
+    if (result?.ok === true && typeof result.compressed === "string") {
+      const summary = result.compressed.trim();
+      if (summary) {
+        return { summary, memoryPersisted: result.memoryPersisted === true };
+      }
     }
     return null;
   } catch {
@@ -318,13 +356,13 @@ export async function prepareDurableProviderHandoff(
   },
 ): Promise<string> {
   const prepared = await prepareProviderHandoff(input);
-  if (prepared !== null) return prepared;
+  if (prepared?.memoryPersisted === true) return prepared.summary;
 
   await persistProviderHandoffMemoryFallback({
     text: buildProviderHandoffMemory({
       sourceThreadId: ThreadId.make(input.sourceThreadId),
       sourceThreadTitle: input.sourceThreadTitle,
-      summary: input.transcript,
+      summary: prepared?.summary ?? input.transcript,
       target: input.target,
       enabledSkills: input.enabledSkills,
     }),
@@ -332,16 +370,15 @@ export async function prepareDurableProviderHandoff(
     preparedConnection: input.preparedConnection,
   });
   // Memo is a local recovery/search mirror, not the transport for the
-  // receiving turn. The caller appends this authoritative transcript to the
-  // outgoing message, so failing closed here only traps users on an exhausted
-  // provider without preserving any additional context.
-  return input.transcript;
+  // receiving turn. Use a successfully prepared summary even if its mirror
+  // failed; only preparation failure needs the authoritative transcript.
+  return prepared?.summary ?? input.transcript;
 }
 
 /**
- * Best-effort Memo mirror for the prepare-failure path. The handoff awaits the
- * bounded attempt, then uses the directly attached transcript regardless of
- * the result so the receiving session always has context.
+ * Best-effort Memo mirror when preparation failed or did not confirm its own
+ * write. The handoff awaits the bounded attempt, then uses the prepared
+ * summary or directly attached transcript regardless of the mirror result.
  */
 export async function persistProviderHandoffMemoryFallback(input: {
   readonly text: string;

@@ -694,6 +694,8 @@ export interface ChatComposerProps {
   phase: SessionPhase;
   isConnecting: boolean;
   isSendBusy: boolean;
+  /** Disables provider changes while a staged handoff is preparing context. */
+  handoffPreparing?: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   memoAttachmentPersistenceState: "idle" | "saving" | "failed";
@@ -814,6 +816,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
+    handoffPreparing = false,
     sendDisabledReason,
     isPreparingWorktree,
     memoAttachmentPersistenceState,
@@ -1501,6 +1504,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
+    disabled: handoffPreparing,
   });
   const pendingPrimaryAction = useMemo(
     () =>
@@ -3597,6 +3601,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : (
                   <ProviderModelPicker
                     compact={isComposerFooterCompact}
+                    disabled={handoffPreparing}
                     activeInstanceId={selectedInstanceId}
                     model={selectedModelForPickerWithCustomFallback}
                     lockedProvider={lockedProvider}
@@ -3628,11 +3633,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   enabledByThread={settings.skills.enabledByThread}
                   inventoryEntries={environmentSkillEntries}
                   inventoryState="ready"
+                  disabled={handoffPreparing}
                   open={isSessionSkillsOpen}
                   onOpenChange={setIsSessionSkillsOpen}
                 />
 
                 <CompactComposerControlsMenu
+                  disabled={handoffPreparing}
                   compact={isComposerFooterCompact}
                   interactionMode={interactionMode}
                   runtimeMode={runtimeMode}

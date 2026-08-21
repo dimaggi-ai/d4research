@@ -50,6 +50,14 @@ import type { ProviderAdapterShape } from "../src/provider/Services/ProviderAdap
 import type { ProviderAdapterError } from "../src/provider/Errors.ts";
 
 export type RealProviderName = "codex" | "claudeAgent" | "agy" | "opencode" | "grok";
+/** Models advertised by the readiness fixture and requested by the real matrix. */
+export const REAL_PROVIDER_TEST_MODELS: Readonly<Record<RealProviderName, string>> = {
+  claudeAgent: "claude-haiku-4-5",
+  codex: "gpt-5.4-mini",
+  agy: "gemini-3.6-flash-low",
+  opencode: "ollama/gemma4:e4b-it-qat",
+  grok: "grok-4.6",
+};
 import {
   NoOpProviderEventLoggers,
   ProviderEventLoggers,
@@ -106,6 +114,11 @@ import * as PreviewAutomationBroker from "../src/mcp/PreviewAutomationBroker.ts"
 import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
+const decodeClaudeSettings = Schema.decodeUnknownEffect(ClaudeSettings);
+const decodeAgySettings = Schema.decodeUnknownEffect(AgySettings);
+const decodeOpenCodeSettings = Schema.decodeUnknownEffect(OpenCodeSettings);
+const decodeGrokSettings = Schema.decodeUnknownEffect(GrokSettings);
+const MAX_TEST_EVENT_HISTORY = 4_096;
 
 function runGit(cwd: string, args: ReadonlyArray<string>) {
   return NodeChildProcess.execFileSync("git", args, {
@@ -247,8 +260,10 @@ export interface OrchestrationIntegrationHarness {
   readonly drainCheckpointReactor: Effect.Effect<void>;
   /** Bound `http://127.0.0.1:<port>/mcp` endpoint when `mcp: true`, else null. */
   readonly mcpEndpoint: string | null;
-  /** Requests the t3-code MCP endpoint actually served — proof a tool call crossed the wire. */
+  /** Number of requests the harness-served t3-code MCP endpoint received. */
   readonly mcpRequestCount: () => number;
+  /** Number of decoded MCP `tools/call` requests received for one tool name. */
+  readonly mcpToolCallCount: (toolName: string) => number;
   readonly dispose: Effect.Effect<void, never>;
 }
 
@@ -323,25 +338,25 @@ export const makeOrchestrationIntegrationHarness = (
             }
             case "claudeAgent": {
               adapters[ProviderDriverKind.make("claudeAgent")] = (yield* makeClaudeAdapter(
-                yield* Schema.decodeUnknownEffect(ClaudeSettings)({}).pipe(Effect.orDie),
+                yield* decodeClaudeSettings({}).pipe(Effect.orDie),
               )) as ProviderAdapterShape<ProviderAdapterError>;
               break;
             }
             case "agy": {
               adapters[ProviderDriverKind.make("agy")] = (yield* makeAgyAdapter(
-                yield* Schema.decodeUnknownEffect(AgySettings)({}).pipe(Effect.orDie),
+                yield* decodeAgySettings({}).pipe(Effect.orDie),
               )) as ProviderAdapterShape<ProviderAdapterError>;
               break;
             }
             case "opencode": {
               adapters[ProviderDriverKind.make("opencode")] = (yield* makeOpenCodeAdapter(
-                yield* Schema.decodeUnknownEffect(OpenCodeSettings)({}).pipe(Effect.orDie),
+                yield* decodeOpenCodeSettings({}).pipe(Effect.orDie),
               )) as ProviderAdapterShape<ProviderAdapterError>;
               break;
             }
             case "grok": {
               adapters[ProviderDriverKind.make("grok")] = (yield* makeGrokAdapter(
-                yield* Schema.decodeUnknownEffect(GrokSettings)({}).pipe(Effect.orDie),
+                yield* decodeGrokSettings({}).pipe(Effect.orDie),
               )) as ProviderAdapterShape<ProviderAdapterError>;
               break;
             }
@@ -401,11 +416,11 @@ export const makeOrchestrationIntegrationHarness = (
     // once that gate landed. These snapshots keep the gate honest and open
     // for the drivers this suite drives.
     const providerRegistryLayer = makeProviderRegistryLayer([
-      readyProviderSnapshot("claudeAgent", "claude-opus-4-6"),
-      readyProviderSnapshot("codex", "gpt-5-codex"),
-      readyProviderSnapshot("agy", "gemini-3.6-flash-low"),
-      readyProviderSnapshot("opencode", "ollama/gemma4:e4b-it-qat"),
-      readyProviderSnapshot("grok", "grok-4.6"),
+      readyProviderSnapshot("claudeAgent", REAL_PROVIDER_TEST_MODELS.claudeAgent),
+      readyProviderSnapshot("codex", REAL_PROVIDER_TEST_MODELS.codex),
+      readyProviderSnapshot("agy", REAL_PROVIDER_TEST_MODELS.agy),
+      readyProviderSnapshot("opencode", REAL_PROVIDER_TEST_MODELS.opencode),
+      readyProviderSnapshot("grok", REAL_PROVIDER_TEST_MODELS.grok),
     ]);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
@@ -516,15 +531,55 @@ export const makeOrchestrationIntegrationHarness = (
     // ephemeral port automatically.
     let mcpEndpoint: string | null = null;
     let mcpRequestCount = 0;
+    const mcpToolCallCounts = new Map<string, number>();
+    let mcpScope: Scope.Closeable | null = null;
     if (options?.mcp === true) {
+      mcpScope = yield* Scope.make("sequential");
+      const ownedMcpScope = mcpScope;
+      // `dispose` closes this eagerly, while the parent finalizer also covers
+      // construction failures before the harness can return its disposer.
+      yield* Effect.addFinalizer((exit) => Scope.close(ownedMcpScope, exit));
       const countingHttpServer = () => {
         const server = NodeHttp.createServer();
         server.on("request", (request) => {
-          if (request.url?.startsWith("/mcp")) mcpRequestCount += 1;
+          if (!request.url?.startsWith("/mcp")) return;
+          mcpRequestCount += 1;
+          if (request.method !== "POST") return;
+
+          const chunks: Array<Buffer> = [];
+          request.on("data", (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          request.on("end", () => {
+            try {
+              const decoded = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+              const messages = Array.isArray(decoded) ? decoded : [decoded];
+              for (const message of messages) {
+                if (
+                  typeof message !== "object" ||
+                  message === null ||
+                  !("method" in message) ||
+                  message.method !== "tools/call" ||
+                  !("params" in message) ||
+                  typeof message.params !== "object" ||
+                  message.params === null ||
+                  !("name" in message.params) ||
+                  typeof message.params.name !== "string"
+                ) {
+                  continue;
+                }
+                const name = message.params.name;
+                mcpToolCallCounts.set(name, (mcpToolCallCounts.get(name) ?? 0) + 1);
+              }
+            } catch {
+              // The real MCP handler owns validation and error responses. This
+              // observer records only well-formed evidence and never interferes.
+            }
+          });
         });
         return server;
       };
-      const mcpContext = yield* HttpRouter.serve(
+      const mcpLayer = HttpRouter.serve(
         McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
         { disableListenLog: true, disableLogger: true },
       ).pipe(
@@ -542,8 +597,8 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.provide(persistenceLayer),
         Layer.provide(ServerConfig.layerTest(workspaceDir, rootDir)),
         Layer.provide(NodeServices.layer),
-        Layer.build,
       );
+      const mcpContext = yield* Layer.buildWithScope(mcpLayer, ownedMcpScope);
       const address = Context.get(mcpContext, HttpServer.HttpServer).address;
       mcpEndpoint = address._tag === "TcpAddress" ? `http://127.0.0.1:${address.port}/mcp` : null;
     }
@@ -600,9 +655,40 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
-      Ref.update(receiptHistory, (history) => [...history, receipt]).pipe(Effect.asVoid),
+      Ref.update(receiptHistory, (history) => {
+        const next = [...history, receipt];
+        return next.length > MAX_TEST_EVENT_HISTORY
+          ? next.slice(next.length - MAX_TEST_EVENT_HISTORY)
+          : next;
+      }).pipe(Effect.asVoid),
     ).pipe(Effect.forkIn(scope));
-    yield* Effect.sleep(10);
+    // Keep a hot in-memory history for test waiters. Replaying the entire
+    // SQLite event store on every 10 ms retry becomes O(events × polls) during
+    // long real-provider turns; this subscription preserves the same
+    // post-dispatch visibility without repeated full scans.
+    const domainEventHistory = yield* Ref.make<ReadonlyArray<OrchestrationEvent>>([]);
+    yield* Stream.runForEach(engine.streamDomainEvents, (event) =>
+      Ref.update(domainEventHistory, (history) => {
+        const next = [...history, event];
+        return next.length > MAX_TEST_EVENT_HISTORY
+          ? next.slice(next.length - MAX_TEST_EVENT_HISTORY)
+          : next;
+      }).pipe(Effect.asVoid),
+    ).pipe(Effect.forkIn(scope));
+    // Let both hot subscribers establish their PubSub subscriptions, then
+    // seed the waiter history from the durable store. The seed closes the
+    // startup race without relying on a timing sleep; events dispatched after
+    // harness construction arrive through the hot stream.
+    yield* Effect.yieldNow;
+    const historicalDomainEvents = yield* Stream.runCollect(engine.readEvents(0)).pipe(
+      Effect.orDie,
+    );
+    yield* Ref.update(domainEventHistory, (history) => {
+      const next = [...Array.from(historicalDomainEvents), ...history];
+      return next.length > MAX_TEST_EVENT_HISTORY
+        ? next.slice(next.length - MAX_TEST_EVENT_HISTORY)
+        : next;
+    });
 
     const waitForThread: OrchestrationIntegrationHarness["waitForThread"] = (
       threadId,
@@ -627,9 +713,7 @@ export const makeOrchestrationIntegrationHarness = (
       timeoutMs,
     ) =>
       waitFor(
-        Stream.runCollect(engine.readEvents(0)).pipe(
-          Effect.map((chunk): ReadonlyArray<OrchestrationEvent> => Array.from(chunk)),
-        ),
+        Ref.get(domainEventHistory),
         (events) => events.some(predicate),
         "domain event",
         timeoutMs,
@@ -706,13 +790,18 @@ export const makeOrchestrationIntegrationHarness = (
 
       const shutdown = Effect.gen(function* () {
         const closeScopeExit = yield* Effect.exit(Scope.close(scope, Exit.void));
+        const closeMcpScopeExit = mcpScope
+          ? yield* Effect.exit(Scope.close(mcpScope, Exit.void))
+          : Exit.void;
         const disposeRuntimeExit = yield* Effect.exit(Effect.promise(() => runtime.dispose()));
 
         const failureCause = Exit.isFailure(closeScopeExit)
           ? closeScopeExit.cause
-          : Exit.isFailure(disposeRuntimeExit)
-            ? disposeRuntimeExit.cause
-            : null;
+          : Exit.isFailure(closeMcpScopeExit)
+            ? closeMcpScopeExit.cause
+            : Exit.isFailure(disposeRuntimeExit)
+              ? disposeRuntimeExit.cause
+              : null;
 
         if (failureCause) {
           return yield* Effect.failCause(failureCause);
@@ -741,6 +830,7 @@ export const makeOrchestrationIntegrationHarness = (
       drainCheckpointReactor: checkpointReactor.drain,
       mcpEndpoint,
       mcpRequestCount: () => mcpRequestCount,
+      mcpToolCallCount: (toolName) => mcpToolCallCounts.get(toolName) ?? 0,
       dispose,
     } satisfies OrchestrationIntegrationHarness;
   });

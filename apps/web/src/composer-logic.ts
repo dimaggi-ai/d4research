@@ -292,7 +292,7 @@ export function describeStagedHandoffBanner(input: {
   if (input.preparing) {
     return {
       title: `Handing off to ${input.displayName} — preparing context…`,
-      description: "Compressing and storing this chat's context. Your message sends right after.",
+      description: "Preparing this chat's context. Your message sends right after.",
     };
   }
   if (input.paused) {

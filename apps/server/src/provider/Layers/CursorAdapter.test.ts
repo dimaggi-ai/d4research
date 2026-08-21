@@ -267,7 +267,11 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
       const turnEventsFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.type === "content.delta" || event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "content.delta" || event.type === "turn.completed"),
+        ),
         Stream.take(2),
         Stream.runCollect,
         Effect.forkChild,

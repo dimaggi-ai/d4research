@@ -3,7 +3,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useEffect, useState } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { shouldExitPlanForDevPipelineSelection } from "../../devPipeline";
@@ -42,6 +42,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   compact: boolean;
+  disabled?: boolean;
   pipelineTargetPolicy: PipelineTargetPolicy;
   isResearchMode: boolean;
   showInteractionModeToggle: boolean;
@@ -57,8 +58,17 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onSelectResearchScenario: (scenarioName: string | null) => void;
   onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (props.disabled && open) setOpen(false);
+  }, [open, props.disabled]);
   return (
-    <Menu>
+    <Menu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!props.disabled) setOpen(nextOpen);
+      }}
+    >
       <MenuTrigger
         render={
           <Button
@@ -66,6 +76,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             variant="ghost"
             className="shrink-0 gap-1.5 px-2 text-muted-foreground/70 hover:text-foreground/80"
             aria-label="Workflows and agent controls"
+            disabled={props.disabled}
           />
         }
       >
@@ -85,7 +96,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuRadioGroup
               value={props.interactionMode}
               onValueChange={(value) => {
-                if (!value) return;
+                if (props.disabled || !value) return;
                 const transition = compactInteractionModeSelection({
                   currentMode: props.interactionMode,
                   nextMode: value as ProviderInteractionMode,
@@ -95,8 +106,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 props.onToggleInteractionMode();
               }}
             >
-              <MenuRadioItem value="default">Chat</MenuRadioItem>
-              <MenuRadioItem value="plan">Plan</MenuRadioItem>
+              <MenuRadioItem disabled={props.disabled} value="default">
+                Chat
+              </MenuRadioItem>
+              <MenuRadioItem disabled={props.disabled} value="plan">
+                Plan
+              </MenuRadioItem>
             </MenuRadioGroup>
             <MenuDivider />
           </>
@@ -107,7 +122,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <MenuRadioGroup
           value={props.activeDevPipeline ?? BUILD_MODE_VALUE}
           onValueChange={(value) => {
-            if (!value) return;
+            if (props.disabled || !value) return;
             const scenarioName = value === BUILD_MODE_VALUE ? null : String(value);
             if (shouldExitPlanForDevPipelineSelection(props.interactionMode, scenarioName)) {
               props.onToggleInteractionMode();
@@ -115,9 +130,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             props.onSelectDevPipeline(scenarioName);
           }}
         >
-          <MenuRadioItem value={BUILD_MODE_VALUE}>Build</MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value={BUILD_MODE_VALUE}>
+            Build
+          </MenuRadioItem>
           {props.devPipelines.map((pipeline) => (
-            <MenuRadioItem key={pipeline} value={pipeline}>
+            <MenuRadioItem disabled={props.disabled} key={pipeline} value={pipeline}>
               {pipeline}
             </MenuRadioItem>
           ))}
@@ -135,13 +152,15 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                   : RESEARCH_OFF_VALUE
               }
               onValueChange={(value) => {
-                if (!value) return;
+                if (props.disabled || !value) return;
                 props.onSelectResearchScenario(value === RESEARCH_OFF_VALUE ? null : String(value));
               }}
             >
-              <MenuRadioItem value={RESEARCH_OFF_VALUE}>Off</MenuRadioItem>
+              <MenuRadioItem disabled={props.disabled} value={RESEARCH_OFF_VALUE}>
+                Off
+              </MenuRadioItem>
               {props.researchScenarios.map((scenario) => (
-                <MenuRadioItem key={scenario} value={scenario}>
+                <MenuRadioItem disabled={props.disabled} key={scenario} value={scenario}>
                   {scenario}
                 </MenuRadioItem>
               ))}
@@ -155,12 +174,16 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <MenuRadioGroup
           value={props.pipelineTargetPolicy}
           onValueChange={(value) => {
-            if (!value || value === props.pipelineTargetPolicy) return;
+            if (props.disabled || !value || value === props.pipelineTargetPolicy) return;
             props.onPipelineTargetPolicyChange(value as PipelineTargetPolicy);
           }}
         >
-          <MenuRadioItem value="labeled-fallback">Use labeled fallback</MenuRadioItem>
-          <MenuRadioItem value="exact">Exact targets only</MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="labeled-fallback">
+            Use labeled fallback
+          </MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="exact">
+            Exact targets only
+          </MenuRadioItem>
         </MenuRadioGroup>
         <div className="max-w-64 px-2 pb-2 text-muted-foreground text-xs leading-4">
           Fallbacks must be listed by the pipeline. Run history records the requested and actual
@@ -171,14 +194,22 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         <MenuRadioGroup
           value={props.runtimeMode}
           onValueChange={(value) => {
-            if (!value || value === props.runtimeMode) return;
+            if (props.disabled || !value || value === props.runtimeMode) return;
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-          <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-          <MenuRadioItem value="auto">Auto</MenuRadioItem>
-          <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="approval-required">
+            Supervised
+          </MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="auto-accept-edits">
+            Auto-accept edits
+          </MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="auto">
+            Auto
+          </MenuRadioItem>
+          <MenuRadioItem disabled={props.disabled} value="full-access">
+            Full access
+          </MenuRadioItem>
         </MenuRadioGroup>
       </MenuPopup>
     </Menu>

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -540,7 +541,14 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
     const request = yield* HttpServerRequest.HttpServerRequest;
     return yield* Effect.gen(function* () {
-      const body = cast<unknown, { text?: unknown; project?: unknown }>(yield* request.json);
+      const rawBody = yield* request.json;
+      if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Request body must be a JSON object." },
+          { status: 400 },
+        );
+      }
+      const body = cast<unknown, { text?: unknown; project?: unknown }>(rawBody);
       const text = typeof body.text === "string" ? body.text.trim() : "";
       const project = typeof body.project === "string" ? body.project.trim() : undefined;
       if (!isValidHandoffMemoryText(text)) {
@@ -942,8 +950,8 @@ export function buildHandoffMemoryText(input: {
 
 // One round-trip for the whole handoff: compresses the transcript per the
 // handoff settings (local Ollama by default, provider session when selected,
-// deterministic truncation as last resort — never an error) and persists the
-// compressed summary (not the raw transcript) to local Memo in the same call.
+// deterministic truncation as last resort — never an error) and attempts to
+// persist the compressed summary (not the raw transcript) to local Memo.
 export const handoffPrepareRouteLayer = HttpRouter.add(
   "POST",
   HANDOFF_PREPARE_PATH,
@@ -951,7 +959,14 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
     const request = yield* HttpServerRequest.HttpServerRequest;
     return yield* Effect.gen(function* () {
-      const body = cast<unknown, HandoffPrepareBody>(yield* request.json);
+      const rawBody = yield* request.json;
+      if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+        return HttpServerResponse.jsonUnsafe(
+          { ok: false, message: "Request body must be a JSON object." },
+          { status: 400 },
+        );
+      }
+      const body = cast<unknown, HandoffPrepareBody>(rawBody);
       const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
       if (!transcript || transcript.length > MAX_HANDOFF_TRANSCRIPT_CHARACTERS) {
         return HttpServerResponse.jsonUnsafe(
@@ -996,6 +1011,18 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
           cwd: config.cwd,
         }).pipe(
           Effect.timeout(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS),
+          Effect.tapCause((cause) =>
+            Effect.logWarning("Provider handoff compression failed; using transcript fallback", {
+              instanceId: compression.instanceId,
+              reasonTags: cause.reasons.map((reason) =>
+                Cause.isFailReason(reason)
+                  ? "Fail"
+                  : Cause.isDieReason(reason)
+                    ? "Die"
+                    : "Interrupt",
+              ),
+            }),
+          ),
           // Handoff must never block on compression or depend on the quota of
           // the provider the user is trying to leave.
           Effect.orElseSucceed(() =>

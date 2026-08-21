@@ -17,6 +17,7 @@ import {
   PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS,
   prepareDurableProviderHandoff,
   prepareProviderHandoff,
+  PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS,
   runSameThreadProviderHandoffTransition,
   shouldBypassProviderHandoffCompression,
   shouldHandoffModelSelection,
@@ -48,6 +49,7 @@ describe("provider handoff", () => {
       shouldBypassProviderHandoffCompression({
         requiredByWorkflow: false,
         sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionBackend: "provider",
         compressionInstanceId: ProviderInstanceId.make("claude"),
       }),
     ).toBe(true);
@@ -55,7 +57,34 @@ describe("provider handoff", () => {
       shouldBypassProviderHandoffCompression({
         requiredByWorkflow: false,
         sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionBackend: "provider",
         compressionInstanceId: ProviderInstanceId.make("ollama"),
+      }),
+    ).toBe(false);
+    expect(
+      shouldBypassProviderHandoffCompression({
+        requiredByWorkflow: true,
+        sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionBackend: "local",
+        compressionInstanceId: ProviderInstanceId.make("ollama"),
+      }),
+    ).toBe(true);
+    expect(
+      shouldBypassProviderHandoffCompression({
+        requiredByWorkflow: false,
+        sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionBackend: "local",
+        compressionInstanceId: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldBypassProviderHandoffCompression({
+        requiredByWorkflow: false,
+        sourceInstanceId: ProviderInstanceId.make("claude"),
+        compressionBackend: "local",
+        // Settings can retain the last provider selection when switching back
+        // to local; that stale id must not disable the local compressor.
+        compressionInstanceId: ProviderInstanceId.make("claude"),
       }),
     ).toBe(false);
   });
@@ -310,10 +339,43 @@ describe("provider handoff", () => {
     }
   });
 
+  it("aborts a stuck prepare request at its bounded deadline", async () => {
+    vi.useFakeTimers();
+    const original = globalThis.fetch;
+    let requestSignal: AbortSignal | undefined;
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }) as typeof globalThis.fetch;
+    try {
+      const result = prepareProviderHandoff({
+        transcript: "context",
+        preparedConnection: preparedConnection(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requestSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS);
+      await expect(result).resolves.toBeNull();
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+      vi.useRealTimers();
+    }
+  });
+
   it("prepare client returns null on non-ok response", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = () =>
-      Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 502 }));
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ ok: true, compressed: "must not be trusted", memoryPersisted: true }),
+          { status: 502 },
+        ),
+      );
     try {
       const result = await prepareProviderHandoff({
         transcript: "test transcript",
@@ -352,7 +414,7 @@ describe("provider handoff", () => {
     }
   });
 
-  it("prepare client returns a summary only when local Memo persistence is proven", async () => {
+  it("prepare client preserves the summary and Memo persistence result", async () => {
     const original = globalThis.fetch;
     const calls: Array<string> = [];
     let postedBody: unknown;
@@ -373,7 +435,7 @@ describe("provider handoff", () => {
         enabledSkills: ["focus-mode"],
         preparedConnection: preparedConnection(),
       });
-      expect(result).toBe("dense summary");
+      expect(result).toEqual({ summary: "dense summary", memoryPersisted: true });
       expect(calls).toEqual(["http://localhost/api/handoff/prepare"]);
       expect(postedBody).toMatchObject({ enabledSkills: ["focus-mode"] });
     } finally {
@@ -455,7 +517,7 @@ describe("provider handoff", () => {
     }
   });
 
-  it("rejects a prepared summary when the local Memo write was not confirmed", async () => {
+  it("preserves a prepared summary when the local Memo write was not confirmed", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = () =>
       Promise.resolve(
@@ -470,7 +532,7 @@ describe("provider handoff", () => {
           transcript: "long transcript",
           preparedConnection: preparedConnection(),
         }),
-      ).toBeNull();
+      ).toEqual({ summary: "dense summary", memoryPersisted: false });
     } finally {
       globalThis.fetch = original;
     }
@@ -503,7 +565,7 @@ describe("provider handoff", () => {
         enabledSkills: ["focus-mode"],
         preparedConnection: preparedConnection(),
       });
-      expect(summary).toBe("authoritative transcript");
+      expect(summary).toBe("dense summary");
       expect(calls).toEqual([
         "http://localhost/api/handoff/prepare",
         "http://localhost/api/memory/handoff",
@@ -512,6 +574,7 @@ describe("provider handoff", () => {
       expect(bodies[1]).toMatchObject({
         text: expect.stringContaining("Configured global and chat skills to preserve: focus-mode"),
       });
+      expect((bodies[1] as { text: string }).text).toContain("dense summary");
     } finally {
       globalThis.fetch = original;
     }
@@ -541,7 +604,7 @@ describe("provider handoff", () => {
           target: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
           preparedConnection: preparedConnection(),
         }),
-      ).resolves.toBe("authoritative transcript");
+      ).resolves.toBe("dense summary");
     } finally {
       globalThis.fetch = original;
     }

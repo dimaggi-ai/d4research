@@ -83,11 +83,14 @@ const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequest
 // fail identically. We recover with empty history instead. Scoped to this
 // signature so real transport/protocol errors still surface.
 const UNREADABLE_THREAD_HISTORY_PATTERN =
-  /thread-store|failed to read session metadata|failed to load thread history/iu;
+  /failed to (?:read session metadata|load thread history)/iu;
 const isUnreadableThreadHistoryError = (
   error: unknown,
 ): error is CodexErrors.CodexAppServerRequestError =>
-  isCodexAppServerRequestError(error) && UNREADABLE_THREAD_HISTORY_PATTERN.test(error.errorMessage);
+  isCodexAppServerRequestError(error) &&
+  error.code === -32603 &&
+  error.method === "thread/read" &&
+  UNREADABLE_THREAD_HISTORY_PATTERN.test(error.errorMessage);
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
@@ -1923,7 +1926,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       Effect.catchIf(isUnreadableThreadHistoryError, (error) =>
         Effect.logWarning("codex thread history is unreadable; recovering with empty history", {
           threadId,
-          detail: error.errorMessage,
+          errorCode: error.code,
         }).pipe(Effect.as({ threadId: String(threadId), turns: [] })),
       ),
       Effect.mapError((cause) =>

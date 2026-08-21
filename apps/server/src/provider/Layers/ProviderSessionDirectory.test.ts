@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { it, assert } from "@effect/vitest";
 import { assertSome } from "@effect/vitest/utils";
 import * as Effect from "effect/Effect";
@@ -119,6 +119,38 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
           model: "gpt-5-codex",
           activeTurnId: "turn-1",
         });
+      }
+    }));
+
+  it("replaces a binding without retaining merged runtime payload fields", () =>
+    Effect.gen(function* () {
+      const directory = yield* ProviderSessionDirectory;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const threadId = ThreadId.make("thread-runtime-replace");
+
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        threadId,
+        runtimePayload: { modelSelection: { model: "failed-target" }, cwd: "/tmp/old" },
+      });
+      yield* directory.replace({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        threadId,
+        status: "running",
+        runtimeMode: "full-access",
+        resumeCursor: { opaque: "old-resume" },
+        runtimePayload: { cwd: "/tmp/restored" },
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const runtime = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(runtime), true);
+      if (Option.isSome(runtime)) {
+        assert.deepEqual(runtime.value.runtimePayload, { cwd: "/tmp/restored" });
+        assert.deepEqual(runtime.value.resumeCursor, { opaque: "old-resume" });
+        assert.equal(runtime.value.lastSeenAt, "2026-01-01T00:00:00.000Z");
       }
     }));
 

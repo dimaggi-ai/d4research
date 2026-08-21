@@ -23,8 +23,10 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
@@ -38,6 +40,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
+  ProviderSessionDirectoryPersistenceError,
   ProviderUnsupportedError,
   ProviderValidationError,
   type ProviderAdapterError,
@@ -91,47 +94,74 @@ type LegacyProviderRuntimeEvent = {
 function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+  let sessionStartCount = 0;
+  let beforeStart: (() => Effect.Effect<void>) | undefined;
+  let beforeSend: (() => Effect.Effect<void>) | undefined;
+  let beforeStop: (() => Effect.Effect<void>) | undefined;
 
   const startSession = vi.fn((input: ProviderSessionStartInput) =>
-    Effect.sync(() => {
-      const now = "2026-01-01T00:00:00.000Z";
-      const session: ProviderSession = {
-        provider,
-        ...(input.providerInstanceId !== undefined
-          ? { providerInstanceId: input.providerInstanceId }
-          : {}),
-        status: "ready",
-        runtimeMode: input.runtimeMode,
-        threadId: input.threadId,
-        resumeCursor: input.resumeCursor ?? {
-          opaque: `resume-${String(input.threadId)}`,
-        },
-        cwd: input.cwd ?? process.cwd(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      sessions.set(session.threadId, session);
-      return session;
-    }),
+    (beforeStart?.() ?? Effect.void).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          const wasActive = sessions.has(input.threadId);
+          sessionStartCount += 1;
+          const now = wasActive ? "2026-01-01T00:00:00.001Z" : "2026-01-01T00:00:00.000Z";
+          const session: ProviderSession = {
+            provider,
+            ...(input.providerInstanceId !== undefined
+              ? { providerInstanceId: input.providerInstanceId }
+              : {}),
+            status: "ready",
+            runtimeMode: input.runtimeMode,
+            threadId: input.threadId,
+            resumeCursor: input.resumeCursor ?? {
+              opaque: `resume-${String(input.threadId)}`,
+            },
+            cwd: input.cwd ?? process.cwd(),
+            createdAt: now,
+            updatedAt: now,
+          };
+          sessions.set(session.threadId, session);
+          return { session, wasActive };
+        }),
+      ),
+      Effect.flatMap(({ session, wasActive }) =>
+        wasActive
+          ? PubSub.publish(runtimeEventPubSub, {
+              eventId: asEventId(`fake-session-started-${sessionStartCount}`),
+              provider,
+              ...(input.providerInstanceId !== undefined
+                ? { providerInstanceId: input.providerInstanceId }
+                : {}),
+              threadId: input.threadId,
+              createdAt: "2026-01-01T00:00:00.001Z",
+              type: "session.started",
+              payload: { message: "fake session restarted" },
+            } satisfies ProviderRuntimeEvent).pipe(Effect.as(session))
+          : Effect.succeed(session),
+      ),
+    ),
   );
 
   const sendTurn = vi.fn(
     (
       input: ProviderSendTurnInput,
     ): Effect.Effect<ProviderTurnStartResult, ProviderAdapterError> => {
-      if (!sessions.has(input.threadId)) {
-        return Effect.fail(
-          new ProviderAdapterSessionNotFoundError({
-            provider,
-            threadId: input.threadId,
-          }),
-        );
-      }
-
-      return Effect.succeed({
-        threadId: input.threadId,
-        turnId: TurnId.make(`turn-${String(input.threadId)}`),
-      });
+      return (beforeSend?.() ?? Effect.void).pipe(
+        Effect.andThen(
+          sessions.has(input.threadId)
+            ? Effect.succeed({
+                threadId: input.threadId,
+                turnId: TurnId.make(`turn-${String(input.threadId)}`),
+              })
+            : Effect.fail(
+                new ProviderAdapterSessionNotFoundError({
+                  provider,
+                  threadId: input.threadId,
+                }),
+              ),
+        ),
+      );
     },
   );
 
@@ -158,9 +188,13 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
 
   const stopSession = vi.fn(
     (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() => {
-        sessions.delete(threadId);
-      }),
+      (beforeStop?.() ?? Effect.void).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            sessions.delete(threadId);
+          }),
+        ),
+      ),
   );
 
   const listSessions = vi.fn(
@@ -241,6 +275,15 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
 
   return {
     adapter,
+    setStartGate: (gate: (() => Effect.Effect<void>) | undefined) => {
+      beforeStart = gate;
+    },
+    setSendGate: (gate: (() => Effect.Effect<void>) | undefined) => {
+      beforeSend = gate;
+    },
+    setStopGate: (gate: (() => Effect.Effect<void>) | undefined) => {
+      beforeStop = gate;
+    },
     emit,
     updateSession,
     startSession,
@@ -254,6 +297,56 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     readThread,
     rollbackThread,
     stopAll,
+  };
+}
+
+function makeFailingProviderSessionDirectory() {
+  const bindings = new Map<ThreadId, ProviderSessionDirectory.ProviderRuntimeBinding>();
+  let failNextUpsert = false;
+  let failNextListBindings = false;
+  const directory: ProviderSessionDirectory.ProviderSessionDirectoryShape = {
+    upsert: (binding) =>
+      Effect.gen(function* () {
+        if (failNextUpsert) {
+          failNextUpsert = false;
+          return yield* new ProviderValidationError({
+            operation: "test.directory.upsert",
+            issue: "simulated persistence failure",
+          });
+        }
+        bindings.set(binding.threadId, binding);
+      }),
+    getProvider: (threadId) => Effect.succeed(bindings.get(threadId)?.provider ?? CODEX_DRIVER),
+    getBinding: (threadId) => Effect.succeed(Option.fromNullishOr(bindings.get(threadId))),
+    listThreadIds: () => Effect.succeed(Array.from(bindings.keys())),
+    listBindings: () =>
+      failNextListBindings
+        ? Effect.gen(function* () {
+            failNextListBindings = false;
+            return yield* new ProviderSessionDirectoryPersistenceError({
+              operation: "test.directory.listBindings",
+              detail: "simulated initial directory failure",
+            });
+          })
+        : Effect.succeed(
+            Array.from(bindings.values()).map((binding) => ({
+              ...binding,
+              lastSeenAt: "2026-01-01T00:00:00.000Z",
+            })),
+          ),
+    replace: (binding) =>
+      Effect.sync(() => {
+        bindings.set(binding.threadId, binding);
+      }),
+  };
+  return {
+    directory,
+    failNextUpsert: () => {
+      failNextUpsert = true;
+    },
+    failNextListBindings: () => {
+      failNextListBindings = true;
+    },
   };
 }
 
@@ -368,9 +461,77 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
 
     assert.equal(Exit.isSuccess(closeExit), true);
-    assert.equal(codex.stopAll.mock.calls.length, 1);
+    assert.equal(codex.stopAll.mock.calls.length, 2);
   }),
 );
+
+it.effect("does not let an admitted turn rewrite the stopped binding after shutdown", () => {
+  const codex = makeFakeCodexAdapter();
+  // Keep the native session alive in this test so the admitted turn can finish
+  // after the service finalizer commits its stopped binding.
+  codex.stopAll.mockImplementation(() => Effect.void);
+  const registry = makeAdapterRegistryMock({ [CODEX_DRIVER]: codex.adapter });
+  const directory = makeFailingProviderSessionDirectory();
+  const directoryLayer = Layer.succeed(
+    ProviderSessionDirectory.ProviderSessionDirectory,
+    directory.directory,
+  );
+  const providerLayer = makeProviderServiceLive().pipe(
+    Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+    Layer.provide(directoryLayer),
+    Layer.provide(defaultServerSettingsLayer),
+    Layer.provide(serverConfigTestLayer),
+    Layer.provide(AnalyticsService.layerTest),
+    Layer.provide(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+  );
+  const testLayer = Layer.mergeAll(providerLayer, directoryLayer, NodeServices.layer);
+
+  return Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    const runtimeServices = yield* Layer.build(testLayer).pipe(Scope.provide(scope));
+    const provider = yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+    const threadId = asThreadId("thread-shutdown-write-fence");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+
+    const sendEntered = yield* Deferred.make<void>();
+    const releaseSend = yield* Deferred.make<void>();
+    codex.setSendGate(() =>
+      Effect.gen(function* () {
+        yield* Deferred.succeed(sendEntered, undefined);
+        yield* Deferred.await(releaseSend);
+      }),
+    );
+    const send = yield* provider
+      .sendTurn({ threadId, input: "finish after shutdown", attachments: [] })
+      .pipe(Effect.forkDetach);
+    yield* Deferred.await(sendEntered);
+
+    const close = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild);
+    yield* TestClock.adjust("10001 millis");
+    yield* Effect.yieldNow;
+    yield* Fiber.join(close);
+
+    const stoppedBinding = Option.getOrUndefined(yield* directory.directory.getBinding(threadId));
+    assert.equal(stoppedBinding?.status, "stopped");
+
+    yield* Deferred.succeed(releaseSend, undefined);
+    const sendExit = yield* Fiber.join(send).pipe(Effect.exit);
+    assert.equal(Exit.isFailure(sendExit), true);
+    const finalBinding = Option.getOrUndefined(yield* directory.directory.getBinding(threadId));
+    assert.equal(finalBinding?.status, "stopped");
+    codex.setSendGate(undefined);
+  }).pipe(Effect.provide(NodeServices.layer));
+});
 
 it.effect("ProviderServiceLive rejects new sessions for disabled providers", () =>
   Effect.gen(function* () {
@@ -593,6 +754,229 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
 );
 
 const routing = makeProviderServiceLayer();
+
+it.effect("cleans up a native session when its routing binding cannot be persisted", () => {
+  const codex = makeFakeCodexAdapter();
+  const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+  const registry = makeAdapterRegistryMock({
+    [ProviderDriverKind.make("codex")]: codex.adapter,
+    [ProviderDriverKind.make("claudeAgent")]: claude.adapter,
+  });
+  const failingDirectory = makeFailingProviderSessionDirectory();
+  const directoryLayer = Layer.succeed(
+    ProviderSessionDirectory.ProviderSessionDirectory,
+    failingDirectory.directory,
+  );
+  const providerLayer = makeProviderServiceLive().pipe(
+    Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+    Layer.provide(directoryLayer),
+    Layer.provide(defaultServerSettingsLayer),
+    Layer.provide(serverConfigTestLayer),
+    Layer.provide(AnalyticsService.layerTest),
+    Layer.provide(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+  );
+  const testLayer = Layer.mergeAll(providerLayer, directoryLayer, NodeServices.layer);
+
+  return Effect.gen(function* () {
+    const provider = yield* ProviderService.ProviderService;
+    const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+    const threadId = asThreadId("thread-binding-write-failure");
+
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    failingDirectory.failNextUpsert();
+
+    const failed = yield* Effect.exit(
+      provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      }),
+    );
+    assert.equal(Exit.isFailure(failed), true);
+    assert.equal(yield* codex.hasSession(threadId), true);
+    assert.equal(yield* claude.hasSession(threadId), false);
+    const binding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+    assert.equal(binding?.provider, CODEX_DRIVER);
+    assert.equal(binding?.providerInstanceId, codexInstanceId);
+  }).pipe(Effect.provide(testLayer));
+});
+
+it.effect("retries routing initialization after an unavailable binding snapshot", () => {
+  const codex = makeFakeCodexAdapter();
+  const registry = makeAdapterRegistryMock({ [CODEX_DRIVER]: codex.adapter });
+  const failingDirectory = makeFailingProviderSessionDirectory();
+  failingDirectory.failNextListBindings();
+  const directoryLayer = Layer.succeed(
+    ProviderSessionDirectory.ProviderSessionDirectory,
+    failingDirectory.directory,
+  );
+  const providerLayer = makeProviderServiceLive().pipe(
+    Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+    Layer.provide(directoryLayer),
+    Layer.provide(defaultServerSettingsLayer),
+    Layer.provide(serverConfigTestLayer),
+    Layer.provide(AnalyticsService.layerTest),
+    Layer.provide(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+  );
+  const testLayer = Layer.mergeAll(providerLayer, directoryLayer, NodeServices.layer);
+
+  return Effect.gen(function* () {
+    const provider = yield* ProviderService.ProviderService;
+    const threadId = asThreadId("thread-routing-init-retry");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+
+    const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+    const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+      Ref.update(received, (current) => [...current, event]),
+    ).pipe(Effect.forkChild);
+    yield* advanceTestClock(50);
+    codex.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-routing-init-retry"),
+      provider: CODEX_DRIVER,
+      createdAt: "2026-01-01T00:00:00.001Z",
+      threadId,
+      turnId: asTurnId("turn-routing-init-retry"),
+      status: "completed",
+    });
+    yield* advanceTestClock(50);
+    yield* Fiber.interrupt(consumer);
+    assert.deepEqual(
+      (yield* Ref.get(received)).map((event) => event.eventId),
+      [asEventId("evt-routing-init-retry")],
+    );
+  }).pipe(Effect.provide(testLayer));
+});
+
+it.effect("restores a same-instance native session after binding persistence fails", () => {
+  const codex = makeFakeCodexAdapter();
+  const registry = makeAdapterRegistryMock({
+    [ProviderDriverKind.make("codex")]: codex.adapter,
+  });
+  const failingDirectory = makeFailingProviderSessionDirectory();
+  const directoryLayer = Layer.succeed(
+    ProviderSessionDirectory.ProviderSessionDirectory,
+    failingDirectory.directory,
+  );
+  const providerLayer = makeProviderServiceLive().pipe(
+    Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+    Layer.provide(directoryLayer),
+    Layer.provide(defaultServerSettingsLayer),
+    Layer.provide(serverConfigTestLayer),
+    Layer.provide(AnalyticsService.layerTest),
+    Layer.provide(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+  );
+  const testLayer = Layer.mergeAll(providerLayer, directoryLayer, NodeServices.layer);
+
+  return Effect.gen(function* () {
+    const provider = yield* ProviderService.ProviderService;
+    const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+    const threadId = asThreadId("thread-same-instance-binding-failure");
+
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      cwd: "/tmp/project-same-instance-rollback",
+      runtimeMode: "full-access",
+    });
+    failingDirectory.failNextUpsert();
+
+    const failed = yield* Effect.exit(
+      provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        cwd: "/tmp/project-same-instance-rollback-next",
+        runtimeMode: "full-access",
+      }),
+    );
+    assert.equal(Exit.isFailure(failed), true);
+    assert.equal(yield* codex.hasSession(threadId), true);
+    assert.equal(codex.startSession.mock.calls.length, 3);
+    const restoredInput = codex.startSession.mock.calls[2]?.[0];
+    assert.equal(restoredInput?.cwd, "/tmp/project-same-instance-rollback");
+    const binding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+    assert.equal(binding?.provider, CODEX_DRIVER);
+    assert.equal(binding?.providerInstanceId, codexInstanceId);
+  }).pipe(Effect.provide(testLayer));
+});
+
+it.effect("rolls back a recovered session when its binding cannot be persisted", () => {
+  const codex = makeFakeCodexAdapter();
+  const registry = makeAdapterRegistryMock({
+    [ProviderDriverKind.make("codex")]: codex.adapter,
+  });
+  const failingDirectory = makeFailingProviderSessionDirectory();
+  const directoryLayer = Layer.succeed(
+    ProviderSessionDirectory.ProviderSessionDirectory,
+    failingDirectory.directory,
+  );
+  const providerLayer = makeProviderServiceLive().pipe(
+    Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+    Layer.provide(directoryLayer),
+    Layer.provide(defaultServerSettingsLayer),
+    Layer.provide(serverConfigTestLayer),
+    Layer.provide(AnalyticsService.layerTest),
+    Layer.provide(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+  );
+  const testLayer = Layer.mergeAll(providerLayer, directoryLayer, NodeServices.layer);
+
+  return Effect.gen(function* () {
+    const provider = yield* ProviderService.ProviderService;
+    const threadId = asThreadId("thread-recovery-binding-failure");
+    yield* provider.startSession(threadId, {
+      provider: CODEX_DRIVER,
+      providerInstanceId: codexInstanceId,
+      threadId,
+      runtimeMode: "full-access",
+    });
+    yield* codex.stopAll();
+    failingDirectory.failNextUpsert();
+
+    const failed = yield* Effect.exit(
+      provider.sendTurn({ threadId, input: "recover", attachments: [] }),
+    );
+    assert.equal(Exit.isFailure(failed), true);
+    assert.equal(yield* codex.hasSession(threadId), false);
+    const binding = Option.getOrUndefined(
+      yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+    );
+    assert.equal(binding?.provider, CODEX_DRIVER);
+    assert.equal(binding?.providerInstanceId, codexInstanceId);
+  }).pipe(Effect.provide(testLayer));
+});
 
 it.effect("ProviderServiceLive writes canonical events to the emitting thread segment", () =>
   Effect.gen(function* () {
@@ -1110,7 +1494,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
-  it.effect("trusts the live session when it conflicts with a mid-restart binding", () =>
+  it.effect("repairs a mid-restart binding before exposing or routing the live session", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -1131,9 +1515,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
 
       // A same-thread provider switch briefly leaves the live session on the
-      // new provider while the persisted binding still names the old one. This
-      // window must not kill listSessions (which would strand the in-flight
-      // turn); the live session is authoritative and the binding converges.
+      // new provider while the persisted binding still names the old one. The
+      // list snapshot must repair the binding before a subsequent turn routes.
       const sessions = yield* provider.listSessions();
       assert.deepEqual(
         sessions
@@ -1141,12 +1524,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
           .map((session) => session.provider),
         ["codex"],
       );
-      yield* directory.upsert({
+      const repairedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+      assert.equal(repairedBinding?.provider, CODEX_DRIVER);
+      assert.equal(repairedBinding?.providerInstanceId, codexInstanceId);
+      yield* provider.sendTurn({
         threadId,
-        provider: ProviderDriverKind.make("codex"),
-        providerInstanceId: codexInstanceId,
-        runtimeMode: "full-access",
+        input: "route after repair",
+        attachments: [],
       });
+      assert.equal(routing.codex.sendTurn.mock.calls.at(-1)?.[0]?.threadId, threadId);
     }),
   );
 
@@ -1185,6 +1571,499 @@ routing.layer("ProviderServiceLive routing", (it) => {
           .filter((session) => session.threadId === threadId)
           .map((session) => session.provider),
         ["claudeAgent"],
+      );
+    }),
+  );
+
+  it.effect("serializes concurrent provider replacements for one thread", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-concurrent-provider-replacement");
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const claudeStartsBefore = routing.claude.startSession.mock.calls.length;
+      const codexStopsBefore = routing.codex.stopSession.mock.calls.length;
+      routing.codex.setStartGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(release);
+        }),
+      );
+
+      const first = yield* provider
+        .startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+
+      const second = yield* provider
+        .startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      assert.equal(routing.claude.startSession.mock.calls.length, claudeStartsBefore);
+
+      yield* Deferred.succeed(release, undefined);
+      const firstSession = yield* Fiber.join(first);
+      const secondSession = yield* Fiber.join(second);
+      assert.equal(firstSession.provider, CODEX_DRIVER);
+      assert.equal(secondSession.provider, CLAUDE_AGENT_DRIVER);
+      assert.deepEqual(routing.codex.stopSession.mock.calls.slice(codexStopsBefore), [[threadId]]);
+
+      const binding = yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(
+        threadId,
+      );
+      assert.equal(Option.getOrUndefined(binding)?.provider, CLAUDE_AGENT_DRIVER);
+    }).pipe(Effect.ensuring(Effect.sync(() => routing.codex.setStartGate(undefined)))),
+  );
+
+  it.effect("serializes a routed turn against a concurrent provider replacement", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-send-provider-replacement");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const claudeStartsBefore = routing.claude.startSession.mock.calls.length;
+      routing.codex.setSendGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(release);
+        }),
+      );
+
+      const send = yield* provider
+        .sendTurn({ threadId, input: "hold the route", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+
+      const replacement = yield* provider
+        .startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      assert.equal(routing.claude.startSession.mock.calls.length, claudeStartsBefore);
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(send);
+      const session = yield* Fiber.join(replacement);
+      assert.equal(session.provider, CLAUDE_AGENT_DRIVER);
+      const binding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(binding?.provider, CLAUDE_AGENT_DRIVER);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          routing.codex.setSendGate(undefined);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("keeps interrupt and approval controls responsive during a routed turn", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-routed-control");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      routing.codex.setSendGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(release);
+        }),
+      );
+
+      const send = yield* provider
+        .sendTurn({ threadId, input: "hold the prompt", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+
+      const interrupt = yield* provider
+        .interruptTurn({ threadId, turnId: asTurnId("turn-control") })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      const interruptExit = yield* Effect.sync(() => interrupt.pollUnsafe());
+      assert.equal(interruptExit !== undefined, true);
+      if (interruptExit !== undefined) assert.equal(Exit.isSuccess(interruptExit), true);
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(interrupt);
+      yield* Fiber.join(send);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          routing.codex.setSendGate(undefined);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("rejects new routed controls once a stop transition begins", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-control-during-stop");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const stopEntered = yield* Deferred.make<void>();
+      const releaseStop = yield* Deferred.make<void>();
+      routing.codex.setStopGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(stopEntered, undefined);
+          yield* Deferred.await(releaseStop);
+        }),
+      );
+
+      const stop = yield* provider.stopSession({ threadId }).pipe(Effect.forkChild);
+      yield* Deferred.await(stopEntered);
+
+      const controlExit = yield* provider
+        .interruptTurn({ threadId, turnId: asTurnId("turn-stopping") })
+        .pipe(Effect.exit);
+      assert.equal(Exit.isFailure(controlExit), true);
+      if (Exit.isFailure(controlExit)) {
+        const failure = controlExit.cause.reasons.find(Cause.isFailReason)?.error;
+        assert.instanceOf(failure, ProviderValidationError);
+      }
+
+      yield* Deferred.succeed(releaseStop, undefined);
+      yield* Fiber.join(stop);
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          routing.codex.setStopGate(undefined);
+        }),
+      ),
+    ),
+  );
+
+  it.effect("bounds a provider stop that never acknowledges", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stop-timeout");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const stopEntered = yield* Deferred.make<void>();
+      const releaseStop = yield* Deferred.make<void>();
+      routing.codex.setStopGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(stopEntered, undefined);
+          yield* Deferred.await(releaseStop);
+        }),
+      );
+
+      const stop = yield* provider.stopSession({ threadId }).pipe(Effect.forkChild);
+      yield* Deferred.await(stopEntered);
+      yield* TestClock.adjust("10001 millis");
+      yield* Effect.yieldNow;
+
+      const stopExit = yield* Fiber.join(stop).pipe(Effect.exit);
+      assert.equal(Exit.isFailure(stopExit), true);
+      yield* Deferred.succeed(releaseStop, undefined);
+    }).pipe(Effect.ensuring(Effect.sync(() => routing.codex.setStopGate(undefined)))),
+  );
+
+  it.effect("keeps queued turns behind a timed-out stop until the active turn drains", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stop-timeout-active-turn");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const sendEntered = yield* Deferred.make<void>();
+      const releaseSend = yield* Deferred.make<void>();
+      let sendGateCalls = 0;
+      routing.codex.setSendGate(() => {
+        sendGateCalls += 1;
+        return sendGateCalls === 1
+          ? Effect.gen(function* () {
+              yield* Deferred.succeed(sendEntered, undefined);
+              yield* Deferred.await(releaseSend);
+            })
+          : Effect.void;
+      });
+
+      const activeSend = yield* provider
+        .sendTurn({ threadId, input: "active", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(sendEntered);
+
+      const stopExit = yield* provider.stopSession({ threadId }).pipe(Effect.forkChild);
+      yield* TestClock.adjust("10001 millis");
+      const stopped = yield* Fiber.join(stopExit).pipe(Effect.exit);
+      assert.equal(Exit.isFailure(stopped), true);
+
+      const queuedSend = yield* provider
+        .sendTurn({ threadId, input: "queued", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      assert.equal(sendGateCalls, 1);
+
+      yield* Deferred.succeed(releaseSend, undefined);
+      yield* Fiber.join(activeSend).pipe(Effect.exit);
+      yield* Fiber.join(queuedSend).pipe(Effect.exit);
+      assert.equal(sendGateCalls, 2);
+    }).pipe(Effect.ensuring(Effect.sync(() => routing.codex.setSendGate(undefined)))),
+  );
+
+  it.effect("does not recover a stopped binding for a turn admitted during stop", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stop-queued-turn");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const stopEntered = yield* Deferred.make<void>();
+      const releaseStop = yield* Deferred.make<void>();
+      routing.codex.setStopGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(stopEntered, undefined);
+          yield* Deferred.await(releaseStop);
+        }),
+      );
+      const stop = yield* provider.stopSession({ threadId }).pipe(Effect.forkChild);
+      yield* Deferred.await(stopEntered);
+
+      routing.codex.sendTurn.mockClear();
+      const queuedTurn = yield* provider
+        .sendTurn({ threadId, input: "must not revive", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      yield* Deferred.succeed(releaseStop, undefined);
+      yield* Fiber.join(stop);
+      const turnExit = yield* Fiber.join(queuedTurn).pipe(Effect.exit);
+      assert.equal(Exit.isFailure(turnExit), true);
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+      assert.equal(yield* routing.codex.hasSession(threadId), false);
+      const binding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(binding?.status, "stopped");
+    }).pipe(Effect.ensuring(Effect.sync(() => routing.codex.setStopGate(undefined)))),
+  );
+
+  it.effect("rolls back a replacement when stale-session cleanup fails", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stale-cleanup-failure");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.codex.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: String(CODEX_DRIVER),
+            method: "stopSession",
+            detail: "simulated stale-session cleanup failure",
+          }),
+        ),
+      );
+
+      const replacementExit = yield* provider
+        .startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.exit);
+      assert.equal(Exit.isFailure(replacementExit), true);
+
+      assert.equal(yield* routing.codex.hasSession(threadId), true);
+      assert.equal(yield* routing.claude.hasSession(threadId), false);
+      const sessions = yield* provider.listSessions();
+      assert.deepEqual(
+        sessions
+          .filter((session) => session.threadId === threadId)
+          .map((session) => session.provider),
+        [CODEX_DRIVER],
+      );
+      const binding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(binding?.provider, CODEX_DRIVER);
+    }),
+  );
+
+  it.effect("reports replacement rollback failure when the target cannot be stopped", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-target-stop-failure");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      routing.codex.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: String(CODEX_DRIVER),
+            method: "stopSession",
+            detail: "simulated stale-session cleanup failure",
+          }),
+        ),
+      );
+      routing.claude.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: String(CLAUDE_AGENT_DRIVER),
+            method: "stopSession",
+            detail: "simulated replacement rollback failure",
+          }),
+        ),
+      );
+
+      const replacementExit = yield* provider
+        .startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.exit);
+
+      assert.equal(Exit.isFailure(replacementExit), true);
+      assert.equal(yield* routing.codex.hasSession(threadId), true);
+      assert.equal(yield* routing.claude.hasSession(threadId), true);
+      const binding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(binding?.provider, CODEX_DRIVER);
+    }),
+  );
+
+  it.effect("marks an explicit stop partial when stale cleanup still fails", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-partial-stop");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      // Simulate a stale native process left behind by a previous failed
+      // replacement. It is intentionally not a durable owner.
+      yield* routing.claude.startSession({
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.claude.stopSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: String(CLAUDE_AGENT_DRIVER),
+            method: "stopSession",
+            detail: "simulated stale cleanup failure",
+          }),
+        ),
+      );
+
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      const stopExit = yield* provider.stopSession({ threadId }).pipe(Effect.exit);
+      assert.equal(Exit.isFailure(stopExit), true);
+      assert.equal(yield* routing.codex.hasSession(threadId), false);
+      assert.equal(yield* routing.claude.hasSession(threadId), true);
+      const binding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(binding?.status, "error");
+      routing.claude.sendTurn.mockClear();
+      const blockedTurn = yield* provider
+        .sendTurn({ threadId, input: "must not route", attachments: [] })
+        .pipe(Effect.exit);
+      assert.equal(Exit.isFailure(blockedTurn), true);
+      assert.equal(routing.claude.sendTurn.mock.calls.length, 0);
+      routing.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-partial-stop-codex"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.001Z",
+        threadId,
+        turnId: asTurnId("turn-partial-stop"),
+        status: "completed",
+      });
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-partial-stop-claude"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:00.001Z",
+        threadId,
+        turnId: asTurnId("turn-partial-stop-stale"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+      assert.deepEqual(yield* Ref.get(received), []);
+
+      yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const recoveredBinding = Option.getOrUndefined(
+        yield* (yield* ProviderSessionDirectory.ProviderSessionDirectory).getBinding(threadId),
+      );
+      assert.equal(recoveredBinding?.status, "running");
+      assert.equal(
+        (recoveredBinding?.runtimePayload as { routingState?: unknown } | null | undefined)
+          ?.routingState,
+        null,
       );
     }),
   );
@@ -1666,6 +2545,248 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
     }),
   );
 
+  it.effect("drops late events from a retired provider instance", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stale-provider-event");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      fanout.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-stale-provider"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-stale-provider"),
+        status: "completed",
+      });
+      fanout.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-current-provider"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-current-provider"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      const events = yield* Ref.get(received);
+      assert.deepEqual(
+        events.map((event) => event.eventId),
+        [asEventId("evt-current-provider")],
+      );
+    }),
+  );
+
+  it.effect("drops a delayed same-instance session exit after restart", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-same-instance-restart");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      // The same configured instance is restarted, so the adapter identity and
+      // providerInstanceId are intentionally unchanged.
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      fanout.codex.emit({
+        type: "session.exited",
+        eventId: asEventId("evt-same-instance-stale-exit"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        payload: { reason: "old context" },
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      assert.deepEqual(
+        (yield* Ref.get(received)).filter(
+          (event) => event.eventId === asEventId("evt-same-instance-stale-exit"),
+        ),
+        [],
+      );
+    }),
+  );
+
+  it.effect("drops queued same-instance output and request events after restart", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-same-instance-queued-events");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const staleEvents: ReadonlyArray<LegacyProviderRuntimeEvent> = [
+        {
+          type: "session.started",
+          eventId: asEventId("evt-same-instance-stale-lifecycle"),
+          provider: CODEX_DRIVER,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          payload: { message: "old context restarted" },
+        },
+        {
+          type: "turn.completed",
+          eventId: asEventId("evt-same-instance-stale-turn"),
+          provider: CODEX_DRIVER,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          turnId: asTurnId("turn-old-context"),
+          status: "completed",
+        },
+        {
+          type: "content.delta",
+          eventId: asEventId("evt-same-instance-stale-content"),
+          provider: CODEX_DRIVER,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          turnId: asTurnId("turn-old-context"),
+          delta: "old output",
+        },
+        {
+          type: "request.opened",
+          eventId: asEventId("evt-same-instance-stale-request"),
+          provider: CODEX_DRIVER,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          requestId: asRequestId("request-old-context"),
+          requestType: "command_execution_approval",
+          title: "old request",
+        },
+      ];
+      for (const event of staleEvents) fanout.codex.emit(event);
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      const receivedIds = new Set((yield* Ref.get(received)).map((event) => event.eventId));
+      for (const event of staleEvents) {
+        assert.equal(receivedIds.has(event.eventId), false);
+      }
+    }),
+  );
+
+  it.effect("drops retired-provider events during a pending replacement", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-pending-provider-event");
+      yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      const replacementStarted = yield* Deferred.make<void>();
+      const releaseReplacement = yield* Deferred.make<void>();
+      fanout.codex.setStartGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(replacementStarted, undefined);
+          yield* Deferred.await(releaseReplacement);
+        }),
+      );
+
+      const replacement = yield* provider
+        .startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(replacementStarted).pipe(Effect.timeout(2_000), Effect.orDie);
+
+      fanout.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-pending-stale-provider"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-pending-stale-provider"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      assert.deepEqual(yield* Ref.get(received), []);
+
+      yield* Deferred.succeed(releaseReplacement, undefined);
+      yield* Fiber.join(replacement);
+      fanout.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-pending-current-provider"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-pending-current-provider"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      assert.deepEqual(
+        (yield* Ref.get(received)).map((event) => event.eventId),
+        [asEventId("evt-pending-current-provider")],
+      );
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          fanout.codex.setStartGate(undefined);
+        }),
+      ),
+    ),
+  );
+
   it.effect("keeps subscriber delivery ordered and isolates failing subscribers", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -1697,7 +2818,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           type: "tool.completed",
           eventId: asEventId("evt-ordered-1"),
           provider: ProviderDriverKind.make("codex"),
-          createdAt: "2026-01-01T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.001Z",
           threadId: session.threadId,
           turnId: asTurnId("turn-1"),
           toolKind: "command",
@@ -1708,7 +2829,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           type: "message.delta",
           eventId: asEventId("evt-ordered-2"),
           provider: ProviderDriverKind.make("codex"),
-          createdAt: "2026-01-01T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.001Z",
           threadId: session.threadId,
           turnId: asTurnId("turn-1"),
           delta: "hello",
@@ -1717,7 +2838,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           type: "turn.completed",
           eventId: asEventId("evt-ordered-3"),
           provider: ProviderDriverKind.make("codex"),
-          createdAt: "2026-01-01T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.001Z",
           threadId: session.threadId,
           turnId: asTurnId("turn-1"),
           status: "completed",

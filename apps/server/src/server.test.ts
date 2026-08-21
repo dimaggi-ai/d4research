@@ -1424,6 +1424,65 @@ const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
 );
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("prepares a passthrough handoff when Memo is disabled", () =>
+    Effect.gen(function* () {
+      const settings = {
+        ...DEFAULT_SERVER_SETTINGS,
+        memory: {
+          ...DEFAULT_SERVER_SETTINGS.memory,
+          localEnabled: false,
+        },
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            getSettings: Effect.succeed(settings),
+          },
+        },
+      });
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      const response = yield* HttpClient.post("/api/handoff/prepare", {
+        headers: { cookie },
+        body: yield* HttpBody.json({
+          transcript: "  authoritative transcript  ",
+          sourceThreadId: "thread-source",
+          sourceThreadTitle: "Source thread",
+          target: { instanceId: "codex", model: "gpt-5.6-sol" },
+          bypassCompression: true,
+        }),
+      });
+      const body = (yield* response.json) as {
+        readonly ok: boolean;
+        readonly compressed: string;
+        readonly memoryPersisted: boolean;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(response.headers["cache-control"], "no-store");
+      assert.deepEqual(body, {
+        ok: true,
+        compressed: "authoritative transcript",
+        memoryPersisted: false,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects invalid handoff transcripts before preparation", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+      for (const transcript of ["   ", "x".repeat(60_001)]) {
+        const response = yield* HttpClient.post("/api/handoff/prepare", {
+          headers: { cookie },
+          body: yield* HttpBody.json({ transcript, bypassCompression: true }),
+        });
+        const body = (yield* response.json) as { readonly ok: boolean };
+        assert.equal(response.status, 400);
+        assert.equal(body.ok, false);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

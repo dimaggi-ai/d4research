@@ -46,6 +46,7 @@ type TraitsRenderInput = {
   modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
   prompt: string;
   onPromptChange: (prompt: string) => void;
+  disabled?: boolean;
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -94,6 +95,7 @@ function renderTraitsControl(
     modelOptions,
     prompt,
     onPromptChange,
+    disabled,
   } = input;
   const hasTarget = threadRef !== undefined || draftId !== undefined;
   if (
@@ -113,6 +115,7 @@ function renderTraitsControl(
       modelOptions={modelOptions}
       prompt={prompt}
       onPromptChange={onPromptChange}
+      {...(disabled !== undefined ? { disabled } : {})}
     />
   );
 }

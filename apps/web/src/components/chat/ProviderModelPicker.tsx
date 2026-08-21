@@ -81,6 +81,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   };
 
   useEffect(() => {
+    if (props.disabled && isMenuOpen) {
+      setIsMenuOpen(false);
+      return;
+    }
     if (!isMenuOpen) {
       return;
     }
@@ -126,7 +130,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       body.style.overflow = previousBodyOverflow;
       body.style.paddingRight = previousBodyPaddingRight;
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, props.disabled]);
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;

@@ -28,7 +28,6 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -333,7 +332,13 @@ export function makeCursorAdapter(
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
 
     const sessions = new Map<ThreadId, CursorSessionContext>();
-    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+    // Session cleanup fibers must outlive the short-lived startSession scope,
+    // but cannot live inside an individual session scope: a notification pump
+    // that closes its own session scope can self-wait during finalization.
+    // The adapter-owned supervisor scope gives those fibers an external owner.
+    const sessionSupervisorScope = yield* Scope.make("sequential");
+    type ThreadLockEntry = { readonly semaphore: Semaphore.Semaphore; readonly users: number };
+    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, ThreadLockEntry>());
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -366,24 +371,38 @@ export function makeCursorAdapter(
 
     const getThreadSemaphore = (threadId: string) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-        const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-          current.get(threadId),
+        const existing = current.get(threadId);
+        if (existing) {
+          const next = new Map(current);
+          next.set(threadId, { ...existing, users: existing.users + 1 });
+          return Effect.succeed([existing, next] as const);
+        }
+        return Semaphore.make(1).pipe(
+          Effect.map((semaphore) => {
+            const next = new Map(current);
+            const entry = { semaphore, users: 1 } satisfies ThreadLockEntry;
+            next.set(threadId, entry);
+            return [entry, next] as const;
+          }),
         );
-        return Option.match(existing, {
-          onNone: () =>
-            Semaphore.make(1).pipe(
-              Effect.map((semaphore) => {
-                const next = new Map(current);
-                next.set(threadId, semaphore);
-                return [semaphore, next] as const;
-              }),
-            ),
-          onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
-        });
+      });
+
+    const releaseThreadSemaphore = (threadId: string, entry: ThreadLockEntry) =>
+      SynchronizedRef.update(threadLocksRef, (current) => {
+        const active = current.get(threadId);
+        if (active?.semaphore !== entry.semaphore) return current;
+        const next = new Map(current);
+        if (active.users <= 1) next.delete(threadId);
+        else next.set(threadId, { ...active, users: active.users - 1 });
+        return next;
       });
 
     const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+      Effect.flatMap(getThreadSemaphore(threadId), (entry) =>
+        entry.semaphore
+          .withPermit(effect)
+          .pipe(Effect.ensuring(releaseThreadSemaphore(threadId, entry))),
+      );
 
     const logNative = (
       threadId: ThreadId,
@@ -506,9 +525,30 @@ export function makeCursorAdapter(
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
           const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const sessionScope = yield* Scope.make("sequential");
-          let sessionScopeTransferred = false;
+          let contextRegistered = false;
+          let startupCompleted = false;
           yield* Effect.addFinalizer(() =>
-            sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
+            startupCompleted
+              ? Effect.void
+              : Effect.gen(function* () {
+                  if (contextRegistered) {
+                    // Registration happens before the notification pump is
+                    // forked so an immediately-ending stream cannot resurrect
+                    // a dead context. If any later startup step fails, remove
+                    // that provisional entry and close the native scope before
+                    // the caller can retry.
+                    ctx.stopped = true;
+                    yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+                    yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+                    if (ctx.notificationFiber) {
+                      yield* Fiber.interrupt(ctx.notificationFiber).pipe(Effect.ignore);
+                    }
+                    if (sessions.get(input.threadId) === ctx) {
+                      sessions.delete(input.threadId);
+                    }
+                  }
+                  yield* Scope.close(sessionScope, Exit.void).pipe(Effect.ignore);
+                }),
           );
           let ctx!: CursorSessionContext;
 
@@ -782,6 +822,13 @@ export function makeCursorAdapter(
             stopped: false,
           };
 
+          // Publish the context before forking the pump. An ACP stream can
+          // terminate immediately (for example, a process that exits during
+          // startup); if its reconciliation runs before this assignment, the
+          // cleanup would be lost and the subsequent `sessions.set` would
+          // resurrect a stopped context.
+          sessions.set(input.threadId, ctx);
+          contextRegistered = true;
           const nf = yield* Stream.runDrain(
             Stream.mapEffect(acp.getEvents(), (event) =>
               Effect.gen(function* () {
@@ -872,25 +919,72 @@ export function makeCursorAdapter(
                     );
                     return;
                 }
-              }),
+              }).pipe(
+                // A malformed notification must not terminate the session's
+                // pump. Continue consuming later ACP events while surfacing the
+                // individual handler failure for diagnosis.
+                Effect.catchCause((cause) =>
+                  Effect.logError("Failed to process Cursor runtime notification.", { cause }),
+                ),
+              ),
             ),
           ).pipe(
-            Effect.catch((cause) =>
-              Effect.logError("Failed to process Cursor runtime notification.", { cause }),
+            // A source/transport failure is distinct from one bad event. Log
+            // it explicitly; the session remains observable for reconciliation
+            // instead of silently looking ready forever.
+            Effect.catchCause((cause) =>
+              Effect.logError("Cursor runtime notification stream stopped.", { cause }),
             ),
-            // The notification pump must live as long as the SESSION, not the
-            // caller: a child fork of the reactor's ephemeral turn-start fiber
-            // is interrupted the moment that fiber completes, and every
-            // notification the real ACP process emits afterwards is lost while
-            // the thread sits "starting" forever — the same lifetime bug fixed
-            // in CodexAdapter after the 2026-08-15 outage. The exit watcher
-            // below already forks into this scope for the same reason.
-            Effect.forkIn(sessionScope),
+            Effect.andThen(
+              withThreadLock(
+                ctx.threadId,
+                Effect.gen(function* () {
+                  if (ctx.stopped || sessions.get(ctx.threadId) !== ctx) return;
+                  ctx.stopped = true;
+                  yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+                  yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
+                  sessions.delete(ctx.threadId);
+                  yield* offerRuntimeEvent({
+                    type: "session.exited",
+                    ...(yield* makeEventStamp()),
+                    provider: PROVIDER,
+                    threadId: ctx.threadId,
+                    payload: {
+                      reason: "Cursor ACP notification stream ended unexpectedly.",
+                      recoverable: false,
+                      exitKind: "error",
+                    },
+                  });
+                  yield* Scope.close(ctx.scope, Exit.void);
+                }),
+              ).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logError("Failed to reconcile Cursor session after event-stream stop.", {
+                    threadId: ctx.threadId,
+                    cause,
+                  }),
+                ),
+              ),
+            ),
+            // The notification pump must live as long as the adapter-owned
+            // session supervisor, not the caller's ephemeral start scope. Its
+            // reconciliation closes ctx.scope from outside that scope.
+            Effect.forkIn(sessionSupervisorScope),
           );
 
           ctx.notificationFiber = nf;
-          sessions.set(input.threadId, ctx);
-          sessionScopeTransferred = true;
+
+          // The pump may have observed an already-closed ACP stream before
+          // the fork returned. Do not emit a successful lifecycle after that
+          // reconciliation or leave a dead session routable.
+          if (ctx.stopped || sessions.get(input.threadId) !== ctx) {
+            yield* Fiber.interrupt(nf).pipe(Effect.ignore);
+            return yield* new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId: input.threadId,
+              detail: "Cursor ACP notification stream ended during startup.",
+            });
+          }
 
           yield* offerRuntimeEvent({
             type: "session.started",
@@ -946,9 +1040,10 @@ export function makeCursorAdapter(
             Effect.catchCause((cause) =>
               Effect.logError("Failed to reconcile an exited Cursor ACP process.", { cause }),
             ),
-            Effect.forkIn(sessionScope),
+            Effect.forkIn(sessionSupervisorScope),
           );
 
+          startupCompleted = true;
           return session;
         }).pipe(Effect.scoped),
       );
@@ -1194,16 +1289,19 @@ export function makeCursorAdapter(
       });
 
     const stopAll: CursorAdapterShape["stopAll"] = () =>
-      Effect.forEach(sessions.values(), stopSessionInternal, { discard: true });
+      Effect.forEach([...sessions.values()], stopSessionInternal, { discard: true });
 
     yield* Effect.addFinalizer(() =>
-      Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
-        Effect.catch((cause) =>
-          Effect.logError("Failed to emit Cursor session shutdown event.", { cause }),
-        ),
-        Effect.tap(() => PubSub.shutdown(runtimeEventPubSub)),
-        Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
-      ),
+      Effect.gen(function* () {
+        yield* Effect.forEach([...sessions.values()], stopSessionInternal, { discard: true }).pipe(
+          Effect.catch((cause) =>
+            Effect.logError("Failed to emit Cursor session shutdown event.", { cause }),
+          ),
+        );
+        yield* Scope.close(sessionSupervisorScope, Exit.void);
+        yield* PubSub.shutdown(runtimeEventPubSub);
+        yield* managedNativeEventLogger?.close() ?? Effect.void;
+      }),
     );
 
     const streamEvents = Stream.fromPubSub(runtimeEventPubSub);

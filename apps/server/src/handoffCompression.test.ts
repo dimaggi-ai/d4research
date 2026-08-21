@@ -18,26 +18,29 @@ import {
 const MOCK_PROVIDER = ProviderDriverKind.make("mock");
 const MOCK_INSTANCE = ProviderInstanceId.make("mock-compressor");
 
-function makeMockAdapter(responseText: string) {
+function makeMockAdapter(responseText: string, options?: { readonly failStart?: boolean }) {
   const sessions = new Map<string, { turns: Array<{ id: string; items: unknown[] }> }>();
+  const stopCalls: string[] = [];
   return {
     provider: MOCK_PROVIDER,
     capabilities: { sessionModelSwitch: "unsupported" as const },
     startSession: (input: { threadId: unknown }) =>
-      Effect.sync(() => {
-        sessions.set(String(input.threadId), { turns: [] });
-        return {
-          provider: MOCK_PROVIDER,
-          providerInstanceId: MOCK_INSTANCE,
-          threadId: input.threadId as ReturnType<typeof ThreadId.make>,
-          cwd: "/tmp",
-          runtimeMode: "approval-required" as const,
-          status: "ready" as const,
-          model: "test-model",
-          createdAt: "2026-01-01T00:00:00Z",
-          updatedAt: "2026-01-01T00:00:00Z",
-        };
-      }),
+      options?.failStart
+        ? Effect.fail({ detail: "startup failed" } as never)
+        : Effect.sync(() => {
+            sessions.set(String(input.threadId), { turns: [] });
+            return {
+              provider: MOCK_PROVIDER,
+              providerInstanceId: MOCK_INSTANCE,
+              threadId: input.threadId as ReturnType<typeof ThreadId.make>,
+              cwd: "/tmp",
+              runtimeMode: "approval-required" as const,
+              status: "ready" as const,
+              model: "test-model",
+              createdAt: "2026-01-01T00:00:00Z",
+              updatedAt: "2026-01-01T00:00:00Z",
+            };
+          }),
     sendTurn: (input: { threadId: unknown; input?: string }) =>
       Effect.sync(() => {
         const session = sessions.get(String(input.threadId));
@@ -63,7 +66,11 @@ function makeMockAdapter(responseText: string) {
           })),
         };
       }),
-    stopSession: () => Effect.void,
+    stopSession: (threadId: unknown) =>
+      Effect.sync(() => {
+        stopCalls.push(String(threadId));
+        sessions.delete(String(threadId));
+      }),
     interruptTurn: () => Effect.void,
     respondToRequest: () => Effect.void,
     respondToUserInput: () => Effect.void,
@@ -72,6 +79,7 @@ function makeMockAdapter(responseText: string) {
     rollbackThread: () => Effect.void,
     stopAll: () => Effect.void,
     streamEvents: Stream.empty,
+    stopCalls,
   };
 }
 
@@ -94,6 +102,70 @@ function registryLayer(responseText: string) {
 }
 
 describe("compressHandoffContext", () => {
+  it.effect("attempts cleanup when compression-session startup fails", () => {
+    const adapter = makeMockAdapter("unused", { failStart: true });
+    return Effect.gen(function* () {
+      const result = yield* Effect.exit(
+        compressHandoffContext({
+          transcript: "test",
+          instanceId: MOCK_INSTANCE,
+          model: "test-model",
+          maxOutputCharacters: 5000,
+          customPrompt: "",
+          cwd: "/tmp",
+        }),
+      );
+      expect(result._tag).toBe("Failure");
+      expect(adapter.stopCalls).toHaveLength(1);
+      expect(adapter.stopCalls[0]).toMatch(/^handoff-compress-/);
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(ProviderAdapterRegistry, {
+          getByInstance: () =>
+            Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
+          getInstanceInfo: () => Effect.die("not implemented"),
+          listInstances: () => Effect.succeed([MOCK_INSTANCE]),
+          listProviders: () => Effect.succeed([MOCK_PROVIDER]),
+          streamChanges: Stream.empty,
+          subscribeChanges: Effect.die("not implemented"),
+        }),
+      ),
+    );
+  });
+
+  it.effect("uses distinct temporary sessions for concurrent handoffs", () => {
+    const adapter = makeMockAdapter("Compressed context summary.");
+    return Effect.gen(function* () {
+      const results = yield* Effect.all(
+        [1, 2].map(() =>
+          compressHandoffContext({
+            transcript: "test",
+            instanceId: MOCK_INSTANCE,
+            model: "test-model",
+            maxOutputCharacters: 5000,
+            customPrompt: "",
+            cwd: "/tmp",
+          }),
+        ),
+        { concurrency: "unbounded" },
+      );
+      expect(results).toEqual(["Compressed context summary.", "Compressed context summary."]);
+      expect(new Set(adapter.stopCalls).size).toBe(2);
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(ProviderAdapterRegistry, {
+          getByInstance: () =>
+            Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
+          getInstanceInfo: () => Effect.die("not implemented"),
+          listInstances: () => Effect.succeed([MOCK_INSTANCE]),
+          listProviders: () => Effect.succeed([MOCK_PROVIDER]),
+          streamChanges: Stream.empty,
+          subscribeChanges: Effect.die("not implemented"),
+        }),
+      ),
+    );
+  });
+
   it.effect("compresses transcript through a mock adapter", () =>
     Effect.gen(function* () {
       const result = yield* compressHandoffContext({

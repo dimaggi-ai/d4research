@@ -799,6 +799,51 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   ): Effect.Effect<A, E | ProviderValidationError, R> =>
     withServiceActivity(withThreadTransitionLockUnsafe(threadId, effect));
 
+  // A runtime event only needs to be fenced against durable transition commits
+  // (start/stop/replacement), which each hold `entry.semaphore` across their
+  // whole commit. Taking the same per-thread permit is sufficient: an event's
+  // ownership read + publish cannot straddle a transition. It deliberately does
+  // NOT take the exclusive gate. Events must not wait on in-flight turns or
+  // controls — a turn's binding write keeps provider/instance stable and can
+  // never flip the ownership decision — and events must not set `exclusive`
+  // mode, which previously serialized every co-tenant thread's event stream
+  // behind any active turn on the same instance. `withServiceActivity` is kept
+  // so shutdown still rejects and drains in-flight event processing.
+  //
+  // Two narrow recovery-race windows are knowingly accepted here (the old
+  // exclusive gate masked them only by making every event wait on
+  // `activeTurns == 0`, which is exactly the head-of-line stall we removed):
+  //   (A) A `sendTurn` that recovers a missing native session writes the new
+  //       restart generation from inside `withRoutedTurn` (no `entry.semaphore`),
+  //       so an event read that lands before that commit can publish a stale
+  //       pre-generation event that a post-commit read would have dropped.
+  //   (B) `restoreNativeSessions` re-arms a fence generation without the
+  //       semaphore, and the disarm below matches on `adapter` alone, so a
+  //       concurrent re-arm can be disarmed against the wrong generation.
+  // Both need a recovery interleaving that is rare and low-severity (at worst a
+  // single stale event reaches the stream; no data loss, deadlock, or security
+  // impact). The clean writer-side fix — making recovery hold `entry.semaphore`
+  // — deadlocks against a transition that holds the permit across its
+  // `activeTurns == 0` wait while the recovering turn keeps `activeTurns` high.
+  // See docs/internals/providers.md "Per-thread gate and the event fence".
+  const withThreadEventFenceUnsafe = <A, E, R>(
+    threadId: ThreadId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
+        restore(entry.semaphore.withPermit(effect)).pipe(
+          Effect.ensuring(releaseThreadTransitionLock(threadId, entry)),
+        ),
+      ),
+    );
+
+  const withThreadEventFence = <A, E, R>(
+    threadId: ThreadId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | ProviderValidationError, R> =>
+    withServiceActivity(withThreadEventFenceUnsafe(threadId, effect));
+
   const withRoutedTurnUnsafe = <A, E, R>(
     threadId: ThreadId,
     effect: (waitedForGate: boolean) => Effect.Effect<A, E, R>,
@@ -1302,7 +1347,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // between the reads, letting a stale event publish after the new binding
       // was durable. The lock also makes shutdown's stopped-state write a hard
       // boundary for already-buffered provider events.
-      yield* withThreadTransitionLock(canonicalEvent.threadId, () =>
+      yield* withThreadEventFence(
+        canonicalEvent.threadId,
         Effect.gen(function* () {
           const activity = yield* SynchronizedRef.get(serviceActivityRef);
           if (activity.closing) {

@@ -2545,6 +2545,67 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
     }),
   );
 
+  it.effect("fans out runtime events while a turn on the same thread is in flight", () =>
+    Effect.gen(function* () {
+      // Regression guard for the event-path fence: a runtime event must not wait
+      // for an in-flight turn to drain. The old exclusive gate made every event
+      // block until `activeTurns === 0`, so this event would never publish until
+      // the held turn released. It now fences only against transitions.
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-event-during-turn");
+      const session = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const eventsRef = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(eventsRef, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      // Hold a turn open: `activeTurns` stays 1 until `releaseSend` fires.
+      const sendEntered = yield* Deferred.make<void>();
+      const releaseSend = yield* Deferred.make<void>();
+      fanout.codex.setSendGate(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(sendEntered, undefined);
+          yield* Deferred.await(releaseSend);
+        }),
+      );
+      const activeSend = yield* provider
+        .sendTurn({ threadId, input: "in flight", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(sendEntered);
+
+      // Emit an event while the turn is still parked, then let the pump run
+      // without releasing the turn.
+      fanout.codex.emit({
+        type: "tool.started",
+        eventId: asEventId("evt-during-turn"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId: session.threadId,
+        turnId: asTurnId("turn-1"),
+        toolKind: "command",
+        title: "Ran command",
+      });
+      yield* advanceTestClock(50);
+
+      const duringTurn = yield* Ref.get(eventsRef);
+      assert.equal(
+        duringTurn.some((entry) => entry.eventId === asEventId("evt-during-turn")),
+        true,
+      );
+
+      yield* Deferred.succeed(releaseSend, undefined);
+      yield* Fiber.join(activeSend).pipe(Effect.exit);
+      yield* Fiber.interrupt(consumer);
+    }).pipe(Effect.ensuring(Effect.sync(() => fanout.codex.setSendGate(undefined)))),
+  );
+
   it.effect("drops late events from a retired provider instance", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

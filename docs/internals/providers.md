@@ -88,6 +88,31 @@ directory to route session and turn operations for a thread, so callers name a t
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
+### Per-thread gate and the event fence
+
+Each thread carries a per-thread semaphore in its routing entry. Durable transitions (start, stop,
+provider replacement) hold that permit across their whole commit, so they never interleave with each
+other or with a runtime event's ownership read and publish. Turns and controls do not take the
+permit: they bump `activeTurns` / `activeControls` counters, and a transition waits for those to
+reach zero before it commits. This keeps a turn and a transition mutually exclusive without a shared
+lock.
+
+Runtime events are fenced with the semaphore only. An event reads the thread's binding, decides
+whether it is from the current owner, may disarm a restart fence, and publishes — all under the
+permit, so it cannot straddle a transition. It deliberately does not wait on `activeTurns`: an
+event that waited would stall every co-tenant thread's event stream behind any in-flight turn on the
+same instance, because one drain fiber serves all threads on a provider instance.
+
+Two recovery-race windows are knowingly accepted as a result. A `sendTurn` that recovers a missing
+native session runs inside the turn path, not a transition, so it writes the new restart generation
+without the permit; an event that reads just before that write can publish a stale pre-generation
+event. Separately, a compensation path can re-arm a fence generation without the permit while an
+event disarms it by adapter identity alone. Both require a rare recovery interleaving and are
+low-severity: at worst a single stale event reaches the stream, with no data loss, deadlock, or
+security impact. The clean writer-side fix — having recovery take the permit — would deadlock,
+because a transition holds the permit across its `activeTurns == 0` wait while the recovering turn
+keeps `activeTurns` above zero.
+
 ## How provider work is requested
 
 Clients never call a provider directly. They dispatch orchestration commands over the RPC method

@@ -19,7 +19,6 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
@@ -296,7 +295,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
 
     const sessions = new Map<ThreadId, GrokSessionContext>();
-    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+    type ThreadLockEntry = { readonly semaphore: Semaphore.Semaphore; readonly users: number };
+    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, ThreadLockEntry>());
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -329,24 +329,43 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     const getThreadSemaphore = (threadId: string) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-        const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-          current.get(threadId),
+        const existing = current.get(threadId);
+        if (existing) {
+          const next = new Map(current);
+          next.set(threadId, { ...existing, users: existing.users + 1 });
+          return Effect.succeed([existing, next] as const);
+        }
+        return Semaphore.make(1).pipe(
+          Effect.map((semaphore) => {
+            const next = new Map(current);
+            const entry = { semaphore, users: 1 } satisfies ThreadLockEntry;
+            next.set(threadId, entry);
+            return [entry, next] as const;
+          }),
         );
-        return Option.match(existing, {
-          onNone: () =>
-            Semaphore.make(1).pipe(
-              Effect.map((semaphore) => {
-                const next = new Map(current);
-                next.set(threadId, semaphore);
-                return [semaphore, next] as const;
-              }),
-            ),
-          onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
-        });
+      });
+
+    const releaseThreadSemaphore = (threadId: string, entry: ThreadLockEntry) =>
+      SynchronizedRef.update(threadLocksRef, (current) => {
+        const active = current.get(threadId);
+        if (active?.semaphore !== entry.semaphore) return current;
+        const next = new Map(current);
+        if (active.users <= 1) next.delete(threadId);
+        else next.set(threadId, { ...active, users: active.users - 1 });
+        return next;
       });
 
     const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+      // `getThreadSemaphore` commits `users + 1`; arm the refcount release before
+      // the permit wait/work becomes cancellable so an interrupt cannot strand a
+      // thread-lock map entry that never gets reclaimed.
+      Effect.uninterruptibleMask((restore) =>
+        Effect.flatMap(getThreadSemaphore(threadId), (entry) =>
+          restore(entry.semaphore.withPermit(effect)).pipe(
+            Effect.ensuring(releaseThreadSemaphore(threadId, entry)),
+          ),
+        ),
+      );
 
     const settlePromptInFlight = (
       threadId: ThreadId,

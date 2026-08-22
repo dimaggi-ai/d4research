@@ -365,46 +365,52 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const withServiceActivity = <A, E, R>(
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | ProviderValidationError, R> =>
-    Effect.gen(function* () {
-      const currentFiber = Fiber.getCurrent();
-      yield* SynchronizedRef.modifyEffect(serviceActivityRef, (current) =>
-        current.closing
-          ? Effect.fail(
-              toValidationError(
-                "ProviderService",
-                "Provider service is shutting down and no longer accepts new operations.",
+    // Admission (active + 1, fiber registration) commits uninterruptibly and the
+    // decrement finalizer is armed before `effect` becomes cancellable again, so
+    // an interrupt cannot leak `active` or a stale `activeFibers` entry and stall
+    // shutdown's drain on a fiber that has already completed.
+    Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const currentFiber = Fiber.getCurrent();
+        yield* SynchronizedRef.modifyEffect(serviceActivityRef, (current) =>
+          current.closing
+            ? Effect.fail(
+                toValidationError(
+                  "ProviderService",
+                  "Provider service is shutting down and no longer accepts new operations.",
+                ),
+              )
+            : Deferred.succeed(current.changed, undefined).pipe(
+                Effect.andThen(Deferred.make<void>()),
+                Effect.map((changed) => {
+                  const activeFibers = new Map(current.activeFibers);
+                  if (currentFiber) activeFibers.set(currentFiber.id, currentFiber);
+                  return [
+                    true,
+                    { ...current, active: current.active + 1, changed, activeFibers },
+                  ] as const;
+                }),
               ),
-            )
-          : Deferred.succeed(current.changed, undefined).pipe(
-              Effect.andThen(Deferred.make<void>()),
-              Effect.map((changed) => {
-                const activeFibers = new Map(current.activeFibers);
-                if (currentFiber) activeFibers.set(currentFiber.id, currentFiber);
-                return [
-                  true,
-                  { ...current, active: current.active + 1, changed, activeFibers },
-                ] as const;
-              }),
-            ),
-      ) as Effect.Effect<true, ProviderValidationError>;
-      return yield* effect.pipe(
-        Effect.ensuring(
-          SynchronizedRef.modifyEffect(serviceActivityRef, (current) =>
-            Deferred.succeed(current.changed, undefined).pipe(
-              Effect.andThen(Deferred.make<void>()),
-              Effect.map((changed) => {
-                const activeFibers = new Map(current.activeFibers);
-                if (currentFiber) activeFibers.delete(currentFiber.id);
-                return [
-                  undefined,
-                  { ...current, active: Math.max(0, current.active - 1), changed, activeFibers },
-                ] as const;
-              }),
-            ),
-          ).pipe(Effect.asVoid),
-        ),
-      );
-    });
+        ) as Effect.Effect<true, ProviderValidationError>;
+        return yield* restore(effect).pipe(
+          Effect.ensuring(
+            SynchronizedRef.modifyEffect(serviceActivityRef, (current) =>
+              Deferred.succeed(current.changed, undefined).pipe(
+                Effect.andThen(Deferred.make<void>()),
+                Effect.map((changed) => {
+                  const activeFibers = new Map(current.activeFibers);
+                  if (currentFiber) activeFibers.delete(currentFiber.id);
+                  return [
+                    undefined,
+                    { ...current, active: Math.max(0, current.active - 1), changed, activeFibers },
+                  ] as const;
+                }),
+              ),
+            ).pipe(Effect.asVoid),
+          ),
+        );
+      }),
+    );
   const beginShutdown = SynchronizedRef.modifyEffect(serviceActivityRef, (current) =>
     current.closing
       ? Effect.succeed([false, current] as const)
@@ -587,7 +593,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.map((changed) => [result, { ...next, changed }] as const),
     );
 
-  const acquireExclusiveGate = (entry: ThreadTransitionLockEntry) =>
+  // Gate acquisition must run inside an `uninterruptibleMask` supplied by the
+  // caller: the successful `modifyEffect` commit and the caller's finalizer
+  // arming cannot be split by an interrupt. Only the blocking wait is `restore`d,
+  // so a queued turn/transition stays cancellable while it waits for the gate.
+  type RestoreInterruptibility = <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E, R>;
+
+  const acquireExclusiveGate = (
+    entry: ThreadTransitionLockEntry,
+    restore: RestoreInterruptibility,
+  ) =>
     Effect.gen(function* () {
       let waited = false;
       while (true) {
@@ -605,11 +622,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
         if (decision.acquired) return waited;
         waited = true;
-        yield* Deferred.await(decision.wait!);
+        yield* restore(Deferred.await(decision.wait!));
       }
     });
 
-  const acquireStoppingGate = (entry: ThreadTransitionLockEntry) =>
+  const acquireStoppingGate = (
+    entry: ThreadTransitionLockEntry,
+    restore: RestoreInterruptibility,
+  ) =>
     Effect.gen(function* () {
       while (true) {
         const decision = yield* SynchronizedRef.modifyEffect(entry.state, (current) =>
@@ -629,11 +649,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               ),
         );
         if (decision.acquired) return;
-        yield* Deferred.await(decision.wait!);
+        yield* restore(Deferred.await(decision.wait!));
       }
     });
 
-  const acquireTurnGate = (entry: ThreadTransitionLockEntry) =>
+  const acquireTurnGate = (entry: ThreadTransitionLockEntry, restore: RestoreInterruptibility) =>
     Effect.gen(function* () {
       let waited = false;
       while (true) {
@@ -655,11 +675,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
         if (decision.acquired) return waited;
         waited = true;
-        yield* Deferred.await(decision.wait!);
+        yield* restore(Deferred.await(decision.wait!));
       }
     });
 
-  const acquireControlGate = (entry: ThreadTransitionLockEntry) =>
+  const acquireControlGate = (entry: ThreadTransitionLockEntry, restore: RestoreInterruptibility) =>
     Effect.gen(function* () {
       while (true) {
         const decision = yield* SynchronizedRef.modifyEffect(entry.state, (current) =>
@@ -686,7 +706,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
                 ),
         );
         if (decision.acquired) return;
-        yield* Deferred.await(decision.wait!);
+        yield* restore(Deferred.await(decision.wait!));
       }
     });
 
@@ -756,15 +776,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     effect: (waitedForGate: boolean) => Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
-      entry.semaphore
-        .withPermit(
-          Effect.gen(function* () {
-            const waitedForGate = yield* acquireExclusiveGate(entry);
-            return yield* effect(waitedForGate).pipe(Effect.ensuring(releaseTransitionGate(entry)));
-          }),
-        )
-        .pipe(Effect.ensuring(releaseThreadTransitionLock(threadId, entry))),
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
+        restore(
+          entry.semaphore.withPermit(
+            Effect.uninterruptibleMask((restoreGate) =>
+              Effect.gen(function* () {
+                const waitedForGate = yield* acquireExclusiveGate(entry, restoreGate);
+                return yield* restoreGate(effect(waitedForGate)).pipe(
+                  Effect.ensuring(releaseTransitionGate(entry)),
+                );
+              }),
+            ),
+          ),
+        ).pipe(Effect.ensuring(releaseThreadTransitionLock(threadId, entry))),
+      ),
     );
 
   const withThreadTransitionLock = <A, E, R>(
@@ -777,12 +803,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     effect: (waitedForGate: boolean) => Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
-      acquireTurnGate(entry).pipe(
-        Effect.flatMap((waitedForGate) =>
-          effect(waitedForGate).pipe(Effect.ensuring(releaseTurnGate(entry))),
+    // Arm every compensating release atomically with its acquisition. The gate
+    // wait and the routed work stay cancellable via `restore`, but an interrupt
+    // can never land between committing `activeTurns + 1` and arming
+    // `releaseTurnGate`, which would otherwise wedge the gate out of idle
+    // forever. Mirrors the acquire/commit discipline in persistRuntimeBinding.
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
+        acquireTurnGate(entry, restore).pipe(
+          Effect.flatMap((waitedForGate) =>
+            restore(effect(waitedForGate)).pipe(Effect.ensuring(releaseTurnGate(entry))),
+          ),
+          Effect.ensuring(releaseThreadTransitionLock(threadId, entry)),
         ),
-        Effect.ensuring(releaseThreadTransitionLock(threadId, entry)),
       ),
     );
 
@@ -796,10 +829,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | ProviderValidationError, R> =>
-    Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
-      acquireControlGate(entry).pipe(
-        Effect.andThen(effect.pipe(Effect.ensuring(releaseControlGate(entry)))),
-        Effect.ensuring(releaseThreadTransitionLock(threadId, entry)),
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
+        acquireControlGate(entry, restore).pipe(
+          Effect.andThen(restore(effect).pipe(Effect.ensuring(releaseControlGate(entry)))),
+          Effect.ensuring(releaseThreadTransitionLock(threadId, entry)),
+        ),
       ),
     );
 
@@ -813,15 +848,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     effect: (entry: ThreadTransitionLockEntry) => Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
-      entry.semaphore
-        .withPermit(
-          Effect.gen(function* () {
-            yield* acquireStoppingGate(entry);
-            return yield* effect(entry).pipe(Effect.ensuring(releaseTransitionGate(entry)));
-          }),
-        )
-        .pipe(Effect.ensuring(releaseThreadTransitionLock(threadId, entry))),
+    Effect.uninterruptibleMask((restore) =>
+      Effect.flatMap(getThreadTransitionLock(threadId), (entry) =>
+        restore(
+          entry.semaphore.withPermit(
+            Effect.uninterruptibleMask((restoreGate) =>
+              Effect.gen(function* () {
+                yield* acquireStoppingGate(entry, restoreGate);
+                return yield* restoreGate(effect(entry)).pipe(
+                  Effect.ensuring(releaseTransitionGate(entry)),
+                );
+              }),
+            ),
+          ),
+        ).pipe(Effect.ensuring(releaseThreadTransitionLock(threadId, entry))),
+      ),
     );
 
   const withStoppingTransition = <A, E, R>(

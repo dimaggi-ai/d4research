@@ -398,10 +398,15 @@ export function makeCursorAdapter(
       });
 
     const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(getThreadSemaphore(threadId), (entry) =>
-        entry.semaphore
-          .withPermit(effect)
-          .pipe(Effect.ensuring(releaseThreadSemaphore(threadId, entry))),
+      // `getThreadSemaphore` commits `users + 1`; arm the refcount release before
+      // the permit wait/work becomes cancellable so an interrupt cannot strand a
+      // thread-lock map entry that never gets reclaimed.
+      Effect.uninterruptibleMask((restore) =>
+        Effect.flatMap(getThreadSemaphore(threadId), (entry) =>
+          restore(entry.semaphore.withPermit(effect)).pipe(
+            Effect.ensuring(releaseThreadSemaphore(threadId, entry)),
+          ),
+        ),
       );
 
     const logNative = (

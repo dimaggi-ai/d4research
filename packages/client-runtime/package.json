@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/client-runtime",
+  "name": "@d4research/client-runtime",
   "private": true,
   "type": "module",
   "exports": {
@@ -157,8 +157,8 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

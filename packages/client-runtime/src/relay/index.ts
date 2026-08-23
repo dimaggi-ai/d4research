@@ -1,3 +1,7 @@
-export * as Discovery from "./discovery.ts";
-export * as ManagedRelay from "./managedRelay.ts";
-export * from "./managedRelayState.ts";
+export {
+  ManagedRelayDpopKeyLoadError,
+  ManagedRelayDpopProofCreationError,
+  ManagedRelayDpopSigner,
+  ManagedRelayDpopSignerError,
+  type ManagedRelayDpopProofInput,
+} from "./managedRelay.ts";

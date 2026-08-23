@@ -1,4 +1,4 @@
-import type { DiscoveredLocalServer, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { DiscoveredLocalServer, EnvironmentId, ThreadId } from "@d4research/contracts";
 import { useMemo } from "react";
 
 import { previewEnvironment } from "./state/preview";

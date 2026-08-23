@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import { appendEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import {
   appendProviderHandoffContext,
   buildProviderHandoffPromptText,
-} from "@t3tools/shared/providerHandoffPrompt";
+} from "@d4research/shared/providerHandoffPrompt";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,

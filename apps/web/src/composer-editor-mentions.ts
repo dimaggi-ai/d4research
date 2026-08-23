@@ -5,7 +5,7 @@ import {
 import {
   collectComposerInlineTokens,
   type ComposerInlineToken,
-} from "@t3tools/shared/composerInlineTokens";
+} from "@d4research/shared/composerInlineTokens";
 
 export type ComposerPromptSegment =
   | {

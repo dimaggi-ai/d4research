@@ -27,7 +27,7 @@ import {
   shareSkillAndRefreshInventory,
   skillNameFromRepoUrl,
 } from "./skillsInventory.ts";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@d4research/contracts";
 
 it("never installs a whole Agy plugin without explicit opt-in", () => {
   // A manifest alone is not consent: this is the regression boundary for

@@ -1,1 +1,1 @@
-export * from "@t3tools/shared/researchPipeline";
+export * from "@d4research/shared/researchPipeline";

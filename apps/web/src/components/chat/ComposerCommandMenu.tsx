@@ -3,7 +3,7 @@ import {
   type ProviderDriverKind,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { ArrowRightIcon, BotIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 

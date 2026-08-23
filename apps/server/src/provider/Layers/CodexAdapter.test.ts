@@ -18,8 +18,8 @@ import {
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { createModelSelection } from "@d4research/shared/model";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 
@@ -54,7 +54,7 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
 class CodexAdapter extends Context.Service<CodexAdapter, CodexAdapterShape>()(
-  "t3/provider/Layers/CodexAdapter.test/CodexAdapter",
+  "d4research/provider/Layers/CodexAdapter.test/CodexAdapter",
 ) {}
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
@@ -522,6 +522,46 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         code: -32603,
         errorMessage:
           "thread-store internal error: failed to read session metadata /home/x/.codex/sessions/2026/08/16/rollout-2026-08-16T08-23-11-01a00b2b.jsonl",
+        method: "thread/read",
+      });
+
+      const snapshot = yield* adapter.readThread(threadId);
+      NodeAssert.deepEqual(snapshot.turns, []);
+      NodeAssert.equal(String(snapshot.threadId), String(threadId));
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("recovers with empty history when codex cannot load thread history", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-unreadable-history-load");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      // The other unrecoverable-history signature codex emits (the regex's
+      // second alternative): same scope, same degrade-to-empty recovery as the
+      // metadata variant above, so a wedged rollout cannot fail every turn.
+      runtime.readThreadFailure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "thread-store internal error: failed to load thread history",
         method: "thread/read",
       });
 

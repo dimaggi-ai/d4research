@@ -182,8 +182,8 @@ else
 fi
 
 echo "build: validating and bundling d4research with bounded steps"
-run_with_heartbeat "Web typecheck" 120 vp run --filter @t3tools/web typecheck
-run_with_heartbeat "Web build" 180 vp run --filter @t3tools/web build
+run_with_heartbeat "Web typecheck" 120 vp run --filter @d4research/web typecheck
+run_with_heartbeat "Web build" 180 vp run --filter @d4research/web build
 run_with_heartbeat "Server build" 180 node apps/server/scripts/cli.ts build
 
 if [[ "${1:-}" == "--build-only" || "$RESTART_MODE" == "build-only" ]]; then

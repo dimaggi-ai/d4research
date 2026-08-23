@@ -1,4 +1,4 @@
-import type { ThreadEnvMode } from "@t3tools/contracts";
+import type { ThreadEnvMode } from "@d4research/contracts";
 
 /**
  * Canonical priority order for a project's default thread env mode:

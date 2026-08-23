@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   PrimaryConnectionTarget,
   type PreparedConnection,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+} from "@d4research/client-runtime/connection";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@d4research/contracts";
+import { appendEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import { vi } from "vite-plus/test";
 
 import {
@@ -359,6 +359,37 @@ describe("provider handoff", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(requestSignal?.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS);
+      await expect(result).resolves.toBeNull();
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts an in-flight prepare when the caller's signal fires", async () => {
+    vi.useFakeTimers();
+    const original = globalThis.fetch;
+    let requestSignal: AbortSignal | undefined;
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }) as typeof globalThis.fetch;
+    const caller = new AbortController();
+    try {
+      const result = prepareProviderHandoff({
+        transcript: "context",
+        preparedConnection: preparedConnection(),
+        signal: caller.signal,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requestSignal?.aborted).toBe(false);
+      // The user backs out of the switch while it is still preparing.
+      caller.abort();
       await expect(result).resolves.toBeNull();
       expect(requestSignal?.aborted).toBe(true);
     } finally {

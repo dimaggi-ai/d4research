@@ -1,5 +1,8 @@
-import type { ResearchPromptFile } from "@t3tools/contracts";
-import { RESEARCH_PROMPT_FILE_MAX_CHARS, RESEARCH_PROMPT_FILE_MAX_COUNT } from "@t3tools/contracts";
+import type { ResearchPromptFile } from "@d4research/contracts";
+import {
+  RESEARCH_PROMPT_FILE_MAX_CHARS,
+  RESEARCH_PROMPT_FILE_MAX_COUNT,
+} from "@d4research/contracts";
 
 export const ACCEPTED_PROMPT_FILE_SUFFIXES = [".md", ".markdown", ".txt"] as const;
 

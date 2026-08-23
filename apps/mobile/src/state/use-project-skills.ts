@@ -1,5 +1,5 @@
-import { fetchEnvironmentSkillsInventory } from "@t3tools/client-runtime/state/skills";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { fetchEnvironmentSkillsInventory } from "@d4research/client-runtime/state/skills";
+import type { EnvironmentId } from "@d4research/contracts";
 import { useEffect, useState } from "react";
 
 import { runtime } from "../lib/runtime";

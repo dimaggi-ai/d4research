@@ -7,7 +7,7 @@ import {
   type ResearchScenario,
   type ProviderInteractionMode,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export const DEV_TRIGGER_PREFIX = "!dev";
 export const DEFAULT_DEV_SCENARIO_NAME = "default";

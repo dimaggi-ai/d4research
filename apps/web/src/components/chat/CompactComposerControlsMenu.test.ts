@@ -1,4 +1,4 @@
-import { ProviderInteractionMode } from "@t3tools/contracts";
+import { ProviderInteractionMode } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { compactInteractionModeSelection } from "./CompactComposerControlsMenu";

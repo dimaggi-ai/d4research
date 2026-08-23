@@ -1,4 +1,4 @@
-import type { AssetResource, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { AssetResource, EnvironmentId, ThreadId } from "@d4research/contracts";
 import {
   ChevronLeft,
   ChevronRight,

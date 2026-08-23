@@ -8,26 +8,26 @@
 // and packs a staging manifest without mutating the repo.
 //
 //   node release-ops/docker/make-artifact.mjs <out-tarball-path>
-import { execFileSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, "../..");
-const serverDir = path.join(repo, "apps/server");
-const outPath = process.argv[2] ?? path.join(here, "t3-artifact.tgz");
+const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const repo = NodePath.resolve(here, "../..");
+const serverDir = NodePath.join(repo, "apps/server");
+const outPath = process.argv[2] ?? NodePath.join(here, "d4research-artifact.tgz");
 
-const manifest = JSON.parse(fs.readFileSync(path.join(serverDir, "package.json"), "utf8"));
+const manifest = JSON.parse(NodeFS.readFileSync(NodePath.join(serverDir, "package.json"), "utf8"));
 
 // Mirrors shouldBundleCliDependency in apps/server/vite.config.ts: these are
 // inlined into dist/bin.mjs and must not appear as install-time dependencies.
-const bundledPrefixes = ["@pierre/diffs", "@t3tools/", "effect-acp", "effect-codex-app-server"];
+const bundledPrefixes = ["@pierre/diffs", "@d4research/", "effect-acp", "effect-codex-app-server"];
 const isBundled = (name) => bundledPrefixes.some((prefix) => name.startsWith(prefix));
 
 // The catalog is a flat "name: version" block in pnpm-workspace.yaml.
-const workspaceYaml = fs.readFileSync(path.join(repo, "pnpm-workspace.yaml"), "utf8");
+const workspaceYaml = NodeFS.readFileSync(NodePath.join(repo, "pnpm-workspace.yaml"), "utf8");
 const catalog = {};
 let inCatalog = false;
 for (const line of workspaceYaml.split("\n")) {
@@ -63,10 +63,10 @@ if (unresolved.length > 0) {
   process.exit(1);
 }
 
-const stage = fs.mkdtempSync(path.join(os.tmpdir(), "t3-dist-"));
-fs.cpSync(path.join(serverDir, "dist"), path.join(stage, "dist"), { recursive: true });
-fs.writeFileSync(
-  path.join(stage, "package.json"),
+const stage = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "d4research-dist-"));
+NodeFS.cpSync(NodePath.join(serverDir, "dist"), NodePath.join(stage, "dist"), { recursive: true });
+NodeFS.writeFileSync(
+  NodePath.join(stage, "package.json"),
   JSON.stringify(
     {
       name: manifest.name,
@@ -82,9 +82,12 @@ fs.writeFileSync(
   ),
 );
 
-const tarball = execFileSync("npm", ["pack", "--silent"], { cwd: stage, encoding: "utf8" }).trim();
-fs.copyFileSync(path.join(stage, tarball), outPath);
-fs.rmSync(stage, { recursive: true, force: true });
+const tarball = NodeChildProcess.execFileSync("npm", ["pack", "--silent"], {
+  cwd: stage,
+  encoding: "utf8",
+}).trim();
+NodeFS.copyFileSync(NodePath.join(stage, tarball), outPath);
+NodeFS.rmSync(stage, { recursive: true, force: true });
 console.log(
-  `${path.basename(outPath)} <- ${tarball} (${Object.keys(dependencies).length} runtime deps: ${Object.keys(dependencies).join(", ")})`,
+  `${NodePath.basename(outPath)} <- ${tarball} (${Object.keys(dependencies).length} runtime deps: ${Object.keys(dependencies).join(", ")})`,
 );

@@ -7,7 +7,7 @@
  * skills inventory — every root of it, since the server resolves the thread's
  * workspace and expands project skills too.
  */
-import type { ServerProvider, ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderSkill } from "@d4research/contracts";
 
 import type { SkillsInventoryEntry } from "./hooks/useSkillsInventory";
 

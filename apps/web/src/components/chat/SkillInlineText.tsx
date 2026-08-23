@@ -1,5 +1,5 @@
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProviderSkill } from "@d4research/contracts";
 
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import {

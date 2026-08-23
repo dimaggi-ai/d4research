@@ -2,9 +2,9 @@ import { memo, useState, useCallback } from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+} from "@d4research/client-runtime/state/runtime";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
+import { type TimestampFormat } from "@d4research/contracts/settings";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";

@@ -1,7 +1,7 @@
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { preparedEnvironmentFetchAuthorization } from "@t3tools/client-runtime/state/skills";
-import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
-import { sha256Hex } from "@t3tools/shared/hash";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import { preparedEnvironmentFetchAuthorization } from "@d4research/client-runtime/state/skills";
+import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@d4research/contracts";
+import { sha256Hex } from "@d4research/shared/hash";
 
 import type { PastedContextDraft } from "./lib/pastedContext";
 import { runtime } from "./lib/runtime";

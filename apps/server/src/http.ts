@@ -5,10 +5,9 @@ import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
   ENABLED_BY_DEFAULT_SKILL_NAME_MAX_CHARS,
   EnvironmentHttpApi,
-} from "@t3tools/contracts";
-import { isDevProxiedPath } from "@t3tools/shared/devProxy";
-import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
-import * as Cause from "effect/Cause";
+} from "@d4research/contracts";
+import { isDevProxiedPath } from "@d4research/shared/devProxy";
+import { decodeOtlpTraceRecords } from "@d4research/shared/observability";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -50,11 +49,11 @@ import {
   type ToolGuardLifecycleAction as ToolGuardLifecycleActionType,
 } from "./toolGuardLifecycle.ts";
 import { readToolGuardPolicy, writeToolGuardPolicy } from "./toolGuardPolicy.ts";
-import type { ToolGuardPolicy } from "@t3tools/contracts";
+import type { ToolGuardPolicy } from "@d4research/contracts";
 import {
   compressHandoffContext,
   compressHandoffContextLocal,
-  truncateHandoffTranscript,
+  compressHandoffContextWithFallback,
 } from "./handoffCompression.ts";
 import {
   isShareSkillTargetRoot,
@@ -87,11 +86,13 @@ const MEMO_ATTACHMENTS_PATH = "/api/memory/attachments";
 const MEMO_ATTACHMENT_DELETE_PATH = "/api/memory/attachment/delete";
 const HANDOFF_COMPRESS_PATH = "/api/handoff/compress";
 const HANDOFF_PREPARE_PATH = "/api/handoff/prepare";
-// A provider selected for compression may be the provider whose usage limit
-// triggered the handoff. Bound the entire attempt well inside the client's
-// request deadline so quota errors and wedged CLIs always reach the model-free
-// fallback while the user is still waiting on the same send.
-export const PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS = 30_000;
+
+// A decoded JSON body must be a plain object before we read named fields off it.
+// `typeof` alone is not enough: arrays and `null` are also `"object"`, and a
+// bare array or `null` body would otherwise read every field as `undefined`.
+export function isJsonObjectRequestBody(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 /**
  * The prepare endpoint accepts a 60k-character transcript. A persisted
  * handoff adds bounded thread, target, and skill metadata, so the fallback
@@ -542,7 +543,7 @@ export const handoffMemoryRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     return yield* Effect.gen(function* () {
       const rawBody = yield* request.json;
-      if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+      if (!isJsonObjectRequestBody(rawBody)) {
         return HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Request body must be a JSON object." },
           { status: 400 },
@@ -960,7 +961,7 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     return yield* Effect.gen(function* () {
       const rawBody = yield* request.json;
-      if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+      if (!isJsonObjectRequestBody(rawBody)) {
         return HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Request body must be a JSON object." },
           { status: 400 },
@@ -1002,33 +1003,18 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
         compressed = clipped;
       } else if (plan === "provider" && compression.instanceId && compression.model) {
         const config = yield* ServerConfig.ServerConfig;
-        compressed = yield* compressHandoffContext({
+        // Handoff must never block on compression or depend on the quota of the
+        // provider the user is trying to leave: the helper bounds the attempt
+        // and always resolves, falling back to deterministic truncation.
+        compressed = yield* compressHandoffContextWithFallback({
           transcript: clipped,
+          clipped,
           instanceId: compression.instanceId,
           model: compression.model,
           maxOutputCharacters: compression.maxOutputCharacters,
           customPrompt: compression.customPrompt,
           cwd: config.cwd,
-        }).pipe(
-          Effect.timeout(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS),
-          Effect.tapCause((cause) =>
-            Effect.logWarning("Provider handoff compression failed; using transcript fallback", {
-              instanceId: compression.instanceId,
-              reasonTags: cause.reasons.map((reason) =>
-                Cause.isFailReason(reason)
-                  ? "Fail"
-                  : Cause.isDieReason(reason)
-                    ? "Die"
-                    : "Interrupt",
-              ),
-            }),
-          ),
-          // Handoff must never block on compression or depend on the quota of
-          // the provider the user is trying to leave.
-          Effect.orElseSucceed(() =>
-            truncateHandoffTranscript(clipped, compression.maxOutputCharacters),
-          ),
-        );
+        });
       } else {
         compressed = yield* compressHandoffContextLocal({
           transcript: clipped,

@@ -1,4 +1,4 @@
-import type { EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
+import type { EnvironmentId as EnvironmentIdType } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -97,15 +97,6 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.remove(environmentId)),
       ),
   });
-  const removeRelayEnvironments = createRuntimeCommand(runtime, {
-    label: "environment-catalog:remove-relay-environments",
-    scheduler: commandScheduler,
-    concurrency: serial,
-    execute: (_input: void) =>
-      EnvironmentRegistry.EnvironmentRegistry.pipe(
-        Effect.flatMap((registry) => registry.removeRelayEnvironments()),
-      ),
-  });
   const retryNow = createRuntimeCommand(runtime, {
     label: "environment-catalog:retry-now",
     scheduler: commandScheduler,
@@ -124,7 +115,6 @@ export function createEnvironmentCatalogAtoms<R, E>(
     stateAtom,
     register,
     remove,
-    removeRelayEnvironments,
     retryNow,
   };
 }

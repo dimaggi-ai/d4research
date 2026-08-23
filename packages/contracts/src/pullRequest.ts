@@ -143,8 +143,8 @@ export const PullRequestReviewerCandidate = Schema.Struct({
   ...PullRequestActor.fields,
   /**
    * How the host addresses this reviewer when a review is requested, which is not always the
-   * handle it shows: GitHub takes a login or a team slug, GitLab a numeric user id, Bitbucket an
-   * account uuid. Opaque to the page, which sends back whatever the candidate arrived with.
+   * handle it shows: GitHub takes a login or a team slug, while GitLab takes a numeric user id.
+   * Opaque to the page, which sends back whatever the candidate arrived with.
    */
   id: TrimmedNonEmptyString,
   kind: PullRequestReviewerKind,
@@ -217,9 +217,8 @@ export type PullRequestReviewerCapabilities = typeof PullRequestReviewerCapabili
  * What a provider can actually do, so a surface can hide what is missing rather than offer an
  * action that would fail. Every provider fills this in for itself; nothing is assumed.
  *
- * Hosts differ more than they look: Azure DevOps exposes no patch through its CLI, and
- * Bitbucket has no endpoint that reopens a declined pull request. Both would otherwise be dead
- * buttons.
+ * Hosts differ more than they look: Azure DevOps exposes no patch through its CLI. Provider
+ * capabilities keep unsupported actions from becoming dead buttons.
  */
 export const PullRequestCapabilities = Schema.Struct({
   /** A unified patch can be fetched for the change request. */
@@ -680,8 +679,7 @@ export type PullRequestUnavailableReason = typeof PullRequestUnavailableReason.T
 
 /**
  * What each host needs before it can be read, so a failure names the fix rather than the
- * symptom. Bitbucket is credentials on the server rather than a signed-in CLI, which is why
- * these are whole sentences instead of a tool name to interpolate.
+ * symptom. These are whole sentences instead of a tool name to interpolate.
  */
 const PROVIDER_REQUIREMENT: Partial<
   Record<SourceControlProviderKind, { readonly missing: string; readonly unauthenticated: string }>
@@ -700,12 +698,6 @@ const PROVIDER_REQUIREMENT: Partial<
     missing:
       "Azure CLI (`az`) with the Azure DevOps extension is required. Install `az`, then run `az extension add --name azure-devops`.",
     unauthenticated: "Azure CLI is not signed in. Run `az login` and retry.",
-  },
-  bitbucket: {
-    missing:
-      "Bitbucket needs API credentials on the server. Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
-    unauthenticated:
-      "Bitbucket rejected the configured credentials. Check T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
   },
 };
 

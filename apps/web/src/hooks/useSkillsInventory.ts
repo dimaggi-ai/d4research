@@ -4,12 +4,12 @@ import type {
   SkillsInventoryEntry,
   SkillsInventoryRoot,
   SkillsInventoryScope,
-} from "@t3tools/contracts";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
+} from "@d4research/contracts";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
 import {
   fetchEnvironmentSkillsInventory,
   preparedEnvironmentFetchAuthorization,
-} from "@t3tools/client-runtime/state/skills";
+} from "@d4research/client-runtime/state/skills";
 
 import { runtime } from "../lib/runtime";
 

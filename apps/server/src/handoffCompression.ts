@@ -1,7 +1,8 @@
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
-import { type ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { type ProviderInstanceId, ThreadId } from "@d4research/contracts";
 
 import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegistry.ts";
 
@@ -16,6 +17,11 @@ const LOCAL_COMPRESSION_TIMEOUT_MILLIS = 60_000;
 // daemon — but a hung provider must never hold a handoff open forever.
 const PROVIDER_COMPRESSION_TIMEOUT_MILLIS = 120_000;
 const SESSION_STOP_TIMEOUT_MILLIS = 10_000;
+// The whole provider-compression attempt behind /api/handoff/prepare. The
+// switch triggered the handoff, so the attempt is bounded well inside the
+// client's patience and can never depend on the quota of the provider being
+// left. On expiry the handoff falls back to deterministic truncation.
+export const PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS = 30_000;
 
 // Compression sessions are hidden provider sessions, not durable threads. A
 // wall-clock-only id lets two handoff requests started in the same millisecond
@@ -240,3 +246,29 @@ export const compressHandoffContext = Effect.fn("compressHandoffContext")(functi
     ? compressed.slice(0, input.maxOutputCharacters)
     : compressed;
 });
+
+/**
+ * Provider-session compression that can never make a handoff fail: it bounds
+ * {@link compressHandoffContext} by {@link PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS},
+ * logs the failure cause, and on any recoverable failure — a provider error or
+ * a timeout, both of which surface on the Fail channel — resolves to a
+ * deterministic truncation of `clipped`. A defect (Die) still propagates: the
+ * only known source is malformed adapter output, which every adapter's typed
+ * `readThread` snapshot rules out. `clipped` is the already-input-clipped
+ * transcript so the fallback honours the same input budget as compression.
+ */
+export const compressHandoffContextWithFallback = (
+  input: CompressHandoffContextInput & { readonly clipped: string },
+): Effect.Effect<string, never, ProviderAdapterRegistry> =>
+  compressHandoffContext(input).pipe(
+    Effect.timeout(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS),
+    Effect.tapCause((cause) =>
+      Effect.logWarning("Provider handoff compression failed; using transcript fallback", {
+        instanceId: input.instanceId,
+        reasonTags: cause.reasons.map((reason) =>
+          Cause.isFailReason(reason) ? "Fail" : Cause.isDieReason(reason) ? "Die" : "Interrupt",
+        ),
+      }),
+    ),
+    Effect.orElseSucceed(() => truncateHandoffTranscript(input.clipped, input.maxOutputCharacters)),
+  );

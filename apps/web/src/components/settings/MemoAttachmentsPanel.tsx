@@ -1,4 +1,4 @@
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
 import { RefreshCwIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 

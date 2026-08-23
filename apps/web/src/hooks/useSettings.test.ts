@@ -2,8 +2,8 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
-} from "@t3tools/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+} from "@d4research/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 
 import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";

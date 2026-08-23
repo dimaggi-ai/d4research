@@ -8,27 +8,27 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
   ServerConfig as T3ServerConfig,
-} from "@t3tools/contracts";
-import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
-import { canStartProviderTurn } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@d4research/contracts";
+import { canStartProviderTurn } from "@d4research/contracts";
 import {
   deriveDirectiveSuggestions,
   deriveResearchProviderCandidatesFromProviders,
   parseInlineDelegateTrigger,
   resolveResearchDirective,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
   type ComposerTrigger,
-} from "@t3tools/shared/composerTrigger";
-import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
+} from "@d4research/shared/composerTrigger";
+import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
 import {
   activeDevScenarioName,
   listDevScenarios,
   shouldExitPlanForDevPipelineSelection,
-} from "@t3tools/shared/devPipeline";
+} from "@d4research/shared/devPipeline";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -52,7 +52,6 @@ import Animated, {
   LinearTransition,
 } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
-import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
@@ -78,7 +77,7 @@ import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
-} from "@t3tools/shared/searchRanking";
+} from "@d4research/shared/searchRanking";
 import {
   applyProviderOptionSelection,
   resolveProviderOptionDescriptors,
@@ -612,14 +611,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     inFlightThreadIdsRef.current.add(threadKey);
     try {
       await onSendMessage();
-      // Sending a prompt starts agent work: arm the lock-screen card while the
-      // app is foregrounded and the activity token can be registered. Armed
-      // after the send so its preference read and native Activity start don't
-      // contend with the queued-message feedback on the tap frame.
-      armAgentAwarenessLiveActivityForLocalWork({
-        threadTitle: props.selectedThread.title,
-        projectTitle: props.environmentLabel ?? "T3 Code",
-      });
     } finally {
       inFlightThreadIdsRef.current.delete(threadKey);
     }

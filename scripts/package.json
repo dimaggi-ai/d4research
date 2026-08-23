@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/scripts",
+  "name": "@d4research/scripts",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,10 +7,10 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/tailscale": "workspace:*",
     "@effect/platform-node": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
     "effect": "catalog:",
     "pngjs": "7.0.0",
     "yaml": "catalog:"

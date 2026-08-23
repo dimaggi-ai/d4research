@@ -23,14 +23,14 @@ import {
   type ProviderInstanceId,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+} from "@d4research/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
@@ -45,13 +45,13 @@ import {
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
   MIN_TERMINAL_FONT_SIZE,
-} from "@t3tools/contracts/settings";
+} from "@d4research/contracts/settings";
 import {
   getBackgroundActivityBaseProfile,
   getBackgroundActivityPresetSettings,
   resolveServerBackgroundActivitySettings,
-} from "@t3tools/shared/backgroundActivitySettings";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/shared/backgroundActivitySettings";
+import { createModelSelection } from "@d4research/shared/model";
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -170,7 +170,7 @@ import {
   DEFAULT_HANDOFF_LOCAL_MODEL,
   DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
   DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
-} from "@t3tools/contracts/settings";
+} from "@d4research/contracts/settings";
 
 const THEME_OPTIONS = [
   {

@@ -1,5 +1,5 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import { EnvironmentId, ProjectId, ProviderInstanceId } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 
 import {

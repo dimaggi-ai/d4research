@@ -1,4 +1,4 @@
-import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@t3tools/contracts";
+import type { ConfirmDialogOptions, ContextMenuItem, LocalApi } from "@d4research/contracts";
 
 import { requestConfirmDialog } from "./confirmDialog";
 import { showContextMenuFallback } from "./contextMenuFallback";

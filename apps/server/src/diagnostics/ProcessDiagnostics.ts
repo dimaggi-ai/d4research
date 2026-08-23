@@ -4,7 +4,7 @@ import type {
   ServerProcessDiagnosticsResult,
   ServerProcessSignal,
   ServerSignalProcessResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -36,7 +36,7 @@ export class ProcessDiagnostics extends Context.Service<
       readonly signal: ServerProcessSignal;
     }) => Effect.Effect<ServerSignalProcessResult>;
   }
->()("t3/diagnostics/ProcessDiagnostics") {}
+>()("d4research/diagnostics/ProcessDiagnostics") {}
 
 function formatElapsed(runTimeMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(runTimeMs / 1_000));

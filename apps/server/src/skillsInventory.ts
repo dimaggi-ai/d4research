@@ -37,7 +37,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import type { ServerProvider, ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderSkill } from "@d4research/contracts";
 
 import { collectSkillDirectories, parseSkillFrontmatter } from "./provider/Drivers/ClaudeSkills.ts";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
@@ -96,7 +96,7 @@ export class PortableSkillsInventory extends Context.Service<
     readonly refresh: Effect.Effect<ReadonlyArray<SkillsInventoryEntry>>;
     readonly changes: Stream.Stream<ReadonlyArray<SkillsInventoryEntry>>;
   }
->()("t3/skillsInventory/PortableSkillsInventory") {}
+>()("d4research/skillsInventory/PortableSkillsInventory") {}
 
 /**
  * Put the environment's portable user skills on every provider snapshot.

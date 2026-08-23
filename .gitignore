@@ -37,3 +37,10 @@ node_modules/
 *.log
 .env*
 !.env.example
+
+# Release deliberation docs (plan/spec/test-spec) stay local, never published.
+# Reasoning is kept out of the public repo by maintainer decision (2026-08-22);
+# local copies live outside the tree. Tooling under release-ops/docker stays tracked.
+release-ops/plan-*.md
+release-ops/spec-*.md
+release-ops/test-spec-*.md

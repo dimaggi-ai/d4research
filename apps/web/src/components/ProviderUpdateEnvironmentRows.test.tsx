@@ -5,7 +5,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 
 import type {

@@ -1,4 +1,4 @@
-import { CommandId, EventId, MessageId } from "@t3tools/contracts";
+import { CommandId, EventId, MessageId } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";

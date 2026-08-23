@@ -12,11 +12,11 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderInstanceId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   appendEnabledSkillsContext,
   mergeEnabledSkillNames,
-} from "@t3tools/shared/enabledSkillsContext";
+} from "@d4research/shared/enabledSkillsContext";
 
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";

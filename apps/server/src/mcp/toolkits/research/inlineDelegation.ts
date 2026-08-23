@@ -4,12 +4,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { HttpClient } from "effect/unstable/http";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@d4research/contracts";
 import {
   deriveResearchProviderCandidatesFromProviders,
   resolveResearchDirective,
   type ResearchModelDirective,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 
 import * as ServerConfig from "../../../config.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -101,7 +101,7 @@ export class InlineDelegationRunner extends Context.Service<
       input: BoundedDelegationRequest,
     ) => Effect.Effect<InlineDelegationResult, ResearchDelegateError>;
   }
->()("t3/mcp/toolkits/research/inlineDelegation/InlineDelegationRunner") {
+>()("d4research/mcp/toolkits/research/inlineDelegation/InlineDelegationRunner") {
   static readonly layer = Layer.effect(
     InlineDelegationRunner,
     Effect.gen(function* () {

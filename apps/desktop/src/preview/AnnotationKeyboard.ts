@@ -1,4 +1,4 @@
-import type { PreviewAnnotationSubmission } from "@t3tools/contracts";
+import type { PreviewAnnotationSubmission } from "@d4research/contracts";
 
 interface AnnotationKeyboardEvent {
   readonly key: string;

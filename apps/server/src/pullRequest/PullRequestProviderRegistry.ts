@@ -1,16 +1,13 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderKind } from "@d4research/contracts";
 
 import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
-import * as BitbucketApi from "../sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
 import * as AzureDevOpsPullRequestProvider from "./AzureDevOpsPullRequestProvider.ts";
-import * as BitbucketPullRequestApi from "./BitbucketPullRequestApi.ts";
-import * as BitbucketPullRequestProvider from "./BitbucketPullRequestProvider.ts";
 import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
 import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
@@ -24,7 +21,7 @@ export class PullRequestProviderRegistry extends Context.Service<
     readonly get: (kind: SourceControlProviderKind) => PullRequestProviderApi | null;
     readonly kinds: ReadonlyArray<SourceControlProviderKind>;
   }
->()("t3/pullRequest/PullRequestProviderRegistry") {}
+>()("d4research/pullRequest/PullRequestProviderRegistry") {}
 
 /** Exported for tests, which stand a registry up from providers they supply themselves. */
 export function fromProviders(
@@ -45,7 +42,6 @@ export const make = Effect.map(
   Effect.all([
     GitHubPullRequestProvider.make,
     GitLabPullRequestProvider.make,
-    BitbucketPullRequestProvider.make,
     AzureDevOpsPullRequestProvider.make,
   ]),
   fromProviders,
@@ -54,6 +50,5 @@ export const make = Effect.map(
 export const layer = Layer.effect(PullRequestProviderRegistry, make).pipe(
   Layer.provide(GitHubPullRequestCli.layer.pipe(Layer.provide(GitHubCli.layer))),
   Layer.provide(GitLabPullRequestCli.layer.pipe(Layer.provide(GitLabCli.layer))),
-  Layer.provide(BitbucketPullRequestApi.layer.pipe(Layer.provide(BitbucketApi.layer))),
   Layer.provide(AzureDevOpsPullRequestCli.layer.pipe(Layer.provide(AzureDevOpsCli.layer))),
 );

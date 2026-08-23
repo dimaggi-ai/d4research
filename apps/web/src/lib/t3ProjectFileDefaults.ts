@@ -1,6 +1,10 @@
-import { T3_PROJECT_FILE_NAME, type EnvironmentId, type ThreadEnvMode } from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import {
+  T3_PROJECT_FILE_NAME,
+  type EnvironmentId,
+  type ThreadEnvMode,
+} from "@d4research/contracts";
+import { parseT3ProjectFile } from "@d4research/shared/t3ProjectFile";
+import { executeAtomQuery } from "@d4research/client-runtime/state/runtime";
 
 import {
   getProjectFileQueryAtom,

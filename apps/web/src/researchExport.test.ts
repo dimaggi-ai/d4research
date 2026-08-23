@@ -1,4 +1,4 @@
-import { EventId, MessageId, ProviderInstanceId, TurnId } from "@t3tools/contracts";
+import { EventId, MessageId, ProviderInstanceId, TurnId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildResearchMarkdownExport, researchMarkdownFilename } from "./researchExport";

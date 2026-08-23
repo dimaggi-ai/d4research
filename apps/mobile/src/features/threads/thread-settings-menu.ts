@@ -4,11 +4,11 @@ import type {
   PipelineTargetPolicy,
   ProviderOptionDescriptor,
   RuntimeMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 

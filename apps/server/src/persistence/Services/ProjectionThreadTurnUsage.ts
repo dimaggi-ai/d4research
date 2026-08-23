@@ -1,4 +1,4 @@
-import { ThreadId, ThreadTurnUsageRow } from "@t3tools/contracts";
+import { ThreadId, ThreadTurnUsageRow } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -38,4 +38,6 @@ export interface ProjectionThreadTurnUsageRepositoryShape {
 export class ProjectionThreadTurnUsageRepository extends Context.Service<
   ProjectionThreadTurnUsageRepository,
   ProjectionThreadTurnUsageRepositoryShape
->()("t3/persistence/Services/ProjectionThreadTurnUsage/ProjectionThreadTurnUsageRepository") {}
+>()(
+  "d4research/persistence/Services/ProjectionThreadTurnUsage/ProjectionThreadTurnUsageRepository",
+) {}

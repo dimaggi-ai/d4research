@@ -2,8 +2,8 @@ import type {
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationThreadActivity,
-} from "@t3tools/contracts";
-import { stripUserMessageTransport } from "@t3tools/shared/userMessageTransport";
+} from "@d4research/contracts";
+import { stripUserMessageTransport } from "@d4research/shared/userMessageTransport";
 
 import type { ChatMessage } from "./types";
 

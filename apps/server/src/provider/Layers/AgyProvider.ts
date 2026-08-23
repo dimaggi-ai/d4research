@@ -2,10 +2,10 @@ import {
   type AgySettings,
   type ModelCapabilities,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@d4research/contracts";
+import { createModelCapabilities } from "@d4research/shared/model";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

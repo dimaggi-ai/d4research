@@ -22,29 +22,32 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
-import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/connection";
+import {
+  effectiveSettled,
+  effectiveSnoozed,
+} from "@d4research/client-runtime/state/thread-settled";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@d4research/client-runtime/environment";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
-import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
-import { appendProviderHandoffContext } from "@t3tools/shared/providerHandoffPrompt";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { truncate } from "@t3tools/shared/String";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+} from "@d4research/shared/model";
+import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
+import { appendProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
+import { projectScriptCwd, projectScriptRuntimeEnv } from "@d4research/shared/projectScripts";
+import { truncate } from "@d4research/shared/String";
+import { nextTerminalId, resolveTerminalSessionLabel } from "@d4research/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -66,7 +69,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -124,7 +127,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { buildTemporaryWorktreeBranchName } from "@d4research/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -157,7 +160,7 @@ import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/state/subagentRuntime";
 import { SystemPanel } from "./SystemPanel";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
@@ -2466,6 +2469,9 @@ function ChatViewContent(props: ChatViewProps) {
   // Memo write run inside the send, before the message row exists, and a
   // silent composer reads as a failed send.
   const handoffPreparationSequenceRef = useRef(0);
+  // Lets the staged-handoff banner abort an in-flight preparation. Preparation
+  // runs before any turn is dispatched, so aborting cleanly cancels the send.
+  const handoffPrepareAbortRef = useRef<AbortController | null>(null);
   const [handoffPreparation, setHandoffPreparation] = useState<{
     readonly routeThreadKey: string;
     readonly routeGeneration: number;
@@ -4768,9 +4774,16 @@ function ChatViewContent(props: ChatViewProps) {
   // the session is not on would leave the banner stuck on providers that need a
   // new session for a model change.
   const handleCancelStagedProviderHandoff = useCallback(() => {
+    if (!activeThread) return;
+    // While preparing, no turn has been dispatched yet, so aborting the
+    // in-flight preparation cancels the whole send and restores the composer.
+    if (handoffPreparing) {
+      handoffPrepareAbortRef.current?.abort();
+      return;
+    }
     // Once a send captured the staged target, reverting the picker would only
     // make the UI disagree with the turn already on its way.
-    if (!activeThread || sendInFlightRef.current || handoffPreparing) return;
+    if (sendInFlightRef.current) return;
     const currentInstanceId =
       activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId;
     const currentSelection =
@@ -4823,7 +4836,9 @@ function ChatViewContent(props: ChatViewProps) {
         <Button
           size="xs"
           variant="outline"
-          disabled={isSendBusy || handoffPreparing}
+          // Stays clickable while preparing so the user can abort the in-flight
+          // switch; only a dispatched send (busy but not preparing) locks it.
+          disabled={isSendBusy && !handoffPreparing}
           onClick={handleCancelStagedProviderHandoff}
         >
           Cancel switch
@@ -5164,7 +5179,14 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
       if (phase === "running" || isSendBusy || handoffPreparing || isConnecting) {
-        setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
+        setThreadError(
+          activeThread.id,
+          // Preparing runs before any turn exists, so "interrupt the turn" is
+          // not the way out — cancelling or finishing the switch is.
+          handoffPreparing && phase !== "running"
+            ? "Finish or cancel the provider switch before reverting checkpoints."
+            : "Interrupt the current turn before reverting checkpoints.",
+        );
         return;
       }
       const confirmed = await localApi.dialogs.confirm(
@@ -5240,6 +5262,8 @@ function ChatViewContent(props: ChatViewProps) {
         routeGeneration: routeGenerationRef.current,
         token: preparationToken,
       });
+      const abortController = new AbortController();
+      handoffPrepareAbortRef.current = abortController;
       try {
         const compression = settings.handoff.contextCompression;
         // Research handoffs carry the transcript as-is: pipeline evidence must
@@ -5272,6 +5296,7 @@ function ChatViewContent(props: ChatViewProps) {
                 target: staged.target,
                 bypassCompression,
                 enabledSkills: effectiveEnabledSkills,
+                signal: abortController.signal,
                 ...(preparedConnection ? { preparedConnection } : {}),
               }),
             // The receiving turn is the caller's own send: the user's instruction
@@ -5296,11 +5321,20 @@ function ChatViewContent(props: ChatViewProps) {
             error: failure instanceof Error ? failure.message : "The provider handoff failed.",
           };
         }
+        // The user cancelled the switch while it was preparing. Nothing has been
+        // dispatched, so treat it as an abandoned send: the composer keeps its
+        // message and the thread keeps its current provider.
+        if (abortController.signal.aborted) {
+          return { error: "Provider switch cancelled." };
+        }
         // The attached context can push an already-long message past the turn
         // limit, so re-check the combined text while aborting is still free.
         const lengthError = outgoingMessageLengthError(text);
         return lengthError !== null ? { error: lengthError } : { text };
       } finally {
+        if (handoffPrepareAbortRef.current === abortController) {
+          handoffPrepareAbortRef.current = null;
+        }
         setHandoffPreparation((current) => (current?.token === preparationToken ? null : current));
       }
     },

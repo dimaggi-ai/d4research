@@ -1,4 +1,4 @@
-import { EventId } from "@t3tools/contracts";
+import { EventId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveRateLimitResumeState } from "./RateLimitResumeBanner";

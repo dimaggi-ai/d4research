@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderDriverKind } from "@d4research/contracts";
 
 export function shouldRestrictModelPickerToLockedProvider(input: {
   readonly lockedProvider: ProviderDriverKind | null;

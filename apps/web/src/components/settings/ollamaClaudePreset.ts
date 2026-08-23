@@ -2,7 +2,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * Last-resort roster used only when neither live source (the server's own

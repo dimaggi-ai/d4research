@@ -1,4 +1,7 @@
-import { RESEARCH_PROMPT_FILE_MAX_CHARS, RESEARCH_PROMPT_FILE_MAX_COUNT } from "@t3tools/contracts";
+import {
+  RESEARCH_PROMPT_FILE_MAX_CHARS,
+  RESEARCH_PROMPT_FILE_MAX_COUNT,
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { mergePromptFiles } from "./promptFiles";

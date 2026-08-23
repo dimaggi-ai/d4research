@@ -3,10 +3,10 @@ import type {
   ServerProvider,
   ServerProviderUsageWindow,
   UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useMemo } from "react";
 
-import { formatDateTimeShort } from "@t3tools/shared/usageFormat";
+import { formatDateTimeShort } from "@d4research/shared/usageFormat";
 
 import { primaryServerProvidersAtom } from "../../state/server";
 import { PROVIDER_COLOR, PROVIDER_MARK } from "./usageProviders";

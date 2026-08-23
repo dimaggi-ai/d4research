@@ -10,4 +10,4 @@ export interface RateLimitResumeReactorShape {
 export class RateLimitResumeReactor extends Context.Service<
   RateLimitResumeReactor,
   RateLimitResumeReactorShape
->()("t3/orchestration/Services/RateLimitResumeReactor") {}
+>()("d4research/orchestration/Services/RateLimitResumeReactor") {}

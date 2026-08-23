@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ToolGuardPolicy } from "@t3tools/contracts";
+import type { ToolGuardPolicy } from "@d4research/contracts";
 
 export interface ToolGuardPolicyState {
   readonly state: "loading" | "ready" | "unavailable";

@@ -40,7 +40,7 @@ jobs:
           components: rustfmt
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - name: Check
         run: vp check
@@ -58,7 +58,6 @@ jobs:
         run: |
           test -f apps/desktop/dist-electron/preload.cjs
           grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.cjs
-          grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
 
   test:
     name: Test
@@ -84,7 +83,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - name: Test
         env:
@@ -136,7 +135,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Install mobile native static analysis tools
         run: brew bundle install --file apps/mobile/Brewfile
@@ -164,7 +163,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Exercise release-only workflow steps
         run: node scripts/release-smoke.ts

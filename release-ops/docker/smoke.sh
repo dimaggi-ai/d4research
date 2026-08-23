@@ -21,8 +21,8 @@ fi
 [ -f "$SERVER/dist/bin.mjs" ] || { echo "[smoke] missing dist/bin.mjs"; exit 1; }
 
 echo "[smoke] packing installable artifact (catalog specifiers resolved)"
-node "$HERE/make-artifact.mjs" "$HERE/t3-artifact.tgz"
-echo "[smoke] artifact size: $(du -h "$HERE/t3-artifact.tgz" | cut -f1)"
+node "$HERE/make-artifact.mjs" "$HERE/d4research-artifact.tgz"
+echo "[smoke] artifact size: $(du -h "$HERE/d4research-artifact.tgz" | cut -f1)"
 
 echo "[smoke] building clean-machine image (npm install -g is the install test)"
 docker build -f "$HERE/Dockerfile.smoke" -t d4research-smoke "$HERE"

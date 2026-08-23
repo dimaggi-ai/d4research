@@ -19,7 +19,7 @@ import {
   type RuntimeMode,
   type ServerProvider,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { resolveResearchDelegateTimeoutMillis } from "../../researchDelegateTiming.ts";
@@ -31,13 +31,13 @@ import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 import type { MemoryEntry } from "../memory/connectors.ts";
 import { parseMemoAttachmentDocumentToken } from "../../../memoAttachment.ts";
-import { deriveDevProviderCandidates, findDevScenario } from "@t3tools/shared/devPipeline";
+import { deriveDevProviderCandidates, findDevScenario } from "@d4research/shared/devPipeline";
 import {
   deriveResearchProviderCandidatesFromProviders,
   findResearchScenario,
   parsePipelineFallbackDirectives,
   resolveResearchDirective,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 import { ResearchDelegationBudget } from "./budget.ts";
 import { ResearchDelegateError, type ResearchDelegateInput, ResearchToolkit } from "./tools.ts";
 

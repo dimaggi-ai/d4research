@@ -1,5 +1,5 @@
-import { type ThreadId } from "@t3tools/contracts";
-import type { PickedElementPayload, PickedElementStackFrame } from "@t3tools/contracts";
+import { type ThreadId } from "@d4research/contracts";
+import type { PickedElementPayload, PickedElementStackFrame } from "@d4research/contracts";
 
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;

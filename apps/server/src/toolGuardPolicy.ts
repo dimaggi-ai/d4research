@@ -1,14 +1,14 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import YAML from "yaml";
 
 import type {
   ToolGuardPolicy,
   ToolGuardPolicyRule,
   ToolGuardPolicyCondition,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as ServerConfig from "./config.ts";
 import { managedToolGuardPaths } from "./toolGuardLifecycle.ts";
 

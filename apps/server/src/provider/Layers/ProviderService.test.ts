@@ -9,7 +9,7 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   ApprovalRequestId,
   EventId,
@@ -18,8 +18,8 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { createModelSelection } from "@d4research/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
@@ -60,7 +60,6 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
@@ -91,7 +90,10 @@ type LegacyProviderRuntimeEvent = {
   readonly [key: string]: unknown;
 };
 
-function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
+function makeFakeCodexAdapter(
+  provider: ProviderDriverKind = CODEX_DRIVER,
+  options?: { readonly restartLifecycle?: "session.started" | "session.ready" },
+) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
   let sessionStartCount = 0;
@@ -127,17 +129,36 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       ),
       Effect.flatMap(({ session, wasActive }) =>
         wasActive
-          ? PubSub.publish(runtimeEventPubSub, {
-              eventId: asEventId(`fake-session-started-${sessionStartCount}`),
-              provider,
-              ...(input.providerInstanceId !== undefined
-                ? { providerInstanceId: input.providerInstanceId }
-                : {}),
-              threadId: input.threadId,
-              createdAt: "2026-01-01T00:00:00.001Z",
-              type: "session.started",
-              payload: { message: "fake session restarted" },
-            } satisfies ProviderRuntimeEvent).pipe(Effect.as(session))
+          ? PubSub.publish(
+              runtimeEventPubSub,
+              // Model how a provider announces a same-instance restart. Codex
+              // emits session.state.changed(ready), not session.started, so both
+              // must disarm the restart fence (regression guard for the Codex
+              // handoff/mode-toggle deadlock).
+              options?.restartLifecycle === "session.ready"
+                ? ({
+                    eventId: asEventId(`fake-session-ready-${sessionStartCount}`),
+                    provider,
+                    ...(input.providerInstanceId !== undefined
+                      ? { providerInstanceId: input.providerInstanceId }
+                      : {}),
+                    threadId: input.threadId,
+                    createdAt: "2026-01-01T00:00:00.001Z",
+                    type: "session.state.changed",
+                    payload: { state: "ready" },
+                  } satisfies ProviderRuntimeEvent)
+                : ({
+                    eventId: asEventId(`fake-session-started-${sessionStartCount}`),
+                    provider,
+                    ...(input.providerInstanceId !== undefined
+                      ? { providerInstanceId: input.providerInstanceId }
+                      : {}),
+                    threadId: input.threadId,
+                    createdAt: "2026-01-01T00:00:00.001Z",
+                    type: "session.started",
+                    payload: { message: "fake session restarted" },
+                  } satisfies ProviderRuntimeEvent),
+            ).pipe(Effect.as(session))
           : Effect.succeed(session),
       ),
     ),
@@ -364,8 +385,15 @@ const hasMetricSnapshot = (
       Object.entries(attributes).every(([key, value]) => snapshot.attributes?.[key] === value),
   );
 
-function makeProviderServiceLayer() {
-  const codex = makeFakeCodexAdapter();
+function makeProviderServiceLayer(options?: {
+  readonly codexRestartLifecycle?: "session.started" | "session.ready";
+}) {
+  const codex = makeFakeCodexAdapter(
+    CODEX_DRIVER,
+    options?.codexRestartLifecycle !== undefined
+      ? { restartLifecycle: options.codexRestartLifecycle }
+      : undefined,
+  );
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
   const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
   const registry = makeAdapterRegistryMock({
@@ -390,7 +418,6 @@ function makeProviderServiceLayer() {
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provideMerge(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -442,7 +469,6 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provideMerge(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -481,7 +507,6 @@ it.effect("does not let an admitted turn rewrite the stopped binding after shutd
     Layer.provide(directoryLayer),
     Layer.provide(defaultServerSettingsLayer),
     Layer.provide(serverConfigTestLayer),
-    Layer.provide(AnalyticsService.layerTest),
     Layer.provide(
       Layer.succeed(
         ProviderEventLoggers.ProviderEventLoggers,
@@ -570,7 +595,6 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(serverConfigTestLayer),
-      Layer.provide(AnalyticsService.layerTest),
       Layer.provide(
         Layer.succeed(
           ProviderEventLoggers.ProviderEventLoggers,
@@ -655,7 +679,6 @@ it.effect(
         Layer.provide(directoryLayer),
         Layer.provide(serverSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -726,7 +749,6 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(serverConfigTestLayer),
-      Layer.provide(AnalyticsService.layerTest),
       Layer.provide(
         Layer.succeed(
           ProviderEventLoggers.ProviderEventLoggers,
@@ -772,7 +794,6 @@ it.effect("cleans up a native session when its routing binding cannot be persist
     Layer.provide(directoryLayer),
     Layer.provide(defaultServerSettingsLayer),
     Layer.provide(serverConfigTestLayer),
-    Layer.provide(AnalyticsService.layerTest),
     Layer.provide(
       Layer.succeed(
         ProviderEventLoggers.ProviderEventLoggers,
@@ -826,7 +847,6 @@ it.effect("retries routing initialization after an unavailable binding snapshot"
     Layer.provide(directoryLayer),
     Layer.provide(defaultServerSettingsLayer),
     Layer.provide(serverConfigTestLayer),
-    Layer.provide(AnalyticsService.layerTest),
     Layer.provide(
       Layer.succeed(
         ProviderEventLoggers.ProviderEventLoggers,
@@ -884,7 +904,6 @@ it.effect("restores a same-instance native session after binding persistence fai
     Layer.provide(directoryLayer),
     Layer.provide(defaultServerSettingsLayer),
     Layer.provide(serverConfigTestLayer),
-    Layer.provide(AnalyticsService.layerTest),
     Layer.provide(
       Layer.succeed(
         ProviderEventLoggers.ProviderEventLoggers,
@@ -943,7 +962,6 @@ it.effect("rolls back a recovered session when its binding cannot be persisted",
     Layer.provide(directoryLayer),
     Layer.provide(defaultServerSettingsLayer),
     Layer.provide(serverConfigTestLayer),
-    Layer.provide(AnalyticsService.layerTest),
     Layer.provide(
       Layer.succeed(
         ProviderEventLoggers.ProviderEventLoggers,
@@ -1005,7 +1023,6 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(serverConfigTestLayer),
-      Layer.provide(AnalyticsService.layerTest),
       Layer.provide(
         Layer.succeed(
           ProviderEventLoggers.ProviderEventLoggers,
@@ -1066,7 +1083,6 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(serverConfigTestLayer),
-      Layer.provide(AnalyticsService.layerTest),
       Layer.provide(
         Layer.succeed(
           ProviderEventLoggers.ProviderEventLoggers,
@@ -1133,7 +1149,6 @@ it.effect(
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -1193,7 +1208,6 @@ it.effect(
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -2257,7 +2271,6 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -2296,7 +2309,6 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
-        Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -2365,7 +2377,6 @@ routing.layer("ProviderServiceLive routing", (it) => {
           Layer.provide(firstDirectoryLayer),
           Layer.provide(defaultServerSettingsLayer),
           Layer.provide(serverConfigTestLayer),
-          Layer.provide(AnalyticsService.layerTest),
           Layer.provide(
             Layer.succeed(
               ProviderEventLoggers.ProviderEventLoggers,
@@ -2399,7 +2410,6 @@ routing.layer("ProviderServiceLive routing", (it) => {
           Layer.provide(secondDirectoryLayer),
           Layer.provide(defaultServerSettingsLayer),
           Layer.provide(serverConfigTestLayer),
-          Layer.provide(AnalyticsService.layerTest),
           Layer.provide(
             Layer.succeed(
               ProviderEventLoggers.ProviderEventLoggers,
@@ -3034,6 +3044,62 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           true,
         );
       }),
+  );
+});
+
+// Codex announces a (re)started session with session.state.changed(ready), not
+// session.started/session.configured (CodexSessionRuntime session/ready). The
+// restart fence must accept that signal, or a Codex same-instance restart (e.g.
+// a runtime-mode toggle) would never disarm and every post-restart event would
+// be dropped. Regression guard for that deadlock.
+const readyRestart = makeProviderServiceLayer({ codexRestartLifecycle: "session.ready" });
+readyRestart.layer("ProviderServiceLive ready-restart fence", (it) => {
+  it.effect("session.state.changed(ready) disarms the same-instance restart fence", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-ready-disarms-restart-fence");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (current) => [...current, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+
+      // Same-instance restart: the ready-configured fake emits
+      // session.state.changed(ready) as its only lifecycle signal.
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "approval-required",
+      });
+      yield* advanceTestClock(50);
+
+      // A post-restart event created after the new session generation must be
+      // published, proving the fence disarmed on ready rather than trapping it.
+      readyRestart.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-post-ready-turn"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.002Z",
+        threadId,
+        turnId: asTurnId("turn-post-ready"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      const receivedIds = new Set((yield* Ref.get(received)).map((event) => event.eventId));
+      // The ready lifecycle event disarmed the fence and was itself published.
+      assert.equal(receivedIds.has(asEventId("fake-session-ready-2")), true);
+      // The subsequent post-restart turn event flowed through the open gate.
+      assert.equal(receivedIds.has(asEventId("evt-post-ready-turn")), true);
+    }),
   );
 });
 

@@ -1,14 +1,14 @@
-import type { LocalApi, ScopedThreadRef } from "@t3tools/contracts";
+import type { LocalApi, ScopedThreadRef } from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useCallback } from "react";
 
-import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
+import { pullRequestHostOf, type SourceControlProviderKind } from "@d4research/contracts";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { readLocalApi } from "../localApi";
 import { useRightPanelStore } from "../rightPanelStore";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
 
 import { useProjects, useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
@@ -104,11 +104,6 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // separator is GitLab's own, so the hostname is not asked about.
   const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
   if (gitlab) return claim(host, gitlab);
-  // Bitbucket Cloud: /{workspace}/{repo}/pull-requests/{n}
-  if (isHostOf(host, "bitbucket.org", "bitbucket")) {
-    const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    return claim(host, match);
-  }
   // Azure DevOps, both the current host and the per-organisation one it replaced. `_git` is part
   // of the repository path there, as it is in the remote URL the identity is read from.
   if (isHostOf(host, "dev.azure.com") || host.endsWith(".visualstudio.com")) {

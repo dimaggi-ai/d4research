@@ -8,8 +8,8 @@
  * verified. These predicates detect that "faked pipeline" from a thread
  * snapshot; the reactor that consumes them is a thin wrapper.
  */
-import type { OrchestrationThread, TurnId } from "@t3tools/contracts";
-import { parseDevTrigger } from "@t3tools/shared/devPipeline";
+import type { OrchestrationThread, TurnId } from "@d4research/contracts";
+import { parseDevTrigger } from "@d4research/shared/devPipeline";
 
 /**
  * Marker line the expanded orchestrator prompt always carries (mirrors

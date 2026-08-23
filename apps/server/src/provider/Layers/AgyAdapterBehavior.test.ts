@@ -24,7 +24,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { AgySettings, ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  AgySettings,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+} from "@d4research/contracts";
 import { makeAgyAdapter, type AgyAdapterLiveOptions } from "./AgyAdapter.ts";
 
 const decodeSettings = Schema.decodeSync(AgySettings);

@@ -2,7 +2,7 @@
  * Pull-request-specific annotations: conversations already on the host and comments queued for
  * the review being written. New comment composition uses the shared diff annotation.
  */
-import type { PullRequestReviewThread } from "@t3tools/contracts";
+import type { PullRequestReviewThread } from "@d4research/contracts";
 import {
   CheckCircle2Icon,
   CircleIcon,

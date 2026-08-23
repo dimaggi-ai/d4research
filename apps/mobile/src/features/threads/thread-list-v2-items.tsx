@@ -1,9 +1,9 @@
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/state/shell";
+import type { EnvironmentThreadSearchMatch } from "@d4research/client-runtime/state/thread-search";
+import { canSnooze, resolveSnoozePresets } from "@d4research/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import {

@@ -12,7 +12,7 @@ RUN T3CODE_DEPLOY_RESTART_MODE=build-only \
   T3CODE_DEPLOY_REQUIRE_VOICE=0 \
   bash scripts/deploy-local.sh --build-only
 
-RUN pnpm --filter t3 deploy --legacy --prod /runtime \
+RUN pnpm --filter d4research deploy --legacy --prod /runtime \
   && rm -rf /runtime/dist \
   && cp -a apps/server/dist /runtime/dist
 

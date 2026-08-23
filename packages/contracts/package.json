@@ -1,6 +1,6 @@
 {
-  "name": "@t3tools/contracts",
-  "version": "0.0.2",
+  "name": "@d4research/contracts",
+  "version": "0.2.0",
   "private": true,
   "files": [
     "dist"
@@ -14,10 +14,6 @@
     "./settings": {
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
-    },
-    "./relay": {
-      "types": "./src/relay.ts",
-      "import": "./src/relay.ts"
     }
   },
   "scripts": {

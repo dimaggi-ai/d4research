@@ -25,4 +25,4 @@ export interface ResearchIntegrityReactorShape {
 export class ResearchIntegrityReactor extends Context.Service<
   ResearchIntegrityReactor,
   ResearchIntegrityReactorShape
->()("t3/orchestration/Services/ResearchIntegrityReactor") {}
+>()("d4research/orchestration/Services/ResearchIntegrityReactor") {}

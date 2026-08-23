@@ -1,4 +1,4 @@
-import type { PreviewRenderedViewportSize, PreviewViewportSetting } from "@t3tools/contracts";
+import type { PreviewRenderedViewportSize, PreviewViewportSetting } from "@d4research/contracts";
 
 import { browserViewportSettingKey } from "~/browser/browserViewportLayout";
 

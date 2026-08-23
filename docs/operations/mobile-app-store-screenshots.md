@@ -9,9 +9,8 @@ history. The app pairs with every server through its normal connection flow and 
 opens the production Home, Thread, ThreadTerminal, ThreadReview, and SettingsEnvironments routes.
 
 No screenshot-specific screen recreates application UI. `EXPO_PUBLIC_SHOWCASE=1` only enables the
-non-rendering pairing/readiness coordinator, disables terminal autofocus so captures do not contain
-the software keyboard, and supplies deterministic T3 Connect discovery rows to the real
-Environments screen. The local environment cards always come from real paired servers.
+non-rendering pairing/readiness coordinator and disables terminal autofocus so captures do not
+contain the software keyboard. The local environment cards always come from real paired servers.
 
 ## Capture the default matrix
 
@@ -134,7 +133,7 @@ Then run the capture from the repository root:
 
     pnpm screenshots:mobile --skip-build --skip-metro --device iphone-6.9
 
-`pnpm --filter @t3tools/mobile showcase` starts Expo on its normal port, so it is not compatible with
+`pnpm --filter @d4research/mobile showcase` starts Expo on its normal port, so it is not compatible with
 the harness's `--skip-metro` mode.
 
 List the matrix and flags:

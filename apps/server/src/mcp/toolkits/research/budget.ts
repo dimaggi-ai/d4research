@@ -2,7 +2,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
-import { RESEARCH_DELEGATION_BUDGET_PER_TURN, RESEARCH_STEP_VISIT_LIMIT } from "@t3tools/contracts";
+import {
+  RESEARCH_DELEGATION_BUDGET_PER_TURN,
+  RESEARCH_STEP_VISIT_LIMIT,
+} from "@d4research/contracts";
 
 /**
  * Hard server-side guard for research delegation loops. The orchestrator is
@@ -44,7 +47,7 @@ export class ResearchDelegationBudget extends Context.Service<
       readonly target: string;
     }) => Effect.Effect<ResearchBudgetCharge>;
   }
->()("t3/mcp/toolkits/research/budget/ResearchDelegationBudget") {}
+>()("d4research/mcp/toolkits/research/budget/ResearchDelegationBudget") {}
 
 export const ResearchDelegationBudgetLive = Layer.effect(
   ResearchDelegationBudget,

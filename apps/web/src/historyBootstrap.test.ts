@@ -1,4 +1,4 @@
-import { MessageId } from "@t3tools/contracts";
+import { MessageId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildBootstrapInput } from "./historyBootstrap";

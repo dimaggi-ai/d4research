@@ -2,7 +2,7 @@ import {
   type PipelineTargetPolicy,
   ProviderInteractionMode,
   RuntimeMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { memo, type ReactNode, useEffect, useState } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";

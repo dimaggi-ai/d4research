@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ServerProviderModel } from "@d4research/contracts";
 
 import { deriveProviderModelsForDisplay, ProviderDetailsButton } from "./ProviderInstanceCard";
 import { PROVIDER_CLIENT_DEFINITIONS } from "./providerDriverMeta";

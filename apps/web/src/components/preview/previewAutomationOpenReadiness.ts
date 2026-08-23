@@ -3,7 +3,7 @@ import {
   type PreviewAutomationOpenInput,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export const DEFAULT_PREVIEW_AUTOMATION_VIEWPORT = {
   _tag: "freeform",

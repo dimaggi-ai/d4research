@@ -2,7 +2,7 @@ import {
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
   type OrchestrationShellSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -73,11 +73,6 @@ const RELAY_TARGET = new RelayConnectionTarget({
   environmentId: EnvironmentId.make("environment-relay"),
   label: "Relay environment",
 });
-const SECOND_RELAY_TARGET = new RelayConnectionTarget({
-  environmentId: EnvironmentId.make("environment-relay-2"),
-  label: "Second relay environment",
-});
-
 const BEARER_TARGET = new BearerConnectionTarget({
   environmentId: EnvironmentId.make("environment-bearer"),
   label: "Bearer environment",
@@ -660,70 +655,6 @@ describe("EnvironmentRegistry", () => {
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
         yield* registry.retryNow(EnvironmentId.make("removed-environment"));
-      }).pipe(Effect.provide(harness.layer), Effect.scoped);
-    }),
-  );
-
-  it.effect("removes all relay-owned data without touching non-cloud connections", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness(
-        [RELAY_TARGET, SECOND_RELAY_TARGET, BEARER_TARGET],
-        [BEARER_PROFILE],
-        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
-      );
-
-      yield* Effect.gen(function* () {
-        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        yield* registry.removeRelayEnvironments();
-
-        const targets = yield* Ref.get(harness.storedTargets);
-        expect(targets.has(RELAY_TARGET.environmentId)).toBe(false);
-        expect(targets.has(SECOND_RELAY_TARGET.environmentId)).toBe(false);
-        expect(targets.get(BEARER_TARGET.environmentId)).toEqual(BEARER_TARGET);
-        expect(yield* Ref.get(harness.cacheClears)).toEqual(
-          expect.arrayContaining([RELAY_TARGET.environmentId, SECOND_RELAY_TARGET.environmentId]),
-        );
-        expect(yield* Ref.get(harness.ownedDataClears)).toEqual(
-          expect.arrayContaining([RELAY_TARGET.environmentId, SECOND_RELAY_TARGET.environmentId]),
-        );
-        expect(
-          (yield* SubscriptionRef.get(registry.entries)).has(BEARER_TARGET.environmentId),
-        ).toBe(true);
-      }).pipe(Effect.provide(harness.layer), Effect.scoped);
-    }),
-  );
-
-  it.effect("keeps the runtime registered when durable removal fails", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeHarness([RELAY_TARGET], [], [], {
-        beforeRegistrationRemove: () =>
-          Effect.fail(
-            new Persistence.ConnectionPersistenceError({
-              operation: "remove-connection",
-              message: "Storage is unavailable.",
-            }),
-          ),
-      });
-
-      yield* Effect.gen(function* () {
-        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        yield* registry.start;
-        yield* awaitConnectionState(
-          registry,
-          RELAY_TARGET.environmentId,
-          (state) => state.phase === "connected",
-        );
-
-        const error = yield* Effect.flip(registry.removeRelayEnvironments());
-
-        expect(error._tag).toBe("ConnectionPersistenceError");
-        expect(yield* Ref.get(harness.releasedSessions)).toBe(0);
-        expect((yield* SubscriptionRef.get(registry.entries)).has(RELAY_TARGET.environmentId)).toBe(
-          true,
-        );
-        expect((yield* Ref.get(harness.storedTargets)).has(RELAY_TARGET.environmentId)).toBe(true);
-        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
-        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

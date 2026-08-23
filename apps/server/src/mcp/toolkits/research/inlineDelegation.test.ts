@@ -4,8 +4,8 @@ import {
   ProviderInstanceId,
   RESEARCH_STEP_VISIT_LIMIT,
   type ServerProvider,
-} from "@t3tools/contracts";
-import { parseInlineDelegateTrigger } from "@t3tools/shared/researchPipeline";
+} from "@d4research/contracts";
+import { parseInlineDelegateTrigger } from "@d4research/shared/researchPipeline";
 
 import { INLINE_DELEGATION_STEP, resolveInlineDelegateTarget } from "./inlineDelegation.ts";
 

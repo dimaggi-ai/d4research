@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { DownloadIcon, Link2Icon, SearchIcon, Share2Icon } from "lucide-react";
-import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@t3tools/contracts";
+import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@d4research/contracts";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

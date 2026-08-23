@@ -1,4 +1,8 @@
-import type { PreviewOpenInput, PreviewSessionSnapshot, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  PreviewOpenInput,
+  PreviewSessionSnapshot,
+  ScopedThreadRef,
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 

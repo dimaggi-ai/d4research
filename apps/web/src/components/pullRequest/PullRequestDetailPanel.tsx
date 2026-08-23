@@ -1,12 +1,12 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   PullRequestAction,
   PullRequestMergeMethod,
   PullRequestRef,
   PullRequestState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   ArrowDownUpIcon,
   ArrowLeftIcon,
@@ -138,7 +138,6 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
 const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
   github: "Open on GitHub",
   gitlab: "Open on GitLab",
-  bitbucket: "Open on Bitbucket",
   "azure-devops": "Open on Azure DevOps",
 };
 

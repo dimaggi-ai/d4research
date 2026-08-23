@@ -1,4 +1,4 @@
-import { type JunieSettings } from "@t3tools/contracts";
+import { type JunieSettings } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

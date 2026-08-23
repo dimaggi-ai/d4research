@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AuthAdministrativeScopes } from "@t3tools/contracts";
+import { AuthAdministrativeScopes } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -103,7 +103,6 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         "orchestration:operate",
         "terminal:operate",
         "review:write",
-        "relay:read",
       ]);
       expect(verified.subject).toBe("one-time-token");
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
@@ -182,10 +181,8 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         "orchestration:operate",
         "terminal:operate",
         "review:write",
-        "relay:read",
         "access:read",
         "access:write",
-        "relay:write",
       ]);
       expect(verified.subject).toBe("administrative-bootstrap");
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),

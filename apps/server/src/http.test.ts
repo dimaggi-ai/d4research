@@ -3,7 +3,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSessionId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,6 +15,7 @@ import {
   buildHandoffMemoryText,
   isValidHandoffMemoryText,
   isBuildAssetPath,
+  isJsonObjectRequestBody,
   isLoopbackHostname,
   makeMemoAttachmentRouteLayer,
   makeSkillsInstallRouteLayer,
@@ -189,6 +190,17 @@ describe("handoff prepare", () => {
     expect(names[0]).toBe("focus-mode");
     expect(names).toHaveLength(12);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("rejects a non-object request body before reading handoff fields", () => {
+    // The prepare and memory routes guard on this: arrays and null are also
+    // typeof "object", so a bare array or null body must 400, not read every
+    // field as undefined.
+    expect(isJsonObjectRequestBody({ transcript: "x" })).toBe(true);
+    expect(isJsonObjectRequestBody(null)).toBe(false);
+    expect(isJsonObjectRequestBody([{ transcript: "x" }])).toBe(false);
+    expect(isJsonObjectRequestBody("string body")).toBe(false);
+    expect(isJsonObjectRequestBody(42)).toBe(false);
   });
 
   it("still builds a memory record without thread metadata", () => {

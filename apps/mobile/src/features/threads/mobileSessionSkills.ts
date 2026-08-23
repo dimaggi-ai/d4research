@@ -4,12 +4,12 @@ import {
   type SkillsInventoryEntry,
   type ServerProvider,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   applyDevTrigger,
   providerDriverSupportsPipelineOrchestration,
-} from "@t3tools/shared/devPipeline";
-import { stripResearchTrigger } from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/devPipeline";
+import { stripResearchTrigger } from "@d4research/shared/researchPipeline";
 
 export function mobilePromptForInteractionMode(
   prompt: string,

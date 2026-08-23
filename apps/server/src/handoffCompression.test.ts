@@ -1,8 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
+import { TestClock } from "effect/testing";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@d4research/contracts";
 
 import type { ProviderAdapterError } from "./provider/Errors.ts";
 import type { ProviderAdapterShape } from "./provider/Services/ProviderAdapter.ts";
@@ -10,15 +13,20 @@ import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegi
 import {
   compressHandoffContext,
   compressHandoffContextLocal,
+  compressHandoffContextWithFallback,
   DEFAULT_OLLAMA_BASE_URL,
   HandoffCompressionError,
+  PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS,
   truncateHandoffTranscript,
 } from "./handoffCompression.ts";
 
 const MOCK_PROVIDER = ProviderDriverKind.make("mock");
 const MOCK_INSTANCE = ProviderInstanceId.make("mock-compressor");
 
-function makeMockAdapter(responseText: string, options?: { readonly failStart?: boolean }) {
+function makeMockAdapter(
+  responseText: string,
+  options?: { readonly failStart?: boolean; readonly hangTurn?: boolean },
+) {
   const sessions = new Map<string, { turns: Array<{ id: string; items: unknown[] }> }>();
   const stopCalls: string[] = [];
   return {
@@ -42,19 +50,21 @@ function makeMockAdapter(responseText: string, options?: { readonly failStart?: 
             };
           }),
     sendTurn: (input: { threadId: unknown; input?: string }) =>
-      Effect.sync(() => {
-        const session = sessions.get(String(input.threadId));
-        if (session) {
-          session.turns.push({
-            id: "turn-1",
-            items: [{ text: responseText }],
-          });
-        }
-        return {
-          threadId: input.threadId as ReturnType<typeof ThreadId.make>,
-          turnId: TurnId.make("turn-1"),
-        };
-      }),
+      options?.hangTurn
+        ? Effect.never
+        : Effect.sync(() => {
+            const session = sessions.get(String(input.threadId));
+            if (session) {
+              session.turns.push({
+                id: "turn-1",
+                items: [{ text: responseText }],
+              });
+            }
+            return {
+              threadId: input.threadId as ReturnType<typeof ThreadId.make>,
+              turnId: TurnId.make("turn-1"),
+            };
+          }),
     readThread: (threadId: unknown) =>
       Effect.sync(() => {
         const session = sessions.get(String(threadId));
@@ -93,6 +103,18 @@ function registryLayer(responseText: string) {
             _tag: "ProviderUnsupportedError" as const,
             message: `No instance: ${instanceId}`,
           } as never),
+    getInstanceInfo: () => Effect.die("not implemented"),
+    listInstances: () => Effect.succeed([MOCK_INSTANCE]),
+    listProviders: () => Effect.succeed([MOCK_PROVIDER]),
+    streamChanges: Stream.empty,
+    subscribeChanges: Effect.die("not implemented"),
+  });
+}
+
+function singleAdapterRegistryLayer(adapter: ReturnType<typeof makeMockAdapter>) {
+  return Layer.succeed(ProviderAdapterRegistry, {
+    getByInstance: () =>
+      Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
     getInstanceInfo: () => Effect.die("not implemented"),
     listInstances: () => Effect.succeed([MOCK_INSTANCE]),
     listProviders: () => Effect.succeed([MOCK_PROVIDER]),
@@ -237,6 +259,67 @@ describe("compressHandoffContext", () => {
       expect(result.detail).toContain("unavailable");
     }).pipe(Effect.provide(registryLayer("anything"))),
   );
+});
+
+describe("compressHandoffContextWithFallback", () => {
+  it.effect("falls back to the transcript when the provider fails", () =>
+    Effect.gen(function* () {
+      // Empty provider output fails compressHandoffContext on the Fail channel;
+      // the handoff must still resolve to the (short) transcript, never error.
+      const transcript = "USER: ship it\nASSISTANT: done";
+      const result = yield* compressHandoffContextWithFallback({
+        transcript,
+        clipped: transcript,
+        instanceId: MOCK_INSTANCE,
+        model: "test-model",
+        maxOutputCharacters: 5000,
+        customPrompt: "",
+        cwd: "/tmp",
+      });
+      expect(result).toBe(transcript);
+    }).pipe(Effect.provide(registryLayer(""))),
+  );
+
+  it.effect("falls back to the transcript when the compression session cannot start", () => {
+    const adapter = makeMockAdapter("unused", { failStart: true });
+    const transcript = "keep this verbatim";
+    return Effect.gen(function* () {
+      const result = yield* compressHandoffContextWithFallback({
+        transcript,
+        clipped: transcript,
+        instanceId: MOCK_INSTANCE,
+        model: "test-model",
+        maxOutputCharacters: 5000,
+        customPrompt: "",
+        cwd: "/tmp",
+      });
+      expect(result).toBe(transcript);
+    }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter)));
+  });
+
+  it.effect("never blocks the handoff: a hung provider times out to the transcript", () => {
+    const adapter = makeMockAdapter("unused", { hangTurn: true });
+    const transcript = "hung provider transcript";
+    return Effect.gen(function* () {
+      const fiber = yield* compressHandoffContextWithFallback({
+        transcript,
+        clipped: transcript,
+        instanceId: MOCK_INSTANCE,
+        model: "test-model",
+        maxOutputCharacters: 5000,
+        customPrompt: "",
+        cwd: "/tmp",
+      }).pipe(Effect.forkScoped);
+      // Past the handoff timeout the attempt is interrupted and the truncated
+      // transcript stands in — the user is never left waiting on a wedged CLI.
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(Duration.millis(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS + 1_000));
+      const result = yield* Fiber.join(fiber);
+      expect(result).toBe(transcript);
+      // Cleanup still runs on the interrupted attempt.
+      expect(adapter.stopCalls).toHaveLength(1);
+    }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter)));
+  });
 });
 
 function jsonFetch(payload: unknown, status = 200): typeof globalThis.fetch {

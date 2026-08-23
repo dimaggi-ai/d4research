@@ -1,5 +1,9 @@
-import type { ContextMenuItem, PreviewSessionSnapshot, PullRequestState } from "@t3tools/contracts";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import type {
+  ContextMenuItem,
+  PreviewSessionSnapshot,
+  PullRequestState,
+} from "@d4research/contracts";
+import { getTerminalLabel } from "@d4research/shared/terminalLabels";
 import {
   Bot,
   ClipboardList,

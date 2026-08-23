@@ -1,20 +1,20 @@
 "use client";
 
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
+import { connectionStatusText } from "@d4research/client-runtime/connection";
+import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
-} from "@t3tools/client-runtime/state/filesystem";
+} from "@d4research/client-runtime/state/filesystem";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   type DesktopWslState,
   type EnvironmentId,
@@ -24,7 +24,7 @@ import {
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
@@ -119,7 +119,7 @@ import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sideb
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
-import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
+import { AzureDevOpsIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
@@ -189,7 +189,7 @@ interface AddProjectEnvironmentOption {
 
 type AddProjectRemoteProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops"
+  "github" | "gitlab" | "azure-devops"
 >;
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
@@ -212,13 +212,11 @@ const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
   "url",
   "github",
   "gitlab",
-  "bitbucket",
   "azure-devops",
 ];
 const REMOTE_PROJECT_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
   "github",
   "gitlab",
-  "bitbucket",
   "azure-devops",
 ];
 
@@ -228,8 +226,6 @@ function remoteProjectSourceLabel(source: AddProjectRemoteSource): string {
       return "GitHub";
     case "gitlab":
       return "GitLab";
-    case "bitbucket":
-      return "Bitbucket";
     case "azure-devops":
       return "Azure DevOps";
     case "url":
@@ -243,8 +239,6 @@ function remoteProjectSourcePathHint(source: AddProjectRemoteSource): string {
       return "owner/repo";
     case "gitlab":
       return "group/project";
-    case "bitbucket":
-      return "workspace/repository";
     case "azure-devops":
       return "project/repository";
     case "url":
@@ -264,8 +258,6 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
       return <GitHubIcon className={className} />;
     case "gitlab":
       return <GitLabIcon className={className} />;
-    case "bitbucket":
-      return <BitbucketIcon className={className} />;
     case "azure-devops":
       return <AzureDevOpsIcon className={className} />;
     case "url":
@@ -315,7 +307,6 @@ function buildAddProjectRemoteSourceReadiness(
     url: { ready: true, hint: null },
     github: unavailable,
     gitlab: unavailable,
-    bitbucket: unavailable,
     "azure-devops": unavailable,
   };
 
@@ -1449,7 +1440,6 @@ function OpenCommandPaletteDialog(props: {
       "git",
       "github",
       "gitlab",
-      "bitbucket",
       "azure",
       "devops",
       "url",

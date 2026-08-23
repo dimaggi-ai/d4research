@@ -1,6 +1,6 @@
 import { GitPullRequestIcon } from "lucide-react";
 import type { ElementType } from "react";
-import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderInfo, SourceControlProviderKind } from "@d4research/contracts";
 export {
   DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
   formatChangeRequestAction,
@@ -9,13 +9,13 @@ export {
   resolveChangeRequestPresentation,
   type ChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
+} from "@d4research/shared/sourceControl";
 import {
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
-import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./components/Icons";
+} from "@d4research/shared/sourceControl";
+import { AzureDevOpsIcon, GitHubIcon, GitLabIcon } from "./components/Icons";
 
 export interface SourceControlPresentation {
   readonly providerName: string;
@@ -45,12 +45,6 @@ export function getSourceControlPresentation(
         providerName: provider?.name || presentation.providerName,
         terminology: getChangeRequestTerminology(provider),
         Icon: AzureDevOpsIcon,
-      };
-    case "bitbucket":
-      return {
-        providerName: provider?.name || presentation.providerName,
-        terminology: getChangeRequestTerminology(provider),
-        Icon: BitbucketIcon,
       };
     case "change-request":
       return {

@@ -6,7 +6,7 @@
  * hosts that have no pending review of their own. That also means a draft lives only as long
  * as the tab does, which is why this is deliberately not persisted.
  */
-import type { ProjectId, PullRequestDiffSide, PullRequestRef } from "@t3tools/contracts";
+import type { ProjectId, PullRequestDiffSide, PullRequestRef } from "@d4research/contracts";
 import { create } from "zustand";
 
 export interface PendingReviewComment {

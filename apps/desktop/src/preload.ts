@@ -3,13 +3,10 @@ import type {
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
-} from "@t3tools/contracts";
-import { exposeClerkBridge } from "@clerk/electron/preload";
+} from "@d4research/contracts";
 import { contextBridge, ipcRenderer } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
-
-exposeClerkBridge({ passkeys: true });
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (

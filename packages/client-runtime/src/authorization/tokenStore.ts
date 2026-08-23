@@ -1,5 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { RelayManagedEndpoint } from "@t3tools/contracts/relay";
+import { EnvironmentId, TrimmedNonEmptyString } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,8 +7,19 @@ import * as Schema from "effect/Schema";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
 
+const RelayManagedEndpointProviderKind = Schema.Literals([
+  "manual",
+  "cloudflare_tunnel",
+  "t3_relay",
+]);
+const RelayManagedEndpoint = Schema.Struct({
+  httpBaseUrl: TrimmedNonEmptyString,
+  wsBaseUrl: TrimmedNonEmptyString,
+  providerKind: RelayManagedEndpointProviderKind,
+});
+
 export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
-  "@t3tools/client-runtime/authorization/RemoteDpopAccessToken",
+  "@d4research/client-runtime/authorization/RemoteDpopAccessToken",
 )({
   environmentId: EnvironmentId,
   label: Schema.String,
@@ -28,7 +38,7 @@ export class RemoteDpopAccessTokenStore extends Context.Service<
     readonly put: (token: RemoteDpopAccessToken) => Effect.Effect<void, ConnectionAttemptError>;
     readonly remove: (environmentId: EnvironmentId) => Effect.Effect<void, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/authorization/tokenStore/RemoteDpopAccessTokenStore") {}
+>()("@d4research/client-runtime/authorization/tokenStore/RemoteDpopAccessTokenStore") {}
 
 export const make = (service: RemoteDpopAccessTokenStore["Service"]) =>
   RemoteDpopAccessTokenStore.of(service);

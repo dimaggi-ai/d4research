@@ -7,7 +7,11 @@ import {
   ShieldCheckIcon,
   Trash2Icon,
 } from "lucide-react";
-import type { ToolGuardPolicy, ToolGuardPolicyRule, ToolGuardRuleEffect } from "@t3tools/contracts";
+import type {
+  ToolGuardPolicy,
+  ToolGuardPolicyRule,
+  ToolGuardRuleEffect,
+} from "@d4research/contracts";
 
 import { Button } from "../ui/button";
 import {

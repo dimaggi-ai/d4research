@@ -24,9 +24,9 @@ export {
   stripDevTrigger,
   type DevProviderCandidate,
   type DevTrigger,
-} from "@t3tools/shared/devPipeline";
+} from "@d4research/shared/devPipeline";
 
-import { parseDevTrigger } from "@t3tools/shared/devPipeline";
+import { parseDevTrigger } from "@d4research/shared/devPipeline";
 
 export function isDevPipelinePrompt(prompt: string): boolean {
   return parseDevTrigger(prompt) !== null;

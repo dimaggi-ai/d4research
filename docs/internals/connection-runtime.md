@@ -16,7 +16,7 @@ supply. There is no legacy connection owner or supported mixed mode.
 [`connection/layer.ts`][layer] assembles the runtime:
 
 - `ConnectionResolver` ([resolver.ts][resolver]) resolves a catalog entry into a
-  prepared, authenticated endpoint for primary, bearer, relay, or SSH targets.
+  prepared, authenticated endpoint for primary, bearer, or SSH targets.
 - `ConnectionDriver` ([driver.ts][driver]) prepares through the resolver, opens
   one RPC session, and reports `preparing`, `opening`, and `synchronizing`.
 - `RpcSessionFactory` ([rpc/session.ts][session]) performs one transport
@@ -24,9 +24,9 @@ supply. There is no legacy connection owner or supported mixed mode.
   exposing `client`, `initialConfig`, `ready`, `probe`, and `closed`.
 - `EnvironmentRegistry` ([registry.ts][registry]) owns the catalog and the
   per-environment scopes.
-- `ConnectionOnboarding` and `RelayEnvironmentDiscovery` sit alongside the
-  registry. Startup calls `EnvironmentRegistry.start` and streams platform
-  registrations into `reconcilePlatform`.
+- `ConnectionOnboarding` sits alongside the registry. Startup calls
+  `EnvironmentRegistry.start` and streams platform registrations into
+  `reconcilePlatform`.
 
 The registry creates one environment-scoped supervisor per environment.
 `acquireSupervisor` serializes access per environment, reuses an existing
@@ -68,8 +68,6 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
   background suspension; it interrupts establishment and resets the retry
   ladder, because the OS may have silently killed the socket underneath the
   attempt.
-- Credential changes interrupt establishment only for relay targets, where a new
-  credential changes what is being established.
 - Explicit disconnect, explicit retry, and going offline interrupt establishment
   in every case.
 - While waiting out backoff, application activation resets the retry ladder so a
@@ -127,11 +125,9 @@ Web and mobile provide:
 
 - network status and network-change streams;
 - application lifecycle wakeups;
-- cloud session credentials;
-- device identity;
 - platform registrations;
 - persistent catalog, credential, shell, and thread stores;
-- HTTP, crypto, and telemetry layers.
+- HTTP and telemetry layers.
 
 Platform layers adapt operating-system capabilities. They do not implement
 connection policy. `EnvironmentOwnedDataCleanup` is part of this contract: on
@@ -168,8 +164,6 @@ Required coverage includes:
 - authentication wakeups;
 - involuntary close and reconnect;
 - explicit removal clearing all owned state;
-- relay token reuse and refresh;
-- progressive relay discovery;
 - shell and thread cache hydration;
 - durable subscriptions switching sessions;
 - command metadata and idempotent queued-command metadata.

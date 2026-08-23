@@ -20,7 +20,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
   UsageReadError,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -91,7 +91,7 @@ export class UsageService extends Context.Service<
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
   }
->()("t3/usage/UsageService") {}
+>()("d4research/usage/UsageService") {}
 
 /** Empty summary, for suites that only need the RPC surface to resolve. */
 export const layerTest = Layer.succeed(

@@ -100,13 +100,11 @@ export const AuthStandardClientScopes = [
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   AuthReviewWriteScope,
-  AuthRelayReadScope,
 ] as const;
 export const AuthAdministrativeScopes = [
   ...AuthStandardClientScopes,
   AuthAccessReadScope,
   AuthAccessWriteScope,
-  AuthRelayWriteScope,
 ] as const;
 
 export const AuthTokenExchangeGrantType =

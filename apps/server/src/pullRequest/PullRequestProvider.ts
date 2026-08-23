@@ -21,8 +21,8 @@ import type {
   PullRequestState,
   PullRequestViewerPermissions,
   SourceControlProviderKind,
-} from "@t3tools/contracts";
-import { SourceControlProviderKind as SourceControlProviderKindSchema } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { SourceControlProviderKind as SourceControlProviderKindSchema } from "@d4research/contracts";
 
 /**
  * The one failure shape every provider reports, so the service can decide what a failure means
@@ -352,7 +352,7 @@ export interface PullRequestProviderApi {
    * `capabilities.reviewers.request` is true.
    *
    * One call for both directions, because that is what every host does with them: GitHub posts and
-   * deletes the same collection, and GitLab and Bitbucket write the whole reviewer set either way.
+   * deletes the same collection, and GitLab writes the whole reviewer set either way.
    * Asking again somebody who has already reviewed is a request like any other — which is how a
    * re-request is made.
    */

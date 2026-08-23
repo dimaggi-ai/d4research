@@ -214,7 +214,7 @@ Global and chat skills are merged and resolved from the live inventory on every
 `thread.turn.start` in the Normalizer. Global names win duplicates and the effective list is capped
 at 12. Project entries win same-name inventory collisions, followed by the shared user root and
 provider-specific roots. Only existing `SKILL.md` files are attached. The server appends the shared
-`<enabled_skills>` format from `@t3tools/shared/enabledSkillsContext`; web and mobile use the exact
+`<enabled_skills>` format from `@d4research/shared/enabledSkillsContext`; web and mobile use the exact
 same parser to remove transport markup and render `Global: name` or `Chat: name` badges. Persisted
 version-one blocks remain readable as global. This is reference-only progressive disclosure, but
 the prompt explicitly requires the receiving agent to read and apply each file, so every selected

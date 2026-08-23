@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import { useMemo } from "react";
 
 import { useAssetUrl } from "../../state/assets";

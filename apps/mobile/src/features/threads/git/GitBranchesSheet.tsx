@@ -1,4 +1,4 @@
-import { sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { sanitizeFeatureBranchName } from "@d4research/shared/git";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";

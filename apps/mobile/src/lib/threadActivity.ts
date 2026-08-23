@@ -1,4 +1,4 @@
-import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import { ApprovalRequestId, isToolLifecycleItemType } from "@d4research/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -6,8 +6,8 @@ import type {
   ToolLifecycleItemType,
   TurnId,
   UserInputQuestion,
-} from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+} from "@d4research/contracts";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";

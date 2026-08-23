@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@d4research/contracts";
 
 import { shouldRestrictModelPickerToLockedProvider } from "./modelPickerHandoff";
 

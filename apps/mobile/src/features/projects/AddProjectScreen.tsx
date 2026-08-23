@@ -10,23 +10,23 @@ import {
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
-} from "@t3tools/client-runtime/operations/projects";
+} from "@d4research/client-runtime/operations/projects";
 import {
   connectionStatusText,
   type EnvironmentConnectionPhase,
-} from "@t3tools/client-runtime/connection";
+} from "@d4research/client-runtime/connection";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
-} from "@t3tools/client-runtime/state/filesystem";
+} from "@d4research/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   inferProjectTitleFromPath,
-} from "@t3tools/client-runtime/state/projects";
-import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/projects";
+import { CommandId, type EnvironmentId, ProjectId } from "@d4research/contracts";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -94,13 +94,7 @@ function stringParam(value: string | string[] | undefined): string | null {
 
 function sourceFromParam(value: string | string[] | undefined): AddProjectRemoteSource {
   const source = stringParam(value);
-  if (
-    source === "url" ||
-    source === "github" ||
-    source === "gitlab" ||
-    source === "bitbucket" ||
-    source === "azure-devops"
-  ) {
+  if (source === "url" || source === "github" || source === "gitlab" || source === "azure-devops") {
     return source;
   }
   return "url";

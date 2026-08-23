@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { PreviewAnnotationPayload } from "@d4research/contracts";
 
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { parseDevTrigger } from "../devPipeline";
-import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import { appendEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import type { ElementContextSelection } from "./elementContext";
 import { makePastedContext } from "./pastedContext";
 import {

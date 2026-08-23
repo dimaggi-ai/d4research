@@ -3,9 +3,9 @@ import {
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import { causeErrorTag } from "@d4research/shared/observability";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -14,8 +14,8 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { createModelCapabilities } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { createModelCapabilities } from "@d4research/shared/model";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import {
   buildServerProvider,

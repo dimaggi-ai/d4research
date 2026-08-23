@@ -1,9 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { type ScopedThreadRef } from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type {
   GitActionProgressEvent,
   GitRunStackedActionResult,
@@ -14,7 +14,7 @@ import type {
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryVisibility,
   VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
@@ -32,7 +32,7 @@ import {
   GlobeIcon,
 } from "lucide-react";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
-import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
+import { AzureDevOpsIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
 import { RadioGroup } from "~/components/ui/radio-group";
 import { Spinner } from "~/components/ui/spinner";
 import { cn } from "~/lib/utils";
@@ -112,10 +112,7 @@ interface PendingDefaultBranchAction {
   filePaths?: string[];
 }
 
-type PublishProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops"
->;
+type PublishProviderKind = Extract<SourceControlProviderKind, "github" | "gitlab" | "azure-devops">;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
 
@@ -177,14 +174,6 @@ const PUBLISH_PROVIDER_OPTIONS = [
     host: "gitlab.com",
     pathPlaceholder: "group/project",
     Icon: GitLabIcon,
-  },
-  {
-    value: "bitbucket",
-    label: "Bitbucket",
-    description: "bitbucket.org",
-    host: "bitbucket.org",
-    pathPlaceholder: "workspace/repository",
-    Icon: BitbucketIcon,
   },
   {
     value: "azure-devops",
@@ -413,7 +402,6 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     const accounts: Record<PublishProviderKind, string | null> = {
       github: null,
       gitlab: null,
-      bitbucket: null,
       "azure-devops": null,
     };
     for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {

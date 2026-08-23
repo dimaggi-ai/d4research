@@ -1,4 +1,4 @@
-import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@d4research/contracts";
 
 /**
  * Pasted / dropped text carried as an attachment instead of raw prompt body.

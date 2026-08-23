@@ -13,7 +13,7 @@ import type {
   SDKControlGetContextUsageResponse,
   SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { ClaudeSettings, ThreadId } from "@t3tools/contracts";
+import { ClaudeSettings, ThreadId } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -30,7 +30,7 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 export class ClaudeFixtureAdapter extends Context.Service<
   ClaudeFixtureAdapter,
   ClaudeAdapterShape
->()("t3/provider/Layers/claudeFixtureHarness/ClaudeFixtureAdapter") {}
+>()("d4research/provider/Layers/claudeFixtureHarness/ClaudeFixtureAdapter") {}
 
 const FIXTURE_DIR = NodePath.join(import.meta.dirname, "__fixtures__/claude");
 

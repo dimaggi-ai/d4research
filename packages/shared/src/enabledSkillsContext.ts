@@ -1,7 +1,7 @@
 import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
   ENABLED_SKILL_SESSION_MAX_COUNT,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * Wire format for skills the user chose to keep active on every turn.

@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as TokenStore from "../authorization/tokenStore.ts";

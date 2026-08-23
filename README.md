@@ -53,7 +53,7 @@ pairingUrl: http://localhost:5733/pair#token=XXXXXXXXXXXX
 
 Open that URL. The web app requires pairing, so the bare origin will not
 authenticate. Connect from any browser, including remote devices via
-[Tailscale or relay](./docs/user/remote-access.md).
+[Tailscale or SSH](./docs/user/remote-access.md).
 
 > [!NOTE]
 > `http://localhost:3773` is the port used by a production `vp run start`
@@ -83,7 +83,7 @@ Everything from the upstream T3 Code platform is available:
 - **Source control** -- Git integration, diffs, checkpoints, branch management, commit message generation
 - **File previews** -- Syntax-highlighted code, images, PDFs, and Jupyter notebooks
 - **Checkpoint diff/restore** -- Roll back any provider change to a prior filesystem state
-- **Remote access** -- Connect from any device via Tailscale, SSH tunnel, or cloud relay
+- **Remote access** -- Connect from any device via Tailscale or an SSH tunnel
 - **Background service** -- Run headless on Linux as a systemd service
 - **Keyboard-driven** -- Configurable keybindings with chord support
 - **Provider instances** -- Multiple accounts per provider driver with separate auth and config

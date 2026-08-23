@@ -1,6 +1,6 @@
 {
-  "name": "@t3tools/marketing",
-  "version": "0.0.0",
+  "name": "@d4research/marketing",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@t3tools/shared": "workspace:*",
+    "@d4research/shared": "workspace:*",
     "astro": "^7.0.3"
   },
   "devDependencies": {

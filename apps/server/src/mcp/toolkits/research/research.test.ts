@@ -20,7 +20,7 @@ import {
   ThreadId,
   TurnId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   RESEARCH_RETAINED_RUN_LIMIT,

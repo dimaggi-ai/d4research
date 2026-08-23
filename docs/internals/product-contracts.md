@@ -48,19 +48,6 @@ Common typed error surface for environment HTTP routes: `EnvironmentRequestInval
 `EnvironmentOperationForbiddenError`, `EnvironmentResourceNotFoundError`,
 `EnvironmentInternalError`, unioned as `EnvironmentHttpCommonError`, each with reason enums.
 
-## relayClient
-
-Status of the hosted relay client on an environment: `RelayClientStatus`, install progress
-stages/events, failure reasons, and `RelayClientInstallFailedError`. Governs the "connect this
-environment to T3 Connect" flow.
-
-## relay
-
-The relay's own record types (see also `infra/relay`): device registration
-(`RelayDeviceRegistrationRequest`, `RelayClientDeviceRecord`, `RelayListDevicesResponse`), APNs
-environment, live-activity registration, and agent-awareness preferences
-(`RelayAgentAwarenessPlatform`/`Phase`/`Preferences`) behind mobile notifications.
-
 ## desktopBootstrap
 
 `DesktopBackendBootstrap` — the handshake payload the Electron shell uses to supervise and connect
@@ -159,7 +146,7 @@ Implemented by the Git driver in `apps/server/src/vcs/`.
 
 ## sourceControl
 
-Hosting-provider integration: `SourceControlProviderKind` (GitHub, GitLab, Bitbucket, Azure
+Hosting-provider integration: `SourceControlProviderKind` (GitHub, GitLab, Azure
 DevOps), provider info/auth status, change requests (`ChangeRequest`, `ChangeRequestState`),
 repository lookup/clone/publish shapes (`SourceControlRepositoryInfo`, clone URLs, visibility,
 protocol). Backs Settings → Source control and the PR/MR flows.

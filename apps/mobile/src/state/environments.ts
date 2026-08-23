@@ -2,8 +2,8 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import type { EnvironmentId } from "@d4research/contracts";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
@@ -26,7 +26,7 @@ export function projectEnvironmentPresentation(
     environmentId,
     label: presentation.entry.target.label,
     displayUrl: connectionCatalogDisplayUrl(presentation.entry),
-    relayManaged: presentation.entry.target._tag === "RelayConnectionTarget",
+    relayManaged: false,
   };
 }
 

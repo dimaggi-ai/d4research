@@ -8,16 +8,16 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
-import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@d4research/contracts";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import {
   extractTrailingProviderHandoffContext,
   parseProviderHandoffPrompt,
-} from "@t3tools/shared/providerHandoffPrompt";
+} from "@d4research/shared/providerHandoffPrompt";
 import {
   mightBeInlineDelegateTrigger,
   parseInlineDelegateTrigger,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;

@@ -25,7 +25,7 @@ import {
   ProviderDriverKind,
   ThreadId,
   type ModelSelection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import { assert, describe, test } from "vite-plus/test";
 
@@ -36,7 +36,7 @@ import {
   type RealProviderName,
 } from "./OrchestrationEngineHarness.integration.ts";
 import type { TurnProcessingQuiescedReceipt } from "../src/orchestration/Services/RuntimeReceiptBus.ts";
-import { appendProviderHandoffContext } from "@t3tools/shared/providerHandoffPrompt";
+import { appendProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 
 const ENABLED = process.env.T3_REAL_HANDOFF === "1";
 const ALL_PROVIDERS = ["claudeAgent", "codex", "agy", "opencode", "grok"] as const;

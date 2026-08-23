@@ -7,20 +7,23 @@ import type {
   OrchestrationThread,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
-import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
-import { parseProviderHandoffPrompt } from "@t3tools/shared/providerHandoffPrompt";
+} from "@d4research/contracts";
+import {
+  CHAT_LIST_ANCHOR_OFFSET,
+  resolveChatListAnchoredEndSpace,
+} from "@d4research/shared/chatList";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
+import { formatElapsed } from "@d4research/shared/orchestrationTiming";
+import { parseProviderHandoffPrompt } from "@d4research/shared/providerHandoffPrompt";
 import {
   mightBeInlineDelegateTrigger,
   parseInlineDelegateTrigger,
   stripInlineDelegateTrigger,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 import {
   stripUserMessageTransport,
   type UserMessageTransportSummary,
-} from "@t3tools/shared/userMessageTransport";
+} from "@d4research/shared/userMessageTransport";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -99,8 +102,8 @@ import {
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
-import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
-import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
+import { markdownFileIconSource } from "@d4research/mobile-markdown-text/file-icons";
+import { resolveMarkdownLinkPresentation } from "@d4research/mobile-markdown-text/links";
 import {
   deriveThreadFeedPresentation,
   type ThreadFeedEntry,

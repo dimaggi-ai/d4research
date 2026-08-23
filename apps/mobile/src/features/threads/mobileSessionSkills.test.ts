@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ThreadId, type ServerProvider } from "@t3tools/contracts";
+import { ThreadId, type ServerProvider } from "@d4research/contracts";
 import {
   listMobileSessionSkillNames,
   mobileProviderSupportsDelegationPipelines,

@@ -1,4 +1,4 @@
-import { EventId, type OrchestrationThreadActivity, TurnId } from "@t3tools/contracts";
+import { EventId, type OrchestrationThreadActivity, TurnId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { projectActivityPayload } from "./ActivityPayloadProjection.ts";

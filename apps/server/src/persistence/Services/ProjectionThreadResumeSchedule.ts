@@ -1,4 +1,4 @@
-import { IsoDateTime, NonNegativeInt, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { IsoDateTime, NonNegativeInt, ProviderInstanceId, ThreadId } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -50,5 +50,5 @@ export class ProjectionThreadResumeScheduleRepository extends Context.Service<
   ProjectionThreadResumeScheduleRepository,
   ProjectionThreadResumeScheduleRepositoryShape
 >()(
-  "t3/persistence/Services/ProjectionThreadResumeSchedule/ProjectionThreadResumeScheduleRepository",
+  "d4research/persistence/Services/ProjectionThreadResumeSchedule/ProjectionThreadResumeScheduleRepository",
 ) {}

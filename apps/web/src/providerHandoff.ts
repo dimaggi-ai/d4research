@@ -1,8 +1,8 @@
-import { ThreadId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { preparedEnvironmentFetchAuthorization } from "@t3tools/client-runtime/state/skills";
-import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
-import { buildProviderHandoffPromptText } from "@t3tools/shared/providerHandoffPrompt";
+import { ThreadId, type ModelSelection, type ProviderInstanceId } from "@d4research/contracts";
+import type { PreparedConnection } from "@d4research/client-runtime/connection";
+import { preparedEnvironmentFetchAuthorization } from "@d4research/client-runtime/state/skills";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
+import { buildProviderHandoffPromptText } from "@d4research/shared/providerHandoffPrompt";
 
 import { runtime } from "./lib/runtime";
 
@@ -183,7 +183,7 @@ export function buildProviderHandoffPrompt(input: {
   readonly targetLabel?: string | undefined;
   readonly enabledSkills?: ReadonlyArray<string> | undefined;
 }): string {
-  // The format lives in @t3tools/shared/providerHandoffPrompt next to its
+  // The format lives in @d4research/shared/providerHandoffPrompt next to its
   // parser, so the compact timeline rendering can never drift from this text.
   return buildProviderHandoffPromptText({
     sourceThreadId: input.sourceThreadId,
@@ -232,6 +232,12 @@ export interface PrepareProviderHandoffInput {
   readonly bypassCompression?: boolean | undefined;
   /** Connected environment that owns this thread and its local Memo. */
   readonly preparedConnection?: PreparedConnection | undefined;
+  /**
+   * Caller abort for the whole preparation. Firing it stops the in-flight
+   * prepare and skips the Memo mirror, so a user can back out of a switch while
+   * it is still preparing — before any receiving turn is dispatched.
+   */
+  readonly signal?: AbortSignal | undefined;
 }
 
 function environmentApiUrl(path: string, prepared?: PreparedConnection): string | null {
@@ -310,8 +316,14 @@ export async function prepareProviderHandoff(
 ): Promise<PreparedProviderHandoff | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVIDER_HANDOFF_PREPARE_TIMEOUT_MS);
+  // A caller abort (user backing out of the switch) folds into the same
+  // controller as the bounded deadline, so either one stops the request.
+  const { signal: externalSignal } = input;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
   try {
-    const { preparedConnection, ...body } = input;
+    const { preparedConnection, signal: _signal, ...body } = input;
     const endpoint = environmentApiUrl("/api/handoff/prepare", preparedConnection);
     if (endpoint === null || preparedConnection === undefined) return null;
     const response = await authorizedEnvironmentPost({
@@ -337,6 +349,7 @@ export async function prepareProviderHandoff(
     return null;
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -357,6 +370,10 @@ export async function prepareDurableProviderHandoff(
 ): Promise<string> {
   const prepared = await prepareProviderHandoff(input);
   if (prepared?.memoryPersisted === true) return prepared.summary;
+
+  // A caller who aborted the switch does not want the Memo mirror to hold the
+  // send busy for its own timeout — the send is being abandoned anyway.
+  if (input.signal?.aborted) return prepared?.summary ?? input.transcript;
 
   await persistProviderHandoffMemoryFallback({
     text: buildProviderHandoffMemory({

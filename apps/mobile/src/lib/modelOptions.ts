@@ -2,12 +2,12 @@ import type {
   ModelCapabilities,
   ModelSelection,
   ServerConfig as T3ServerConfig,
-} from "@t3tools/contracts";
-import { canStartProviderTurn } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { canStartProviderTurn } from "@d4research/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 
 export type ModelOption = {
   readonly key: string;

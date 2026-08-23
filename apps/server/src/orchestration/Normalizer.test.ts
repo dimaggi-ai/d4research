@@ -12,8 +12,8 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+} from "@d4research/contracts";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";

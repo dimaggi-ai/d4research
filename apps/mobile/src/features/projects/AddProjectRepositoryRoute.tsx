@@ -1,6 +1,6 @@
 import type { StaticScreenProps } from "@react-navigation/native";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { addProjectRemoteSourceLabel } from "@t3tools/client-runtime/operations/projects";
+import { addProjectRemoteSourceLabel } from "@d4research/client-runtime/operations/projects";
 
 import { AddProjectRepositoryScreen } from "./AddProjectScreen";
 
@@ -15,10 +15,7 @@ export function AddProjectRepositoryRoute({
   const params = route.params ?? {};
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
   const title =
-    source === "github" ||
-    source === "gitlab" ||
-    source === "bitbucket" ||
-    source === "azure-devops"
+    source === "github" || source === "gitlab" || source === "azure-devops"
       ? addProjectRemoteSourceLabel(source)
       : "Git URL";
 

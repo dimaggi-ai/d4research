@@ -4,13 +4,13 @@ import type {
   ResearchScenario,
   ResearchSettings,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   canStartProviderTurn,
   RESEARCH_DELEGATION_BUDGET_PER_TURN,
   RESEARCH_STEP_VISIT_LIMIT,
   STARTER_RESEARCH_SCENARIO,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { parseDevTrigger, stripDevTrigger } from "./devPipeline.ts";
 import { sha256Hex } from "./hash.ts";
 

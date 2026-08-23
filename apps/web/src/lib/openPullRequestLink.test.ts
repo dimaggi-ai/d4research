@@ -71,14 +71,6 @@ describe("parseChangeRequestUrl", () => {
     );
   });
 
-  it("reads a Bitbucket pull request", () => {
-    expect(parseChangeRequestUrl("https://bitbucket.org/workspace/repo/pull-requests/5")).toEqual({
-      host: "bitbucket.org",
-      repository: "workspace/repo",
-      number: 5,
-    });
-  });
-
   it("reads both Azure DevOps URL forms, keeping `_git` in the repository path", () => {
     expect(
       parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/t3code/pullrequest/17"),
@@ -105,9 +97,6 @@ describe("parseChangeRequestUrl", () => {
     expect(
       parseChangeRequestUrl("https://gitlab.com/team/project/-/merge_requests/42/diffs#note_1"),
     ).toEqual({ host: "gitlab.com", repository: "team/project", number: 42 });
-    expect(
-      parseChangeRequestUrl("https://bitbucket.org/team/repo/pull-requests/5/commits"),
-    ).toEqual({ host: "bitbucket.org", repository: "team/repo", number: 5 });
     expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/")).toEqual({
       host: "github.com",
       repository: "t3tools/t3code",

@@ -1,4 +1,4 @@
-import type { PullRequestListEntry } from "@t3tools/contracts";
+import type { PullRequestListEntry } from "@d4research/contracts";
 
 import { memo } from "react";
 

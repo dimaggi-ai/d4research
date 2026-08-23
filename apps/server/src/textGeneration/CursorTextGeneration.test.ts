@@ -11,10 +11,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@d4research/shared/model";
 import { expect } from "vite-plus/test";
 
-import { CursorSettings, ProviderInstanceId } from "@t3tools/contracts";
+import { CursorSettings, ProviderInstanceId } from "@d4research/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";

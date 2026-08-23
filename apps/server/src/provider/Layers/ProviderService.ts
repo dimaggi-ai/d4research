@@ -23,8 +23,8 @@ import {
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
-} from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
+} from "@d4research/contracts";
+import { causeErrorTag } from "@d4research/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -63,7 +63,6 @@ import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
-import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 const isModelSelection = Schema.is(ModelSelection);
@@ -291,7 +290,6 @@ const correlateRuntimeEventWithInstance = (
 const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
 ) {
-  const analytics = yield* Effect.service(AnalyticsService.AnalyticsService);
   const serverConfig = yield* ServerConfig.ServerConfig;
   const eventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
   // Options-provided logger wins (test overrides); otherwise we take whatever
@@ -1441,7 +1439,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             }
             const isRestartLifecycleEvent =
               canonicalEvent.type === "session.started" ||
-              canonicalEvent.type === "session.configured";
+              canonicalEvent.type === "session.configured" ||
+              // Codex never emits session.started/session.configured; it
+              // announces a (re)started session's readiness via
+              // session.state.changed(ready) (CodexSessionRuntime session/ready).
+              // That ready signal comes only from the new session — a retired
+              // session emits session.exited on teardown, never a second ready —
+              // so it is a stale-safe restart boundary for every provider, not a
+              // timestamp guess.
+              (canonicalEvent.type === "session.state.changed" &&
+                canonicalEvent.payload.state === "ready");
             if (!isRestartLifecycleEvent) {
               yield* Effect.logWarning("ProviderService.streamEvents: dropped pre-restart event", {
                 threadId: canonicalEvent.threadId,
@@ -1700,11 +1707,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             input.binding.threadId,
             activeMcpSession?.providerSessionId,
           );
-          yield* analytics.record("provider.session.recovered", {
-            provider: existing.provider,
-            strategy: "adopt-existing",
-            hasResumeCursor: existing.resumeCursor !== undefined,
-          });
           return { adapter, session: existing } as const;
         }
       }
@@ -1800,11 +1802,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         input.binding.threadId,
         issuedMcpCredential?.config.providerSessionId,
       );
-      yield* analytics.record("provider.session.recovered", {
-        provider: resumed.provider,
-        strategy: "resume-thread",
-        hasResumeCursor: resumed.resumeCursor !== undefined,
-      });
       return { adapter, session: resumed } as const;
     }).pipe(
       withMetrics({
@@ -1906,14 +1903,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             return yield* withProviderShutdownTimeout(
               adapter.stopSession(input.threadId),
               "ProviderService.stopStaleSessionsForThread.stopSession",
-            ).pipe(
-              Effect.tap(() =>
-                analytics.record("provider.session.stopped", {
-                  provider: adapter.provider,
-                }),
-              ),
-              Effect.as(true),
-            );
+            ).pipe(Effect.as(true));
           }).pipe(
             Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause)
@@ -2117,29 +2107,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               threadId,
               issuedMcpCredential?.config.providerSessionId,
             );
-            yield* analytics.record("provider.session.started", {
-              provider: sessionWithInstance.provider,
-              runtimeMode: input.runtimeMode,
-              hasResumeCursor: sessionWithInstance.resumeCursor !== undefined,
-              hasCwd: typeof effectiveCwd === "string" && effectiveCwd.trim().length > 0,
-              hasModel:
-                typeof input.modelSelection?.model === "string" &&
-                input.modelSelection.model.trim().length > 0,
-            });
-
-            // Changing runtime mode restarts the session, so the transition is only
-            // observable here, by diffing against the mode the previous session for
-            // this thread was bound to. Recording it separately is what makes the
-            // "started supervised, switched to full access" funnel answerable.
-            const previousRuntimeMode = persistedBinding?.runtimeMode;
-            if (previousRuntimeMode !== undefined && previousRuntimeMode !== input.runtimeMode) {
-              yield* analytics.record("provider.runtime_mode.changed", {
-                provider: sessionWithInstance.provider,
-                from: previousRuntimeMode,
-                to: input.runtimeMode,
-              });
-            }
-
             return sessionWithInstance;
           }).pipe(
             withMetrics({
@@ -2249,17 +2216,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             lastRuntimeEventAt: yield* nowIso,
           },
         });
-        yield* analytics.record("provider.turn.sent", {
-          provider: routed.adapter.provider,
-          model: input.modelSelection?.model,
-          interactionMode: input.interactionMode,
-          // Session-start events alone skew runtime mode toward users who toggle
-          // often, since every toggle restarts the session. Recording it per turn
-          // gives a usage-weighted view and lets it cross with interactionMode.
-          runtimeMode: routed.runtimeMode,
-          attachmentCount: input.attachments.length,
-          hasInput: typeof input.input === "string" && input.input.trim().length > 0,
-        });
         return turn;
       }).pipe(
         withMetrics({
@@ -2302,9 +2258,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             "provider.turn_id": input.turnId,
           });
           yield* routed.adapter.interruptTurn(routed.threadId, input.turnId);
-          yield* analytics.record("provider.turn.interrupted", {
-            provider: routed.adapter.provider,
-          });
         }).pipe(
           withMetrics({
             counter: providerTurnsTotal,
@@ -2342,10 +2295,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             "provider.request_id": input.requestId,
           });
           yield* routed.adapter.respondToRequest(routed.threadId, input.requestId, input.decision);
-          yield* analytics.record("provider.request.responded", {
-            provider: routed.adapter.provider,
-            decision: input.decision,
-          });
         }).pipe(
           withMetrics({
             counter: providerTurnsTotal,
@@ -2505,9 +2454,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               activeTurnId: null,
               routingState: null,
             },
-          });
-          yield* analytics.record("provider.session.stopped", {
-            provider: routed.adapter.provider,
           });
         }).pipe(
           withMetrics({
@@ -2777,10 +2723,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.rollback_turns": input.numTurns,
         });
         yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
-        yield* analytics.record("provider.conversation.rolled_back", {
-          provider: routed.adapter.provider,
-          turns: input.numTurns,
-        });
       }).pipe(
         withMetrics({
           counter: providerTurnsTotal,
@@ -2923,18 +2865,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           yield* logFailure("directory.markStopped", stopped.cause);
         }
       }).pipe(Effect.catchCause((cause) => logFailure("directory.markStopped", cause))),
-    );
-    yield* analytics
-      .record("provider.sessions.stopped_all", {
-        sessionCount: threadIds.length,
-      })
-      .pipe(
-        Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
-        Effect.catchCause((cause) => logFailure("analytics.record", cause)),
-      );
-    yield* analytics.flush.pipe(
-      Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
-      Effect.catchCause((cause) => logFailure("analytics.flush", cause)),
     );
     // A timed-out admitted operation may have completed its final MCP-side
     // cleanup after the first revoke. Serialize one last revoke so no token

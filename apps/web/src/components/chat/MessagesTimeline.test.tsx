@@ -1,13 +1,13 @@
-import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
+import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@d4research/contracts";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
-import { appendEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
+import { appendEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
 import {
   appendProviderHandoffContext,
   buildProviderHandoffPromptText,
-} from "@t3tools/shared/providerHandoffPrompt";
+} from "@d4research/shared/providerHandoffPrompt";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";

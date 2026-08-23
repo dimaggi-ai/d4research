@@ -5,7 +5,7 @@ import {
   TurnId,
   type OrchestrationCheckpointSummary,
   type ReviewDiffPreviewSource,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   buildReviewListItems,

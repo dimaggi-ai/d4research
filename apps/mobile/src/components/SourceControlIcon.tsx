@@ -1,6 +1,6 @@
 import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
-export type SourceControlIconKind = "github" | "gitlab" | "bitbucket" | "azure-devops";
+export type SourceControlIconKind = "github" | "gitlab" | "azure-devops";
 
 export function SourceControlIcon(props: {
   readonly kind: SourceControlIconKind;
@@ -66,32 +66,6 @@ export function SourceControlIcon(props: {
           <Path
             fill="url(#azure-b)"
             d="M66.6 9.36a4.14 4.14 0 0 0-3.93-2.82H33.65a4.15 4.15 0 0 1 3.93 2.82l25.18 74.62a4.15 4.15 0 0 1-3.93 5.48h29.02a4.15 4.15 0 0 0 3.93-5.48z"
-          />
-        </Svg>
-      );
-    case "bitbucket":
-      return (
-        <Svg width={size} height={size} viewBox="8.4 14.39 2481.29 2231.21">
-          <Defs>
-            <LinearGradient
-              id="bitbucket-a"
-              x1="945.1094"
-              y1="1524.8389"
-              x2="944.4923"
-              y2="1524.1893"
-              gradientTransform="matrix(1996.6343 0 0 -1480.3047 -1884485.625 2258195)"
-            >
-              <Stop offset="0.18" stopColor="#0052CC" />
-              <Stop offset="1" stopColor="#2684FF" />
-            </LinearGradient>
-          </Defs>
-          <Path
-            fill="#2684FF"
-            d="M88.92,14.4C45.02,13.83,8.97,48.96,8.41,92.86c-0.06,4.61,0.28,9.22,1.02,13.77l337.48,2048.72 c8.68,51.75,53.26,89.8,105.74,90.24h1619.03c39.38,0.5,73.19-27.9,79.49-66.78l337.49-2071.78c7.03-43.34-22.41-84.17-65.75-91.2 c-4.55-0.74-9.15-1.08-13.76-1.02L88.92,14.4z M1509.99,1495.09H993.24l-139.92-731h781.89L1509.99,1495.09z"
-          />
-          <Path
-            fill="url(#bitbucket-a)"
-            d="M2379.27,763.06h-745.5l-125.12,730.42H992.31l-609.67,723.67c19.32,16.71,43.96,26,69.5,26.21h1618.13 c39.35,0.51,73.14-27.88,79.44-66.72L2379.27,763.06z"
           />
         </Svg>
       );

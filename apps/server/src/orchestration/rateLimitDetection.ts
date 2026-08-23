@@ -1,4 +1,4 @@
-import type { ServerProviderUsage } from "@t3tools/contracts";
+import type { ServerProviderUsage } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 export const RATE_LIMIT_CONTINUATION_PROMPT =

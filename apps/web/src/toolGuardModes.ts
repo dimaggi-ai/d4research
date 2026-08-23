@@ -1,4 +1,4 @@
-import type { RuntimeMode } from "@t3tools/contracts";
+import type { RuntimeMode } from "@d4research/contracts";
 
 export interface ToolGuardModePresentation {
   readonly label: string;

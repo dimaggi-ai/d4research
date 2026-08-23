@@ -11,7 +11,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { AgySettings, ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  AgySettings,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+} from "@d4research/contracts";
 import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
 import { AGY_PROMPT_MAX_CHARS, makeAgyAdapter, prepareAgyPrompt } from "./AgyAdapter.ts";
 

@@ -1,4 +1,4 @@
-import type { PreviewViewportSetting } from "@t3tools/contracts";
+import type { PreviewViewportSetting } from "@d4research/contracts";
 
 export function reconcileLockedAspectRatio(
   current: number | null,

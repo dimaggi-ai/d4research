@@ -18,16 +18,16 @@ import {
   type ProviderSession,
   type RuntimeMode,
   TurnId,
-} from "@t3tools/contracts";
-import { extractTrailingEnabledSkillsContext } from "@t3tools/shared/enabledSkillsContext";
-import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+} from "@d4research/contracts";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
+import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@d4research/shared/git";
 import {
   deriveDevProviderCandidates,
   expandDevPipelinePrompt,
   parseDevTrigger,
   providerDriverSupportsPipelineOrchestration,
   type DevProviderCandidate,
-} from "@t3tools/shared/devPipeline";
+} from "@d4research/shared/devPipeline";
 import {
   buildResearchRunManifest,
   deriveResearchProviderCandidatesFromProviders,
@@ -36,7 +36,7 @@ import {
   parseResearchTrigger,
   type InlineDelegateTrigger,
   type ResearchProviderCandidate,
-} from "@t3tools/shared/researchPipeline";
+} from "@d4research/shared/researchPipeline";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -51,7 +51,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import {

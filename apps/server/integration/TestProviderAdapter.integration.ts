@@ -9,7 +9,7 @@ import {
   ThreadId,
   TurnId,
   ProviderDriverKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -283,6 +283,20 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
           turnCount: 0,
           queuedResponses: queuedResponsesForNextSession.splice(0),
           rollbackCalls: [],
+        });
+
+        // Model what a real session announces on (re)start: readiness. This is
+        // the boundary the orchestration restart fence waits on, so a
+        // same-instance restart (e.g. a runtime-mode toggle) can disarm it and
+        // publish the new session's events. Real Codex emits this via
+        // session/ready; omitting it here would leave a restarted thread wedged.
+        yield* emit({
+          type: "session.state.changed",
+          eventId: nextEventId(threadId),
+          provider,
+          createdAt,
+          threadId,
+          payload: { state: "ready" },
         });
 
         return session;

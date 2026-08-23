@@ -4,18 +4,18 @@ import {
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/contracts";
+import { parseScopedThreadKey } from "@d4research/client-runtime/environment";
+import type { AgentPanelModel } from "@d4research/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { stripInlineDelegateTrigger } from "@t3tools/shared/researchPipeline";
+import { resolveChatListAnchoredEndSpace } from "@d4research/shared/chatList";
+import { stripInlineDelegateTrigger } from "@d4research/shared/researchPipeline";
 import {
   createContext,
   Fragment,
@@ -102,7 +102,7 @@ import type { ParsedPreviewAnnotation } from "~/lib/previewAnnotation";
 import { extractUserMessageContexts } from "~/lib/userMessageContextComposition";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@d4research/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
 import {

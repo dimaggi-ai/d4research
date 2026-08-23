@@ -20,22 +20,13 @@ allowBuilds:
   node-pty: true
   sharp: true
   utf-8-validate: false
-  workerd: false
 
 catalog:
-  "@clerk/backend": 3.14.0
-  "@clerk/clerk-js": 6.25.13
-  "@clerk/electron": 0.0.24
-  "@clerk/electron-passkeys": 0.0.3
-  "@clerk/expo": 4.2.0
-  "@clerk/react": 6.12.10
-  "@clerk/shared": 4.25.10
   "@effect/atom-react": 4.0.0-beta.103
   "@effect/openapi-generator": 4.0.0-beta.103
   "@effect/platform-bun": 4.0.0-beta.103
   "@effect/platform-node": 4.0.0-beta.103
   "@effect/platform-node-shared": 4.0.0-beta.103
-  "@effect/sql-pg": 4.0.0-beta.103
   "@effect/sql-sqlite-bun": 4.0.0-beta.103
   "@effect/tsgo": 0.13.2
   "@effect/vitest": 4.0.0-beta.103
@@ -53,49 +44,21 @@ catalog:
   yaml: ^2.9.0
 
 minimumReleaseAgeExclude:
-  - "@clerk/backend@3.14.0"
-  - "@clerk/clerk-js@6.25.13"
-  - "@clerk/electron@0.0.24"
-  - "@clerk/expo@4.2.0"
-  - "@clerk/react@6.12.10"
-  - "@clerk/shared@4.25.10"
-  - "@distilled.cloud/aws@0.30.2"
-  - "@distilled.cloud/axiom@0.30.2"
-  - "@distilled.cloud/cloudflare@0.30.2"
-  - "@distilled.cloud/core@0.30.2"
-  - "@distilled.cloud/neon@0.30.2"
-  - "@distilled.cloud/planetscale@0.30.2"
   - "@effect/atom-react@4.0.0-beta.103"
   - "@effect/openapi-generator@4.0.0-beta.103"
   - "@effect/platform-bun@4.0.0-beta.103"
   - "@effect/platform-node-shared@4.0.0-beta.103"
   - "@effect/platform-node@4.0.0-beta.103"
-  - "@effect/sql-pg@4.0.0-beta.103"
   - "@effect/sql-sqlite-bun@4.0.0-beta.103"
   - "@effect/vitest@4.0.0-beta.103"
-  - alchemy@2.0.0-beta.65
   - effect@4.0.0-beta.103
   - "@legendapp/list@3.3.5"
 
 overrides:
-  "@clerk/backend": "catalog:"
-  "@clerk/clerk-js": "catalog:"
-  "@clerk/clerk-js>@base-org/account": "-"
-  "@clerk/clerk-js>@coinbase/wallet-sdk": "-"
-  "@clerk/clerk-js>@solana/wallet-adapter-base": "-"
-  "@clerk/clerk-js>@solana/wallet-adapter-react": "-"
-  "@clerk/clerk-js>@solana/wallet-standard": "-"
-  "@clerk/clerk-js>@wallet-standard/core": "-"
-  "@clerk/electron": "catalog:"
-  "@clerk/electron-passkeys": "catalog:"
-  "@clerk/expo": "catalog:"
-  "@clerk/react": "catalog:"
-  "@clerk/shared": "catalog:"
   "@effect/atom-react": "catalog:"
   "@effect/platform-bun": "catalog:"
   "@effect/platform-node": "catalog:"
   "@effect/platform-node-shared": "catalog:"
-  "@effect/sql-pg": "catalog:"
   "@effect/sql-sqlite-bun": "catalog:"
   "@effect/vitest": "catalog:"
   "@effect/vitest>vitest": "-"
@@ -110,9 +73,6 @@ overrides:
   yaml: "catalog:"
 
 packageExtensions:
-  "@clerk/expo@*":
-    dependencies:
-      "@expo/config-plugins": 56.0.9
   "@effect/vitest@*":
     dependencies:
       vite-plus: "catalog:"
@@ -124,7 +84,6 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
-  "@clerk/expo@4.2.0": patches/@clerk__expo@4.2.0.patch
   "@effect/vitest@4.0.0-beta.103": patches/@effect__vitest@4.0.0-beta.103.patch
   "@expo/metro-config@56.0.14": patches/@expo%2Fmetro-config@56.0.14.patch
   "@ff-labs/fff-node@0.9.4": patches/@ff-labs__fff-node@0.9.4.patch

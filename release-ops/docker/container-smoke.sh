@@ -21,7 +21,7 @@ fail() {
 }
 
 start_server() {
-  t3 >/tmp/t3-server.log 2>&1 &
+  d4research >/tmp/d4research-server.log 2>&1 &
   SERVER_PID=$!
 }
 
@@ -40,13 +40,13 @@ wait_healthy() {
     if [ "$code" = "200" ]; then return 0; fi
     kill -0 "$SERVER_PID" 2>/dev/null || {
       say "server process exited during startup; last log lines:"
-      tail -20 /tmp/t3-server.log
+      tail -20 /tmp/d4research-server.log
       fail "startup crash"
     }
     sleep 1
   done
   say "no 200 from $ORIGIN within 60s; last log lines:"
-  tail -20 /tmp/t3-server.log
+  tail -20 /tmp/d4research-server.log
   fail "first launch never became healthy"
 }
 
@@ -57,8 +57,8 @@ wait_healthy
 say "first launch healthy, state created"
 
 say "== step 2: pairing CLI mints a link against the live server"
-PAIR_OUT=$(t3 pair 2>&1) || fail "t3 pair exited nonzero: $PAIR_OUT"
-echo "$PAIR_OUT" | grep -Eq "http" || fail "t3 pair printed no URL: $PAIR_OUT"
+PAIR_OUT=$(d4research pair 2>&1) || fail "d4research pair exited nonzero: $PAIR_OUT"
+echo "$PAIR_OUT" | grep -Eq "http" || fail "d4research pair printed no URL: $PAIR_OUT"
 say "pair output carries a URL"
 
 say "== step 3: restart preserves state"
@@ -70,15 +70,15 @@ say "restart healthy with persisted state"
 
 say "== step 4: update-in-place (reinstall artifact over live state)"
 stop_server
-npm install -g /smoke/t3-artifact.tgz >/dev/null 2>&1 || fail "reinstall failed"
+npm install -g /smoke/d4research-artifact.tgz >/dev/null 2>&1 || fail "reinstall failed"
 start_server
 wait_healthy
 say "updated install serves the same state"
 
 say "== step 5: uninstall leaves nothing on PATH"
 stop_server
-npm rm -g t3 >/dev/null 2>&1 || fail "npm rm -g t3 failed"
-if command -v t3 >/dev/null 2>&1; then fail "t3 still on PATH after uninstall"; fi
+npm rm -g d4research >/dev/null 2>&1 || fail "npm rm -g d4research failed"
+if command -v d4research >/dev/null 2>&1; then fail "d4research still on PATH after uninstall"; fi
 say "uninstall clean"
 
 say "SMOKE PASS"

@@ -1,8 +1,8 @@
-import { type AgySettings, TextGenerationError, type ModelSelection } from "@t3tools/contracts";
-import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { type AgySettings, TextGenerationError, type ModelSelection } from "@d4research/contracts";
+import { tokenizeCliArgs } from "@d4research/shared/cliArgs";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
+import { extractJsonObject } from "@d4research/shared/schemaJson";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";

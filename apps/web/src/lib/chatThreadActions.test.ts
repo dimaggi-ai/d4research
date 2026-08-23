@@ -1,5 +1,5 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   resolveThreadActionProjectRef,

@@ -1,6 +1,6 @@
 {
-  "name": "@t3tools/desktop",
-  "version": "0.0.2",
+  "name": "@d4research/desktop",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -12,14 +12,12 @@
     "smoke-test": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
-    "@clerk/electron": "catalog:",
-    "@clerk/electron-passkeys": "catalog:",
+    "@d4research/client-runtime": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/ssh": "workspace:*",
+    "@d4research/tailscale": "workspace:*",
     "@effect/platform-node": "catalog:",
-    "@t3tools/client-runtime": "workspace:*",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/ssh": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
     "effect": "catalog:",
     "electron": "41.5.0",
     "electron-store": "^8.2.0",

@@ -1,9 +1,9 @@
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+import type { TimestampFormat } from "@d4research/contracts/settings";
 import {
   resolveSnoozePresets as resolveSharedSnoozePresets,
   snoozeWakeLabel,
   type SnoozePreset,
-} from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/state/thread-settled";
 
 import { formatShortTimestamp, parseTimestampDate } from "../timestampFormat";
 

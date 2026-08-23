@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@d4research/contracts";
 import {
   ArrowDownUpIcon,
   ChevronRightIcon,

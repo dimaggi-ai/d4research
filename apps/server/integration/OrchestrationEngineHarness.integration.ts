@@ -8,7 +8,7 @@ import {
   ProviderDriverKind,
   type OrchestrationEvent,
   type OrchestrationThread,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -35,14 +35,14 @@ import { ProjectionPendingApprovalRepository } from "../src/persistence/Services
 import { makeAdapterRegistryMock } from "../src/provider/testUtils/providerAdapterRegistryMock.ts";
 import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapterRegistry.ts";
 import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerRegistryMock.ts";
-import { defaultInstanceIdForDriver, type ServerProvider } from "@t3tools/contracts";
+import { defaultInstanceIdForDriver, type ServerProvider } from "@d4research/contracts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
 import { makeClaudeAdapter } from "../src/provider/Layers/ClaudeAdapter.ts";
 import { makeAgyAdapter } from "../src/provider/Layers/AgyAdapter.ts";
-import { AgySettings, ClaudeSettings, GrokSettings, OpenCodeSettings } from "@t3tools/contracts";
+import { AgySettings, ClaudeSettings, GrokSettings, OpenCodeSettings } from "@d4research/contracts";
 import { makeOpenCodeAdapter } from "../src/provider/Layers/OpenCodeAdapter.ts";
 import { makeGrokAdapter } from "../src/provider/Layers/GrokAdapter.ts";
 import { OpenCodeRuntimeLive } from "../src/provider/opencodeRuntime.ts";
@@ -63,7 +63,6 @@ import {
   ProviderEventLoggers,
 } from "../src/provider/Layers/ProviderEventLoggers.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
-import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
 import * as RepositoryIdentityResolver from "../src/project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
@@ -103,7 +102,6 @@ import * as VcsDriverRegistry from "../src/vcs/VcsDriverRegistry.ts";
 import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
-import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
 import * as NodeHttp from "node:http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Context from "effect/Context";
@@ -375,13 +373,11 @@ export const makeOrchestrationIntegrationHarness = (
       ? makeProviderServiceLive().pipe(
           Layer.provide(providerSessionDirectoryLayer),
           Layer.provide(realCodexRegistry),
-          Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         )
       : makeProviderServiceLive().pipe(
           Layer.provide(providerSessionDirectoryLayer),
           Layer.provide(fakeRegistry!),
-          Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         );
     const readyProviderSnapshot = (
@@ -507,12 +503,6 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.succeed(ResearchIntegrityReactor, {
           start: () => Effect.void,
           drain: Effect.void,
-        }),
-      ),
-      Layer.provideMerge(
-        Layer.succeed(AgentAwarenessRelay.AgentAwarenessRelay, {
-          publishThread: () => Effect.void,
-          start: () => Effect.void,
         }),
       ),
       Layer.provideMerge(

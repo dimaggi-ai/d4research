@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { TurnId, type OrchestrationThread } from "@t3tools/contracts";
+import { TurnId, type OrchestrationThread } from "@d4research/contracts";
 
 import {
   DEV_ORCHESTRATOR_SENTINEL,

@@ -23,10 +23,6 @@ describe("source control presentation", () => {
       shortLabel: "PR",
       singular: "pull request",
     });
-    expect(getChangeRequestTerminologyForKind("bitbucket")).toEqual({
-      shortLabel: "PR",
-      singular: "pull request",
-    });
   });
 
   it("falls back to generic change request copy for unknown providers", () => {
@@ -52,9 +48,6 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("https://dev.azure.com/org/project/_git/repo")?.kind,
     ).toBe("azure-devops");
-    expect(
-      detectSourceControlProviderFromRemoteUrl("git@bitbucket.org:workspace/repo.git")?.kind,
-    ).toBe("bitbucket");
   });
 
   it("detects Azure DevOps SSH remotes", () => {

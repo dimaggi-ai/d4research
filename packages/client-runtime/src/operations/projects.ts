@@ -7,7 +7,7 @@ import type {
   SourceControlDiscoveryResult,
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -24,7 +24,7 @@ import type { EnvironmentProject } from "../state/models.ts";
 
 export type AddProjectRemoteProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops"
+  "github" | "gitlab" | "azure-devops"
 >;
 export type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
@@ -58,14 +58,12 @@ const ADD_PROJECT_REMOTE_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
   "url",
   "github",
   "gitlab",
-  "bitbucket",
   "azure-devops",
 ];
 
 const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
   "github",
   "gitlab",
-  "bitbucket",
   "azure-devops",
 ];
 
@@ -75,8 +73,6 @@ export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): str
       return "GitHub";
     case "gitlab":
       return "GitLab";
-    case "bitbucket":
-      return "Bitbucket";
     case "azure-devops":
       return "Azure DevOps";
     case "url":
@@ -90,8 +86,6 @@ export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): 
       return "owner/repo";
     case "gitlab":
       return "group/project";
-    case "bitbucket":
-      return "workspace/repository";
     case "azure-devops":
       return "project/repository";
     case "url":
@@ -134,7 +128,6 @@ export function buildAddProjectRemoteSourceReadiness(
     url: { ready: true, hint: null },
     github: unavailable,
     gitlab: unavailable,
-    bitbucket: unavailable,
     "azure-devops": unavailable,
   };
 

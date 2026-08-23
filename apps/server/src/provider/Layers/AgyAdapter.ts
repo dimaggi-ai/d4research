@@ -1,5 +1,5 @@
-import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { tokenizeCliArgs } from "@d4research/shared/cliArgs";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 import {
   type AgySettings,
   EventId,
@@ -9,7 +9,7 @@ import {
   type ProviderSession,
   type ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
-import { PullRequestListEntry, PullRequestListResult } from "@t3tools/contracts";
-import type { PullRequestInvolvement, PullRequestListState } from "@t3tools/contracts";
+import { PullRequestListEntry, PullRequestListResult } from "@d4research/contracts";
+import type { PullRequestInvolvement, PullRequestListState } from "@d4research/contracts";
 
 export type PullRequestGroupKey = "reviewRequested" | "authored" | "others";
 
@@ -319,8 +319,8 @@ export function resolveProjectScope<Id extends string>(
 /**
  * How well a row answers the text that was searched for, as a number to order by.
  *
- * Every host searches more than a row shows — GitHub reads bodies and commit messages, GitLab
- * and Bitbucket read descriptions — so a result can be a real match with nothing on the row to
+ * Every host searches more than a row shows — GitHub reads bodies and commit messages, while
+ * GitLab reads descriptions — so a result can be a real match with nothing on the row to
  * show for it. Ordering those by recency alone is what puts an apparently unrelated pull request
  * between two obvious ones. They are still results, so they are still shown; they are shown last,
  * under the rows whose own words matched.

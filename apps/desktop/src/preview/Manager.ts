@@ -26,9 +26,9 @@ import type {
   PreviewAutomationStatus,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { normalizePreviewUrl } from "@t3tools/shared/preview";
+} from "@d4research/contracts";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { normalizePreviewUrl } from "@d4research/shared/preview";
 import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -3659,7 +3659,7 @@ export class PreviewManager extends Context.Service<
       listener: RecordingFrameListener,
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
->()("@t3tools/desktop/preview/Manager/PreviewManager") {}
+>()("@d4research/desktop/preview/Manager/PreviewManager") {}
 
 export const make = Effect.gen(function* PreviewManagerMake() {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;

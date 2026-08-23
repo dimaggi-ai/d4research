@@ -2,8 +2,8 @@ import {
   ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
   type EnvironmentId,
   ThreadId,
-} from "@t3tools/contracts";
-import { mergeEnabledSkillNames } from "@t3tools/shared/enabledSkillsContext";
+} from "@d4research/contracts";
+import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
 import { CheckIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import { memo, type ComponentProps, useEffect, useMemo, useState } from "react";
 

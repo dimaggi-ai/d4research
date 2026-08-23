@@ -1,13 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef, useState } from "react";
 import { EyeIcon, PaperclipIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import type { ResearchPromptFile, ResearchScenario } from "@t3tools/contracts";
+import type { ResearchPromptFile, ResearchScenario } from "@d4research/contracts";
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
   RESEARCH_PROMPT_FILE_MAX_COUNT,
   RESEARCH_SCENARIO_MAX_COUNT,
   RESEARCH_SCENARIO_NAME_REGEX,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import {
   applyProviderInstanceSettings,

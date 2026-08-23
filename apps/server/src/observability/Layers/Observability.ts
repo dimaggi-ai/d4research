@@ -1,5 +1,5 @@
-import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
-import { makeLocalFileTracer, makeTraceSink } from "@t3tools/shared/observability";
+import { httpHeaderRedactionLayer } from "@d4research/shared/httpObservability";
+import { makeLocalFileTracer, makeTraceSink } from "@d4research/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";

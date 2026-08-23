@@ -10,7 +10,7 @@
  * unfamiliar shape still fails loudly instead of silently passing.
  */
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@d4research/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

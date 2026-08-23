@@ -1,6 +1,6 @@
 "use client";
 
-import type { PreviewAnnotationPayload, ScopedThreadRef } from "@t3tools/contracts";
+import type { PreviewAnnotationPayload, ScopedThreadRef } from "@d4research/contracts";
 
 import type { ComposerImageAttachment } from "~/composerDraftStore";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";

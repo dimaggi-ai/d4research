@@ -9,7 +9,7 @@ import {
   type ProjectListEntriesResult,
   type ProjectReadFileResult,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";

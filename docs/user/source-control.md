@@ -8,7 +8,6 @@ d4research works with the platforms your team already uses:
 
 - **GitHub** – Pull requests, repository creation, and clone integration
 - **GitLab** – Merge requests, repository publishing, and hosted clones
-- **Bitbucket** – Pull request workflows (via API token authentication)
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
 
 ## What You Can Do
@@ -18,13 +17,13 @@ d4research works with the platforms your team already uses:
 **Clone repositories directly**
 
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
+- Choose **GitHub repository**, **GitLab repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
 **Publish local projects to the cloud**
 
 - Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
+- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, or Azure DevOps), add it as your origin remote, and push, in one flow
 - If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
 
 ### Manage Code Reviews Without Context Switching
@@ -33,7 +32,7 @@ d4research works with the platforms your team already uses:
 
 - Push a branch and create a pull request from the Git actions controls in the toolbar
 - d4research can suggest titles and descriptions based on your commits
-- Supports GitHub Pull Requests, GitLab Merge Requests, Bitbucket Pull Requests, and Azure DevOps Pull Requests
+- Supports GitHub Pull Requests, GitLab Merge Requests, and Azure DevOps Pull Requests
 
 **Stay on top of open reviews**
 
@@ -81,28 +80,6 @@ You can now clone, publish, and create pull requests.
    glab auth login
    ```
 3. Check **Settings → Source Control** to confirm the connection
-
-### For Bitbucket
-
-Bitbucket uses tokens instead of a CLI tool. Two options, both set as environment variables on the
-machine running d4research.
-
-Recommended, a Bitbucket access token:
-
-```bash
-export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
-```
-
-Or an Atlassian account email plus API token, with read/write access to pull requests and
-repositories:
-
-```bash
-export T3CODE_BITBUCKET_EMAIL="you@example.com"
-export T3CODE_BITBUCKET_API_TOKEN="your-token"
-```
-
-If both are set, the access token wins. Restart d4research and verify the connection in **Source
-Control settings**.
 
 ### For Azure DevOps
 

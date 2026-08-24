@@ -162,6 +162,12 @@ function assertContains(haystack: string, needle: string, message: string): void
   }
 }
 
+function assertNotContains(haystack: string, needle: string, message: string): void {
+  if (haystack.includes(needle)) {
+    throw new Error(message);
+  }
+}
+
 function assertExists(path: string, message: string): void {
   if (!NodeFS.existsSync(path)) {
     throw new Error(message);
@@ -187,6 +193,38 @@ function assertMissing(path: string, message: string): void {
 const tempRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-release-smoke-"));
 
 try {
+  const releaseWorkflow = NodeFS.readFileSync(
+    NodePath.resolve(repoRoot, ".github/workflows/release.yml"),
+    "utf8",
+  );
+  assertNotContains(
+    releaseWorkflow,
+    "blacksmith-",
+    "Release workflow must use runners available to the d4research fork.",
+  );
+  for (const runner of ["ubuntu-24.04", "macos-14", "windows-2025"]) {
+    assertContains(
+      releaseWorkflow,
+      `runner: ${runner}`,
+      `Release workflow is missing the ${runner} build runner.`,
+    );
+  }
+  assertContains(
+    releaseWorkflow,
+    "vars.RELEASE_PUBLISH_ENABLED == 'true'",
+    "Release publication must remain explicitly opt-in.",
+  );
+  assertNotContains(
+    releaseWorkflow,
+    "ref: main",
+    "Release finalization must not target the fork's nonexistent main branch.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "git push origin HEAD:master",
+    "Release finalization must update the fork's master branch.",
+  );
+
   copyWorkspaceManifestFixture(tempRoot);
 
   NodeChildProcess.execFileSync(

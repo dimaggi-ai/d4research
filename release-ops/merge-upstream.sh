@@ -176,13 +176,9 @@ npm view t3@
 t3-artifact\.tgz
 node_modules[/\\]+t3[/\\]'
 
-# KNOWN_GAPS: docs still carrying upstream `npx t3@` / `npm view t3@` command
-# examples from before the fork. Flagged in the 2026-08-23 separation review;
-# fixing them needs a maintainer decision, so the gate tolerates exactly these.
-KNOWN_GAP_EXCLUDES=(
-  ':(exclude)docs/internals/server-updates.md'
-  ':(exclude)docs/user/background-service.md'
-)
+# Keep this list empty unless a compatibility identifier is both intentional
+# and too narrowly scoped for the explicit exclusions above.
+KNOWN_GAP_EXCLUDES=()
 
 leak_grep() { # args: pattern, extra git-grep args...; returns 0 if leaks found
   local pat="$1"; shift

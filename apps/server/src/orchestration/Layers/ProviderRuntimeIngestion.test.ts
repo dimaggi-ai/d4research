@@ -154,7 +154,7 @@ describe("runtime tool liveness activities", () => {
   });
 
   it("folds agent-owned tool heartbeats into one thread-scoped task row", () => {
-    const [progress] = runtimeEventToActivities({
+    const event = {
       type: "tool.progress",
       eventId: asEventId("evt-agent-tool-progress"),
       provider: ProviderDriverKind.make("claudeAgent"),
@@ -168,6 +168,13 @@ describe("runtime tool liveness activities", () => {
         toolName: "Read",
         elapsedSeconds: 65,
       },
+    } as const;
+    const [progress] = runtimeEventToActivities(event);
+    const [updated] = runtimeEventToActivities({
+      ...event,
+      eventId: asEventId("evt-agent-tool-progress-update"),
+      createdAt: "2026-08-09T00:01:35.000Z",
+      payload: { ...event.payload, elapsedSeconds: 95 },
     });
 
     expect(progress).toMatchObject({
@@ -181,6 +188,10 @@ describe("runtime tool liveness activities", () => {
         toolName: "Read",
         elapsedSeconds: 65,
       },
+    });
+    expect(updated).toMatchObject({
+      id: "tool-progress:thread-1:task-1",
+      payload: { elapsedSeconds: 95 },
     });
   });
 });

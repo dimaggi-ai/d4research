@@ -1,8 +1,7 @@
 # Running d4research in the Background
 
 d4research can run as a user-level systemd service on Linux. The current source distribution uses
-the repository-owned unit and build artifacts; the upstream `npx t3 service` commands manage T3
-Code, not this fork.
+the repository-owned unit and build artifacts described below.
 
 This is a maintainer-managed deployment. From the d4research checkout:
 

@@ -72,10 +72,8 @@ gate already know these; keep it that way when editing either:
 - Fork docs sentences contrasting "the upstream `npx t3`" with this fork
   (README, docs/user/\*). The rename map skips lines containing "upstream".
 
-## Known gaps the check gate tolerates
+## Identity gate
 
-`docs/internals/server-updates.md` and `docs/user/background-service.md` still
-show `npx t3@…` / `npm view t3@…`
-command examples from before the fork. `merge-upstream.sh rename` fixes the
-genuinely-ours ones; remove the corresponding `KNOWN_GAP_EXCLUDES` entries in
-the script once that lands.
+Release, update, and user command examples are covered by the same identifier
+leak check as source files. Do not add documentation exclusions for stale
+upstream package or executable names.

@@ -20,6 +20,7 @@ import {
   ProjectId,
   ProviderItemId,
   RuntimeItemId,
+  RuntimeTaskId,
   type ServerSettings,
   type ServerProvider,
   ThreadId,
@@ -150,6 +151,37 @@ describe("runtime tool liveness activities", () => {
       },
     });
     expect(started?.payload).toEqual({ itemType: "mcp_tool_call", toolCallId: "call-1" });
+  });
+
+  it("folds agent-owned tool heartbeats into one thread-scoped task row", () => {
+    const [progress] = runtimeEventToActivities({
+      type: "tool.progress",
+      eventId: asEventId("evt-agent-tool-progress"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-08-09T00:01:05.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      payload: {
+        taskId: RuntimeTaskId.make("task-1"),
+        toolUseId: "call-1",
+        parentToolUseId: "parent-1",
+        toolName: "Read",
+        elapsedSeconds: 65,
+      },
+    });
+
+    expect(progress).toMatchObject({
+      id: "tool-progress:thread-1:task-1",
+      kind: "tool.progress",
+      summary: "Read",
+      payload: {
+        taskId: "task-1",
+        toolUseId: "call-1",
+        parentToolUseId: "parent-1",
+        toolName: "Read",
+        elapsedSeconds: 65,
+      },
+    });
   });
 });
 

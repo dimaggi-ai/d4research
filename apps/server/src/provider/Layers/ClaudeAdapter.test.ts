@@ -1231,6 +1231,57 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("treats Claude quota results marked success as failed", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "continue the work",
+        attachments: [],
+      });
+
+      const quotaMessage = "You've hit your monthly spend limit.";
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        api_error_status: 429,
+        terminal_reason: "api_error",
+        result: quotaMessage,
+        errors: [],
+        session_id: "sdk-session-quota",
+        uuid: "result-quota",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+      assert.isDefined(runtimeError);
+      if (runtimeError?.type === "runtime.error") {
+        assert.equal(runtimeError.payload.message, quotaMessage);
+      }
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.isDefined(completed);
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.equal(completed.payload.errorMessage, quotaMessage);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   // A genuine failure must still surface, even when a diagnostic rides along.
   it.effect("still reports real Claude errors alongside an ede_diagnostic line", () => {
     const harness = makeHarness();

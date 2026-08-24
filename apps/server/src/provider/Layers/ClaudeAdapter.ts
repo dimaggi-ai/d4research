@@ -355,15 +355,20 @@ function resultErrorsText(result: SDKResultMessage): string {
 }
 
 /**
- * First user-facing error from a non-success result. "[ede_diagnostic] ..."
+ * First user-facing error from a failed result. "[ede_diagnostic] ..."
  * entries are CLI-internal telemetry (the CLI hides them from its own UI too),
  * so they must never become the error banner.
  */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
-  if (result.subtype === "success" || !Array.isArray(result.errors)) {
-    return undefined;
+  if ("errors" in result && Array.isArray(result.errors)) {
+    const error = result.errors.find((entry) => !entry.startsWith("[ede_diagnostic]"));
+    if (error) return error;
   }
-  return result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
+  // Claude CLI currently reports quota failures with the contradictory shape
+  // `subtype: "success", is_error: true`; its useful explanation lives in
+  // `result`, not `errors`.
+  const resultText = "result" in result ? result.result : undefined;
+  return typeof resultText === "string" && resultText.trim() ? resultText.trim() : undefined;
 }
 
 function isInterruptedResult(result: SDKResultMessage): boolean {
@@ -1313,10 +1318,6 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
-  if (result.subtype === "success") {
-    return "completed";
-  }
-
   const errors = resultErrorsText(result);
   if (isInterruptedResult(result)) {
     return "interrupted";
@@ -1327,7 +1328,7 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   // The SDK reports genuine failures with `is_error`. A non-error result that
   // reached here carries only diagnostics, so it is a completed turn, not a
   // failed one.
-  if (result.is_error === false) {
+  if (result.is_error !== true) {
     return "completed";
   }
   return "failed";
@@ -3031,7 +3032,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.interruptRequested && message.subtype !== "success"
         ? "interrupted"
         : turnStatusFromResult(message);
-    const errorMessage = message.subtype === "success" ? undefined : resultUserFacingError(message);
+    const errorMessage = status === "completed" ? undefined : resultUserFacingError(message);
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");

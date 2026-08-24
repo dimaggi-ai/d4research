@@ -71,7 +71,7 @@ independent from the shared Release App installation.
 ## Server self-update release invariant
 
 Connected servers update to the client's exact version, not to an npm dist-tag. Every released
-desktop or hosted client version must therefore have a matching `t3@<version>` package available on
+desktop or hosted client version must therefore have a matching `d4research@<version>` package available on
 npm before users can receive that client.
 
 The workflow enforces this ordering:
@@ -82,11 +82,11 @@ The workflow enforces this ordering:
 Preserve these dependencies when changing the release graph. Publishing a client first would leave
 the **Update server** action targeting a package version that does not exist yet.
 
-For a release smoke test, confirm `npm view t3@<version> version` returns the expected version, then
+For a release smoke test, confirm `npm view d4research@<version> version` returns the expected version, then
 connect the new client to a server on the previous version and verify that the update action
 reconnects to the matching server. Use releases with identical migration manifests for the
 automatic path. When the manifest changed, verify that the remote action stops before restart and
-shows the exact local `npx t3@<version> service update` command. Also test the manual or
+shows the exact local `npx d4research@<version> service update` command. Also test the manual or
 desktop-managed guidance when those environments are available.
 
 ## Desktop auto-update notes
@@ -114,12 +114,13 @@ desktop-managed guidance when those environments are available.
 ## 0) npm OIDC trusted publishing setup (CLI)
 
 The workflow invokes `node apps/server/scripts/cli.ts publish` after aligning package versions. That
-script temporarily prepares the `t3` package, then runs `vp pm publish --filter t3 ...` from the
+script temporarily prepares the `d4research` package, then runs
+`vp pm publish --filter d4research ...` from the
 repository root so workspace publish configuration is applied correctly.
 
 Checklist:
 
-1. Confirm npm org/user owns package `t3` (or rename package first if needed).
+1. Confirm npm org/user owns package `d4research`.
 2. In npm package settings, configure Trusted Publisher:
    - Provider: GitHub Actions
    - Repository: this repo

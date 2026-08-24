@@ -488,6 +488,32 @@ export function runtimeEventToActivities(
     }
 
     case "tool.progress": {
+      if (event.payload.taskId !== undefined) {
+        return [
+          {
+            // Agent heartbeats are latest-state rows, so repeated updates for
+            // one task replace each other instead of growing the timeline.
+            id: EventId.make(`tool-progress:${event.threadId}:${event.payload.taskId}`),
+            createdAt: event.createdAt,
+            tone: "info",
+            kind: "tool.progress",
+            summary: event.payload.toolName ?? "Tool progress",
+            payload: {
+              taskId: event.payload.taskId,
+              ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
+              ...(event.payload.toolUseId ? { toolUseId: event.payload.toolUseId } : {}),
+              ...(event.payload.elapsedSeconds !== undefined
+                ? { elapsedSeconds: event.payload.elapsedSeconds }
+                : {}),
+              ...(event.payload.parentToolUseId
+                ? { parentToolUseId: event.payload.parentToolUseId }
+                : {}),
+            },
+            turnId: toTurnId(event.turnId) ?? null,
+            ...maybeSequence,
+          },
+        ];
+      }
       const toolCallId = event.payload.toolUseId ?? event.itemId;
       return [
         {
@@ -718,40 +744,6 @@ export function runtimeEventToActivities(
               ? { isBackgrounded: event.payload.isBackgrounded }
               : {}),
             ...taskLinkageActivityFields(event.payload as Record<string, unknown>),
-          },
-          turnId: toTurnId(event.turnId) ?? null,
-          ...maybeSequence,
-        },
-      ];
-    }
-
-    case "tool.progress": {
-      // Only agent-owned heartbeats are persisted: they feed the owning
-      // agent's activity line. Parent-conversation tool progress stays
-      // ephemeral (item lifecycle already covers it).
-      if (event.payload.taskId === undefined) {
-        return [];
-      }
-      return [
-        {
-          // Same stable-id treatment as task.progress: a heartbeat is
-          // "what is this agent doing right now", so one row per task
-          // (thread-scoped for the same global-PK collision reason).
-          id: EventId.make(`tool-progress:${event.threadId}:${event.payload.taskId}`),
-          createdAt: event.createdAt,
-          tone: "info",
-          kind: "tool.progress",
-          summary: event.payload.toolName ?? "Tool progress",
-          payload: {
-            taskId: event.payload.taskId,
-            ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
-            ...(event.payload.toolUseId ? { toolUseId: event.payload.toolUseId } : {}),
-            ...(event.payload.elapsedSeconds !== undefined
-              ? { elapsedSeconds: event.payload.elapsedSeconds }
-              : {}),
-            ...(event.payload.parentToolUseId
-              ? { parentToolUseId: event.payload.parentToolUseId }
-              : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

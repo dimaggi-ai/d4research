@@ -255,20 +255,25 @@ spec(
       state: "visible",
       timeout: 30_000,
     });
-    const isolationDatabase = new NodeSqlite.DatabaseSync(
-      NodePath.join(baseDir, "userdata/state.sqlite"),
-      { readOnly: true },
-    );
-    try {
-      const sent = isolationDatabase
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(sent?.text, "prove chat skill isolation");
-    } finally {
-      isolationDatabase.close();
+    let isolatedMessage;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const isolationDatabase = new NodeSqlite.DatabaseSync(
+        NodePath.join(baseDir, "userdata/state.sqlite"),
+        { readOnly: true },
+      );
+      try {
+        isolatedMessage = isolationDatabase
+          .prepare(
+            "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
+          )
+          .get()?.text;
+      } finally {
+        isolationDatabase.close();
+      }
+      if (isolatedMessage === "prove chat skill isolation") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    NodeAssert.equal(isolatedMessage, "prove chat skill isolation");
     await stopRunningTurnForIsolation(page);
     persistedSettings = JSON.parse(await NodeFSP.readFile(settingsPath, "utf8"));
     NodeAssert.deepEqual(
@@ -427,12 +432,18 @@ spec(
     const workflows = page.getByRole("button", { name: "Workflows and agent controls" });
     await workflows.waitFor({ state: "visible", timeout: 20_000 });
     await workflows.click();
-    await page.getByRole("menuitemradio", { name: "e2e-review", exact: true }).click();
+    const selectedPipeline = page.getByRole("menuitemradio", {
+      name: "e2e-review",
+      exact: true,
+    });
+    await selectedPipeline.click();
     NodeAssert.ok(
       (await page.locator("body").innerText()).includes("!dev:e2e-review"),
       "expected choosing a dev pipeline to arm its !dev trigger in the composer",
     );
 
+    await page.keyboard.press("Escape");
+    await selectedPipeline.waitFor({ state: "hidden", timeout: 20_000 });
     await workflows.click();
     const exactTargets = page.getByRole("menuitemradio", {
       name: "Exact targets only",
@@ -457,6 +468,8 @@ spec(
     });
     await labeledFallback.waitFor({ state: "visible", timeout: 20_000 });
     await labeledFallback.evaluate((element) => element.click());
+    await page.keyboard.press("Escape");
+    await labeledFallback.waitFor({ state: "hidden", timeout: 20_000 });
 
     await page.getByTestId("composer-editor").pressSequentially("fix the e2e regression");
     await page.getByRole("button", { name: "Send message" }).click();
@@ -1019,12 +1032,14 @@ spec(
     await systemMonitor.waitFor({ state: "visible", timeout: 20_000 });
     await systemMonitor.evaluate((element) => element.click());
     await page.waitForURL(/\/system$/, { timeout: 20_000 });
+    // Tool Guard renders as soon as the System panel mounts. CPU depends on
+    // the optional Mission Control endpoint and may legitimately remain in its
+    // unavailable state in an isolated test environment.
     await page
-      .getByText("CPU", { exact: true })
+      .getByText("Tool Guard", { exact: true })
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     const body = await page.locator("body").innerText();
-    NodeAssert.ok(/Tool Guard|CPU|Memory/i.test(body), "expected the system health monitors");
     NodeAssert.ok(!/Token Usage|Per-turn token usage|Usage limits/i.test(body));
   },
 );

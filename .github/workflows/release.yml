@@ -146,7 +146,7 @@ jobs:
             echo "release_channel=stable" >> "$GITHUB_OUTPUT"
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "tag=v$version" >> "$GITHUB_OUTPUT"
-            echo "name=T3 Code v$version" >> "$GITHUB_OUTPUT"
+            echo "name=d4research v$version" >> "$GITHUB_OUTPUT"
             echo "cli_dist_tag=latest" >> "$GITHUB_OUTPUT"
             if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
@@ -556,8 +556,8 @@ jobs:
     name: Publish CLI to npm
     needs: [preflight, build]
     # Outward-facing publication is opt-in for this fork: the d4research release
-    # line is isolated from upstream's npm, hosted-web, and Discord channels, and
-    # the inherited CLI package name is upstream's. Set the repository variable
+    # line is isolated from upstream's npm, hosted-web, and Discord channels.
+    # Set the repository variable
     # RELEASE_PUBLISH_ENABLED=true to turn publication back on.
     if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04 # blacksmith-8vcpu-ubuntu-2404

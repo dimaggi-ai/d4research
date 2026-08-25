@@ -22,8 +22,8 @@ node apps/server/src/bin.ts pair --tailscale
 
 This publishes the server over Tailscale Serve HTTPS (configuring the mapping if needed — it persists until you run `tailscale serve --https=443 off`) and pairs through the `https://machine.tailnet.ts.net/` URL. Use `--tailscale-serve-port` for a different HTTPS port, `--ttl` to change the token lifetime, and `--base-dir` to target a specific data directory.
 
-If no server is running, start the source checkout before pairing. The upstream `npx t3` package
-starts T3 Code, not d4research.
+If no server is running, start the released server with `npx d4research@0.2.0` or start a source
+checkout. The upstream `npx t3` package starts T3 Code, not d4research.
 
 ## Recommended Setup
 

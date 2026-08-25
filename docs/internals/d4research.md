@@ -138,7 +138,9 @@ Research changes must continue to account for:
 
 ## Current boundaries
 
-- The repository is public and normally installed from source. Desktop builds are cut on a maintainer machine and attached to GitHub releases; there is no `d4research` npm package.
+- Version 0.2.0 publishes the fork-owned `d4research` npm CLI and CI-built desktop artifacts for
+  macOS, Windows, and Linux. There is no d4research-branded mobile-store release; mobile connects to
+  a compatible d4research server.
 - A pipeline executes the scenario the user wrote. It does not guarantee delegation: a pipeline with no `!provider:model` directives runs entirely on the orchestrating model, and a step may resolve in fewer visits than its budget allows.
 - Provider handoff mirrors context to the configured local Memo connector when available. An unavailable or disabled connector does not prevent the switch because the receiving message carries the structured visible-thread transcript directly.
 - Memo-backed composer documents require the same connector. Providers without the injected d4research MCP toolkit receive only the bounded preview during their turn.

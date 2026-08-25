@@ -31,7 +31,8 @@ the repository to enable publication, and review the CLI package name first.
   - Stable tags with a suffix after `X.Y.Z` (for example `1.2.3-alpha.1`) are published as GitHub prereleases.
   - Only plain stable `X.Y.Z` releases are marked as the repository's latest release.
   - Nightly runs are always GitHub prereleases and never marked latest.
-  - Automatically generated release notes are pinned to the previous tag in the same channel, so stable compares to the previous stable tag and nightly compares to the previous nightly tag.
+  - Stable releases require authored notes at `docs/user/release-<version>.md`; preflight fails before
+    publication when the matching file is absent. Nightlies use a short generated build notice.
 - Includes Electron auto-update metadata (for example `latest*.yml`, `nightly*.yml`, and `*.blockmap`) in release assets.
 - Publishes the CLI package (`apps/server`, npm package `d4research`) with OIDC trusted publishing from the same workflow file:
   - stable releases publish npm dist-tag `latest`
@@ -99,13 +100,19 @@ desktop-managed guidance when those environments are available.
   - The desktop UI shows a rocket update button when an update is available; click once to download, click again after download to restart/install.
 - Provider: GitHub Releases (`provider: github`) configured at build time.
 - Repository slug source:
-  - `T3CODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), if set.
+  - Release CI sets `T3CODE_DESKTOP_UPDATE_REPOSITORY=dimaggi-ai/d4research` explicitly.
+  - Local builds may set `T3CODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`).
   - if unset, no update feed is configured. The fork does not fall back to the
     ambient `GITHUB_REPOSITORY`, so a build never inherits an upstream channel.
 - Required release assets for updater:
   - platform installers (`.exe`, `.dmg`, `.AppImage`, plus macOS `.zip` for Squirrel.Mac update payloads)
   - channel metadata: `latest*.yml` for stable releases, `nightly*.yml` for nightly releases
   - `*.blockmap` files (used for differential downloads)
+- Manual-download integrity:
+  - the release job downloads the exact npm package it just published;
+  - `SHA256SUMS` covers the npm tarball and every attached desktop/update artifact;
+  - GitHub records a build-provenance attestation for the release assets;
+  - npm publication requests npm provenance through trusted publishing.
 - macOS metadata note:
   - `electron-updater` reads `latest-mac.yml` on stable and `nightly-mac.yml` on nightly, for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one channel-specific mac manifest before publishing the GitHub Release.
@@ -236,9 +243,11 @@ Checklist:
    - all matrix builds pass
    - `publish_cli` publishes the exact release version before the release job
    - release job uploads expected files
+   - `SHA256SUMS`, npm provenance, and GitHub asset attestations are present
 6. Smoke test downloaded artifacts.
 
-For every release candidate, attach an applicability record instead of assuming upstream parity:
+For 0.2.0, update the [release evidence record](./release-evidence-0.2.0.md). For every later
+candidate, attach an equivalent applicability record instead of assuming upstream parity:
 
 | Area        | Required decision and evidence                                                             |
 | ----------- | ------------------------------------------------------------------------------------------ |

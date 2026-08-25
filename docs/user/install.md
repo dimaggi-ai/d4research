@@ -1,7 +1,34 @@
 # Install and First Run
 
-d4research `v0.2.0` is currently a source distribution. The upstream `npx t3`, T3 Code desktop
-downloads, and mobile-store apps install T3 Code, not d4research.
+d4research `v0.2.0` is distributed as the fork-owned `d4research` npm CLI and as desktop installers
+on the [d4research GitHub Releases](https://github.com/dimaggi-ai/d4research/releases) page. The
+upstream `npx t3` command and T3 Code store apps install T3 Code, not d4research.
+
+## Install the server CLI
+
+Run without a permanent global installation:
+
+```bash
+npx d4research@0.2.0
+```
+
+Or install the exact release globally:
+
+```bash
+npm install --global d4research@0.2.0
+d4research
+```
+
+The server prints a one-time pairing URL. Open the complete URL, including its token. Provider CLIs,
+projects, credentials, and local Memo data stay on the server machine.
+
+## Install the desktop client
+
+Download the artifact for macOS, Windows, or Linux from the GitHub Release. Version 0.2.0 installers
+are unsigned early-access artifacts. Use `SHA256SUMS` on the release page to verify a manual
+download.
+
+## Build from source
 
 ## Requirements
 
@@ -9,7 +36,7 @@ downloads, and mobile-store apps install T3 Code, not d4research.
 - Node.js `^22.16 || ^23.11 || >=24.10`
 - At least one supported provider CLI installed and authenticated on the server machine
 
-## Start d4research
+### Start from a checkout
 
 ```bash
 git clone git@github.com:dimaggi-ai/d4research.git
@@ -99,9 +126,9 @@ deployment updater, not a clean-machine installer.
 
 ## What Is Supported Today
 
-- Web from the source runner is the primary first-run path.
-- Desktop can be built from source and wraps the web client, but no signed d4research installers
-  are published yet.
+- Web through the released CLI or source runner is the primary first-run path.
+- GitHub Releases provide desktop artifacts for macOS, Windows, and Linux. Signing is optional and
+  the release notes identify whether a particular artifact was signed.
 - Mobile can connect to a compatible d4research server, but a d4research-branded store build is not
   part of the current source distribution.
 - Remote browsers connect to the server environment; provider CLIs, projects, Memo, and credentials

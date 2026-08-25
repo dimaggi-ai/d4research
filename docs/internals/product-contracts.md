@@ -2,8 +2,8 @@
 
 > For maintainers. Generated summary of `packages/contracts/src` — the typed surface every client
 > and the server agree on. One section per module; regenerate rather than hand-drift. All schemas
-> are Effect Schema; `index.ts` re-exports every module listed here (plus `./settings` and
-> `./relay` as dedicated subpath exports).
+> are Effect Schema; `index.ts` re-exports every module listed here. The package also exposes
+> `./settings` as a dedicated subpath export.
 
 ## index
 
@@ -124,13 +124,34 @@ freshness, `canStart`, and remediation),
 
 ## settings
 
-`ServerSettings` — the server-persisted configuration tree: appearance (font sizes/families,
-smoothing), sidebar ordering/grouping/preview counts and auto-settle, timestamp format, thread
-defaults, `MemoryConnectorSettings` (`memory.localEnabled`, built-in or external backend, local
-Memo base URL), shared `PipelineTargetPolicy` (`exact` or `labeled-fallback`), and
-`HandoffSettings` with `HandoffContextCompressionSettings` (`enabled`, `instanceId`, `model`,
-`maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions are
-decoded forward-compatibly so older clients survive newer config.
+Client and server configuration plus atomic patch contracts. `ClientSettingsSchema` covers local UI
+preferences and defaults. `ServerSettings` owns appearance, sidebar behavior, timestamps, thread
+defaults, `MemoryConnectorSettings`, `HandoffSettings`, provider instances, named
+`ResearchScenario`/`ResearchSettings`, named Dev scenarios through `DevSettings`, and the shared
+`PipelineTargetPolicy` (`exact` or `labeled-fallback`). `UnifiedSettings` combines both sides for
+clients. `ServerSettingsPatch` and `ClientSettingsPatch` define bounded partial updates instead of
+whole-file replacement. Handoff compression retains its bounded input/output defaults and optional
+custom prompt. Forward-compatible unions let older clients tolerate newer settings values.
+
+## pullRequest
+
+Pull-request list, detail, review, action, and capability contracts shared by server and clients.
+Defines involvement and state enums, repository/author/reviewer data, changed files and comments,
+`PullRequestCapabilities`, action inputs/results, and typed provider/error variants. RPC methods in
+`rpc.ts` expose listing, detail loading, review submission, and supported pull-request actions.
+
+## threadTurnUsage
+
+Per-turn token accounting used by `threads.getTokenUsage`. `ThreadTurnUsageRow` records the thread,
+turn, provider/model identity, input/output/cached/reasoning token counts, cost, and timestamps;
+`ThreadTurnUsageInput` selects the thread whose usage rows the client requests.
+
+## usage
+
+Versioned environment-wide transcript usage reporting. `USAGE_CONTRACT_VERSION` anchors the schema
+version; bucket, token, source, pricing, input, summary, and typed error schemas support
+`server.getUsageSummary`. The server aggregates the data and web/desktop clients render the returned
+summary without inventing a second usage model.
 
 ## git
 

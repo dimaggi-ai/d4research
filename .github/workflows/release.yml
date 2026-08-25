@@ -179,6 +179,12 @@ jobs:
           node scripts/update-release-package-versions.ts "${{ steps.release_meta.outputs.version }}"
           git diff --exit-code -- apps/server/package.json apps/desktop/package.json apps/web/package.json apps/mobile/package.json apps/marketing/package.json packages/contracts/package.json
 
+      - name: Verify authored stable release notes
+        if: steps.release_meta.outputs.release_channel == 'stable'
+        env:
+          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
+        run: test -f "docs/user/release-$RELEASE_VERSION.md"
+
       - name: Check
         run: vp check
 
@@ -368,7 +374,7 @@ jobs:
           fi
 
       - name: Prepare Azure Trusted Signing
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && needs.preflight.outputs.version != '0.2.0'
         shell: pwsh
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -432,6 +438,8 @@ jobs:
       - name: Build desktop artifact
         shell: bash
         env:
+          D4_SIGNING_ENABLED: ${{ needs.preflight.outputs.version != '0.2.0' }}
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: dimaggi-ai/d4research
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -465,7 +473,7 @@ jobs:
           }
 
           if [[ "${{ matrix.platform }}" == "mac" ]]; then
-            if has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
+            if [[ "$D4_SIGNING_ENABLED" == "true" ]] && has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
               if ! has_all "$APPLE_TEAM_ID" "$MACOS_PROVISIONING_PROFILE"; then
                 echo "macOS signing is configured, but APPLE_TEAM_ID or MACOS_PROVISIONING_PROFILE is missing." >&2
                 exit 1
@@ -491,7 +499,7 @@ jobs:
             # so the packaged WSL backend ships a ready binary (no first-launch
             # compile). Required for a working WSL backend on Windows.
             args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
-            if has_all \
+            if [[ "$D4_SIGNING_ENABLED" == "true" ]] && has_all \
               "$AZURE_TENANT_ID" \
               "$AZURE_CLIENT_ID" \
               "$AZURE_CLIENT_SECRET" \
@@ -648,7 +656,7 @@ jobs:
             echo "Master advanced after release preflight; refusing to publish stale artifacts." >&2
             exit 1
           fi
-          node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --verbose
+          node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --provenance --verbose
 
   release:
     name: Publish GitHub Release
@@ -657,7 +665,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
+      attestations: write
       contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -695,6 +705,54 @@ jobs:
             fi
           done
 
+      - name: Download the published CLI package
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            echo "Fetching d4research@$RELEASE_VERSION from npm (attempt $attempt/6)"
+            if npm pack "d4research@$RELEASE_VERSION" --pack-destination release-assets; then
+              exit 0
+            fi
+            if [[ "$attempt" == 6 ]]; then
+              echo "npm package was not readable after 6 attempts." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release-assets/*
+
+      - name: Prepare release notes
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" ]]; then
+            notes_path="docs/user/release-$RELEASE_VERSION.md"
+            if [[ ! -f "$notes_path" ]]; then
+              echo "Missing authored stable release notes: $notes_path" >&2
+              exit 1
+            fi
+            cp "$notes_path" release-notes.md
+          else
+            printf 'Automated nightly build from `%s`. Use the stable channel unless you are testing unreleased changes.\n' \
+              "${{ needs.preflight.outputs.short_sha }}" > release-notes.md
+          fi
+
       # - name: Merge Windows updater manifests
       #   run: |
       #     shopt -s nullglob
@@ -731,7 +789,7 @@ jobs:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
           name: ${{ needs.preflight.outputs.release_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           previous_tag: ${{ needs.preflight.outputs.previous_tag }}
           prerelease: ${{ needs.preflight.outputs.is_prerelease }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}
@@ -742,6 +800,8 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/*.tgz
+            release-assets/SHA256SUMS
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 
@@ -752,7 +812,7 @@ jobs:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
           name: ${{ needs.preflight.outputs.release_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           prerelease: ${{ needs.preflight.outputs.is_prerelease }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}
           files: |
@@ -762,6 +822,8 @@ jobs:
             release-assets/*.exe
             release-assets/*.blockmap
             release-assets/*.yml
+            release-assets/*.tgz
+            release-assets/SHA256SUMS
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 

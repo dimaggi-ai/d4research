@@ -17,6 +17,13 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function asArray(value: unknown, label: string): ReadonlyArray<unknown> {
+  if (!Array.isArray(value)) {
+    throw new Error(`Expected ${label} to be an array.`);
+  }
+  return value;
+}
+
 const workspaceFiles = [
   "package.json",
   "pnpm-lock.yaml",
@@ -214,6 +221,12 @@ try {
   const jobs = asRecord(workflow.jobs, "release workflow jobs");
   const preflightJob = asRecord(jobs.preflight, "preflight job");
   const preflightOutputs = asRecord(preflightJob.outputs, "preflight outputs");
+  const preflightSteps = asArray(preflightJob.steps, "preflight steps").map((step, index) =>
+    asRecord(step, `preflight step ${index + 1}`),
+  );
+  if (!preflightSteps.some((step) => step.name === "Verify authored stable release notes")) {
+    throw new Error("Preflight must reject missing authored notes before npm publication.");
+  }
   if (
     preflightOutputs.publication_allowed !==
     "${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'nightly') }}"
@@ -247,6 +260,50 @@ try {
   if (releaseJob.environment !== undefined) {
     throw new Error("GitHub Release publication must not wait on a second post-npm approval.");
   }
+  const releasePermissions = asRecord(releaseJob.permissions, "release permissions");
+  for (const [permission, expected] of [
+    ["attestations", "write"],
+    ["contents", "write"],
+    ["id-token", "write"],
+  ] as const) {
+    if (releasePermissions[permission] !== expected) {
+      throw new Error(`Release permission ${permission} must be ${expected}.`);
+    }
+  }
+  const releaseSteps = asArray(releaseJob.steps, "release steps").map((step, index) =>
+    asRecord(step, `release step ${index + 1}`),
+  );
+  const releaseStepNames = releaseSteps.map((step) => String(step.name ?? ""));
+  const requiredOrder = [
+    "Download all desktop artifacts",
+    "Merge macOS updater manifests",
+    "Download the published CLI package",
+    "Generate release checksums",
+    "Attest release assets",
+    "Prepare release notes",
+    "Publish release",
+  ];
+  let previousIndex = -1;
+  for (const stepName of requiredOrder) {
+    const index = releaseStepNames.indexOf(stepName);
+    if (index <= previousIndex) {
+      throw new Error(`Release step '${stepName}' is missing or out of order.`);
+    }
+    previousIndex = index;
+  }
+  const attestStep = releaseSteps.find((step) => step.name === "Attest release assets");
+  const attestWith = asRecord(attestStep?.with, "attestation inputs");
+  if (attestWith["subject-path"] !== "release-assets/*") {
+    throw new Error("Release attestation must cover every finalized release asset.");
+  }
+  for (const stepName of ["Publish release", "Publish first release"] as const) {
+    const publishStep = releaseSteps.find((step) => step.name === stepName);
+    const publishWith = asRecord(publishStep?.with, `${stepName} inputs`);
+    const files = String(publishWith.files ?? "");
+    for (const artifact of ["release-assets/*.tgz", "release-assets/SHA256SUMS"] as const) {
+      assertContains(files, artifact, `${stepName} must upload ${artifact}.`);
+    }
+  }
   assertNotContains(
     releaseWorkflow,
     "blacksmith-",
@@ -278,6 +335,46 @@ try {
     releaseWorkflow,
     "actions/create-github-app-token",
     "Release finalization must not require an undeclared GitHub App credential.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "--provenance --verbose",
+    "npm publication must emit registry provenance.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "release-assets/SHA256SUMS",
+    "GitHub Releases must include checksums for published assets.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "actions/attest-build-provenance@",
+    "GitHub Release assets must receive build-provenance attestations.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "T3CODE_DESKTOP_UPDATE_REPOSITORY: dimaggi-ai/d4research",
+    "Desktop updater metadata must point at the fork-owned release repository.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "D4_SIGNING_ENABLED: ${{ needs.preflight.outputs.version != '0.2.0' }}",
+    "The 0.2.0 release must deterministically produce the documented unsigned artifacts.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "if: matrix.platform == 'win' && needs.preflight.outputs.version != '0.2.0'",
+    "Unsigned 0.2.0 builds must not initialize the Windows signing toolchain.",
+  );
+  assertContains(
+    releaseWorkflow,
+    "body_path: release-notes.md",
+    "Stable releases must use authored product release notes.",
+  );
+  assertContains(
+    releaseWorkflow,
+    'notes_path="docs/user/release-$RELEASE_VERSION.md"',
+    "Stable release notes must resolve from the exact release version.",
   );
 
   copyWorkspaceManifestFixture(tempRoot);

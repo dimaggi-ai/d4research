@@ -2,8 +2,8 @@
 
 > For maintainers. Using d4research? See [docs/user](../user/).
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs four jobs on pull requests and
-pushes to `main`:
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs four jobs on pull requests,
+manual dispatches, and its scheduled cadence:
 
 - **Check**: `vp check` (format and lint; this repo sets `typeCheck: false` in its lint options),
   then `vpr typecheck` for the workspace type check. The same job

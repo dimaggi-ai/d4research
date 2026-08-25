@@ -3,10 +3,25 @@
 The web or desktop client and the server it connects to should use the same d4research build. A
 version warning means those two components differ; dismissing it does not update either one.
 
-## Source Checkouts
+## Released CLI servers
 
-`v0.2.0` does not have a fork-owned npm or automatic update channel. The upstream `npx t3` command
-installs T3 Code and must not be used as a d4research updater.
+Install the exact version used by the client:
+
+```bash
+npm install --global d4research@0.2.0
+```
+
+The desktop client's **Update server** action also requests its exact d4research version rather than
+an npm dist-tag. The upstream `npx t3` command installs T3 Code and must not be used as a d4research
+updater.
+
+## Desktop
+
+Desktop checks the fork-owned GitHub Release channel for its selected stable or nightly channel.
+Install the offered update through the app, or download the matching version manually and verify it
+against the release's `SHA256SUMS` file.
+
+## Source Checkouts
 
 Finish or stop active agent and terminal work, then update the server checkout:
 

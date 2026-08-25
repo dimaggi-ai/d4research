@@ -4,6 +4,7 @@ d4research is a private workspace for long-running research across models and co
 
 ## Using d4research
 
+- [Release 0.2.0](./user/release-0.2.0.md)
 - [Research workflows](./user/research-workflows.md)
 - [Starter research scenario](./user/starter-research.md)
 - [Starter sample corpus](./user/samples/kitten-fluffiness.md)
@@ -54,9 +55,11 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 
 ### Runbooks
 
+- [0.2.0 release evidence](./operations/release-evidence-0.2.0.md)
 - [Docker QA stack](./operations/docker-qa.md)
 - [Local deployment](./operations/local-deployment.md)
 - [Release](./operations/release.md)
+- [Upstream merge](./operations/upstream-merge.md)
 - [Observability](./operations/observability.md)
 - [Relay observability](./operations/relay-observability.md)
 - [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)

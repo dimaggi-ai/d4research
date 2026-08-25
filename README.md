@@ -4,11 +4,16 @@ A multi-provider coding agent workspace for structured research, built on the [T
 
 ## Installation
 
-**Run this fork from source** — see [Setup](#setup) below. The `v0.1.0` GitHub release is
-source-only; no d4research binaries, npm package, or Docker image are published yet. The upstream
-`npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
+Run the released server directly:
 
-Desktop artifacts are cut on a maintainer machine rather than in CI, so when they do land the platform set tracks whatever that machine can build — a Linux `x86_64` AppImage via `vp run dist:desktop:linux` — and the binaries are unsigned. macOS and Windows installers are not published; build them from source with the matching `dist:desktop:*` script, or run from source on any platform.
+```bash
+npx d4research@0.2.0
+```
+
+Desktop artifacts for macOS, Windows, and Linux are available from
+[d4research Releases](https://github.com/dimaggi-ai/d4research/releases). Version 0.2.0 is an
+unsigned early-access release; verify manual downloads with the published `SHA256SUMS`. The upstream
+`npx t3` and T3 Code store releases install the original T3 Code, not this fork.
 
 ### Requirements
 
@@ -17,6 +22,8 @@ Desktop artifacts are cut on a maintainer machine rather than in CI, so when the
 - At least one provider CLI installed and authenticated (see [Providers](#supported-providers))
 
 ### Setup
+
+To develop or run from source:
 
 ```bash
 git clone git@github.com:dimaggi-ai/d4research.git
@@ -61,7 +68,13 @@ authenticate. Connect from any browser, including remote devices via
 
 ### Updating
 
-Pull the latest source and reinstall:
+Update a released global CLI to the exact client version:
+
+```bash
+npm install --global d4research@0.2.0
+```
+
+For a source checkout, pull and reinstall:
 
 ```bash
 git pull

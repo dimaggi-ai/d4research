@@ -45,6 +45,7 @@
     "@types/node": "catalog:",
     "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
+    "node-gyp": "12.3.0",
     "vite-plus": "catalog:"
   },
   "engines": {

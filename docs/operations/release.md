@@ -7,8 +7,7 @@ This document covers the unified release workflow for stable and nightly desktop
 ## Publication is opt-in for this fork
 
 The d4research release line is isolated from upstream's distribution channels. Every outward-facing
-job — npm publish, GitHub Release publication, the version-alignment commit to `master`, and the
-Discord announcement — is
+job — npm publish, GitHub Release publication, and the Discord announcement — is
 gated behind the repository variable `RELEASE_PUBLISH_ENABLED`.
 
 While that variable is unset, pushing a `v*.*.*` tag still runs the quality gates and builds every
@@ -42,9 +41,14 @@ the repository to enable publication, and review the CLI package name first.
 ## Required release credentials
 
 The publish job uses npm trusted publishing and therefore needs `id-token: write`; it does not use a
-long-lived npm token. GitHub Release publication and the optional version-alignment commit use the
-repository-scoped workflow token. The finalize job explicitly requests `contents: write` and pushes
-only to the fork's unprotected `master` branch.
+long-lived npm token. GitHub Release publication uses the repository-scoped workflow token. Release
+jobs never commit back to `master`; stable package versions must already match the tag.
+
+The signing `build` and npm `publish_cli` jobs use the `release-production` GitHub environment. Before
+enabling publication, configure that environment with required maintainer approval, prevent
+self-review, and restrict deployment branches/tags to `master` and stable/nightly release tags. Store
+Apple and Azure signing credentials as environment secrets, not repository secrets. Configure npm's
+trusted publisher with Environment set exactly to `release-production`.
 
 ## Nightly builds
 
@@ -61,7 +65,7 @@ only to the fork's unprotected `master` branch.
 - Uses the next stable patch version as the nightly base. For example, `0.0.17` produces nightlies on `0.0.18-nightly.*`.
 - Publishes Electron auto-update metadata to the dedicated `nightly` updater channel, so desktop users can opt into that track independently from stable.
 - Publishes the CLI package (`apps/server`, npm package `d4research`) to the `nightly` npm dist-tag using the same nightly version.
-- Does not commit version bumps back to `main`.
+- Does not commit version bumps back to `master`.
 
 ## Server self-update release invariant
 
@@ -115,14 +119,25 @@ repository root so workspace publish configuration is applied correctly.
 
 Checklist:
 
-1. Confirm npm org/user owns package `d4research`. For the first release, the package must be
-   published once by an authenticated maintainer because trusted publishing is configured from an
-   existing package's settings page.
+1. Confirm the authenticated npm org/user can create package `d4research`. Register it with a minimal
+   placeholder under a version that is not the intended release:
+
+   ```bash
+   bootstrap_dir="$(mktemp -d)"
+   printf '{"name":"d4research","version":"0.2.0-oidc.0","description":"OIDC publishing bootstrap","license":"MIT"}\n' > "$bootstrap_dir/package.json"
+   printf '# d4research\n\nBootstrap package; install a stable release instead.\n' > "$bootstrap_dir/README.md"
+   npm publish "$bootstrap_dir" --access public --tag oidc-bootstrap
+   npm view d4research@0.2.0-oidc.0 version
+   ```
+
+   npm versions are immutable: never use `0.2.0` for bootstrap. The placeholder only establishes
+   package ownership so trusted publishing can be configured; it is not a product release.
+
 2. After the bootstrap publish, configure Trusted Publisher in the package settings:
    - Provider: GitHub Actions
    - Repository: this repo
    - Workflow file: `.github/workflows/release.yml`
-   - Environment (if used): match your npm trusted publishing config
+   - Environment: `release-production` (required; must exactly match the workflow job environment)
 3. Ensure npm account and org policies allow trusted publishing for the package.
 4. Create release tag `vX.Y.Z` and push; workflow will:
    - align the release package versions to `X.Y.Z`
@@ -132,19 +147,16 @@ Checklist:
 
 ## 1) Release validation and unsigned builds
 
-There is no dry-run tag path. Pushing any accepted non-nightly tag, including
-`v0.0.0-test.1`, classifies the run as the stable channel. It publishes `d4research` with npm dist-tag
-`latest`, creates a real GitHub Release, and can commit a version bump to `master` in the finalize
-job. Do not push a test tag
-to validate the workflow.
+There is no disposable tag path. When publication is enabled, pushing an accepted non-nightly tag
+from current `master`, including `v0.0.0-test.1`, publishes `d4research` with npm dist-tag `latest`
+and creates a real GitHub Release. With publication disabled it does not publish, but the Git tag is
+still permanent release history; prefer stable `workflow_dispatch` for rehearsals.
 
-While `RELEASE_PUBLISH_ENABLED` is unset, `workflow_dispatch` is a non-publishing rehearsal: it runs
-preflight and builds every platform, then skips npm, GitHub Release, finalization, and announcement.
-Once the variable is `true`, manual stable or nightly dispatches are real publications. Nightly
-publication does not update the stable channel or commit a version bump to `master`.
-
-Manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
-secrets only makes platform artifacts unsigned; it does not prevent publication.
+Manual stable `workflow_dispatch` from current `master` is always a non-publishing rehearsal: it runs preflight and builds
+every platform, then skips npm, GitHub Release, and announcement. Nightly dispatches
+publish only when `RELEASE_PUBLISH_ENABLED=true`. Stable publication additionally requires a pushed
+release tag whose commit exactly matches current `master`. Omitting signing secrets only makes
+platform artifacts unsigned; it is not the publication guard.
 
 ## 2) Apple signing + notarization setup (macOS)
 

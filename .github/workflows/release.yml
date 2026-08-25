@@ -26,6 +26,10 @@ permissions:
   contents: read
   id-token: none
 
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   check_changes:
     name: Check for changes since last nightly
@@ -35,7 +39,7 @@ jobs:
       has_changes: ${{ steps.check.outputs.has_changes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           sparse-checkout: |
@@ -57,10 +61,10 @@ jobs:
           head_sha=$(git rev-parse HEAD)
 
           if [[ "$last_nightly_sha" == "$head_sha" ]]; then
-            echo "No changes on main since last nightly release ($last_nightly_tag). Skipping."
+            echo "No changes on master since last nightly release ($last_nightly_tag). Skipping."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Changes detected on main since $last_nightly_tag ($last_nightly_sha → $head_sha). Proceeding."
+            echo "Changes detected on master since $last_nightly_tag ($last_nightly_sha → $head_sha). Proceeding."
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -83,9 +87,10 @@ jobs:
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       make_latest: ${{ steps.release_meta.outputs.make_latest }}
       ref: ${{ github.sha }}
+      publication_allowed: ${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'nightly') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           sparse-checkout: |
@@ -93,8 +98,19 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Verify publication commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master
+          master_sha="$(git rev-parse origin/master)"
+          if [[ "$GITHUB_SHA" != "$master_sha" ]]; then
+            echo "Release workflows must run from current master ($master_sha), got $GITHUB_SHA." >&2
+            exit 1
+          fi
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -157,6 +173,12 @@ jobs:
             fi
           fi
 
+      - name: Verify stable package versions
+        if: steps.release_meta.outputs.release_channel == 'stable'
+        run: |
+          node scripts/update-release-package-versions.ts "${{ steps.release_meta.outputs.version }}"
+          git diff --exit-code -- apps/server/package.json apps/desktop/package.json apps/web/package.json apps/mobile/package.json apps/marketing/package.json packages/contracts/package.json
+
       - name: Check
         run: vp check
 
@@ -188,7 +210,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           sparse-checkout: |
@@ -197,7 +219,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -214,13 +236,13 @@ jobs:
           # node-pty's own dependency tree, so node-gyp has everything it needs.
           pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
           pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          ( cd "$pty_dir" && "$GITHUB_WORKSPACE/apps/server/node_modules/.bin/node-gyp" rebuild )
           mkdir -p wsl-prebuild
           cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
           file wsl-prebuild/pty.node
 
       - name: Upload node-pty linux-x64 prebuild
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: wsl-node-pty-x64
           path: wsl-prebuild/pty.node
@@ -238,6 +260,7 @@ jobs:
     needs: [preflight, build_wsl_node_pty]
     if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ${{ matrix.runner }}
+    environment: release-production
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -278,7 +301,7 @@ jobs:
           #   arch: arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           sparse-checkout: |
@@ -287,7 +310,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -298,7 +321,7 @@ jobs:
               - --filter=@d4research/scripts...
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           targets: ${{ matrix.rust_target }}
 
@@ -307,7 +330,7 @@ jobs:
 
       - name: Download WSL node-pty prebuild
         if: matrix.platform == 'win'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: wsl-node-pty-x64
           path: wsl-prebuild
@@ -539,14 +562,14 @@ jobs:
           cp "$source_path" "$target_dir/$binary_name"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-publish/*
           if-no-files-found: error
 
       - name: Upload resource monitor
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: resource-monitor-${{ matrix.resource_key }}
           path: resource-monitor-publish/${{ matrix.resource_key }}/*
@@ -559,15 +582,16 @@ jobs:
     # line is isolated from upstream's npm, hosted-web, and Discord channels.
     # Set the repository variable
     # RELEASE_PUBLISH_ENABLED=true to turn publication back on.
-    if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.result == 'success' && needs.build.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.outputs.publication_allowed == 'true' && needs.preflight.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
+    environment: release-production
     timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           sparse-checkout: |
@@ -576,7 +600,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -596,7 +620,7 @@ jobs:
         run: vp run --filter d4research build
 
       - name: Download resource monitors
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: resource-monitor-*
           path: ${{ runner.temp }}/resource-monitors
@@ -614,19 +638,29 @@ jobs:
           done
 
       - name: Publish CLI package
-        run: node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --verbose
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master
+          if [[ "$(git rev-parse origin/master)" != "$RELEASE_SHA" ]]; then
+            echo "Master advanced after release preflight; refusing to publish stale artifacts." >&2
+            exit 1
+          fi
+          node apps/server/scripts/cli.ts publish --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --app-version "${{ needs.preflight.outputs.version }}" --verbose
 
   release:
     name: Publish GitHub Release
     needs: [preflight, build, publish_cli]
-    if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.result == 'success' && needs.build.result == 'success' && needs.publish_cli.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.outputs.publication_allowed == 'true' && needs.preflight.result == 'success' && needs.build.result == 'success' && needs.publish_cli.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           sparse-checkout: |
@@ -635,7 +669,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -644,7 +678,7 @@ jobs:
               - --filter=@d4research/scripts...
 
       - name: Download all desktop artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: desktop-*
           merge-multiple: true
@@ -692,7 +726,7 @@ jobs:
 
       - name: Publish release
         if: needs.preflight.outputs.previous_tag != ''
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
@@ -713,7 +747,7 @@ jobs:
 
       - name: Publish first release
         if: needs.preflight.outputs.previous_tag == ''
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
           target_commitish: ${{ needs.preflight.outputs.ref }}
@@ -731,83 +765,20 @@ jobs:
           fail_on_unmatched_files: true
           token: ${{ github.token }}
 
-  finalize:
-    name: Finalize release
-    if: ${{ !failure() && !cancelled() && vars.RELEASE_PUBLISH_ENABLED == 'true' && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'stable' }}
-    needs: [preflight, release]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: master
-          fetch-depth: 0
-          token: ${{ github.token }}
-          persist-credentials: true
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@d4research/scripts...
-              - --filter=@d4research/oxlint-plugin-t3code...
-
-      - id: update_versions
-        name: Update version strings
-        env:
-          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
-        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION" --github-output
-
-      - name: Format package.json files
-        if: steps.update_versions.outputs.changed == 'true'
-        run: vp fmt apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json
-
-      - name: Refresh lockfile
-        if: steps.update_versions.outputs.changed == 'true'
-        run: vp install --lockfile-only --ignore-scripts
-
-      - name: Commit and push version bump
-        if: steps.update_versions.outputs.changed == 'true'
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
-        run: |
-          if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml; then
-            echo "No version changes to commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml
-          git commit -m "chore(release): prepare $RELEASE_TAG"
-          git push origin HEAD:master
-
   announce_discord:
     name: Announce release on Discord
     if: |
       always() && !cancelled() &&
       vars.RELEASE_PUBLISH_ENABLED == 'true' &&
+      needs.preflight.outputs.publication_allowed == 'true' &&
       needs.preflight.result == 'success' &&
-      needs.release.result == 'success' &&
-      (needs.finalize.result == 'success' || needs.finalize.result == 'skipped')
-    needs: [preflight, release, finalize]
+      needs.release.result == 'success'
+    needs: [preflight, release]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.preflight.outputs.ref }}
           sparse-checkout: |
@@ -816,7 +787,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true

@@ -6,8 +6,16 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import { parse as parseYaml } from "yaml";
 
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+
+function asRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Expected ${label} to be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
 
 const workspaceFiles = [
   "package.json",
@@ -197,6 +205,48 @@ try {
     NodePath.resolve(repoRoot, ".github/workflows/release.yml"),
     "utf8",
   );
+  for (const line of releaseWorkflow.split("\n")) {
+    if (/^\s*uses:/.test(line) && !/@[0-9a-f]{40}(?:\s+#.*)?$/.test(line)) {
+      throw new Error(`Release workflow action is not pinned to a commit SHA: ${line.trim()}`);
+    }
+  }
+  const workflow = asRecord(parseYaml(releaseWorkflow), "release workflow");
+  const jobs = asRecord(workflow.jobs, "release workflow jobs");
+  const preflightJob = asRecord(jobs.preflight, "preflight job");
+  const preflightOutputs = asRecord(preflightJob.outputs, "preflight outputs");
+  if (
+    preflightOutputs.publication_allowed !==
+    "${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'nightly') }}"
+  ) {
+    throw new Error(
+      "Publication policy must allow tags/schedules/nightly dispatch and deny stable dispatch.",
+    );
+  }
+  const outwardJobs = ["publish_cli", "release", "announce_discord"] as const;
+  for (const jobName of outwardJobs) {
+    const job = asRecord(jobs[jobName], `${jobName} job`);
+    const condition = String(job.if ?? "");
+    assertContains(
+      condition,
+      "vars.RELEASE_PUBLISH_ENABLED == 'true'",
+      `${jobName} must remain explicitly opt-in.`,
+    );
+    assertContains(
+      condition,
+      "needs.preflight.outputs.publication_allowed == 'true'",
+      `${jobName} must honor the event-specific publication gate.`,
+    );
+  }
+  for (const jobName of ["build", "publish_cli"] as const) {
+    const job = asRecord(jobs[jobName], `${jobName} job`);
+    if (job.environment !== "release-production") {
+      throw new Error(`${jobName} must use the protected release-production environment.`);
+    }
+  }
+  const releaseJob = asRecord(jobs.release, "release job");
+  if (releaseJob.environment !== undefined) {
+    throw new Error("GitHub Release publication must not wait on a second post-npm approval.");
+  }
   assertNotContains(
     releaseWorkflow,
     "blacksmith-",
@@ -219,15 +269,10 @@ try {
     "ref: main",
     "Release finalization must not target the fork's nonexistent main branch.",
   );
-  assertContains(
+  assertNotContains(
     releaseWorkflow,
     "git push origin HEAD:master",
-    "Release finalization must update the fork's master branch.",
-  );
-  assertContains(
-    releaseWorkflow,
-    "contents: write",
-    "Release finalization must explicitly request permission to update master.",
+    "Release jobs must not mutate master after publication.",
   );
   assertNotContains(
     releaseWorkflow,
@@ -265,6 +310,8 @@ try {
     "apps/server/package.json",
     "apps/desktop/package.json",
     "apps/web/package.json",
+    "apps/mobile/package.json",
+    "apps/marketing/package.json",
     "packages/contracts/package.json",
   ]) {
     assertPackageVersion(NodePath.resolve(tempRoot, relativePath), "9.9.9-smoke.0");

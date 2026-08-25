@@ -6,9 +6,9 @@ This document covers the unified release workflow for stable and nightly desktop
 
 ## Publication is opt-in for this fork
 
-The d4research release line is isolated from upstream's distribution channels, and the inherited
-CLI package name is upstream's. Every outward-facing job — npm publish, GitHub Release publication,
-the version-alignment commit to `main`, and the Discord announcement — is
+The d4research release line is isolated from upstream's distribution channels. Every outward-facing
+job — npm publish, GitHub Release publication, the version-alignment commit to `master`, and the
+Discord announcement — is
 gated behind the repository variable `RELEASE_PUBLISH_ENABLED`.
 
 While that variable is unset, pushing a `v*.*.*` tag still runs the quality gates and builds every
@@ -41,15 +41,10 @@ the repository to enable publication, and review the CLI package name first.
 
 ## Required release credentials
 
-Stable releases require these GitHub Actions secrets in addition to the platform
-credentials documented below:
-
-- `RELEASE_APP_ID`
-- `RELEASE_APP_PRIVATE_KEY`
-
-The finalize job uses them to commit and push aligned package versions to `main` as the Release App.
-GitHub Release publication uses the repository-scoped workflow token so it has a rate-limit quota
-independent from the shared Release App installation.
+The publish job uses npm trusted publishing and therefore needs `id-token: write`; it does not use a
+long-lived npm token. GitHub Release publication and the optional version-alignment commit use the
+repository-scoped workflow token. The finalize job explicitly requests `contents: write` and pushes
+only to the fork's unprotected `master` branch.
 
 ## Nightly builds
 
@@ -120,8 +115,10 @@ repository root so workspace publish configuration is applied correctly.
 
 Checklist:
 
-1. Confirm npm org/user owns package `d4research`.
-2. In npm package settings, configure Trusted Publisher:
+1. Confirm npm org/user owns package `d4research`. For the first release, the package must be
+   published once by an authenticated maintainer because trusted publishing is configured from an
+   existing package's settings page.
+2. After the bootstrap publish, configure Trusted Publisher in the package settings:
    - Provider: GitHub Actions
    - Repository: this repo
    - Workflow file: `.github/workflows/release.yml`
@@ -137,15 +134,14 @@ Checklist:
 
 There is no dry-run tag path. Pushing any accepted non-nightly tag, including
 `v0.0.0-test.1`, classifies the run as the stable channel. It publishes `d4research` with npm dist-tag
-`latest`, creates a real GitHub Release, and can commit a version bump to `main` in the finalize
+`latest`, creates a real GitHub Release, and can commit a version bump to `master` in the finalize
 job. Do not push a test tag
 to validate the workflow.
 
-The workflow has no non-publishing `workflow_dispatch` mode. Use normal CI or local quality gates to
-validate checks and builds without shipping. To exercise the complete release graph at lower stable
-risk, manually dispatch `channel=nightly`; this still publishes a real nightly npm package, GitHub
-prerelease, and desktop updater release, but it does not update the stable channel or commit a
-version bump to `main`. Only run it when a real nightly release is acceptable.
+While `RELEASE_PUBLISH_ENABLED` is unset, `workflow_dispatch` is a non-publishing rehearsal: it runs
+preflight and builds every platform, then skips npm, GitHub Release, finalization, and announcement.
+Once the variable is `true`, manual stable or nightly dispatches are real publications. Nightly
+publication does not update the stable channel or commit a version bump to `master`.
 
 Manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
 secrets only makes platform artifacts unsigned; it does not prevent publication.

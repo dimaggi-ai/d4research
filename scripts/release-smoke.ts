@@ -224,6 +224,16 @@ try {
     "git push origin HEAD:master",
     "Release finalization must update the fork's master branch.",
   );
+  assertContains(
+    releaseWorkflow,
+    "contents: write",
+    "Release finalization must explicitly request permission to update master.",
+  );
+  assertNotContains(
+    releaseWorkflow,
+    "actions/create-github-app-token",
+    "Release finalization must not require an undeclared GitHub App credential.",
+  );
 
   copyWorkspaceManifestFixture(tempRoot);
 

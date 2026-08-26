@@ -128,6 +128,12 @@ The voice conversation flow calls local transcription, summarization, and speech
 
 The fork retains T3 Code's Node WebSocket server, typed contracts, provider adapters, event-sourced commands/events/projectors, receipt-driven side effects, checkpoints, and web/desktop/mobile clients. It also retains compatibility-facing names such as the `t3` CLI and `T3CODE_HOME` where renaming would break users or protocols.
 
+Follow-up messages are environment state, not client state. A turn start received while a session
+is running is persisted in the server's queued-message projection and acknowledged to the sending
+client. Web, desktop, and mobile render that shared projection; the server drains it after the
+active turn ends, so delivery does not depend on a browser tab or mobile React tree remaining
+active. Client storage is only a pre-acknowledgement retry buffer for disconnected sends.
+
 Research changes must continue to account for:
 
 - web, desktop, and mobile surfaces where the feature is applicable;

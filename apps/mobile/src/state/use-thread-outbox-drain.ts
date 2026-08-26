@@ -37,7 +37,7 @@ import {
   type QueuedThreadMessage,
   type ThreadOutboxCommandStage,
 } from "./thread-outbox-model";
-import { environmentThreadShells, threadEnvironment } from "./threads";
+import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
 import {
   editingQueuedMessageIdsAtom,
@@ -314,7 +314,6 @@ export function useThreadOutboxDrain(): void {
         threadExists: thread !== undefined,
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
-        threadBusy: thread?.session?.status === "running" || thread?.session?.status === "starting",
       });
       if (deliveryAction === "wait") {
         continue;
@@ -367,15 +366,6 @@ export function useThreadOutboxDrain(): void {
         // (returning true skips the failure/backoff path) rather than sending
         // a payload the user is editing or racing an active turn.
         if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[nextQueuedMessage.messageId]) {
-          return true;
-        }
-        const freshThread = findThread(
-          appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
-          nextQueuedMessage,
-        );
-        const freshThreadBusy =
-          freshThread?.session?.status === "running" || freshThread?.session?.status === "starting";
-        if (deliveryAction === "send" && creation === undefined && freshThreadBusy) {
           return true;
         }
         return deliveryAction === "remove"

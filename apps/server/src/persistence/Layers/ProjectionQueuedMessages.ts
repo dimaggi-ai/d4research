@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { ChatAttachment, ModelSelection } from "@t3tools/contracts";
+import { ChatAttachment, ModelSelection } from "@d4research/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {

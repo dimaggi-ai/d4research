@@ -5781,7 +5781,6 @@ function ChatViewContent(props: ChatViewProps) {
       outgoingMessageText = handoffForSend.text;
     }
 
-    const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const turnAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({

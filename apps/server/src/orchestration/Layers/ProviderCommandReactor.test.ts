@@ -1444,6 +1444,13 @@ describe("ProviderCommandReactor", () => {
         runtimeMode: "approval-required",
         createdAt: now,
       });
+      yield* harness.engine.dispatch({
+        type: "thread.queue.steer",
+        commandId: CommandId.make("cmd-steer-inline-delegate-second"),
+        threadId: ThreadId.make("thread-1"),
+        messageId: asMessageId("user-message-inline-delegate-second"),
+        createdAt: now,
+      });
       yield* Effect.promise(() => harness.drain());
 
       // The running delegation keeps the thread; the second is refused rather
@@ -1853,6 +1860,7 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
+    await harness.settleSession();
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",
@@ -1877,6 +1885,7 @@ describe("ProviderCommandReactor", () => {
         createdAt: "2026-01-01T00:00:01.000Z",
       }),
     );
+    await harness.settleSession();
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",

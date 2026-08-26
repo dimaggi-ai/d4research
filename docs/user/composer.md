@@ -54,7 +54,7 @@ the pieces it needs. Each Memo-backed document can contain up to 2,000,000 chara
 
 Memo must confirm the write before the draft can be cleared. Normal sends clear optimistically
 during dispatch and restore the draft if the server rejects the turn start; queued sends clear after
-the Memo-backed request enters the local queue. If local Memo is disabled, unavailable, or times
+the server accepts the Memo-backed request. If local Memo is disabled, unavailable, or times
 out, the request stays in the composer and Send becomes available again for a retry. A very large
 unsent attachment keeps only a bounded browser-storage preview across a page reload. If the app
 asks for the complete source, remove the stale attachment chip and then reattach the file before
@@ -90,7 +90,10 @@ hint. See [Handoff](./concepts.md#handoff).
 
 Sending while a turn is still running does not interrupt the agent: the request is queued and shown
 in a **Queued · n** banner above the composer, where individual entries can be removed before they
-run. Queued requests are dispatched when the current turn settles.
+run. The environment server persists the queue and publishes it to every connected client. After
+the server acknowledges a send from mobile, the phone or browser does not need to remain awake or
+open: the server dispatches the next request when the current turn settles. A disconnected client
+keeps a temporary local retry copy only until it can hand the request to the server.
 
 ## Approvals and user input
 

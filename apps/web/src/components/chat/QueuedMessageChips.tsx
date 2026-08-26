@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { CornerDownRightIcon, ListEndIcon, Trash2Icon } from "lucide-react";
-import type { MessageId, OrchestrationQueuedMessage } from "@t3tools/contracts";
+import type { MessageId, OrchestrationQueuedMessage } from "@d4research/contracts";
 
 import { Button } from "../ui/button";
 

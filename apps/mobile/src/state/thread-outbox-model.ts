@@ -153,7 +153,6 @@ export function resolveThreadOutboxDeliveryAction(input: {
   readonly threadExists: boolean;
   readonly shellStatus: EnvironmentShellStatus;
   readonly environmentConnected: boolean;
-  readonly threadBusy: boolean;
 }): ThreadOutboxDeliveryAction {
   if (input.isCreation) {
     // A pending task creates its thread on delivery. If the thread already
@@ -169,7 +168,10 @@ export function resolveThreadOutboxDeliveryAction(input: {
   if (!input.threadExists) {
     return input.shellStatus === "live" ? "remove" : "wait";
   }
-  return input.environmentConnected && !input.threadBusy ? "send" : "wait";
+  // Existing-thread messages go to the server as soon as the environment is
+  // reachable. The server durably queues a follow-up when a turn is active,
+  // so delivery must not depend on this React tree staying mounted.
+  return input.environmentConnected ? "send" : "wait";
 }
 
 /**

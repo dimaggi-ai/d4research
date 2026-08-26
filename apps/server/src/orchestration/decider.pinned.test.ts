@@ -48,6 +48,8 @@ function makeReadModel(input: {
         pinOrderKey: input.pinOrderKey ?? null,
         deletedAt: null,
         messages: [],
+        queuedMessages: [],
+        pendingTurnStart: null,
         proposedPlans: [],
         activities: [],
         checkpoints: [],

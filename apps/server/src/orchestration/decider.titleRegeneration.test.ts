@@ -36,6 +36,8 @@ const readModel: OrchestrationReadModel = {
       snoozedAt: null,
       deletedAt: null,
       messages: [],
+      queuedMessages: [],
+      pendingTurnStart: null,
       proposedPlans: [],
       activities: [],
       checkpoints: [],

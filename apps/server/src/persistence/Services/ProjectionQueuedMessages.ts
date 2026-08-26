@@ -5,7 +5,7 @@ import {
   ModelSelection,
   OrchestrationProposedPlanId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -58,4 +58,4 @@ export interface ProjectionQueuedMessageRepositoryShape {
 export class ProjectionQueuedMessageRepository extends Context.Service<
   ProjectionQueuedMessageRepository,
   ProjectionQueuedMessageRepositoryShape
->()("t3/persistence/Services/ProjectionQueuedMessages/ProjectionQueuedMessageRepository") {}
+>()("d4research/persistence/Services/ProjectionQueuedMessages/ProjectionQueuedMessageRepository") {}

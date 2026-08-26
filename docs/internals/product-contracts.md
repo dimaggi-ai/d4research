@@ -175,13 +175,21 @@ protocol). Backs Settings → Source control and the PR/MR flows.
 ## orchestration
 
 The event-sourced core: command and event unions for projects and threads (client-dispatchable
-commands like `thread.create`, `thread.turn.start`, `thread.approval.respond`,
-`thread.checkpoint.revert`; internal events like `thread.message.assistant.delta`), the read
-model (`OrchestrationProject`, `OrchestrationThread`, messages, activities — including
-`context-window.updated` — checkpoints, session state), mode enums (`RuntimeMode`:
+commands like `thread.create`, `thread.turn.start`, `thread.queue.steer`, `thread.queue.remove`,
+`thread.approval.respond`, and `thread.checkpoint.revert`; internal commands such as
+`thread.queue.drain`; events including `thread.message-queued`,
+`thread.queued-message-removed`, and `thread.message.assistant.delta`), the read model
+(`OrchestrationProject`, `OrchestrationThread`, persisted `OrchestrationQueuedMessage` entries,
+`pendingTurnStart`, messages, activities — including `context-window.updated` — checkpoints, and
+session state), mode enums (`RuntimeMode`:
 `approval-required` | `auto-accept-edits` | `auto` | `full-access`, `ProviderInteractionMode`:
 `default` | `plan`, `AssistantDeliveryMode`: `streaming` | `buffered`), approval policy/sandbox
 enums, `ModelSelection`, and `ORCHESTRATION_WS_METHODS`.
+
+An active thread's `thread.turn.start` is queue-by-default. The server persists the message before
+acknowledging the command, projects the queue to web, desktop, and mobile, and drains entries in
+stable order after the active turn ends. Explicit steer removes one queued entry and dispatches it
+into a running provider session; remove discards it without adding it to the transcript.
 
 ## t3ProjectFile
 

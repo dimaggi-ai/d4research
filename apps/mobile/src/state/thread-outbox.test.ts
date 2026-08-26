@@ -457,14 +457,13 @@ describe("thread outbox", () => {
     registry.dispose();
   });
 
-  it("only removes a missing-thread message after shell synchronization is live", () => {
+  it("sends existing-thread messages whenever connected and only removes missing threads after sync", () => {
     expect(
       resolveThreadOutboxDeliveryAction({
         isCreation: false,
         threadExists: false,
         shellStatus: "synchronizing",
         environmentConnected: true,
-        threadBusy: false,
       }),
     ).toBe("wait");
     expect(
@@ -473,7 +472,6 @@ describe("thread outbox", () => {
         threadExists: false,
         shellStatus: "live",
         environmentConnected: true,
-        threadBusy: false,
       }),
     ).toBe("remove");
     expect(
@@ -482,9 +480,16 @@ describe("thread outbox", () => {
         threadExists: true,
         shellStatus: "live",
         environmentConnected: true,
-        threadBusy: false,
       }),
     ).toBe("send");
+    expect(
+      resolveThreadOutboxDeliveryAction({
+        isCreation: false,
+        threadExists: true,
+        shellStatus: "live",
+        environmentConnected: false,
+      }),
+    ).toBe("wait");
   });
 
   it("sends queued creations once connected and live, removing already-created ones", () => {
@@ -494,7 +499,6 @@ describe("thread outbox", () => {
         threadExists: false,
         shellStatus: "cached",
         environmentConnected: false,
-        threadBusy: false,
       }),
     ).toBe("wait");
     // Connected but not yet synchronized: a previously delivered creation may
@@ -505,7 +509,6 @@ describe("thread outbox", () => {
         threadExists: false,
         shellStatus: "synchronizing",
         environmentConnected: true,
-        threadBusy: false,
       }),
     ).toBe("wait");
     expect(
@@ -514,7 +517,6 @@ describe("thread outbox", () => {
         threadExists: false,
         shellStatus: "live",
         environmentConnected: true,
-        threadBusy: false,
       }),
     ).toBe("send");
     expect(
@@ -523,7 +525,6 @@ describe("thread outbox", () => {
         threadExists: true,
         shellStatus: "live",
         environmentConnected: true,
-        threadBusy: true,
       }),
     ).toBe("remove");
   });

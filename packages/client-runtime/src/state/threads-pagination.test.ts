@@ -106,6 +106,8 @@ const BASE_THREAD: OrchestrationThread = {
   settledAt: null,
   deletedAt: null,
   messages: [RECENT_MESSAGE],
+  queuedMessages: [],
+  pendingTurnStart: null,
   proposedPlans: [],
   activities: [],
   checkpoints: [checkpoint("turn-2", 2)],

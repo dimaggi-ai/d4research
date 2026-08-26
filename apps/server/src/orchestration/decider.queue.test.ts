@@ -484,4 +484,60 @@ it.layer(NodeServices.layer)("decider queue flows", (it) => {
       expect(error.message).toContain("no queued messages");
     }),
   );
+
+  it.effect("queues a future scheduled message on an idle thread and drains it only when due", () =>
+    Effect.gen(function* () {
+      let readModel = yield* seedReadModel;
+      const scheduledAt = "2026-01-01T01:00:00.000Z";
+      const planned = yield* decideOrchestrationCommand({
+        command: { ...turnStartCommand("scheduled"), scheduledAt },
+        readModel,
+      });
+      const queuedEvents = Array.isArray(planned) ? planned : [planned];
+      expect(queuedEvents).toHaveLength(1);
+      expect(queuedEvents[0]?.type).toBe("thread.message-queued");
+      expect(queuedEvents[0]?.payload).toMatchObject({ scheduledAt });
+      readModel = yield* applyPlanned(readModel, planned);
+
+      const early = yield* Effect.flip(
+        decideOrchestrationCommand({
+          command: {
+            type: "thread.queue.drain",
+            commandId: asCommandId("cmd-drain-early"),
+            threadId: THREAD_ID,
+            createdAt: "2026-01-01T00:59:59.000Z",
+          },
+          readModel,
+        }),
+      );
+      expect(early.message).toContain("no queued messages");
+
+      const due = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.queue.drain",
+          commandId: asCommandId("cmd-drain-due"),
+          threadId: THREAD_ID,
+          createdAt: scheduledAt,
+        },
+        readModel,
+      });
+      expect((Array.isArray(due) ? due : [due]).map((event) => event.type)).toEqual([
+        "thread.queued-message-removed",
+        "thread.message-sent",
+        "thread.turn-start-requested",
+      ]);
+    }),
+  );
+
+  it.effect("rejects a scheduled timestamp that is not in the future", () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          command: { ...turnStartCommand("past"), scheduledAt: NOW },
+          readModel: yield* seedReadModel,
+        }),
+      );
+      expect(error.message).toContain("future time");
+    }),
+  );
 });

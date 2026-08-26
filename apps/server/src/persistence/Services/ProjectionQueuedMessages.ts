@@ -21,12 +21,15 @@ export const ProjectionQueuedMessage = Schema.Struct({
   sourceProposedPlanThreadId: Schema.NullOr(ThreadId),
   sourceProposedPlanId: Schema.NullOr(OrchestrationProposedPlanId),
   queuedAt: IsoDateTime,
+  scheduledAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionQueuedMessage = typeof ProjectionQueuedMessage.Type;
 
 export const ListProjectionQueuedMessagesInput = Schema.Struct({
   threadId: ThreadId,
 });
+export const ListDueProjectionQueuedMessagesInput = Schema.Struct({ now: IsoDateTime });
+export type ListDueProjectionQueuedMessagesInput = typeof ListDueProjectionQueuedMessagesInput.Type;
 export type ListProjectionQueuedMessagesInput = typeof ListProjectionQueuedMessagesInput.Type;
 
 export const DeleteProjectionQueuedMessageInput = Schema.Struct({
@@ -46,6 +49,9 @@ export interface ProjectionQueuedMessageRepositoryShape {
   ) => Effect.Effect<void, ProjectionRepositoryError>;
   readonly listByThreadId: (
     input: ListProjectionQueuedMessagesInput,
+  ) => Effect.Effect<ReadonlyArray<ProjectionQueuedMessage>, ProjectionRepositoryError>;
+  readonly listDue: (
+    input: ListDueProjectionQueuedMessagesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionQueuedMessage>, ProjectionRepositoryError>;
   readonly deleteByMessageId: (
     input: DeleteProjectionQueuedMessageInput,

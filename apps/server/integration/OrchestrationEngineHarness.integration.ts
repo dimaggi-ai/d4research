@@ -82,6 +82,7 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../src/orchestration/Services/RateLimitResumeReactor.ts";
+import { ScheduledQueueReactor } from "../src/orchestration/Services/ScheduledQueueReactor.ts";
 import { ResearchIntegrityReactor } from "../src/orchestration/Services/ResearchIntegrityReactor.ts";
 import { InlineDelegationRunner } from "../src/mcp/toolkits/research/inlineDelegation.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
@@ -498,6 +499,9 @@ export const makeOrchestrationIntegrationHarness = (
           start: () => Effect.void,
           runDue: Effect.void,
         }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ScheduledQueueReactor, { start: () => Effect.void, runDue: Effect.void }),
       ),
       Layer.provideMerge(
         Layer.succeed(ResearchIntegrityReactor, {

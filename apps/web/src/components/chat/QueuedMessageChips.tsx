@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { CornerDownRightIcon, ListEndIcon, Trash2Icon } from "lucide-react";
+import { Clock3Icon, CornerDownRightIcon, ListEndIcon, Trash2Icon } from "lucide-react";
 import type { MessageId, OrchestrationQueuedMessage } from "@d4research/contracts";
 
 import { Button } from "../ui/button";
@@ -40,6 +40,19 @@ export const QueuedMessageChips = memo(function QueuedMessageChips({
               ? queuedMessage.text
               : `${queuedMessage.attachments.length} attachment(s)`}
           </span>
+          {queuedMessage.scheduledAt ? (
+            <time
+              dateTime={queuedMessage.scheduledAt}
+              className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+              title={new Date(queuedMessage.scheduledAt).toLocaleString()}
+            >
+              <Clock3Icon aria-hidden="true" className="size-3.5" />
+              {new Date(queuedMessage.scheduledAt).toLocaleString([], {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </time>
+          ) : null}
           <Button
             size="xs"
             variant="ghost"
@@ -49,7 +62,7 @@ export const QueuedMessageChips = memo(function QueuedMessageChips({
             onClick={() => onSteer(queuedMessage.messageId)}
           >
             <CornerDownRightIcon className="size-3.5" />
-            Steer
+            {queuedMessage.scheduledAt ? "Send now" : "Steer"}
           </Button>
           <Button
             size="icon-xs"

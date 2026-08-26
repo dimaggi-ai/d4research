@@ -40,6 +40,8 @@ upgradeLayer("043_044_D4UpgradeCompatibility", (it) => {
           [42, "ProjectionThreadResumeSchedule"],
           [43, "ProjectionThreadsPinOrderKey"],
           [44, "ProjectionTurnsKeysetIndex"],
+          [45, "ProjectionQueuedMessages"],
+          [46, "ProjectionQueuedMessagesScheduledAt"],
         ],
       );
 
@@ -77,6 +79,8 @@ partialUpgradeLayer("043_044_D4PartialUpgradeCompatibility", (it) => {
         [
           [43, "ProjectionThreadsPinOrderKey"],
           [44, "ProjectionTurnsKeysetIndex"],
+          [45, "ProjectionQueuedMessages"],
+          [46, "ProjectionQueuedMessagesScheduledAt"],
         ],
       );
 
@@ -96,6 +100,8 @@ partialUpgradeLayer("043_044_D4PartialUpgradeCompatibility", (it) => {
           [42, "ProjectionThreadResumeSchedule"],
           [43, "ProjectionThreadsPinOrderKey"],
           [44, "ProjectionTurnsKeysetIndex"],
+          [45, "ProjectionQueuedMessages"],
+          [46, "ProjectionQueuedMessagesScheduledAt"],
         ],
       );
     }),

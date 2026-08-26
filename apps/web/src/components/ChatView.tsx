@@ -305,6 +305,7 @@ import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import { QueuedMessageChips } from "./chat/QueuedMessageChips";
+import { parseScheduledMessage } from "@d4research/client-runtime/schedule";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -5336,13 +5337,26 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPreviewAnnotations = queuedRequestForSend ? [] : annotatedPreviewAnnotations;
     const composerReviewComments = queuedRequestForSend ? [] : sendContextReviewComments;
     const promptForSend = queuedRequestForSend?.text ?? promptRef.current;
+    const scheduleResult = parseScheduledMessage(promptForSend);
+    if (scheduleResult.kind === "invalid") {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Could not schedule message",
+          description: scheduleResult.error,
+        }),
+      );
+      return;
+    }
+    const promptForDispatch =
+      scheduleResult.kind === "scheduled" ? scheduleResult.text : promptForSend;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
       expiredTerminalContextCount,
       hasSendableContent,
     } = deriveComposerSendState({
-      prompt: promptForSend,
+      prompt: promptForDispatch,
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
@@ -5351,7 +5365,12 @@ function ChatViewContent(props: ChatViewProps) {
         composerReviewComments.length,
       pastedContextCount: composerPastedContexts.length,
     });
-    if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
+    if (
+      scheduleResult.kind === "none" &&
+      !directAnnotation &&
+      showPlanFollowUpPrompt &&
+      activeProposedPlan
+    ) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
@@ -5431,7 +5450,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const renderOutgoingMessage = (pastedContexts: ReadonlyArray<PastedContextDraft>) => {
       const messageText = composeUserMessageContexts({
-        prompt: promptForSend,
+        prompt: promptForDispatch,
         pastedContexts,
         terminalContexts: sendableComposerTerminalContexts,
         elementContexts: composerElementContexts,
@@ -5529,7 +5548,7 @@ function ChatViewContent(props: ChatViewProps) {
     };
     if (phase === "running" && queuedRequestForSend === null) {
       const queuedText = composeUserMessageContexts({
-        prompt: promptForSend,
+        prompt: promptForDispatch,
         pastedContexts: preparedOutgoingMessage.contexts,
         terminalContexts: sendableComposerTerminalContexts,
         elementContexts: composerElementContexts,
@@ -5587,7 +5606,11 @@ function ChatViewContent(props: ChatViewProps) {
     // delegates inherit the correct cwd and memory scope rather than whatever
     // this thread happens to be checked out in. A brand-new empty thread is
     // already a dedicated surface, so run in place there.
-    if (isDeepResearchPrompt(promptForSend) && threadHasStarted(activeThread)) {
+    if (
+      scheduleResult.kind === "none" &&
+      isDeepResearchPrompt(promptForDispatch) &&
+      threadHasStarted(activeThread)
+    ) {
       const researchThreadId = newThreadId();
       const researchCreatedAt = new Date().toISOString();
       const researchTitle = truncate(trimmed || "Research");
@@ -5959,6 +5982,9 @@ function ChatViewContent(props: ChatViewProps) {
           runtimeMode,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
+          ...(scheduleResult.kind === "scheduled"
+            ? { scheduledAt: scheduleResult.scheduledAt }
+            : {}),
           createdAt: messageCreatedAt,
         },
       });

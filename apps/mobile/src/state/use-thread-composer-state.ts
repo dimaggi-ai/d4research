@@ -11,6 +11,7 @@ import {
   type ThreadId,
 } from "@d4research/contracts";
 import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
+import { parseScheduledMessage } from "@d4research/client-runtime/schedule";
 import { deriveActiveWorkStartedAt } from "@d4research/shared/orchestrationTiming";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
@@ -152,6 +153,12 @@ export function useThreadComposerState() {
     if (text.length === 0 && attachments.length === 0) {
       return null;
     }
+    const scheduleResult = parseScheduledMessage(text);
+    if (scheduleResult.kind === "invalid") {
+      setPendingConnectionError(scheduleResult.error);
+      return null;
+    }
+    const messageText = scheduleResult.kind === "scheduled" ? scheduleResult.text : text;
 
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
@@ -165,12 +172,13 @@ export function useThreadComposerState() {
       threadId: selectedThreadShell.id,
       messageId,
       commandId: CommandId.make(metadata.commandId),
-      text,
+      text: messageText,
       attachments,
       modelSelection: draft.modelSelection ?? thread.modelSelection,
       runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
       interactionMode: draft.interactionMode ?? thread.interactionMode,
       createdAt: metadata.createdAt,
+      ...(scheduleResult.kind === "scheduled" ? { scheduledAt: scheduleResult.scheduledAt } : {}),
     });
     clearComposerDraftContent(threadKey);
     enqueuePromise.catch((error: unknown) => {

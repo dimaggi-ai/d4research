@@ -397,6 +397,9 @@ export function applyThreadDetailEvent(
           ? { sourceProposedPlan: event.payload.sourceProposedPlan }
           : {}),
         queuedAt: event.payload.queuedAt,
+        ...(event.payload.scheduledAt !== undefined
+          ? { scheduledAt: event.payload.scheduledAt }
+          : {}),
       };
       return {
         kind: "updated",

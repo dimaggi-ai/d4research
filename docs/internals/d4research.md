@@ -134,6 +134,12 @@ client. Web, desktop, and mobile render that shared projection; the server drain
 active turn ends, so delivery does not depend on a browser tab or mobile React tree remaining
 active. Client storage is only a pre-acknowledgement retry buffer for disconnected sends.
 
+Scheduled sends use the same projection. Clients parse `!schedule:` and `#schedule:` into an ISO
+`scheduledAt` timestamp and clean message text; the server validates that the timestamp is future,
+persists it, and periodically dispatches due entries through `thread.queue.drain`. The projection's
+partial due-time index makes the sweep independent of connected clients and avoids process-local
+timers that would be lost on restart.
+
 Research changes must continue to account for:
 
 - web, desktop, and mobile surfaces where the feature is applicable;

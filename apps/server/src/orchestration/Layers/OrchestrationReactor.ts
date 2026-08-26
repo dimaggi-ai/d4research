@@ -11,6 +11,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../Services/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactor } from "../Services/ResearchIntegrityReactor.ts";
+import { ScheduledQueueReactor } from "../Services/ScheduledQueueReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
@@ -19,6 +20,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const threadDeletionReactor = yield* ThreadDeletionReactor;
   const rateLimitResumeReactor = yield* RateLimitResumeReactor;
   const researchIntegrityReactor = yield* ResearchIntegrityReactor;
+  const scheduledQueueReactor = yield* ScheduledQueueReactor;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* providerRuntimeIngestion.start();
@@ -26,6 +28,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
     yield* rateLimitResumeReactor.start();
+    yield* scheduledQueueReactor.start();
     yield* researchIntegrityReactor.start();
   });
 

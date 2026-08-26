@@ -190,6 +190,11 @@ An active thread's `thread.turn.start` is queue-by-default. The server persists 
 acknowledging the command, projects the queue to web, desktop, and mobile, and drains entries in
 stable order after the active turn ends. Explicit steer removes one queued entry and dispatches it
 into a running provider session; remove discards it without adding it to the transcript.
+`thread.turn.start.scheduledAt` places a future request in that same durable queue even when the
+thread is idle. `thread.message-queued.scheduledAt` and `OrchestrationQueuedMessage.scheduledAt`
+carry the due time to every client. A server reactor scans the indexed projection for due entries,
+so execution does not depend on a browser or phone remaining connected; future entries never block
+an unscheduled or already-due entry behind them.
 
 ## t3ProjectFile
 

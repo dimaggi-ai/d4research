@@ -1184,9 +1184,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       // dispatched (by a send or a queue drain) but the provider has not
       // reported the session status yet — a send in that gap must queue,
       // not open a second concurrent turn ahead of already-queued chips.
+      const scheduledAtMs =
+        command.scheduledAt === undefined ? null : Date.parse(command.scheduledAt);
+      if (scheduledAtMs !== null && scheduledAtMs <= Date.parse(command.createdAt)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Scheduled messages must be set for a future time.",
+        });
+      }
       if (
-        command.bootstrap === undefined &&
-        (isThreadTurnActive(targetThread) || targetThread.pendingTurnStart !== null)
+        scheduledAtMs !== null ||
+        (command.bootstrap === undefined &&
+          (isThreadTurnActive(targetThread) || targetThread.pendingTurnStart !== null))
       ) {
         if (targetThread.queuedMessages.length >= MAX_THREAD_QUEUED_MESSAGES) {
           return yield* new OrchestrationCommandInvariantError({
@@ -1212,6 +1221,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               : {}),
             ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
             queuedAt: command.createdAt,
+            ...(command.scheduledAt !== undefined ? { scheduledAt: command.scheduledAt } : {}),
           },
         };
       }
@@ -1315,11 +1325,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const queuedMessage = thread.queuedMessages.at(0);
+      const commandTime = Date.parse(command.createdAt);
+      const queuedMessage = thread.queuedMessages.find(
+        (entry) => entry.scheduledAt === undefined || Date.parse(entry.scheduledAt) <= commandTime,
+      );
       if (!queuedMessage) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: `Thread '${command.threadId}' has no queued messages to drain.`,
+          detail: `Thread '${command.threadId}' has no queued messages that are due to drain.`,
         });
       }
       // The user may have raced a new message in between turn completion and

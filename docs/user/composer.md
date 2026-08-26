@@ -95,6 +95,23 @@ the server acknowledges a send from mobile, the phone or browser does not need t
 open: the server dispatches the next request when the current turn settles. A disconnected client
 keeps a temporary local retry copy only until it can hand the request to the server.
 
+To send later, begin a message with `!schedule:<time>` or `#schedule:<time>`. Relative times use
+`s`, `m`, `h`, or `d`; clock times use 12-hour or 24-hour notation:
+
+```text
+!schedule:30s check the deployment
+!schedule:2h review the logs
+#schedule:4pm prepare the status update
+#schedule:16:30 run the final checks
+```
+
+The prefix is removed before the agent receives the request. Scheduled requests appear in the same
+server-owned queue with their local due date and time. **Send now** dispatches one early; remove
+deletes it. Clock times mean the next occurrence in the sending client's time zone. Invalid mixed
+notation such as `16pm` is rejected instead of guessed. The environment server dispatches due
+requests while clients are closed; if the thread is busy, the request remains queued until it can
+start safely.
+
 ## Approvals and user input
 
 When the provider asks for approval (a command, an edit) or for user input, the request surfaces as

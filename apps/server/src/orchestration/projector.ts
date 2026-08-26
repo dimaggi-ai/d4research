@@ -582,6 +582,7 @@ export function projectEvent(
                 ? { sourceProposedPlan: payload.sourceProposedPlan }
                 : {}),
               queuedAt: payload.queuedAt,
+              ...(payload.scheduledAt !== undefined ? { scheduledAt: payload.scheduledAt } : {}),
             },
           ];
 

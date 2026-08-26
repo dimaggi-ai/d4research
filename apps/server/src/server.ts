@@ -68,6 +68,8 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { RateLimitResumeReactorLive } from "./orchestration/Layers/RateLimitResumeReactor.ts";
+import { ScheduledQueueReactorLive } from "./orchestration/Layers/ScheduledQueueReactor.ts";
+import { ProjectionQueuedMessageRepositoryLive } from "./persistence/Layers/ProjectionQueuedMessages.ts";
 import { ResearchIntegrityReactorLive } from "./orchestration/Layers/ResearchIntegrityReactor.ts";
 import { ResearchDelegationBudgetLive } from "./mcp/toolkits/research/budget.ts";
 import { InlineDelegationRunner } from "./mcp/toolkits/research/inlineDelegation.ts";
@@ -240,6 +242,8 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(RateLimitResumeReactorLive),
+  Layer.provideMerge(ScheduledQueueReactorLive),
+  Layer.provideMerge(ProjectionQueuedMessageRepositoryLive),
   Layer.provideMerge(ResearchIntegrityReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(RuntimeReceiptBusLive),

@@ -11,6 +11,7 @@ import {
   DeleteProjectionQueuedMessageInput,
   DeleteProjectionQueuedMessagesInput,
   ListProjectionQueuedMessagesInput,
+  ListDueProjectionQueuedMessagesInput,
   ProjectionQueuedMessage,
   ProjectionQueuedMessageRepository,
   type ProjectionQueuedMessageRepositoryShape,
@@ -41,7 +42,8 @@ const makeProjectionQueuedMessageRepository = Effect.gen(function* () {
         model_selection_json,
         source_proposed_plan_thread_id,
         source_proposed_plan_id,
-        queued_at
+        queued_at,
+        scheduled_at
       )
       VALUES (
         ${row.messageId},
@@ -51,7 +53,8 @@ const makeProjectionQueuedMessageRepository = Effect.gen(function* () {
         ${row.modelSelection !== null ? JSON.stringify(row.modelSelection) : null},
         ${row.sourceProposedPlanThreadId},
         ${row.sourceProposedPlanId},
-        ${row.queuedAt}
+        ${row.queuedAt},
+        ${row.scheduledAt}
       )
     `,
   });
@@ -68,10 +71,27 @@ const makeProjectionQueuedMessageRepository = Effect.gen(function* () {
         model_selection_json AS "modelSelection",
         source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
         source_proposed_plan_id AS "sourceProposedPlanId",
-        queued_at AS "queuedAt"
+        queued_at AS "queuedAt",
+        scheduled_at AS "scheduledAt"
       FROM projection_queued_messages
       WHERE thread_id = ${threadId}
       ORDER BY rowid ASC
+    `,
+  });
+
+  const listDueProjectionQueuedMessageRows = SqlSchema.findAll({
+    Request: ListDueProjectionQueuedMessagesInput,
+    Result: ProjectionQueuedMessageDbRowSchema,
+    execute: ({ now }) => sql`
+      SELECT
+        message_id AS "messageId", thread_id AS "threadId", text,
+        attachments_json AS "attachments", model_selection_json AS "modelSelection",
+        source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
+        source_proposed_plan_id AS "sourceProposedPlanId", queued_at AS "queuedAt",
+        scheduled_at AS "scheduledAt"
+      FROM projection_queued_messages
+      WHERE scheduled_at IS NOT NULL AND scheduled_at <= ${now}
+      ORDER BY scheduled_at ASC, rowid ASC
     `,
   });
 
@@ -102,6 +122,10 @@ const makeProjectionQueuedMessageRepository = Effect.gen(function* () {
         toPersistenceSqlError("ProjectionQueuedMessageRepository.listByThreadId:query"),
       ),
     );
+  const listDue: ProjectionQueuedMessageRepositoryShape["listDue"] = (input) =>
+    listDueProjectionQueuedMessageRows(input).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionQueuedMessageRepository.listDue:query")),
+    );
 
   const deleteByMessageId: ProjectionQueuedMessageRepositoryShape["deleteByMessageId"] = (input) =>
     deleteProjectionQueuedMessageRow(input).pipe(
@@ -120,6 +144,7 @@ const makeProjectionQueuedMessageRepository = Effect.gen(function* () {
   return {
     upsert,
     listByThreadId,
+    listDue,
     deleteByMessageId,
     deleteByThreadId,
   } satisfies ProjectionQueuedMessageRepositoryShape;

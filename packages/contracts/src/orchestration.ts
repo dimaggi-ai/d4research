@@ -374,6 +374,7 @@ export const OrchestrationQueuedMessage = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   queuedAt: IsoDateTime,
+  scheduledAt: Schema.optional(IsoDateTime),
 });
 export type OrchestrationQueuedMessage = typeof OrchestrationQueuedMessage.Type;
 
@@ -858,6 +859,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  scheduledAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 
@@ -877,6 +879,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  scheduledAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 
@@ -1309,6 +1312,7 @@ export const ThreadMessageQueuedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   queuedAt: IsoDateTime,
+  scheduledAt: Schema.optional(IsoDateTime),
 });
 
 export const ThreadQueuedMessageRemovedReason = Schema.Literals(["user", "dispatched"]);

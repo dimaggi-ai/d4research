@@ -12,6 +12,7 @@ import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../Services/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactor } from "../Services/ResearchIntegrityReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
+import { ScheduledQueueReactor } from "../Services/ScheduledQueueReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 
 describe("OrchestrationReactor", () => {
@@ -29,6 +30,15 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provideMerge(
+          Layer.succeed(ScheduledQueueReactor, {
+            start: () => {
+              started.push("scheduled-queue-reactor");
+              return Effect.void;
+            },
+            runDue: Effect.void,
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(ProviderRuntimeIngestionService, {
             start: () => {
@@ -96,6 +106,7 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "thread-deletion-reactor",
       "rate-limit-resume-reactor",
+      "scheduled-queue-reactor",
       "research-integrity-reactor",
     ]);
 

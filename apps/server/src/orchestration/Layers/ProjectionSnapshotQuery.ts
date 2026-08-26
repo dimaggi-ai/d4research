@@ -363,6 +363,7 @@ function mapQueuedMessageRow(
         }
       : {}),
     queuedAt: row.queuedAt,
+    ...(row.scheduledAt !== null ? { scheduledAt: row.scheduledAt } : {}),
   };
 }
 
@@ -596,7 +597,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           source_proposed_plan_id AS "sourceProposedPlanId",
-          queued_at AS "queuedAt"
+          queued_at AS "queuedAt",
+          scheduled_at AS "scheduledAt"
         FROM projection_queued_messages
         ORDER BY thread_id ASC, rowid ASC
       `,
@@ -615,7 +617,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           model_selection_json AS "modelSelection",
           source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           source_proposed_plan_id AS "sourceProposedPlanId",
-          queued_at AS "queuedAt"
+          queued_at AS "queuedAt",
+          scheduled_at AS "scheduledAt"
         FROM projection_queued_messages
         WHERE thread_id = ${threadId}
         ORDER BY rowid ASC

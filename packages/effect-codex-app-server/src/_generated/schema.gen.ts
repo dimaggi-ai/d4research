@@ -2616,11 +2616,16 @@ export const ServerNotification__SpendControlLimitSnapshot = Schema.Struct({
   used: Schema.String,
 });
 
-export type ServerNotification__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type ServerNotification__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const ServerNotification__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type ServerNotification__TerminalInteractionNotification = {
@@ -6284,11 +6289,16 @@ export const V2ReviewStartResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ReviewStartResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ReviewStartResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ReviewStartResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ReviewStartResponse__TextElement = {
@@ -6720,11 +6730,16 @@ export const V2ThreadForkResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ThreadForkResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ThreadForkResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ThreadForkResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ThreadForkResponse__TextElement = {
@@ -7119,11 +7134,16 @@ export const V2ThreadListResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ThreadListResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ThreadListResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ThreadListResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ThreadListResponse__TextElement = {
@@ -7760,11 +7780,16 @@ export const V2ThreadReadResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ThreadReadResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ThreadReadResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ThreadReadResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ThreadReadResponse__TextElement = {
@@ -8342,11 +8367,16 @@ export const V2ThreadResumeResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ThreadResumeResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ThreadResumeResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ThreadResumeResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ThreadResumeResponse__TextElement = {
@@ -9458,11 +9488,16 @@ export const V2ThreadStartResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2ThreadStartResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2ThreadStartResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2ThreadStartResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2ThreadStartResponse__TextElement = {
@@ -10761,11 +10796,16 @@ export const V2TurnStartResponse__ReasoningEffort = Schema.String.annotate({
   description: "A non-empty reasoning effort value advertised by the model.",
 }).check(Schema.isMinLength(1));
 
-export type V2TurnStartResponse__SubAgentActivityKind = "started" | "interacted" | "interrupted";
+export type V2TurnStartResponse__SubAgentActivityKind =
+  | "started"
+  | "interacted"
+  | "interrupted"
+  | "completed";
 export const V2TurnStartResponse__SubAgentActivityKind = Schema.Literals([
   "started",
   "interacted",
   "interrupted",
+  "completed",
 ]);
 
 export type V2TurnStartResponse__TextElement = {

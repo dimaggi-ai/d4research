@@ -3,12 +3,23 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import * as CodexError from "../errors.ts";
+import * as CodexSchema from "../schema.ts";
 import * as Shared from "./shared.ts";
 
 const decodeNestedNumberPayload = Schema.decodeUnknownEffect(
   Schema.Struct({ profile: Schema.Struct({ token: Schema.Number }) }),
 );
 const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
+it.effect("accepts completed subagent activity from resumed Codex threads", () =>
+  Effect.gen(function* () {
+    const kind = yield* Schema.decodeUnknownEffect(
+      CodexSchema.V2ThreadResumeResponse__SubAgentActivityKind,
+    )("completed");
+
+    assert.equal(kind, "completed");
+  }),
+);
 
 it.effect("preserves schema decode diagnostics without deriving the message from the cause", () =>
   Effect.gen(function* () {

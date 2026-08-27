@@ -92,6 +92,17 @@ click the blurred email to reveal it.
 
 Use display names and accent colors to make accounts easy to tell apart in the model picker.
 
+## Compact A Long Thread
+
+Choose `/compact` from the composer's command menu and send it without attachments. d4research
+starts Codex's native thread compaction instead of sending the text as an ordinary prompt. The
+visible chat history remains authoritative and stays on screen; Codex reduces the context it carries
+forward for later turns.
+
+Codex performs this operation with the thread's active model. Its app-server protocol does not offer
+a separate model field for manual compaction, so selecting Terra only for this operation is not
+currently possible without abandoning the native Codex thread.
+
 ## I Need A Different API Key Or Endpoint
 
 Use the provider's Environment variables section in Settings.

@@ -19,6 +19,7 @@ import {
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import { normalizeModelSlug } from "@d4research/shared/model";
 import * as Crypto from "effect/Crypto";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Cause from "effect/Cause";
@@ -140,6 +141,8 @@ export interface CodexSessionRuntimeShape {
     input: CodexSessionRuntimeSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
+  /** Starts Codex's protocol-native manual context compaction. */
+  readonly compactThread: () => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
     numTurns: number,
@@ -1907,6 +1910,18 @@ export const makeCodexSessionRuntime = (
             threadId: providerThreadId,
             turnId: effectiveTurnId,
           });
+        }),
+      compactThread: () =>
+        Effect.gen(function* () {
+          const providerThreadId = yield* readProviderThreadId;
+          yield* client.request("thread/compact/start", { threadId: providerThreadId });
+          const turnId = TurnId.make(`compact:${yield* Clock.currentTimeMillis}`);
+          yield* updateSession(sessionRef, { status: "running", activeTurnId: turnId });
+          return {
+            threadId: options.threadId,
+            turnId,
+            resumeCursor: { threadId: providerThreadId },
+          } satisfies ProviderTurnStartResult;
         }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;

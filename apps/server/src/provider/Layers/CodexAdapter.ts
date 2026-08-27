@@ -1870,6 +1870,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     );
 
     const session = yield* requireSession(input.threadId);
+    if (input.input?.trim().toLowerCase() === "/compact" && codexAttachments.length === 0) {
+      return yield* session.runtime
+        .compactThread()
+        .pipe(
+          Effect.mapError((cause) =>
+            mapCodexRuntimeError(input.threadId, "thread/compact/start", cause),
+          ),
+        );
+    }
     const reasoningEffort =
       input.modelSelection?.instanceId === boundInstanceId
         ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")

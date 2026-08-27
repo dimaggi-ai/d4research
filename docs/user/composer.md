@@ -8,12 +8,12 @@ commands, images, queued follow-ups, and the research toggle.
 Three characters open a completion menu at the cursor (detected by `detectComposerTrigger` in
 `packages/shared/src/composerTrigger.ts`):
 
-| Trigger | Menu                               | What gets inserted                                                                      |
-| ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `@`     | Files and folders in the workspace | A path mention. Paths with spaces are quoted automatically.                             |
-| `$`     | Skills                             | `$<skill-name>` — the provider's own skills, or your installed ones                     |
-| `/`     | Commands                           | Built-in `/model`, `/plan`, `/default`, plus the selected provider's own slash commands |
-| `!`     | Delegation targets                 | `!provider:model` — only at the very start of a message                                 |
+| Trigger | Menu                               | What gets inserted                                                                                  |
+| ------- | ---------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `@`     | Files and folders in the workspace | A path mention. Paths with spaces are quoted automatically.                                         |
+| `$`     | Skills                             | `$<skill-name>` — the provider's own skills, or your installed ones                                 |
+| `/`     | Commands                           | Built-in `/model`, `/plan`, `/default`, `/compact`, plus the selected provider's own slash commands |
+| `!`     | Delegation targets                 | `!provider:model` — only at the very start of a message                                             |
 
 - **File mentions** search the project's entries as you type. Dragging a file from the workspace
   file tree into the composer inserts a markdown-style file link (`[name](path)`) — mentions and
@@ -38,6 +38,11 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
   plugin can include executable hooks and MCP servers in addition to the skill.
 - `/model` jumps into the model picker; `/plan` and `/default` switch the interaction mode. A
   standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.
+- `/compact` is available for every selected agent. It asks that provider to reduce its active
+  context while the visible d4research chat remains intact. Codex uses its native thread-compaction
+  operation; providers that expose `/compact` receive their own command. Compaction uses the
+  provider session's active model—Codex does not currently expose a separate compaction-model
+  override.
 
 ## Attachments
 

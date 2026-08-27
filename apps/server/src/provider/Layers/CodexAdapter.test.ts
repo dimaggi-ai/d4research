@@ -91,6 +91,14 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
   );
 
+  public readonly compactThreadImpl = vi.fn(
+    (): Promise<ProviderTurnStartResult> =>
+      Promise.resolve({
+        threadId: this.options.threadId,
+        turnId: asTurnId("compact-turn-1"),
+      }),
+  );
+
   public readonly readThreadImpl = vi.fn(
     (): Promise<CodexThreadSnapshot> =>
       Promise.resolve({
@@ -137,6 +145,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   interruptTurn(turnId?: TurnId) {
     return Effect.promise(() => this.interruptTurnImpl(turnId));
+  }
+
+  compactThread() {
+    return Effect.promise(() => this.compactThreadImpl());
   }
 
   // When set, readThread fails with this typed error instead of resolving —
@@ -421,6 +433,27 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         effort: "high",
         serviceTier: "priority",
       });
+    }),
+  );
+
+  it.effect("routes the exact /compact command to Codex native compaction", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("sess-compact");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.sendTurnImpl.mockClear();
+      runtime.compactThreadImpl.mockClear();
+
+      yield* adapter.sendTurn({ threadId, input: " /compact ", attachments: [] });
+
+      NodeAssert.equal(runtime.compactThreadImpl.mock.calls.length, 1);
+      NodeAssert.equal(runtime.sendTurnImpl.mock.calls.length, 0);
     }),
   );
 

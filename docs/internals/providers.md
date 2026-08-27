@@ -164,6 +164,13 @@ Each provider probe produces a `ServerProvider` snapshot
 where the CLI exposes them — `slashCommands` and `skills` that the web composer surfaces as `/` and
 `$` completions.
 
+The composer also supplies `/compact` for every provider and removes a same-named command from the
+provider-discovered list so it appears once. Most providers receive it through their normal command
+path. Codex is the exception at the adapter boundary: an exact, attachment-free `/compact` is routed
+to app-server's `thread/compact/start`, because sending that text through `turn/start` would be an
+ordinary prompt. The native method accepts only the provider thread id, so the active Codex model
+owns summarization; d4research cannot select a separate compression model for that operation.
+
 `discoverClaudeSkills` ([`ClaudeSkills.ts`](../../apps/server/src/provider/Drivers/ClaudeSkills.ts))
 scans `<configDir>/skills` (scope `user`) and `<cwd>/.claude/skills` (scope `project`). The scan
 recurses up to three levels so category layouts (`skills/writing/copywriting/SKILL.md`) are found;

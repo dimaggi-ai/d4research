@@ -1343,17 +1343,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/default",
           description: "Switch this thread back to normal build mode",
         },
+        {
+          id: "slash:compact",
+          type: "slash-command",
+          command: "compact",
+          label: "/compact",
+          description: "Compact this agent's context while keeping the chat history",
+        },
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
-      const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
-        (command) => ({
+      const builtInCommandNames = new Set<string>(
+        builtInSlashCommandItems.map((item) => item.command),
+      );
+      const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? [])
+        .filter((command) => !builtInCommandNames.has(command.name.toLowerCase()))
+        .map((command) => ({
           id: `provider-slash-command:${selectedProvider}:${command.name}`,
           type: "provider-slash-command" as const,
           provider: selectedProvider,
           command,
           label: `/${command.name}`,
           description: command.description ?? command.input?.hint ?? "Run provider command",
-        }),
-      );
+        }));
       const query = composerTrigger.query.trim().toLowerCase();
       const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
       if (!query) {
@@ -2004,6 +2014,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           if (applied) {
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
+          }
+          return;
+        }
+        if (item.command === "compact") {
+          const replacement = "/compact ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) {
+            setComposerHighlightedItemId(null);
           }
           return;
         }

@@ -351,6 +351,19 @@ describe("ServerSettings dev pipelines", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts atomic scenario upserts and removals", () => {
+    expect(
+      decodeServerSettingsPatch({
+        dev: { upsertScenario: pipeline },
+        research: { removeScenario: "starter" },
+      }),
+    ).toMatchObject({
+      dev: { upsertScenario: pipeline },
+      research: { removeScenario: "starter" },
+    });
+    expect(() => decodeServerSettingsPatch({ dev: { removeScenario: "Not Valid" } })).toThrow();
+  });
 });
 
 describe("ServerSettings.sourceControlWritingStyle", () => {

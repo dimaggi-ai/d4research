@@ -123,6 +123,35 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
+function applyScenarioPatch(
+  current: ServerSettings["research"]["scenarios"],
+  patch: {
+    readonly scenarios?: ServerSettings["research"]["scenarios"];
+    readonly upsertScenario?: {
+      readonly name: string;
+      readonly pipelinePrompt: string;
+      readonly promptFiles?: ServerSettings["research"]["scenarios"][number]["promptFiles"];
+    };
+    readonly removeScenario?: string;
+  },
+): ServerSettings["research"]["scenarios"] {
+  let scenarios = patch.scenarios ? [...patch.scenarios] : [...current];
+  if (patch.upsertScenario) {
+    const index = scenarios.findIndex((scenario) => scenario.name === patch.upsertScenario?.name);
+    const existing = index === -1 ? undefined : scenarios[index];
+    const upserted = {
+      ...patch.upsertScenario,
+      promptFiles: patch.upsertScenario.promptFiles ?? existing?.promptFiles ?? [],
+    };
+    if (index === -1) scenarios.push(upserted);
+    else scenarios[index] = upserted;
+  }
+  if (patch.removeScenario) {
+    scenarios = scenarios.filter((scenario) => scenario.name !== patch.removeScenario);
+  }
+  return scenarios;
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   patch: ServerSettingsPatch,
@@ -134,8 +163,16 @@ export function applyServerSettingsPatch(
     backgroundActivityProfile,
     backgroundActivity,
     skills: skillsPatch,
+    research: researchPatch,
+    dev: devPatch,
     ...patchForMerge
   } = patch;
+  const {
+    upsertScenario: researchUpsert,
+    removeScenario: researchRemove,
+    ...researchForMerge
+  } = researchPatch ?? {};
+  const { upsertScenario: devUpsert, removeScenario: devRemove, ...devForMerge } = devPatch ?? {};
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
   const backgroundActivityPatch =
     backgroundActivityProfile !== undefined
@@ -171,7 +208,17 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
-  const next = deepMerge(current, patchForMerge);
+  const next = deepMerge(current, {
+    ...patchForMerge,
+    ...(researchPatch ? { research: researchForMerge } : {}),
+    ...(devPatch ? { dev: devForMerge } : {}),
+  });
+  const nextResearchScenarios = researchPatch
+    ? applyScenarioPatch(current.research.scenarios, researchPatch)
+    : next.research.scenarios;
+  const nextDevScenarios = devPatch
+    ? applyScenarioPatch(current.dev.scenarios, devPatch)
+    : next.dev.scenarios;
   const replacedSkills = {
     ...next.skills,
     ...(skillsPatch?.enabledByDefault !== undefined
@@ -237,21 +284,34 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
-    ...(patch.research?.scenarios !== undefined || patch.research?.promptFiles !== undefined
+    ...(researchPatch?.scenarios !== undefined ||
+    researchUpsert !== undefined ||
+    researchRemove !== undefined ||
+    researchPatch?.promptFiles !== undefined
       ? {
           research: {
             ...next.research,
-            ...(patch.research.scenarios !== undefined
-              ? { scenarios: patch.research.scenarios }
+            scenarios: nextResearchScenarios,
+            ...(researchRemove === current.research.activeScenario &&
+            researchPatch?.activeScenario === undefined
+              ? { activeScenario: nextResearchScenarios[0]?.name ?? "" }
               : {}),
-            ...(patch.research.promptFiles !== undefined
-              ? { promptFiles: patch.research.promptFiles }
+            ...(researchPatch?.promptFiles !== undefined
+              ? { promptFiles: researchPatch.promptFiles }
               : {}),
           },
         }
       : {}),
-    ...(patch.dev?.scenarios !== undefined
-      ? { dev: { ...next.dev, scenarios: patch.dev.scenarios } }
+    ...(devPatch?.scenarios !== undefined || devUpsert !== undefined || devRemove !== undefined
+      ? {
+          dev: {
+            ...next.dev,
+            scenarios: nextDevScenarios,
+            ...(devRemove === current.dev.activeScenario && devPatch?.activeScenario === undefined
+              ? { activeScenario: nextDevScenarios[0]?.name ?? "" }
+              : {}),
+          },
+        }
       : {}),
     ...(skillsPatch !== undefined ? { skills: nextSkills } : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),

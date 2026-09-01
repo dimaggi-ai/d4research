@@ -132,6 +132,25 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 Clients send typed WebSocket requests. The server turns them into _commands_, a pure _decider_ turns commands into persisted _events_, and a _projector_ derives the read model the UI renders. Provider CLIs run as subprocesses; per-provider _adapters_ translate their native protocols into orchestration events. Side effects run in queue-backed _reactors_ that emit _receipts_ when milestones land. Each turn ends with a _checkpoint_, a hidden git ref, so the app can diff and restore.
 
+## Dev and research pipeline API
+
+Every provider agent connected through d4research receives the authenticated `t3-code` MCP
+toolkit. Use its pipeline tools instead of reading or editing `settings.json` directly:
+
+- `pipeline_list` discovers the environment's named Dev and Research pipelines.
+- `pipeline_get` returns the exact prompt, attachments, trigger, and active state. Always call it
+  before modifying an existing pipeline.
+- `pipeline_upsert` creates or atomically replaces one scenario. Send the complete pipeline prompt;
+  omit `promptFiles` to preserve existing attachments.
+- `pipeline_delete` removes one scenario and is destructive. Use it only when the user explicitly
+  asks for deletion.
+
+Pipeline definitions are environment settings, not repository scripts. Their schema lives in
+`packages/contracts/src/settings.ts`, atomic patch behavior in
+`packages/shared/src/serverSettings.ts`, and agent API implementation in
+`apps/server/src/mcp/toolkits/pipelines/`. Product execution remains in
+`packages/shared/src/researchPipeline.ts` and `apps/server/src/mcp/toolkits/research/`.
+
 Full glossary with file links: `docs/internals/glossary.md`
 
 ## Where code lives
@@ -155,3 +174,22 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Editorial quality gate (hard rule)
+
+Reader-facing English prose MUST pass an editorial review before it is treated as final or publish-ready. This includes website and product copy, articles, release notes, announcements, README and documentation prose, UI onboarding/help/error text, narrative reports, and material rewrites.
+
+Required sequence:
+
+1. Draft from verified facts and keep the source meaning intact.
+2. Edit for clarity, specificity, consistent terminology, and an appropriate tone.
+3. Recheck every fact, number, quotation, product name, command, and link after editing.
+4. In the handoff, report `Editorial review: passed — <files>` or `Editorial review: not applicable — code-only change`.
+
+Reviewers MUST treat missing editorial-review evidence as blocking when changed prose is in scope.
+
+Never invent metrics, quotations, customers, anecdotes, personal experience, or certainty during editing. Style may change; facts may not.
+
+This gate does not apply to executable code, identifiers, machine-readable schemas or protocols, generated files, literal quotations, or legal/regulatory text that must remain exact. Code comments need technical clarity, not marketing treatment.
+
+If editorial review cannot be completed, stop before merge, publish, or deploy and request review. Do not silently skip the gate.

@@ -31,3 +31,4 @@ we may close it without merging it, or never review it.
 - [ ] I explained what changed and why
 - [ ] I included before/after screenshots for any UI changes
 - [ ] I included a video for animation/interaction changes
+- [ ] Editorial review passed for changed reader-facing prose, or this is a code-only change

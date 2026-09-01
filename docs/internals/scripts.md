@@ -41,6 +41,26 @@ authenticated.
 - Pass dev-runner flags directly after the root task name, for example:
   `vp run dev --home-dir /tmp/t3code-dev`
 
+### Agent pipeline API
+
+Provider agents use the authenticated `t3-code` MCP server to discover and maintain the named Dev
+and Research pipeline scenarios stored in the current environment:
+
+| Tool              | Purpose                                                                    |
+| ----------------- | -------------------------------------------------------------------------- |
+| `pipeline_list`   | List scenario names, kinds, triggers, active state, and attachment names.  |
+| `pipeline_get`    | Read one exact scenario before editing it.                                 |
+| `pipeline_upsert` | Atomically create or replace one scenario; omitted files remain unchanged. |
+| `pipeline_delete` | Atomically delete one scenario and repair the active selection if needed.  |
+
+These tools expose only pipeline fields, never unrelated server settings or provider secrets. The
+MCP bearer credential is provider-scoped, so the same interface works for Codex, Claude, Cursor,
+Grok, OpenCode, and other adapters that connect to the built-in toolkit. Pipeline definitions are
+environment settings rather than files in `scripts/`: their contract is
+`packages/contracts/src/settings.ts`, patch semantics are in
+`packages/shared/src/serverSettings.ts`, and handlers live under
+`apps/server/src/mcp/toolkits/pipelines/`.
+
 ### Dev state directories
 
 - Dev commands run from a linked **git worktree** default to that worktree's gitignored `.t3`, even

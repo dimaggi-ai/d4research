@@ -28,6 +28,8 @@ import { ResearchToolkitHandlersLive } from "./toolkits/research/handlers.ts";
 import { ResearchToolkit } from "./toolkits/research/tools.ts";
 import { SkillsToolkitHandlersLive } from "./toolkits/skills/handlers.ts";
 import { SkillsToolkit } from "./toolkits/skills/tools.ts";
+import { PipelinesToolkitHandlersLive } from "./toolkits/pipelines/handlers.ts";
+import { PipelinesToolkit } from "./toolkits/pipelines/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -229,6 +231,10 @@ const ResearchToolkitRegistrationLive = McpServer.toolkit(ResearchToolkit).pipe(
   Layer.provide(ResearchToolkitHandlersLive),
 );
 
+const PipelinesToolkitRegistrationLive = McpServer.toolkit(PipelinesToolkit).pipe(
+  Layer.provide(PipelinesToolkitHandlersLive),
+);
+
 export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewStandardToolkitRegistrationLive,
   PreviewSnapshotRegistrationLive,
@@ -245,5 +251,6 @@ export const layer = PreviewToolkitRegistrationLive.pipe(
   Layer.merge(MemoryToolkitRegistrationLive),
   Layer.merge(SkillsToolkitRegistrationLive),
   Layer.merge(ResearchToolkitRegistrationLive),
+  Layer.merge(PipelinesToolkitRegistrationLive),
   Layer.provideMerge(McpTransportLive),
 );

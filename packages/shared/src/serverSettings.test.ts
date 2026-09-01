@@ -308,6 +308,70 @@ describe("serverSettings helpers", () => {
     ).toEqual({ "thread-a": ["beta"] });
   });
 
+  it("merges atomic pipeline edits against the latest scenario list", () => {
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      dev: {
+        upsertScenario: { name: "build", pipelinePrompt: "Build it.", promptFiles: [] },
+      },
+    });
+    const second = applyServerSettingsPatch(first, {
+      dev: {
+        upsertScenario: { name: "review", pipelinePrompt: "Review it.", promptFiles: [] },
+      },
+    });
+    const updated = applyServerSettingsPatch(second, {
+      dev: {
+        upsertScenario: { name: "build", pipelinePrompt: "Build safely.", promptFiles: [] },
+      },
+    });
+    const removed = applyServerSettingsPatch(updated, {
+      dev: { removeScenario: "review" },
+    });
+
+    expect(updated.dev.scenarios).toEqual([
+      { name: "build", pipelinePrompt: "Build safely.", promptFiles: [] },
+      { name: "review", pipelinePrompt: "Review it.", promptFiles: [] },
+    ]);
+    expect(removed.dev.scenarios.map((scenario) => scenario.name)).toEqual(["build"]);
+  });
+
+  it("preserves prompt files inside an atomic pipeline prompt update", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      dev: {
+        upsertScenario: {
+          name: "build",
+          pipelinePrompt: "Build it.",
+          promptFiles: [{ name: "rules.md", content: "Be careful." }],
+        },
+      },
+    });
+    const next = applyServerSettingsPatch(current, {
+      dev: { upsertScenario: { name: "build", pipelinePrompt: "Build safely." } },
+    });
+
+    expect(next.dev.scenarios[0]).toEqual({
+      name: "build",
+      pipelinePrompt: "Build safely.",
+      promptFiles: [{ name: "rules.md", content: "Be careful." }],
+    });
+  });
+
+  it("repairs the active scenario during an atomic removal", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      dev: {
+        scenarios: [
+          { name: "build", pipelinePrompt: "Build.", promptFiles: [] },
+          { name: "review", pipelinePrompt: "Review.", promptFiles: [] },
+        ],
+        activeScenario: "build",
+      },
+    });
+    const next = applyServerSettingsPatch(current, { dev: { removeScenario: "build" } });
+
+    expect(next.dev.scenarios.map((scenario) => scenario.name)).toEqual(["review"]);
+    expect(next.dev.activeScenario).toBe("review");
+  });
+
   it("falls back from a disabled source control writer provider without clearing its selection", () => {
     const instanceId = ProviderInstanceId.make("codex_writer");
     const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");

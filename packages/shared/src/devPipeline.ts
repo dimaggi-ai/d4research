@@ -164,7 +164,15 @@ const targetDirective = (target: DevTarget): string =>
 export function buildDefaultDevPipelinePrompt(
   candidates: ReadonlyArray<DevProviderCandidate>,
 ): string {
-  const usableCandidates = candidates.filter((candidate) => candidate.models.length > 0);
+  // Environment policy: Claude-family models are not eligible for generated
+  // service mappings. Codex gpt-5.6-sol is the preferred planning/review seat;
+  // independent non-Claude providers remain available for diversity.
+  const usableCandidates = candidates
+    .map((candidate) => ({
+      ...candidate,
+      models: candidate.models.filter((model) => modelFamily(model) !== "claude"),
+    }))
+    .filter((candidate) => candidate.models.length > 0);
   if (usableCandidates.length === 0) {
     return `STEP 1 — PLAN
 Determine the root cause, the smallest correct fix, the files to touch, and the command that proves it. Do not edit until the plan is concrete.
@@ -180,11 +188,9 @@ Report plan, files changed, review verdict, and verification outcome. Never impl
   }
 
   const used = new Set<string>();
-  const planner = findPreferredTarget(
-    usableCandidates,
-    ["claude-opus-5", "claude-fable-5", "gpt-5.6-sol", "gpt-5.6-terra"],
-    { providerPreferences: ["claudeAgent", "claude", "junie", "codex"] },
-  )!;
+  const planner = findPreferredTarget(usableCandidates, ["gpt-5.6-sol", "gpt-5.6-terra"], {
+    providerPreferences: ["codex", "junie", "ollama"],
+  })!;
   used.add(targetKey(planner));
   const builder =
     findPreferredTarget(
@@ -193,24 +199,24 @@ Report plan, files changed, review verdict, and verification outcome. Never impl
       {
         excludedKeys: used,
         excludedFamilies: new Set([modelFamily(planner.model)]),
-        providerPreferences: ["junie", "ollama", "codex", "claudeAgent"],
+        providerPreferences: ["junie", "ollama", "codex"],
       },
     ) ?? planner;
   used.add(targetKey(builder));
   const reviewer =
     findPreferredTarget(
       usableCandidates,
-      ["gpt-5.6-terra", "gpt-5.6-sol", "claude-opus-5", "gemini-3.1-pro-preview"],
+      ["gpt-5.6-sol", "gpt-5.6-terra", "gemini-3.1-pro-preview"],
       {
         excludedKeys: used,
         excludedFamilies: new Set([modelFamily(builder.model)]),
-        providerPreferences: ["codex", "junie", "claudeAgent", "ollama"],
+        providerPreferences: ["codex", "junie", "ollama"],
       },
     ) ?? planner;
   used.add(targetKey(reviewer));
   const secondOpinion = findPreferredTarget(
     usableCandidates,
-    ["gemini-3.1-pro-preview", "claude-opus-5", "gpt-5.6-sol"],
+    ["gemini-3.1-pro-preview", "gpt-5.6-sol"],
     {
       excludedKeys: used,
       excludedFamilies: new Set([
@@ -218,20 +224,16 @@ Report plan, files changed, review verdict, and verification outcome. Never impl
         modelFamily(builder.model),
         modelFamily(reviewer.model),
       ]),
-      providerPreferences: ["junie", "claudeAgent", "codex", "ollama"],
+      providerPreferences: ["junie", "codex", "ollama"],
     },
   );
 
   const fallbackFor = (primary: DevTarget): DevTarget | null =>
-    findPreferredTarget(
-      usableCandidates,
-      ["gpt-5.6-sol", "gpt-5.6-terra", "claude-opus-5", "glm-5.2:cloud"],
-      {
-        excludedKeys: new Set([targetKey(primary)]),
-        excludedInstanceIds: new Set([primary.candidate.instanceId]),
-        providerPreferences: ["codex", "junie", "claudeAgent", "ollama"],
-      },
-    );
+    findPreferredTarget(usableCandidates, ["gpt-5.6-sol", "gpt-5.6-terra", "glm-5.2:cloud"], {
+      excludedKeys: new Set([targetKey(primary)]),
+      excludedInstanceIds: new Set([primary.candidate.instanceId]),
+      providerPreferences: ["codex", "junie", "ollama"],
+    });
   const step = (name: string, primary: DevTarget, request: string): string => {
     const fallback = fallbackFor(primary);
     return `${name}

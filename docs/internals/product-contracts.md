@@ -132,6 +132,11 @@ Memo base URL), shared `PipelineTargetPolicy` (`exact` or `labeled-fallback`), a
 `maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions are
 decoded forward-compatibly so older clients survive newer config.
 
+Named Dev and Research pipelines share `ResearchScenario` (name, pipeline prompt, attached prompt
+files). `ServerSettingsPatch` supports whole-array UI replacement plus atomic single-scenario
+upsert/removal operations used by the authenticated agent pipeline API; an upsert that omits
+`promptFiles` preserves the current attachments.
+
 ## git
 
 Git action progress and stacked actions: `GitStackedAction`, progress phases/kinds/streams,

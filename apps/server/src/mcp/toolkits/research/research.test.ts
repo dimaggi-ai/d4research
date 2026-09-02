@@ -417,6 +417,7 @@ describe("research delegate handler", () => {
           getCapabilities: facadeMustNotRun,
           getInstanceInfo: facadeMustNotRun,
           rollbackConversation: facadeMustNotRun,
+          uploadFeedback: facadeMustNotRun,
           streamEvents: Stream.fromPubSub(runtimeEvents),
           subscribeEvents: PubSub.subscribe(runtimeEvents).pipe(
             Effect.map((subscription) => Stream.fromEffectRepeat(PubSub.take(subscription))),

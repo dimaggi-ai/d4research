@@ -26,6 +26,8 @@
     "./types": "./src/SelectableMarkdownText.types.ts"
   },
   "peerDependencies": {
+    "@d4research/client-runtime": "*",
+    "@d4research/shared": "*",
     "expo-asset": "*",
     "expo-clipboard": "*",
     "expo-haptics": "*",

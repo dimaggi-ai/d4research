@@ -28,7 +28,7 @@ import { OrchestrationCommandReceiptRepositoryLive } from "../src/persistence/La
 import { OrchestrationEventStoreLive } from "../src/persistence/Layers/OrchestrationEventStore.ts";
 import { ProjectionCheckpointRepositoryLive } from "../src/persistence/Layers/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../src/persistence/Layers/ProjectionPendingApprovals.ts";
-import { ProviderSessionRuntimeRepositoryLive } from "../src/persistence/Layers/ProviderSessionRuntime.ts";
+import { layer as ProviderSessionRuntimeRepositoryLive } from "../src/persistence/ProviderSessionRuntime.ts";
 import { makeSqlitePersistenceLive } from "../src/persistence/Layers/Sqlite.ts";
 import { ProjectionCheckpointRepository } from "../src/persistence/Services/ProjectionCheckpoints.ts";
 import { ProjectionPendingApprovalRepository } from "../src/persistence/Services/ProjectionPendingApprovals.ts";
@@ -232,14 +232,26 @@ export interface OrchestrationIntegrationHarness {
     requestId: string,
     predicate: (row: {
       readonly status: "pending" | "resolved";
-      readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+      readonly decision:
+        | "accept"
+        | "acceptAlways"
+        | "acceptForSession"
+        | "decline"
+        | "cancel"
+        | null;
       readonly resolvedAt: string | null;
     }) => boolean,
     timeoutMs?: number,
   ) => Effect.Effect<
     {
       readonly status: "pending" | "resolved";
-      readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+      readonly decision:
+        | "accept"
+        | "acceptAlways"
+        | "acceptForSession"
+        | "decline"
+        | "cancel"
+        | null;
       readonly resolvedAt: string | null;
     },
     never
@@ -490,7 +502,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(
         Layer.succeed(ThreadDeletionReactor, {
           start: () => Effect.void,
-          drain: Effect.void,
+          drainThrough: () => Effect.void,
         }),
       ),
       Layer.provideMerge(
@@ -733,7 +745,13 @@ export const makeOrchestrationIntegrationHarness = (
           row,
         ): row is {
           readonly status: "pending" | "resolved";
-          readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+          readonly decision:
+            | "accept"
+            | "acceptAlways"
+            | "acceptForSession"
+            | "decline"
+            | "cancel"
+            | null;
           readonly resolvedAt: string | null;
         } => row !== null && predicate(row),
         `pending approval '${requestId}'`,
@@ -741,7 +759,13 @@ export const makeOrchestrationIntegrationHarness = (
       ) as Effect.Effect<
         {
           readonly status: "pending" | "resolved";
-          readonly decision: "accept" | "acceptForSession" | "decline" | "cancel" | null;
+          readonly decision:
+            | "accept"
+            | "acceptAlways"
+            | "acceptForSession"
+            | "decline"
+            | "cancel"
+            | null;
           readonly resolvedAt: string | null;
         },
         never

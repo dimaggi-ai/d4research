@@ -51,4 +51,12 @@ export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
   },
 );
 
+/** Undefined on platforms without POSIX uids (Windows). */
+export const HostProcessUserId = Context.Reference<number | undefined>(
+  "@d4research/shared/hostProcess/HostProcessUserId",
+  {
+    defaultValue: () => process.getuid?.(),
+  },
+);
+
 export const isHostWindows = Effect.map(HostProcessPlatform, (platform) => platform === "win32");

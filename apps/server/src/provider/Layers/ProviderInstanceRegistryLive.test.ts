@@ -10,7 +10,7 @@
  *
  *  2. **Many drivers, one registry** — the "all drivers slice" describe
  *     block below configures one instance of every shipped driver
- *     (`codex`, `claudeAgent`, `agy`, `cursor`, `grok`, `junie`, `opencode`) in a single
+ *     (`codex`, `claudeAgent`, `cursor`, `grok`, `opencode`) in a single
  *     `ProviderInstanceConfigMap` and asserts the registry boots them all
  *     without cross-contamination. This proves the driver SPI is uniform
  *     across every provider — any driver plugs into the registry through
@@ -26,11 +26,9 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type ClaudeSettings,
-  type AgySettings,
   type CodexSettings,
   type CursorSettings,
   type GrokSettings,
-  type JunieSettings,
   type OpenCodeSettings,
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
@@ -43,15 +41,15 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import type { BuiltInDriversEnv } from "../builtInDrivers.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ClaudeDriver } from "../Drivers/ClaudeDriver.ts";
-import { AgyDriver } from "../Drivers/AgyDriver.ts";
 import { CodexDriver } from "../Drivers/CodexDriver.ts";
 import { CursorDriver } from "../Drivers/CursorDriver.ts";
 import { GrokDriver } from "../Drivers/GrokDriver.ts";
-import { JunieDriver } from "../Drivers/JunieDriver.ts";
 import { OpenCodeDriver } from "../Drivers/OpenCodeDriver.ts";
+import * as ModelManifest from "../ModelManifest.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
@@ -98,9 +96,9 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   enabled: false,
   binaryPath: "codex",
   homePath: "",
-  webSearch: true,
   shadowHomePath: "",
   launchArgs: "",
+  webSearch: false,
   customModels: [],
   ...overrides,
 });
@@ -111,15 +109,7 @@ const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings =>
   homePath: "",
   customModels: [],
   launchArgs: "",
-  ...overrides,
-});
-
-const makeAgyConfig = (overrides: Partial<AgySettings>): AgySettings => ({
-  enabled: false,
-  binaryPath: "agy",
-  defaultModel: "gemini-3.6-flash-medium",
-  launchArgs: "",
-  customModels: [],
+  autoCompactWindow: "",
   ...overrides,
 });
 
@@ -134,14 +124,6 @@ const makeCursorConfig = (overrides: Partial<CursorSettings>): CursorSettings =>
 const makeGrokConfig = (overrides: Partial<GrokSettings>): GrokSettings => ({
   enabled: false,
   binaryPath: "grok",
-  customModels: [],
-  ...overrides,
-});
-
-const makeJunieConfig = (overrides: Partial<JunieSettings>): JunieSettings => ({
-  enabled: false,
-  binaryPath: "junie",
-  defaultModel: "gpt-5.6-terra",
   customModels: [],
   ...overrides,
 });
@@ -169,6 +151,7 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(ModelManifest.layerTest),
   );
 
   it.live("boots two independent codex instances from a ProviderInstanceConfigMap", () =>
@@ -245,6 +228,32 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.live("treats an explicit in-config enabled:false as disabling despite the envelope", () =>
+    Effect.gen(function* () {
+      // Old settings files can carry both flags with conflicting values.
+      // The explicit false must win so a user's disable is never undone.
+      const staleId = ProviderInstanceId.make("codex_stale");
+      const configMap: ProviderInstanceConfigMap = {
+        [staleId]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          config: makeCodexConfig({ enabled: false }),
+        },
+      };
+
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [CodexDriver],
+        configMap,
+      });
+
+      const instance = yield* registry.getInstance(staleId);
+      expect(instance).toBeDefined();
+      expect(instance!.enabled).toBe(false);
+      const snapshot = yield* instance!.snapshot.getSnapshot;
+      expect(snapshot.enabled).toBe(false);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.live(
     "shadows instances whose driver is not registered in this build without failing boot",
     () =>
@@ -308,24 +317,21 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(ModelManifest.layerTest),
   );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>
     Effect.gen(function* () {
       const codexId = ProviderInstanceId.make("codex_default");
       const claudeId = ProviderInstanceId.make("claude_default");
-      const agyId = ProviderInstanceId.make("agy_default");
       const cursorId = ProviderInstanceId.make("cursor_default");
       const grokId = ProviderInstanceId.make("grok_default");
-      const junieId = ProviderInstanceId.make("junie_default");
       const openCodeId = ProviderInstanceId.make("opencode_default");
 
       const codexDriverKind = ProviderDriverKind.make("codex");
       const claudeDriverKind = ProviderDriverKind.make("claudeAgent");
-      const agyDriverKind = ProviderDriverKind.make("agy");
       const cursorDriverKind = ProviderDriverKind.make("cursor");
       const grokDriverKind = ProviderDriverKind.make("grok");
-      const junieDriverKind = ProviderDriverKind.make("junie");
       const openCodeDriverKind = ProviderDriverKind.make("opencode");
 
       const configMap: ProviderInstanceConfigMap = {
@@ -344,12 +350,6 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
             launchArgs: "--verbose",
           }),
         },
-        [agyId]: {
-          driver: agyDriverKind,
-          displayName: "Agy",
-          enabled: false,
-          config: makeAgyConfig({}),
-        },
         [cursorId]: {
           driver: cursorDriverKind,
           displayName: "Cursor",
@@ -362,12 +362,6 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
           enabled: false,
           config: makeGrokConfig({}),
         },
-        [junieId]: {
-          driver: junieDriverKind,
-          displayName: "Junie",
-          enabled: false,
-          config: makeJunieConfig({}),
-        },
         [openCodeId]: {
           driver: openCodeDriverKind,
           displayName: "OpenCode",
@@ -376,16 +370,8 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         },
       };
 
-      const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [
-          CodexDriver,
-          ClaudeDriver,
-          AgyDriver,
-          CursorDriver,
-          GrokDriver,
-          JunieDriver,
-          OpenCodeDriver,
-        ],
+      const { registry } = yield* makeProviderInstanceRegistry<BuiltInDriversEnv>({
+        drivers: [CodexDriver, ClaudeDriver, CursorDriver, GrokDriver, OpenCodeDriver],
         configMap,
       });
 
@@ -395,9 +381,9 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(unavailable).toEqual([]);
 
       const instances = yield* registry.listInstances;
-      expect(instances).toHaveLength(7);
+      expect(instances).toHaveLength(5);
       expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
-        [codexId, claudeId, agyId, cursorId, grokId, junieId, openCodeId].toSorted(),
+        [codexId, claudeId, cursorId, grokId, openCodeId].toSorted(),
       );
 
       // Instance lookup by id resolves each instance to its own bundle —
@@ -405,24 +391,18 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       // model. Each driver's bundle carries its advertised `driverKind`.
       const codex = yield* registry.getInstance(codexId);
       const claude = yield* registry.getInstance(claudeId);
-      const agy = yield* registry.getInstance(agyId);
       const cursor = yield* registry.getInstance(cursorId);
       const grok = yield* registry.getInstance(grokId);
-      const junie = yield* registry.getInstance(junieId);
       const openCode = yield* registry.getInstance(openCodeId);
       expect(codex?.driverKind).toBe(codexDriverKind);
       expect(claude?.driverKind).toBe(claudeDriverKind);
-      expect(agy?.driverKind).toBe(agyDriverKind);
       expect(cursor?.driverKind).toBe(cursorDriverKind);
       expect(grok?.driverKind).toBe(grokDriverKind);
-      expect(junie?.driverKind).toBe(junieDriverKind);
       expect(openCode?.driverKind).toBe(openCodeDriverKind);
       expect(codex?.displayName).toBe("Codex");
       expect(claude?.displayName).toBe("Claude");
-      expect(agy?.displayName).toBe("Agy");
       expect(cursor?.displayName).toBe("Cursor");
       expect(grok?.displayName).toBe("Grok");
-      expect(junie?.displayName).toBe("Junie");
       expect(openCode?.displayName).toBe("OpenCode");
 
       // Every instance owns its own set of closures — no sharing across
@@ -433,30 +413,24 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const adapters = [
         codex!.adapter,
         claude!.adapter,
-        agy!.adapter,
         cursor!.adapter,
         grok!.adapter,
-        junie!.adapter,
         openCode!.adapter,
       ];
       expect(new Set(adapters).size).toBe(adapters.length);
       const textGenerations = [
         codex!.textGeneration,
         claude!.textGeneration,
-        agy!.textGeneration,
         cursor!.textGeneration,
         grok!.textGeneration,
-        junie!.textGeneration,
         openCode!.textGeneration,
       ];
       expect(new Set(textGenerations).size).toBe(textGenerations.length);
       const snapshots = [
         codex!.snapshot,
         claude!.snapshot,
-        agy!.snapshot,
         cursor!.snapshot,
         grok!.snapshot,
-        junie!.snapshot,
         openCode!.snapshot,
       ];
       expect(new Set(snapshots).size).toBe(snapshots.length);
@@ -479,11 +453,6 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(claudeSnapshot.enabled).toBe(false);
       expect(claudeSnapshot.continuation?.groupKey).toBe("claude:home:/home/julius/.claude-work");
 
-      const agySnapshot = yield* agy!.snapshot.getSnapshot;
-      expect(agySnapshot.instanceId).toBe(agyId);
-      expect(agySnapshot.driver).toBe(agyDriverKind);
-      expect(agySnapshot.enabled).toBe(false);
-
       const cursorSnapshot = yield* cursor!.snapshot.getSnapshot;
       expect(cursorSnapshot.instanceId).toBe(cursorId);
       expect(cursorSnapshot.driver).toBe(cursorDriverKind);
@@ -497,11 +466,6 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(grokSnapshot.driver).toBe(grokDriverKind);
       expect(grokSnapshot.enabled).toBe(false);
       expect(grokSnapshot.continuation?.groupKey).toBe(`${grokDriverKind}:instance:${grokId}`);
-
-      const junieSnapshot = yield* junie!.snapshot.getSnapshot;
-      expect(junieSnapshot.instanceId).toBe(junieId);
-      expect(junieSnapshot.driver).toBe(junieDriverKind);
-      expect(junieSnapshot.enabled).toBe(false);
 
       const openCodeSnapshot = yield* openCode!.snapshot.getSnapshot;
       expect(openCodeSnapshot.instanceId).toBe(openCodeId);

@@ -16,6 +16,8 @@ import {
   type ServerAuthDescriptor,
   type ServerAuthSessionMethod,
   type AuthWebSocketTicketResult,
+  DpopFailureReason,
+  type DpopFailureReason as DpopFailureReasonType,
 } from "@d4research/contracts";
 import { encodeOAuthScope } from "@d4research/shared/oauthScope";
 import * as Context from "effect/Context";
@@ -33,6 +35,7 @@ import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
 
 export const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
@@ -347,6 +350,7 @@ export class ServerAuthInvalidCredentialError extends Schema.TaggedErrorClass<Se
   "ServerAuthInvalidCredentialError",
   {
     diagnostic: Schema.optional(Schema.String),
+    dpopFailureReason: Schema.optionalKey(DpopFailureReason),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -365,6 +369,11 @@ export const serverAuthCredentialReason = (
   error: ServerAuthCredentialError,
 ): "missing_credential" | "invalid_credential" =>
   error._tag === "ServerAuthMissingCredentialError" ? "missing_credential" : "invalid_credential";
+
+export const serverAuthDpopFailureReason = (
+  error: ServerAuthCredentialError,
+): DpopFailureReasonType | undefined =>
+  error._tag === "ServerAuthInvalidCredentialError" ? error.dpopFailureReason : undefined;
 
 export class ServerAuthInvalidScopeError extends Schema.TaggedErrorClass<ServerAuthInvalidScopeError>()(
   "ServerAuthInvalidScopeError",
@@ -993,4 +1002,7 @@ export const layer = Layer.effect(EnvironmentAuth, make).pipe(
 
 export const storageLayer = Layer.mergeAll(ServerSecretStore.layer, SqlitePersistenceLayer);
 
-export const runtimeLayer = layer.pipe(Layer.provideMerge(storageLayer));
+export const runtimeLayer = layer.pipe(
+  Layer.provideMerge(storageLayer),
+  Layer.provideMerge(ServerEnvironment.identityLayer),
+);

@@ -21,6 +21,7 @@ import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsResearchRouteImport } from './routes/settings.research'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDevPipelinesRouteImport } from './routes/settings.dev-pipelines'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
@@ -90,6 +91,11 @@ const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
   path: '/keybindings',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   id: '/general',
   path: '/general',
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/dev-pipelines': typeof SettingsDevPipelinesRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/dev-pipelines': typeof SettingsDevPipelinesRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/dev-pipelines': typeof SettingsDevPipelinesRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/dev-pipelines'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/research'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/dev-pipelines'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/research'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/settings/dev-pipelines'
     | '/settings/general'
+    | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/research'
@@ -370,6 +382,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsKeybindingsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/general': {
       id: '/settings/general'
       path: '/general'
@@ -458,6 +477,7 @@ interface SettingsRouteChildren {
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDevPipelinesRoute: typeof SettingsDevPipelinesRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsResearchRoute: typeof SettingsResearchRoute
@@ -472,6 +492,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDevPipelinesRoute: SettingsDevPipelinesRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsResearchRoute: SettingsResearchRoute,

@@ -18,7 +18,13 @@ import {
   mergeEnabledSkillNames,
 } from "@d4research/shared/enabledSkillsContext";
 
-import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import {
+  createAttachmentId,
+  planAttachmentClaim,
+  PENDING_ATTACHMENT_THREAD_SEGMENT,
+  parseThreadSegmentFromAttachmentId,
+  resolveAttachmentPath,
+} from "../attachmentStore.ts";
 import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -258,6 +264,18 @@ export const canonicalizeClientCommandTimestamps = (
   };
 };
 
+const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachmentPaths")(
+  function* (attachmentPaths: ReadonlyArray<string>) {
+    if (attachmentPaths.length === 0) return;
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* Effect.forEach(
+      attachmentPaths,
+      (attachmentPath) => fileSystem.remove(attachmentPath, { force: true }).pipe(Effect.ignore),
+      { concurrency: 1 },
+    );
+  },
+);
+
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
     const receivedAt = DateTime.formatIso(yield* DateTime.now);
@@ -319,10 +337,63 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       return canonicalCommand as OrchestrationCommand;
     }
 
+    const claimedAttachmentPaths: string[] = [];
     const normalizedAttachments = yield* Effect.forEach(
       canonicalCommand.message.attachments,
       (attachment) =>
         Effect.gen(function* () {
+          if (!("dataUrl" in attachment)) {
+            const claim = planAttachmentClaim({
+              attachmentsDir: serverConfig.attachmentsDir,
+              threadId: canonicalCommand.threadId,
+              attachmentId: attachment.id,
+            });
+            if (!claim.ok) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: ${claim.reason}.`,
+              });
+            }
+            const info = yield* fileSystem.stat(claim.currentPath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message: `Attachment '${attachment.name}' cannot be sent: attachment not found.`,
+                    cause,
+                  }),
+              ),
+            );
+            if (Number(info.size) !== attachment.sizeBytes) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: stored size does not match.`,
+              });
+            }
+            const normalizedAttachment = {
+              ...attachment,
+              id: claim.finalId,
+              mimeType: attachment.mimeType.toLowerCase(),
+            };
+            const expectedPath = resolveAttachmentPath({
+              attachmentsDir: serverConfig.attachmentsDir,
+              attachment: normalizedAttachment,
+            });
+            if (expectedPath !== claim.finalPath) {
+              return yield* new OrchestrationDispatchCommandError({
+                message: `Attachment '${attachment.name}' cannot be sent: attachment type does not match the upload.`,
+              });
+            }
+            yield* fileSystem.copyFile(claim.currentPath, claim.finalPath).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message: `Failed to claim attachment '${attachment.name}' for this thread.`,
+                    cause,
+                  }),
+              ),
+            );
+            claimedAttachmentPaths.push(claim.finalPath);
+            return normalizedAttachment;
+          }
+
           const parsed = parseBase64DataUrl(attachment.dataUrl);
           if (!parsed || !parsed.mimeType.startsWith("image/")) {
             return yield* new OrchestrationDispatchCommandError({
@@ -382,7 +453,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           return persistedAttachment;
         }),
       { concurrency: 1 },
-    );
+    ).pipe(Effect.tapError(() => removeClaimedAttachmentPaths(claimedAttachmentPaths)));
 
     const textWithExplicitSkills = yield* expandSkillReferences({
       text: canonicalCommand.message.text,
@@ -417,3 +488,28 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       },
     } satisfies OrchestrationCommand;
   });
+
+export const cleanupFailedUploadedAttachments = Effect.fn(
+  "Normalizer.cleanupFailedUploadedAttachments",
+)(function* (command: ClientOrchestrationCommand, normalizedCommand: OrchestrationCommand) {
+  if (command.type !== "thread.turn.start" || normalizedCommand.type !== "thread.turn.start")
+    return;
+  const serverConfig = yield* ServerConfig;
+  const claimedPaths: string[] = [];
+  for (const [index, attachment] of normalizedCommand.message.attachments.entries()) {
+    const original = command.message.attachments[index];
+    if (
+      !original ||
+      "dataUrl" in original ||
+      parseThreadSegmentFromAttachmentId(original.id) !== PENDING_ATTACHMENT_THREAD_SEGMENT
+    ) {
+      continue;
+    }
+    const claimedPath = resolveAttachmentPath({
+      attachmentsDir: serverConfig.attachmentsDir,
+      attachment,
+    });
+    if (claimedPath) claimedPaths.push(claimedPath);
+  }
+  yield* removeClaimedAttachmentPaths(claimedPaths);
+});

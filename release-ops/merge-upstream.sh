@@ -104,6 +104,8 @@ list_text_files() { # args: [pathspec...]
   git grep -Il '' -- "${@:-.}" \
     ':(exclude).repos' ':(exclude)pnpm-lock.yaml' ':(exclude)patches' \
     ':(exclude).plans' ':(exclude)apps/server/scripts/acp-mock-agent.ts' \
+    ':(exclude)release-ops/merge-upstream.sh' \
+    ':(exclude)docs/operations/upstream-merge.md' \
     2>/dev/null || true
 }
 

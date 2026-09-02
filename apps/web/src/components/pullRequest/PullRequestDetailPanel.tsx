@@ -112,6 +112,9 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   draft: "Converted to draft",
   close: "Pull request closed",
   reopen: "Pull request reopened",
+  "disable-auto-merge": "Auto-merge disabled",
+  "enable-auto-merge": "Auto-merge enabled",
+  "update-branch": "Pull request branch updated",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
@@ -121,6 +124,9 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   draft: "Could not convert this to a draft",
   close: "Could not close this pull request",
   reopen: "Could not reopen this pull request",
+  "disable-auto-merge": "Could not disable auto-merge",
+  "enable-auto-merge": "Could not enable auto-merge",
+  "update-branch": "Could not update the pull request branch",
 };
 
 /** What to try, for the times the host says only that it refused. */
@@ -132,6 +138,9 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
   close: "The host refused it. Check that you have write access, or that you opened it.",
   reopen:
     "The host refused it. Check that you have write access, and that the branch still exists.",
+  "disable-auto-merge": "The host refused it. Check that you have write access.",
+  "enable-auto-merge": "The host refused it. Check required checks and your write access.",
+  "update-branch": "The host refused it. Check branch protections and your write access.",
 };
 
 /** Named for the host rather than "externally": the point is where you will land. */

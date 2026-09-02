@@ -14,6 +14,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -139,6 +140,7 @@ export const CanonicalRequestType = Schema.Literals([
   "file_change_approval",
   "apply_patch_approval",
   "exec_command_approval",
+  "mcp_elicitation_approval",
   "tool_user_input",
   "dynamic_tool_call",
   "auth_tokens_refresh",
@@ -324,6 +326,7 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   durationMs: Schema.optional(NonNegativeInt),
   totalCostUsd: Schema.optional(Schema.Number),
   compactsAutomatically: Schema.optional(Schema.Boolean),
+  autoCompactThreshold: Schema.optional(PositiveInt),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 
@@ -432,6 +435,8 @@ export type ContentDeltaPayload = typeof ContentDeltaPayload.Type;
 const RequestOpenedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
+  appName: Schema.optional(TrimmedNonEmptyStringSchema),
+  options: Schema.optional(Schema.Array(ProviderApprovalOption)),
   args: Schema.optional(Schema.Unknown),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;
@@ -1193,24 +1198,6 @@ export type ProviderRuntimeEventV2 = typeof ProviderRuntimeEventV2.Type;
 
 export const ProviderRuntimeEvent = ProviderRuntimeEventV2;
 export type ProviderRuntimeEvent = ProviderRuntimeEventV2;
-
-// Compatibility aliases for call sites still importing legacy names.
-const ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-export type ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-const ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-export type ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-const ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-export type ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-const ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-export type ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-
-// Legacy helper aliases retained for adapters/tests.
-const ProviderRuntimeToolKind = Schema.Literals(["command", "file-read", "file-change", "other"]);
-export type ProviderRuntimeToolKind = typeof ProviderRuntimeToolKind.Type;
 
 export const ProviderRuntimeTurnStatus = RuntimeTurnState;
 export type ProviderRuntimeTurnStatus = RuntimeTurnState;

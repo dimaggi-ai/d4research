@@ -90,7 +90,14 @@ export function PullRequestReviewBar({
         ...reference,
         verdict: verdict.value,
         body: submittedBody,
-        comments: submittedComments,
+        comments: submittedComments.map((comment) => ({
+          path: comment.path,
+          position:
+            comment.side === "right"
+              ? { kind: "added" as const, newLine: comment.line }
+              : { kind: "deleted" as const, oldLine: comment.line },
+          body: comment.body,
+        })),
       },
     });
     setPending(false);

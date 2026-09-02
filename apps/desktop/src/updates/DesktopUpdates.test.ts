@@ -326,10 +326,12 @@ describe("DesktopUpdates", () => {
           {
             version: "1.2.4-nightly.20260709.766",
             items: ["feat(client): persist offline environment data by @juliusmarminge in #3795"],
+            totalItems: 1,
           },
           {
             version: "1.2.4-nightly.20260709.765",
             items: ["[codex] Upgrade Clerk stack by @juliusmarminge in #3821"],
+            totalItems: 1,
           },
         ]);
         assert.deepEqual(harness.sentStates.at(-1)?.releaseNotes, state.releaseNotes);

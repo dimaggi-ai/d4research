@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./themePalettes": {
+      "types": "./src/themePalettes.ts",
+      "import": "./src/themePalettes.ts"
+    },
+    "./themePreview": {
+      "types": "./src/themePreview.ts",
+      "import": "./src/themePreview.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
@@ -151,6 +159,10 @@
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
     },
+    "./threadReference": {
+      "types": "./src/threadReference.ts",
+      "import": "./src/threadReference.ts"
+    },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
@@ -158,6 +170,10 @@
     "./composerInlineTokens": {
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"
+    },
+    "./assistantCitations": {
+      "types": "./src/assistantCitations.ts",
+      "import": "./src/assistantCitations.ts"
     },
     "./terminalLabels": {
       "types": "./src/terminalLabels.ts",
@@ -178,6 +194,10 @@
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"
+    },
+    "./video": {
+      "types": "./src/video.ts",
+      "import": "./src/video.ts"
     },
     "./chatList": {
       "types": "./src/chatList.ts",
@@ -226,6 +246,14 @@
     "./usageFormat": {
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
+    },
+    "./desktopAppControl": {
+      "types": "./src/desktopAppControl.ts",
+      "import": "./src/desktopAppControl.ts"
+    },
+    "./claudeCompaction": {
+      "types": "./src/claudeCompaction.ts",
+      "import": "./src/claudeCompaction.ts"
     }
   },
   "scripts": {

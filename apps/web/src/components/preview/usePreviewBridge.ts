@@ -85,6 +85,9 @@ function projectDesktopState(state: DesktopPreviewTabState): DesktopPreviewOverl
     pictureInPicture: state.pictureInPicture,
     colorScheme: state.colorScheme,
     controller: state.controller,
+    audioMuted: state.audioMuted,
+    audible: state.audible,
+    favicon: state.favicon ?? null,
   };
 }
 

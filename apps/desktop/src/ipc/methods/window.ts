@@ -285,6 +285,7 @@ export const pickThemeFiles = DesktopIpc.makeIpcMethod({
       owner: yield* electronWindow.focusedMainOrFirst,
       defaultPath: defaultPath ? Option.some(extensionsDir) : Option.none(),
       filters: [{ name: "JSON", extensions: ["json"] }],
+      multiple: true,
     });
     if (paths.length === 0) {
       return null;

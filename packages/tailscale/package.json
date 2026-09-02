@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/tailscale",
+  "name": "@d4research/tailscale",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@t3tools/shared": "workspace:*",
+    "@d4research/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

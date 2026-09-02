@@ -11,7 +11,7 @@ devices. Environment-provided transcription and transcription on web and desktop
 The shared [`VoiceInputController`][controller] in `packages/client-runtime` owns preparation,
 recording, transcription, cancellation, temporary-file cleanup, and insertion into the captured
 draft selection. Applications import it through the [voice-input entry point][voice-input] as
-`@t3tools/client-runtime/voice-input`. Its dependencies separate capture from transcription; the
+`@d4research/client-runtime/voice-input`. Its dependencies separate capture from transcription; the
 controller imports neither React Native nor an Apple transcription API.
 
 The shared [transcription contract][transcription] defines `VoiceTranscriber`,

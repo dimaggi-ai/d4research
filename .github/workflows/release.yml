@@ -198,7 +198,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - name: Check
         run: vp check
@@ -338,7 +338,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=t3...
+              - --filter=d4research...
 
       - name: Build node-pty linux-x64 prebuild
         shell: bash
@@ -447,7 +447,7 @@ jobs:
           key: windows-release-packages-v1-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+        run: vp install --filter=@d4research/desktop... --filter=d4research... --filter=@d4research/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache
@@ -759,9 +759,9 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=t3...
-              - --filter=@t3tools/web...
-              - --filter=@t3tools/scripts...
+              - --filter=d4research...
+              - --filter=@d4research/web...
+              - --filter=@d4research/scripts...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -780,10 +780,10 @@ jobs:
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
-      # The t3 build task depends on @t3tools/web#build, so the web client is
+      # The t3 build task depends on @d4research/web#build, so the web client is
       # built (once) as part of this step.
       - name: Build CLI package
-        run: vp run --filter t3 build
+        run: vp run --filter d4research build
 
       - name: Download resource monitors
         uses: actions/download-artifact@v8
@@ -831,7 +831,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
@@ -937,8 +937,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/web...
+              - --filter=@d4research/scripts...
+              - --filter=@d4research/web...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -1065,8 +1065,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/oxlint-plugin-t3code...
+              - --filter=@d4research/scripts...
+              - --filter=@d4research/oxlint-plugin-t3code...
 
       - id: update_versions
         name: Update version strings
@@ -1129,7 +1129,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Announce prerelease on Discord
         if: needs.preflight.outputs.is_prerelease == 'true'

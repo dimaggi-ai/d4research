@@ -6,7 +6,7 @@ import {
   PullRequestListProjectError,
   PullRequestListResult,
   resolvePullRequestAuthorFilter,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type {
   ProjectId,
   PullRequestActor,
@@ -16,7 +16,7 @@ import type {
   PullRequestListCursors,
   PullRequestListFilters,
   PullRequestListState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * A listed change request with the environment that read it. Nothing on a row says which machine

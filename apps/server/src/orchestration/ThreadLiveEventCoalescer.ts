@@ -1,4 +1,4 @@
-import type { OrchestrationEvent, OrchestrationThreadStreamItem } from "@t3tools/contracts";
+import type { OrchestrationEvent, OrchestrationThreadStreamItem } from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

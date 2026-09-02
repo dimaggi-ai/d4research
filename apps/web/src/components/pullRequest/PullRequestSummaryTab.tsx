@@ -4,7 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   ArrowDownUpIcon,
   ChevronDownIcon,

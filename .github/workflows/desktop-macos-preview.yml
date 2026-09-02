@@ -52,7 +52,7 @@ jobs:
           run-install: false
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+        run: vp install --filter=@d4research/desktop... --filter=d4research... --filter=@d4research/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache

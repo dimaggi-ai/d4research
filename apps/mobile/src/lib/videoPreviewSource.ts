@@ -1,4 +1,4 @@
-import type { AssetResource, ChatFileAttachment, EnvironmentId } from "@t3tools/contracts";
+import type { AssetResource, ChatFileAttachment, EnvironmentId } from "@d4research/contracts";
 
 import type { DraftComposerFileAttachment } from "./composerImages";
 import type { MediaActionsSource } from "./mediaActions";

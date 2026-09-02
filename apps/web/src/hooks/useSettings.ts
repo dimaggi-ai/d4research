@@ -16,20 +16,20 @@ import {
   type EnvironmentId,
   ServerSettings,
   type ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   type ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
   type EnvironmentIdentificationMode,
   type UnifiedSettings,
-} from "@t3tools/contracts/settings";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+} from "@d4research/contracts/settings";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
 import {
   findSharedSettingsMismatches,
   pickSharedServerSettings,
   splitSharedServerPatch,
-} from "@t3tools/client-runtime/state/shared-settings";
+} from "@d4research/client-runtime/state/shared-settings";
 import { ensureLocalApi } from "~/localApi";
 import {
   getThemeDefinition,

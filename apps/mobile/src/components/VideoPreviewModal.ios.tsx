@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import { requireNativeModule } from "expo";
 import { useEffect, useEffectEvent, useId, useState } from "react";
 import { Alert, Keyboard } from "react-native";

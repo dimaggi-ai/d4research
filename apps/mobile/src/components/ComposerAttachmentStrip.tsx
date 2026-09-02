@@ -1,5 +1,5 @@
 import { SymbolView } from "../components/AppSymbol";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 
@@ -10,7 +10,7 @@ import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { PresentationSource } from "./NativePresentation";
 import type { FilePreviewSource } from "./FilePreviewModal";
 import { isPdfFile } from "../lib/filePreview";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import {
   retryComposerAttachmentUpload,
   useComposerAttachmentUploadState,

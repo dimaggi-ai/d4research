@@ -14,16 +14,16 @@ import {
   EnvironmentHttpUnauthorizedError,
   EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   type RelayClientEnvironmentRecord,
   type RelayEnvironmentLinkResponse,
   type RelayManagedEndpointProviderKind,
-} from "@t3tools/contracts/relay";
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { request, runStream } from "@t3tools/client-runtime/rpc";
-import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay, relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
+} from "@d4research/contracts/relay";
+import { EnvironmentRegistry } from "@d4research/client-runtime/connection";
+import { request, runStream } from "@d4research/client-runtime/rpc";
+import { makeEnvironmentHttpApiClient } from "@d4research/client-runtime/rpc";
+import { ManagedRelay, relayProtectedErrorMessage } from "@d4research/client-runtime/relay";
 
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import { resolveCloudPublicConfig } from "./publicConfig";

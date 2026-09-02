@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_SETTINGS, EnvironmentId } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, EnvironmentId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {

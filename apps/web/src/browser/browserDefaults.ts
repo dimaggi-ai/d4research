@@ -17,7 +17,7 @@ import type {
   DesktopPreviewTabDefaults,
   PreviewAppearancePreference,
   PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   ensureClientSettingsHydrated,

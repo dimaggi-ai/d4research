@@ -12,16 +12,16 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
-} from "@t3tools/contracts";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+} from "@d4research/contracts";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
 import {
   codexFeedbackMessage,
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
-import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+} from "@d4research/client-runtime/state/threads";
+import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
+import { deriveActiveWorkStartedAt } from "@d4research/shared/orchestrationTiming";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {

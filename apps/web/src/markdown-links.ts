@@ -1,7 +1,7 @@
 import {
   inlineCodeFilePathCandidate,
   isConventionalFilePosition,
-} from "@t3tools/client-runtime/markdown-links";
+} from "@d4research/client-runtime/markdown-links";
 
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import {

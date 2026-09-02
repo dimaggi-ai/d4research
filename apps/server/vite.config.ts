@@ -30,7 +30,7 @@ export default mergeConfig(
       tasks: {
         build: {
           command: "node scripts/cli.ts build",
-          dependsOn: ["@t3tools/web#build"],
+          dependsOn: ["@d4research/web#build"],
           cache: false,
         },
       },

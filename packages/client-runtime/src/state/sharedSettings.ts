@@ -8,7 +8,7 @@
  * environment, and warn when a connected environment still holds a different
  * value so the user can push their current value out.
  */
-import type { EnvironmentId, ServerSettings, ServerSettingsPatch } from "@t3tools/contracts";
+import type { EnvironmentId, ServerSettings, ServerSettingsPatch } from "@d4research/contracts";
 import * as Equal from "effect/Equal";
 import * as Struct from "effect/Struct";
 

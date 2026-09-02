@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { codexFeedbackMessage } from "@t3tools/client-runtime/state/threads";
+import { codexFeedbackMessage } from "@d4research/client-runtime/state/threads";
 
 import {
   EventId,
@@ -10,7 +10,7 @@ import {
   TurnId,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   buildPendingUserInputAnswers,

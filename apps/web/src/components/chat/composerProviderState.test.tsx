@@ -4,7 +4,7 @@ import {
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   getComposerPromptInjectionState,
   getComposerProviderState,

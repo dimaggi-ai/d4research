@@ -64,7 +64,7 @@ case "$platform" in
     # adb shell re-joins its arguments and evaluates them through the device
     # shell, so the deep link's `?`/`&` must be quoted once more for that shell.
     adb -s "$device_id" shell \
-      "am start -W -a android.intent.action.VIEW -d '$deep_link' com.t3tools.t3code.dev" \
+      "am start -W -a android.intent.action.VIEW -d '$deep_link' ai.dimaggi.d4research.dev" \
       >/dev/null
     ;;
 esac

@@ -6,8 +6,8 @@ import {
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
-} from "@t3tools/contracts";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+} from "@d4research/contracts";
+import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
 
 import { toUploadChatImageAttachments, type DraftComposerAttachment } from "./composerImages";
 import type { UploadedMobileAttachment } from "./attachmentUpload";

@@ -25,8 +25,8 @@ import type {
   PullRequestReviewerKind,
   PullRequestState,
   PullRequestThreadComment,
-} from "@t3tools/contracts";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+} from "@d4research/contracts";
+import { decodeJsonResult } from "@d4research/shared/schemaJson";
 
 import { dedupeChecks } from "./pullRequestChecks.ts";
 

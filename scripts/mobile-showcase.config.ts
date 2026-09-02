@@ -2,7 +2,7 @@ import {
   MOBILE_DEFAULT_THEME_ID,
   MOBILE_THEME_IDS,
   type MobileThemeId,
-} from "@t3tools/shared/themePalettes";
+} from "@d4research/shared/themePalettes";
 
 import { SHOWCASE_SCENES, type ShowcaseScene } from "./mobile-showcase-environment.ts";
 

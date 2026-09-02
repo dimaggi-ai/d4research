@@ -23,8 +23,8 @@ import { useFontFamily } from "../../lib/useFontFamily";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@d4research/contracts";
 
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import {

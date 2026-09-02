@@ -3,12 +3,12 @@ import {
   type AssetResource,
   type ThreadId,
   type ToolLifecycleItemType,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
-} from "@t3tools/client-runtime/markdown-images";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+} from "@d4research/client-runtime/markdown-images";
+import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
 
 export function isWorktreeSetupActivity(kind: string): boolean {
   return kind === "setup-script.requested" || kind === "setup-script.started";

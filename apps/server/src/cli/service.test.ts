@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import * as NetService from "@t3tools/shared/Net";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import * as NetService from "@d4research/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -35,7 +35,7 @@ it("reports the installed service version and host paths", () => {
     formatServiceStatus(status, "0.0.29"),
     [
       "T3 Code service",
-      "  Status: installed · t3@0.0.29",
+      "  Status: installed · d4research@0.0.29",
       "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
@@ -45,7 +45,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `npx t3@latest service update`.",
+    "Next: Run `npx d4research@latest service update`.",
   );
 });
 
@@ -62,9 +62,9 @@ it("reports a newer installed service and gives an exact-version repair command"
     "0.0.31",
   );
 
-  assert.include(output, "t3@0.0.32-nightly.1 (newer than this t3@0.0.31 CLI)");
-  assert.include(output, "npx t3@0.0.32-nightly.1 service update");
-  assert.notInclude(output, "npx t3@latest service update");
+  assert.include(output, "d4research@0.0.32-nightly.1 (newer than this d4research@0.0.31 CLI)");
+  assert.include(output, "npx d4research@0.0.32-nightly.1 service update");
+  assert.notInclude(output, "npx d4research@latest service update");
 });
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };

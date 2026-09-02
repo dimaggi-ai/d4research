@@ -8,27 +8,27 @@ keeping a terminal open.
 Install it with the latest T3 Code release:
 
 ```sh
-npx t3@latest service install
+npx d4research@latest service install
 ```
 
 Check whether it is installed:
 
 ```sh
-npx t3@latest service status
+npx d4research@latest service status
 ```
 
 Update or repair it:
 
 ```sh
-npx t3@latest service update
+npx d4research@latest service update
 ```
 
 The service uses the same T3 Code version as the CLI you run. To install a nightly or an exact
 version, use that version of the CLI:
 
 ```sh
-npx t3@nightly service update
-npx t3@1.2.3 service update
+npx d4research@nightly service update
+npx d4research@1.2.3 service update
 ```
 
 The install and update commands refuse to replace a newer service with an older version. Setup
@@ -36,13 +36,13 @@ through T3 Connect leaves a newer service unchanged. To downgrade, select the ex
 and pass `--allow-downgrade`:
 
 ```sh
-npx t3@1.2.3 service update --allow-downgrade
+npx d4research@1.2.3 service update --allow-downgrade
 ```
 
 Stop it and remove it from startup:
 
 ```sh
-npx t3@latest service uninstall
+npx d4research@latest service uninstall
 ```
 
 Updating restarts T3 Code briefly. Let active agent work and terminal commands finish first.
@@ -59,7 +59,7 @@ updates roll back with the server version. An older launcher may require one loc
 **Linux** uses a systemd user unit at `~/.config/systemd/user/t3code.service`. The service starts
 when the machine boots and keeps running after you log out (lingering is enabled during install).
 
-**macOS** uses a launch agent at `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`. It
+**macOS** uses a launch agent at `~/Library/LaunchAgents/ai.dimaggi.d4research.service.plist`. It
 starts when you log in, not when the Mac boots, and it stops when you log out; macOS has no
 equivalent of Linux lingering for user agents. For a Mac that should stay reachable unattended,
 turn on automatic login (System Settings → Users & Groups; unavailable while FileVault is on) and

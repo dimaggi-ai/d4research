@@ -21,8 +21,8 @@ import {
   PREVIEW_ZOOM_LEVELS,
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
-import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
+} from "@d4research/contracts";
+import { PREVIEW_VIEWPORT_PRESETS } from "@d4research/shared/previewViewport";
 import { InfoIcon } from "lucide-react";
 import type { ReactNode } from "react";
 

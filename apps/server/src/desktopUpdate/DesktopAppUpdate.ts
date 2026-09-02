@@ -4,7 +4,7 @@ import {
   type DesktopUpdateStatusReport,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
@@ -55,7 +55,7 @@ export class DesktopAppUpdate extends Context.Service<
         returns only when installation fails or times out. */
     readonly commit: (requestId: string) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("t3/desktopUpdate/DesktopAppUpdate") {}
+>()("d4research/desktopUpdate/DesktopAppUpdate") {}
 
 export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* () {
   const config = yield* ServerConfig;

@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, WS_METHODS } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, WS_METHODS } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

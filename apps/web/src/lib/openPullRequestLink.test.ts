@@ -10,7 +10,7 @@ import {
   PullRequestLinkOpenError,
   shouldOpenPullRequestExternally,
 } from "./openPullRequestLink";
-import { ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
+import { ProjectId, type RepositoryIdentity } from "@d4research/contracts";
 
 function repositoryIdentity(
   provider: string,

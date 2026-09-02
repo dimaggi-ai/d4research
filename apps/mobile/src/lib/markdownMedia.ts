@@ -1,15 +1,15 @@
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
-} from "@t3tools/client-runtime/markdown-images";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { normalizeNativeMarkdownUrl } from "@t3tools/mobile-markdown-text/links";
-import { mediaMimeType, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
+} from "@d4research/client-runtime/markdown-images";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { normalizeNativeMarkdownUrl } from "@d4research/mobile-markdown-text/links";
+import { mediaMimeType, mediaMimeTypeFromExtension } from "@d4research/shared/filePreview";
 import {
   mediaFileReference,
   mediaReferenceFileName,
   mediaUrlReference,
-} from "@t3tools/client-runtime/media-reference";
+} from "@d4research/client-runtime/media-reference";
 
 import type { FilePreviewSource } from "../components/FilePreviewModal";
 import type { MediaVideoPreviewSource } from "./videoPreviewSource";

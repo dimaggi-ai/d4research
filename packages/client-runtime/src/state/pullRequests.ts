@@ -3,7 +3,7 @@ import {
   type PullRequestDetail,
   type PullRequestDiffInput,
   type VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

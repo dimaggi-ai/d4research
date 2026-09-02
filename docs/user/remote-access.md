@@ -7,7 +7,7 @@ Use this when you want to connect to a T3 Code server from another device such a
 If a server is already running on this machine, mint a fresh pairing token and QR code without restarting anything:
 
 ```bash
-npx t3 pair
+npx d4research pair
 ```
 
 `t3 pair` finds the running server (the shared `~/.t3` install, or the current worktree's dev server when run inside one), issues a one-time pairing token, and prints the pairing URL as a QR code you can scan from your phone.
@@ -15,12 +15,12 @@ npx t3 pair
 If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
 
 ```bash
-npx t3 pair --tailscale
+npx d4research pair --tailscale
 ```
 
 This publishes the server over Tailscale Serve HTTPS (configuring the mapping if needed — it persists until you run `tailscale serve --https=443 off`) and pairs through the `https://machine.tailnet.ts.net/` URL. Use `--tailscale-serve-port` for a different HTTPS port, `--ttl` to change the token lifetime, and `--base-dir` to target a specific data directory.
 
-If no server is running, `t3 pair` says so and points you at `npx t3 serve` or `npx t3 connect`.
+If no server is running, `t3 pair` says so and points you at `npx d4research serve` or `npx d4research connect`.
 
 ## Recommended Setup
 
@@ -87,7 +87,7 @@ Use this when you want to run the server without a GUI, for example on a remote 
 Run the server with `t3 serve`.
 
 ```bash
-npx t3 serve --host "$(tailscale ip -4)"
+npx d4research serve --host "$(tailscale ip -4)"
 ```
 
 `t3 serve` starts the server without opening a browser and prints:
@@ -109,14 +109,14 @@ Use `t3 serve --help` for the full flag reference. It supports the same general 
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
 
 ```bash
-npx t3 serve --tailscale-serve
+npx d4research serve --tailscale-serve
 ```
 
 By default this configures Tailscale Serve on HTTPS port 443 and advertises
 `https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
 
 ```bash
-npx t3 serve --tailscale-serve --tailscale-serve-port 8443
+npx d4research serve --tailscale-serve --tailscale-serve-port 8443
 ```
 
 Once paired, add projects normally: open the Command Palette and choose **Add Project**, then pick

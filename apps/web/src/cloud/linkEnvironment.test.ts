@@ -3,8 +3,8 @@ import {
   EnvironmentId,
   type RelayClientInstallProgressEvent,
   WS_METHODS,
-} from "@t3tools/contracts";
-import { RelayWebClientId } from "@t3tools/contracts/relay";
+} from "@d4research/contracts";
+import { RelayWebClientId } from "@d4research/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,11 +18,11 @@ import {
   EnvironmentSupervisor,
   type PreparedConnection,
   PrimaryConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import { type RpcSession } from "@t3tools/client-runtime/rpc";
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
-import { remoteHttpClientLayer } from "@t3tools/client-runtime/rpc";
+} from "@d4research/client-runtime/connection";
+import { type RpcSession } from "@d4research/client-runtime/rpc";
+import { EnvironmentRegistry } from "@d4research/client-runtime/connection";
+import { ManagedRelay } from "@d4research/client-runtime/relay";
+import { remoteHttpClientLayer } from "@d4research/client-runtime/rpc";
 import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/desktopAuth";
 
 import {

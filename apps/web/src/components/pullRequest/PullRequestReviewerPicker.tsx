@@ -9,14 +9,14 @@ import type {
   EnvironmentId,
   PullRequestRef,
   PullRequestReviewerCandidate,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { CheckIcon, UserPlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

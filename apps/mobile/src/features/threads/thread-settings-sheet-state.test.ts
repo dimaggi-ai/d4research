@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProviderInstanceId, type ProviderOptionSelection } from "@t3tools/contracts";
+import { ProviderInstanceId, type ProviderOptionSelection } from "@d4research/contracts";
 
 import type { ModelOption } from "../../lib/modelOptions";
 import { modelMatchesCatalogQuery, pendingModelAfterPress } from "./thread-settings-sheet-state";

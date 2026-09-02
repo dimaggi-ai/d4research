@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@d4research/shared/model";
 
 import {
   ApprovalRequestId,
@@ -23,7 +23,7 @@ import {
   type ProviderRuntimeEvent,
   ThreadId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -33,7 +33,7 @@ const decodeCursorSettings = Schema.decodeSync(CursorSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CursorAdapter`.
 class CursorAdapter extends Context.Service<CursorAdapter, CursorAdapterShape>()(
-  "t3/provider/Layers/CursorAdapter.test/CursorAdapter",
+  "d4research/provider/Layers/CursorAdapter.test/CursorAdapter",
 ) {}
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

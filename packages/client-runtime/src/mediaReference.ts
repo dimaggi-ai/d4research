@@ -1,4 +1,4 @@
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { isWindowsAbsolutePath } from "@d4research/shared/path";
 
 /** The authored media location, never the temporary URL used to load its bytes. */
 export type MediaReference =

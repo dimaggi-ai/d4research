@@ -29,7 +29,7 @@ Do not treat unavailable iOS tooling as a blocker when Android is a valid repres
 The development identity on both platforms is:
 
 - App: `T3 Code Dev`
-- Bundle/package identifier: `com.t3tools.t3code.dev`
+- Bundle/package identifier: `ai.dimaggi.d4research.dev`
 - URL scheme: `t3code-dev`
 
 Bundle or package presence proves the correct variant, not native compatibility. Reuse it only when the current changes did not alter its Expo SDK, native dependencies, config plugins, entitlements, generated project, or native source.
@@ -96,12 +96,12 @@ Use `ios-debugger-agent` to select one UDID and set these XcodeBuildMCP session 
 - Scheme: `T3CodeDev`
 - Configuration: `Debug`
 - Simulator ID: the selected UDID
-- Bundle ID: `com.t3tools.t3code.dev`
+- Bundle ID: `ai.dimaggi.d4research.dev`
 
 Check the installed client with:
 
 ```bash
-xcrun simctl get_app_container <simulator-udid> com.t3tools.t3code.dev app
+xcrun simctl get_app_container <simulator-udid> ai.dimaggi.d4research.dev app
 xcrun simctl openurl <simulator-udid> <printed-dev-client-url>
 ```
 
@@ -112,12 +112,12 @@ Accept the iOS confirmation prompt and dismiss the developer menu when it obscur
 Select one running emulator serial from `adb devices` and check the installed client:
 
 ```bash
-adb -s <emulator-serial> shell pm path com.t3tools.t3code.dev
+adb -s <emulator-serial> shell pm path ai.dimaggi.d4research.dev
 adb -s <emulator-serial> reverse tcp:<metro-port> tcp:<metro-port>
 adb -s <emulator-serial> shell am start -W \
   -a android.intent.action.VIEW \
   -d '<printed-dev-client-url>' \
-  com.t3tools.t3code.dev
+  ai.dimaggi.d4research.dev
 ```
 
 Do not start, stop, erase, or reconfigure an emulator owned by another task. Track and later stop only processes owned by this test.

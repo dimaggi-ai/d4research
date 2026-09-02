@@ -9,10 +9,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as ProcessRunner from "../processRunner.ts";
 
 /**
- * A pinned runtime is an exact `t3@<version>` npm-installed into
+ * A pinned runtime is an exact `d4research@<version>` npm-installed into
  * <baseDir>/runtime/versions/<version>. The boot service points its unit or
  * launch agent here, and server self-update installs the target version here before
- * switching over, never `npx t3`, whose cache is ephemeral and whose
+ * switching over, never `npx d4research`, whose cache is ephemeral and whose
  * registry fetch at boot would make startup depend on the network.
  */
 
@@ -71,7 +71,7 @@ export class PinnedRuntimePreflightBlockedError extends Schema.TaggedErrorClass<
 }
 
 /**
- * Installs `t3@<version>` into the pinned runtime directory unless a complete
+ * Installs `d4research@<version>` into the pinned runtime directory unless a complete
  * install is already there, and returns its paths. The sentinel is written
  * only after npm exits 0; checking the entry file alone is not enough. npm
  * extracts files before running native builds (node-pty), so a killed
@@ -155,7 +155,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     yield* runner
       .run({
         command: "npm",
-        args: ["install", "--prefix", stagingDir, "--no-fund", "--no-audit", `t3@${input.version}`],
+        args: ["install", "--prefix", stagingDir, "--no-fund", "--no-audit", `d4research@${input.version}`],
         // Native dependencies may compile from source on slower machines.
         timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
       })

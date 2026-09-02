@@ -3,7 +3,7 @@ import {
   isToolLifecycleItemType,
   ProviderApprovalOption,
   ProviderRequestKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -11,8 +11,8 @@ import type {
   ToolLifecycleItemType,
   TurnId,
   UserInputQuestion,
-} from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+} from "@d4research/contracts";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
@@ -23,8 +23,8 @@ import {
   summarizeToolGroup,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+} from "@d4research/client-runtime/work-log/presentation";
+import { commandProgramName } from "@d4research/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";

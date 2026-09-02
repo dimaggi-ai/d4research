@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/mobile-markdown-text",
+  "name": "@d4research/mobile-markdown-text",
   "version": "0.0.0",
   "private": true,
   "source": "./index.ts",
@@ -26,8 +26,8 @@
     "./types": "./src/SelectableMarkdownText.types.ts"
   },
   "peerDependencies": {
-    "@t3tools/client-runtime": "*",
-    "@t3tools/shared": "*",
+    "@d4research/client-runtime": "*",
+    "@d4research/shared": "*",
     "expo-asset": "*",
     "expo-clipboard": "*",
     "expo-haptics": "*",

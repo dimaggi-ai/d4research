@@ -1,4 +1,4 @@
-import type { AssistantCitation } from "@t3tools/contracts";
+import type { AssistantCitation } from "@d4research/contracts";
 import {
   $createLineBreakNode,
   $createTextNode,

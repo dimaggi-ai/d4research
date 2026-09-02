@@ -1,4 +1,4 @@
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 import { CircleAlertIcon, InfoIcon, LoaderCircleIcon } from "lucide-react";
 import { useId, useState } from "react";
 

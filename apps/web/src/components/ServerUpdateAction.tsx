@@ -1,9 +1,9 @@
-import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
-import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { EnvironmentId, ServerSelfUpdateCapability } from "@d4research/contracts";
+import type { ServerUpdateStage, ServerUpdateState } from "@d4research/client-runtime/state/server";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type { ComponentProps } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -155,7 +155,7 @@ export function ServerUpdateAction({
         title: `${serverLabel} updated`,
         description: isDesktopAppUpdate
           ? `Desktop app relaunched on ${result.value.targetVersion}.`
-          : `Reconnected on t3@${result.value.targetVersion}.`,
+          : `Reconnected on d4research@${result.value.targetVersion}.`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);

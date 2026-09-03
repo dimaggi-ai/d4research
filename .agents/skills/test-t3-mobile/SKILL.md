@@ -36,7 +36,7 @@ Bundle or package presence proves the correct variant, not native compatibility.
 
 ## Start one disposable T3 environment
 
-Run backend commands from the repository root. Use the ignored, worktree-local `.t3` directory or create a fresh directory with the host OS's temporary-directory mechanism. An explicit base directory stores state in `<base-dir>/userdata`; never point testing at shared `~/.t3` state.
+Run backend commands from the repository root. Use the ignored, worktree-local `.t3` directory or create a fresh one with the host OS's temporary-directory mechanism. An explicit base directory stores state in `<base-dir>/userdata`; never point testing at shared `~/.t3` state.
 
 Seed a small number of meaningful Git projects before starting the backend:
 
@@ -85,7 +85,7 @@ Run Metro from `apps/mobile`.
      --port <metro-port>
    ```
 
-   In PowerShell, set `$env:APP_VARIANT = "development"` first and then run the `vp exec expo start ...` command without the leading assignment.
+   In PowerShell, set `$env:APP_VARIANT = "development"` first, then run the `vp exec expo start ...` command without the leading assignment.
 
 4. Open the exact development-client URL for the selected device and confirm the loaded bundle belongs to this worktree and Metro port.
 

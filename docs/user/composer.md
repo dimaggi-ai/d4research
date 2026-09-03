@@ -60,9 +60,9 @@ unsent attachment keeps only a bounded browser-storage preview across a page rel
 asks for the complete source, remove the stale attachment chip and then reattach the file before
 sending.
 
-Chunk retrieval is available when the selected provider receives d4research's memory tools. Other
-providers still see the compact preview, while the full local Memo copy remains available after a
-handoff to a provider with `memory_search`. For a workspace file the agent can read directly, an
+Chunk retrieval works when the selected provider receives d4research's memory tools. Other
+providers still see the compact preview, and the full local Memo copy stays available after a
+handoff to a provider with `memory_search`. For workspace files the agent can read directly, an
 `@` mention remains the simplest unabridged option.
 
 Memo-backed attachments use durable local storage. With the built-in SQLite backend, open

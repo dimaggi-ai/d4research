@@ -3,9 +3,9 @@
 T3 Code uses the OpenCode setup on the connected environment. With a remote environment, its
 OpenCode login and configuration apply, not the setup on your desktop or phone.
 
-T3 Code requires OpenCode 1.14.19 or newer. It checks the server version before it loads models or
-starts work. If the check fails, update OpenCode or fix the server URL and password, then refresh
-the provider status. Reconnecting the client also runs the check again.
+T3 Code requires OpenCode 1.14.19 or newer. It checks the server version before loading models or
+starting work. If the check fails, update OpenCode or fix the server URL and password, then
+refresh the provider status. Reconnecting the client runs the check again.
 
 ## Server authentication
 
@@ -13,7 +13,7 @@ Without a server URL, T3 Code starts a local OpenCode server. The process inheri
 `OPENCODE_SERVER_PASSWORD` from the environment. A password in the provider settings overrides
 that environment value for both the local process and T3 Code.
 
-With a server URL, T3 Code connects to that external server and uses only the password in the
+With a server URL, T3 Code connects to that external server using only the password in the
 provider settings. It does not send a local `OPENCODE_SERVER_PASSWORD` to an external server.
 OpenCode uses this password for HTTP Basic authentication.
 
@@ -39,10 +39,10 @@ configuration in T3 Code also replaces that provider connection.
 On mobile, open the thread settings and select **Refresh models**. The control stays disabled while
 the refresh runs and shows an error if the refresh fails.
 
-OpenCode reads credential changes on each model-list request. Native OpenCode configuration files
-can stay cached while the local helper is running. The helper closes after 30 seconds with no
-model-list or text-generation work. Refresh after that idle period to start a new helper and read
-the file changes. Repeated refreshes or active helper work can extend this wait.
+OpenCode reads credential changes on each model-list request. While the local helper runs, native
+OpenCode configuration files can stay cached. The helper closes after 30 seconds of no model-list
+or text-generation work. Refresh after that idle period to start a new helper and read file
+changes. Repeated refreshes or active helper work can extend this wait.
 
 T3 Code does not own an external OpenCode server. Native configuration changes on that server can
 require its own reload or restart before a refresh returns the new list.

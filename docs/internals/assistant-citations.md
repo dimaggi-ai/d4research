@@ -21,7 +21,7 @@ remote, and tunnel clients share one form. Opening the source still requires acc
 environment.
 
 The parser accepts only version 1 with exactly three source IDs and one of each selector field;
-`comment` is optional and links without one keep their original format. It rejects credentials,
+`comment` is optional, so links without it keep their original format. It rejects credentials,
 ports, malformed encoding, and extra or duplicate query fields. IDs have a 512-character limit,
 the quote and comment each fit in 8,000 UTF-16 code units, offsets are nonnegative safe integers
 with `end > start`, prefix and suffix each fit in 32 code units, and the URI itself is capped at
@@ -51,12 +51,12 @@ occurrences are ambiguous, even if one remains at the saved offsets; the resolve
 ## Composer and clients
 
 [`AssistantSelectionToolbar`][toolbar] offers **Cite in composer** for a selection within one
-response and disables it above the quote limit. It shares [`selectionActions.ts`][actions] with
-the terminal's selection menu: the observer opens actions only after a primary-button release from
-a gesture that started inside the surface, waits out the 500 ms repeat-click window so
-double/triple clicks can finish, anchors to the release point (or the text end for keyboard
-selections), and dismisses on outside interaction, scrolling, or `Escape`. The toolbar registers
-its own element with the observer so interacting with it cannot replace the captured quote.
+response, disabling it above the quote limit. It shares [`selectionActions.ts`][actions] with the
+terminal's selection menu: the observer opens actions only after a primary-button release from a
+gesture that started inside the surface, waits out the 500 ms repeat-click window so double/triple
+clicks can finish, anchors to the release point (or the text end for keyboard selections), and
+dismisses on outside interaction, scrolling, or `Escape`. The toolbar registers its own element
+with the observer so interacting with it cannot replace the captured quote.
 
 `ChatView` inserts the serialized link at the last composer cursor. A one-shot editor request then
 opens the comment editor beside the cited source text, carrying the live DOM range for positioning
@@ -81,11 +81,11 @@ copy so the displayed label is not duplicated as text.
 normalization from decoding quote whitespace or source IDs. Each click adds a fresh activation ID
 to navigation state so the same link can reveal its source again after dismissal.
 
-[`useAssistantCitationTarget`][target] loads earlier history (bounded at 20 pages or a repeated
-cursor, with a warning past that), expands a folded turn, and asks the virtual list to mount the
-source row. While positioning, the timeline disables initial end-scroll and scroll maintenance and
-keeps the cited row mounted until measured; the activation ID doubles as the list's data version
-so pinning rows recalculates a stationary Legend list without discarding measurements.
+[`useAssistantCitationTarget`][target] loads earlier history, bounded at 20 pages or a repeated
+cursor (with a warning past that), expands a folded turn, and asks the virtual list to mount the
+source row. During positioning, the timeline disables initial end-scroll and scroll maintenance
+while keeping the cited row mounted until measured; the activation ID doubles as the list's data
+version so pinning rows recalculates a stationary Legend list without discarding measurements.
 
 [`AssistantCitationSource`][source] resolves the DOM range, smoothly scrolls to it, and pulses
 only that text through the CSS Highlight API: two 650 ms pulses driven by a registered opacity
@@ -99,8 +99,8 @@ produce warnings without changing the saved quote. The separate comment-editing 
 the same range-repair observer while its editor is open.
 
 Desktop shares the web implementation. Mobile's `ThreadFeed` uses `renderAssistantCitationsAsText`
-to show sent quotes as readable Markdown blockquotes with each user comment below its quote; it
-does not create citations or navigate to sources.
+to display sent quotes as readable Markdown blockquotes, placing each user comment below its
+quote; it does not create citations or navigate to sources.
 
 ## Provider input and titles
 

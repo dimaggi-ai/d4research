@@ -1,16 +1,17 @@
 # Mobile navigation
 
 The iOS Home and thread routes share the root native stack in
-[`Stack.tsx`](../../apps/mobile/src/Stack.tsx). Keeping them in one navigation
-controller lets UIKit animate the header between routes. The iPad sidebar owns
-a separate, single-screen stack; Android uses its own in-flow headers.
+[`Stack.tsx`](../../apps/mobile/src/Stack.tsx). A single navigation controller
+allows UIKit to animate the header between these routes. The iPad sidebar
+maintains a separate, single-screen stack, while Android uses its own in-flow
+headers.
 
 Home and the iPad sidebar render their brand and connection status through
-`headerTitle`, with `Threads` retained as the route title. The editor-style native
-bar aligns that title on the leading side. Do not model the brand as a toolbar
-button: on iOS 26.5 UIKit morphs a background-free custom leading item's rectangle
-into the next screen's glass back button, even with distinct item identifiers.
-Using the title slot lets the brand and native back button animate separately.
+`headerTitle`, keeping `Threads` as the route title. The editor-style native bar
+aligns that title on the leading side. Do not model the brand as a toolbar button:
+on iOS 26.5, UIKit morphs a background-free custom leading item's rectangle into
+the next screen's glass back button, even with distinct item identifiers. Using
+the title slot lets the brand and native back button animate separately.
 
 The connection-status title has a maximum width based on its header's width and
 trailing actions. A long environment name or larger text must not push Settings
@@ -29,8 +30,9 @@ independently. A button can belong to only one group: constructing another group
 with the same button removes it from the previous one. Unrelated menu updates
 must therefore preserve the other groups while UIKit may be animating them.
 
-Each cache includes the owning header config, its item values, and custom native
-item identities, so changed content or remounted event emitters still rebuild.
+Each cache holds the owning header config, item values, and custom native item
+identities so that changed content or remounted event emitters still trigger a
+rebuild.
 
 Custom header identifiers require native code generation and a new mobile build;
 an over-the-air JavaScript update alone is insufficient. The Android view manager
@@ -51,12 +53,12 @@ use a separate implementation and do not need this workaround.
 
 ## Native media presentations
 
-`PresentationSource` in `NativePresentation` registers a thumbnail for AVKit,
-image zoom transitions, and UIKit's share sheet. Wrap the thumbnail as its single child
-and pass the stable identifier to the presentation. The registry keeps weak
-references to source views; recycled or compact composer thumbnails can register
-the same identifier. Identifiers must distinguish simultaneously visible attachments.
-The source registration does not own the preview. Android uses a regular view.
+`PresentationSource` in `NativePresentation` registers thumbnails for AVKit, image zoom
+transitions, and UIKit's share sheet. Wrap the thumbnail as its single child and pass
+the stable identifier to the presentation. The registry holds weak references to source
+views; recycled or compact composer thumbnails can register the same identifier.
+Identifiers must distinguish simultaneously visible attachments. Source registration
+does not own the preview. Android uses a regular view.
 
 On iOS, video previews mount `AVPlayerViewController` temporarily inside the
 registered source and enter full screen through AVKit. AVKit
@@ -91,14 +93,14 @@ the client does not download the entire file or show a separate opening overlay 
 presentation. The URL is captured once per preview so credential refresh does not
 restart playback. Saving or sharing still downloads the original file.
 
-The native presentation promise completes after dismissal. Local draft previews
-hold their file lease until that promise settles. The iOS preview component requests
-native dismissal when its source screen unmounts. Playback pauses in the background.
-AVPlayer activates audio as playback starts. The presenter pauses and releases
-its own player on close, then restores the previous audio-session configuration
-if no other component changed it during playback. It does not deactivate the
-shared session, which may still serve another player or recorder. Android retains
-its React Native modal and Expo Video player.
+The native presentation promise resolves after dismissal. Local draft previews keep
+their file lease until that promise settles. The iOS preview component requests
+native dismissal when its source screen unmounts. Playback pauses in the background,
+and AVPlayer activates audio as playback starts. On close, the presenter pauses and
+releases its own player, then restores the previous audio-session configuration if
+no other component changed it during playback. It does not deactivate the shared
+session, which may still serve another player or recorder. Android retains its React
+Native modal and Expo Video player.
 
 `shareFileFromSource` uses the same source registration to anchor UIKit's activity
 controller. Its promise completes when the native share flow finishes, keeping

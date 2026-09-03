@@ -1,8 +1,8 @@
 # Docker deployment QA
 
-The Docker QA stack validates the local deployment without reading or writing the developer's
-live T3 home. It builds T3 through `scripts/deploy-local.sh --build-only`, starts an isolated server,
-runs a deterministic local-control mock beside it, and puts Caddy in front of both T3 and `/voice`.
+The Docker QA stack validates local deployment without touching the developer's live T3 home. It
+builds T3 via `scripts/deploy-local.sh --build-only`, starts an isolated server, runs a
+deterministic local-control mock alongside it, and places Caddy in front of both T3 and `/voice`.
 
 Run the complete smoke test:
 

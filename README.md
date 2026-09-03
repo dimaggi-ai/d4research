@@ -1,6 +1,6 @@
 # d4research
 
-A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation without leaving the thread, replay authored pipelines that delegate steps across models under server-enforced budgets, and layer optional tool-safety policies on top.
+A multi-provider coding agent workspace for structured research built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy agents side by side. Hand off context between them mid-conversation without leaving the thread. Replay authored pipelines that delegate steps across models under server-enforced budgets. Layer optional tool-safety policies on top.
 
 ## Installation
 
@@ -69,7 +69,7 @@ vp i
 vp run dev
 ```
 
-`scripts/deploy-local.sh` rebuilds an existing local deployment with systemd restart. It is not a fresh-machine installer.
+`scripts/deploy-local.sh` rebuilds an existing local deployment using a systemd restart; it does not install on a fresh machine.
 
 ---
 
@@ -106,7 +106,7 @@ Both are configured as **named scenarios** — create one per kind of work (`blo
 
 Dev pipelines ship with a working default — a plan → build → review + verify chain that picks distinct model families for each role from whatever providers you have ready, so the reviewer is never the author.
 
-**Directives.** Inside a pipeline, `!provider:model` names a delegation target and `!provider:model:file.md` also hands that delegate one of your attached prompt files. The provider matches by name and the model fragment can be partial as long as it is unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then their models, then your attached files; live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
+**Directives.** Inside a pipeline, `!provider:model` names a delegation target, while `!provider:model:file.md` hands that delegate one of your attached prompt files. The provider matches by name; the model fragment can be partial if unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then models, then attached files. Live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
 
 The composer's **Workflows** menu combines Chat/Plan, named Dev and Research scenarios, and one
 shared target policy. **Exact targets only** fails an unavailable step. **Use labeled fallback**
@@ -114,7 +114,7 @@ accepts only a `FALLBACK directive: !provider:model` authored in that scenario. 
 always record the requested and actual target, so a fallback never impersonates the unavailable
 model.
 
-**Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. Contents are inlined server-side into the delegated request, so the orchestrator's own context never carries the file bodies — and a file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
+**Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. The server inlines their contents into the delegated request, so the orchestrator's own context never carries the file bodies. A file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
 
 **Budgets, enforced by the server rather than requested of the model.** A step may delegate to the same target at most 3 times, and a run has a hard ceiling of 24 delegations. Loops are allowed and provably terminate: when a guard trips, the orchestrator must say which loop was cut and synthesize from what it has. Delegates cannot delegate further.
 
@@ -128,11 +128,11 @@ Switch models mid-conversation without losing context or leaving the thread. Thi
 
 The client summarizes a bounded transcript and must prove the handoff context reached local Memo **before** anything else changes. Only then does it stop the old session, update the thread's model selection, and start the receiving provider on the same thread. If both memory writes fail, the switch is abandoned with the original provider still selected — the receiving model never starts against a visible history it cannot recover. The receiving turn is explicitly context-synchronization only: acknowledge and wait, do not resume prior work.
 
-**Context compression** — optionally route the transcript through a separate provider (a local Ollama model, say) before handing off. Configure the compression model, input/output character caps, and a custom compression prompt in **Settings → General → Handoff**. The compressed summary goes in the prompt to save tokens while the full transcript goes to Memo to preserve accuracy. Compression never hard-fails a handoff; unavailable local memory does. Research handoffs skip compression by default so evidence crosses verbatim.
+**Context compression** optionally routes the transcript through a separate provider (a local Ollama model, say) before handing off. Configure the compression model, input/output character caps, and a custom compression prompt in **Settings → General → Handoff**. The compressed summary goes in the prompt to save tokens while the full transcript goes to Memo to preserve accuracy. Compression never hard-fails a handoff; unavailable local memory does. Research handoffs skip compression by default so evidence crosses verbatim.
 
 ### Skills
 
-Portable `SKILL.md` instruction files, inventoried across every root your agents already read — the shared `~/.agents/skills` user root, Claude's and Codex's own locations, Agy's registry, and the current project — deduplicated when roots alias each other through a symlink, with every root that reaches an entry reported.
+Portable `SKILL.md` instruction files are inventoried in every root your agents already read: the shared `~/.agents/skills` user root, Claude's and Codex's own locations, Agy's registry, and the current project. The system deduplicates entries when roots alias each other through a symlink and reports every root that reaches an entry.
 
 Select skills at two scopes: **global** in **Settings → Skills** (every turn in every chat) or **chat** from the composer's Skills control (that chat only, surviving reloads and provider handoffs). The two share a 12-skill ceiling, duplicates are charged once, and message bubbles badge which scope applied. Attaching a skill hands the agent a short reference and asks it to read the file — it costs a few lines rather than the whole text, and it never executes anything.
 

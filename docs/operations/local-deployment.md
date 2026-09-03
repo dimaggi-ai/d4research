@@ -40,8 +40,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now d4research.service
 ```
 
-The stable link makes the tracked unit independent of a developer-specific checkout path. A missing
-build artifact prevents startup, and the start limiter prevents a persistent crash loop. The unit
-grants shutdown up to 45 seconds so provider subprocesses and SQLite checkpoint work can close
+The stable link keeps the tracked unit independent of any developer-specific checkout path. A
+missing build artifact blocks startup, and the start limiter stops persistent crash loops. The unit
+allows up to 45 seconds for shutdown so provider subprocesses and SQLite checkpoint work can close
 cleanly instead of inheriting a workstation's shorter manager default. Machine-specific Node PATH
 or proxy settings belong in a systemd drop-in rather than an untracked replacement unit.

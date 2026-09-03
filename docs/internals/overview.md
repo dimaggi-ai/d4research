@@ -33,8 +33,8 @@ there, never in the client.
 The client/server contract is an Effect RPC group, not a hand-rolled push protocol. [`rpc.ts`][rpc]
 declares `WS_METHODS` and assembles `WsRpcGroup`; each member is either unary or a server stream
 (`stream: true`). Streaming members such as `orchestration.subscribeShell`,
-`orchestration.subscribeThread`, `subscribeServerConfig`, and `terminal.attach` replace what used to
-be a broadcast push bus: a client subscribes to what it needs and the server pushes only on that
+`orchestration.subscribeThread`, `subscribeServerConfig`, and `terminal.attach` replace the old
+broadcast push bus. A client subscribes to what it needs, and the server pushes only on that
 subscription.
 
 [`ws.ts`][ws] serves the group. `websocketRpcRouteLayer` mounts `GET /ws`, authenticates the upgrade
@@ -60,8 +60,8 @@ or RPC clients. See [connection-runtime.md](./connection-runtime.md).
 
 ## Orchestration is event-sourced
 
-The server does not mutate app state directly. Clients dispatch typed commands; the engine turns them
-into persisted events; projections derive the read model.
+The server does not mutate app state directly. Clients dispatch typed commands, the engine converts
+them into persisted events, and projections derive the read model.
 
 [`OrchestrationEngine.ts`][engine] serializes this. `dispatch` offers a `CommandEnvelope` onto
 `commandQueue` and awaits its result; a single worker fiber takes envelopes one at a time, so command
@@ -81,13 +81,13 @@ the event log. On dispatch failure the engine rereads persisted events past the 
 reconciles.
 
 Command and event names live in [`orchestration.ts`][contracts]. Some commands are client
-dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); others are internal
-and produced only by server-side reactors (`thread.message.assistant.delta`,
+dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); others are
+internal, produced only by server-side reactors (`thread.message.assistant.delta`,
 `thread.turn.diff.complete`).
 
-A turn is complete when its session leaves `running` status, projected by
-`settledTurnStateForSessionStatus` in [`projector.ts`][projector]. Checkpoint work settling later
-does not define turn end.
+A turn completes when its session leaves `running` status, a transition projected by
+`settledTurnStateForSessionStatus` in [`projector.ts`][projector]. Checkpoint work that settles
+later does not define the end of the turn.
 
 Thread settlement is server-owned. Each server's own settings control PR and inactivity
 settlement. Those keys are user preferences, so clients write them to every connected environment
@@ -121,20 +121,21 @@ build production behavior on receipts.
 
 ## Provider drivers
 
-Seven drivers ship built in, registered in [`builtInDrivers.ts`][drivers] as `BUILT_IN_DRIVERS`:
-Codex, Claude, Agy, Cursor, Grok, Junie, and OpenCode. A driver declares its kind and config schema and creates a
-scoped adapter; `ProviderInstanceRegistry` owns live instances and `ProviderAdapterRegistry` resolves
-an instance to its adapter, so `ProviderService` routes session and turn operations without knowing
-which agent is behind them. See [providers.md](./providers.md).
+Seven drivers ship built in, registered as `BUILT_IN_DRIVERS` in [`builtInDrivers.ts`][drivers]:
+Codex, Claude, Agy, Cursor, Grok, Junie, and OpenCode. Each driver declares its kind and config
+schema to create a scoped adapter. `ProviderInstanceRegistry` owns live instances while
+`ProviderAdapterRegistry` resolves an instance to its adapter, allowing `ProviderService` to route
+session and turn operations without knowing which agent is behind them. See
+[providers.md](./providers.md).
 
 ## Checkpointing
 
-Each turn is bracketed by workspace checkpoints so diffs and reverts are exact. `CheckpointStore`
-captures state as hidden Git refs through the VCS driver's checkpoint operations;
-`CheckpointDiffQuery` answers turn and full-thread diff requests; `CheckpointReactor` coordinates
-baseline capture, completed-turn capture, diff projection, and reverting both the workspace and the
-provider conversation. The storage contract is `VcsCheckpointOps` in
-[`VcsDriver.ts`](../../apps/server/src/vcs/VcsDriver.ts), implemented for Git in the same directory.
+Workspace checkpoints bracket each turn to keep diffs and reverts exact. `CheckpointStore` captures
+state as hidden Git refs using the VCS driver's checkpoint operations; `CheckpointDiffQuery` handles
+turn and full-thread diff requests; `CheckpointReactor` coordinates baseline capture, completed-turn
+capture, diff projection, and reverting both the workspace and the provider conversation. The
+storage contract is `VcsCheckpointOps` in [`VcsDriver.ts`](../../apps/server/src/vcs/VcsDriver.ts),
+implemented for Git in the same directory.
 
 ## Startup
 

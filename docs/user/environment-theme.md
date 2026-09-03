@@ -20,15 +20,14 @@ The machine can also set the environment's theme:
 d4research theme set nightfall
 ```
 
-Web and desktop clients switch to it — immediately when connected, on their next connect
-otherwise — and a fresh client opens with it. Each client applies a set once, so picking a
-different theme in Settings afterwards sticks until the next `d4research theme set`, and running
-the same set again is how you bring clients back. `d4research theme clear` removes the setting
-without changing what anyone currently has, and `d4research theme show` prints the current theme
-and everything the machine publishes. Only the environment you are anchored to publishes themes,
-so a remote client follows the machine it is connected to, not the device it runs on. T3 Code
-Mobile keeps its own
-appearance settings and does not follow environment themes.
+Web and desktop clients switch to it immediately when connected, or on their next connect
+otherwise; a fresh client opens with it. Each client applies a set once, so picking a different
+theme in Settings afterwards sticks until the next `d4research theme set`, and running the same
+set again is how you bring clients back. `d4research theme clear` removes the setting without
+changing what anyone currently has, and `d4research theme show` prints the current theme and
+everything the machine publishes. Only the environment you are anchored to publishes themes, so
+a remote client follows the machine it is connected to, not the device it runs on. T3 Code
+Mobile keeps its own appearance settings and does not follow environment themes.
 
 Select **Duplicate** on a published theme's card to keep a copy you can edit. The published theme
 itself cannot be edited or removed, because the environment rewrites it whenever its own theme
@@ -64,8 +63,8 @@ its own palette, a short seeded form:
 rest of the palette from those two, the same way the guided theme editor does, so the result reads
 as a T3 Code theme wearing your desktop's colors rather than a transplant of another app's.
 
-A machine that knows a role better than a derivation can guess — its terminal palette, its
-semantic colors — can publish that role directly under `colors`, layered over the generated
+A machine that knows a role better than a derivation can guess (its terminal palette, its
+semantic colors) can publish that role directly under `colors`, layered over the generated
 palette:
 
 ```json
@@ -88,6 +87,6 @@ ignored — the filename decides.
 
 A theme with no usable colors is not listed on that client.
 
-Write each file atomically — write a temporary file beside it and rename — so T3 Code never reads
-a half-written theme. An unreadable or invalid file is simply not published; the machine's other
-themes are unaffected.
+Write each file atomically by writing a temporary file beside it and renaming it, so T3 Code
+never reads a half-written theme. An unreadable or invalid file is simply not published; the
+machine's other themes are unaffected.

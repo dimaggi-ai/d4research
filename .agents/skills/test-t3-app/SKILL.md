@@ -24,7 +24,7 @@ Ports are derived from the worktree path but can shift when occupied. Always rea
 
 Shared browser dev is single-origin: Vite proxies the backend paths, so never set `VITE_HTTP_URL` or `VITE_WS_URL` for `dev`/`dev:web`.
 
-The dev runner disables browser auto-open by default. Do not pass `--browser` during automated testing: an automatically opened page can consume the one-time bootstrap token before the controlled browser uses it.
+The dev runner disables browser auto-open by default. Do not pass `--browser` during automated testing, as an automatically opened page can consume the one-time bootstrap token before the controlled browser uses it.
 
 ### Verify a shared environment before human handoff
 

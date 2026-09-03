@@ -3,10 +3,11 @@
 > For maintainers. Using d4research? See [docs/user](../user/).
 
 The screenshot harness runs the real mobile application against three disposable local T3
-environments. It creates an isolated base directory and server for each environment, real Git
-projects with deterministic content, seeded orchestration projections, and persisted terminal
-history. The app pairs with every server through its normal connection flow and React Navigation
-opens the production Home, Thread, ThreadTerminal, ThreadReview, and SettingsEnvironments routes.
+environments. It creates an isolated base directory and server for each environment, along with
+real Git projects containing deterministic content, seeded orchestration projections, and
+persisted terminal history. The app pairs with every server through its normal connection flow,
+and React Navigation opens the production Home, Thread, ThreadTerminal, ThreadReview, and
+SettingsEnvironments routes.
 
 No screenshot-specific screen recreates application UI. `EXPO_PUBLIC_SHOWCASE=1` only enables the
 non-rendering pairing/readiness coordinator and disables terminal autofocus so captures do not
@@ -40,15 +41,15 @@ paths and server ports.
 
 Captures wait for the real environment snapshot to hydrate and for the requested route to become
 active. Both platforms record readiness in the simulator/emulator app container. A final settle
-delay allows native terminal and Git review data to finish rendering.
+delay lets native terminal and Git review data finish rendering.
 
 A full capture regenerates the selected native project with Expo's clean production prebuild before
 building it. Use --skip-build for repeated captures after the first build.
 
-The harness uses fixed Metro port `8199`, which separates it from Expo's normal default port but is
-shared across every checkout. The readiness check only verifies that the port is open; it does not
-verify process ownership. Concurrent screenshot harnesses in different worktrees can therefore
-collide or attach to the wrong Metro process.
+The harness uses fixed Metro port `8199`. This separates it from Expo's normal default port, but
+every checkout shares the same port. The readiness check only verifies that the port is open; it
+does not verify process ownership. Concurrent screenshot harnesses in different worktrees can
+therefore collide or attach to the wrong Metro process.
 
 Every configured device defaults to dark appearance and the `t3-code` palette, so plain
 `pnpm screenshots:mobile` produces 30 dark PNGs. Pass `--appearance light`, `--appearance dark`, or
@@ -107,8 +108,8 @@ palette and runs iOS and Android concurrently: iPhone and iPad capture on a
 12-vCPU Blacksmith macOS runner, while Android phone, 7-inch tablet, and 10-inch tablet capture on a
 16-vCPU Blacksmith Linux runner with a KVM-accelerated x86_64 emulator.
 
-Every job uploads its PNGs even when capture fails, which makes partial runs useful for diagnosis.
-The separate validation step is success-gated: it runs before upload only when capture succeeds. If
+Every job uploads its PNGs even when capture fails, making partial runs useful for diagnosis. The
+separate validation step is success-gated: it runs before upload only if capture succeeds. If
 capture fails, the `always()` upload still publishes partial PNGs without re-validating them.
 Download `app-store-connect-screenshots` and `google-play-screenshots` from the workflow run's
 Artifacts section. Artifacts are retained for 14 days.

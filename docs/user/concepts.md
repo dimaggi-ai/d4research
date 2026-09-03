@@ -36,8 +36,8 @@ scenario. Research and Dev share target resolution, explicit fallback policy, tr
 server-enforced budgets.
 
 A **delegation** is a real, bounded provider call made by the orchestrator. Delegates cannot
-delegate again. A skipped or failed call remains skipped or failed in the run record; model-written
-prose cannot turn it into a successful call.
+delegate again. A skipped or failed call stays that way in the run record; model-written prose
+cannot turn it into a successful call.
 
 An **inline delegation** is the same bounded call made without a pipeline: open a message with
 `!provider:model` and that one message is answered by the model you named, leaving the chat's own

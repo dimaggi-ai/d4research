@@ -7,8 +7,8 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with seven entries. All support
-multiple instances.
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS`, which contains seven entries
+that all support multiple instances.
 
 | Driver kind   | Display name | Transport                     | Driver source                           |
 | ------------- | ------------ | ----------------------------- | --------------------------------------- |
@@ -47,9 +47,9 @@ The seven drivers use four distinct transport protocols:
 **Codex** — two instances with different `homePath`s run fully independent Codex app-server
 processes. Model discovery queries the app-server for account info and model list.
 
-**Claude** — model catalog is built-in with version-gated entries (e.g. Opus 5 requires SDK ≥
-2.1.219). When `ANTHROPIC_BASE_URL` points to a local Ollama server, the driver also runs
-`ollama list` to discover local models. Supports native updates via `claude update`.
+**Claude** — the model catalog is built-in with version-gated entries (e.g., Opus 5 requires
+SDK ≥ 2.1.219). If `ANTHROPIC_BASE_URL` points to a local Ollama server, the driver runs
+`ollama list` to discover local models. It supports native updates via `claude update`.
 
 **Agy** — `agy models` hangs on plain pipes on Linux, so the provider wraps it in
 `script -q -e -c <command> /dev/null` for a pseudo-terminal. Cold starts can take up to 20 seconds.
@@ -129,9 +129,8 @@ Provider output comes back as internal commands such as `thread.message.assistan
 
 ## Server-side workers
 
-Provider work flows through three queue-backed workers. All three are built with
-`makeDrainableWorker` from [`DrainableWorker.ts`][worker] and expose `drain` for deterministic test
-synchronization.
+Provider work flows through three queue-backed workers built with `makeDrainableWorker` from
+[`DrainableWorker.ts`][worker]. Each exposes `drain` for deterministic test synchronization.
 
 1. [`ProviderRuntimeIngestion`][ingest] consumes provider runtime streams and emits orchestration
    commands.
@@ -143,10 +142,10 @@ synchronization.
 ### Buffered assistant delivery
 
 A thread in `buffered` assistant delivery mode accumulates assistant text instead of streaming each
-delta. The buffer is not held until turn completion. In [`ProviderRuntimeIngestion`][ingest],
-`MAX_BUFFERED_ASSISTANT_CHARS` is 24,000: the append that would exceed it invalidates the buffer and
-spills the whole accumulated text as one delta. The buffer also flushes at interaction boundaries,
-when a request opens (approval) or user input is requested, via
+delta, but does not hold the buffer until turn completion. In [`ProviderRuntimeIngestion`][ingest],
+`MAX_BUFFERED_ASSISTANT_CHARS` is 24,000; an append that would exceed this limit invalidates the
+buffer and spills the entire accumulated text as a single delta. The buffer also flushes at
+interaction boundaries, such as when a request opens (approval) or user input is requested, via
 `flushBufferedAssistantMessagesForTurn`.
 
 ## Provider snapshots: models, skills, usage
@@ -160,26 +159,27 @@ pipeline's Junie build model, and requires exact streamed output. It is intentio
 CI because it requires the installed CLI and a live account; a skipped probe is not release proof.
 
 Each provider probe produces a `ServerProvider` snapshot
-([`server.ts`](../../packages/contracts/src/server.ts)): install/auth/status, the model list, and —
-where the CLI exposes them — `slashCommands` and `skills` that the web composer surfaces as `/` and
-`$` completions.
+([`server.ts`](../../packages/contracts/src/server.ts)) containing install/auth/status, the model
+list, and, where the CLI exposes them, `slashCommands` and `skills`. The web composer surfaces
+these as `/` and `$` completions.
 
 `discoverClaudeSkills` ([`ClaudeSkills.ts`](../../apps/server/src/provider/Drivers/ClaudeSkills.ts))
-scans `<configDir>/skills` (scope `user`) and `<cwd>/.claude/skills` (scope `project`). The scan
-recurses up to three levels so category layouts (`skills/writing/copywriting/SKILL.md`) are found;
-hidden directories and `node_modules` are skipped, and a directory holding a `SKILL.md` is itself a
-skill and is never descended into. Project skills win name collisions with user skills.
+scans `<configDir>/skills` (scope `user`) and `<cwd>/.claude/skills` (scope `project`). It recurses
+up to three levels deep, which finds category layouts like `skills/writing/copywriting/SKILL.md`.
+The scan skips hidden directories and `node_modules`. A directory containing a `SKILL.md` is treated
+as the skill itself, so it is never descended into. Project skills take precedence over user skills
+in name collisions.
 
 ### Skills inventory and the Skills settings page
 
-[`skillsInventory.ts`](../../apps/server/src/skillsInventory.ts) merges every skills root the local
-agents read — the shared user root `~/.agents/skills` (Codex, Cursor, Grok, and OpenCode),
+[`skillsInventory.ts`](../../apps/server/src/skillsInventory.ts) merges every skills root read by
+local agents: the shared user root `~/.agents/skills` (Codex, Cursor, Grok, OpenCode),
 `~/.claude/skills`, Codex's hidden `~/.codex/skills/.system` set (scope `system`),
 `~/.junie/skills`, `~/.junie/commands/*.md` (kind `command`, description from frontmatter or the
 first heading), Agy's documented `~/.gemini/config/skills.json` registry, and the project's
-`.agents/skills` and `.claude/skills`. Project roots frequently alias one another through a symlink, so entries are
-deduplicated by resolved path while the aliasing is still reported (`isSymlinked`) and the `agents`
-list unions every root that reaches the entry.
+`.agents/skills` and `.claude/skills`. Because project roots often alias one another via symlinks,
+entries are deduplicated by resolved path. The aliasing is still reported (`isSymlinked`), and the
+`agents` list unions every root that reaches the entry.
 
 Git installs are copied into `~/.agents/skills`, then linked into the Claude and Junie user roots.
 Agy receives the same canonical root through an idempotent entry in
@@ -204,21 +204,21 @@ Three authenticated endpoints expose it ([`http.ts`](../../apps/server/src/http.
   fans out portable skills. `installAgyPlugin` must be exactly `true` before the server may invoke
   Agy's whole-package installer; the default is portable skills only.
 
-The web side is `useSkillsInventory` plus `SkillsSettingsPanel` at `/settings/skills`, which groups
-skills by root, filters by name/description/path, offers the Share action per row, and persists up to
-12 global `skills.enabledByDefault` names in server settings. Web and mobile composers persist
-additive chat selections in `skills.enabledByThread`, keyed by the durable (preallocated for drafts)
-thread id. Empty chat entries are removed and the map is bounded to 256 configured chats.
+The web side uses `useSkillsInventory` and `SkillsSettingsPanel` at `/settings/skills`. It groups
+skills by root, filters them by name/description/path, provides the Share action for each row, and
+stores up to 12 global `skills.enabledByDefault` names in server settings. Web and mobile composers
+save additive chat selections in `skills.enabledByThread`, keyed by the durable (preallocated for
+drafts) thread id. The system removes empty chat entries and limits the map to 256 configured chats.
 
-Global and chat skills are merged and resolved from the live inventory on every
-`thread.turn.start` in the Normalizer. Global names win duplicates and the effective list is capped
-at 12. Project entries win same-name inventory collisions, followed by the shared user root and
-provider-specific roots. Only existing `SKILL.md` files are attached. The server appends the shared
-`<enabled_skills>` format from `@d4research/shared/enabledSkillsContext`; web and mobile use the exact
-same parser to remove transport markup and render `Global: name` or `Chat: name` badges. Persisted
-version-one blocks remain readable as global. This is reference-only progressive disclosure, but
-the prompt explicitly requires the receiving agent to read and apply each file, so every selected
-skill has a deliberate per-turn context cost.
+The Normalizer merges global and chat skills and resolves them against the live inventory on every
+`thread.turn.start`. Global names take precedence in duplicates, capping the effective list at 12.
+Project entries beat same-name inventory collisions, followed by the shared user root and
+provider-specific roots. The system attaches only existing `SKILL.md` files. It appends the shared
+`<enabled_skills>` format from `@d4research/shared/enabledSkillsContext`, which web and mobile parse
+identically to strip transport markup and render `Global: name` or `Chat: name` badges. Version-one
+persisted blocks still read as global. Although this is reference-only progressive disclosure, the
+prompt explicitly requires the receiving agent to read and apply each file, imposing a deliberate
+per-turn context cost for every selected skill.
 
 Provider handoff carries the merged global and chat names outside the compressed summary in two
 places: the receiving prompt and the durable local Memo record. The receiving turn is normalized
@@ -234,16 +234,15 @@ report `skills: []`, so a bare `$name` would reach them as a meaningless string.
 
 For those, the server expands the token.
 [`skillExpansion.ts`](../../apps/server/src/skillExpansion.ts) finds `$name` tokens at a word
-boundary — ignoring `$` inside inline code spans, fenced blocks, and `$$` — and appends a compact
+boundary, ignoring `$` inside inline code spans, fenced blocks, and `$$`, then appends a compact
 reference block after the message text: name, description, the absolute `SKILL.md` path, and one
-instruction to read that file first. It is progressive disclosure, not the body: every provider here
-is a local CLI with file-read tools. The original token stays in place because it is the user's
+instruction to read that file first. This is progressive disclosure, not the body; every provider
+here is a local CLI with file-read tools. The original token stays in place because it is the user's
 visible attachment, and the block states plainly that attaching a skill does not run it.
 
-The expansion happens in `normalizeDispatchCommand`
-([`Normalizer.ts`](../../apps/server/src/orchestration/Normalizer.ts)), so it is part of the
-persisted user message and every client — web, desktop, mobile — sees the same authoritative thread.
-Constraints worth knowing:
+`normalizeDispatchCommand` ([`Normalizer.ts`](../../apps/server/src/orchestration/Normalizer.ts))
+handles the expansion, making it part of the persisted user message so every client (web, desktop,
+mobile) sees the same authoritative thread. Constraints worth knowing:
 
 - **Every root, including project skills.** The scan covers `claude-user`, `codex-user`,
   `junie-user` and `project`. A `thread.turn.start` carries no workspace root for an existing
@@ -268,9 +267,10 @@ pay for a poll they never read.
 ### `skills_search` (MCP)
 
 [`mcp/toolkits/skills`](../../apps/server/src/mcp/toolkits/skills/) registers one read-only tool,
-`skills_search(query, limit)`, answered from `readSkillsInventory` at query time — a live scan, so a
-deleted skill disappears immediately and there is no index to go stale. It returns each skill's name,
-description, absolute path, root/kind/scope, and which agents can see it; it never runs a skill.
+`skills_search(query, limit)`, which answers from `readSkillsInventory` at query time. This live
+scan means a deleted skill disappears immediately and there is no index to go stale. It returns each
+skill's name, description, absolute path, root/kind/scope, and which agents can see it; it never
+runs a skill.
 
 Reachability follows the MCP session, not the skills support: **Codex, Claude, Cursor, Grok and
 OpenCode** get an `McpProviderSession` and can call it. **Agy and Junie** have no MCP session in
@@ -309,12 +309,12 @@ Server-side, `ClaudeDriver` also discovers local models with `ollama list` when
 
 ## Tool Guard environment
 
-The Claude, Codex, and Agy adapters inject Tool Guard variables into the provider process through
+The Claude, Codex, and Agy adapters inject Tool Guard variables into the provider process via
 `toolGuardEnvironment` (`apps/server/src/provider/toolGuardRuntime.ts`). When the managed
 integration is enabled (`setToolGuardRuntimeEnabled`), it sets `T3RESEARCH_RUNTIME_MODE` to the
 thread's runtime mode, `T3RESEARCH_TOOL_GUARD_MODE` to `shadow` for `full-access` and `enforcement`
-for every other mode, and `T3RESEARCH_TOOL_GUARD_PROFILE`. When disabled it returns the environment
-unchanged, so the hooks stay inert. See [tool-guard.md](./tool-guard.md).
+for every other mode, and `T3RESEARCH_TOOL_GUARD_PROFILE`. When disabled, it returns the
+environment unchanged, leaving the hooks inert. See [tool-guard.md](./tool-guard.md).
 
 [drivers]: ../../apps/server/src/provider/builtInDrivers.ts
 [codex]: ../../apps/server/src/provider/Drivers/CodexDriver.ts

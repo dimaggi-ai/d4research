@@ -8,9 +8,9 @@
 ## index
 
 `packages/contracts/src/index.ts` is the public aggregation boundary for the contracts package. It
-re-exports the module-level schemas, branded identifiers, HTTP API declarations, and RPC method
-maps consumed by the server, web, desktop, mobile, and client-runtime packages; it does not define
-a second wire model of its own.
+re-exports module-level schemas, branded identifiers, HTTP API declarations, and RPC method maps
+used by the server, web, desktop, mobile, and client-runtime packages; it does not define a second
+wire model of its own.
 
 ## baseSchemas
 
@@ -39,7 +39,7 @@ background-activity layers that differ between web and mobile.
 Descriptors for an execution environment: platform (`ExecutionEnvironmentPlatform` os/arch),
 capabilities including self-update (`ServerSelfUpdateMethod`, `ServerSelfUpdateCapability`),
 `ExecutionEnvironmentDescriptor`, `EnvironmentConnectionState`, and `RepositoryIdentityLocator`.
-Consumed by all clients to describe and pick environments.
+All clients consume these to describe and pick environments.
 
 ## environmentHttp
 
@@ -69,8 +69,8 @@ app branding (`DesktopAppBrandingSchema`). Desktop-only.
 
 Server-owned PTY sessions: `TerminalOpenInput`, `TerminalAttachInput` (server stream of raw
 bytes), `TerminalWriteInput`, `TerminalResizeInput`, `TerminalClearInput`, `TerminalRestartInput`,
-`TerminalCloseInput`, keyed by thread (`TerminalThreadInput`, `DEFAULT_TERMINAL_ID`). Renderer
-choice (libghostty-vt) never crosses this wire.
+and `TerminalCloseInput`, keyed by thread (`TerminalThreadInput`, `DEFAULT_TERMINAL_ID`). The
+renderer choice (libghostty-vt) never crosses this wire.
 
 ## provider
 
@@ -89,8 +89,8 @@ This is what Settings → Providers edits.
 
 ## providerRuntime
 
-Normalized runtime event stream every driver maps its transport into: session/thread/turn state
-enums (`RuntimeSessionState`, `RuntimeThreadState`, `RuntimeTurnState`), item and request
+Every driver maps its transport into this normalized runtime event stream: session/thread/turn
+state enums (`RuntimeSessionState`, `RuntimeThreadState`, `RuntimeTurnState`), item and request
 taxonomies (`CanonicalItemType`, `CanonicalRequestType`, `ToolLifecycleItemType`), the
 `ProviderRuntimeEventType` union with payloads (`SessionStartedPayload`, `SessionExitedPayload`,
 `ThreadStateChangedPayload`, `ThreadMetadataUpdatedPayload`, …), raw passthrough
@@ -101,8 +101,8 @@ token/cost report that feeds the context-window meter.
 
 Model and option descriptors: `ModelCapabilities`, provider option descriptors
 (`SelectProviderOptionDescriptor`, `BooleanProviderOptionDescriptor`,
-`ProviderOptionDescriptor`), and user selections (`ProviderOptionSelection(s)`). Drives the model
-picker and per-model option UI.
+`ProviderOptionDescriptor`), and user selections (`ProviderOptionSelection(s)`). These drive the
+model picker and per-model option UI.
 
 ## keybindings
 
@@ -129,8 +129,8 @@ smoothing), sidebar ordering/grouping/preview counts and auto-settle, timestamp 
 defaults, `MemoryConnectorSettings` (`memory.localEnabled`, built-in or external backend, local
 Memo base URL), shared `PipelineTargetPolicy` (`exact` or `labeled-fallback`), and
 `HandoffSettings` with `HandoffContextCompressionSettings` (`enabled`, `instanceId`, `model`,
-`maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions are
-decoded forward-compatibly so older clients survive newer config.
+`maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions
+decode forward-compatibly so older clients survive newer config.
 
 Named Dev and Research pipelines share `ResearchScenario` (name, pipeline prompt, attached prompt
 files). `ServerSettingsPatch` supports whole-array UI replacement plus atomic single-scenario
@@ -158,19 +158,20 @@ protocol). Backs Settings → Source control and the PR/MR flows.
 
 ## orchestration
 
-The event-sourced core: command and event unions for projects and threads (client-dispatchable
-commands like `thread.create`, `thread.turn.start`, `thread.approval.respond`,
-`thread.checkpoint.revert`; internal events like `thread.message.assistant.delta`), the read
-model (`OrchestrationProject`, `OrchestrationThread`, messages, activities — including
-`context-window.updated` — checkpoints, session state), mode enums (`RuntimeMode`:
-`approval-required` | `auto-accept-edits` | `auto` | `full-access`, `ProviderInteractionMode`:
-`default` | `plan`, `AssistantDeliveryMode`: `streaming` | `buffered`), approval policy/sandbox
-enums, `ModelSelection`, and `ORCHESTRATION_WS_METHODS`.
+The event-sourced core defines command and event unions for projects and threads.
+Client-dispatchable commands include `thread.create`, `thread.turn.start`,
+`thread.approval.respond`, and `thread.checkpoint.revert`; internal events include
+`thread.message.assistant.delta`. The read model covers `OrchestrationProject`,
+`OrchestrationThread`, messages, activities (including `context-window.updated`), checkpoints,
+and session state. It also defines mode enums (`RuntimeMode`: `approval-required` |
+`auto-accept-edits` | `auto` | `full-access`, `ProviderInteractionMode`: `default` | `plan`,
+`AssistantDeliveryMode`: `streaming` | `buffered`), approval policy/sandbox enums,
+`ModelSelection`, and `ORCHESTRATION_WS_METHODS`.
 
 ## t3ProjectFile
 
-The `t3.json` project file: `T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_SCHEMA_URL`,
-`T3ProjectFile` and `T3ProjectFileScript` (project-declared scripts, runnable via keybindings).
+`t3.json` project file: `T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_SCHEMA_URL`, `T3ProjectFile`,
+and `T3ProjectFileScript` (project-declared scripts, runnable via keybindings).
 
 ## editor
 
@@ -192,9 +193,8 @@ Generic host filesystem browsing for pickers: `FilesystemBrowseInput`, `Filesyst
 ## assets
 
 Workspace asset (image/attachment) resolution: `AssetResource`, signed URL creation
-(`AssetCreateUrlInput`/`Result`), and a family of tagged errors covering workspace context
-resolution, path validation, preview type checks, attachment lookup, and project favicon
-resolution.
+(`AssetCreateUrlInput`/`Result`), plus tagged errors for workspace context, path
+validation, preview type checks, attachment lookup, and project favicon resolution.
 
 ## review
 
@@ -238,9 +238,9 @@ Plain TypeScript interfaces (not Effect Schema) for the Tool Guard policy docume
 
 ## rpc
 
-The assembled WebSocket contract: `WS_METHODS` names every unary and streaming member
+The assembled WebSocket contract: `WS_METHODS` lists every unary and streaming member
 (orchestration dispatch/subscriptions, `terminal.*`, `preview.*`, keybindings, settings get/update,
 provider refresh/update, server update with progress, source-control discovery, diagnostics,
-resource telemetry, process signals, …), and the per-method `Ws…Rpc` definitions are aggregated
-into the `WsRpcGroup` served at `/ws`. `RPC_REQUIRED_SCOPE` (server-side) pairs each method with an
-`auth` scope.
+resource telemetry, process signals, …), and the per-method `Ws…Rpc` definitions aggregate into the
+`WsRpcGroup` served at `/ws`. `RPC_REQUIRED_SCOPE` (server-side) pairs each method with an `auth`
+scope.

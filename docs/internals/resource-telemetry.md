@@ -87,9 +87,9 @@ line on stdout:
 - `historyChunk`
 - `error`
 
-The protocol version is defined by
 `RESOURCE_MONITOR_PROTOCOL_VERSION` in
-`packages/contracts/src/resourceTelemetry.ts`.
+`packages/contracts/src/resourceTelemetry.ts`
+defines the protocol version.
 
 ### Collection
 
@@ -309,9 +309,9 @@ adding diagnostics-specific counters.
 `HostPowerMonitor` consumes `DesktopTelemetryReceiver` directly; observing host
 power does not retain live resource diagnostics or invoke shell probes.
 
-The monitor updates its latest timestamp on every Electron sample but only
-publishes semantic state changes. Increasing idle seconds alone does not cause a
-background-policy broadcast every second.
+The monitor updates its latest timestamp on every Electron sample but publishes
+semantic state changes only. Increasing idle seconds alone does not trigger a
+background-policy broadcast each second.
 
 ## Public API and UI
 

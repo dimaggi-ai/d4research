@@ -18,7 +18,7 @@ The launcher is the only runtime writer of `service-state.json`. `t3 service ins
 `t3 service update` may replace the launcher and state while the unit is stopped. Server children
 only communicate with the launcher over their inherited IPC channel.
 
-The state contains one active version and, at most, one update record:
+The state holds one active version and, at most, one update record:
 
 - `pending A → B` selects B as a retryable trial;
 - `committed A → B` selects B for ordinary restarts;

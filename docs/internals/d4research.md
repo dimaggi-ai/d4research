@@ -35,7 +35,7 @@ A prompt whose first token is a bare `!provider:model` directive — with a task
 
 `ProviderCommandReactor` diverts at the same point it detects a pipeline kind, before any expansion. The thread's provider is never consulted: no session is started, no model selection changes, and the persisted user message stays the compact trigger. Resolution reuses `resolveResearchDirective` against the live provider snapshots, then re-checks readiness with `exact` target policy — inline delegation authors no scenario, so `resolveAuthoredPipelineFallbackTargets` legitimately returns nothing and no fallback may be synthesized. An unresolvable directive terminates the turn in a visible error state; nothing stays running.
 
-The divert refuses before opening a turn when a delegation is already running in the thread (one per thread; the registry reserves the slot synchronously, so two concurrent turn-start fibers cannot orphan each other) or when the message carries a `<handoff_context>` block (impossible from a correct client, and the carried context would be labeled for a provider that is not answering).
+The divert refuses before opening a turn if a delegation is already running in the thread (one per thread; the registry reserves the slot synchronously so two concurrent turn-start fibers cannot orphan each other) or if the message carries a `<handoff_context>` block (impossible from a correct client, and the carried context would be labeled for a provider that is not answering).
 
 The **delegate turn** is a normal turn shape assembled from existing commands, not a new lifecycle:
 
@@ -46,7 +46,7 @@ The **delegate turn** is a normal turn shape assembled from existing commands, n
 5. `thread.session.set` → `ready` when the thread had a session, `stopped` when it did not (or `error` with the typed `failureKind`, or `stopped` on interrupt), which settles the turn.
 6. A placeholder `thread.turn.diff.complete` records the turn boundary. The delegate changes no files, so this is not about the diff: revert retention keeps only turns carrying a checkpoint, and an assistant message is never rescued by the user-message fallback — a delegate turn without one loses its answer to any later revert. `CheckpointReactor` replaces the placeholder with a real git ref, exactly as it does for provider-reported diffs.
 
-Every settle dispatch is retried on transient engine failure, and a force-settle fallback clears the turn even when the richer rows cannot be written. Nothing may stay "running": restart reconciliation recognizes an `inline-delegate:*` `activeTurnId` and settles it as an interrupted delegation with a failed ledger row, instead of reporting a provider session that never existed.
+Every settle dispatch retries on transient engine failure, and a force-settle fallback clears the turn even when the richer rows cannot be written. Nothing may stay "running": restart reconciliation recognizes an `inline-delegate:*` `activeTurnId` and settles it as an interrupted delegation with a failed ledger row, instead of reporting a provider session that never existed.
 
 Cancellation interrupts the delegation fiber; the delegation's own `ensuring` cleanup stops the delegate session, and the fiber's `onExit` finalizer settles the turn. `providerService.interruptTurn` is deliberately not called — there is no thread session to interrupt.
 
@@ -74,13 +74,13 @@ project with deterministic alphanumeric document and chunk tokens. It writes a s
 last. A retry searches for that exact manifest token and skips duplicate writes only after the
 complete document has been committed; a partial write has no manifest and is retried.
 
-The provider-bound message contains a compact head/tail preview, the project, chunk count, and the
+The provider-bound message includes a compact head/tail preview, the project, chunk count, and the
 exact `memory_search` query sequence (`<document-token>chunk0001`, then increment). The client
 waits for Memo before clearing or queuing the draft. Missing authorization, disabled memory,
 unreachable storage, a malformed response, or the 60-second browser timeout aborts preparation and
 releases the send latch, leaving the draft available to retry. Text held beyond the persisted draft
-preview is memory-only until this write succeeds; after a reload the client refuses to claim that a
-truncated preview is complete and asks the user to reattach it.
+preview is memory-only until this write succeeds; after a reload, the client refuses to claim that
+a truncated preview is complete and asks the user to reattach it.
 
 Retrieval depends on the provider adapter exposing d4research's MCP toolkit. Codex, Claude, Cursor,
 Grok/Junie, and server-managed OpenCode sessions receive it. Agy and externally managed OpenCode
@@ -126,7 +126,7 @@ The voice conversation flow calls local transcription, summarization, and speech
 
 ## Inherited foundation
 
-The fork retains T3 Code's Node WebSocket server, typed contracts, provider adapters, event-sourced commands/events/projectors, receipt-driven side effects, checkpoints, and web/desktop/mobile clients. It also retains compatibility-facing names such as the `t3` CLI and `T3CODE_HOME` where renaming would break users or protocols.
+The fork keeps T3 Code's Node WebSocket server, typed contracts, provider adapters, event-sourced commands/events/projectors, receipt-driven side effects, checkpoints, and web/desktop/mobile clients. It also preserves compatibility-facing names like the `t3` CLI and `T3CODE_HOME` to avoid breaking users or protocols.
 
 Research changes must continue to account for:
 

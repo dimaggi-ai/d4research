@@ -21,9 +21,9 @@ command wraps the `.ps1` adapter in
 
 The wrapper script exits immediately (allowing the tool) unless `T3RESEARCH_TOOL_GUARD_MODE` is
 set. The Claude, Codex, and Agy adapters set that variable per provider process through
-`toolGuardEnvironment` ([`toolGuardRuntime.ts`][runtime]), and only while the managed integration
-is enabled. This is the double gate: a hook entry alone does nothing outside a session launched by
-an enabled d4research environment.
+`toolGuardEnvironment` ([`toolGuardRuntime.ts`][runtime]), but only while the managed integration
+is enabled. This creates a double gate: a hook entry alone does nothing outside a session launched
+by an enabled d4research environment.
 
 When active, the wrapper execs `tg hook` with `-policy-dir`, `-mode`, an audit log at
 `<data-dir>/decisions.jsonl`, `-protect-self`, and `-fail-closed-tools bash,write,edit,notebookedit`
@@ -33,7 +33,7 @@ directory, and policy directory.
 
 ## Mode mapping
 
-The per-thread access selector (`RuntimeMode`) maps onto two guard modes:
+The per-thread access selector (`RuntimeMode`) maps to two guard modes:
 
 | Runtime mode                                     | Guard mode    | Meaning                                             |
 | ------------------------------------------------ | ------------- | --------------------------------------------------- |
@@ -47,9 +47,9 @@ Full access therefore stays audited without pretending to be restricted. The sha
 
 ## Policy format
 
-`ops/tool-guard/profiles/local-coding/policy.yaml` is the bundled profile. Shape (mirrored by the
+`ops/tool-guard/profiles/local-coding/policy.yaml` is the bundled profile. Its shape mirrors the
 `ToolGuardPolicy` interface in
-[`packages/contracts/src/toolGuardPolicy.ts`](../../packages/contracts/src/toolGuardPolicy.ts)):
+[`packages/contracts/src/toolGuardPolicy.ts`](../../packages/contracts/src/toolGuardPolicy.ts):
 
 - header: `policy_id`, `name`, `version`, `status`, `mode` (`enforcement` | `shadow`)
 - `scope`: `tool_names` (`bash`, `shell`, `run_command`) and `tool_groups`
@@ -58,8 +58,8 @@ Full access therefore stays audited without pretending to be restricted. The sha
   (`deny` | `escalate` | `allow`), and a `citation.excerpt` explaining the rule.
 
 The bundled rules deny recursive deletion of system/home paths and secret exfiltration over the
-network, and escalate (require human review) recursive/forced deletes, git history rewrites and
-pushes, GitHub publishing actions, npm publishes, and privileged Docker use.
+network. They escalate (require human review) recursive/forced deletes, git history rewrites
+and pushes, GitHub publishing actions, npm publishes, and privileged Docker use.
 
 ## Managed lifecycle
 
@@ -94,17 +94,17 @@ or `ops/tool-guard/profiles` in a checkout). The response carries
 `ToolGuardPolicySource = "managed" | "bundled"`.
 
 The web page **Settings → Tool Guard** (`/settings/tool-guard`,
-`apps/web/src/components/settings/ToolGuardSettingsPanel.tsx`) renders every rule as a card with
-its effect, citation, and condition summary. Editing (rule create/edit/delete via
-`RuleEditDialog`, persisted through `PUT /api/tool-guard/policy`) is enabled only when the managed
-integration is installed and the policy source is `managed`; with a `bundled` source the rules are
-read-only, so users can inspect the policy before installing.
+`apps/web/src/components/settings/ToolGuardSettingsPanel.tsx`) displays each rule as a card
+showing its effect, citation, and condition summary. You can create, edit, or delete rules via
+`RuleEditDialog` (persisted through `PUT /api/tool-guard/policy`) only when the managed
+integration is installed and the policy source is `managed`. If the source is `bundled`, the rules
+are read-only, allowing users to inspect the policy before installing.
 
 ## Audit
 
-Decisions append to `decisions.jsonl` under the managed data directory (default
-`$T3CODE_HOME/userdata/tool-guard`, or the `audit/` directory beside an installed profile tree).
-There is no in-app audit viewer yet; the log is a local file.
+Decisions append to `decisions.jsonl` under the managed data directory, which defaults to
+`$T3CODE_HOME/userdata/tool-guard`, or the `audit/` directory beside an installed profile tree.
+No in-app audit viewer exists yet; the log is a local file.
 
 [lifecycle]: ../../apps/server/src/toolGuardLifecycle.ts
 [status]: ../../apps/server/src/toolGuardStatus.ts

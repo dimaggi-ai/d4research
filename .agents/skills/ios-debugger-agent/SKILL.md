@@ -27,7 +27,7 @@ Do not ask contributors to install the OpenAI `build-ios-apps` plugin globally.
 3. Call `session_set_defaults` with the project or workspace, scheme, Debug configuration, simulator ID, and bundle identifier when known.
 4. Keep every subsequent build, launch, screenshot, log capture, and UI action pinned to that same UDID.
 
-Avoid generic Mac window automation for switching among Simulator windows. Explicit device identity is more reliable.
+Avoid generic Mac window automation for switching among Simulator windows; explicit device identity is more reliable.
 
 ## Choose build or launch
 
@@ -37,7 +37,7 @@ Avoid generic Mac window automation for switching among Simulator windows. Expli
 - To reuse an existing build artifact, use `get_sim_app_path` or `get_app_bundle_id`, install it with `install_app_sim` when necessary, and then launch it.
 - Do not run a build-only action immediately before `build_run_sim` unless the task requires both artifacts.
 
-After launch, call `snapshot_ui` or `screenshot` before interacting. An open Simulator window alone is not evidence that the intended app launched.
+After launch, call `snapshot_ui` or `screenshot` before interacting. An open Simulator window alone does not prove the intended app launched.
 
 ## Drive the UI semantically
 

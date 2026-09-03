@@ -35,7 +35,7 @@ Examples: `mod+j`, `mod+shift+d`, `ctrl+l`, `cmd+k`.
 ## Commands
 
 Commands are IDs like `terminal.toggle`, `commandPalette.toggle`, `preview.refresh`, and
-`chat.new`. Project scripts are addressable as `script.{id}.run`, for example `script.test.run`.
+`chat.new`. Project scripts use the format `script.{id}.run`, for example `script.test.run`.
 
 `filePicker.toggle` opens file search for the active project and defaults to `mod+p`.
 `projectSearch.toggle` searches inside the active project's files and defaults to `mod+shift+f`.
@@ -56,12 +56,12 @@ so add one in **Settings** → **Keybindings** if you want to use it.
 request is available. Its default shortcut is `mod+shift+c`, and it does not replace terminal copy
 while the terminal has focus.
 
-`thread.settle` settles the active thread or restores it when it is already settled. Its default
+`thread.settle` settles the active thread or restores it if already settled. Its default
 shortcut is `mod+shift+s`, and it does not run while the terminal has focus.
 
-`thread.pin` pins the active thread to the pinned section of the sidebar, or unpins it when it is
-already pinned. Its default shortcut is `mod+shift+p`, and it does not run while the terminal has
-focus. See [Organizing threads](./thread-sidebar.md) for how pinned threads are ordered.
+`thread.pin` pins the active thread to the pinned section of the sidebar or unpins it if already
+pinned. Its default shortcut is `mod+shift+p`, and it does not run while the terminal has focus.
+See [Organizing threads](./thread-sidebar.md) for how pinned threads are ordered.
 
 The command palette searches settings, active thread titles, projects, branches, user messages, and
 final agent responses across connected environments. A setting result opens its exact control or
@@ -85,10 +85,10 @@ but the new thread does not reuse the worktree created for the thread that just 
 
 ## `when` Conditions
 
-A `when` expression is evaluated against context keys describing the current UI state. The keys
-the app supplies today are `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`, and
-`modelPickerOpen`. The set is open and grows over time, so treat that as the current list rather
-than a fixed one. Any key the running app does not supply evaluates to `false`.
+A `when` expression checks context keys that describe the current UI state. The app currently
+provides `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`, and `modelPickerOpen`.
+This list is open and grows over time, so treat it as the current set rather than a fixed one.
+Any key the running app does not supply evaluates to `false`.
 
 Operators: `!` (not), `&&` (and), `||` (or), and parentheses.
 

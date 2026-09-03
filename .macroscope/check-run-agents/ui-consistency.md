@@ -20,7 +20,7 @@ showToolCalls: true
 
 Review changed web UI code and directly affected call sites for consistency with the shared component system, Tailwind ownership, and the behavioral constraints below. Apply these rules when a pull request creates, moves, or modifies controls or styling. Do not demand unrelated repository-wide cleanup.
 
-The goal is not to minimize CSS or class counts at any cost. The goal is to put each behavior in the smallest correct owner while preserving interaction, theming, accessibility, layout, and browser behavior.
+The goal is not to minimize CSS or class counts at any cost. Instead, put each behavior in the smallest correct owner while preserving interaction, theming, accessibility, layout, and browser behavior.
 
 ## Shared controls and variants
 

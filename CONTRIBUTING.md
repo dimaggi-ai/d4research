@@ -10,7 +10,7 @@ Feature requests and proposals belong in [Ideas discussions](https://github.com/
 
 If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
 
-PRs are automatically labeled with a `vouch:*` trust status and a `size:*` diff size based on changed lines.
+PRs get a `vouch:*` trust status and a `size:*` diff size label automatically, based on changed lines.
 
 If you are an external contributor, expect `vouch:unvouched` until we explicitly add you to [.github/VOUCHED.td](.github/VOUCHED.td).
 
@@ -48,7 +48,7 @@ Do not mix unrelated fixes together.
 
 If the PR makes anything resembling a UI change, include clear before/after images.
 
-If the change depends on motion, timing, transitions, or interaction details, include a short video.
+Include a short video if the change relies on motion, timing, transitions, or interaction details.
 
 If we have to guess what changed, we are much less likely to review it.
 

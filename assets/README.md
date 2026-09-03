@@ -6,7 +6,7 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
+Each project uses `text.svg` for the T3 mark and `background.svg` when the background is a vector layer. Additional layers use semantic names describing their role and placement.
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
@@ -29,7 +29,7 @@ Save the three exports to:
 - `nightly/app-icon.icon` -> `nightly/nightly-macos-1024.png`
 - `prod/app-icon.icon` -> `prod/black-macos-1024.png`
 
-The result must be a 1024×1024 PNG with the classic macOS safe area: the opaque icon body is 824×824, inset 100 pixels on every side, with only the native Icon Composer shadow extending into the surrounding transparent canvas.
+The result must be a 1024×1024 PNG with the classic macOS safe area: an opaque icon body of 824×824, inset 100 pixels on every side, where only the native Icon Composer shadow extends into the surrounding transparent canvas.
 
 To have Codex perform the native exports, paste this prompt into a task opened at the repository root:
 

@@ -5,10 +5,10 @@ and the agent share it.
 
 ## Opening a preview
 
-Open a preview tab from the workspace surface controls, from a link printed in a terminal (local
-`http://…` links open in the preview instead of an external browser), or from a discovered local
-dev server: the server's port scanner (`apps/server/src/preview/PortScanner.ts`) detects listening
-local servers for the thread's workspace and offers them as one-click preview targets.
+Open a preview tab from the workspace surface controls, a terminal link (local `http://…` links
+open in the preview instead of an external browser), or a discovered local dev server: the port
+scanner (`apps/server/src/preview/PortScanner.ts`) detects listening local servers for the
+thread's workspace and offers them as one-click preview targets.
 
 Preview sessions are managed server-side (`apps/server/src/preview/Manager.ts`) and exposed to
 clients over the `preview.*` RPC methods (`open`, `navigate`, `resize`, `refresh`, `close`, `list`,

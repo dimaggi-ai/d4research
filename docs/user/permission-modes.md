@@ -1,6 +1,6 @@
 # Permission Modes
 
-A permission mode controls how much the agent does on its own and when it stops to ask you.
+A permission mode controls how much the agent acts independently and when it pauses to ask for input.
 
 The mode is set per thread, from the mode control in the message composer. Changing it in one
 thread does not change any other thread. A thread created from inside another thread keeps that
@@ -12,8 +12,8 @@ before sending.
 **Supervised**: ask before commands and file changes. The agent pauses and shows you what it
 wants to run or edit, and waits for approval. Work outside the workspace is restricted.
 
-**Auto-accept edits**: auto-approve edits, ask before other actions. File changes go through
-without prompting; commands and anything else still stop for approval.
+**Auto-accept edits**: auto-approve file changes; ask before other actions. Edits go through
+without prompting, while commands and anything else still stop for approval.
 
 **Auto**: routine actions proceed without you; risky ones still ask. How this is enforced depends
 on the provider: Codex delegates routine approvals to an AI reviewer, Claude uses its own auto
@@ -38,9 +38,9 @@ shell commands.
 
 ## Provider Behavior
 
-Each provider maps these modes onto its own approval and sandbox settings. Codex, for example,
-translates the mode into its approval policy and sandbox level, so **Supervised** runs the CLI
-with prompting enabled and a restricted workspace while **Full access** disables both. The
+Each provider maps these modes to its own approval and sandbox settings. Codex, for example,
+translates the mode into an approval policy and sandbox level: **Supervised** runs the CLI
+with prompting enabled and a restricted workspace, while **Full access** disables both. The
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
 

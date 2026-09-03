@@ -22,7 +22,7 @@ OAuth-style scope strings:
 Ordinary pairing links grant the four client-operation scopes:
 `orchestration:read orchestration:operate terminal:operate review:write`.
 The desktop bootstrap credential and command-line administrative bootstrap
-credentials additionally grant `access:read access:write`.
+credentials also grant `access:read access:write`.
 
 ## Host file access
 
@@ -72,8 +72,8 @@ environment copies.
 ### Browser Session
 
 `POST /api/auth/browser-session` consumes a one-time bootstrap credential and creates a
-browser session cookie. The cookie is an HTTP transport adapter for the same
-scoped session model; the response never exposes the session secret to browser
+browser session cookie. The cookie acts as an HTTP transport adapter for the same
+scoped session model, and the response never exposes the session secret to browser
 JavaScript.
 
 ### Bearer Access Token
@@ -118,14 +118,15 @@ An ordinary paired client therefore cannot exchange its grant for
 
 ### DPoP-Bound Access Token
 
-The same `/oauth/token` exchange supports proof-of-possession tokens. A client
-that sends a `DPoP` header has its proof verified by `verifyRequestDpopProof`;
-the resulting JWK thumbprint is stored on the session, which is then issued with
-method `dpop-access-token` and a one-hour TTL instead of the bearer default. An
-invalid proof gets a DPoP challenge header and a credential error rather than a
-bearer token. Newer servers include a safe `dpopFailureReason` category in that
-error. When an older server omits the category, clients mention clock skew as
-one possible cause rather than presenting it as confirmed.
+The same `/oauth/token` exchange supports proof-of-possession tokens. When a
+client sends a `DPoP` header, `verifyRequestDpopProof` verifies the proof. The
+system stores the resulting JWK thumbprint on the session and issues it with
+method `dpop-access-token` and a one-hour TTL instead of the bearer default. If
+the proof is invalid, the server returns a DPoP challenge header and a
+credential error rather than a bearer token. Newer servers include a safe
+`dpopFailureReason` category in that error. When an older server omits this
+category, clients mention clock skew as one possible cause rather than
+presenting it as confirmed.
 
 `dpop-access-token` is advertised alongside `browser-session-cookie` and
 `bearer-access-token` in the descriptor's `sessionMethods`
@@ -135,11 +136,11 @@ assume it.
 ### WebSocket Ticket
 
 `POST /api/auth/websocket-ticket` accepts any authenticated session and returns
-a short-lived, single-purpose WebSocket ticket, issued through
-`EnvironmentAuth.issueWebSocketTicket` with a five-minute default TTL. The
-client presents its bearer or DPoP credential in headers to get the ticket, then
+a short-lived, single-purpose WebSocket ticket via
+`EnvironmentAuth.issueWebSocketTicket`, which defaults to a five-minute TTL. The
+client sends its bearer or DPoP credential in headers to obtain the ticket, then
 appends only that ticket to the socket URL as `wsTicket`. This keeps long-lived
-tokens and browser cookies out of WebSocket URLs while letting the handshake
+tokens and browser cookies out of WebSocket URLs while allowing the handshake to
 authenticate.
 
 The ticket carries its session's scopes; each RPC method then enforces

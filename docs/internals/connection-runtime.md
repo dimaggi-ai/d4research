@@ -2,7 +2,7 @@
 
 > For maintainers. Using d4research? See [docs/user](../user/).
 
-The connection runtime is shared by web and mobile. It owns connectivity,
+Web and mobile share one connection runtime that owns connectivity,
 authentication, retries, transport lifetime, cached environment data, and
 environment-scoped operations.
 
@@ -29,11 +29,11 @@ supply. There is no legacy connection owner or supported mixed mode.
   `reconcilePlatform`.
 
 The registry creates one environment-scoped supervisor per environment.
-`acquireSupervisor` serializes access per environment, reuses an existing
-supervisor when the catalog entry is unchanged, and closes and recreates the
-scope when it changed. `createServiceScope` builds an `EnvironmentSupervisor`
-bound to a closeable scope and connects it; `run` and `runStream` execute caller
-effects with that supervisor provided.
+`acquireSupervisor` serializes access per environment; it reuses an existing
+supervisor if the catalog entry is unchanged and closes then recreates the scope
+if it changed. `createServiceScope` builds an `EnvironmentSupervisor` bound to a
+closeable scope and connects it. `run` and `runStream` execute caller effects
+with that supervisor provided.
 
 `EnvironmentSupervisor` owns desired state, retry scheduling, and the active
 session scope. React components do not create connections, transports, retry
@@ -129,9 +129,9 @@ Web and mobile provide:
 - persistent catalog, credential, shell, and thread stores;
 - HTTP and telemetry layers.
 
-Platform layers adapt operating-system capabilities. They do not implement
+Platform layers adapt operating-system capabilities, but they do not implement
 connection policy. `EnvironmentOwnedDataCleanup` is part of this contract: on
-removal the registry clears its cache and calls the platform implementation, so
+removal, the registry clears its cache and calls the platform implementation so
 web clears composer drafts and mobile clears drafts plus the thread outbox.
 
 ## Source Boundaries

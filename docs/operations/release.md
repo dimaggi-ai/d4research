@@ -6,10 +6,10 @@ This document covers the unified release workflow for stable and nightly desktop
 
 ## Publication is opt-in for this fork
 
-The d4research release line is isolated from upstream's distribution channels, and the inherited
-CLI package name is upstream's. Every outward-facing job — npm publish, GitHub Release publication,
-the version-alignment commit to `main`, and the Discord announcement — is
-gated behind the repository variable `RELEASE_PUBLISH_ENABLED`.
+The d4research release line stays isolated from upstream's distribution channels, though it uses
+upstream's inherited CLI package name. Every outward-facing job (npm publish, GitHub Release
+publication, the version-alignment commit to `main`, and the Discord announcement) is gated behind
+the repository variable `RELEASE_PUBLISH_ENABLED`.
 
 While that variable is unset, pushing a `v*.*.*` tag still runs the quality gates and builds every
 desktop artifact, then stops: nothing is published anywhere. Set `RELEASE_PUBLISH_ENABLED=true` on
@@ -82,9 +82,9 @@ The workflow enforces this ordering:
 Preserve these dependencies when changing the release graph. Publishing a client first would leave
 the **Update server** action targeting a package version that does not exist yet.
 
-For a release smoke test, confirm `npm view d4research@<version> version` returns the expected version, then
-connect the new client to a server on the previous version and verify that the update action
-reconnects to the matching server. Use releases with identical migration manifests for the
+For a release smoke test, confirm `npm view d4research@<version> version` returns the expected
+version. Then connect the new client to a server on the previous version and verify that the update
+action reconnects to the matching server. Use releases with identical migration manifests for the
 automatic path. When the manifest changed, verify that the remote action stops before restart and
 shows the exact local `npx d4research@<version> service update` command. Also test the manual or
 desktop-managed guidance when those environments are available.
@@ -113,10 +113,10 @@ desktop-managed guidance when those environments are available.
 
 ## 0) npm OIDC trusted publishing setup (CLI)
 
-The workflow invokes `node apps/server/scripts/cli.ts publish` after aligning package versions. That
-script temporarily prepares the `d4research` package, then runs
-`vp pm publish --filter d4research ...` from the
-repository root so workspace publish configuration is applied correctly.
+The workflow runs `node apps/server/scripts/cli.ts publish` after aligning package versions. That
+script temporarily prepares the `d4research` package, then executes
+`vp pm publish --filter d4research ...` from the repository root to apply workspace publish
+configuration correctly.
 
 Checklist:
 

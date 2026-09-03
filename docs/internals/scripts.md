@@ -122,9 +122,9 @@ environment settings rather than files in `scripts/`: their contract is
 
 ## Browser development
 
-`dev` and `dev:web` leave `VITE_HTTP_URL` and `VITE_WS_URL` unset so the browser resolves the backend
-from `window.location.origin`. Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known` to the
-server, allowing the same bundle to work from localhost or a tailnet hostname.
+`dev` and `dev:web` leave `VITE_HTTP_URL` and `VITE_WS_URL` unset, letting the browser resolve the
+backend from `window.location.origin`. Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known` to
+the server so the same bundle works from localhost or a tailnet hostname.
 
 ## Running multiple dev instances
 

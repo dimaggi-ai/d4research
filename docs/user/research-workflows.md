@@ -30,12 +30,12 @@ Inside the pipeline, reference models with directives:
 
 Provider matches by name (`claude`, `codex`, `junie`, …); the model fragment can be partial as long
 as it is unambiguous (`fable` → `claude-fable-5`). The settings screen validates every directive
-live and shows what it resolved to — or exactly why it did not.
+live and shows what it resolved to, or exactly why it did not.
 
-The composer's **Workflows** menu keeps Chat/Plan, named development pipelines, named research
-scenarios, and delegation target policy in one place. **Use labeled fallback** permits only a
-fallback written into the active pipeline; **Exact targets only** stops the step when its requested
-model is unavailable.
+The composer's **Workflows** menu groups Chat/Plan, named development pipelines, named research
+scenarios, and delegation target policy together. **Use labeled fallback** allows only a fallback
+defined in the active pipeline; **Exact targets only** halts the step if its requested model is
+unavailable.
 
 Label a fallback on its own pipeline line so the server can verify it:
 

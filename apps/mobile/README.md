@@ -31,7 +31,7 @@ invalid output, clear it for one development-client start:
 vp run dev:client:reset
 ```
 
-Run that reset once after installing or changing the Uniwind dependency patch. Cached transforms
+Run that reset once after installing or changing the Uniwind dependency patch; cached transforms
 can otherwise reference its previous pnpm package path. Ordinary Metro starts still keep the cache.
 
 Component edits use Fast Refresh. Connection-runtime edits replace the active Effect layer through
@@ -104,7 +104,7 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 
 Preview and production variants use Expo fingerprinting so OTA updates only reach binaries with matching native dependencies, config plugins, and patches. CI uses the `preview:dev` profile to reuse a compatible native build when possible.
 
-The development variant uses `appVersion` to avoid recalculating the native fingerprint for each Metro launch manifest. `MOBILE_VERSION_POLICY` can override either default. If you distribute a custom Release build with the development identity and publish OTA updates to it, set `MOBILE_VERSION_POLICY=fingerprint` for both its build and updates. Changing the runtime policy requires a native rebuild for OTA matching; an existing dev client can still load local Metro bundles.
+The development variant uses `appVersion` to skip recalculating the native fingerprint on every Metro launch manifest. You can override either default with `MOBILE_VERSION_POLICY`. If you distribute a custom Release build using the development identity and publish OTA updates to it, set `MOBILE_VERSION_POLICY=fingerprint` for both its build and updates. Changing the runtime policy requires a native rebuild for OTA matching; an existing dev client can still load local Metro bundles.
 
 Create a PR preview dev-client build manually:
 

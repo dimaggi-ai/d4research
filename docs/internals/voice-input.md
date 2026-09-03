@@ -8,10 +8,10 @@ devices. Environment-provided transcription and transcription on web and desktop
 
 ## Current boundaries
 
-The shared [`VoiceInputController`][controller] in `packages/client-runtime` owns preparation,
+The shared [`VoiceInputController`][controller] in `packages/client-runtime` handles preparation,
 recording, transcription, cancellation, temporary-file cleanup, and insertion into the captured
-draft selection. Applications import it through the [voice-input entry point][voice-input] as
-`@d4research/client-runtime/voice-input`. Its dependencies separate capture from transcription; the
+draft selection. Applications import it as `@d4research/client-runtime/voice-input` via the
+[voice-input entry point][voice-input]. Its dependencies separate capture from transcription; the
 controller imports neither React Native nor an Apple transcription API.
 
 The shared [transcription contract][transcription] defines `VoiceTranscriber`,
@@ -42,8 +42,8 @@ that work settles, ignores its result, and cleans up the recording.
 
 ## Ownership decisions
 
-The extension boundary distinguishes transcription on the client device from transcription through
-the composer's environment. These constraints apply when adding selectable transcription services:
+The extension boundary separates transcription on the client device from transcription through the
+composer's environment. These constraints apply when adding selectable transcription services:
 
 - Local means the client device, regardless of which machine hosts the environment. A device's lack
   of local recognition does not prevent it from recording audio for an environment service.
@@ -82,11 +82,11 @@ The [attachment upload contracts][uploads] and [shared upload operations][attach
 pattern for authorized binary uploads through an environment, including remote connections. Their
 existing chat-attachment retention is not a transcription cleanup policy.
 
-Future service selection and environment requests belong alongside the controller in
-`packages/client-runtime`, with wire contracts in `packages/contracts`. Capture and native local
-recognition remain client-specific. An environment-backed transcriber implements the same shared
-contract, with its environment and service bound when selected. The controller does not own service
-credentials, provider SDKs, or transport selection.
+Future service selection and environment requests live in `packages/client-runtime` next to the
+controller, with wire contracts in `packages/contracts`. Capture and native local recognition stay
+client-specific. An environment-backed transcriber implements the same shared contract, binding its
+environment and service upon selection. The controller does not own service credentials, provider
+SDKs, or transport selection.
 
 [controller]: ../../packages/client-runtime/src/voice-input/controller.ts
 [voice-input]: ../../packages/client-runtime/src/voice-input/index.ts

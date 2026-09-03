@@ -98,8 +98,8 @@ CODEX_HOME path: ~/.codex
 Shadow home path: ~/.codex_p
 ```
 
-The important part is that both providers use the same `CODEX_HOME path`, but only the second one
-has a `Shadow home path`.
+Both providers share the same `CODEX_HOME path`, but only the second one has a
+`Shadow home path`.
 
 ## Which Account Am I Using?
 

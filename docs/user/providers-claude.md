@@ -126,7 +126,7 @@ instead of trying to share part of the state.
 Use this when you want Claude Code to talk to OpenRouter directly, without running a local router.
 This is the simplest external-provider setup.
 
-OpenRouter provides a Claude Code integration through Claude's Anthropic-compatible environment
+OpenRouter offers a Claude Code integration via Claude's Anthropic-compatible environment
 variables.
 
 ### Configure A Claude OpenRouter Provider

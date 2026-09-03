@@ -75,5 +75,5 @@ honest provenance without publishing a proprietary production pipeline.
 ## Collecting Evidence for Support
 
 Record the environment name, thread ID, provider instance/model, visible readiness remediation,
-and the terminal lifecycle state. Export the research Markdown from the web/desktop thread header
-when available; it includes the visible conversation and controller-owned run provenance.
+and terminal lifecycle state. When available, export the research Markdown from the web/desktop
+thread header; it includes the visible conversation and controller-owned run provenance.

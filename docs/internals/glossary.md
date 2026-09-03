@@ -44,7 +44,7 @@ A user-visible log item attached to a thread. In [the contracts][1], activities 
 
 #### Inline delegation
 
-A turn whose prompt opens with a bare `!provider:model` directive and is answered by that target instead of the thread's provider. It reuses the bounded-delegation engine (`runBoundedDelegation`), charges the same per-run budget under the synthetic step `inline`, and leaves the thread's model selection, provider session, and history untouched. The divert lives in [ProviderCommandReactor.ts][12]; the grammar is `parseInlineDelegateTrigger` in `packages/shared/src/researchPipeline.ts`.
+A turn whose prompt opens with a bare `!provider:model` directive, answered by that target instead of the thread's provider. It reuses the bounded-delegation engine (`runBoundedDelegation`), charges the same per-run budget under the synthetic step `inline`, and leaves the thread's model selection, provider session, and history untouched. The divert lives in [ProviderCommandReactor.ts][12]; the grammar is `parseInlineDelegateTrigger` in `packages/shared/src/researchPipeline.ts`.
 
 ### Orchestration
 
@@ -98,7 +98,7 @@ The live backend agent implementation and its event stream. The main service is 
 
 #### Provider
 
-The backend agent runtime that actually performs work. Seven drivers ship built in: Codex, Claude, Agy, Cursor, Grok, Junie, and OpenCode. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
+The backend agent runtime that performs the work. Seven drivers ship built in: Codex, Claude, Agy, Cursor, Grok, Junie, and OpenCode. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
 
 #### Session
 

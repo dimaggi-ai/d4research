@@ -16,7 +16,7 @@ and jumps straight to them.
 | **Beta**           | Experimental toggles (for example Sidebar v2)                                                                                                                                                                                                                                                 |
 | **Archived**       | Archived threads                                                                                                                                                                                                                                                                              |
 
-Settings are stored server-side (`ServerSettings` in `packages/contracts/src/settings.ts`), so they
-follow the environment: every client connected to the same server sees the same configuration.
-Sensitive provider environment variables are kept as server secrets and never sent back to clients
-after saving.
+Settings live on the server (`ServerSettings` in `packages/contracts/src/settings.ts`) so they
+track the environment: every client connected to that same server sees the same configuration.
+Sensitive provider environment variables stay as server secrets and never return to clients after
+saving.

@@ -1,6 +1,6 @@
 # Remote Access
 
-Use this when you want to connect to a d4research server from another device such as a phone, tablet, or separate desktop app.
+Use this to connect to a d4research server from another device such as a phone, tablet, or separate desktop app.
 
 ## Quick Pairing for a Running Server
 
@@ -107,7 +107,7 @@ From there, connect from another device in either of these ways:
 - in the desktop app, enter the host and token separately
 - in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
 
-Use `node apps/server/src/bin.ts serve --help` for the full flag reference. It supports the same
+Run `node apps/server/src/bin.ts serve --help` for the full flag reference. It supports the same
 general startup options as the normal server command, including an optional `cwd` argument.
 
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
@@ -208,7 +208,7 @@ Use hosted pairing when the backend is reachable from the browser over HTTPS/WSS
 
 Do not use hosted pairing for plain HTTP LAN URLs such as `http://192.168.x.y:3773`. Browsers block an HTTPS page from connecting to an insecure HTTP or WS backend. For those endpoints, use the direct pairing URL shown by the desktop app or CLI from a client that can open that HTTP URL directly.
 
-Hosted pairing does not proxy traffic through d4research. The browser still connects directly to the backend URL in the pairing link.
+Hosted pairing does not proxy traffic through d4research; the browser connects directly to the backend URL in the pairing link.
 
 ## Managing Access Later
 

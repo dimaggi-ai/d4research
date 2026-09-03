@@ -12,14 +12,15 @@ runtime starts its asynchronous disposal. These modules use normal Metro update
 propagation. The app does not call `DevSettings.reload` during their replacement.
 React can still reset state when its normal Fast Refresh rules require it.
 
-Do not reset the shared registry to clean up a connection-runtime edit: registry
-reset removes listeners from unedited mounted consumers. Do not self-accept a
-runtime module while leaving importers attached to its old implementation. A
-hot-update boundary must install fresh behavior through the existing reactive
-dependencies. These boundaries do not make every module-level atom family in the
-app hot-swappable; new runtime singletons still need explicit ownership. Editing
-the registry or managed runtime can still rebuild a much larger dependency graph
-than an ordinary component or connection-runtime edit.
+Do not reset the shared registry to clean up a connection-runtime edit;
+resetting it removes listeners from unedited mounted consumers. Do not
+self-accept a runtime module while importers remain attached to its old
+implementation. A hot-update boundary must install fresh behavior through
+existing reactive dependencies. These boundaries do not make every module-level
+atom family in the app hot-swappable, and new runtime singletons still need
+explicit ownership. Editing the registry or managed runtime can still rebuild a
+much larger dependency graph than an ordinary component or connection-runtime
+edit.
 
 Environment supervisor scopes are children of the connection registry scope.
 The registry's per-environment map supports targeted shutdown, but it cannot be

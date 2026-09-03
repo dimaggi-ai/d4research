@@ -1,6 +1,6 @@
 # T3 Mobile Terminal Native Module
 
-This local Expo module owns the native terminal surface for the mobile app.
+This local Expo module owns the mobile app's native terminal surface.
 
 The JavaScript contract is intentionally small:
 
@@ -26,8 +26,9 @@ Vendored Ghostty revision and license details are in `THIRD_PARTY_NOTICES.md`.
 
 ## Rebuilding GhosttyKit
 
-The checked-in `GhosttyKit.xcframework` is built from the Ghostty custom-I/O fork (https://github.com/Yash-Singh1/ghostty/tree/custom-io).
-Set the directory to the cloned repository checked out on the `custom-io` branch to `GHOSTTY_SOURCE_DIR`.
+The checked-in `GhosttyKit.xcframework` is built from the Ghostty custom-I/O fork
+(https://github.com/Yash-Singh1/ghostty/tree/custom-io). Set `GHOSTTY_SOURCE_DIR` to the cloned
+repository checked out on the `custom-io` branch.
 
 ```bash
 apps/mobile/modules/t3-terminal/scripts/build-libghostty-ios16.sh

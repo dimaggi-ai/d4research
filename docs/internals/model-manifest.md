@@ -9,10 +9,10 @@ The top-level provider catalog is generic: models contain presentation metadata,
 an optional badge, and a reusable capability profile. The profile and model `adapter` fields are
 opaque until the owning provider validates them with its own allowlisted schema.
 
-Claude Code uses the manifest as its complete built-in model catalog. To add a Claude model that
-uses an existing profile, add one object to `providers.claudeAgent.models`. Do not add a test or
-change application code. Add or change a profile in the same JSON file only when the model exposes
-a capability combination that does not already exist.
+Claude Code treats the manifest as its complete built-in model catalog. To add a Claude model that
+uses an existing profile, append one object to `providers.claudeAgent.models`. Do not add tests or
+modify application code. Add or change a profile in the same JSON file only if the model exposes a
+capability combination that does not already exist.
 
 `currentModels.claudeAgent` is retained as a frozen compatibility field for releases that predate
 catalog discovery. New Claude models do not need to be added there. Codex still discovers models
@@ -28,7 +28,7 @@ Claude model entries support:
 
 Changing model data does not require tests. Do not add or update tests for a model slug, display
 name, alias, legacy status, version boundary, badge, or profile assignment. The bundled manifest is
-configuration and is validated by its schema when imported.
+configuration and validates against its schema on import.
 
 Add tests only when implementation behavior changes:
 

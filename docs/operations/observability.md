@@ -27,10 +27,10 @@ If you want a log message to show up in the trace file, emit it inside an active
 
 ### Traces
 
-Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the
-server starts: production and explicitly configured homes use
+Completed spans are written as NDJSON records to `serverTracePath`. The default path depends on
+how the server starts. Production and explicitly configured homes use
 `<home>/userdata/logs/server.trace.ndjson` (so `~/.t3/userdata/...` by default, or
-`/custom/path/userdata/...` with `--home-dir /custom/path`), a linked worktree dev run uses
+`/custom/path/userdata/...` with `--home-dir /custom/path`). A linked worktree dev run uses
 `<worktree>/.t3/userdata/logs/server.trace.ndjson`, and an implicit dev run outside a linked
 worktree uses `~/.t3/dev/logs/server.trace.ndjson`.
 
@@ -500,7 +500,7 @@ const program = doWork().pipe(
 
 ### Runtime Wiring
 
-The server observability layer is assembled in `apps/server/src/observability/Layers/Observability.ts`.
+The server observability layer lives in `apps/server/src/observability/Layers/Observability.ts`.
 
 It provides:
 
@@ -533,7 +533,7 @@ If the OTLP URLs are unset, local tracing still works and metrics stay in-proces
 
 ### What Is Instrumented Today
 
-Current high-value span and metric boundaries include:
+The current high-value span and metric boundaries are:
 
 - Effect RPC websocket request spans from `effect/rpc`
 - RPC request metrics in `apps/server/src/observability/RpcInstrumentation.ts`

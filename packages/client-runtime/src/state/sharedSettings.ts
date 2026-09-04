@@ -13,7 +13,7 @@ import type {
   ExecutionEnvironmentCapabilities,
   ServerSettings,
   ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Equal from "effect/Equal";
 import * as Struct from "effect/Struct";
 

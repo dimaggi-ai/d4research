@@ -1,4 +1,4 @@
-import type { ProjectIconColor, ProjectIconOverride } from "@t3tools/contracts";
+import type { ProjectIconColor, ProjectIconOverride } from "@d4research/contracts";
 import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {

@@ -6,28 +6,28 @@ import {
   type ServerProviderSkill,
   type ToolActivityIcon,
   type TurnId,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+} from "@d4research/contracts";
+import { parseScopedThreadKey } from "@d4research/client-runtime/environment";
+import type { CodexArtifactTemplate } from "@d4research/client-runtime/codex-artifact-templates";
 import {
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/work-log/presentation";
+import { resolveWorkGroupScrollAnchor } from "@d4research/client-runtime/work-log/scroll-anchor";
+import type { AgentPanelModel } from "@d4research/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@d4research/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
-import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
+import { resolveChatListAnchoredEndSpace } from "@d4research/shared/chatList";
+import { toolActivityFaviconUrl } from "@d4research/shared/favicon";
+import { getProjectFaviconCacheKey } from "@d4research/shared/projectFavicon";
 import {
   createContext,
   Fragment,
@@ -159,7 +159,7 @@ import {
 } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@d4research/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import {
   buildInlineTerminalContextText,

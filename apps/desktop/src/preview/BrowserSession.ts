@@ -126,7 +126,7 @@ export class BrowserSession extends Context.Service<
       partitions?: ReadonlyArray<string>,
     ) => Effect.Effect<void, BrowserSessionCacheClearError>;
   }
->()("@t3tools/desktop/preview/BrowserSession") {}
+>()("@d4research/desktop/preview/BrowserSession") {}
 
 /**
  * Restricts a clear to the given partitions. Omitting them keeps the historical

@@ -11,7 +11,7 @@ import type {
   ProviderTurnStartResult,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
   AssistantCitation,
@@ -25,12 +25,12 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   expandAssistantCitationsForProvider,
   serializeAssistantCitation,
-} from "@t3tools/shared/assistantCitations";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@d4research/shared/assistantCitations";
+import { createModelSelection } from "@d4research/shared/model";
 import { it, assert, describe, vi } from "@effect/vitest";
 
 import * as Cause from "effect/Cause";

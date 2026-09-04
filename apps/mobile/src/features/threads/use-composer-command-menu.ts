@@ -1,21 +1,21 @@
-import type { EnvironmentId, ProviderInteractionMode, ServerProvider } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderInteractionMode, ServerProvider } from "@d4research/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
   type ComposerTrigger,
-} from "@t3tools/shared/composerTrigger";
+} from "@d4research/shared/composerTrigger";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
-} from "@t3tools/shared/searchRanking";
+} from "@d4research/shared/searchRanking";
 import {
   dedupeProviderSkillsByName,
   getProviderSkillsForSlashMenu,
   isProviderSkillUserInvocable,
   resolveProviderSkillsForCwd,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@d4research/client-runtime/providerSkills";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type PanelAnimationDurationMs } from "@t3tools/contracts/settings";
+import { type PanelAnimationDurationMs } from "@d4research/contracts/settings";
 
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useClientSettings } from "./hooks/useSettings";

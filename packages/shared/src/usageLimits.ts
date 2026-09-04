@@ -13,7 +13,7 @@ import {
   type ServerProviderUsageWindow,
   type UsageLimitSourceSnapshot,
   type UsageLimitSourceSnapshots,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

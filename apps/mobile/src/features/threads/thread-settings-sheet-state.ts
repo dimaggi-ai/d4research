@@ -1,4 +1,4 @@
-import type { ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type { ProviderInstanceId, ServerProvider } from "@d4research/contracts";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { providerNeedsSetup } from "../settings/provider-setup-state";
 

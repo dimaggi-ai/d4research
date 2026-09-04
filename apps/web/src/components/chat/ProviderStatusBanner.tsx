@@ -1,4 +1,4 @@
-import { type ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import { type ProviderInstanceId, type ServerProvider } from "@d4research/contracts";
 import { memo } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";

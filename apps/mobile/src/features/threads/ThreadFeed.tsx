@@ -10,26 +10,26 @@ import type {
   MessageId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
+} from "@d4research/contracts";
+import { renderAssistantCitationsAsText } from "@d4research/shared/assistantCitations";
 import {
   codexArtifactTemplatePresentationLabel,
   type CodexArtifactTemplate,
-} from "@t3tools/client-runtime/codex-artifact-templates";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/codex-artifact-templates";
+import { resolveAssetUrl } from "@d4research/client-runtime/state/assets";
+import { formatAttachmentSize } from "@d4research/client-runtime/state/attachments";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
-} from "@t3tools/client-runtime/markdown-images";
-import { resolveViewedImageAsset } from "@t3tools/client-runtime/work-log/presentation";
+} from "@d4research/client-runtime/markdown-images";
+import { resolveViewedImageAsset } from "@d4research/client-runtime/work-log/presentation";
 import {
   renderCodexFileCitationsAsMarkdown,
   splitCodexArtifactTemplateMarkdown,
-} from "@t3tools/client-runtime/codex-markdown-directives";
-import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { videoMimeType } from "@t3tools/shared/video";
+} from "@d4research/client-runtime/codex-markdown-directives";
+import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@d4research/shared/chatList";
+import { videoMimeType } from "@d4research/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -136,12 +136,12 @@ import {
 } from "../../lib/appearancePreferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
-import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
+import { markdownFileIconSource } from "@d4research/mobile-markdown-text/file-icons";
 import {
   normalizeNativeMarkdownUrl,
   resolveMarkdownInlineCodePresentation,
   resolveMarkdownLinkPresentation,
-} from "@t3tools/mobile-markdown-text/links";
+} from "@d4research/mobile-markdown-text/links";
 import {
   deriveThreadFeedPresentation,
   type ThreadFeedEntry,

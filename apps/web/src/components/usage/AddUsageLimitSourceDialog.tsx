@@ -1,4 +1,4 @@
-import { UsageLimitSourceId } from "@t3tools/contracts";
+import { UsageLimitSourceId } from "@d4research/contracts";
 import { useState } from "react";
 
 import { useUpdatePrimarySettings } from "../../hooks/useSettings";

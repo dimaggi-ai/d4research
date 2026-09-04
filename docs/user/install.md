@@ -12,24 +12,24 @@ T3 Code settings. See [Providers](#providers) below.
 ## Run Without Installing
 
 ```bash
-npx t3@latest
+npx d4research@latest
 ```
 
 This starts the T3 Code server on your machine and opens the local web app. Use
-`npx t3@latest --help` for the full CLI reference.
+`npx d4research@latest --help` for the full CLI reference.
 
 ## Open a project in the desktop app
 
 When the T3 Code desktop app is running on the same machine, open the current directory with:
 
 ```bash
-npx t3 app
+npx d4research app
 ```
 
 Pass a path to open another directory:
 
 ```bash
-npx t3 app ../my-project
+npx d4research app ../my-project
 ```
 
 The command adds the directory as a project when needed, focuses the desktop app, and opens a new

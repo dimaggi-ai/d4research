@@ -4,7 +4,7 @@ import {
   resolveEnvironmentMachineKind,
   type EnvironmentId,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useCallback } from "react";
 
 import { isElectron } from "../../env";

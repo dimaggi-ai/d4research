@@ -2,7 +2,7 @@ import {
   EnvironmentAuthInvalidError,
   type PullRequestDiffInput,
   type PullRequestDiffResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -87,7 +87,7 @@ export class PullRequestDiffLoader extends Context.Service<
       input: PullRequestDiffInput,
     ) => Effect.Effect<PullRequestDiffResult, PullRequestDiffLoadError>;
   }
->()("@t3tools/client-runtime/state/pullRequestDiffHttp/PullRequestDiffLoader") {}
+>()("@d4research/client-runtime/state/pullRequestDiffHttp/PullRequestDiffLoader") {}
 
 export const pullRequestDiffLoaderLayer: Layer.Layer<
   PullRequestDiffLoader,

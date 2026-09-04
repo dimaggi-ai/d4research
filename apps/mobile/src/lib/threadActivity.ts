@@ -3,7 +3,7 @@ import {
   isToolLifecycleItemType,
   ProviderApprovalOption,
   ProviderRequestKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -11,8 +11,8 @@ import type {
   ToolLifecycleItemType,
   TurnId,
   UserInputQuestion,
-} from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+} from "@d4research/contracts";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
@@ -25,9 +25,9 @@ import {
   toolGroupAction,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+} from "@d4research/client-runtime/work-log/presentation";
+import { extractToolActivityPresentation } from "@d4research/client-runtime/work-log/tool-presentation";
+import { commandProgramName } from "@d4research/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -102,9 +102,9 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
-  toolSurface?: import("@t3tools/contracts").ToolActivitySurface;
-  toolIcon?: import("@t3tools/contracts").ToolActivityIcon;
-  toolSource?: import("@t3tools/contracts").ToolActivitySource;
+  toolSurface?: import("@d4research/contracts").ToolActivitySurface;
+  toolIcon?: import("@d4research/contracts").ToolActivityIcon;
+  toolSource?: import("@d4research/contracts").ToolActivitySource;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;

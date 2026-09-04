@@ -23,7 +23,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import type * as Option from "effect/Option";
 import type * as Effect from "effect/Effect";
@@ -229,4 +229,4 @@ export interface ProjectionSnapshotQueryShape {
 export class ProjectionSnapshotQuery extends Context.Service<
   ProjectionSnapshotQuery,
   ProjectionSnapshotQueryShape
->()("t3/orchestration/Services/ProjectionSnapshotQuery") {}
+>()("d4research/orchestration/Services/ProjectionSnapshotQuery") {}

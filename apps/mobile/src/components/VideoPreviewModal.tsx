@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@d4research/shared/video";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

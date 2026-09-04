@@ -3,7 +3,7 @@ import type {
   ServerProvider,
   ServerProviderUsageWindow,
   UsageLimitSourceAccount,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   collectLimitSources,
   collectLimitsGroups,
@@ -12,7 +12,7 @@ import {
   limitsNotice,
   paceOf,
   providerLimitsLabel,
-} from "@t3tools/shared/usageLimits";
+} from "@d4research/shared/usageLimits";
 import { useState } from "react";
 import { View } from "react-native";
 

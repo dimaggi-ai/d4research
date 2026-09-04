@@ -24,9 +24,9 @@ import {
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
-} from "@t3tools/contracts";
-import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
-import { causeErrorTag } from "@t3tools/shared/observability";
+} from "@d4research/contracts";
+import { expandAssistantCitationsForProvider } from "@d4research/shared/assistantCitations";
+import { causeErrorTag } from "@d4research/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

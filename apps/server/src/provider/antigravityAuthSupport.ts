@@ -2,8 +2,8 @@ import * as NodeCrypto from "node:crypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - resolveAntigravityProfileDirectory is a pure sync helper, so it cannot use the Path service.
 import * as NodePath from "node:path";
 
-import type { AntigravityAuthMethod, ProviderInstanceId } from "@t3tools/contracts";
-import { HostProcessExecutablePath, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import type { AntigravityAuthMethod, ProviderInstanceId } from "@d4research/contracts";
+import { HostProcessExecutablePath, HostProcessPlatform } from "@d4research/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

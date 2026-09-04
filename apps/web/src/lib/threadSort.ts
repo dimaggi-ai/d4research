@@ -7,4 +7,4 @@ export {
   toSortableTimestamp,
   type SettledThreadTimestampInput,
   type ThreadSortInput,
-} from "@t3tools/client-runtime/state/thread-sort";
+} from "@d4research/client-runtime/state/thread-sort";

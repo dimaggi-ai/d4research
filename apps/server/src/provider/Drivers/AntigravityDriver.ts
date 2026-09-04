@@ -1,4 +1,4 @@
-import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
+import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

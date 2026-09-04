@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { type EnvironmentMachineKind, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { type EnvironmentMachineKind, resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";

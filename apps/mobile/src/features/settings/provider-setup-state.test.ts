@@ -4,7 +4,7 @@ import {
   ProviderInstanceId,
   ServerProvider,
   resolveProviderInstanceEnabled,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 

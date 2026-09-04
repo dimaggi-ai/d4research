@@ -3,7 +3,7 @@ import {
   formatFilePathPosition,
   splitFilePathPosition,
   stripSlashPrefixedWindowsDrive,
-} from "@t3tools/client-runtime/markdown-links";
+} from "@d4research/client-runtime/markdown-links";
 
 function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");

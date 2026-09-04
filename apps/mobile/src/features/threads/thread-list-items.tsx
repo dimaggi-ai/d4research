@@ -2,9 +2,9 @@ import { useRecyclingState } from "@legendapp/list/react-native";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/shell";
+import type { EnvironmentThreadSearchMatch } from "@d4research/client-runtime/state/thread-search";
+import type { EnvironmentMachineKind } from "@d4research/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useMemo, type ComponentProps } from "react";

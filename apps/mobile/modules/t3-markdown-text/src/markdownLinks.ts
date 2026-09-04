@@ -4,8 +4,8 @@ import {
   inlineCodeFilePathCandidate,
   normalizeMarkdownLinkDestination,
   parseMarkdownFileLink,
-} from "@t3tools/client-runtime/markdown-links";
-import { videoMimeType } from "@t3tools/shared/video";
+} from "@d4research/client-runtime/markdown-links";
+import { videoMimeType } from "@d4research/shared/video";
 
 import type { MARKDOWN_FILE_ICON_SOURCES } from "./markdownFileIcons.generated";
 

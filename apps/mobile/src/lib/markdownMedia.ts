@@ -1,6 +1,6 @@
-import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { normalizeNativeMarkdownUrl } from "@t3tools/mobile-markdown-text/links";
+import { resolveMediaSource } from "@d4research/client-runtime/media-source";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { normalizeNativeMarkdownUrl } from "@d4research/mobile-markdown-text/links";
 
 import type { FilePreviewSource } from "../components/FilePreviewModal";
 import type { MediaVideoPreviewSource } from "./videoPreviewSource";

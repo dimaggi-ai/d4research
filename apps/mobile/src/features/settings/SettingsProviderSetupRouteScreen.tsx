@@ -1,12 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import type { AtomCommandResult } from "@d4research/client-runtime/state/runtime";
 import {
   ANTIGRAVITY_AUTH_METHODS,
   AuthOrchestrationOperateScope,
   EnvironmentId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";

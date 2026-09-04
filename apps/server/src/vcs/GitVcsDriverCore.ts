@@ -1309,6 +1309,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     ).pipe(Effect.map((result) => result.exitCode === 0));
 
+  const remoteBranchExistsForInput: GitVcsDriver.GitVcsDriver["Service"]["remoteBranchExists"] = (
+    input,
+  ) => remoteBranchExists(input.cwd, input.remoteName, input.refName);
+
   const remoteExists: GitVcsDriver.GitVcsDriver["Service"]["remoteExists"] = (input) =>
     executeGit("GitVcsDriver.remoteExists", input.cwd, ["remote", "get-url", input.remoteName], {
       allowNonZeroExit: true,
@@ -3318,6 +3322,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     resolveDefaultBranchName,
     fetchRemote: (input) => withListRefsInvalidation(input.cwd, fetchRemote(input)),
     remoteExists,
+    remoteBranchExists: remoteBranchExistsForInput,
     resolveRemoteTrackingCommit,
     fetchRemoteBranch: (input) => withListRefsInvalidation(input.cwd, fetchRemoteBranch(input)),
     fetchRemoteTrackingBranch: (input) =>

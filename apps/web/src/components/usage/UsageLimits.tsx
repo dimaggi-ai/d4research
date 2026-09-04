@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
   ServerProvider,
-  ServerProviderUsageWindow,
+  LegacyServerProviderUsageWindow as ServerProviderUsageWindow,
   UsageProviderKind,
 } from "@d4research/contracts";
 import { useMemo } from "react";

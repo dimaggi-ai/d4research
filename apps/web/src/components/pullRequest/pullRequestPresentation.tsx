@@ -2,12 +2,14 @@ import type {
   PullRequestActor,
   PullRequestCheck,
   PullRequestCheckStatus,
+  PullRequestChecksState,
   PullRequestMergeability,
   PullRequestState,
 } from "@d4research/contracts";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleDotIcon,
   CircleXIcon,
   GitMergeIcon,
   GitPullRequestClosedIcon,
@@ -116,6 +118,11 @@ export function PullRequestStateGlyph({
 
 const CHECK_STATUS_PRESENTATION = {
   pending: { label: "Running", Icon: LoaderIcon, toneClassName: "animate-spin text-amber-500" },
+  "action-required": {
+    label: "Awaiting action",
+    Icon: CircleDotIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
   success: {
     label: "Passed",
     Icon: CircleCheckIcon,
@@ -129,6 +136,28 @@ const CHECK_STATUS_PRESENTATION = {
   PullRequestCheckStatus,
   { label: string; Icon: typeof CircleCheckIcon; toneClassName: string }
 >;
+
+const CHECKS_STATE_PRESENTATION = {
+  passing: {
+    label: "All checks have passed",
+    Icon: CircleCheckIcon,
+    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+  },
+  failing: {
+    label: "Some checks were not successful",
+    Icon: CircleXIcon,
+    toneClassName: "text-destructive",
+  },
+  pending: {
+    label: "Some checks haven't completed yet",
+    Icon: CircleDotIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
+} as const satisfies Record<PullRequestChecksState, unknown>;
+
+export function pullRequestChecksStatePresentation(state: PullRequestChecksState) {
+  return CHECKS_STATE_PRESENTATION[state];
+}
 
 export function pullRequestCheckStatusLabel(status: PullRequestCheckStatus): string {
   return CHECK_STATUS_PRESENTATION[status].label;
@@ -179,13 +208,18 @@ export function PullRequestActorAvatar({
 export function PullRequestActorLabel({
   actor,
   className,
+  tooltip = true,
 }: {
   actor: PullRequestActor | null;
   className?: string;
+  tooltip?: boolean;
 }) {
   const login = actor?.login ?? "ghost";
   return (
-    <span className={cn("flex min-w-0 items-center gap-1.5", className)} title={login}>
+    <span
+      className={cn("flex min-w-0 items-center gap-1.5", className)}
+      title={tooltip ? login : undefined}
+    >
       <PullRequestActorAvatar actor={actor} />
       <span className="truncate">{login}</span>
     </span>

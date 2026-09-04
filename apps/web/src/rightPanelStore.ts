@@ -8,7 +8,7 @@
  * workspace paths, and diff/files remain singleton surfaces.
  */
 import { scopedThreadKey } from "@d4research/client-runtime/environment";
-import type { ScopedThreadRef } from "@d4research/contracts";
+import type { ChatFileAttachment, ScopedThreadRef } from "@d4research/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -43,12 +43,15 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" }
   | { id: "system"; kind: "system" }
   | {
-      id: `file:${string}`;
+      id: `file:${string}` | `attachment:${string}`;
       kind: "file";
       /** Workspace-relative, or absolute for a host file outside the workspace. */
       relativePath: string;
       revealLine: number | null;
       revealRequestId: number;
+      /** Present when the file lives in the thread's attachment store rather
+          than at a workspace or host path. */
+      attachment?: ChatFileAttachment;
     }
   | {
       /**
@@ -94,6 +97,7 @@ interface RightPanelStoreState {
   ) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
+  openAttachment: (ref: ScopedThreadRef, attachment: ChatFileAttachment) => void;
   openPullRequest: (
     ref: ScopedThreadRef,
     target: { environmentId?: string; projectId: string; repository: string; number: number },
@@ -162,6 +166,15 @@ const fileSurface = (
   relativePath,
   revealLine,
   revealRequestId,
+});
+
+const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
+  id: `attachment:${attachment.id}`,
+  kind: "file",
+  relativePath: attachment.name,
+  revealLine: null,
+  revealRequestId: 0,
+  attachment,
 });
 
 const terminalSurface = (terminalId: string): RightPanelSurface => ({
@@ -422,6 +435,18 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             };
           }),
         })),
+      openAttachment: (ref, attachment) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const withoutStandaloneExplorer = current.surfaces.filter(
+              (surface) => surface.kind !== "files",
+            );
+            return upsertSurface(
+              { ...current, surfaces: withoutStandaloneExplorer },
+              attachmentSurface(attachment),
+            );
+          }),
+        })),
       openTerminal: (ref, terminalId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
@@ -598,7 +623,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
             if (workspaceAvailable) return current;
             const surfaces = current.surfaces.filter(
-              (surface) => surface.kind !== "files" && surface.kind !== "file",
+              (surface) =>
+                surface.kind !== "files" &&
+                (surface.kind !== "file" || surface.attachment !== undefined),
             );
             if (surfaces.length === current.surfaces.length) return current;
             const activeStillExists = surfaces.some(

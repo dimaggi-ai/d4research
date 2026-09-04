@@ -96,6 +96,7 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import { claudeRateLimitEventToUpdate } from "./claudeUsageLimits.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -3562,12 +3563,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
+      const limits = claudeRateLimitEventToUpdate(message.rate_limit_info, {
+        overageIncluded: undefined,
+      });
+      if (!limits) return;
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
-        payload: {
-          rateLimits: message,
-        },
+        payload: { limits },
       });
       return;
     }

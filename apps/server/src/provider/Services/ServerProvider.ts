@@ -1,4 +1,4 @@
-import type { ServerProvider } from "@d4research/contracts";
+import type { ProviderUsageLimitsUpdate, ServerProvider } from "@d4research/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
@@ -8,4 +8,7 @@ export interface ServerProviderShape {
   readonly getSnapshot: Effect.Effect<ServerProvider>;
   readonly refresh: Effect.Effect<ServerProvider>;
   readonly streamChanges: Stream.Stream<ServerProvider>;
+  readonly applyUsageLimits: (
+    update: ProviderUsageLimitsUpdate & { readonly checkedAt: string },
+  ) => Effect.Effect<void>;
 }

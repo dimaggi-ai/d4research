@@ -85,6 +85,8 @@ import {
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import { ProviderAuthService } from "./provider/Services/ProviderAuthService.ts";
+import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -378,6 +380,8 @@ const makeWsRpcLayer = (
       const providerService = yield* ProviderService.ProviderService;
       const portableSkillsInventory = yield* PortableSkillsInventory;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
+      const providerAuth = yield* ProviderAuthService;
+      const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -1486,6 +1490,52 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "provider" },
           ),
+        [WS_METHODS.providerAuthStart]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerAuthStart,
+            providerAuth.start(input, currentSessionId),
+            { "rpc.aggregate": "provider" },
+          ),
+        [WS_METHODS.providerAuthComplete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerAuthComplete,
+            providerAuth.complete(input, currentSessionId),
+            { "rpc.aggregate": "provider" },
+          ),
+        [WS_METHODS.providerAuthCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerAuthCancel,
+            providerAuth.cancel(input, currentSessionId),
+            { "rpc.aggregate": "provider" },
+          ),
+        [WS_METHODS.providerAuthLogout]: (input) =>
+          observeRpcEffect(WS_METHODS.providerAuthLogout, providerAuth.logout(input), {
+            "rpc.aggregate": "provider",
+          }),
+        [WS_METHODS.providerAuthSubscribe]: (input) =>
+          observeRpcStream(
+            WS_METHODS.providerAuthSubscribe,
+            providerAuth.subscribe(input, currentSessionId),
+            { "rpc.aggregate": "provider" },
+          ),
+        [WS_METHODS.providerInstallStart]: (input) =>
+          observeRpcEffect(WS_METHODS.providerInstallStart, providerInstallation.start(input), {
+            "rpc.aggregate": "provider",
+          }),
+        [WS_METHODS.providerInstallCancel]: (input) =>
+          observeRpcEffect(WS_METHODS.providerInstallCancel, providerInstallation.cancel(input), {
+            "rpc.aggregate": "provider",
+          }),
+        [WS_METHODS.providerInstallSubscribe]: (input) =>
+          observeRpcStream(
+            WS_METHODS.providerInstallSubscribe,
+            providerInstallation.subscribe(input),
+            { "rpc.aggregate": "provider" },
+          ),
+        [WS_METHODS.providerInstallRemove]: (input) =>
+          observeRpcEffect(WS_METHODS.providerInstallRemove, providerInstallation.remove(input), {
+            "rpc.aggregate": "provider",
+          }),
         [WS_METHODS.serverUpdateProvider]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateProvider,
@@ -1612,6 +1662,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverRefreshUsageRates]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {
             "rpc.aggregate": "server",
@@ -1654,6 +1708,10 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.pullRequestsListStats]: (input) =>
           observeRpcEffect(WS_METHODS.pullRequestsListStats, pullRequests.listStats(input), {
+            "rpc.aggregate": "pull-requests",
+          }),
+        [WS_METHODS.pullRequestsSummary]: (input) =>
+          observeRpcEffect(WS_METHODS.pullRequestsSummary, pullRequests.summary(input), {
             "rpc.aggregate": "pull-requests",
           }),
         [WS_METHODS.pullRequestsDetail]: (input) =>
@@ -1730,6 +1788,16 @@ const makeWsRpcLayer = (
             pullRequests.requestReviewers(input),
             { "rpc.aggregate": "pull-requests" },
           ),
+        [WS_METHODS.pullRequestsLabelCandidates]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestsLabelCandidates,
+            pullRequests.labelCandidates(input),
+            { "rpc.aggregate": "pull-requests" },
+          ),
+        [WS_METHODS.pullRequestsSetLabels]: (input) =>
+          observeRpcEffect(WS_METHODS.pullRequestsSetLabels, pullRequests.setLabels(input), {
+            "rpc.aggregate": "pull-requests",
+          }),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlLookupRepository,
@@ -1876,7 +1944,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
-              if (input.resource._tag === "attachment") {
+              if (
+                input.resource._tag === "attachment" ||
+                input.resource._tag === "native-app-icon"
+              ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
               if (input.resource._tag === "project-favicon") {

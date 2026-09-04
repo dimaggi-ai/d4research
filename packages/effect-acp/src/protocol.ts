@@ -1,8 +1,10 @@
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import type * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -41,14 +43,21 @@ export type AcpIncomingNotification =
       readonly params: unknown;
     };
 
+/** Standard I/O whose input can report provider-specific ACP failures. */
+export interface AcpStdio extends Omit<Stdio.Stdio, "stdin"> {
+  readonly stdin: Stream.Stream<Uint8Array, PlatformError.PlatformError | AcpError.AcpError>;
+}
+
 export interface AcpPatchedProtocolOptions {
-  readonly stdio: Stdio.Stdio;
+  readonly stdio: AcpStdio;
   readonly terminationError?: Effect.Effect<AcpError.AcpError>;
   readonly serverRequestMethods: ReadonlySet<string>;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
-  readonly safeRequestIds?: boolean;
   readonly logger?: (event: AcpProtocolLogEvent) => Effect.Effect<void, never>;
+  readonly transformSessionUpdate?: (
+    notification: AcpSchema.SessionNotification,
+  ) => AcpSchema.SessionNotification;
   readonly onNotification?: (
     notification: AcpIncomingNotification,
   ) => Effect.Effect<void, AcpError.AcpError, never>;
@@ -85,6 +94,17 @@ const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.ElicitationCompleteNotification,
 );
 const parserFactory = RpcSerialization.ndJsonRpc();
+const MAX_BUFFERED_RAW_NOTIFICATIONS = 32;
+// Outbound JSON-RPC notification: no `id`, so peers never treat it as a request.
+const encodeJsonRpcNotification = Schema.encodeUnknownExit(
+  Schema.fromJsonString(
+    Schema.Struct({
+      jsonrpc: Schema.Literal("2.0"),
+      method: Schema.String,
+      params: Schema.Unknown,
+    }),
+  ),
+);
 
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
@@ -92,17 +112,24 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const parser = parserFactory.makeUnsafe();
   const serverQueue = yield* Queue.unbounded<RpcMessage.FromClientEncoded>();
   const clientQueue = yield* Queue.unbounded<RpcMessage.FromServerEncoded>();
-  const notificationQueue = yield* Queue.unbounded<AcpIncomingNotification>();
+  const notificationQueue = yield* Queue.sliding<AcpIncomingNotification>(
+    MAX_BUFFERED_RAW_NOTIFICATIONS,
+  );
   const disconnects = yield* Queue.unbounded<number>();
   const outgoing = yield* Queue.unbounded<string | Uint8Array, Cause.Done<void>>();
   const nextRequestId = yield* Ref.make(1);
   const wireRequestIds = yield* Ref.make<WireRequestIdState>({
     next: 1,
-    originalToWire: new Map<string, number>(),
-    wireToOriginal: new Map<string, string | number>(),
+    originalToWire: new Map(),
+    wireToOriginal: new Map(),
   });
   const terminationHandled = yield* Ref.make(false);
+  const terminationFailure = yield* Deferred.make<never, AcpError.AcpError>();
   const extPending = yield* Ref.make(new Map<string, AcpPendingRequest>());
+
+  const ensureActive = Ref.get(terminationHandled).pipe(
+    Effect.flatMap((terminated) => (terminated ? Deferred.await(terminationFailure) : Effect.void)),
+  );
 
   const logProtocol = (event: AcpProtocolLogEvent) => {
     if (event.direction === "incoming" && !options.logIncoming) {
@@ -120,35 +147,39 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const offerOutgoing = Effect.fn("offerOutgoing")(function* (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
   ) {
-    const wireMessage = options.safeRequestIds
-      ? yield* Ref.modify(
-          wireRequestIds,
-          (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
-            if (message._tag === "Request") {
-              const originalKey = String(message.id);
-              const existing = state.originalToWire.get(originalKey);
-              const wireId = existing ?? state.next;
-              if (existing !== undefined) return [{ ...message, id: wireId }, state] as const;
-              const originalToWire = new Map(state.originalToWire);
-              const wireToOriginal = new Map(state.wireToOriginal);
-              originalToWire.set(originalKey, wireId);
-              wireToOriginal.set(String(wireId), message.id);
-              return [
-                { ...message, id: wireId },
-                { next: wireId + 1, originalToWire, wireToOriginal },
-              ] as const;
-            }
-            if (message._tag === "Ack" || message._tag === "Interrupt") {
-              const wireId = state.originalToWire.get(String(message.requestId));
-              return [
-                wireId === undefined ? message : { ...message, requestId: wireId },
-                state,
-              ] as const;
-            }
-            return [message, state] as const;
-          },
-        )
-      : message;
+    // RpcClient emits `@effect/rpc/Interrupt` when a pending request's fiber is interrupted.
+    // ACP has no such method; agents log it as an error and cannot act on it, so drop it.
+    if (message._tag === "Interrupt") {
+      return;
+    }
+    const wireMessage = yield* Ref.modify(
+      wireRequestIds,
+      (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
+        if (message._tag === "Request") {
+          const originalKey = String(message.id);
+          const existing = state.originalToWire.get(originalKey);
+          const wireId = existing ?? state.next;
+          if (existing !== undefined) return [{ ...message, id: wireId }, state] as const;
+          const originalToWire = new Map(state.originalToWire);
+          const wireToOriginal = new Map(state.wireToOriginal);
+          originalToWire.set(originalKey, wireId);
+          wireToOriginal.set(String(wireId), message.id);
+          return [
+            { ...message, id: wireId },
+            { next: wireId + 1, originalToWire, wireToOriginal },
+          ] as const;
+        }
+        if (message._tag === "Ack") {
+          const wireId = state.originalToWire.get(String(message.requestId));
+          return [
+            wireId === undefined ? message : { ...message, requestId: wireId },
+            state,
+          ] as const;
+        }
+        return [message, state] as const;
+      },
+    );
+    yield* ensureActive;
     yield* logProtocol({
       direction: "outgoing",
       stage: "decoded",
@@ -175,6 +206,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         payload: typeof encoded === "string" ? encoded : new TextDecoder().decode(encoded),
       });
 
+      yield* ensureActive;
       yield* Queue.offer(outgoing, encoded).pipe(Effect.asVoid);
     }
   });
@@ -241,7 +273,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       }),
     }).pipe(Effect.asVoid);
 
-  const handleTermination = (classify: () => Effect.Effect<AcpError.AcpError | undefined>) =>
+  const handleTermination = (classify: () => Effect.Effect<AcpError.AcpError>) =>
     Ref.modify(terminationHandled, (handled) => {
       if (handled) {
         return [Effect.void, true] as const;
@@ -250,9 +282,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         Effect.gen(function* () {
           yield* Queue.offer(disconnects, 0);
           const error = yield* classify();
-          if (!error) {
-            return;
-          }
+          yield* Deferred.fail(terminationFailure, error);
           yield* failAllExtPending(error);
           yield* emitClientProtocolError(error);
           if (options.onTermination) {
@@ -313,7 +343,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
               ({
                 _tag: "SessionUpdate",
                 method: CLIENT_METHODS.session_update,
-                params,
+                params: options.transformSessionUpdate?.(params) ?? params,
               }) satisfies AcpIncomingNotification,
           ),
           Effect.mapError((cause) =>
@@ -452,30 +482,31 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const restoreIncomingRequestId = (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
   ) =>
-    options.safeRequestIds
-      ? Ref.modify(wireRequestIds, (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
-          if (message._tag !== "Chunk" && message._tag !== "Exit") {
-            return [message, state] as const;
-          }
-          const originalId = state.wireToOriginal.get(String(message.requestId));
-          if (originalId === undefined) return [message, state] as const;
-          const restored = { ...message, requestId: originalId };
-          if (message._tag === "Chunk") return [restored, state] as const;
-          const originalToWire = new Map(state.originalToWire);
-          const wireToOriginal = new Map(state.wireToOriginal);
-          originalToWire.delete(String(originalId));
-          wireToOriginal.delete(String(message.requestId));
-          return [restored, { ...state, originalToWire, wireToOriginal }] as const;
-        })
-      : Effect.succeed(message);
+    Ref.modify(wireRequestIds, (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
+      if (message._tag !== "Chunk" && message._tag !== "Exit") {
+        return [message, state] as const;
+      }
+      const originalId = state.wireToOriginal.get(String(message.requestId));
+      if (originalId === undefined) return [message, state] as const;
+      const restored = { ...message, requestId: originalId };
+      if (message._tag === "Chunk") return [restored, state] as const;
+      const originalToWire = new Map(state.originalToWire);
+      const wireToOriginal = new Map(state.wireToOriginal);
+      originalToWire.delete(String(originalId));
+      wireToOriginal.delete(String(message.requestId));
+      return [restored, { ...state, originalToWire, wireToOriginal }] as const;
+    });
 
   yield* options.stdio.stdin.pipe(
     Stream.runForEach((data) =>
-      logProtocol({
-        direction: "incoming",
-        stage: "raw",
-        payload: typeof data === "string" ? data : new TextDecoder().decode(data),
-      }).pipe(
+      (options.logIncoming
+        ? logProtocol({
+            direction: "incoming",
+            stage: "raw",
+            payload: typeof data === "string" ? data : new TextDecoder().decode(data),
+          })
+        : Effect.void
+      ).pipe(
         Effect.flatMap(() =>
           Effect.try({
             try: () =>
@@ -581,20 +612,35 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     supportsSpanPropagation: true,
   });
 
+  // JSON-RPC notifications carry no `id`. The generic Request encoder emits `id: ""` plus
+  // `headers`, which real agents (Grok CLI) parse as a malformed request and silently drop.
+  // That made `session/cancel` a no-op against Grok while the lenient mock agent accepted it.
   const sendNotification = Effect.fn("sendNotification")(function* (
     method: string,
     payload: unknown,
   ) {
-    yield* offerOutgoing({
-      _tag: "Request",
-      id: "",
-      tag: method,
-      payload,
-      headers: [],
+    yield* ensureActive;
+    yield* logProtocol({
+      direction: "outgoing",
+      stage: "decoded",
+      payload: { _tag: "Notification", tag: method, payload },
     });
+    const exit = encodeJsonRpcNotification({ jsonrpc: "2.0", method, params: payload });
+    if (Exit.isFailure(exit)) {
+      return yield* AcpError.AcpProtocolParseError.fromEncodingError(
+        method,
+        undefined,
+        Cause.squash(exit.cause),
+      );
+    }
+    const encoded = `${exit.value}\n`;
+    yield* logProtocol({ direction: "outgoing", stage: "raw", payload: encoded });
+    yield* ensureActive;
+    yield* Queue.offer(outgoing, encoded);
   });
 
   const sendRequest = Effect.fn("sendRequest")(function* (method: string, payload: unknown) {
+    yield* ensureActive;
     const requestId = yield* Ref.modify(
       nextRequestId,
       (current) => [current, current + 1] as const,

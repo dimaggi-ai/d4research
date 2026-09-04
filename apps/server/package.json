@@ -33,7 +33,8 @@
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "node-pty": "^1.1.0",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@d4research/contracts": "workspace:*",
@@ -43,6 +44,7 @@
     "@effect/vitest": "catalog:",
     "@types/bun": "1.3.14",
     "@types/node": "catalog:",
+    "@types/yauzl": "^3.4.0",
     "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
     "vite-plus": "catalog:"

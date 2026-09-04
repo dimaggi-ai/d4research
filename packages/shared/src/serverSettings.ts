@@ -153,6 +153,18 @@ function applyScenarioPatch(
   return scenarios;
 }
 
+function mergeUsageLimitSources(
+  current: ServerSettings["usageLimitSources"],
+  patch: NonNullable<ServerSettingsPatch["usageLimitSources"]>,
+): ServerSettings["usageLimitSources"] {
+  const next = new Map(Object.entries(current));
+  for (const [id, config] of Object.entries(patch)) {
+    if (config === null) next.delete(id);
+    else next.set(id, config);
+  }
+  return Object.fromEntries(next) as ServerSettings["usageLimitSources"];
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   patch: ServerSettingsPatch,
@@ -166,6 +178,7 @@ export function applyServerSettingsPatch(
     skills: skillsPatch,
     research: researchPatch,
     dev: devPatch,
+    usageLimitSources: usageLimitSourcesPatch,
     ...patchForMerge
   } = patch;
   const {
@@ -281,6 +294,14 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
+      : {}),
+    ...(usageLimitSourcesPatch !== undefined
+      ? {
+          usageLimitSources: mergeUsageLimitSources(
+            current.usageLimitSources,
+            usageLimitSourcesPatch,
+          ),
+        }
       : {}),
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }

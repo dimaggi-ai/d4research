@@ -246,6 +246,56 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/providers",
   },
   {
+    id: "provider-health-check-interval",
+    title: "Provider health checks",
+    to: "/settings/providers",
+  },
+  {
+    id: "dev-pipelines",
+    title: "Dev pipelines",
+    to: "/settings/dev-pipelines",
+  },
+  {
+    id: "browser-default-viewport",
+    title: "Default browser viewport",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-default-zoom",
+    title: "Default browser zoom",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-default-appearance",
+    title: "Default browser appearance",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-recording-frame-rate",
+    title: "Browser recording frame rate",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-link-target",
+    title: "Open browser links in",
+    to: "/settings/general",
+  },
+  {
+    id: "agent-browser-access",
+    title: "Agent browser access",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-auto-show-floating-preview",
+    title: "Auto-show floating preview",
+    to: "/settings/general",
+  },
+  {
+    id: "browser-profiles",
+    title: "Browser profiles",
+    to: "/settings/general",
+  },
+  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",

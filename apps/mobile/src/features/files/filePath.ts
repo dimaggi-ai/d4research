@@ -13,7 +13,8 @@ function isWindowsAbsolutePath(value: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 }
 
-function isAbsolutePath(value: string): boolean {
+/** A file route holding an absolute path shows a host file outside the workspace. */
+export function isAbsolutePath(value: string): boolean {
   return value.startsWith("/") || isWindowsAbsolutePath(value);
 }
 

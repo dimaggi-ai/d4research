@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@d4research/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
 import { Globe, History, RadioTower } from "lucide-react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
@@ -9,6 +9,7 @@ import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
 
 interface Props {
+  threadRef?: ScopedThreadRef;
   environmentId: EnvironmentId;
   configuredUrls?: ReadonlyArray<string> | undefined;
   recentlySeenUrls?: ReadonlyArray<string> | undefined;

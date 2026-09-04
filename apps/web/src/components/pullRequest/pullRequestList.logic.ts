@@ -25,6 +25,11 @@ function normalize(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+export function pullRequestLabelColor(color: string | null): string | null {
+  const hex = color?.trim().replace(/^#/, "") ?? "";
+  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
+}
+
 /**
  * Authorship is per host, not per provider kind: the same list can hold change requests from
  * GitHub, GitLab and a GitHub Enterprise install, and the account that owns one says nothing

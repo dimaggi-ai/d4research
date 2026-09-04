@@ -2696,6 +2696,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getInstanceInfo: ProviderServiceMethod<"getInstanceInfo"> = (instanceId) =>
     registry.getInstanceInfo(instanceId);
 
+  const assertConversationRollbackSupported: ProviderServiceMethod<"assertConversationRollbackSupported"> =
+    Effect.fn("assertConversationRollbackSupported")(function* (threadId) {
+      const routed = yield* resolveRoutableSession({
+        threadId,
+        operation: "ProviderService.assertConversationRollbackSupported",
+        allowRecovery: false,
+      });
+      if (routed.adapter.capabilities.supportsConversationRollback === false) {
+        return yield* toValidationError(
+          "ProviderService.assertConversationRollbackSupported",
+          `Provider '${routed.adapter.provider}' does not support conversation rewind.`,
+        );
+      }
+    });
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -2707,6 +2722,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     if (input.numTurns === 0) {
       return;
     }
+    yield* assertConversationRollbackSupported(input.threadId);
     let metricProvider = "unknown";
     return yield* withThreadTransitionLock(input.threadId, (waitedForGate) =>
       Effect.gen(function* () {
@@ -2932,6 +2948,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    assertConversationRollbackSupported,
     rollbackConversation,
     uploadFeedback,
     // Each access creates a fresh PubSub subscription so that multiple

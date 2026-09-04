@@ -115,6 +115,8 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   "disable-auto-merge": "Auto-merge disabled",
   "enable-auto-merge": "Auto-merge enabled",
   "update-branch": "Pull request branch updated",
+  revert: "Revert pull request opened",
+  "approve-workflows": "Workflows approved",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
@@ -127,6 +129,8 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   "disable-auto-merge": "Could not disable auto-merge",
   "enable-auto-merge": "Could not enable auto-merge",
   "update-branch": "Could not update the pull request branch",
+  revert: "Could not open a revert pull request",
+  "approve-workflows": "Could not approve workflows",
 };
 
 /** What to try, for the times the host says only that it refused. */
@@ -141,6 +145,8 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
   "disable-auto-merge": "The host refused it. Check that you have write access.",
   "enable-auto-merge": "The host refused it. Check required checks and your write access.",
   "update-branch": "The host refused it. Check branch protections and your write access.",
+  revert: "The host refused it. Check that you can create branches and pull requests.",
+  "approve-workflows": "The host refused it. Check that you have permission to approve workflows.",
 };
 
 /** Named for the host rather than "externally": the point is where you will land. */

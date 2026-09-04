@@ -3,6 +3,8 @@ import type { SelectableMarkdownTextProps } from "@d4research/mobile-markdown-te
 type MobileSelectableMarkdownTextProps = Omit<SelectableMarkdownTextProps, "highlightCode">;
 
 export type {
+  MarkdownFileContextMenu,
+  MarkdownFileContextMenuAction,
   MarkdownImageRenderer,
   MarkdownImageRequest,
   NativeMarkdownTextStyle,

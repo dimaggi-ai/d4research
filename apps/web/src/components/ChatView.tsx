@@ -19,6 +19,7 @@ import {
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   ProviderDriverKind,
+  resolveEnvironmentMachineKind,
   RuntimeMode,
   TerminalOpenInput,
 } from "@d4research/contracts";
@@ -1885,17 +1886,20 @@ function ChatViewContent(props: ChatViewProps) {
       projectId: ProjectId;
       label: string;
       isPrimary: boolean;
+      machine: ReturnType<typeof resolveEnvironmentMachineKind>;
     }> = [];
     for (const p of memberProjects) {
       if (seen.has(p.environmentId)) continue;
       seen.add(p.environmentId);
       const isPrimary = p.environmentId === primaryEnvironmentId;
-      const label = environmentById.get(p.environmentId)?.label ?? p.environmentId;
+      const environment = environmentById.get(p.environmentId) ?? null;
+      const label = environment?.label ?? p.environmentId;
       envs.push({
         environmentId: p.environmentId,
         projectId: p.id,
         label,
         isPrimary,
+        machine: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
       });
     }
     // Sort: primary first, then alphabetical
@@ -7364,7 +7368,11 @@ function ChatViewContent(props: ChatViewProps) {
         </RightPanelTabs>
       ) : null}
       {shouldUsePlanSidebarSheet && rightPanelOpen && activeThreadRef ? (
-        <RightPanelSheet open onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}>
+        <RightPanelSheet
+          animationDurationMs={settings.panelAnimationDurationMs}
+          open
+          onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}
+        >
           <RightPanelTabs
             mode="sheet"
             layoutControls={panelToggleControls}

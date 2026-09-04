@@ -95,7 +95,11 @@ describe("fetchEnvironmentSkillsInventory", () => {
     const proofInputs: Array<{ readonly method: string; readonly url: string }> = [];
     const dpopPrepared: PreparedConnection = {
       ...prepared,
-      httpAuthorization: { _tag: "Dpop", accessToken: "relay-token" },
+      httpAuthorization: {
+        _tag: "Dpop",
+        accessToken: "relay-token",
+        expiresAtEpochMs: 4_102_444_800_000,
+      },
     };
     return Effect.gen(function* () {
       const auth = yield* preparedEnvironmentFetchAuthorization(
@@ -132,7 +136,11 @@ describe("fetchEnvironmentSkillsInventory", () => {
     const proofInputs: Array<{ readonly method: string; readonly url: string }> = [];
     const dpopPrepared: PreparedConnection = {
       ...prepared,
-      httpAuthorization: { _tag: "Dpop", accessToken: "relay-token" },
+      httpAuthorization: {
+        _tag: "Dpop",
+        accessToken: "relay-token",
+        expiresAtEpochMs: 4_102_444_800_000,
+      },
     };
     const urls = [
       "https://remote.example.test/api/handoff/prepare",

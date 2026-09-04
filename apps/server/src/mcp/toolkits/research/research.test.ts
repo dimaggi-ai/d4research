@@ -416,6 +416,7 @@ describe("research delegate handler", () => {
           listSessions: facadeMustNotRun,
           getCapabilities: facadeMustNotRun,
           getInstanceInfo: facadeMustNotRun,
+          assertConversationRollbackSupported: facadeMustNotRun,
           rollbackConversation: facadeMustNotRun,
           uploadFeedback: facadeMustNotRun,
           streamEvents: Stream.fromPubSub(runtimeEvents),

@@ -253,6 +253,7 @@ function createProviderServiceHarness() {
         },
       });
     },
+    assertConversationRollbackSupported: () => unsupported(),
     rollbackConversation: () => unsupported(),
     uploadFeedback: () => unsupported(),
     get streamEvents() {

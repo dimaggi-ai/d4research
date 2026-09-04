@@ -1536,7 +1536,7 @@ const make = Effect.gen(function* () {
       if (event.type === "account.rate-limits.updated") {
         yield* Ref.update(latestRateLimitsByProvider, (current) => {
           const next = new Map(current);
-          next.set(providerRateLimitKey, event.payload.rateLimits);
+          next.set(providerRateLimitKey, event.payload.limits);
           return next;
         });
       }

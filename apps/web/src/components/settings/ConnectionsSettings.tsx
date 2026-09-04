@@ -522,6 +522,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   onRevoke,
 }: PairingLinkListRowProps) {
   const nowMs = useRelativeTimeTick(1_000);
+  const credential = pairingLink.credential ?? "";
   const expiresAtMs = useMemo(
     () => new Date(pairingLink.expiresAt).getTime(),
     [pairingLink.expiresAt],
@@ -534,20 +535,20 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const qrPanelId = useId();
 
   const currentOriginPairingUrl = useMemo(
-    () => resolveCurrentOriginPairingUrl(pairingLink.credential),
-    [pairingLink.credential],
+    () => resolveCurrentOriginPairingUrl(credential),
+    [credential],
   );
   const hostedPairingUrl = useMemo(
     () =>
       endpointUrl != null && endpointUrl !== ""
-        ? resolveHostedPairingUrl(endpointUrl, pairingLink.credential)
+        ? resolveHostedPairingUrl(endpointUrl, credential)
         : null,
-    [endpointUrl, pairingLink.credential],
+    [endpointUrl, credential],
   );
   const endpointPairingUrl = useMemo(() => {
     const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
-    return endpoint ? resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential) : null;
-  }, [defaultEndpointKey, endpoints, pairingLink.credential]);
+    return endpoint ? resolveAdvertisedEndpointPairingUrl(endpoint, credential) : null;
+  }, [credential, defaultEndpointKey, endpoints]);
   const endpointCopyOptions = useMemo(() => {
     const options: Array<{
       readonly id: string;
@@ -561,7 +562,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       if (endpoint.status === "unavailable") {
         continue;
       }
-      const url = resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential);
+      const url = resolveAdvertisedEndpointPairingUrl(endpoint, credential);
       options.push({
         id: endpoint.id,
         preferenceKey: endpointDefaultPreferenceKey(endpoint),
@@ -572,19 +573,19 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       });
     }
     return options;
-  }, [endpoints, pairingLink.credential]);
+  }, [credential, endpoints]);
   const shareablePairingUrl =
     endpointPairingUrl ??
     (endpointUrl != null && endpointUrl !== ""
-      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, pairingLink.credential))
+      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential))
       : isLoopbackHostname(window.location.hostname)
         ? null
         : currentOriginPairingUrl);
   // Value of the copy attempt that last failed. The clipboard-failure reveal
   // dialog must show exactly what failed to copy, not the row's default URL.
   const [failedCopyValue, setFailedCopyValue] = useState<string | null>(null);
-  const revealValue = failedCopyValue ?? shareablePairingUrl ?? pairingLink.credential;
-  const isRevealValueUrl = revealValue !== pairingLink.credential;
+  const revealValue = failedCopyValue ?? shareablePairingUrl ?? credential;
+  const isRevealValueUrl = revealValue !== credential;
   const isRevealValueHostedAppPairingUrl = isRevealValueUrl && isHostedAppPairingUrl(revealValue);
   // Never render a QR for a loopback URL, even in the manual-copy fallback.
   const isRevealValueQrShareable =
@@ -649,8 +650,8 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   );
 
   const handleCopyCode = useCallback(() => {
-    copyPairingValue(pairingLink.credential, "code");
-  }, [copyPairingValue, pairingLink.credential]);
+    copyPairingValue(credential, "code");
+  }, [copyPairingValue, credential]);
 
   const expiresAbsolute = formatAccessTimestamp(pairingLink.expiresAt);
 

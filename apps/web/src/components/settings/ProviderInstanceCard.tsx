@@ -325,12 +325,17 @@ function ProviderEnvironmentSection(props: {
 }
 
 interface ProviderInstanceCardProps {
+  mode?: "card" | "editor" | "list";
   readonly instanceId: ProviderInstanceId;
   readonly instance: ProviderInstanceConfig;
   readonly driverOption: DriverOption | undefined;
   readonly liveProvider: ServerProvider | undefined;
-  readonly isExpanded: boolean;
-  readonly onExpandedChange: (open: boolean) => void;
+  readonly selected?: boolean;
+  readonly onSelect?: (() => void) | undefined;
+  readonly readOnly?: boolean;
+  readonly setup?: ReactNode;
+  readonly isExpanded?: boolean;
+  readonly onExpandedChange?: (open: boolean) => void;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
   /**
    * Pass `undefined` to hide the delete button entirely. Built-in default
@@ -412,12 +417,17 @@ export function ProviderDetailsButton({
  *     flows through the envelope.
  */
 export function ProviderInstanceCard({
+  mode = "card",
   instanceId,
   instance,
   driverOption,
   liveProvider,
-  isExpanded,
-  onExpandedChange,
+  selected = false,
+  onSelect,
+  readOnly = false,
+  setup,
+  isExpanded: isExpandedProp,
+  onExpandedChange: onExpandedChangeProp,
   onUpdate,
   onDelete,
   headerAction,
@@ -430,6 +440,8 @@ export function ProviderInstanceCard({
   onRunUpdate,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
+  const isExpanded = isExpandedProp ?? mode === "editor";
+  const onExpandedChange = onExpandedChangeProp ?? (() => undefined);
   const enabled = instance.enabled ?? true;
   // The server-reported status wins when present; otherwise fall back to
   // "disabled"/"warning" based on the local `enabled` flag so the dot
@@ -703,7 +715,10 @@ export function ProviderInstanceCard({
   ) : null;
 
   return (
-    <div className="rounded-xl transition-colors hover:bg-muted/20">
+    <div
+      className={cn("rounded-xl transition-colors hover:bg-muted/20", selected && "bg-muted/30")}
+      onClick={onSelect}
+    >
       <div className="px-3 py-3 sm:px-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1">
@@ -819,6 +834,7 @@ export function ProviderInstanceCard({
             />
             <Switch
               checked={enabled}
+              disabled={readOnly}
               onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
               aria-label={`Enable ${displayName}`}
             />
@@ -829,6 +845,7 @@ export function ProviderInstanceCard({
       <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
         <CollapsibleContent id={`provider-details-${instanceId}`}>
           <div className="space-y-5 px-3 pb-4 pt-2 sm:px-4">
+            {setup}
             {driverKind === "claudeAgent" ? (
               <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/25 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">

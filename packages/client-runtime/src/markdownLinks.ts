@@ -8,6 +8,15 @@ const RELATIVE_FILE_NAME_PATTERN =
   /^[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\.[A-Za-z0-9_-]+(?::\d+){0,2}$/;
 const EXTERNAL_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):(.*)$/;
 const POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/;
+const BARE_EXTENSIONLESS_POSITION_PATTERN = /^[A-Za-z0-9_-]+(?::\d+){1,2}$/;
+
+/** Recognizes conventional extensionless filenames with an explicit line position. */
+export function isConventionalFilePosition(path: string): boolean {
+  return (
+    BARE_EXTENSIONLESS_POSITION_PATTERN.test(path) &&
+    EXTENSIONLESS_FILE_NAMES.has(path.replace(POSITION_SUFFIX_PATTERN, ""))
+  );
+}
 const POSITION_SUFFIX_CAPTURE_PATTERN = /:(\d+)(?::(\d+))?$/;
 const POSITION_HASH_PATTERN = /^#L(\d+)(?:C(\d+))?$/i;
 const POSITION_ONLY_PATTERN = /^\d+(?::\d+)?$/;
@@ -15,7 +24,6 @@ const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`]/;
 const PATH_SEPARATOR_PATTERN = /[\\/]/;
 const FILE_EXTENSION_PATTERN = /\.[A-Za-z0-9_-]+$/;
 const NUMERIC_DOTTED_PATTERN = /^\d+(?:\.\d+)+$/;
-const BARE_EXTENSIONLESS_POSITION_PATTERN = /^[A-Za-z0-9_-]+(?::\d+){1,2}$/;
 // Standard OS and dev-container roots; deliberately excludes app-route-ish
 // prefixes like /app/ or /chat/ so SPA routes never read as files.
 const POSIX_FILE_ROOT_PREFIXES = [
@@ -150,14 +158,6 @@ function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
   if (labels.length < 2 || lastLabel === undefined) return false;
   if (GENERIC_HOSTNAME_TLDS.has(lastLabel)) return true;
   return !hasPosition && COUNTRY_HOSTNAME_TLDS.has(lastLabel);
-}
-
-/** Recognizes conventional extensionless filenames with an explicit line position. */
-export function isConventionalFilePosition(path: string): boolean {
-  return (
-    BARE_EXTENSIONLESS_POSITION_PATTERN.test(path) &&
-    EXTENSIONLESS_FILE_NAMES.has(path.replace(POSITION_SUFFIX_PATTERN, ""))
-  );
 }
 
 /**
@@ -342,6 +342,9 @@ export function workspaceRelativeFilePath(
   const normalizedRoot = stripSlashPrefixedWindowsDrive(
     workspaceRoot.replaceAll("\\", "/"),
   ).replace(/\/+$/, "");
-  if (!normalizedPath.toLowerCase().startsWith(`${normalizedRoot.toLowerCase()}/`)) return null;
+  const caseInsensitive = isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(workspaceRoot));
+  const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+  const rootForCompare = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
+  if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
   return normalizedPath.slice(normalizedRoot.length + 1);
 }

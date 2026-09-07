@@ -17,11 +17,13 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
     id: "network-access",
     title: "Network access",
     to: "/settings/connections",
+    searchTerms: ["remote pairing backend"],
   },
   {
     id: "providers",
     title: "Providers",
     to: "/settings/providers",
+    searchTerms: ["claude codex agents"],
   },
   {
     id: "provider-updates",
@@ -36,11 +38,11 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
-  it("matches only setting titles", () => {
+  it("matches setting titles, sections, and search aliases", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    expect(searchSettings("connections", ITEMS)).toEqual([]);
-    expect(searchSettings("claude", ITEMS)).toEqual([]);
+    expect(searchSettings("connections", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
+    expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
   });
 
   it("matches normalized title substrings", () => {
@@ -56,6 +58,45 @@ describe("searchSettings", () => {
     ]);
   });
 
+  it("matches query words across fields and ranks the strongest result first", () => {
+    expect(searchSettings("pairing remote", ITEMS).map((item) => item.id)).toEqual([
+      "network-access",
+    ]);
+    expect(
+      searchSettings("remote pairing")
+        .slice(0, 2)
+        .map((item) => item.id),
+    ).toEqual(["network-access", "connections-environment"]);
+  });
+
+  it("finds settings that used to be reachable only through their section", () => {
+    expect(searchSettings("pull request template")[0]?.id).toBe("follow-change-request-templates");
+    expect(searchSettings("git security keys")[0]?.id).toBe("git-fetch-interval");
+    expect(searchSettings("push notifications")).toEqual([]);
+    expect(searchSettings("battery saver")[0]?.id).toBe("background-activity");
+    expect(searchSettings("binary path")[0]?.id).toBe("providers");
+    expect(searchSettings("Antigravity")[0]?.id).toBe("providers");
+    expect(searchSettings("Google sign in")[0]?.id).toBe("providers");
+    expect(searchSettings("authorized clients")[0]?.id).toBe("connections-environment");
+    expect(searchSettings("administrative access")[0]?.id).toBe("connections-environment");
+  });
+
+  it("lists thread confirmations in panel order", () => {
+    expect(searchSettings("confirmation").map((item) => item.id)).toEqual([
+      "archive-confirmation",
+      "delete-confirmation",
+    ]);
+  });
+
+  it.each(["usage providers", "CLIProxyAPI", "CLI proxy hub", "management key"])(
+    "finds usage-provider management by %s",
+    (query) => {
+      expect(searchSettings(query)[0]).toMatchObject({
+        id: "usage-providers",
+        to: "/settings/providers",
+      });
+    },
+  );
   it("returns no results for an empty query", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });
@@ -63,6 +104,15 @@ describe("searchSettings", () => {
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("does not offer controls absent from the local d4 settings panels", () => {
+    const ids = SETTINGS_SEARCH_ITEMS.map((item) => String(item.id));
+    expect(ids).not.toContain("composer-collapse");
+    expect(ids).not.toContain("legacy-plan-mode");
+    expect(searchSettings("push notifications")).toEqual([]);
+    expect(searchSettings("handoff")[0]?.id).toBe("handoff");
+    expect(searchSettings("tool guard")[0]?.to).toBe("/settings/tool-guard");
   });
 
   it("serves anchor props to panels from the catalog", () => {

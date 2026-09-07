@@ -55,7 +55,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ControlPill } from "../../components/ControlPill";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type { DraftComposerAttachment } from "../../lib/composerImages";
+import type { CodexFeedbackSubmission } from "@d4research/client-runtime/state/threads";
+import { ComposerFeedback } from "./ComposerFeedback";
+import { AppText as Text } from "../../components/AppText";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import type {
@@ -94,7 +97,10 @@ export interface ThreadDetailScreenProps {
   readonly activePendingUserInputAnswers: Record<string, string | ReadonlyArray<string>> | null;
   readonly respondingUserInputId: ApprovalRequestId | null;
   readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
+  readonly onDismissFeedback: (id: MessageId) => void;
+  readonly isCompacting: boolean;
   readonly connectionStateLabel: EnvironmentConnectionPhase;
   /** Message sync status for the selected thread (drives the composer status pill). */
   readonly threadSyncStatus?: EnvironmentThreadStatus;
@@ -135,6 +141,7 @@ export interface ThreadDetailScreenProps {
     customAnswer: string,
   ) => void;
   readonly onSubmitUserInput: () => Promise<unknown>;
+  readonly onDismissUserInput: () => Promise<unknown>;
   readonly showContent?: boolean;
 }
 
@@ -704,6 +711,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       onSelectOption={props.onSelectUserInputOption}
                       onChangeCustomAnswer={props.onChangeUserInputCustomAnswer}
                       onSubmit={props.onSubmitUserInput}
+                      onDismiss={props.onDismissUserInput}
                     />
                   ) : null}
                 </Animated.View>
@@ -713,6 +721,16 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             {/* Hidden (not unmounted) while a user-input request owns the
                 composer slot, so composer drafts and editor state survive. */}
             <View style={activeUserInputRequestId !== null ? { display: "none" } : undefined}>
+              {props.feedbackSubmissions.map((submission) => (
+                <ComposerFeedback
+                  key={submission.id}
+                  submission={submission}
+                  onDismiss={() => props.onDismissFeedback(submission.id)}
+                />
+              ))}
+              {props.isCompacting ? (
+                <Text accessibilityLiveRegion="polite">Compacting context…</Text>
+              ) : null}
               <ThreadComposer
                 editorRef={composerEditorRef}
                 draftMessage={props.draftMessage}

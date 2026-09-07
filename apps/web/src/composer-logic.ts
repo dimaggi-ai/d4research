@@ -1,8 +1,17 @@
-import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
+import type { AssistantCitation } from "@d4research/contracts";
+import {
+  serializeAssistantCitation,
+  withAssistantCitationComment,
+} from "@d4research/shared/assistantCitations";
+import {
+  splitPromptIntoComposerSegments,
+  type ComposerPromptSegment,
+} from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill" | "directive";
 export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSubmissionIntent = "foreground" | "background";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -11,20 +20,23 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
-export function shouldSubmitComposerOnEnter(input: {
-  isMobileViewport: boolean;
-  shiftKey: boolean;
-}): boolean {
-  return !input.isMobileViewport && !input.shiftKey;
+export function formatAssistantCitationForComposer(citation: AssistantCitation, comment = "") {
+  return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-const isInlineTokenSegment = (
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): boolean => segment.type !== "text";
+export function composerSubmissionIntentForEnter(input: {
+  isMobileViewport: boolean;
+  shiftKey: boolean;
+  modifierKey: boolean;
+  isDraftThread: boolean;
+}): ComposerSubmissionIntent | null {
+  if (input.isMobileViewport || input.shiftKey) {
+    return null;
+  }
+  return input.modifierKey && input.isDraftThread ? "background" : "foreground";
+}
+
+const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";
 
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
@@ -60,7 +72,7 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   let expandedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (segment.type === "mention" || segment.type === "citation") {
       const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
@@ -98,13 +110,7 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   return expandedCursor;
 }
 
-function collapsedSegmentLength(
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): number {
+function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
   }
@@ -112,12 +118,7 @@ function collapsedSegmentLength(
 }
 
 function clampCollapsedComposerCursorForSegments(
-  segments: ReadonlyArray<
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" }
-  >,
+  segments: ReadonlyArray<ComposerPromptSegment>,
   cursorInput: number,
 ): number {
   const collapsedLength = segments.reduce(
@@ -148,7 +149,7 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
   let collapsedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (segment.type === "mention" || segment.type === "citation") {
       const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;
@@ -220,8 +221,6 @@ export function isCollapsedCursorAdjacentToInlineToken(
   return false;
 }
 
-export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
-
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
@@ -250,15 +249,8 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
       rangeEnd: cursor,
     };
   }
-  // `!provider:model` only delegates when it opens the message, so the menu
-  // only offers targets there. A `!` mid-prose stays prose.
   if (token.startsWith("!") && tokenStart === 0) {
-    return {
-      kind: "directive",
-      query: token.slice(1),
-      rangeStart: tokenStart,
-      rangeEnd: cursor,
-    };
+    return { kind: "directive", query: token.slice(1), rangeStart: tokenStart, rangeEnd: cursor };
   }
   if (!token.startsWith("@")) {
     return null;
@@ -271,6 +263,39 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     rangeEnd: cursor,
   };
 }
+
+export function parseStandaloneComposerSlashCommand(
+  text: string,
+): Exclude<ComposerSlashCommand, "model"> | null {
+  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
+  if (!match) {
+    return null;
+  }
+  const command = match[1]?.toLowerCase();
+  if (command === "plan") return "plan";
+  return "default";
+}
+
+export function replaceTextRange(
+  text: string,
+  rangeStart: number,
+  rangeEnd: number,
+  replacement: string,
+): { text: string; cursor: number } {
+  const safeStart = Math.max(0, Math.min(text.length, rangeStart));
+  const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
+  const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
+  return { text: nextText, cursor: safeStart + replacement.length };
+}
+
+export function shouldSubmitComposerOnEnter(input: {
+  isMobileViewport: boolean;
+  shiftKey: boolean;
+}): boolean {
+  return !input.isMobileViewport && !input.shiftKey;
+}
+
+export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
 
 /**
  * Banner copy for a staged provider handoff. A draft that opens with
@@ -312,28 +337,4 @@ export function describeStagedHandoffBanner(input: {
     title: `Next message hands off to ${input.displayName}`,
     description: "This chat's context will be attached to it.",
   };
-}
-
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
-  if (!match) {
-    return null;
-  }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
-}
-
-export function replaceTextRange(
-  text: string,
-  rangeStart: number,
-  rangeEnd: number,
-  replacement: string,
-): { text: string; cursor: number } {
-  const safeStart = Math.max(0, Math.min(text.length, rangeStart));
-  const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
-  const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
-  return { text: nextText, cursor: safeStart + replacement.length };
 }

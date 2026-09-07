@@ -50,6 +50,7 @@ describe("registerComposerInlineTokenPaste", () => {
     );
     registerComposerInlineTokenPaste(editor, {
       createMentionNode: (path) => $createTextNode(`<mention:${path}>`),
+      createCitationNode: (_citation, source) => $createTextNode(source),
       getExpandedAbsoluteOffsetForPoint: () => 0,
     });
     editor.registerCommand(PASTE_COMMAND, plainTextFallback, COMMAND_PRIORITY_EDITOR);
@@ -95,6 +96,7 @@ describe("registerComposerInlineTokenPaste", () => {
     );
     registerComposerInlineTokenPaste(editor, {
       createMentionNode: (path) => $createTextNode(`<mention:${path}>`),
+      createCitationNode: (_citation, source) => $createTextNode(source),
       getExpandedAbsoluteOffsetForPoint: () => 0,
     });
     editor.registerCommand(PASTE_COMMAND, plainTextFallback, COMMAND_PRIORITY_EDITOR);
@@ -129,6 +131,7 @@ describe("registerComposerInlineTokenPaste", () => {
     );
     registerComposerInlineTokenPaste(editor, {
       createMentionNode: (path) => $createTextNode(`<mention:${path}>`),
+      createCitationNode: (_citation, source) => $createTextNode(source),
       getExpandedAbsoluteOffsetForPoint: () => 0,
     });
     editor.registerCommand(PASTE_COMMAND, plainTextFallback, COMMAND_PRIORITY_EDITOR);

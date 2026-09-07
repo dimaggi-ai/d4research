@@ -66,6 +66,8 @@ it.effect("appends one visible warning when a completed pipeline turn faked dele
           Effect.as({ sequence: 1 }),
         ),
       readEvents: () => Stream.empty,
+      readThreadEvents: () => Stream.empty,
+      getThreadReplayStats: () => Effect.die("unused"),
       streamDomainEvents: Stream.fromIterable([completion]),
       latestSequence: Effect.succeed(0),
     });

@@ -1,12 +1,17 @@
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
+  isWorkspaceVideoPreviewPath,
 } from "@d4research/shared/filePreview";
 
 export interface FileBreadcrumb {
   readonly label: string;
   readonly path: string;
   readonly kind: "project" | "directory" | "file";
+}
+
+export function isVideoPreviewFile(path: string): boolean {
+  return isWorkspaceVideoPreviewPath(path);
 }
 
 function isWindowsAbsolutePath(value: string): boolean {

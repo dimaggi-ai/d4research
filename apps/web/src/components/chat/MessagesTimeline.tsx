@@ -1,3 +1,4 @@
+import { isImageAttachment, type ChatImageAttachment } from "../../types";
 import {
   type EnvironmentId,
   type MessageId,
@@ -464,7 +465,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const anchoredEndSpace = useMemo(() => {
     const config = resolveChatListAnchoredEndSpace(rows, anchorMessageId, (row) =>
-      row.kind === "message" ? row.message.id : null,
+      row.kind === "message" && row.message.id === anchorMessageId ? row.message.id : null,
     );
     return config
       ? { ...config, onReady: handleAnchorReady, onSizeChanged: handleAnchorSizeChanged }
@@ -1027,7 +1028,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const userImages = row.message.attachments ?? [];
+  const userImages = (row.message.attachments ?? []).filter(isImageAttachment);
   const displayedUserMessage = extractUserMessageContexts(row.message.text);
   const terminalContexts = displayedUserMessage.terminalContexts;
   const previewAnnotations = displayedUserMessage.previewAnnotations;
@@ -1044,7 +1045,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
         {regularImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-            {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+            {regularImages.map((image) => (
               <div
                 key={image.id}
                 className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
@@ -1742,7 +1743,7 @@ const UserMessagePastedContextChip = memo(function UserMessagePastedContextChip(
 
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;
-  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+  image: ChatImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (

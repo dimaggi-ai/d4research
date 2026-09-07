@@ -17,6 +17,9 @@ import type {
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@d4research/client-runtime/state/shell";
+import { videoMimeType } from "@d4research/shared/video";
+
+export { videoMimeType } from "@d4research/shared/video";
 
 export type SessionPhase = "disconnected" | "connecting" | "ready" | "running";
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
@@ -42,11 +45,35 @@ export interface ChatFileAttachment extends ContractChatFileAttachment {
   readonly downloadable?: boolean;
 }
 
-export interface ChatUnknownAttachment extends ContractChatUnknownAttachment {
-  readonly previewUrl?: string;
-}
+// Attachment types this build does not know pass through with the contract
+// shape. The UI renders them as inert rows so a newer server cannot crash an
+// older client.
+export type ChatUnknownAttachment = ContractChatUnknownAttachment;
 
 export type ChatAttachment = ChatImageAttachment | ChatFileAttachment | ChatUnknownAttachment;
+
+// The union has an open member (`type: string`), so a literal comparison does
+// not narrow. Use these guards wherever type-specific fields are read.
+export function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {
+  return attachment.type === "image";
+}
+
+export function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {
+  return attachment.type === "file";
+}
+
+export function isVideoAttachment(attachment: ChatFileAttachment): boolean {
+  return videoMimeType(attachment) !== null;
+}
+
+export function isBrowserPreviewAttachment(attachment: ChatFileAttachment): boolean {
+  const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase();
+  return (
+    /\.(?:html?|pdf)$/i.test(attachment.name) ||
+    mimeType === "application/pdf" ||
+    mimeType === "text/html"
+  );
+}
 
 export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;

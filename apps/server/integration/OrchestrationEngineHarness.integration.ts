@@ -84,6 +84,8 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import { RateLimitResumeReactor } from "../src/orchestration/Services/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactor } from "../src/orchestration/Services/ResearchIntegrityReactor.ts";
 import { InlineDelegationRunner } from "../src/mcp/toolkits/research/inlineDelegation.ts";
+import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
+import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -110,6 +112,7 @@ import * as McpHttpServer from "../src/mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "../src/mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "../src/mcp/PreviewAutomationBroker.ts";
 import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
+import * as PullRequestService from "../src/pullRequest/PullRequestService.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 const decodeClaudeSettings = Schema.decodeUnknownEffect(ClaudeSettings);
@@ -470,6 +473,11 @@ export const makeOrchestrationIntegrationHarness = (
     const checkpointReactorLayer = CheckpointReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(
+        Layer.mock(PullRequestService.PullRequestService)({
+          refreshAfterTurn: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
           getStatus: () => Effect.die("getStatus should not be called in this test"),
           refreshLocalStatus: () =>
@@ -482,6 +490,8 @@ export const makeOrchestrationIntegrationHarness = (
               workingTree: { files: [], insertions: 0, deletions: 0 },
             }),
           refreshStatus: () => Effect.die("refreshStatus should not be called in this test"),
+          refreshPullRequestStatus: () =>
+            Effect.die("refreshPullRequestStatus should not be called in this test"),
           streamStatus: () => Stream.empty,
         }),
       ),
@@ -513,6 +523,18 @@ export const makeOrchestrationIntegrationHarness = (
       ),
       Layer.provideMerge(
         Layer.succeed(ResearchIntegrityReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ThreadPullRequestReactor.ThreadPullRequestReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
           start: () => Effect.void,
           drain: Effect.void,
         }),

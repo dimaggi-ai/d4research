@@ -15,6 +15,9 @@ const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
+  readonly planModeEnabled?: boolean;
+  readonly threadListSnoozedShelfExpanded?: boolean;
+  readonly threadListSettledShelfExpanded?: boolean;
   readonly liveActivitiesEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
@@ -74,6 +77,9 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    planModeEnabled?: boolean;
+    threadListSnoozedShelfExpanded?: boolean;
+    threadListSettledShelfExpanded?: boolean;
     liveActivitiesEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
@@ -85,6 +91,13 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingMode?: SidebarProjectGroupingMode;
     legacyThreadListEnabled?: boolean;
   } = {};
+
+  if (typeof parsed.planModeEnabled === "boolean")
+    preferences.planModeEnabled = parsed.planModeEnabled;
+  if (typeof parsed.threadListSnoozedShelfExpanded === "boolean")
+    preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
+  if (typeof parsed.threadListSettledShelfExpanded === "boolean")
+    preferences.threadListSettledShelfExpanded = parsed.threadListSettledShelfExpanded;
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;

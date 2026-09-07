@@ -75,26 +75,25 @@ export function resolveChangeRequestPresentation(
       return GITLAB_CHANGE_REQUEST_PRESENTATION;
     case "azure-devops":
       return AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION;
+    case "bitbucket":
+      return {
+        ...GENERIC_CHANGE_REQUEST_PRESENTATION,
+        providerName: "Bitbucket",
+        shortName: "PR",
+        longName: "pull request",
+        pluralLongName: "pull requests",
+        providerLongName: "Bitbucket pull request",
+        urlExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
+      };
     case "unknown":
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
 }
 
-export function resolveChangeRequestPresentationForKind(
+function resolveChangeRequestPresentationForKind(
   kind: SourceControlProviderKind,
 ): ChangeRequestPresentation {
   return resolveChangeRequestPresentation({ kind, name: "", baseUrl: "" });
-}
-
-export function formatChangeRequestAction(
-  verb: "View" | "Create",
-  presentation: ChangeRequestPresentation,
-): string {
-  return `${verb} ${presentation.shortName}`;
-}
-
-export function formatCreateChangeRequestPhrase(presentation: ChangeRequestPresentation): string {
-  return `create ${presentation.shortName}`;
 }
 
 export function getChangeRequestTerminology(
@@ -215,6 +214,13 @@ export function detectSourceControlProviderFromRemoteUrl(
     };
   }
 
+  if (hostname === "bitbucket.org" || hasDnsLabel(hostname, "bitbucket")) {
+    return {
+      kind: "bitbucket",
+      name: hostname === "bitbucket.org" ? "Bitbucket" : "Bitbucket Self-Hosted",
+      baseUrl: toBaseUrl(host),
+    };
+  }
   return {
     kind: "unknown",
     name: host,

@@ -8,7 +8,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@d4research/contracts";
-import { createModelCapabilities, normalizeModelSlug } from "@d4research/shared/model";
+import { createModelCapabilities, resolveSelectableModel } from "@d4research/shared/model";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -30,7 +30,7 @@ export function getProviderModels(
   return getProviderSnapshot(providers, provider)?.models ?? [];
 }
 
-export function getProviderSnapshot(
+function getProviderSnapshot(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
 ): ServerProvider | undefined {
@@ -62,7 +62,6 @@ export function isProviderEnabled(
   }
   return getProviderSnapshot(providers, provider)?.enabled ?? false;
 }
-
 // Resolve an instance selection to the correlated live driver. If the
 // instance is absent, fall back to a live enabled provider instead of
 // inferring a driver from the missing instance id.
@@ -82,7 +81,7 @@ export function getProviderModelCapabilities(
   model: string | null | undefined,
   provider: ProviderDriverKind,
 ): ModelCapabilities {
-  const slug = normalizeModelSlug(model, provider);
+  const slug = resolveSelectableModel(provider, model, models);
   return models.find((candidate) => candidate.slug === slug)?.capabilities ?? EMPTY_CAPABILITIES;
 }
 

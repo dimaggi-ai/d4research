@@ -194,12 +194,12 @@ function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
 
   const resolvedHttpBaseUrl =
     configuredHttpBaseUrl ??
-    (configuredWsBaseUrl?.startsWith("wss:")
+    (configuredWsBaseUrl?.toLowerCase().startsWith("wss:")
       ? swapBaseUrlProtocol(configuredWsBaseUrl, "https:", "websocket-base-url")
       : swapBaseUrlProtocol(configuredWsBaseUrl!, "http:", "websocket-base-url"));
   const resolvedWsBaseUrl =
     configuredWsBaseUrl ??
-    (configuredHttpBaseUrl?.startsWith("https:")
+    (configuredHttpBaseUrl?.toLowerCase().startsWith("https:")
       ? swapBaseUrlProtocol(configuredHttpBaseUrl, "wss:", "http-base-url")
       : swapBaseUrlProtocol(configuredHttpBaseUrl!, "ws:", "http-base-url"));
 

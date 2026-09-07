@@ -57,7 +57,10 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
     case "eye":
       return { ios: "eye", android: "visibility" };
     case "globe":
+    case "browser":
       return { ios: "globe", android: "public" };
+    case "computer":
+      return { ios: "desktopcomputer", android: "computer" };
     case "hammer":
       return { ios: "hammer", android: "construction" };
     case "message":

@@ -1,3 +1,5 @@
+import { commandDetailRepeatsCommand } from "@d4research/client-runtime/work-log/presentation";
+import { extractCommandOutputText } from "@d4research/client-runtime/work-log/presentation";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
 import { isBackgroundTaskActivity } from "@d4research/client-runtime/state/subagentRuntime";
@@ -140,6 +142,7 @@ export interface PendingApproval {
 }
 
 export interface PendingUserInput {
+  dismissible?: boolean;
   requestId: ApprovalRequestId;
   createdAt: string;
   questions: ReadonlyArray<UserInputQuestion>;
@@ -903,6 +906,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (detail) {
     entry.detail = detail;
   }
+  if (!entry.detail && (activity.kind === "runtime.error" || activity.kind === "runtime.warning")) {
+    const message = asTrimmedString(payload?.message);
+    if (message && message !== entry.label) entry.detail = message;
+  }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
   }
@@ -1453,34 +1460,6 @@ function isCommandToolDetail(payload: Record<string, unknown> | null, heading: s
   );
 }
 
-function extractToolDetail(
-  payload: Record<string, unknown> | null,
-  heading: string,
-): string | null {
-  const rawDetail = asTrimmedString(payload?.detail);
-  const detail = rawDetail ? stripTrailingExitCode(rawDetail).output : null;
-  const normalizedHeading = normalizePreviewForComparison(heading);
-  const normalizedDetail = normalizePreviewForComparison(detail);
-
-  if (detail && normalizedHeading !== normalizedDetail) {
-    return detail;
-  }
-
-  if (isCommandToolDetail(payload, heading)) {
-    return null;
-  }
-
-  const rawOutputSummary = summarizeToolRawOutput(payload);
-  if (rawOutputSummary) {
-    const normalizedRawOutputSummary = normalizePreviewForComparison(rawOutputSummary);
-    if (normalizedRawOutputSummary !== normalizedHeading) {
-      return rawOutputSummary;
-    }
-  }
-
-  return null;
-}
-
 function stripTrailingExitCode(value: string): {
   output: string | null;
   exitCode?: number | undefined;
@@ -1689,4 +1668,58 @@ export function derivePhase(session: ThreadSession | null): SessionPhase {
   if (session.status === "starting") return "connecting";
   if (session.status === "running") return "running";
   return "ready";
+}
+
+function extractToolOutput(payload: Record<string, unknown> | null): string | null {
+  const output = extractCommandOutputText(payload?.data);
+  return output ? stripTrailingExitCode(output).output : null;
+}
+
+function extractToolDetail(
+  payload: Record<string, unknown> | null,
+  heading: string,
+): string | null {
+  const rawDetail = asTrimmedString(payload?.detail);
+  const detail = rawDetail ? stripTrailingExitCode(rawDetail).output : null;
+  const normalizedHeading = normalizePreviewForComparison(heading);
+  const normalizedDetail = normalizePreviewForComparison(detail);
+  const commandTool = isCommandToolDetail(payload, heading);
+  const commandPreview = commandTool
+    ? extractToolCommand(payload)
+    : { command: null, rawCommand: null };
+  const command = commandPreview.command;
+
+  if (commandTool && command) {
+    const output = extractToolOutput(payload);
+    if (output) return output;
+  }
+
+  const data = asRecord(payload?.data);
+  const repeatsCommand =
+    detail !== null &&
+    commandDetailRepeatsCommand({
+      detail,
+      command,
+      rawCommand: commandPreview.rawCommand,
+      toolName: data?.toolName,
+      data,
+    });
+
+  if (detail && normalizedHeading !== normalizedDetail && (!commandTool || !repeatsCommand)) {
+    return detail;
+  }
+
+  if (commandTool) {
+    return null;
+  }
+
+  const rawOutputSummary = summarizeToolRawOutput(payload);
+  if (rawOutputSummary) {
+    const normalizedRawOutputSummary = normalizePreviewForComparison(rawOutputSummary);
+    if (normalizedRawOutputSummary !== normalizedHeading) {
+      return rawOutputSummary;
+    }
+  }
+
+  return null;
 }

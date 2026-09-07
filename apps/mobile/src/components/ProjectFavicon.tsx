@@ -5,10 +5,14 @@ import { View } from "react-native";
 import type { EnvironmentId } from "@d4research/contracts";
 import {
   getProjectFaviconCacheKey,
+  getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
 } from "@d4research/shared/projectFavicon";
 import { useThemeColor } from "../lib/useThemeColor";
-import { useAssetUrl } from "../state/assets";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/unstable/reactivity";
+import { projectFaviconUrlAtom } from "../state/assets";
+
 import {
   beginProjectFaviconRequest,
   createProjectFaviconRequest,
@@ -16,6 +20,8 @@ import {
   markProjectFaviconFailed,
   markProjectFaviconLoaded,
 } from "./projectFaviconCache";
+
+const EMPTY_FAVICON_URL = Atom.make<string | null>(null);
 
 /* ─── Component ──────────────────────────────────────────────────────── */
 export function ProjectFavicon(props: {
@@ -27,20 +33,23 @@ export function ProjectFavicon(props: {
   readonly faviconPath?: string | null;
 }) {
   const size = props.size ?? 42;
-  const faviconUrl = useAssetUrl(
-    props.environmentId,
-    props.workspaceRoot === null || props.workspaceRoot === undefined
-      ? null
-      : {
-          _tag: "project-favicon",
+  const faviconUrl = useAtomValue(
+    props.workspaceRoot == null
+      ? EMPTY_FAVICON_URL
+      : projectFaviconUrlAtom({
+          environmentId: props.environmentId,
           cwd: props.workspaceRoot,
-          ...(props.faviconPath ? { path: props.faviconPath } : {}),
-        },
+          faviconPath: props.faviconPath,
+        }),
   );
   const renderableFaviconUrl = isProjectFaviconFallbackUrl(faviconUrl) ? null : faviconUrl;
+  // Inline images are self-contained; remote URLs key on their revision so signed-token
+  // rotation reuses the disk cache while a changed icon starts from the loading state.
   const cacheKey =
     renderableFaviconUrl && props.workspaceRoot
-      ? getProjectFaviconCacheKey(props.environmentId, props.workspaceRoot, renderableFaviconUrl)
+      ? renderableFaviconUrl.startsWith("data:")
+        ? getProjectFaviconResourceKey(props.environmentId, props.workspaceRoot, props.faviconPath)
+        : getProjectFaviconCacheKey(props.environmentId, props.workspaceRoot, renderableFaviconUrl)
       : null;
 
   return (
@@ -77,7 +86,9 @@ function ProjectFaviconImage(props: {
   }, [faviconRequest]);
 
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() =>
-    hasLoadedProjectFavicon(props.cacheKey) ? "loaded" : "loading",
+    props.faviconUrl?.startsWith("data:") || hasLoadedProjectFavicon(props.cacheKey)
+      ? "loaded"
+      : "loading",
   );
 
   const requestIsActive = faviconRequest !== null && activeFaviconRequest === faviconRequest;
@@ -106,11 +117,12 @@ function ProjectFaviconImage(props: {
       {requestIsActive ? (
         <Image
           key={faviconRequest.faviconUrl}
-          source={{
-            uri: faviconRequest.faviconUrl,
-            cacheKey: faviconRequest.cacheKey,
-          }}
-          cachePolicy="memory-disk"
+          source={
+            faviconRequest.faviconUrl.startsWith("data:")
+              ? { uri: faviconRequest.faviconUrl }
+              : { uri: faviconRequest.faviconUrl, cacheKey: faviconRequest.cacheKey }
+          }
+          cachePolicy={faviconRequest.faviconUrl.startsWith("data:") ? "memory" : "memory-disk"}
           recyclingKey={faviconRequest.cacheKey}
           accessibilityLabel={`${props.projectTitle} favicon`}
           style={{

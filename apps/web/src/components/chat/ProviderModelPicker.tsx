@@ -44,6 +44,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   allowCrossProviderSelection?: boolean | undefined;
+  onOpenProviderSetup?: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -65,7 +66,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   // a stale foreign slug.
   const selectedModel =
     selectedInstanceOptions.find((option) => option.slug === props.model) ??
-    selectedInstanceOptions[0];
+    (activeEntry?.driverKind === "opencode" ? undefined : selectedInstanceOptions[0]);
   const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
   const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
   const duplicateDriverCount = props.instanceEntries.filter(
@@ -199,7 +200,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <ModelPickerContent
           activeInstanceId={activeInstanceId}
           model={props.model}
-          lockedProvider={props.lockedProvider}
+          lockedProvider={props.allowCrossProviderSelection ? null : props.lockedProvider}
           lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
           instanceEntries={props.instanceEntries}
           {...(props.keybindings ? { keybindings: props.keybindings } : {})}
@@ -210,7 +211,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ? { getModelDisabledReason: props.getModelDisabledReason }
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
-          allowCrossProviderSelection={props.allowCrossProviderSelection}
+          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
         />
       </PopoverPopup>
     </Popover>

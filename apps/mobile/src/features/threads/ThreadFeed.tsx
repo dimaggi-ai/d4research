@@ -972,7 +972,7 @@ function renderFeedEntry(
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
-  if (entry.type === "working") {
+  if (entry.type === "thinking") {
     return <WorkingTimelineRow startedAt={entry.createdAt} />;
   }
 
@@ -1004,7 +1004,7 @@ function renderFeedEntry(
         expanded={entry.expanded}
         hiddenCount={entry.hiddenCount}
         iconSubtleColor={iconSubtleColor}
-        onlyToolActivities={entry.onlyToolActivities}
+        onlyToolActivities={entry.summaryKind !== "mixed"}
         onToggle={() => props.onToggleWorkGroup(entry.groupId)}
       />
     );
@@ -1289,7 +1289,7 @@ function renderFeedEntry(
 
   return (
     <ThreadWorkLog
-      activities={entry.activities}
+      activities={entry.type === "agent-spawn" ? [entry.activity] : entry.activities}
       copiedRowId={props.copiedRowId}
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
@@ -2097,7 +2097,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           return TURN_FOLD_HEIGHT;
         case "work-toggle":
           return WORK_GROUP_TOGGLE_HEIGHT;
-        case "working":
+        case "thinking":
           return workingRowHeight;
         case "activity-group":
           // Expanded rows append a variable detail block — fall back to

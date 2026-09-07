@@ -409,6 +409,7 @@ describe("research delegate handler", () => {
         ProviderService.of({
           startSession: facadeMustNotRun,
           sendTurn: facadeMustNotRun,
+          compactThread: facadeMustNotRun,
           interruptTurn: facadeMustNotRun,
           respondToRequest: facadeMustNotRun,
           respondToUserInput: facadeMustNotRun,

@@ -1,3 +1,5 @@
+import { dedupeProviderSkillsByName } from "@d4research/client-runtime/providerSkills";
+import { isProviderSkillUserInvocable } from "@d4research/client-runtime/providerSkills";
 import type { ServerProviderSkill } from "@d4research/contracts";
 import {
   insertRankedSearchResult,
@@ -71,7 +73,7 @@ export function searchProviderSkills(
   query: string,
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
-  const enabledSkills = skills.filter((skill) => skill.enabled);
+  const enabledSkills = dedupeProviderSkillsByName(skills.filter(isProviderSkillUserInvocable));
   const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\$+/ });
 
   if (!normalizedQuery) {

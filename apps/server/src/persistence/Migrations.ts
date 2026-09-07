@@ -56,6 +56,20 @@ import Migration0041 from "./Migrations/041_ProjectionThreadTurnUsage.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadResumeSchedule.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadsPinOrderKey.ts";
 import Migration0044 from "./Migrations/044_ProjectionTurnsKeysetIndex.ts";
+// d4research already shipped its turn-usage and resume-schedule migrations in
+// historical slots 37 and 38, then repeated them in 41 and 42 while remapping
+// upstream's keyset and pin-order migrations to 43 and 44. Keep every collided
+// upstream migration in its original order from slot 47. Slots 45 and 46 were
+// already shipped for the retired queued-message projection and stay reserved.
+import Migration0045 from "./Migrations/041_AuthSessionClientConnection.ts";
+import Migration0046 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
+import Migration0047 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
+import Migration0048 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
+import Migration0049 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
+import Migration0050 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
+import Migration0051 from "./Migrations/047_ProjectionProjectIcon.ts";
+import Migration0054 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
+import Migration0055 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -110,9 +124,25 @@ export const migrationEntries = [
   [42, "ProjectionThreadResumeSchedule", Migration0042],
   [43, "ProjectionThreadsPinOrderKey", Migration0043],
   [44, "ProjectionTurnsKeysetIndex", Migration0044],
+  [47, "AuthSessionClientConnection", Migration0045],
+  [48, "ProjectionThreadLinkedPullRequest", Migration0046],
+  [49, "ProjectionThreadsUnsettledAt", Migration0047],
+  [50, "ClearAutomaticProjectModelDefaults", Migration0048],
+  [51, "ProjectionProjectsAutoPull", Migration0049],
+  [52, "RepairAutomaticSettlementTimestamps", Migration0050],
+  [53, "ProjectionProjectIcon", Migration0051],
+  [54, "ProjectionThreadBranchPullRequest", Migration0054],
+  [55, "ProjectionThreadsActiveOrderKey", Migration0055],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
+
+const historicalMigrationSlots = [
+  [37, "ProjectionThreadTurnUsage"],
+  [38, "ProjectionThreadResumeSchedule"],
+  [45, "ProjectionQueuedMessages"],
+  [46, "ProjectionQueuedMessagesScheduledAt"],
+] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
@@ -154,7 +184,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     SELECT migration_id, name FROM effect_sql_migrations
   `;
   const appliedById = new Map(applied.map((row) => [Number(row.migration_id), row.name]));
-  for (const [id, expectedName] of migrationManifest) {
+  for (const [id, expectedName] of [...historicalMigrationSlots, ...migrationManifest]) {
     const appliedName = appliedById.get(id);
     if (appliedName !== undefined && appliedName !== expectedName) {
       return yield* Effect.die(

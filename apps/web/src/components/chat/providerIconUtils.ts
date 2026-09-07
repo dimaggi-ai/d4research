@@ -38,6 +38,10 @@ export type ModelEsque = {
   shortName?: string | undefined;
   subProvider?: string | undefined;
   isLegacy?: boolean | undefined;
+  isUnavailable?: boolean | undefined;
+  isDefault?: boolean | undefined;
+  aliases?: ReadonlyArray<string> | undefined;
+  badge?: "new" | undefined;
 };
 
 function escapeRegExp(value: string): string {

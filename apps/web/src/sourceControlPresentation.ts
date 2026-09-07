@@ -3,8 +3,6 @@ import type { ElementType } from "react";
 import type { SourceControlProviderInfo, SourceControlProviderKind } from "@d4research/contracts";
 export {
   DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
-  formatChangeRequestAction,
-  formatCreateChangeRequestPhrase,
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestPresentation,

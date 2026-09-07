@@ -6,6 +6,7 @@ import { SETTINGS_SEARCH_ITEMS, SETTINGS_SECTION_LABELS } from "./settingsSearch
 const EXPECTED_SETTINGS_SCREENS = [
   "/settings/general",
   "/settings/appearance",
+  "/settings/projects",
   "/settings/keybindings",
   "/settings/providers",
   "/settings/source-control",

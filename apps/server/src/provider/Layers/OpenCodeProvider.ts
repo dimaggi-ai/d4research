@@ -13,6 +13,7 @@ import { createModelCapabilities } from "@d4research/shared/model";
 import { compareSemverVersions } from "@d4research/shared/semver";
 import {
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   nonEmptyTrimmed,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -525,6 +526,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     checkedAt,
     models,
     skills,
+    slashCommands: [COMPACT_SLASH_COMMAND],
     probe: {
       installed: true,
       version,

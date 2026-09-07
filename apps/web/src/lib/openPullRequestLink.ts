@@ -1,50 +1,55 @@
-import type { LocalApi, ScopedThreadRef } from "@d4research/contracts";
+import type {
+  EnvironmentId,
+  RepositoryIdentity,
+  ScopedThreadRef,
+  ThreadLinkedPullRequest,
+} from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
 import { type MouseEvent, useCallback } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@d4research/contracts";
 
+import { useOpenLink } from "../browser/useOpenLink";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { readLocalApi } from "../localApi";
 import { useRightPanelStore } from "../rightPanelStore";
 import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
 
 import { useProjects, useServerConfigs } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 
-export class PullRequestLinkOpenError extends Schema.TaggedErrorClass<PullRequestLinkOpenError>()(
-  "PullRequestLinkOpenError",
-  {
-    targetOrigin: Schema.NullOr(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {
-  static fromCause(targetUrl: string, cause: unknown): PullRequestLinkOpenError {
-    let targetOrigin: string | null = null;
-    try {
-      targetOrigin = new URL(targetUrl).origin;
-    } catch {
-      // Keep malformed URLs out of diagnostics while preserving the open failure below.
-    }
-    return new PullRequestLinkOpenError({ targetOrigin, cause });
+/** Builds a GitHub URL that remains available when the pull request API cannot be read. */
+export function gitHubPullRequestBrowserUrl(
+  identity: RepositoryIdentity | null | undefined,
+  repository: string,
+  number: number,
+): string | null {
+  if (identity?.provider !== "github" || !Number.isSafeInteger(number) || number < 1) return null;
+  const repositoryPath = repository.split("/");
+  if (
+    repositoryPath.length !== 2 ||
+    repositoryPath.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    return null;
   }
 
-  override get message(): string {
-    return this.targetOrigin === null
-      ? "Unable to open pull request link."
-      : `Unable to open pull request link at ${this.targetOrigin}.`;
-  }
-}
-
-export async function openPullRequestLink(
-  shell: Pick<LocalApi["shell"], "openExternal">,
-  targetUrl: string,
-): Promise<void> {
+  let origin: string | null = null;
   try {
-    await shell.openExternal(targetUrl);
-  } catch (cause) {
-    throw PullRequestLinkOpenError.fromCause(targetUrl, cause);
+    const remoteUrl = new URL(identity.locator.remoteUrl.trim());
+    if (remoteUrl.protocol === "http:" || remoteUrl.protocol === "https:") {
+      origin = remoteUrl.origin;
+    }
+  } catch {
+    // SCP-style remotes are read from their normalized identity below.
+  }
+  const hostname = identity.canonicalKey.split("/")[0];
+  if (origin === null && !hostname) return null;
+
+  try {
+    const url = new URL(origin ?? `https://${hostname}`);
+    url.pathname = `/${repositoryPath.join("/")}/pull/${number}`;
+    return url.toString();
+  } catch {
+    return null;
   }
 }
 
@@ -104,6 +109,11 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // separator is GitLab's own, so the hostname is not asked about.
   const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
   if (gitlab) return claim(host, gitlab);
+  // Bitbucket Cloud: /{workspace}/{repo}/pull-requests/{n}
+  if (isHostOf(host, "bitbucket.org", "bitbucket")) {
+    const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    return claim(host, match);
+  }
   // Azure DevOps, both the current host and the per-organisation one it replaced. `_git` is part
   // of the repository path there, as it is in the remote URL the identity is read from.
   if (isHostOf(host, "dev.azure.com") || host.endsWith(".visualstudio.com")) {
@@ -111,6 +121,63 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
     return claim(host, match);
   }
   return null;
+}
+
+/**
+ * The pull-request URL a GitHub-style `#123` autolink might name. GitHub writes every bare
+ * reference through `/issues/`, including pull requests, so this only builds a candidate: the
+ * caller must successfully read it as a pull request before treating it as one.
+ */
+export function pullRequestCandidateUrlFromReferenceAutolink(targetUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    !isHostOf(url.hostname.toLowerCase(), "github.com", "github")
+  ) {
+    return null;
+  }
+  const match = /^\/([^/]+\/[^/]+)\/issues\/(\d+)(?:\/|$)/u.exec(url.pathname);
+  if (match?.[1] === undefined || match[2] === undefined) return null;
+  url.pathname = `/${match[1]}/pull/${match[2]}`;
+  return url.toString();
+}
+
+/** Match a stored PR without requiring its project to remain available. */
+export function matchesLinkedPullRequestUrl(
+  linkedPullRequest: ThreadLinkedPullRequest,
+  targetUrl: string,
+): boolean {
+  const linked = parseChangeRequestUrl(linkedPullRequest.url);
+  const target = parseChangeRequestUrl(targetUrl);
+  return (
+    linked !== null &&
+    target !== null &&
+    linked.host === target.host &&
+    linked.repository === target.repository &&
+    linked.number === target.number
+  );
+}
+
+/** The repository root behind a recognised change-request URL, without PR-specific state. */
+export function changeRequestRepositoryUrl(targetUrl: string): string | null {
+  const changeRequest = parseChangeRequestUrl(targetUrl);
+  if (changeRequest === null) return null;
+  const url = new URL(targetUrl);
+  const repositoryPath =
+    /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1] ??
+    /^(.*?)(?:\/pull\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
+      url.pathname,
+    )?.[1];
+  if (!repositoryPath) return null;
+  url.pathname = repositoryPath;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 function claim(host: string, match: RegExpExecArray | null): ChangeRequestLink | null {
@@ -168,34 +235,55 @@ export function findProjectForChangeRequest(
  * should still be reading it afterwards. Any change request opens there, not only the thread's
  * own, since the panel is told which one to show.
  */
+export function shouldOpenPullRequestExternally(
+  event: Pick<MouseEvent<HTMLElement>, "metaKey" | "ctrlKey">,
+): boolean {
+  return event.metaKey || event.ctrlKey;
+}
+
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
 ): (
-  event: Pick<MouseEvent<HTMLElement>, "preventDefault" | "stopPropagation">,
+  event: Pick<
+    MouseEvent<HTMLElement>,
+    "preventDefault" | "stopPropagation" | "metaKey" | "ctrlKey"
+  >,
   targetUrl: string,
   targetThreadRef?: ScopedThreadRef,
+  targetEnvironmentId?: EnvironmentId,
 ) => boolean {
   const navigate = useNavigate();
   const allProjects = useProjects();
   const serverConfigs = useServerConfigs();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   return useCallback(
-    (event, targetUrl, targetThreadRef) => {
+    (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
+      if (shouldOpenPullRequestExternally(event)) return false;
       const resolvedThreadRef = targetThreadRef ?? threadRef;
-      const environmentId = resolvedThreadRef?.environmentId ?? primaryEnvironmentId;
-      if (
-        environmentId === null ||
-        serverConfigs.get(environmentId)?.environment.capabilities.pullRequests !== true
-      ) {
-        return false;
-      }
+      const parsed = parseChangeRequestUrl(targetUrl);
+      if (parsed === null) return false;
+      const reads = (environmentId: string) =>
+        serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
+        true;
       // Beside a thread the panel reads on that thread's environment, so a project from another
       // one could not be read there whatever its remote says: two environments can hold the same
       // repository, and handing the panel the wrong one's id opens a surface that never loads.
-      const projects = allProjects.filter((project) => project.environmentId === environmentId);
-      const parsed = parseChangeRequestUrl(targetUrl);
-      const project = parsed === null ? undefined : findProjectForChangeRequest(projects, parsed);
-      if (parsed === null || project === undefined) return false;
+      //
+      // The page has no such tie — it lists every server at once — so the link is resolved
+      // against all of them, the primary first where two hold the same repository.
+      const projects = resolvedThreadRef
+        ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
+        : targetEnvironmentId
+          ? allProjects.filter((project) => project.environmentId === targetEnvironmentId)
+          : allProjects
+              .filter((project) => reads(project.environmentId))
+              .toSorted(
+                (left, right) =>
+                  Number(right.environmentId === primaryEnvironmentId) -
+                  Number(left.environmentId === primaryEnvironmentId),
+              );
+      const project = findProjectForChangeRequest(projects, parsed);
+      if (project === undefined || !reads(project.environmentId)) return false;
       event.preventDefault();
       event.stopPropagation();
       if (resolvedThreadRef) {
@@ -218,6 +306,8 @@ export function useOpenChangeRequestLink(
           repository: parsed.repository,
           number: parsed.number,
           selectedProjectId: project.id,
+          // Named so the page opens the right one of two servers holding this project.
+          selectedEnvironmentId: project.environmentId,
         },
       });
       return true;
@@ -228,22 +318,24 @@ export function useOpenChangeRequestLink(
 
 export function useOpenPrLink(threadRef?: ScopedThreadRef) {
   const openChangeRequest = useOpenChangeRequestLink(threadRef);
+  const openLink = useOpenLink(threadRef);
   return useCallback(
     (event: MouseEvent<HTMLElement>, prUrl: string, targetThreadRef?: ScopedThreadRef) => {
-      event.preventDefault();
       event.stopPropagation();
-      if (openChangeRequest(event, prUrl, targetThreadRef)) return true;
+      const openInBrowser = shouldOpenPullRequestExternally(event);
+      const isAnchor =
+        event.currentTarget instanceof HTMLAnchorElement && event.currentTarget.href.length > 0;
+      // A real link already knows how to cmd/ctrl+click. Leave its default
+      // action alone so the browser (or Electron's window-open handler) opens
+      // the host. Buttons have no href, so they still go through openExternal.
+      if (openInBrowser && isAnchor) return false;
 
-      const api = readLocalApi();
-      if (!api) {
-        toastManager.add({
-          type: "error",
-          title: "Link opening is unavailable.",
-        });
-        return false;
-      }
+      event.preventDefault();
+      if (!openInBrowser && openChangeRequest(event, prUrl, targetThreadRef)) return true;
 
-      void openPullRequestLink(api.shell, prUrl).catch((error) => {
+      // No project to show it in, so it is an ordinary link and follows the
+      // "Open links in" setting; the modifier still forces the system browser.
+      void openLink(prUrl, { event, threadRef: targetThreadRef }).catch((error: unknown) => {
         console.error(error);
         toastManager.add(
           stackedThreadToast({
@@ -255,6 +347,6 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       });
       return false;
     },
-    [openChangeRequest],
+    [openChangeRequest, openLink],
   );
 }

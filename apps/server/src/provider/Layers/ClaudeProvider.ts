@@ -12,6 +12,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Ref from "effect/Ref";
+import {
+  type ClaudeScopedLimitNames,
+  claudeUsageResponseToLimits,
+  recordClaudeUsageResponse,
+} from "./claudeUsageLimits.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import * as Schema from "effect/Schema";
 import {
   FetchHttpClient,
@@ -41,6 +48,7 @@ import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
   parseGenericCliVersion,
@@ -776,7 +784,9 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
-  readonly usage?: ServerProviderUsage;
+  readonly usage?:
+    | ServerProviderUsage
+    | Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
 };
 
 const CLAUDE_USAGE_WINDOWS = [
@@ -802,19 +812,21 @@ function makeClaudeUsageStatus(
 }
 
 export function mapClaudeUsage(
-  raw: SDKControlGetUsageResponse,
+  raw: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits"> & {
+    readonly subscription_type?: string | null;
+  },
   checkedAt: string,
 ): ServerProviderUsage {
   if (!raw.rate_limits_available) {
     return {
       ...makeClaudeUsageStatus("unsupported", checkedAt),
-      planType: raw.subscription_type,
+      planType: raw.subscription_type ?? null,
     };
   }
 
   return {
     support: "supported",
-    planType: raw.subscription_type,
+    planType: raw.subscription_type ?? null,
     windows: CLAUDE_USAGE_WINDOWS.flatMap(([id, label]) => {
       const window = raw.rate_limits?.[id];
       return window
@@ -949,39 +961,47 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
-      const usage = await q
-        .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()
-        .then((raw) => mapClaudeUsage(raw, usageCheckedAt))
-        .catch(() => makeClaudeUsageStatus("unavailable", usageCheckedAt));
-      const account = init.account as
-        | {
-            readonly email?: string;
-            readonly subscriptionType?: string;
-            readonly tokenSource?: string;
-            readonly apiProvider?: string;
-          }
-        | undefined;
-      return {
-        email: account?.email,
-        subscriptionType: account?.subscriptionType,
-        tokenSource: account?.tokenSource,
-        apiProvider: account?.apiProvider,
-        slashCommands: parseClaudeInitializationCommands(init.commands),
-        usage,
-      } satisfies ClaudeCapabilitiesProbe;
+      return { q, init };
     });
   }).pipe(
+    Effect.timeout(CAPABILITIES_PROBE_TIMEOUT_MS),
+    Effect.flatMap(({ q, init }) =>
+      Effect.gen(function* () {
+        // Usage has its own deadline so a slow optional request cannot discard initialization.
+        const usageResult = yield* Effect.tryPromise(() =>
+          q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+        ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result);
+        const usage = Result.isSuccess(usageResult)
+          ? {
+              rate_limits_available: usageResult.success.rate_limits_available,
+              rate_limits: usageResult.success.rate_limits,
+            }
+          : undefined;
+        const account = init.account as
+          | {
+              readonly email?: string;
+              readonly subscriptionType?: string;
+              readonly tokenSource?: string;
+              readonly apiProvider?: string;
+            }
+          | undefined;
+        return {
+          email: account?.email,
+          subscriptionType: account?.subscriptionType,
+          tokenSource: account?.tokenSource,
+          apiProvider: account?.apiProvider,
+          slashCommands: parseClaudeInitializationCommands(init.commands),
+          ...(usage ? { usage } : {}),
+        } satisfies ClaudeCapabilitiesProbe;
+      }),
+    ),
     Effect.ensuring(
       Effect.sync(() => {
         if (!abort.signal.aborted) abort.abort();
       }),
     ),
-    Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.result,
-    Effect.map((result) => {
-      if (Result.isFailure(result)) return undefined;
-      return Option.isSome(result.success) ? result.success.value : undefined;
-    }),
+    Effect.map((result) => (Result.isSuccess(result) ? result.success : undefined)),
   );
 };
 
@@ -1008,6 +1028,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   ) => Effect.Effect<ClaudeCapabilitiesProbe | undefined>,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
+  scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -1143,13 +1164,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
-  const slashCommands = [
-    {
-      name: "compact",
-      description: "Summarize the conversation and reduce context usage",
-    },
-    ...(capabilities?.slashCommands ?? []),
-  ];
+  const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
@@ -1208,6 +1223,18 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
     }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  const rawUsage =
+    capabilities.usage && !("support" in capabilities.usage) ? capabilities.usage : undefined;
+  const usageLimits = rawUsage
+    ? scopedLimitNames
+      ? yield* recordClaudeUsageResponse(scopedLimitNames, { response: rawUsage, checkedAt })
+      : claudeUsageResponseToLimits({ response: rawUsage, checkedAt }).limits
+    : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
+  const usage = capabilities.usage
+    ? "support" in capabilities.usage
+      ? capabilities.usage
+      : mapClaudeUsage(capabilities.usage, checkedAt)
+    : makeClaudeUsageStatus("unavailable", checkedAt);
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -1215,7 +1242,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
-    usage: capabilities.usage ?? makeClaudeUsageStatus("unavailable", checkedAt),
+    usage,
+    usageLimits,
     probe: {
       installed: true,
       version: parsedVersion,

@@ -12,6 +12,8 @@ import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
+  readCustomModelEntries,
+  toCustomModelSetting,
   getProviderOptionBooleanSelectionValue,
   getProviderOptionStringSelectionValue,
   normalizeCustomModelSlug,
@@ -157,5 +159,55 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
+describe("readCustomModelEntries", () => {
+  const capabilities: ModelCapabilities = {
+    optionDescriptors: [
+      {
+        id: "effort",
+        label: "Reasoning",
+        type: "select",
+        options: [{ id: "high", label: "High", isDefault: true }],
+        currentValue: "high",
+      },
+    ],
+  };
+
+  it("resolves bare slugs and entries, trimming and deduplicating on slug", () => {
+    expect(
+      readCustomModelEntries([
+        " bare ",
+        { slug: "named", name: " Named ", capabilities },
+        "bare",
+        { slug: "named", name: "Second" },
+        "",
+        { name: "no slug" },
+        42,
+      ]),
+    ).toEqual([
+      { slug: "bare", name: "bare", capabilities: null },
+      { slug: "named", name: "Named", capabilities },
+    ]);
+  });
+
+  it("drops unparseable capabilities but keeps the entry", () => {
+    expect(
+      readCustomModelEntries([{ slug: "x", capabilities: { optionDescriptors: "nope" } }]),
+    ).toEqual([{ slug: "x", name: "x", capabilities: null }]);
+    expect(readCustomModelEntries("not a list")).toEqual([]);
+  });
+
+  it("writes the compact stored shape back", () => {
+    expect(toCustomModelSetting({ slug: "x", name: "x", capabilities: null })).toBe("x");
+    expect(
+      toCustomModelSetting({ slug: "x", name: "x", capabilities: { optionDescriptors: [] } }),
+    ).toBe("x");
+    expect(toCustomModelSetting({ slug: "x", name: "X", capabilities })).toEqual({
+      slug: "x",
+      name: "X",
+      capabilities,
+    });
   });
 });

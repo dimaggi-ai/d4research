@@ -5,6 +5,7 @@ import {
   codexRateLimitsFailureMessage,
   codexRateLimitsToLimits,
   codexRateLimitsToUpdate,
+  codexResetCreditsToContract,
 } from "./codexUsageLimits.ts";
 
 const checkedAt = "2026-07-18T10:00:00.000Z";
@@ -59,6 +60,54 @@ describe("codexRateLimitsToLimits", () => {
       },
     ]);
   });
+
+  it("selects the main Codex allowance and leaves Spark out", () => {
+    const spark = {
+      limitId: "codex_bengalfox",
+      primary: { usedPercent: 0, windowDurationMins: 300 },
+      secondary: { usedPercent: 90, windowDurationMins: 10080 },
+    };
+    expect(
+      codexRateLimitsToLimits({
+        checkedAt,
+        snapshot: spark,
+        rateLimitsByLimitId: {
+          codex_bengalfox: spark,
+          codex: { secondary: { usedPercent: 42, windowDurationMins: 10080 } },
+        },
+      }).windows,
+    ).toEqual([
+      {
+        id: "secondary",
+        kind: "weekly",
+        label: "Weekly",
+        usedPercent: 42,
+        windowDurationMins: 10080,
+      },
+    ]);
+  });
+
+  it.each([undefined, null, {}])(
+    "supports legacy reads with no bucket map: %j",
+    (rateLimitsByLimitId) => {
+      const snapshot = { primary: { usedPercent: 12, windowDurationMins: 300 } };
+      expect(codexRateLimitsToLimits({ checkedAt, snapshot, rateLimitsByLimitId })).toEqual(
+        codexRateLimitsToLimits({ checkedAt, snapshot }),
+      );
+    },
+  );
+
+  it("does not show a model-specific legacy snapshot as the main allowance", () => {
+    expect(
+      codexRateLimitsToLimits({
+        checkedAt,
+        snapshot: {
+          limitId: "codex_bengalfox",
+          secondary: { usedPercent: 90 },
+        },
+      }).windows,
+    ).toEqual([]);
+  });
 });
 
 describe("codexRateLimitsToUpdate", () => {
@@ -80,6 +129,30 @@ describe("codexRateLimitsToUpdate", () => {
     });
     expect(codexRateLimitsToUpdate({ planType: "plus" })).toBeUndefined();
   });
+
+  it("ignores Spark notifications so they cannot overwrite the main allowance", () => {
+    expect(
+      codexRateLimitsToUpdate({
+        limitId: "codex_bengalfox",
+        primary: { usedPercent: 0, windowDurationMins: 300 },
+        secondary: { usedPercent: 90, windowDurationMins: 10080 },
+      }),
+    ).toBeUndefined();
+    expect(
+      codexRateLimitsToUpdate({
+        limitId: "codex",
+        secondary: { usedPercent: 42, windowDurationMins: 10080 },
+      })?.windows,
+    ).toEqual([
+      {
+        id: "secondary",
+        kind: "weekly",
+        label: "Weekly",
+        usedPercent: 42,
+        windowDurationMins: 10080,
+      },
+    ]);
+  });
 });
 
 describe("codexRateLimitsFailureMessage", () => {
@@ -99,5 +172,32 @@ describe("codexRateLimitsFailureMessage", () => {
     expect(
       codexRateLimitsFailureMessage(new CodexErrors.CodexAppServerProcessExitedError({ code: 1 })),
     ).toBe("Codex exited before it could report usage.");
+  });
+});
+
+describe("codexResetCreditsToContract", () => {
+  it("counts available credits and reports the soonest expiry", () => {
+    expect(
+      codexResetCreditsToContract({
+        availableCount: 2,
+        credits: [
+          { status: "available", expiresAt: 1_784_500_000 },
+          { status: "redeemed", expiresAt: 1_700_000_000 },
+          { status: "available", expiresAt: 1_784_000_000 },
+        ],
+      }),
+    ).toEqual({ availableCount: 2, nextExpiresAt: "2026-07-14T03:33:20.000Z" });
+    expect(codexResetCreditsToContract({ availableCount: 0 })).toEqual({ availableCount: 0 });
+    expect(codexResetCreditsToContract(null)).toBeUndefined();
+  });
+
+  it("rides along on the probe's limits", () => {
+    expect(
+      codexRateLimitsToLimits({
+        checkedAt,
+        snapshot: { primary: { usedPercent: 5, windowDurationMins: 300 } },
+        resetCredits: { availableCount: 1 },
+      }).resetCredits,
+    ).toEqual({ availableCount: 1 });
   });
 });

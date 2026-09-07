@@ -2,7 +2,7 @@ import { ClientSettingsSchema, type ClientSettings } from "@d4research/contracts
 
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
-export const CLIENT_SETTINGS_STORAGE_KEY = "t3code:client-settings:v1";
+const CLIENT_SETTINGS_STORAGE_KEY = "t3code:client-settings:v1";
 
 function hasWindow(): boolean {
   return typeof window !== "undefined";
@@ -36,13 +36,8 @@ export function readBrowserClientSettings(): ClientSettings | null {
     return null;
   }
 
-  try {
-    const settings = getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
-    return settings === null ? null : restoreLegacyWordWrap(settings);
-  } catch (error) {
-    console.error("Could not read persisted client settings.", error);
-    return null;
-  }
+  const settings = getLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, ClientSettingsSchema);
+  return settings === null ? null : restoreLegacyWordWrap(settings);
 }
 
 export function writeBrowserClientSettings(settings: ClientSettings): void {

@@ -21,6 +21,7 @@ interface PanelLayoutControlsProps {
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
   rightPanelShortcutLabel: string | null;
+  rightPanelUnavailableLabel?: string;
   tasksOpen?: boolean;
   tasksLabel?: string;
   /** Running + waiting subagents in this thread; badges the right panel toggle. */
@@ -40,6 +41,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelAvailable,
   rightPanelOpen,
   rightPanelShortcutLabel,
+  rightPanelUnavailableLabel = "Right panel is unavailable",
   tasksOpen = false,
   tasksLabel = "Tasks",
   liveAgentCount,
@@ -153,7 +155,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                   ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
                   : ""
               }`
-            : "Right panel is unavailable"}
+            : rightPanelUnavailableLabel}
         </TooltipPopup>
       </Tooltip>
     </div>

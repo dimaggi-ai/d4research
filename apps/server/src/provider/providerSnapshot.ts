@@ -1,4 +1,5 @@
 import type {
+  CustomModelSetting,
   ProviderDriverKind,
   ModelCapabilities,
   ServerProvider,
@@ -14,7 +15,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { normalizeCustomModelSlug } from "@d4research/shared/model";
+import { readCustomModelEntries } from "@d4research/shared/model";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { createProviderVersionAdvisory } from "./providerMaintenance.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
@@ -22,6 +23,11 @@ import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 export const DEFAULT_TIMEOUT_MS = 4_000;
 // Auth status checks involve disk/network lookups and can be slow on first run (especially Windows)
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
+
+export const COMPACT_SLASH_COMMAND = {
+  name: "compact",
+  description: "Summarize the conversation and reduce context usage",
+} satisfies ServerProviderSlashCommand;
 
 export interface CommandResult {
   readonly stdout: string;
@@ -46,6 +52,7 @@ export class ProviderCommandNotFoundError extends Schema.TaggedErrorClass<Provid
 const isProviderCommandNotFoundError = Schema.is(ProviderCommandNotFoundError);
 
 export interface ProviderProbeResult {
+  readonly usageLimits?: ServerProvider["usageLimits"];
   readonly installed: boolean;
   readonly version: string | null;
   readonly status: Exclude<ServerProviderState, "disabled">;
@@ -215,26 +222,30 @@ function humanizeModelSlug(slug: string): string {
   return tag && tag !== "latest" ? `${name} (${tag})` : name;
 }
 
+/**
+ * Append the user's custom models after the built-ins. A custom entry that
+ * declares its own capabilities keeps them; a bare slug gets the driver's
+ * default set. Slugs that collide with a built-in are dropped.
+ */
 export function providerModelsFromSettings(
   builtInModels: ReadonlyArray<ServerProviderModel>,
-  customModels: ReadonlyArray<string>,
+  customModels: ReadonlyArray<CustomModelSetting>,
   customModelCapabilities: ModelCapabilities,
 ): ReadonlyArray<ServerProviderModel> {
   const resolvedBuiltInModels = [...builtInModels];
   const seen = new Set(resolvedBuiltInModels.map((model) => model.slug));
   const customEntries: ServerProviderModel[] = [];
 
-  for (const candidate of customModels) {
-    const normalized = normalizeCustomModelSlug(candidate);
-    if (!normalized || seen.has(normalized)) {
+  for (const entry of readCustomModelEntries(customModels)) {
+    if (seen.has(entry.slug)) {
       continue;
     }
-    seen.add(normalized);
+    seen.add(entry.slug);
     customEntries.push({
-      slug: normalized,
-      name: humanizeModelSlug(normalized),
+      slug: entry.slug,
+      name: entry.name === entry.slug ? humanizeModelSlug(entry.slug) : entry.name,
       isCustom: true,
-      capabilities: customModelCapabilities,
+      capabilities: entry.capabilities ?? customModelCapabilities,
     });
   }
 
@@ -299,6 +310,7 @@ export function buildServerProvider(input: {
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
   usage?: ServerProviderUsage;
+  usageLimits?: ServerProvider["usageLimits"];
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
@@ -329,6 +341,9 @@ export function buildServerProvider(input: {
     skills: [...(input.skills ?? [])],
     ...(versionAdvisory ? { versionAdvisory } : {}),
     ...(input.usage ? { usage: input.usage } : {}),
+    ...((input.usageLimits ?? input.probe.usageLimits)
+      ? { usageLimits: input.usageLimits ?? input.probe.usageLimits }
+      : {}),
     readiness: providerReadiness(input),
   };
 }

@@ -1,3 +1,5 @@
+import { resolveWorkEntryToolPresentation } from "@d4research/client-runtime/work-log/presentation";
+import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import * as Equal from "effect/Equal";
 import {
   formatDuration,
@@ -888,4 +890,20 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       );
     }
   }
+}
+
+export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
+  const toolPresentation = resolveWorkEntryToolPresentation(entry);
+  if (toolPresentation) return toolPresentation.displayName;
+  if (entry.command) return entry.command;
+  if (entry.detail) return entry.detail;
+  const [firstPath] = entry.changedFiles ?? [];
+  if (firstPath) {
+    const path = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    return entry.changedFiles!.length === 1
+      ? path
+      : `${path} +${entry.changedFiles!.length - 1} more`;
+  }
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
 }

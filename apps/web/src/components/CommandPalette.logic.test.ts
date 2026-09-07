@@ -5,6 +5,7 @@ import {
   buildBrowseGroups,
   buildThreadActionItems,
   enumerateCommandPaletteItems,
+  filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   type CommandPaletteGroup,
@@ -28,7 +29,7 @@ describe("reduceCommandPaletteUiState", () => {
 
     expect(
       reduceCommandPaletteUiState(contentOpen, { _tag: "ToggleMode", mode: "content" }),
-    ).toEqual({ open: false, mode: "command", openIntent: null });
+    ).toEqual({ open: false, mode: "content", openIntent: null });
   });
 
   it("switches between open modes without closing", () => {
@@ -62,7 +63,7 @@ describe("reduceCommandPaletteUiState", () => {
     });
   });
 
-  it("resets to command mode for dialog-driven opens and closes", () => {
+  it("preserves the mode on close and resets it on open", () => {
     const filesOpen = reduceCommandPaletteUiState(closedState, {
       _tag: "ToggleMode",
       mode: "files",
@@ -70,7 +71,7 @@ describe("reduceCommandPaletteUiState", () => {
 
     expect(reduceCommandPaletteUiState(filesOpen, { _tag: "SetOpen", open: false })).toEqual({
       open: false,
-      mode: "command",
+      mode: "files",
       openIntent: null,
     });
     expect(reduceCommandPaletteUiState(filesOpen, { _tag: "SetOpen", open: true })).toEqual({
@@ -241,6 +242,98 @@ describe("buildThreadActionItems", () => {
     expect(groups[0]?.items.map((item) => item.value)).toEqual(["thread:project-context-only"]);
   });
 
+  it("ranks an order-independent setting title match above a split context match", () => {
+    const settingsSearchItems = [
+      {
+        kind: "action" as const,
+        value: "setting:context-match",
+        searchTerms: ["Pairing settings", "remote backend"],
+        title: "Context match",
+        icon: null,
+        run: async () => undefined,
+      },
+      {
+        kind: "action" as const,
+        value: "setting:remote-pairing",
+        searchTerms: ["Remote pairing", "connections"],
+        title: "Remote pairing",
+        icon: null,
+        run: async () => undefined,
+      },
+    ];
+
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "pairing remote",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      settingsSearchItems,
+      threadSearchItems: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.value).toBe("settings-search");
+    expect(groups[0]?.items.map((item) => item.value)).toEqual([
+      "setting:remote-pairing",
+      "setting:context-match",
+    ]);
+  });
+
+  it("keeps accent-insensitive setting results", () => {
+    const groups = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "thè\u{1ab0}mes",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      settingsSearchItems: [
+        {
+          kind: "action",
+          value: "setting:theme",
+          searchTerms: ["Themes", "Appearance"],
+          title: "Themes",
+          icon: null,
+          run: async () => undefined,
+        },
+      ],
+      threadSearchItems: [],
+    });
+
+    expect(groups[0]?.items.map((item) => item.value)).toEqual(["setting:theme"]);
+  });
+
+  it("normalizes case independently of the host locale", () => {
+    const toLocaleLowerCase = String.prototype.toLocaleLowerCase;
+    const localeLowerCase = vi
+      .spyOn(String.prototype, "toLocaleLowerCase")
+      .mockImplementation(function (this: string) {
+        return toLocaleLowerCase.call(this, "tr");
+      });
+    try {
+      const groups = filterCommandPaletteGroups({
+        activeGroups: [],
+        query: "GIT",
+        isInSubmenu: false,
+        projectSearchItems: [],
+        threadSearchItems: [],
+        settingsSearchItems: [
+          {
+            kind: "action",
+            value: "setting:version-control",
+            title: "Version control",
+            searchTerms: ["git"],
+            icon: null,
+            run: async () => undefined,
+          },
+        ],
+      });
+      expect(groups.flatMap((group) => group.items.map((item) => item.value))).toEqual([
+        "setting:version-control",
+      ]);
+    } finally {
+      localeLowerCase.mockRestore();
+    }
+  });
+
   it("keeps message excerpts searchable without replacing thread metadata", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search" })],
@@ -262,6 +355,20 @@ describe("buildThreadActionItems", () => {
       query: "reconnect",
     });
     expect(item?.description).toBe("T3 Code · #feat/search");
+  });
+
+  it("prefers renderDescription when provided", () => {
+    const [item] = buildThreadActionItems({
+      threads: [makeThread({ branch: "feat/search", worktreePath: "/tmp/wt" })],
+      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
+      sortOrder: "updated_at",
+      icon: null,
+      renderDescription: (thread, { projectTitle }) =>
+        `${projectTitle}:${thread.branch}:${thread.worktreePath ? "wt" : "local"}`,
+      runThread: async (_thread) => undefined,
+    });
+
+    expect(item?.description).toBe("T3 Code:feat/search:wt");
   });
 
   it("filters archived threads out of thread search items", () => {
@@ -325,5 +432,41 @@ describe("buildBrowseGroups", () => {
     finishNavigation?.();
     await action;
     expect(actionSettled).toBe(true);
+  });
+});
+
+describe("filterPinnedBrowseEntries", () => {
+  const entries = [
+    { name: "repo", fullPath: "/projects/repo" },
+    { name: "work", fullPath: "/projects/work" },
+  ];
+
+  it("shows sibling folders without losing an existing pinned destination", () => {
+    expect(
+      filterPinnedBrowseEntries({
+        browseEntries: entries,
+        filterQuery: "repo",
+        pinnedDirectoryName: "repo",
+        caseSensitive: true,
+      }),
+    ).toEqual({ visibleEntries: entries, exactEntry: entries[0] });
+  });
+
+  it("matches an existing pinned destination without Windows casing", () => {
+    const windowsEntries = [
+      { name: "Repo", fullPath: "C:\\projects\\Repo" },
+      { name: "work", fullPath: "C:\\projects\\work" },
+    ];
+    expect(
+      filterPinnedBrowseEntries({
+        browseEntries: windowsEntries,
+        filterQuery: "repo",
+        pinnedDirectoryName: "repo",
+        caseSensitive: false,
+      }),
+    ).toEqual({
+      visibleEntries: windowsEntries,
+      exactEntry: windowsEntries[0],
+    });
   });
 });

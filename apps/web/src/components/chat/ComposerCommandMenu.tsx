@@ -1,3 +1,11 @@
+import { type ProviderSkillSourceKind } from "@d4research/client-runtime/providerSkills";
+import { BlocksIcon } from "lucide-react";
+import { FolderIcon } from "lucide-react";
+import { PackageIcon } from "lucide-react";
+import { SettingsIcon } from "lucide-react";
+import { UserRoundIcon } from "lucide-react";
+import { type LucideIcon } from "lucide-react";
+import { Badge } from "../ui/badge";
 import {
   type ProjectEntry,
   type ProviderDriverKind,
@@ -105,6 +113,7 @@ function groupCommandItems(
 
   const builtInItems = items.filter((item) => item.type === "slash-command");
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
+  const skillItems = items.filter((item) => item.type === "skill");
 
   const groups: ComposerCommandGroup[] = [];
   if (builtInItems.length > 0) {
@@ -113,6 +122,7 @@ function groupCommandItems(
   if (providerItems.length > 0) {
     groups.push({ id: "provider", label: "Provider", items: providerItems });
   }
+  if (skillItems.length > 0) groups.push({ id: "skills", label: "Skills", items: skillItems });
   return groups;
 }
 
@@ -171,6 +181,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                     <ComposerCommandMenuItem
                       key={item.id}
                       item={item}
+                      triggerKind={props.triggerKind}
                       resolvedTheme={props.resolvedTheme}
                       isActive={props.activeItemId === item.id}
                       onHighlight={props.onHighlightedItemChange}
@@ -222,14 +233,15 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
 });
 
 const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
+  triggerKind: ComposerTriggerKind | null;
   item: ComposerCommandItem;
   resolvedTheme: "light" | "dark";
   isActive: boolean;
   onHighlight: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
-  const skillSourceLabel =
-    props.item.type === "skill" ? formatProviderSkillInstallSource(props.item.skill) : null;
+  const skillSourceKind =
+    props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
 
   return (
     <CommandItem
@@ -273,14 +285,56 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <ArrowRightIcon className="size-4 shrink-0 text-icon-muted" />
       ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="shrink-0">{props.item.label}</span>
+        <span className="shrink-0">
+          {props.item.type === "skill" && props.triggerKind === "slash-command" ? (
+            <>
+              <span className="text-secondary-label">/skill:</span>
+              {formatProviderSkillDisplayName(props.item.skill)}
+            </>
+          ) : (
+            props.item.label
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate text-secondary-label text-xs">
           {props.item.description}
         </span>
       </span>
-      {skillSourceLabel ? (
-        <span className="shrink-0 pl-2 text-secondary-label text-xs">{skillSourceLabel}</span>
+      {skillSourceKind ? (
+        <SkillSourceBadge kind={skillSourceKind} showSkillSuffix={props.triggerKind === "skill"} />
       ) : null}
     </CommandItem>
   );
 });
+
+const SKILL_SOURCE_ICON_BY_KIND: Record<ProviderSkillSourceKind, LucideIcon> = {
+  app: BlocksIcon,
+  repo: FolderIcon,
+  project: FolderIcon,
+  personal: UserRoundIcon,
+  system: SettingsIcon,
+  other: PackageIcon,
+};
+
+const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
+  app: "App",
+  repo: "Repo",
+  project: "Project",
+  personal: "Personal",
+  system: "System",
+  other: "Provider",
+};
+
+function SkillSourceBadge(props: { kind: ProviderSkillSourceKind; showSkillSuffix: boolean }) {
+  const Icon = SKILL_SOURCE_ICON_BY_KIND[props.kind];
+  return (
+    <Badge className="ms-auto" variant="secondary">
+      <Icon aria-hidden="true" className="text-current" />
+      {SKILL_SOURCE_LABEL_BY_KIND[props.kind]}
+      {props.showSkillSuffix ? " Skill" : null}
+    </Badge>
+  );
+}
+import {
+  resolveProviderSkillSourceKind,
+  formatProviderSkillDisplayName,
+} from "@d4research/client-runtime/providerSkills";

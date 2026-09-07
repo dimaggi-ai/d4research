@@ -1,3 +1,4 @@
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import { GlassContainer, GlassView } from "expo-glass-effect";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text as SystemText, View } from "react-native";
@@ -13,11 +14,16 @@ import Animated, {
 import { withUniwind } from "uniwind";
 
 import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
 import { ControlPill } from "../../components/ControlPill";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 
-const CONTROL_HEIGHT = 44;
-const CONTROL_COMPOSER_GAP = 8;
+const CONTROL_HEIGHT = 38.5; // h-11 with the mobile 14px rem
+// The collapsed composer capsule starts 6 below its overlay's top edge, so
+// the pill sits at (gap - 6) above the overlay to leave the same gap to the
+// capsule as the feed's end inset leaves between it and the last row.
+const CONTROL_GAP = 8;
+const COMPOSER_CAPSULE_INSET = 6;
 const GLASS_MERGE_SPACING = 12;
 const CONTROL_ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 const CONTROL_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
@@ -38,7 +44,8 @@ const UniwindGlassContainer = withUniwind(GlassContainer, {
 });
 const AnimatedGlassView = Animated.createAnimatedComponent(UniwindGlassView);
 
-export const FLOATING_WORKING_CONTROL_COVERAGE = CONTROL_HEIGHT + CONTROL_COMPOSER_GAP;
+const CONTROL_OVERLAY_OFFSET = CONTROL_HEIGHT + CONTROL_GAP - COMPOSER_CAPSULE_INSET;
+export const FLOATING_WORKING_CONTROL_COVERAGE = CONTROL_OVERLAY_OFFSET + CONTROL_GAP;
 
 /**
  * What the floating pill says. Syncing and working share one element so the
@@ -46,7 +53,8 @@ export const FLOATING_WORKING_CONTROL_COVERAGE = CONTROL_HEIGHT + CONTROL_COMPOS
  */
 export type FloatingWorkingStatus =
   | { readonly kind: "working"; readonly startedAt: string }
-  | { readonly kind: "syncing"; readonly label: string };
+  | { readonly kind: "syncing"; readonly label: string }
+  | { readonly kind: "compacting" };
 
 export function FloatingWorkingControl(props: {
   readonly colorScheme: "light" | "dark";
@@ -78,7 +86,7 @@ export function FloatingWorkingControl(props: {
     <Animated.View
       pointerEvents="box-none"
       className="absolute left-0 right-0 z-20 items-center"
-      style={{ top: -FLOATING_WORKING_CONTROL_COVERAGE }}
+      style={{ top: -CONTROL_OVERLAY_OFFSET }}
       entering={NATIVE_LIQUID_GLASS_SUPPORTED ? undefined : CONTROL_ENTERING}
       exiting={NATIVE_LIQUID_GLASS_SUPPORTED ? undefined : CONTROL_EXITING}
     >
@@ -161,6 +169,24 @@ export function FloatingWorkingControl(props: {
   );
 }
 
+function CompactingLabel() {
+  return (
+    <View
+      accessible
+      accessibilityLabel="Compacting"
+      className="h-11 flex-row items-center gap-1.5 px-4"
+    >
+      <SymbolView
+        name="arrow.down.right.and.arrow.up.left"
+        size={13}
+        tintColorClassName="foreground"
+        type="monochrome"
+      />
+      <Text className="font-t3-medium text-xs text-foreground">Compacting…</Text>
+    </View>
+  );
+}
+
 function FloatingStatusLabel(props: { readonly status: FloatingWorkingStatus }) {
   if (props.status.kind === "syncing") {
     return (
@@ -173,6 +199,9 @@ function FloatingStatusLabel(props: { readonly status: FloatingWorkingStatus }) 
         <Text className="font-t3-medium text-xs text-foreground">{props.status.label}</Text>
       </View>
     );
+  }
+  if (props.status.kind === "compacting") {
+    return <CompactingLabel />;
   }
   return <WorkingDuration startedAt={props.status.startedAt} />;
 }
@@ -211,6 +240,9 @@ function formatWorkingDuration(startedAt: string, nowMs: number): string {
   const totalSeconds = Math.floor((nowMs - startedAtMs) / 1_000);
   if (totalSeconds < 60) {
     return `${totalSeconds}s`;
+  }
+  if (totalSeconds >= 3_600) {
+    return formatDuration(totalSeconds * 1_000);
   }
 
   const minutes = Math.floor(totalSeconds / 60);

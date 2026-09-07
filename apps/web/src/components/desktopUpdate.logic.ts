@@ -4,6 +4,7 @@ import { isWindowsPlatform } from "../lib/utils";
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
 const DESKTOP_RELEASE_TAG_URL = "https://github.com/dimaggi-ai/d4research/releases/tag";
+const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/dimaggi-ai/d4research/releases";
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -36,16 +37,6 @@ export function resolveDesktopUpdateButtonAction(
     }
   }
   return "none";
-}
-
-export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
-  if (!state || !state.enabled) {
-    return false;
-  }
-  if (state.status === "downloading") {
-    return true;
-  }
-  return resolveDesktopUpdateButtonAction(state) !== "none";
 }
 
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
@@ -130,4 +121,18 @@ export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
     state.status !== "downloaded" &&
     state.status !== "disabled"
   );
+}
+
+export function getDesktopUpdateReleaseHistoryUrl(): string {
+  return DESKTOP_RELEASE_HISTORY_URL;
+}
+
+export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
+  if (!state || !state.enabled) {
+    return false;
+  }
+  if (state.status === "downloading") {
+    return true;
+  }
+  return resolveDesktopUpdateButtonAction(state) !== "none";
 }

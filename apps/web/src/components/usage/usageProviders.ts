@@ -35,6 +35,17 @@ export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
   grok: GrokIcon,
 };
 
+export const PROVIDER_PRESENTATION = Object.fromEntries(
+  PROVIDER_ORDER.map((provider) => [
+    provider,
+    {
+      label: PROVIDER_LABEL[provider],
+      color: PROVIDER_COLOR[provider],
+      mark: PROVIDER_MARK[provider],
+    },
+  ]),
+) as Record<UsageProviderKind, { label: string; color: string; mark: Icon }>;
+
 export function providersWithUsage(
   totals: readonly {
     readonly provider: UsageProviderKind;

@@ -1,4 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
+import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
+import { vi } from "vite-plus/test";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import { ClaudeSettings } from "@d4research/contracts";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -17,6 +24,8 @@ import {
   parseOllamaTagsPayload,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
+
+vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -145,22 +154,12 @@ it("isolates Claude capability probes without dropping workspace setting sources
 
 it("maps supported and unsupported Claude usage limits", () => {
   const checkedAt = "2026-08-05T12:00:00.000Z";
-  const session = {
-    total_cost_usd: 0,
-    total_api_duration_ms: 0,
-    total_duration_ms: 0,
-    total_lines_added: 0,
-    total_lines_removed: 0,
-    model_usage: {},
-  };
 
   assert.deepStrictEqual(
     mapClaudeUsage(
       {
-        session,
         subscription_type: "max",
         rate_limits_available: true,
-        behaviors: null,
         rate_limits: {
           five_hour: { utilization: 42.5, resets_at: "2026-08-05T15:00:00.000Z" },
           seven_day: { utilization: null, resets_at: null },
@@ -204,10 +203,8 @@ it("maps supported and unsupported Claude usage limits", () => {
   assert.deepStrictEqual(
     mapClaudeUsage(
       {
-        session,
         subscription_type: null,
         rate_limits_available: false,
-        behaviors: null,
         rate_limits: null,
       },
       checkedAt,
@@ -231,8 +228,25 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-probe-sdk-" });
       const executablePath = path.join(tempDir, "fake-claude.mjs");
       const invocationPath = path.join(tempDir, "invocation.json");
-      const workspaceCwd = path.join(tempDir, "workspace");
-      yield* fs.makeDirectory(workspaceCwd, { recursive: true });
+      // The probe aborts the SDK without awaiting the child's exit, and on
+      // Windows a directory that is still some process's cwd cannot be
+      // removed. Keep the workspace outside the scoped directory and let it
+      // go with a retrying removal once the child has gone.
+      const workspaceCwd = yield* fs.makeTempDirectory({ prefix: "t3-claude-probe-cwd-" });
+      // Node's own retry rather than an Effect schedule: it.effect runs on a
+      // TestClock, so a scheduled retry would wait for time nobody advances.
+      // If the child still holds the directory after that, an empty temp
+      // directory is left behind rather than failing the test for it.
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() =>
+          NodeFSP.rm(workspaceCwd, {
+            recursive: true,
+            force: true,
+            maxRetries: 20,
+            retryDelay: 250,
+          }).catch(() => undefined),
+        ),
+      );
 
       yield* fs.writeFileString(
         executablePath,
@@ -307,7 +321,6 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       );
       assert.ok(capabilities);
       assert.ok(capabilities.usage);
-      assert.match(capabilities.usage.checkedAt, /^\d{4}-\d{2}-\d{2}T/u);
 
       assert.deepEqual(capabilities, {
         email: "dev@example.com",
@@ -322,20 +335,10 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           },
         ],
         usage: {
-          support: "supported",
-          planType: "pro",
-          windows: [
-            {
-              id: "five_hour",
-              label: "5-hour",
-              utilizationPercent: 25,
-              resetsAt: "2026-08-05T15:00:00.000Z",
-              windowMinutes: null,
-            },
-          ],
-          limitReached: null,
-          checkedAt: capabilities.usage.checkedAt,
-          message: null,
+          rate_limits_available: true,
+          rate_limits: {
+            five_hour: { utilization: 25, resets_at: "2026-08-05T15:00:00.000Z" },
+          },
         },
       });
 
@@ -356,3 +359,38 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
     }).pipe(Effect.scoped),
   );
 });
+
+it.effect("preserves initialized capabilities when optional usage times out", () =>
+  Effect.gen(function* () {
+    const usageStarted = yield* Deferred.make<void>();
+    let abortSignal: AbortSignal | undefined;
+    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+      abortSignal = options?.abortController?.signal;
+      return {
+        initializationResult: async () => ({
+          account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
+          commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],
+        }),
+        usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () => {
+          Deferred.doneUnsafe(usageStarted, Effect.void);
+          return new Promise(() => {});
+        },
+      } as ReturnType<typeof ClaudeSdk.query>;
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const probe = yield* probeClaudeCapabilities(
+      decodeClaudeSettings({ binaryPath: "claude" }),
+    ).pipe(Effect.forkChild);
+    yield* Deferred.await(usageStarted);
+    yield* TestClock.adjust("4 seconds");
+    const capabilities = yield* Fiber.join(probe);
+    assert.equal(capabilities?.email, "dev@example.com");
+    assert.equal(capabilities?.subscriptionType, "pro");
+    assert.equal(capabilities?.tokenSource, "oauth");
+    assert.deepEqual(capabilities?.slashCommands, [
+      { name: "review", description: "Review changes", input: { hint: "[path]" } },
+    ]);
+    assert.equal(capabilities?.usage, undefined);
+    assert.equal(abortSignal?.aborted, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

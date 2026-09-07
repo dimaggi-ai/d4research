@@ -39,9 +39,11 @@ export interface ComposerBannerStackItem {
   // Ordering hint for stack assemblers: front this banner even though its
   // variant is calm (e.g. live update progress). The stack itself ignores it.
   readonly urgent?: boolean;
+  readonly priority?: "urgent" | "activity" | "notice";
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
+  readonly children?: ReactNode;
   readonly actions?: ReactNode;
   readonly className?: string;
   readonly actionClassName?: string;
@@ -196,6 +198,7 @@ function ComposerBannerStackAlert({
       {item.icon}
       <AlertTitle>{item.title}</AlertTitle>
       {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
+      {item.children}
       {item.actions || item.onDismiss ? (
         <AlertAction
           className={cn(

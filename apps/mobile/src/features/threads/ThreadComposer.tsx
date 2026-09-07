@@ -69,7 +69,7 @@ import {
 } from "../../components/ComposerToolbarTrigger";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type { DraftComposerAttachment } from "../../lib/composerImages";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
@@ -115,7 +115,7 @@ export const COMPOSER_EXPANDED_CHROME = 174;
 
 export interface ThreadComposerProps {
   readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly placeholder: string;
   readonly contentMaxWidth?: number;
   readonly bottomInset?: number;
@@ -1013,12 +1013,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           {!isExpanded && props.draftAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">
               {props.draftAttachments.slice(0, 3).map((image) => (
-                <Pressable key={image.id} onPress={() => onPressImage(image.previewUri)}>
-                  <Image
-                    source={{ uri: image.previewUri }}
-                    className="size-[30px] rounded-lg bg-subtle"
-                    resizeMode="cover"
-                  />
+                <Pressable
+                  key={image.id}
+                  onPress={
+                    image.type === "image" ? () => onPressImage(image.previewUri) : undefined
+                  }
+                  accessibilityLabel={image.name}
+                >
+                  {image.type === "image" ? (
+                    <Image
+                      source={{ uri: image.previewUri }}
+                      className="size-[30px] rounded-lg bg-subtle"
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text numberOfLines={1} className="max-w-20 text-xs text-foreground-muted">
+                      {image.name}
+                    </Text>
+                  )}
                 </Pressable>
               ))}
               {props.draftAttachments.length > 3 ? (

@@ -27,6 +27,7 @@
   },
   "include": [
     "src",
+    "vite",
     "vite.config.ts",
     "test",
     "scripts/warm-dep-cache.ts",

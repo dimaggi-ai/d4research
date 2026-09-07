@@ -1,3 +1,6 @@
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { resolveMediaSource } from "@d4research/client-runtime/media-source";
+import { getBrowseDirectoryPath } from "@d4research/client-runtime/state/projects";
 import { useCallback, useMemo, useState } from "react";
 import {
   Markdown,
@@ -14,12 +17,19 @@ import {
   resolveNativeMarkdownTypography,
 } from "../../lib/appearancePreferences";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import {
+  ThreadMarkdownImage,
+  ThreadMarkdownImageUnavailable,
+} from "../threads/ThreadMarkdownImage";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   hasNativeSelectableMarkdownText,
   SelectableMarkdownText,
+  type MarkdownImageRenderer,
   type NativeMarkdownTextStyle,
 } from "../../native/SelectableMarkdownText";
+import { resolveWorkspaceFilePath } from "./filePath";
 
 interface MarkdownPreviewStyles {
   readonly theme: PartialMarkdownTheme;
@@ -28,7 +38,7 @@ interface MarkdownPreviewStyles {
   readonly nativeTextStyle: NativeMarkdownTextStyle;
 }
 
-function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
+function useMarkdownPreviewStyles(renderImage?: MarkdownImageRenderer): MarkdownPreviewStyles {
   const { appearance } = useAppearancePreferences();
   const markdownFontSizes = useMemo(
     () => resolveMarkdownFontSizes(appearance.baseFontSize),
@@ -68,6 +78,14 @@ function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
           {children}
         </NativeText>
       ),
+      image: ({ node }) =>
+        node.href && renderImage
+          ? (renderImage({
+              href: node.href,
+              alt: node.alt ?? null,
+              title: node.title ?? null,
+            }) ?? undefined)
+          : undefined,
     };
 
     return {
@@ -165,13 +183,18 @@ function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
     mediumFontFamily,
     nativeMarkdownTypography,
     regularFontFamily,
+    renderImage,
     strong,
     boldFontFamily,
   ]);
 }
 
 export function FileMarkdownPreview(props: {
+  readonly cwd: string;
+  readonly environmentId: EnvironmentId;
   readonly markdown: string;
+  readonly relativePath: string;
+  readonly threadId: ThreadId;
   readonly onRefresh?: () => Promise<void> | void;
 }) {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
@@ -186,7 +209,36 @@ export function FileMarkdownPreview(props: {
       setIsPullRefreshing(false);
     }
   }, [props.onRefresh]);
-  const styles = useMarkdownPreviewStyles();
+  const markdownDirectory = useMemo(
+    () => getBrowseDirectoryPath(resolveWorkspaceFilePath(props.cwd, props.relativePath)),
+    [props.cwd, props.relativePath],
+  );
+  const renderImage = useCallback<MarkdownImageRenderer>(
+    (image) => {
+      const media = resolveMediaSource(image.href, {
+        threadId: props.threadId,
+        workspaceRoot: markdownDirectory,
+        imageEmbed: true,
+      });
+      if (media?.access === "direct") {
+        return null;
+      }
+      if (media === null || media.kind !== "image" || media.access === "unavailable") {
+        return <ThreadMarkdownImageUnavailable alt={image.alt} />;
+      }
+      return (
+        <ThreadMarkdownImage
+          environmentId={props.environmentId}
+          resource={media.resource}
+          alt={image.alt}
+          srcFragment={media.srcFragment}
+          onPressPreview={() => undefined}
+        />
+      );
+    },
+    [markdownDirectory, props.environmentId, props.threadId],
+  );
+  const styles = useMarkdownPreviewStyles(renderImage);
   const onLinkPress = useCallback((href: string) => {
     void tryOpenExternalUrl(href, "markdown-link");
   }, []);
@@ -209,6 +261,7 @@ export function FileMarkdownPreview(props: {
           <SelectableMarkdownText
             markdown={props.markdown}
             onLinkPress={onLinkPress}
+            renderImage={renderImage}
             textStyle={styles.nativeTextStyle}
           />
         ) : (

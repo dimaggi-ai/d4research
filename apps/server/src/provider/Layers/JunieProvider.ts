@@ -85,7 +85,7 @@ export function junieModelsFromSessionSetup(
 }
 
 const modelsFromSettings = (
-  customModels: ReadonlyArray<string>,
+  customModels: Parameters<typeof providerModelsFromSettings>[1],
   builtInModels: ReadonlyArray<ServerProviderModel> = BUILT_IN_MODELS,
 ) => providerModelsFromSettings(builtInModels, customModels, EMPTY_CAPABILITIES);
 

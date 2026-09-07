@@ -16,7 +16,10 @@ const baseState: ThreadActionMenuState = {
 };
 
 function ids(state: ThreadActionMenuState): string[] {
-  return buildThreadActionMenuItems(state).map((item) => item.id);
+  return buildThreadActionMenuItems(state).flatMap((item) => [
+    item.id,
+    ...(item.children?.map((child) => child.id) ?? []),
+  ]);
 }
 
 describe("buildThreadActionMenuItems", () => {
@@ -26,7 +29,16 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy-path", "copy-thread-id", "delete"]);
+    ).toEqual([
+      "rename",
+      "mark-unread",
+      "copy",
+      "copy-path",
+      "copy-thread-id",
+      "project-settings",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("includes branch items only for threads with a branch", () => {

@@ -96,6 +96,8 @@ function makeTestLayer(input: {
         ),
       ),
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused"),
     streamDomainEvents: Stream.empty,
     latestSequence: Effect.succeed(0),
   });

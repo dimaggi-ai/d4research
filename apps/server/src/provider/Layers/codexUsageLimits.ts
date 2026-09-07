@@ -8,6 +8,7 @@
  */
 import type {
   ProviderUsageLimitsUpdate,
+  ServerProviderResetCredits,
   ServerProviderUsageLimits,
   ServerProviderUsageWindow,
 } from "@d4research/contracts";
@@ -25,9 +26,19 @@ interface CodexRateLimitWindow {
 
 /** Structural view of the generated `RateLimitSnapshot`; both messages satisfy it. */
 export interface CodexRateLimitSnapshot {
+  readonly limitId?: string | null;
   readonly planType?: string | null;
   readonly primary?: CodexRateLimitWindow | null;
   readonly secondary?: CodexRateLimitWindow | null;
+}
+
+/** Structural view of the read response's `rateLimitResetCredits`. */
+export interface CodexResetCreditsSummary {
+  readonly availableCount: number;
+  readonly credits?: ReadonlyArray<{
+    readonly status: string;
+    readonly expiresAt?: number | null;
+  }> | null;
 }
 
 const SESSION_MINS = 5 * 60;
@@ -58,6 +69,9 @@ function labelForKind(kind: ServerProviderUsageWindow["kind"]): string {
 export function codexRateLimitsToWindows(
   snapshot: CodexRateLimitSnapshot,
 ): ReadonlyArray<ServerProviderUsageWindow> {
+  // Show the main allowance only. Model-specific notifications (such as Spark)
+  // must not replace its primary/secondary rows. Older CLIs omit the limit id.
+  if (snapshot.limitId && snapshot.limitId !== "codex") return [];
   const isMonthlyPlan = snapshot.planType === "free" || snapshot.planType === "go";
   const positions = [
     ["primary", snapshot.primary, isMonthlyPlan ? MONTH_MINS : SESSION_MINS],
@@ -82,14 +96,41 @@ export function codexRateLimitsToWindows(
   return windows;
 }
 
+export function codexResetCreditsToContract(
+  summary: CodexResetCreditsSummary | null | undefined,
+): ServerProviderResetCredits | undefined {
+  if (!summary) return undefined;
+  const expiries = (summary.credits ?? [])
+    .filter((credit) => credit.status === "available")
+    .map((credit) => credit.expiresAt)
+    .filter((value): value is number => typeof value === "number");
+  const nextExpiresAt =
+    expiries.length > 0 ? isoFromEpochSeconds(Math.min(...expiries)) : undefined;
+  return {
+    availableCount: Math.max(0, summary.availableCount),
+    ...(nextExpiresAt ? { nextExpiresAt } : {}),
+  };
+}
+
 export function codexRateLimitsToLimits(input: {
   readonly snapshot: CodexRateLimitSnapshot;
+  readonly rateLimitsByLimitId?:
+    | Readonly<Record<string, CodexRateLimitSnapshot>>
+    | null
+    | undefined;
+  readonly resetCredits?: CodexResetCreditsSummary | null | undefined;
   readonly checkedAt: string;
 }): ServerProviderUsageLimits {
-  return makeUsageLimits({
-    checkedAt: input.checkedAt,
-    windows: codexRateLimitsToWindows(input.snapshot),
-  });
+  const resetCredits = codexResetCreditsToContract(input.resetCredits);
+  // Select the main bucket explicitly; the legacy snapshot can name another limit.
+  const windows = codexRateLimitsToWindows(input.rateLimitsByLimitId?.codex ?? input.snapshot);
+  return {
+    ...makeUsageLimits({
+      checkedAt: input.checkedAt,
+      windows,
+    }),
+    ...(resetCredits ? { resetCredits } : {}),
+  };
 }
 
 export function codexRateLimitsToUpdate(

@@ -74,6 +74,15 @@ export function UsagePage() {
       ),
     [merged.providers, metric],
   );
+  const orderedModels = useMemo(
+    () =>
+      merged.models.toSorted((left, right) =>
+        metric === "cost"
+          ? right.costUsd - left.costUsd
+          : right.totalTokens - left.totalTokens || right.costUsd - left.costUsd,
+      ),
+    [merged.models, metric],
+  );
 
   const activePeriods = (isPast24Hours ? merged.hourly : merged.daily).filter(
     (period) => period.totalTokens > 0,
@@ -357,7 +366,7 @@ export function UsagePage() {
                             </td>
                           </tr>
                         ) : (
-                          merged.models.map((model) => (
+                          orderedModels.map((model) => (
                             <tr
                               key={`${model.provider}:${model.model}`}
                               className="border-b border-border/50"

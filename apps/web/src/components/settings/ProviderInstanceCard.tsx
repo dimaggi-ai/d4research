@@ -491,7 +491,13 @@ export function ProviderInstanceCard({
     ? instance.driver
     : null;
 
-  const customModels = readConfigStringArray(instance.config, "customModels");
+  const config = instance.config;
+  const customModelDefinitions = readCustomModelEntries(
+    config !== null && typeof config === "object" && "customModels" in config
+      ? config.customModels
+      : undefined,
+  );
+  const customModels = customModelDefinitions.map((entry) => entry.slug);
   // Server-returned models may lag behind settings writes. Treat probe
   // models as the source for built-ins only; custom rows come directly
   // from the current instance config so add/remove reflects immediately.
@@ -570,8 +576,12 @@ export function ProviderInstanceCard({
     );
   };
 
-  const updateCustomModels = (next: ReadonlyArray<string>) => {
-    const nextConfig = nextConfigBlobWithValue(instance.config, "customModels", [...next]);
+  const updateCustomModels = (next: ReadonlyArray<CustomModelDefinition>) => {
+    const nextConfig = nextConfigBlobWithValue(
+      instance.config,
+      "customModels",
+      next.map(toCustomModelSetting),
+    );
     const { config: _omit, ...rest } = instance;
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
   };
@@ -951,7 +961,7 @@ export function ProviderInstanceCard({
                 instanceId={instanceId}
                 driverKind={driverKind}
                 models={modelsForDisplay}
-                customModels={customModels}
+                customModels={customModelDefinitions}
                 hiddenModels={hiddenModels}
                 favoriteModels={favoriteModels}
                 modelOrder={modelOrder}
@@ -976,3 +986,8 @@ export function ProviderInstanceCard({
     </div>
   );
 }
+import {
+  readCustomModelEntries,
+  toCustomModelSetting,
+  type CustomModelDefinition,
+} from "@d4research/shared/model";

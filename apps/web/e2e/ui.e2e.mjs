@@ -5,6 +5,8 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
+import { panelCloseReachability } from "./panel-close.spec.mjs";
+import { mobileSidebarReachability, mobileStatusBarReachability } from "./mobile-sidebar.spec.mjs";
 
 import {
   openProject,
@@ -15,6 +17,9 @@ import {
 
 const specs = [];
 const spec = (name, run) => specs.push({ name, run });
+spec("mobile sidebar buttons remain reachable with safe-area insets", mobileSidebarReachability);
+spec("mobile sidebar controls clear the status bar", mobileStatusBarReachability);
+spec("both panels have reachable close controls", panelCloseReachability);
 
 async function startNewLocalThread(page) {
   const priorUrl = page.url();

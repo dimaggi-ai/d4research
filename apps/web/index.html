@@ -9,14 +9,13 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="d4research" />
+    <meta name="apple-mobile-web-app-title" content="d4[Research]" />
     <!-- use-credentials: the PWA can sit behind a cookie-auth reverse proxy
          (passkey gate); a credential-less manifest fetch would 302 to the
          login page and fail manifest parsing. -->
     <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.ico?v=formula-1" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=formula-1" />
     <script>
       (() => {
         const LIGHT_BACKGROUND = "#ffffff";
@@ -448,10 +447,11 @@
         position: relative;
         z-index: 1;
         display: flex;
+        flex-direction: column;
+        gap: 12px;
         align-items: center;
         justify-content: center;
-        width: 96px;
-        height: 96px;
+        min-width: 96px;
       }
 
       #boot-shell-logo {
@@ -484,13 +484,14 @@
         cursor: pointer;
       }
     </style>
-    <title>d4research</title>
+    <title>d4[Research]</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
         <div id="boot-shell-card" aria-label="d4research splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="d4research" />
+          <img id="boot-shell-logo" src="/d4-mark.svg" alt="d4" />
+          <span style="font: 14px system-ui">[Research]</span>
         </div>
       </div>
     </div>

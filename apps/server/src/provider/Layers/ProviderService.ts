@@ -31,7 +31,6 @@ import {
   type ProviderSession,
 } from "@d4research/contracts";
 import { causeErrorTag } from "@d4research/shared/observability";
-import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { resolveProjectAgentBrowserAccess } from "@d4research/shared/serverSettings";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
@@ -80,6 +79,10 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS = 10_000;
+// This must stay comfortably below the systemd unit's TimeoutStopSec (45s).
+// Individual cleanup calls are also bounded, but several sequential failures
+// must never make the complete service finalizer exceed the process deadline.
+const PROVIDER_SHUTDOWN_TOTAL_TIMEOUT_MILLIS = 30_000;
 
 /** How long a manual context compaction may run before ProviderService gives up on it. */
 const COMPACTION_COMPLETION_TIMEOUT = "10 minutes";
@@ -3130,28 +3133,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
       Effect.orElseSucceed(() => false),
     );
-    const threadIds = yield* directory.listThreadIds().pipe(
-      Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
-      Effect.catchCause((cause) =>
-        logFailure("directory.listThreadIds", cause).pipe(Effect.as([])),
-      ),
-    );
     const initialAdapters = yield* getAdapterEntries;
-    const activeSessions = yield* Effect.forEach(initialAdapters, ([instanceId, adapter]) =>
-      adapter.listSessions().pipe(
-        Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
-        Effect.map((sessions) =>
-          sessions.map((session) => ({
-            ...session,
-            providerInstanceId: instanceId,
-          })),
-        ),
-        Effect.catchCause((cause) =>
-          logFailure(`adapter.listSessions:${String(instanceId)}`, cause).pipe(
-            Effect.as([] as Array<ProviderSession>),
+    const activeSessions = yield* Effect.forEach(
+      initialAdapters,
+      ([instanceId, adapter]) =>
+        adapter.listSessions().pipe(
+          Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
+          Effect.map((sessions) =>
+            sessions.map((session) => ({
+              ...session,
+              providerInstanceId: instanceId,
+            })),
+          ),
+          Effect.catchCause((cause) =>
+            logFailure(`adapter.listSessions:${String(instanceId)}`, cause).pipe(
+              Effect.as([] as Array<ProviderSession>),
+            ),
           ),
         ),
-      ),
+      { concurrency: "unbounded" },
     ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
 
     // Preserve a final runtime snapshot where possible, but never let one
@@ -3263,8 +3263,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   });
 
+  const runStopAllWithinDeadline = Effect.gen(function* () {
+    // Keep cleanup structurally independent from the deadline wait. Effect's
+    // normal timeout interrupts and then joins the losing effect, which can
+    // itself hang on an uncooperative provider finalizer.
+    const cleanupFiber = yield* runStopAll().pipe(Effect.forkDetach);
+    const cleanupExit = yield* Fiber.await(cleanupFiber).pipe(
+      Effect.timeoutOption(PROVIDER_SHUTDOWN_TOTAL_TIMEOUT_MILLIS),
+    );
+    if (Option.isSome(cleanupExit)) {
+      return yield* cleanupExit.value;
+    }
+
+    yield* Effect.logWarning("provider shutdown exceeded total deadline", {
+      timeoutMillis: PROVIDER_SHUTDOWN_TOTAL_TIMEOUT_MILLIS,
+    });
+    // Request interruption without making scope closure wait for an adapter
+    // that ignores cancellation. The process may now complete its shutdown.
+    yield* Fiber.interrupt(cleanupFiber).pipe(Effect.forkDetach, Effect.asVoid);
+  });
+
   yield* Effect.addFinalizer(() =>
-    runStopAll().pipe(
+    runStopAllWithinDeadline.pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("failed to stop provider service", {
           errorTag: causeErrorTag(cause),

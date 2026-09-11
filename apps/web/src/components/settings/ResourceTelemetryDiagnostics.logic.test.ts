@@ -35,6 +35,16 @@ const process = (pid: number, ppid: number, depth: number): ResourceTelemetryPro
 });
 
 describe("shouldShowResourceMonitorRetry", () => {
+  it.each(["degraded", "unavailable", "stopped"] as const)(
+    "offers a retry when the native monitor is %s",
+    (nativeStatus) => {
+      expect(shouldShowResourceMonitorRetry({ nativeStatus, error: null })).toBe(true);
+    },
+  );
+
+  it("does not turn a healthy source into a retry loop", () => {
+    expect(shouldShowResourceMonitorRetry({ nativeStatus: "healthy", error: "stale" })).toBe(false);
+  });
   it("allows retry when the initial telemetry request fails before a snapshot", () => {
     expect(
       shouldShowResourceMonitorRetry({
@@ -62,6 +72,10 @@ describe("resourceHistoryBarHeight", () => {
 });
 
 describe("resourceHistoryCpuScaleMax", () => {
+  it("uses the observed CPU range and a nonzero empty scale", () => {
+    expect(resourceHistoryCpuScaleMax([{ avgCpuPercent: 0 }, { avgCpuPercent: 240 }])).toBe(240);
+    expect(resourceHistoryCpuScaleMax([])).toBe(1);
+  });
   it("scales average bars independently of brief peak spikes", () => {
     const buckets = [
       { avgCpuPercent: 1, maxCpuPercent: 100 },

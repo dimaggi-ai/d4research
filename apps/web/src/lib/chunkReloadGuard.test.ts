@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./chunkReloadGuard";
+import {
+  clearChunkReloadGuard,
+  installChunkLoadRecovery,
+  reloadOnceForChunkLoadError,
+} from "./chunkReloadGuard";
 
 function createStorageStub(): Storage {
   const store = new Map<string, string>();
@@ -21,6 +25,27 @@ function createStorageStub(): Storage {
 }
 
 describe("reloadOnceForChunkLoadError", () => {
+  it("handles the browser preload event once and exposes persistent failures", () => {
+    const target = new EventTarget();
+    const storage = createStorageStub();
+    const reload = vi.fn();
+    const uninstall = installChunkLoadRecovery(target, () => storage, reload);
+    const first = new Event("vite:preloadError", { cancelable: true });
+    target.dispatchEvent(first);
+    expect(first.defaultPrevented).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    const repeated = new Event("vite:preloadError", { cancelable: true });
+    target.dispatchEvent(repeated);
+    expect(repeated.defaultPrevented).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    clearChunkReloadGuard(() => storage);
+    uninstall();
+    target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it("reloads on the first failure and lets the second one surface", () => {
     const storage = createStorageStub();
     const reload = vi.fn();

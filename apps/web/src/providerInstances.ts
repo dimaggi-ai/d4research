@@ -16,7 +16,6 @@ import * as Equal from "effect/Equal";
  * @module providerInstances
  */
 import {
-  DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
   resolveProviderInstanceEnabled,
@@ -253,16 +252,21 @@ export function applyProviderInstanceSettings(
   return entries
     .filter((entry) => !redundantInstanceIds.has(entry.instanceId))
     .map((entry) => {
-      const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
-        ? settings.providerInstances[entry.instanceId]
-        : undefined;
+      const explicitInstance =
+        settings.providerInstances && Object.hasOwn(settings.providerInstances, entry.instanceId)
+          ? settings.providerInstances[entry.instanceId]
+          : undefined;
       const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
         ? legacyProviders[entry.driverKind]
         : undefined;
       const enabled = explicitInstance
         ? resolveProviderInstanceEnabled(explicitInstance)
-        : entry.isDefault && legacyProvider
-          ? (legacyProvider.enabled ?? entry.enabled)
+        : entry.isDefault
+          ? (legacyProvider?.enabled ??
+            (legacyProvider !== undefined ||
+            Object.hasOwn(DEFAULT_SERVER_SETTINGS.providers, entry.driverKind)
+              ? entry.enabled
+              : false))
           : false;
       return enabled === entry.enabled ? entry : { ...entry, enabled };
     });

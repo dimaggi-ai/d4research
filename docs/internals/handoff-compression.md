@@ -1,6 +1,6 @@
 # Handoff Context Compression
 
-When a user switches providers mid-conversation (e.g. Claude → Agy, or Codex → a local Ollama model), the handoff system transfers conversation context to the new provider. The transcript is structured — the first user message (the task statement) is kept verbatim, the middle is marked as omitted, and the most recent messages fill the remaining budget. When compression is enabled, it is condensed before it travels; otherwise the bounded structured transcript travels directly. Local Ollama is the default compression backend, so enabling compression does not require cloud tokens.
+Automatic web and desktop handoffs attach a bounded transcript directly to the user's next message. There is no pre-send compression or Memo request. Context is capped at 60,000 characters and reduced further when necessary to fit the 120,000-character message limit. The original task (capped on long threads) and recent messages are retained; omitted history is marked.
 
 ## Non-negotiable thread invariant
 
@@ -8,17 +8,17 @@ A provider handoff stays on the existing d4research thread. Only the provider-na
 
 Picking a cross-provider model in a started chat **stages** the switch; it starts nothing. The user's next send performs it, and the receiving turn is that send: one turn whose message is the user's own instruction with a `<handoff_context>` block appended. There is no acknowledgement round-trip and no machine-authored turn. The block names the target, the source thread, the configured skills, and the carried summary, and it tells the receiving agent to act on the instruction above it rather than resume unrelated prior work.
 
-The visible thread transcript is the authoritative context bridge between provider-native sessions. Local Memo mirrors the carried summary for later search and recovery, but it is not the transport for the receiving turn. The client first asks `/api/handoff/prepare` to compress and persist the summary, then attempts `/api/memory/handoff` with the prepared summary (or the structured transcript when preparation itself failed) if persistence is not proven. If both writes fail, whichever context was selected remains attached directly to the receiving message. This keeps an exhausted source provider or unavailable Memo from trapping the user on the old session without creating a contextless receiving turn.
+The saved message is the context bridge between provider-native sessions. One turn-start command carries the target model, user instruction, and context on the original thread. Once accepted by the server, the turn continues independently of client navigation. A connection failure before acceptance is not a completed handoff.
 
 ## Settings
 
-Compression is configured under **Settings → General → Handoff → Context compression** and stored in `ServerSettings.handoff.contextCompression`.
+The retained preparation/compression endpoints use `ServerSettings.handoff.contextCompression`, exposed under **Settings → General → Handoff → Context compression**. These settings do not delay or summarize automatic web/desktop handoffs.
 
 | Field                 | Type                    | Default             | Description                                                    |
 | --------------------- | ----------------------- | ------------------- | -------------------------------------------------------------- |
 | `enabled`             | boolean                 | `false`             | Master toggle                                                  |
 | `backend`             | `"local" \| "provider"` | `"local"`           | Local Ollama daemon vs. a full provider session                |
-| `localModel`          | string                  | `gemma4:e4b-it-qat` | Ollama model used when `backend` is `"local"`                  |
+| `localModel`          | string                  | `qwen38-sys:latest` | Ollama model used when `backend` is `"local"`                  |
 | `instanceId`          | `ProviderInstanceId`    | —                   | Provider instance to run the compression (`backend: provider`) |
 | `model`               | string                  | —                   | Model within that provider (`backend: provider`)               |
 | `maxInputCharacters`  | positive int            | `6 000`             | Max transcript length sent to the compressor                   |
@@ -29,42 +29,13 @@ With `backend: "local"` only `enabled` and `localModel` matter. With `backend: "
 
 ## Architecture
 
-```
-Model picker (started chat, cross-provider)
-  │
-  └─ stage the selection in the composer draft — no turn, no session change
+Model selection stages the target. On Send, `buildImmediateProviderHandoffMessage` builds the attached context synchronously, then the normal send path persists one turn on the existing thread. The timeline folds the attached block into “Handed off to …”. Plan follow-ups use the same builder.
 
-ChatView (onSend, staged handoff pending)
-  │
-  ├─ buildStructuredHandoffTranscript(messages, maxInputCharacters)
-  │     → head (first user message, capped) + omission marker + freshest tail
-  │
-  ├─ POST /api/handoff/prepare  { transcript, project, sourceThreadId, sourceThreadTitle, target }
-  │     │
-  │     ├─ reads compression settings from ServerSettings
-  │     ├─ backend "local"    → compressHandoffContextLocal (Ollama /api/chat,
-  │     │                       stream:false, keep_alive 30m, 60 s timeout;
-  │     │                       any failure → truncateHandoffTranscript)
-  │     ├─ backend "provider" → compressHandoffContext (ephemeral provider
-  │     │                       session, 30 s total prepare-route budget)
-  │     └─ attempts to persist the prepared summary to local Memo, then
-  │        returns both the summary and whether persistence succeeded
-  │
-  ├─ Fallback mirror: prepare did not prove persistence → the client writes
-  │  the prepared summary (or the structured transcript when preparation
-  │  itself failed) via POST /api/memory/handoff. The receiving context stays
-  │  the prepared summary whenever one exists. Mirror failure does not block
-  │  the switch.
-  │
-  └─ Start ONE turn on the same thread, on the target model
-        → message = user's instruction + trailing <handoff_context> block
-```
-
-The primary round trip does both jobs. If it returns without proof of persistence, the browser makes one bounded fallback write with the prepared summary when one exists, otherwise the structured transcript. The local memory service applies its own curation.
+No route-owned preparation promise sits between selecting a provider and submitting the message. If an earlier attachment operation finishes after navigation, the captured send uses its original thread. Send failures restore only that thread's empty draft and do not overwrite the visible composer's refs.
 
 ## Server endpoints
 
-**`POST /api/handoff/prepare`** — the primary path.
+**`POST /api/handoff/prepare`** — retained for explicit preparation and older clients, not called by automatic web/desktop sends.
 
 - **Auth:** `AuthOrchestrationOperateScope`
 - **Request:** `{ transcript, project?, sourceThreadId?, sourceThreadTitle?, target?, bypassCompression? }`
@@ -91,15 +62,15 @@ Output only the compressed summary, no preamble.
 
 ## Client integration
 
-`prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and preserves both the prepared summary and whether Memo persistence was confirmed. `prepareDurableProviderHandoff` owns the complete fallback: on network error, non-ok response, malformed JSON, or an unconfirmed write, it attempts to store the prepared summary when available (or the structured transcript when preparation itself failed) through `persistProviderHandoffMemoryFallback`. A successful prepared summary is still attached even when the optional mirror write fails; only a failed prepare falls back to the structured transcript.
+The retained compatibility helper `prepareProviderHandoff` in `apps/web/src/providerHandoff.ts` POSTs the structured transcript to `/api/handoff/prepare` and preserves both the prepared summary and whether Memo persistence was confirmed. `prepareDurableProviderHandoff` owns the complete fallback: on network error, non-ok response, malformed JSON, or an unconfirmed write, it attempts to store the prepared summary when available (or the structured transcript when preparation itself failed) through `persistProviderHandoffMemoryFallback`. A successful prepared summary is still attached even when the optional mirror write fails; only a failed prepare falls back to the structured transcript.
 
 `onProviderModelSelect` treats every pick the same way: it writes the selection into the composer draft. `resolveProviderHandoffForSelection` is the single predicate that decides whether a selection would hand off; the composer banner, the released provider lock, and the send path all read it, so they cannot disagree. Releasing `deriveLockedProvider` while a handoff is staged is what lets the composer show and dispatch the target instance in a started chat.
 
-`applyStagedProviderHandoff` is the one place the switch happens. It re-resolves the predicate against the model selection the dispatch is actually about to send, runs `runSameThreadProviderHandoffTransition`, and returns either the combined text or a reason to abort. **Every dispatch path that sends the composer's own model selection must route through it** — today that is `onSend` and `onSubmitPlanFollowUp`. The paths that do not are safe for structural reasons: `onResumeAfterUsageLimit` sends `activeThread.modelSelection` rather than the composer's, and the research divert and `onImplementPlanInNewThread` create a new thread, which has no session to hand off from.
+`applyStagedProviderHandoff` is the one place the switch happens. It re-resolves the predicate against the model selection the dispatch is actually about to send, calls `buildImmediateProviderHandoffMessage` synchronously, and returns either the combined text or a reason to abort. **Every dispatch path that sends the composer's own model selection must route through it** — today that is `onSend` and `onSubmitPlanFollowUp`. The paths that do not are safe for structural reasons: `onResumeAfterUsageLimit` sends `activeThread.modelSelection` rather than the composer's, and the research divert and `onImplementPlanInNewThread` create a new thread, which has no session to hand off from.
 
-Placement matters. Context preparation completes before `persistThreadSettingsForNextTurn` records the target model and before the composer is cleared. The combined text is re-length-checked after the block is appended, because attached context can push an already-long message past the 120,000-character turn limit. Preparation is bounded but asynchronous, so callers compare the route thread against `routeThreadKeyRef` afterwards and abandon the send if the user navigated away: this component is not remounted per thread, and the rest of a dispatch writes optimistic rows, anchors, and the live composer ref that now belong to a different thread.
+Context is attached and length-checked before clearing the composer. Handoff target model changes are carried by the turn-start command rather than a preceding metadata write. Successful sends remain owned by the original thread; failure recovery must avoid touching refs belonging to another route.
 
-**No dispatch may change the provider-native session without attaching context from the authoritative visible thread**, and that is enforced at the dispatch boundary rather than at staging time. `resolveProviderHandoffForSelection` decides whether a handoff is _required_ from the thread and the outgoing selection alone — never from the target's health. Health is a separate verdict: a target that is disabled, unavailable, not `ready`, or has no models resolves as `unavailable`, which hides the banner and keeps the lock, and makes the dispatch **abort with an error** instead of falling through to a plain send. The distinction matters because the provider lock only constrains driver _kind_: a sibling instance of the running driver (`codex_personal` while the session is on `codex`) passes the composer's lock check, so treating an unhealthy target as "no handoff needed" would switch instances without the handoff context block.
+**No dispatch may change the provider-native session without attaching context from the authoritative visible thread.** `resolveProviderHandoffForSelection` checks the source and outgoing selection at dispatch, including switches between instances of the same driver. An unavailable target remains a staged switch, not permission to send it a contextless message. The composer shows a warning and retains the source provider; if an unavailable target reaches `applyStagedProviderHandoff`, the dispatch aborts with an error.
 
 **Cancel switch** is disabled while a send is in flight, since the dispatch already captured its target and reverting the picker would only make the UI disagree with the turn on its way.
 
@@ -111,15 +82,7 @@ Display follows the same order. `extractUserMessageContexts` (web) and `stripUse
 
 ## Failure modes
 
-Compression and unavailable local memory do not hard-fail a handoff. Compression is bypassed
-when its configured provider is the provider being replaced, so an exhausted quota, failed
-authentication, or wedged runtime cannot prevent the user from switching away. The fallback chain is:
-
-1. Compression succeeds → compressed summary in the attached block, same summary in Memo.
-2. Compressor fails server-side → structured truncation in the block and in Memo.
-3. Prepare returns a usable summary but does not prove persistence → that summary remains in the block; the client separately writes the same prepared summary to Memo via `/api/memory/handoff`.
-4. Prepare itself fails → the structured transcript becomes the block summary and the client attempts the same fallback Memo write.
-5. Both Memo paths fail → whichever context was selected above remains in the attached block and the handoff continues; only the searchable Memo mirror is missing.
+Automatic handoffs make no compression or Memo request, so those services cannot delay the switch. An oversized instruction that leaves insufficient space for context is rejected with the draft intact. Provider authentication, connection, and turn-start errors remain explicit failures. The retained preparation endpoints still use bounded compression and optional Memo fallback for older clients.
 
 A staged target can go unavailable while it waits for the next send. The dispatch is safe on its own — the lock is restored, the composer substitutes the running instance, and the message goes out on the source provider with no unprepared switch — but silence there would let the banner's promise and the send's behavior diverge. So the banner is driven by the **raw draft pick**, not the composer's substituted selection, and an `unavailable` resolution keeps it on screen in a warning state: _“Handoff to … paused — provider unavailable. Messages continue on … until it returns, or cancel the switch.”_ Cancel still works, and the switch resumes by itself once the target reports ready. `applyStagedProviderHandoff` keeps refusing an `unavailable` target as defence in depth, for any future path that reaches dispatch without the substitution.
 
@@ -127,18 +90,18 @@ A user who pastes a structurally valid `<handoff_context>` block at the end of t
 
 ## Files
 
-| File                                                     | Role                                                           |
-| -------------------------------------------------------- | -------------------------------------------------------------- |
-| `packages/contracts/src/settings.ts`                     | `HandoffContextCompressionSettings` schema (+ patch)           |
-| `packages/shared/src/providerHandoffPrompt.ts`           | Combined block append/extract, plus the legacy build + parse   |
-| `packages/shared/src/userMessageTransport.ts`            | Mobile peel order; surfaces the handoff target                 |
-| `apps/server/src/handoffCompression.ts`                  | Local + provider compression, truncation, error type           |
-| `apps/server/src/handoffCompression.test.ts`             | Local success/fallback, provider mock, truncation tests        |
-| `apps/server/src/http.ts`                                | `/api/handoff/prepare` and `/api/handoff/compress` routes      |
-| `apps/server/src/server.ts`                              | Route registration                                             |
-| `apps/web/src/providerHandoff.ts`                        | Structured transcript, prepare client, Memo fallback           |
-| `apps/web/src/providerHandoff.test.ts`                   | Client-side transcript/prepare tests                           |
-| `apps/web/src/lib/userMessageContextComposition.ts`      | Web peel order; keeps the block out of visible and copy text   |
-| `apps/web/src/components/ChatView.tsx`                   | Stage on pick, banner, prepare + dispatch inside the send path |
-| `apps/web/src/components/chat/MessagesTimeline.logic.ts` | Detects legacy vs. combined handoff rows                       |
-| `apps/mobile/src/features/threads/ThreadFeed.tsx`        | Mobile fold row for both shapes                                |
+| File                                                     | Role                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------ |
+| `packages/contracts/src/settings.ts`                     | `HandoffContextCompressionSettings` schema (+ patch)               |
+| `packages/shared/src/providerHandoffPrompt.ts`           | Combined block append/extract, plus the legacy build + parse       |
+| `packages/shared/src/userMessageTransport.ts`            | Mobile peel order; surfaces the handoff target                     |
+| `apps/server/src/handoffCompression.ts`                  | Local + provider compression, truncation, error type               |
+| `apps/server/src/handoffCompression.test.ts`             | Local success/fallback, provider mock, truncation tests            |
+| `apps/server/src/http.ts`                                | `/api/handoff/prepare` and `/api/handoff/compress` routes          |
+| `apps/server/src/server.ts`                              | Route registration                                                 |
+| `apps/web/src/providerHandoff.ts`                        | Immediate transcript builder and preparation compatibility helpers |
+| `apps/web/src/providerHandoff.test.ts`                   | Client-side transcript/prepare tests                               |
+| `apps/web/src/lib/userMessageContextComposition.ts`      | Web peel order; keeps the block out of visible and copy text       |
+| `apps/web/src/components/ChatView.tsx`                   | Stage on pick, banner, attach context and dispatch on Send         |
+| `apps/web/src/components/chat/MessagesTimeline.logic.ts` | Detects legacy vs. combined handoff rows                           |
+| `apps/mobile/src/features/threads/ThreadFeed.tsx`        | Mobile fold row for both shapes                                    |

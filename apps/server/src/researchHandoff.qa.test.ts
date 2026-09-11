@@ -12,8 +12,8 @@ import { makeBuiltinMemoryConnector } from "./mcp/toolkits/memory/builtinStore.t
 /**
  * QA for the research handoff path: the bypass plan, the local small-model
  * compression it replaces, and the memory round-trip a handoff performs. The
- * live half runs against a local gemma4 tag via Ollama and skips cleanly when
- * the daemon is absent, so CI stays hermetic.
+ * Live compression is opt-in. When enabled, unavailable prerequisites and
+ * transcript fallback fail the probe instead of masquerading as model output.
  */
 const OLLAMA_URL = "http://127.0.0.1:11434";
 const GENERATION_TIMEOUT_MS = 120_000;
@@ -94,30 +94,33 @@ describe("handoff memory round-trip (builtin store)", () => {
   );
 });
 
-describe("handoff compression QA (live gemma4)", () => {
-  it.effect(
-    "the local small model produces a bounded, on-topic summary",
-    () =>
-      Effect.gen(function* () {
-        const model = yield* Effect.promise(pickGemmaModel);
-        if (!model) {
-          yield* Effect.log("SKIP handoff compression QA — no local Ollama daemon or gemma4 tag");
-          return;
-        }
-        const compressed = yield* compressHandoffContextLocal({
-          transcript: SAMPLE_TRANSCRIPT,
-          model,
-          baseUrl: OLLAMA_URL,
-          maxInputCharacters: 6_000,
-          maxOutputCharacters: 1_200,
-          customPrompt: "",
-          timeoutMillis: GENERATION_TIMEOUT_MS,
-        });
-        expect(compressed.trim().length).toBeGreaterThan(0);
-        expect(compressed.length).toBeLessThanOrEqual(1_200);
-        // On-topic: the summary must retain the load-bearing subject.
-        expect(compressed.toLowerCase()).toMatch(/fts5|keyword|memory/);
-      }),
-    GENERATION_TIMEOUT_MS + 10_000,
-  );
-});
+describe.skipIf(process.env.T3_HANDOFF_COMPRESSION_QA !== "1")(
+  "handoff compression QA (live gemma4)",
+  () => {
+    it.effect(
+      "the local small model produces a bounded, on-topic summary",
+      () =>
+        Effect.gen(function* () {
+          const model = yield* Effect.promise(pickGemmaModel);
+          if (!model) {
+            throw new Error("T3_HANDOFF_COMPRESSION_QA=1 requires Ollama with a gemma4 model");
+          }
+          const compressed = yield* compressHandoffContextLocal({
+            transcript: SAMPLE_TRANSCRIPT,
+            model,
+            baseUrl: OLLAMA_URL,
+            maxInputCharacters: 6_000,
+            maxOutputCharacters: 1_200,
+            customPrompt: "",
+            timeoutMillis: GENERATION_TIMEOUT_MS,
+          });
+          expect(compressed.trim().length).toBeGreaterThan(0);
+          expect(compressed.length).toBeLessThanOrEqual(1_200);
+          expect(compressed).not.toBe(SAMPLE_TRANSCRIPT);
+          // On-topic: the summary must retain the load-bearing subject.
+          expect(compressed.toLowerCase()).toMatch(/fts5|keyword|memory/);
+        }),
+      GENERATION_TIMEOUT_MS + 10_000,
+    );
+  },
+);

@@ -64,6 +64,7 @@ import {
   type PromptStashEntry,
 } from "../../promptStashStore";
 import { ComposerStashBadge } from "./ComposerStashBadge";
+import { ComposerSurface } from "./ComposerSurface";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
@@ -87,23 +88,17 @@ import {
   shouldUseCompactComposerFooter,
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
-import { activeDevScenarioName, applyDevTrigger, devPipelineControlKind } from "../../devPipeline";
+import { activeDevScenarioName, applyDevTrigger } from "../../devPipeline";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
-import {
-  BUILD_MODE_VALUE,
-  CompactComposerControlsMenu,
-  PLAN_MODE_VALUE,
-  RESEARCH_OFF_VALUE,
-} from "./CompactComposerControlsMenu";
+import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerSessionSkillsControl } from "./ComposerSessionSkillsControl";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { composerDraftOperationKey } from "./composerDraftOperationKey";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
-import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
@@ -115,7 +110,6 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
-import { Separator } from "../ui/separator";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -198,22 +192,9 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
-import { Select, SelectItem, SelectPopup } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import {
-  BotIcon,
-  CircleAlertIcon,
-  PencilRulerIcon,
-  ShieldCheckIcon,
-  type LucideIcon,
-  LockIcon,
-  LockOpenIcon,
-  PenLineIcon,
-  SparklesIcon,
-  TelescopeIcon,
-  XIcon,
-} from "lucide-react";
+import { CircleAlertIcon, XIcon } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import {
   deriveDirectiveSuggestions,
@@ -264,31 +245,7 @@ import { useSkillsInventory } from "../../hooks/useSkillsInventory";
 import { usePreparedConnection } from "../../state/session";
 import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
-import { TOOL_GUARD_MODE_PRESENTATION } from "../../toolGuardModes";
 
-const runtimeModeConfig: Record<
-  RuntimeMode,
-  { label: string; description: string; icon: LucideIcon }
-> = {
-  "approval-required": {
-    ...TOOL_GUARD_MODE_PRESENTATION["approval-required"],
-    icon: LockIcon,
-  },
-  "auto-accept-edits": {
-    ...TOOL_GUARD_MODE_PRESENTATION["auto-accept-edits"],
-    icon: PenLineIcon,
-  },
-  auto: {
-    ...TOOL_GUARD_MODE_PRESENTATION.auto,
-    icon: SparklesIcon,
-  },
-  "full-access": {
-    ...TOOL_GUARD_MODE_PRESENTATION["full-access"],
-    icon: LockOpenIcon,
-  },
-};
-
-const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -329,245 +286,6 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
   return element.closest(COMPOSER_FLOATING_LAYER_SELECTOR) !== null;
 }
 
-const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
-  showInteractionModeToggle: boolean;
-  interactionMode: ProviderInteractionMode;
-  runtimeMode: RuntimeMode;
-  isResearchMode: boolean;
-  canStartResearch: boolean;
-  researchScenarios: ReadonlyArray<string>;
-  activeResearchScenario: string | null;
-  devPipelines: ReadonlyArray<string>;
-  activeDevPipeline: string | null;
-  onToggleInteractionMode: () => void;
-  onRuntimeModeChange: (mode: RuntimeMode) => void;
-  onSelectResearchScenario: (scenarioName: string | null) => void;
-  onSelectDevPipeline: (scenarioName: string | null) => void;
-}) {
-  const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
-  const interactionModeTooltip =
-    props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
-
-  // A research run always gets its own thread, so the picker only appears on a
-  // chat that has not started. Selecting a scenario writes its trigger into the
-  // prompt; "Off" removes it.
-  const researchScenarioPicker = props.canStartResearch ? (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-      <Tooltip>
-        <Select
-          value={
-            props.isResearchMode
-              ? (props.activeResearchScenario ?? RESEARCH_OFF_VALUE)
-              : RESEARCH_OFF_VALUE
-          }
-          onValueChange={(value) =>
-            props.onSelectResearchScenario(value === RESEARCH_OFF_VALUE ? null : String(value))
-          }
-        >
-          <TooltipTrigger
-            render={
-              <ComposerSelectControl
-                className={cn(
-                  "shrink-0 whitespace-nowrap font-medium",
-                  props.isResearchMode
-                    ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/15 hover:text-violet-300"
-                    : "text-muted-foreground/70 hover:text-foreground/80",
-                )}
-                aria-label={
-                  props.isResearchMode
-                    ? `Research scenario: ${props.activeResearchScenario ?? "default"}`
-                    : "Start research"
-                }
-              />
-            }
-          >
-            <ComposerControlIcon
-              icon={TelescopeIcon}
-              className={props.isResearchMode ? "text-current opacity-100" : undefined}
-            />
-            <span className="sr-only sm:not-sr-only">
-              {props.isResearchMode ? (props.activeResearchScenario ?? "Research") : "Research"}
-            </span>
-          </TooltipTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-              Research scenario
-            </div>
-            <SelectItem value={RESEARCH_OFF_VALUE} hideIndicator>
-              Off
-            </SelectItem>
-            {props.researchScenarios.map((scenario) => (
-              <SelectItem key={scenario} value={scenario} hideIndicator>
-                {scenario}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">
-          {props.isResearchMode
-            ? "Research pipeline armed — pick a scenario or turn it off"
-            : "Run a research pipeline in this new chat"}
-        </TooltipPopup>
-      </Tooltip>
-    </>
-  ) : null;
-
-  // Plan keeps its one-click exit; the Build side becomes the picker, because
-  // arming a dev pipeline is a choice between named pipelines, not a toggle.
-  const isPlanMode = props.interactionMode === "plan";
-  const onSelectMode = (value: string) => {
-    if (value === PLAN_MODE_VALUE) {
-      props.onSelectDevPipeline(null);
-      if (!isPlanMode) props.onToggleInteractionMode();
-      return;
-    }
-    if (isPlanMode) props.onToggleInteractionMode();
-    props.onSelectDevPipeline(value === BUILD_MODE_VALUE ? null : value);
-  };
-
-  const interactionModeToggle =
-    devPipelineControlKind(props.showInteractionModeToggle, props.interactionMode) ===
-    "plan-exit" ? (
-      <>
-        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <ComposerControl
-                className="shrink-0 whitespace-nowrap bg-blue-500/10 text-blue-400 hover:bg-blue-500/15 hover:text-blue-300"
-                type="button"
-                onClick={props.onToggleInteractionMode}
-                aria-label={interactionModeTooltip}
-              />
-            }
-          >
-            <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
-            <span className="sr-only sm:not-sr-only">Plan</span>
-          </TooltipTrigger>
-          <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
-        </Tooltip>
-      </>
-    ) : (
-      <>
-        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-        <Tooltip>
-          <Select
-            value={props.activeDevPipeline ?? BUILD_MODE_VALUE}
-            onValueChange={(value) => onSelectMode(String(value))}
-          >
-            <TooltipTrigger
-              render={
-                <ComposerSelectControl
-                  iconOnly
-                  className={cn(
-                    "shrink-0 whitespace-nowrap font-medium",
-                    props.activeDevPipeline
-                      ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300"
-                      : "text-muted-foreground/70 hover:text-foreground/80",
-                  )}
-                  aria-label={
-                    props.activeDevPipeline
-                      ? `Dev pipeline: ${props.activeDevPipeline}`
-                      : "Build mode"
-                  }
-                />
-              }
-            >
-              <ComposerControlIcon
-                icon={BotIcon}
-                opticalSize="large"
-                className={props.activeDevPipeline ? "text-current opacity-100" : undefined}
-              />
-            </TooltipTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value={BUILD_MODE_VALUE} hideIndicator>
-                Build
-              </SelectItem>
-              {props.showInteractionModeToggle ? (
-                <SelectItem value={PLAN_MODE_VALUE} hideIndicator>
-                  Plan
-                </SelectItem>
-              ) : null}
-              {props.devPipelines.length > 0 ? (
-                <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-                  Dev pipeline
-                </div>
-              ) : null}
-              {props.devPipelines.map((pipeline) => (
-                <SelectItem key={pipeline} value={pipeline} hideIndicator>
-                  {pipeline}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-          <TooltipPopup side="top">
-            {props.activeDevPipeline
-              ? `Dev pipeline "${props.activeDevPipeline}" armed — delegates advise, the agent edits`
-              : "Build mode — pick a dev pipeline to delegate plan, build, and review"}
-          </TooltipPopup>
-        </Tooltip>
-      </>
-    );
-
-  return (
-    <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-
-      <Tooltip>
-        <Select
-          value={props.runtimeMode}
-          onValueChange={(value) => props.onRuntimeModeChange(value!)}
-        >
-          <TooltipTrigger
-            render={
-              <ComposerSelectControl
-                className="font-medium"
-                aria-label={`Agent access: ${runtimeModeOption.label}`}
-              />
-            }
-          >
-            <ComposerControlIcon icon={ShieldCheckIcon} />
-            <span className="sr-only">{runtimeModeOption.label}</span>
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-              Agent access
-            </div>
-            {runtimeModeOptions.map((mode) => {
-              const option = runtimeModeConfig[mode];
-              const OptionIcon = option.icon;
-              return (
-                <SelectItem key={mode} value={mode} hideIndicator className="min-w-64 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                        <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        {option.label}
-                      </span>
-                      <span className="text-muted-foreground text-xs leading-4">
-                        {option.description}
-                      </span>
-                    </div>
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">
-          Agent access · {runtimeModeOption.label}: {runtimeModeOption.description}
-        </TooltipPopup>
-      </Tooltip>
-
-      {interactionModeToggle}
-      {researchScenarioPicker}
-    </>
-  );
-});
-
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   activeContextWindow: ReturnType<typeof deriveLatestContextWindowSnapshot>;
@@ -589,6 +307,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
+  showSendWhileRunning: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -617,6 +336,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
+        showSendWhileRunning={props.showSendWhileRunning}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -694,8 +414,6 @@ export interface ChatComposerProps {
   phase: SessionPhase;
   isConnecting: boolean;
   isSendBusy: boolean;
-  /** Disables provider changes while a staged handoff is preparing context. */
-  handoffPreparing?: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   memoAttachmentPersistenceState: "idle" | "saving" | "failed";
@@ -816,7 +534,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
-    handoffPreparing = false,
     sendDisabledReason,
     isPreparingWorktree,
     memoAttachmentPersistenceState,
@@ -1504,7 +1221,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptions: composerModelOptions?.[selectedInstanceId],
     prompt,
     onPromptChange: setPromptFromTraits,
-    disabled: handoffPreparing,
   });
   const pendingPrimaryAction = useMemo(
     () =>
@@ -3099,11 +2815,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
-      <div
-        className={cn(
-          "group rounded-[22px] p-px transition-colors duration-200",
-          composerProviderState.composerFrameClassName,
-        )}
+      <ComposerSurface.Main
+        className={cn(composerProviderState.composerFrameClassName)}
         onDragEnter={onComposerDragEnter}
         onDragOver={onComposerDragOver}
         onDragLeave={onComposerDragLeave}
@@ -3601,7 +3314,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : (
                   <ProviderModelPicker
                     compact={isComposerFooterCompact}
-                    disabled={handoffPreparing}
                     activeInstanceId={selectedInstanceId}
                     model={selectedModelForPickerWithCustomFallback}
                     lockedProvider={lockedProvider}
@@ -3633,13 +3345,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   enabledByThread={settings.skills.enabledByThread}
                   inventoryEntries={environmentSkillEntries}
                   inventoryState="ready"
-                  disabled={handoffPreparing}
                   open={isSessionSkillsOpen}
                   onOpenChange={setIsSessionSkillsOpen}
                 />
 
                 <CompactComposerControlsMenu
-                  disabled={handoffPreparing}
                   compact={isComposerFooterCompact}
                   interactionMode={interactionMode}
                   runtimeMode={runtimeMode}
@@ -3699,6 +3409,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
+                  showSendWhileRunning={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}
                   onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
@@ -3707,7 +3418,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
           )}
         </div>
-      </div>
+      </ComposerSurface.Main>
     </form>
   );
 });

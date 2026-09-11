@@ -235,6 +235,35 @@ describe("applyProviderInstanceSettings", () => {
     expect(entry?.enabled).toBe(false);
   });
 
+  it.each(["constructor", "toString"])(
+    "keeps an explicitly enabled instance named %s selectable",
+    (instanceId) => {
+      const entries = deriveProviderInstanceEntries([
+        provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId }),
+      ]);
+      const [entry] = applyProviderInstanceSettings(entries, {
+        providerInstances: {
+          [ProviderInstanceId.make(instanceId)]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            environment: [{ name: "CLAUDE_PROFILE", value: "work", sensitive: false }],
+          },
+        },
+        providers: {} as never,
+      });
+      expect(entry?.enabled).toBe(true);
+    },
+  );
+
+  it("keeps a configured fork default enabled when its legacy config omits enabled", () => {
+    const driver = ProviderDriverKind.make("fork-driver");
+    const [entry] = applyProviderInstanceSettings(
+      deriveProviderInstanceEntries([provider({ provider: driver, instanceId: "fork-driver" })]),
+      { providerInstances: {}, providers: { [driver]: {} } as never },
+    );
+    expect(entry?.enabled).toBe(true);
+  });
+
   it("uses legacy settings for a built-in default instance", () => {
     const entries = deriveProviderInstanceEntries([
       provider({

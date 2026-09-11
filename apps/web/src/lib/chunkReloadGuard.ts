@@ -5,6 +5,18 @@
 // it so the next stale deploy gets its own single reload.
 const CHUNK_RELOAD_GUARD_KEY = "t3code:chunk-load-reloaded";
 
+export function installChunkLoadRecovery(
+  target: EventTarget = window,
+  getStorage: () => Storage = () => window.sessionStorage,
+  reload: () => void = () => window.location.reload(),
+): () => void {
+  const onPreloadError = (event: Event) => {
+    if (reloadOnceForChunkLoadError(getStorage, reload)) event.preventDefault();
+  };
+  target.addEventListener("vite:preloadError", onPreloadError);
+  return () => target.removeEventListener("vite:preloadError", onPreloadError);
+}
+
 /**
  * Called from the `vite:preloadError` listener. Reloads at most once per
  * failure streak and returns whether it did, so the caller knows whether to

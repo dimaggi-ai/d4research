@@ -359,7 +359,7 @@ export function UsagePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {merged.models.length === 0 ? (
+                        {orderedModels.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="py-6 text-center text-muted-foreground">
                               No activity in this window.

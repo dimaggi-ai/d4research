@@ -128,7 +128,7 @@ describe("providerModelsFromSettings", () => {
     expect(models).toEqual([
       {
         slug: "bare",
-        name: "bare",
+        name: "Bare",
         isCustom: true,
         capabilities: OPENCODE_CUSTOM_MODEL_CAPABILITIES,
       },

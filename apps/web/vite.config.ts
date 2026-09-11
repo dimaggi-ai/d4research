@@ -262,7 +262,8 @@ export default defineConfig(() => {
     },
     build: {
       outDir: "dist",
-      emptyOutDir: true,
+      // Retain hashed chunks still requested by open tabs after an in-place update.
+      emptyOutDir: false,
       manifest: true,
       sourcemap: buildSourcemap,
     },

@@ -81,6 +81,20 @@ const command = {
 };
 
 it.layer(NodeServices.layer)("user input dismiss decider", (it) => {
+  it.effect("keeps native question answers on the callback path", () =>
+    Effect.gen(function* () {
+      const request = makeRequest(undefined);
+      const result = yield* decideOrchestrationCommand({
+        command: { ...command, type: "thread.user-input.respond", answers: { "0": "Yes" } },
+        readModel: makeReadModel([request]),
+        userInputActivity: request,
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((event) => event.type)).toEqual(["thread.user-input-response-requested"]);
+      expect(events[0]?.payload).toMatchObject({ requestId, answers: { "0": "Yes" } });
+    }),
+  );
+
   it.effect("closes an async question without sending a message or starting a turn", () =>
     Effect.gen(function* () {
       const request = makeRequest("message");

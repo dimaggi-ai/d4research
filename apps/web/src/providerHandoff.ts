@@ -1,14 +1,41 @@
-import { ThreadId, type ModelSelection, type ProviderInstanceId } from "@d4research/contracts";
+import {
+  ThreadId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  type ModelSelection,
+  type ProviderInstanceId,
+} from "@d4research/contracts";
 import type { PreparedConnection } from "@d4research/client-runtime/connection";
 import { preparedEnvironmentFetchAuthorization } from "@d4research/client-runtime/state/skills";
 import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
-import { buildProviderHandoffPromptText } from "@d4research/shared/providerHandoffPrompt";
+import {
+  appendProviderHandoffContext,
+  buildProviderHandoffPromptText,
+  type ProviderHandoffPromptInput,
+} from "@d4research/shared/providerHandoffPrompt";
 
 import { runtime } from "./lib/runtime";
 
 export interface ProviderHandoffMessage {
   readonly role: string;
   readonly text: string;
+}
+
+/** Automatic switches carry context in the durable turn, without a network preflight. */
+export function buildImmediateProviderHandoffMessage(input: {
+  readonly promptText: string;
+  readonly messages: ReadonlyArray<ProviderHandoffMessage>;
+  readonly context: Omit<ProviderHandoffPromptInput, "summary">;
+}): string {
+  const envelope = appendProviderHandoffContext(input.promptText, {
+    ...input.context,
+    summary: "",
+  });
+  const budget = Math.min(60_000, PROVIDER_SEND_TURN_MAX_INPUT_CHARS - envelope.length);
+  if (budget < 256) throw new Error("Shorten this message to leave room for the handoff context.");
+  return appendProviderHandoffContext(input.promptText, {
+    ...input.context,
+    summary: buildProviderHandoffTranscript(input.messages, budget),
+  });
 }
 
 export interface SameThreadProviderHandoffTransition<Prepared> {
@@ -385,6 +412,7 @@ export async function prepareDurableProviderHandoff(
     }),
     project: input.project,
     preparedConnection: input.preparedConnection,
+    signal: input.signal,
   });
   // Memo is a local recovery/search mirror, not the transport for the
   // receiving turn. Use a successfully prepared summary even if its mirror
@@ -401,11 +429,15 @@ export async function persistProviderHandoffMemoryFallback(input: {
   readonly text: string;
   readonly project?: string | undefined;
   readonly preparedConnection?: PreparedConnection | undefined;
+  readonly signal?: AbortSignal | undefined;
 }): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVIDER_HANDOFF_MEMORY_TIMEOUT_MS);
+  const onExternalAbort = () => controller.abort();
+  if (input.signal?.aborted) controller.abort();
+  else input.signal?.addEventListener("abort", onExternalAbort, { once: true });
   try {
-    const { preparedConnection, ...body } = input;
+    const { preparedConnection, signal: _signal, ...body } = input;
     const endpoint = environmentApiUrl("/api/memory/handoff", preparedConnection);
     if (endpoint === null || preparedConnection === undefined) return false;
     const response = await authorizedEnvironmentPost({
@@ -420,5 +452,6 @@ export async function persistProviderHandoffMemoryFallback(input: {
     return false;
   } finally {
     clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onExternalAbort);
   }
 }

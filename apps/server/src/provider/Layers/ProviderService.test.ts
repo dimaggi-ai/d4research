@@ -19,7 +19,6 @@ import {
   MessageId,
   OrchestrationThreadShell,
   ProjectId,
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
@@ -711,6 +710,132 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     assert.equal(Exit.isSuccess(closeExit), true);
     assert.equal(codex.stopAll.mock.calls.length, 2);
   }),
+);
+
+it.effect("caps shutdown time with many stalled provider adapters", () =>
+  Effect.gen(function* () {
+    const adapterCount = 512;
+    const adapters = Array.from({ length: adapterCount }, (_, index) => {
+      const driver = ProviderDriverKind.make(`shutdown-stress-${index}`);
+      const fake = makeFakeCodexAdapter(driver);
+      fake.listSessions.mockImplementation(() =>
+        Effect.sleep("9 seconds").pipe(Effect.as([] as ReadonlyArray<ProviderSession>)),
+      );
+      fake.stopAll.mockImplementation(() => Effect.never);
+      return { driver, fake };
+    });
+    const registry = makeAdapterRegistryMock(
+      Object.fromEntries(adapters.map(({ driver, fake }) => [driver, fake.adapter])),
+    );
+    const providerAdapterLayer = Layer.succeed(
+      ProviderAdapterRegistry.ProviderAdapterRegistry,
+      registry,
+    );
+    const directoryBase = makeFailingProviderSessionDirectory();
+    let stallListBindings = false;
+    const directory: ProviderSessionDirectory.ProviderSessionDirectoryShape = {
+      ...directoryBase.directory,
+      listBindings: () =>
+        stallListBindings ? Effect.never : directoryBase.directory.listBindings(),
+    };
+    const directoryLayer = Layer.succeed(
+      ProviderSessionDirectory.ProviderSessionDirectory,
+      directory,
+    );
+    const providerLayer = Layer.mergeAll(
+      makeProviderServiceLive().pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+      directoryLayer,
+    ).pipe(Layer.provideMerge(NodeServices.layer));
+    const scope = yield* Scope.make();
+    const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+    yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+
+    stallListBindings = true;
+    const close = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild);
+
+    // All discovery calls should consume one concurrent nine-second window,
+    // followed by two concurrent ten-second stop windows. The deliberately
+    // stalled directory call then forces the aggregate 30-second deadline.
+    yield* advanceTestClock(9_001);
+    yield* advanceTestClock(10_001);
+    yield* advanceTestClock(9_000);
+    assert.equal(close.pollUnsafe(), undefined);
+
+    yield* advanceTestClock(2_000);
+    const closeExit = yield* Fiber.join(close).pipe(Effect.exit);
+
+    assert.equal(Exit.isSuccess(closeExit), true);
+    assert.equal(
+      adapters.every(({ fake }) => fake.listSessions.mock.calls.length === 1),
+      true,
+    );
+    assert.equal(
+      adapters.every(({ fake }) => fake.stopAll.mock.calls.length === 2),
+      true,
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("releases shutdown when a provider ignores interruption", () =>
+  Effect.gen(function* () {
+    const adapterCount = 32;
+    const adapters = Array.from({ length: adapterCount }, (_, index) => {
+      const driver = ProviderDriverKind.make(`uninterruptible-shutdown-${index}`);
+      const fake = makeFakeCodexAdapter(driver);
+      fake.stopAll.mockImplementation(() => Effect.uninterruptible(Effect.never));
+      return { driver, fake };
+    });
+    const registry = makeAdapterRegistryMock(
+      Object.fromEntries(adapters.map(({ driver, fake }) => [driver, fake.adapter])),
+    );
+    const directory = makeFailingProviderSessionDirectory();
+    const directoryLayer = Layer.succeed(
+      ProviderSessionDirectory.ProviderSessionDirectory,
+      directory.directory,
+    );
+    const providerLayer = Layer.mergeAll(
+      makeProviderServiceLive().pipe(
+        Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+      directoryLayer,
+    ).pipe(Layer.provideMerge(NodeServices.layer));
+    const scope = yield* Scope.make();
+    const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
+    yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+
+    const close = yield* Scope.close(scope, Exit.void).pipe(Effect.forkChild);
+    yield* advanceTestClock(29_999);
+    assert.equal(close.pollUnsafe(), undefined);
+
+    yield* advanceTestClock(2);
+    const closeExit = yield* Fiber.join(close).pipe(Effect.exit);
+
+    assert.equal(Exit.isSuccess(closeExit), true);
+    assert.equal(
+      adapters.every(({ fake }) => fake.stopAll.mock.calls.length === 1),
+      true,
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("does not let an admitted turn rewrite the stopped binding after shutdown", () => {

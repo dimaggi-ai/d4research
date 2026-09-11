@@ -2224,7 +2224,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           id="handoff-context-compression"
           title="Context compression"
-          description="Use a provider to summarize the conversation before handing off to another model. Reduces token cost and keeps the receiving provider focused."
+          description="Controls explicit preparation requests and older clients. Automatic handoffs attach bounded context immediately, without waiting for compression."
           control={
             <Switch
               checked={settings.handoff.contextCompression.enabled}

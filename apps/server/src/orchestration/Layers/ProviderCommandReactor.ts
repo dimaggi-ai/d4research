@@ -53,6 +53,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TxRef from "effect/TxRef";
 import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
@@ -2588,6 +2589,7 @@ const make = Effect.gen(function* () {
     );
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
+  const observedDomainEventSequence = yield* TxRef.make(0);
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     yield* Effect.gen(function* () {
@@ -2658,11 +2660,22 @@ const make = Effect.gen(function* () {
         event.type === "thread.session-stop-requested" ||
         event.type === "thread.settled"
       ) {
-        return yield* worker.enqueue(event);
+        yield* worker.enqueue(event);
       }
+      yield* TxRef.set(observedDomainEventSequence, event.sequence).pipe(Effect.tx);
     });
 
-    // Acquire the subscription before returning so the first turn cannot be lost.
+    // Record the durable baseline before subscribing. Events committed after
+    // this read are buffered by the acquired subscription and advance the
+    // watermark above, so drain can distinguish "nothing queued yet" from
+    // "the stream has observed everything committed before drain began".
+    yield* orchestrationEngine.latestSequence.pipe(
+      Effect.flatMap((sequence) => TxRef.set(observedDomainEventSequence, sequence)),
+      Effect.tx,
+    );
+    // Acquire the hot PubSub subscription before returning from start. Using
+    // streamDomainEvents directly leaves a race where an immediately
+    // dispatched command can publish before the forked stream subscribes.
     const domainEvents = orchestrationEngine.subscribeDomainEvents
       ? yield* orchestrationEngine.subscribeDomainEvents
       : orchestrationEngine.streamDomainEvents;
@@ -2697,6 +2710,11 @@ const make = Effect.gen(function* () {
   return {
     start,
     drain: Effect.gen(function* () {
+      const targetSequence = yield* orchestrationEngine.latestSequence;
+      yield* TxRef.get(observedDomainEventSequence).pipe(
+        Effect.tap((sequence) => (sequence < targetSequence ? Effect.txRetry : Effect.void)),
+        Effect.tx,
+      );
       yield* worker.drain;
       yield* Effect.forEach([...activeTurnStartFibers], Fiber.await, { discard: true });
       yield* threadTitleRegenerationWorker.drain;

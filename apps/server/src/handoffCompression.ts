@@ -83,9 +83,10 @@ export const compressHandoffContextLocal = Effect.fn("compressHandoffContextLoca
   const numCtx = Math.min(16_384, Math.max(2_048, Math.ceil(estimatedTokens / 1_024) * 1_024));
 
   const compressed = yield* Effect.tryPromise({
-    try: async () => {
+    try: async (signal) => {
       const response = await fetchFn(`${baseUrl}/api/chat`, {
         method: "POST",
+        signal,
         headers: { "content-type": "application/json" },
         // Ollama's /api/chat body is a fixed vendor shape, not a domain schema.
         // @effect-diagnostics-next-line preferSchemaOverJson:off
@@ -122,7 +123,12 @@ export const compressHandoffContextLocal = Effect.fn("compressHandoffContextLoca
         : new LocalHandoffCompressionError({ detail: String(cause) }),
   }).pipe(
     Effect.timeout(input.timeoutMillis ?? LOCAL_COMPRESSION_TIMEOUT_MILLIS),
-    Effect.orElseSucceed(() => ""),
+    Effect.catch((error) =>
+      Effect.logWarning("handoff.compression.fallback", {
+        model: input.model,
+        reason: String(error),
+      }).pipe(Effect.as("")),
+    ),
   );
 
   if (!compressed) return truncateHandoffTranscript(transcript, input.maxOutputCharacters);

@@ -115,6 +115,8 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - Smallest proof that the change works. `vp test run <files>` for the tests you touched, targeted lint and typecheck for the scope you changed.
 - Test meaningful logic or observable behavior. Do not render components to static markup to assert props or attributes, or add tests that merely assert callback wiring or mirror the implementation.
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
+- Before declaring web/PWA changes or an upstream web merge ready to merge or deploy, run `vp run test:ui-regressions` against a freshly built isolated production bundle. Unit tests and viewport screenshots alone are not enough. Follow the browser-consent rule below; if verification cannot run, report it as unverified. See `apps/web/e2e/README.md` for setup and evidence.
+- Changes to PWA viewport metadata, service-worker delivery, or authentication proxies also require an installed-iPhone check. Chromium safe-area emulation and a Safari tab are not substitutes for that check.
 - Backend behavior changes ship with focused tests for that behavior.
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
 - Upon request, user-visible frontend changes should get one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Ask permission before doing computer use or spinning up browsers.

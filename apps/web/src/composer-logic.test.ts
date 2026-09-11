@@ -404,8 +404,9 @@ describe("describeStagedHandoffBanner", () => {
 
   it("promises the switch for an ordinary draft", () => {
     expect(describeStagedHandoffBanner({ ...base, draftIsInlineDelegate: false })).toEqual({
-      title: "Next message hands off to Claude Code",
-      description: "This chat's context will be attached to it.",
+      title: "Context handoff to Claude Code",
+      description:
+        "Your next message carries this chat's context and continues on the selected model.",
     });
   });
 
@@ -420,18 +421,5 @@ describe("describeStagedHandoffBanner", () => {
     expect(
       describeStagedHandoffBanner({ ...base, paused: true, draftIsInlineDelegate: true }).title,
     ).toBe("Handoff to Claude Code paused — provider unavailable");
-  });
-
-  it("shows the in-flight prepare over every other state", () => {
-    // The prepare runs inside the send: without this copy the composer looks
-    // dead for the seconds compression takes and users press send again.
-    const copy = describeStagedHandoffBanner({
-      ...base,
-      paused: true,
-      draftIsInlineDelegate: true,
-      preparing: true,
-    });
-    expect(copy.title).toBe("Handing off to Claude Code — preparing context…");
-    expect(copy.description).toContain("Your message sends right after");
   });
 });

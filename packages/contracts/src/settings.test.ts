@@ -106,6 +106,14 @@ describe("custom model settings", () => {
   });
 });
 
+describe("ServerSettings handoff compression", () => {
+  it("defaults local compression to the workstation Qwen model", () => {
+    expect(decodeServerSettings({}).handoff.contextCompression.localModel).toBe(
+      "qwen38-sys:latest",
+    );
+  });
+});
+
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {
     expect(decodeClaudeSettings({}).autoCompactWindow).toBe("");

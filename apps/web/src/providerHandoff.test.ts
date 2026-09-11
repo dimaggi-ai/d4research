@@ -5,10 +5,12 @@ import {
 } from "@d4research/client-runtime/connection";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@d4research/contracts";
 import { appendEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
+import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 import { vi } from "vite-plus/test";
 
 import {
   buildProviderHandoffMemory,
+  buildImmediateProviderHandoffMessage,
   buildProviderHandoffPrompt,
   buildProviderHandoffTranscript,
   buildStructuredHandoffTranscript,
@@ -44,6 +46,92 @@ function preparedConnection(
 }
 
 describe("provider handoff", () => {
+  const immediateContext = {
+    sourceThreadId: "original-thread",
+    sourceThreadTitle: "Original task",
+    targetInstanceId: "codex",
+    targetModel: "gpt-5.6-sol",
+    targetLabel: "Codex",
+    project: "project-a",
+    enabledSkills: ["review"],
+  };
+
+  it("creates a sendable handoff synchronously with the instruction and context in one message", () => {
+    const text = buildImmediateProviderHandoffMessage({
+      promptText: "Continue the implementation",
+      context: immediateContext,
+      messages: [
+        { role: "user", text: "Build a parser" },
+        { role: "assistant", text: "Tokenizer is complete" },
+      ],
+    });
+    expect(typeof text).toBe("string");
+    expect(text).toContain("USER: Build a parser");
+    expect(text).toContain("ASSISTANT: Tokenizer is complete");
+    expect(text).toContain("original-thread");
+    expect(text).toContain("review");
+    expect(extractTrailingProviderHandoffContext(text).promptText).toBe(
+      "Continue the implementation",
+    );
+  });
+
+  it("preserves the original task and latest findings within the automatic context budget", () => {
+    const text = buildImmediateProviderHandoffMessage({
+      promptText: "Continue",
+      context: immediateContext,
+      messages: [
+        { role: "user", text: "Keep the same thread" },
+        { role: "assistant", text: "x".repeat(100_000) },
+        { role: "user", text: "Latest finding: SQLite is authoritative" },
+      ],
+    });
+    expect(text).toContain("Keep the same thread");
+    expect(text).toContain("Latest finding: SQLite is authoritative");
+    expect(text).toContain("omitted");
+    expect(text.length).toBeLessThan(61_000);
+  });
+
+  it("reserves room for a long instruction without truncating it", () => {
+    const promptText = "p".repeat(100_000);
+    const text = buildImmediateProviderHandoffMessage({
+      promptText,
+      context: immediateContext,
+      messages: [
+        { role: "user", text: "Source task" },
+        { role: "assistant", text: "x".repeat(60_000) },
+      ],
+    });
+    expect(text.length).toBeLessThanOrEqual(120_000);
+    expect(extractTrailingProviderHandoffContext(text).promptText).toBe(promptText);
+    expect(text).toContain("Source task");
+  });
+
+  it("rejects a message with no context space rather than silently dropping the handoff", () => {
+    expect(() =>
+      buildImmediateProviderHandoffMessage({
+        promptText: "p".repeat(120_000),
+        context: immediateContext,
+        messages: [],
+      }),
+    ).toThrow(/leave room for the handoff context/);
+  });
+
+  it("keeps source metadata and transcript isolated between threads", () => {
+    const first = buildImmediateProviderHandoffMessage({
+      promptText: "Original instruction",
+      context: immediateContext,
+      messages: [{ role: "user", text: "Original history" }],
+    });
+    const other = buildImmediateProviderHandoffMessage({
+      promptText: "Other instruction",
+      context: { ...immediateContext, sourceThreadId: "other-thread" },
+      messages: [{ role: "user", text: "Other history" }],
+    });
+    expect(first).toContain("original-thread");
+    expect(first).not.toContain("Other history");
+    expect(other).toContain("other-thread");
+    expect(other).not.toContain("Original history");
+  });
   it("never makes a handoff depend on compression by the provider being replaced", () => {
     expect(
       shouldBypassProviderHandoffCompression({
@@ -637,6 +725,93 @@ describe("provider handoff", () => {
         }),
       ).resolves.toBe("dense summary");
     } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("cancels a pending Memo fallback without waiting for its deadline", async () => {
+    const original = globalThis.fetch;
+    const controller = new AbortController();
+    let fallbackSignal: AbortSignal | null = null;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (fetcher.mock.calls.length === 1) {
+        return Promise.resolve(
+          Response.json({ ok: true, compressed: "prepared context", memoryPersisted: false }),
+        );
+      }
+      fallbackSignal = init?.signal ?? null;
+      markStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        fallbackSignal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+    globalThis.fetch = fetcher as typeof fetch;
+    try {
+      const result = prepareDurableProviderHandoff({
+        transcript: "original context",
+        sourceThreadId: "source",
+        sourceThreadTitle: "Source",
+        target: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
+        preparedConnection: preparedConnection(),
+        signal: controller.signal,
+      });
+      await started;
+      controller.abort();
+      expect((fallbackSignal as AbortSignal | null)?.aborted).toBe(true);
+      await expect(result).resolves.toBe("prepared context");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("does not start a Memo write when already cancelled", async () => {
+    const original = globalThis.fetch;
+    const fetcher = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    globalThis.fetch = fetcher;
+    try {
+      await expect(
+        persistProviderHandoffMemoryFallback({
+          text: "context",
+          preparedConnection: preparedConnection(),
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("removes cancellation listeners after a successful Memo write", async () => {
+    const original = globalThis.fetch;
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const fetcher = vi.fn(async () => Response.json({ ok: true }));
+    globalThis.fetch = fetcher;
+    try {
+      await expect(
+        persistProviderHandoffMemoryFallback({
+          text: "context",
+          preparedConnection: preparedConnection(),
+          signal: controller.signal,
+        }),
+      ).resolves.toBe(true);
+      expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+      const init = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.parse(String(init[1].body))).toEqual({ text: "context" });
+    } finally {
+      remove.mockRestore();
       globalThis.fetch = original;
     }
   });

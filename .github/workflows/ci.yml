@@ -14,6 +14,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ui_pwa_regressions:
+    name: UI and PWA regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Install pinned browser and system dependencies
+        run: node apps/web/node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Verify canonical d4 icon assets
+        run: vp run icons:check
+      - name: Build production web and server
+        run: vp run --filter d4research build
+      - name: Run focused PWA unit tests
+        run: vp test run apps/web/src/serviceWorkerRegistration.test.ts apps/web/src/serviceWorkerLifecycle.test.ts apps/web/src/lib/chunkReloadGuard.test.ts apps/web/src/pwaServiceWorkerBuild.test.ts
+      - name: Exercise production UI and PWA regressions
+        env:
+          T3_UI_ARTIFACT_DIR: ${{ runner.temp }}/ui-pwa-regressions
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: "1"
+        run: vp run test:ui-regressions
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-pwa-regressions
+          path: ${{ runner.temp }}/ui-pwa-regressions
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Verify the regression tests reject known faults
+        env:
+          T3_UI_ARTIFACT_DIR: ${{ runner.temp }}/ui-pwa-guards
+          PW_TEST_SCREENSHOT_NO_FONTS_READY: "1"
+        run: vp run test:ui-regression-guards
+      - name: Upload regression guard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-pwa-guards
+          path: ${{ runner.temp }}/ui-pwa-guards
+          if-no-files-found: warn
+          retention-days: 7
+
   check:
     name: Check
     runs-on: ubuntu-24.04

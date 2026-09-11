@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -333,6 +334,29 @@ function jsonFetch(payload: unknown, status = 200): typeof globalThis.fetch {
 }
 
 describe("compressHandoffContextLocal", () => {
+  it.effect("aborts the daemon request on timeout and retains fallback context", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const request: { signal: AbortSignal | null } = { signal: null };
+      const fiber = yield* compressHandoffContextLocal({
+        transcript: "USER: preserve this context",
+        model: "test-compressor",
+        maxInputCharacters: 6000,
+        maxOutputCharacters: 500,
+        customPrompt: "",
+        timeoutMillis: 1000,
+        fetchFn: ((_url, init) => {
+          request.signal = init?.signal ?? null;
+          Deferred.doneUnsafe(started, Effect.void);
+          return new Promise<Response>(() => {});
+        }) as typeof fetch,
+      }).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(fiber)).toBe("USER: preserve this context");
+      expect(request.signal?.aborted).toBe(true);
+    }),
+  );
   it.effect("returns the local model's summary on success", () =>
     Effect.gen(function* () {
       const requests: Array<{ url: string; body: Record<string, unknown> }> = [];

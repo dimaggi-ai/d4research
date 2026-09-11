@@ -1228,11 +1228,76 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.user-input.respond": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      const request = userInputActivity;
+      if (
+        request &&
+        Predicate.isObject(request.payload) &&
+        request.payload.responseMode === "message"
+      ) {
+        const payload = decodeUserInputRequestedPayload(request.payload);
+        if (request.kind !== "user-input.requested" || Option.isNone(payload)) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "This question has already been answered.",
+          });
+        }
+        const replies: string[] = [];
+        for (const question of payload.value.questions) {
+          const answer = command.answers[question.id];
+          if (typeof answer !== "string" || answer.trim().length === 0) {
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: "Answer each question before sending.",
+            });
+          }
+          replies.push(`${question.question}\n${answer.trim()}`);
+        }
+        // Commit the answer and its message together. The normal turn path
+        // steers a running agent or resumes an idle session.
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            {
+              type: "thread.activity.append",
+              commandId: command.commandId,
+              threadId: command.threadId,
+              createdAt: command.createdAt,
+              activity: {
+                id: EventId.make(`async-answer:${command.requestId}`),
+                kind: "user-input.resolved",
+                summary: "User input submitted",
+                tone: "info",
+                turnId: request.turnId,
+                createdAt: command.createdAt,
+                payload: {
+                  requestId: command.requestId,
+                  responseMode: "message",
+                  answers: command.answers,
+                },
+              },
+            },
+            {
+              type: "thread.turn.start",
+              commandId: command.commandId,
+              threadId: command.threadId,
+              createdAt: command.createdAt,
+              runtimeMode: thread.runtimeMode,
+              interactionMode: thread.interactionMode,
+              message: {
+                messageId: MessageId.make(`async-answer:${command.requestId}`),
+                role: "user",
+                text: replies.join("\n\n"),
+                attachments: [],
+              },
+            },
+          ],
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",

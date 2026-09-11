@@ -171,7 +171,7 @@ export default defineConfig({
         "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts": 42,
         "apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts": 5,
         "apps/server/src/orchestration/Layers/OrchestrationReactor.test.ts": 4,
-        "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts": 66,
+        "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts": 68,
         "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts": 29,
         "apps/server/src/orchestration/Layers/ThreadDeletionReactor.test.ts": 2,
         "apps/server/src/orchestration/commandInvariants.test.ts": 5,

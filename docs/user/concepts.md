@@ -50,10 +50,14 @@ authoritative.
 
 Choosing another provider in a chat that has already started only _stages_ the switch — nothing runs
 yet, and the composer tells you the next message will hand off. That next message is the handoff:
-d4research stores recoverable context in local Memo, attaches it to what you wrote, and the new
-provider answers your actual instruction. If Memo is unavailable, d4research attaches the
-size-bounded visible-thread transcript directly so the switch can still happen. The handoff record
-will not be searchable in Memo, but the receiving provider does not lose the carried context.
+d4research attaches a bounded transcript to what you wrote, and the new provider answers your
+instruction. Automatic handoffs do not wait for compression or a Memo write. You can switch chats
+after sending; an accepted turn continues on its original thread. The context travels in the saved
+message, without requiring a separate searchable Memo record.
+
+The attached context keeps the original task and recent messages, up to 60,000 characters, with
+less space available for very long instructions. Omitted history is marked. A failed or disconnected
+send is not a completed handoff; check the original thread for the sent message or error.
 
 In the thread, a handed-off message carries a compact **Handed off to …** row above your normal
 message bubble; expand it to read the context that travelled with it. Handoffs from older versions

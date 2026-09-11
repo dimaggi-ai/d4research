@@ -1,6 +1,57 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ToolGuardPolicy } from "@d4research/contracts";
 
+export type ToolGuardPolicyReadResult =
+  | {
+      readonly ok: true;
+      readonly policy: ToolGuardPolicy;
+      readonly source: "managed" | "bundled";
+    }
+  | { readonly ok: false };
+
+export async function requestToolGuardPolicy(
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<ToolGuardPolicyReadResult> {
+  const response = await fetcher("/api/tool-guard/policy", {
+    credentials: "include",
+    cache: "no-store",
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!response.ok) return { ok: false };
+
+  const payload = (await response.json()) as {
+    ok?: unknown;
+    policy?: unknown;
+    source?: unknown;
+  };
+  if (payload.ok !== true || typeof payload.policy !== "object" || payload.policy === null) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    policy: payload.policy as ToolGuardPolicy,
+    source: payload.source === "bundled" ? "bundled" : "managed",
+  };
+}
+
+export async function saveToolGuardPolicy(
+  policy: ToolGuardPolicy,
+  fetcher: typeof fetch = fetch,
+): Promise<{ readonly ok: boolean; readonly message: string }> {
+  const response = await fetcher("/api/tool-guard/policy", {
+    method: "PUT",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ policy }),
+  });
+  const payload = (await response.json()) as { ok?: unknown; message?: unknown };
+  return {
+    ok: response.ok && payload.ok === true,
+    message: typeof payload.message === "string" ? payload.message : "Failed to save policy.",
+  };
+}
+
 export interface ToolGuardPolicyState {
   readonly state: "loading" | "ready" | "unavailable";
   readonly policy: ToolGuardPolicy | null;
@@ -31,31 +82,16 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     const load = async () => {
       setState("loading");
       try {
-        const response = await fetch("/api/tool-guard/policy", {
-          credentials: "include",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
+        const result = await requestToolGuardPolicy(fetch, controller.signal);
+        if (!result.ok) {
           setState("unavailable");
           setPolicy(null);
           setSource(null);
           return;
         }
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          policy?: ToolGuardPolicy;
-          source?: "managed" | "bundled";
-        };
-        if (payload.ok && payload.policy) {
-          setPolicy(payload.policy);
-          setSource(payload.source ?? "managed");
-          setState("ready");
-        } else {
-          setState("unavailable");
-          setPolicy(null);
-          setSource(null);
-        }
+        setPolicy(result.policy);
+        setSource(result.source);
+        setState("ready");
       } catch {
         if (controller.signal.aborted) return;
         setState("unavailable");
@@ -71,18 +107,12 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/tool-guard/policy", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ policy: nextPolicy }),
-      });
-      const payload = (await response.json()) as { ok?: boolean; message?: string };
-      if (payload.ok) {
+      const result = await saveToolGuardPolicy(nextPolicy);
+      if (result.ok) {
         setPolicy(nextPolicy);
         return true;
       }
-      setError(payload.message ?? "Failed to save policy.");
+      setError(result.message);
       return false;
     } catch {
       setError("Failed to save policy.");

@@ -887,7 +887,7 @@ export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 // ── Handoff settings ────────────────────────────────────────────────────
 export const DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS = 6_000;
 export const DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS = 2_000;
-export const DEFAULT_HANDOFF_LOCAL_MODEL = "gemma4:e4b-it-qat";
+export const DEFAULT_HANDOFF_LOCAL_MODEL = "qwen38-sys:latest";
 
 export const HandoffCompressionBackend = Schema.Literals(["local", "provider"]);
 export type HandoffCompressionBackend = typeof HandoffCompressionBackend.Type;

@@ -1166,6 +1166,7 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
         : transcript.slice(0, compression.maxInputCharacters);
 
       const plan = resolveHandoffPreparePlan(compression, bypassCompression);
+      yield* Effect.logInfo("handoff.prepare.started", { sourceThreadId, target, plan });
       let compressed: string;
       if (plan === "passthrough") {
         compressed = clipped;
@@ -1216,6 +1217,12 @@ export const handoffPrepareRouteLayer = HttpRouter.add(
         }).pipe(Effect.orElseSucceed(() => false));
       }
 
+      yield* Effect.logInfo("handoff.prepare.completed", {
+        sourceThreadId,
+        target,
+        memoryPersisted,
+        contextCharacters: compressed.length,
+      });
       return HttpServerResponse.jsonUnsafe(
         { ok: true, compressed, memoryPersisted },
         { headers: { "cache-control": "no-store" } },

@@ -126,22 +126,21 @@ describe("discoverGrokSkills", () => {
     ),
   );
 
-  it.effect("rejects malformed or unexpected output as a decode failure", () =>
+  it.effect("recovers malformed or unexpected output with an empty skill list", () =>
     Effect.gen(function* () {
       for (const stdout of ["not json", "null", '{"skills":"nope"}', "{}"]) {
-        const error = yield* discoverGrokSkills({ binaryPath: "grok" }, {}).pipe(
-          Effect.flip,
+        const skills = yield* discoverGrokSkills({ binaryPath: "grok" }, {}).pipe(
           Effect.provideService(
             ChildProcessSpawner.ChildProcessSpawner,
             makeInspectSpawner(stdout),
           ),
         );
-        expect(error).toMatchObject({ _tag: "GrokSkillsProbeError", stage: "decode" });
+        expect(skills).toEqual([]);
       }
     }),
   );
 
-  it.effect("spawns in the configured cwd and rejects a failed probe", () => {
+  it.effect("spawns in the configured cwd and recovers a failed probe", () => {
     const spawnCwds: Array<string | undefined> = [];
     const stdout = inspectPayload([
       {
@@ -162,13 +161,12 @@ describe("discoverGrokSkills", () => {
       expect(skills.map((skill) => skill.name)).toEqual(["kept"]);
 
       const failed = yield* discoverGrokSkills({ binaryPath: "grok" }).pipe(
-        Effect.result,
         Effect.provideService(
           ChildProcessSpawner.ChildProcessSpawner,
           makeInspectSpawner(stdout, 1),
         ),
       );
-      expect(failed._tag).toBe("Failure");
+      expect(failed).toEqual([]);
     });
   });
 });

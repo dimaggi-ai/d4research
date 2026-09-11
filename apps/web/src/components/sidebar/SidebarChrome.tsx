@@ -89,7 +89,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
+        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] flex h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
@@ -101,31 +101,14 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Research
+        [Research]
       </span>
     </Link>
   );
 }
 
 function D4ResearchMark() {
-  return (
-    <svg
-      aria-label="d4research"
-      className="size-5 shrink-0"
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect width="64" height="64" rx="16" fill="#171717" />
-      <path
-        d="M30 14v36M30 28H20a11 11 0 1 0 0 22h10M49.5 45.5V22L38 38h16"
-        fill="none"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="7"
-      />
-    </svg>
-  );
+  return <img alt="d4" className="size-5 shrink-0" src="/d4-mark.svg" />;
 }
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {

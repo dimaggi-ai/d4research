@@ -139,6 +139,7 @@ export function createPairingUrl(app, label = "e2e") {
     {
       cwd: repoRoot,
       encoding: "utf8",
+      timeout: 30000,
       env: { ...process.env, T3CODE_PORT: String(app.serverPort) },
     },
   );

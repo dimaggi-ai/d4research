@@ -236,7 +236,7 @@ function Sidebar({
         <Sheet onOpenChange={setOpenMobile} open={openMobile} {...props}>
           <SheetPopup
             className={cn(
-              "w-(--sidebar-width) max-w-none bg-sidebar surface-grain p-0 text-sidebar-foreground",
+              "h-dvh max-h-dvh w-(--sidebar-width) max-w-full overflow-hidden bg-sidebar surface-grain p-0 text-sidebar-foreground",
               className,
             )}
             data-mobile="true"
@@ -256,7 +256,7 @@ function Sidebar({
             </SheetHeader>
             <div
               className={cn(
-                "flex h-full w-full flex-col pb-safe pt-safe",
+                "flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-contain pb-safe pt-safe",
                 side === "left" ? "pl-safe" : "pr-safe",
               )}
             >
@@ -308,7 +308,8 @@ function Sidebar({
           {...props}
         >
           <div
-            className="flex h-full w-full flex-col bg-sidebar surface-grain group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
+            // Fixed sidebars bypass #root's safe-area padding, including on iPad.
+            className="flex h-full w-full flex-col bg-sidebar surface-grain pt-safe pb-safe group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >
@@ -670,7 +671,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex shrink-0 flex-col gap-2 p-2", className)}
       data-sidebar="footer"
       data-slot="sidebar-footer"
       {...props}

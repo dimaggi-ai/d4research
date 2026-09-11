@@ -88,6 +88,7 @@ describe("default dev pipeline against an overlapping provider snapshot", () => 
   it("keeps the default planner and explicit Claude target unambiguous when Ollama is listed first", () => {
     const planner = /STEP 1 — PLAN[\s\S]*?Directive: (\S+)/.exec(defaultPrompt)?.[1];
     expect(planner).toBe("!codex:gpt-5.6-sol");
+    expect(defaultPrompt).not.toMatch(/Directive: ![^\s]+:claude-/u);
     expect(targetOf("!claudeAgent:claude-opus-5")).toBe("claudeAgent:claude-opus-5");
   });
 

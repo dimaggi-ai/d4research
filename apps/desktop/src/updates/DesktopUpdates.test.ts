@@ -104,6 +104,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     setMain: () => Effect.void,
     clearMain: () => Effect.void,
     reveal: () => Effect.void,
+    prepareReveal: () => Effect.succeed(false),
     sendAll: (_channel, state) =>
       Effect.sync(() => {
         sentStates.push(state as DesktopUpdateState);

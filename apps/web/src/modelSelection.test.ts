@@ -55,6 +55,36 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it("shows a missing OpenCode selection without making it selectable", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        models: ["openai/current"],
+      }),
+    ];
+    const entry = deriveProviderInstanceEntries(providers)[0]!;
+    expect(
+      getAppModelOptionsForInstance(DEFAULT_UNIFIED_SETTINGS, entry, "openai/removed"),
+    ).toContainEqual({
+      slug: "openai/removed",
+      name: "openai/removed",
+      isCustom: false,
+      isUnavailable: true,
+    });
+    expect(
+      resolveAppModelSelectionForInstance(
+        entry.instanceId,
+        DEFAULT_UNIFIED_SETTINGS,
+        providers,
+        "openai/removed",
+      ),
+    ).toBe("openai/current");
+    expect(
+      getAppModelOptionsForInstance(DEFAULT_UNIFIED_SETTINGS, entry, "openai/current"),
+    ).toHaveLength(1);
+  });
+
   it("preserves server-provided legacy model metadata", () => {
     const baseProvider = provider({
       instanceId: "claudeAgent",

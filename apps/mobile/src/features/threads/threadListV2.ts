@@ -1,3 +1,4 @@
+import { threadPullRequestSearchTerms } from "@d4research/shared/threadPullRequests";
 import {
   effectiveSnoozed,
   hasQueuedTurnStart,
@@ -404,6 +405,9 @@ export function buildThreadListV2Items(input: {
     if (
       query.length > 0 &&
       !thread.title.toLocaleLowerCase().includes(query) &&
+      !threadPullRequestSearchTerms(thread).some((term) =>
+        term.toLocaleLowerCase().includes(query),
+      ) &&
       input.matchedThreadKeys?.has(
         threadSearchMatchKey({
           environmentId: thread.environmentId,

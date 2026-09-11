@@ -46,7 +46,7 @@ const PipelineScenarioWithHint = Schema.Struct({
   editHint: Schema.String,
 });
 
-export class PipelineToolError extends Schema.TaggedErrorClass<PipelineToolError>()(
+export class PipelineToolError extends Schema.TaggedError<PipelineToolError>()(
   "PipelineToolError",
   { detail: Schema.String },
 ) {}

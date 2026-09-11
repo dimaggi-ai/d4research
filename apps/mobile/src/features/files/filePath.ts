@@ -23,6 +23,12 @@ export function isAbsolutePath(value: string): boolean {
   return value.startsWith("/") || isWindowsAbsolutePath(value);
 }
 
+/** Keep the leading root when a file path travels through route segments. */
+export function fileRoutePathSegments(path: string): string[] {
+  const segments = path.split("/").filter((segment) => segment.length > 0);
+  return path.startsWith("/") ? ["", ...segments] : segments;
+}
+
 function isWindowsPathStyle(value: string): boolean {
   return isWindowsAbsolutePath(value) || /^[A-Za-z]:\\/.test(value);
 }

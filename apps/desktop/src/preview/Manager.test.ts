@@ -59,8 +59,117 @@ describe("isPreviewRefreshShortcut", () => {
   });
 });
 
+describe("isPreviewEditingShortcut", () => {
+  const input = (platform: NodeJS.Platform, key: string, overrides: Partial<Electron.Input> = {}) =>
+    ({
+      type: "keyDown",
+      key,
+      meta: platform === "darwin",
+      control: platform !== "darwin",
+      shift: false,
+      alt: false,
+      ...overrides,
+    }) as Electron.Input;
+
+  it.each(["darwin", "linux", "win32"] as const)(
+    "allows native editing chords on %s without allowing host shortcuts",
+    (platform) => {
+      for (const key of ["a", "c", "v", "x", "z", "V"]) {
+        expect(PreviewManager.isPreviewEditingShortcut(input(platform, key), platform)).toBe(true);
+      }
+      const redo =
+        platform === "win32" ? input(platform, "y") : input(platform, "z", { shift: true });
+      expect(PreviewManager.isPreviewEditingShortcut(redo, platform)).toBe(true);
+      expect(
+        PreviewManager.isPreviewEditingShortcut(
+          input(platform, "v", { shift: true, alt: platform === "darwin" }),
+          platform,
+        ),
+      ).toBe(true);
+
+      for (const key of ["k", ",", "w", "j", "q", "+", "=", "-", "0", "r", "F12"]) {
+        expect(PreviewManager.isPreviewEditingShortcut(input(platform, key), platform)).toBe(false);
+      }
+      for (const modifiers of [
+        { meta: false, control: false },
+        { meta: true, control: true },
+        { meta: platform !== "darwin", control: platform === "darwin" },
+        { alt: true },
+        { shift: true, alt: platform !== "darwin" },
+      ]) {
+        expect(
+          PreviewManager.isPreviewEditingShortcut(input(platform, "v", modifiers), platform),
+        ).toBe(false);
+      }
+      expect(
+        PreviewManager.isPreviewEditingShortcut(input(platform, "a", { shift: true }), platform),
+      ).toBe(false);
+    },
+  );
+
+  it("recognizes macOS Paste and Match Style when Option changes the key to a symbol", () => {
+    const pasteAndMatchStyle = input("darwin", "◊", { code: "KeyV", alt: true, shift: true });
+    expect(PreviewManager.isPreviewEditingShortcut(pasteAndMatchStyle, "darwin")).toBe(true);
+    for (const modifiers of [
+      { code: "KeyC" },
+      { alt: false },
+      { shift: false },
+      { control: true },
+    ]) {
+      expect(
+        PreviewManager.isPreviewEditingShortcut({ ...pasteAndMatchStyle, ...modifiers }, "darwin"),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("previewWindowOpenAction", () => {
+  const details = (overrides: {
+    readonly url?: string;
+    readonly disposition?: Electron.HandlerDetails["disposition"];
+  }) => ({
+    url: "https://accounts.google.com/o/oauth2/auth",
+    disposition: "new-window" as Electron.HandlerDetails["disposition"],
+    ...overrides,
+  });
+
+  it("opens a real window for scripted popups so the opener survives", () => {
+    // OAuth SDKs read a null `window.open()` as a blocked popup, and they need
+    // the opener alive to receive the credential back.
+    expect(PreviewManager.previewWindowOpenAction(details({}))).toBe("popup");
+    expect(
+      PreviewManager.previewWindowOpenAction(details({ url: "http://localhost:5173/auth" })),
+    ).toBe("popup");
+  });
+
+  it("keeps target=_blank links in the preview tab", () => {
+    expect(PreviewManager.previewWindowOpenAction(details({ disposition: "foreground-tab" }))).toBe(
+      "navigate",
+    );
+    expect(PreviewManager.previewWindowOpenAction(details({ disposition: "background-tab" }))).toBe(
+      "navigate",
+    );
+  });
+
+  it("does not hand a window to schemes that cannot be hardened", () => {
+    // A popup skips the `will-attach-webview` hardening, so it only gets a window
+    // when its preferences can be overridden. Chromium copies the guest's
+    // preferences for `about:blank` and forbids overriding them.
+    for (const url of [
+      "about:blank",
+      "javascript:alert(1)",
+      "file:///etc/passwd",
+      "vscode://vscode-remote/ssh-remote+box/tmp",
+      "not a url",
+    ]) {
+      expect(PreviewManager.previewWindowOpenAction(details({ url }))).toBe("navigate");
+    }
+  });
+});
+
 const {
   browserWindowConstructor,
+  clipboardItemConstructor,
   createFromPath,
   fromId,
   getFocusedWebContents,
@@ -68,23 +177,32 @@ const {
   showItemInFolder,
   webviewSend,
   writeFile,
-  writeImage,
+  writeClipboard,
 } = vi.hoisted(() => ({
   browserWindowConstructor: vi.fn(),
-  createFromPath: vi.fn((): { readonly isEmpty: () => boolean } => ({ isEmpty: () => false })),
-  fromId: vi.fn((_id?: number): Electron.WebContents | null => null),
+  clipboardItemConstructor: vi.fn(),
+  createFromPath: vi.fn((): { readonly isEmpty: () => boolean; readonly toPNG: () => Buffer } => ({
+    isEmpty: () => false,
+    toPNG: () => Buffer.from("png"),
+  })),
+  fromId: vi.fn<(_id?: number) => Electron.WebContents | null>((_id?: number) => null),
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
   showItemInFolder: vi.fn(),
   webviewSend: vi.fn(),
   writeFile: vi.fn((_path: string, _data: Uint8Array) => undefined),
-  writeImage: vi.fn(),
+  writeClipboard: vi.fn(async () => undefined),
 }));
 
 vi.mock("electron", () => ({
   BrowserWindow: browserWindowConstructor,
+  ClipboardItem: class {
+    constructor(data: Record<string, unknown>) {
+      clipboardItemConstructor(data);
+    }
+  },
   clipboard: {
-    writeImage,
+    write: writeClipboard,
   },
   nativeImage: {
     createFromPath,
@@ -420,7 +538,8 @@ describe("PreviewManager", () => {
     mkdir.mockClear();
     writeFile.mockClear();
     showItemInFolder.mockClear();
-    writeImage.mockClear();
+    clipboardItemConstructor.mockClear();
+    writeClipboard.mockClear();
     createFromPath.mockClear();
     webviewSend.mockClear();
   });
@@ -433,6 +552,7 @@ describe("PreviewManager", () => {
         const hostWebContents = { sendInputEvent };
         Object.assign(preview.webContents, { hostWebContents });
         fromId.mockReturnValue(preview.webContents);
+        getFocusedWebContents.mockReturnValue(preview.webContents as never);
         yield* manager.setMainWindow({
           isDestroyed: () => false,
           once: vi.fn(),
@@ -446,7 +566,7 @@ describe("PreviewManager", () => {
         ).toHaveBeenCalledWith(true);
         const beforeInput = preview.listeners.get("before-input-event")!;
         for (const control of [false, true]) {
-          for (const key of ["k", ",", "w", "j", "q", "+", "a", "c", "v", "x"]) {
+          for (const key of ["k", ",", "w", "j", "q", "+"]) {
             for (const type of ["keyDown", "keyUp"]) {
               const preventDefault = vi.fn();
               beforeInput(
@@ -455,6 +575,9 @@ describe("PreviewManager", () => {
               );
               yield* Effect.yieldNow;
               expect(preventDefault).not.toHaveBeenCalled();
+              expect(
+                (preview.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+              ).toHaveBeenLastCalledWith(true);
             }
           }
         }
@@ -476,12 +599,55 @@ describe("PreviewManager", () => {
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(preview.reload).toHaveBeenCalledOnce();
         expect(sendInputEvent).not.toHaveBeenCalled();
+      }),
+    ),
+  );
 
-        const setIgnoreMenuShortcuts = vi.fn();
-        preview.listeners.get("did-create-window")!({
-          webContents: { setIgnoreMenuShortcuts, setWindowOpenHandler: vi.fn() },
-        } as never);
-        expect(setIgnoreMenuShortcuts).toHaveBeenCalledWith(true);
+  effectIt.effect("preserves focused browser editing in tabs and sign-in popups", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_editing");
+        yield* manager.registerWebview("tab_editing", 42);
+
+        const popup = makeFaviconWebContents({ id: 43 });
+        preview.listeners.get("did-create-window")!({ webContents: popup.webContents } as never);
+        expect(
+          (popup.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+        ).toHaveBeenCalledWith(true);
+
+        for (const browser of [preview, popup]) {
+          const contents = browser.webContents as Electron.WebContents;
+          getFocusedWebContents.mockReturnValue(browser.webContents as never);
+          const beforeInput = browser.listeners.get("before-input-event")!;
+          const preventDefault = vi.fn();
+          const input = {
+            type: "keyDown",
+            key: "v",
+            meta: true,
+            control: false,
+            shift: false,
+            alt: false,
+          };
+          beforeInput({ preventDefault } as never, input as never);
+          expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(false);
+          // Releasing Command must not disable native fallback for the pending paste.
+          beforeInput(
+            { preventDefault } as never,
+            { ...input, type: "keyUp", key: "Meta", meta: false } as never,
+          );
+          expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(false);
+
+          beforeInput({ preventDefault } as never, { ...input, key: "w" } as never);
+          expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(true);
+
+          // An injected paste in an unfocused guest cannot edit the active renderer.
+          getFocusedWebContents.mockReturnValue(null);
+          beforeInput({ preventDefault } as never, input as never);
+          expect(contents.setIgnoreMenuShortcuts).toHaveBeenLastCalledWith(true);
+          expect(preventDefault).not.toHaveBeenCalled();
+        }
       }),
     ),
   );
@@ -3605,7 +3771,10 @@ describe("PreviewManager", () => {
         yield* manager.copyArtifactToClipboard(artifactPath);
 
         expect(createFromPath).toHaveBeenCalledWith(artifactPath);
-        expect(writeImage).toHaveBeenCalledOnce();
+        expect(clipboardItemConstructor).toHaveBeenCalledWith({
+          "image/png": expect.any(Blob),
+        });
+        expect(writeClipboard).toHaveBeenCalledOnce();
         const exit = yield* Effect.exit(
           manager.copyArtifactToClipboard("/tmp/t3/dev/settings.json"),
         );
@@ -3619,13 +3788,28 @@ describe("PreviewManager", () => {
         });
         expect("cause" in error).toBe(false);
 
-        createFromPath.mockReturnValueOnce({ isEmpty: () => true });
+        createFromPath.mockReturnValueOnce({
+          isEmpty: () => true,
+          toPNG: () => Buffer.from("invalid"),
+        });
         const invalidImageExit = yield* Effect.exit(manager.copyArtifactToClipboard(artifactPath));
         expect(Exit.isFailure(invalidImageExit)).toBe(true);
         if (Exit.isSuccess(invalidImageExit)) return;
         expect(Option.getOrThrow(Cause.findErrorOption(invalidImageExit.cause))).toMatchObject({
           _tag: "PreviewArtifactImageLoadError",
           artifactPath,
+        });
+
+        const writeCause = new Error("clipboard write failed");
+        writeClipboard.mockRejectedValueOnce(writeCause);
+        const writeExit = yield* Effect.exit(manager.copyArtifactToClipboard(artifactPath));
+        expect(Exit.isFailure(writeExit)).toBe(true);
+        if (Exit.isSuccess(writeExit)) return;
+        expect(Option.getOrThrow(Cause.findErrorOption(writeExit.cause))).toMatchObject({
+          _tag: "PreviewOperationError",
+          operation: "copyArtifactToClipboard.write",
+          artifactPath,
+          cause: writeCause,
         });
       }),
     ),

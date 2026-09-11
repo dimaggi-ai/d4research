@@ -6,10 +6,12 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
+  | "/settings/snap-shot"
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/research"
   | "/settings/dev-pipelines"
+  | "/settings/integrations"
   | "/settings/connections"
   | "/settings/tool-guard"
   | "/settings/skills"
@@ -41,10 +43,12 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/projects": "Projects",
   "/settings/keybindings": "Keybindings",
+  "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
   "/settings/research": "Research",
   "/settings/dev-pipelines": "Dev pipelines",
+  "/settings/integrations": "Integrations",
   "/settings/connections": "Connections",
   "/settings/tool-guard": "Tool Guard",
   "/settings/skills": "Skills",
@@ -58,6 +62,83 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * here once instead of separately in the panel and the index.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "legacy-plan-mode",
+    title: "Plan mode (legacy)",
+    to: "/settings/general",
+    searchTerms: ["build plan composer old"],
+  },
+  {
+    id: "legacy-context-window-indicator",
+    title: "Context window indicator (legacy)",
+    to: "/settings/general",
+    searchTerms: ["composer meter usage tokens circle old"],
+  },
+  {
+    id: "legacy-token-streaming",
+    title: "Stream token by token (legacy)",
+    to: "/settings/general",
+    searchTerms: ["response output old compatibility"],
+  },
+  {
+    id: "legacy-sidebar",
+    title: "Sidebar (legacy)",
+    to: "/settings/general",
+    searchTerms: ["project thread tree old flat list"],
+  },
+  {
+    id: "auto-settle-merged-threads",
+    title: "Auto-settle merged threads",
+    to: "/settings/general",
+    searchTerms: ["pull request merge closed automatically sidebar"],
+    requiresThreadAutoSettlement: true,
+  },
+  {
+    id: "auto-settle-inactive-threads",
+    title: "Auto-settle inactive threads",
+    to: "/settings/general",
+    searchTerms: ["sidebar inactivity days no activity automatically"],
+    requiresThreadAutoSettlement: true,
+  },
+  {
+    id: "days-before-auto-settle",
+    title: "Days of inactivity before auto-settle",
+    to: "/settings/general",
+    targetId: "auto-settle-inactive-threads",
+    searchTerms: ["thread timeout activity sidebar"],
+    requiresThreadAutoSettlement: true,
+  },
+  {
+    id: "diff-layout",
+    title: "Diff layout",
+    to: "/settings/general",
+    searchTerms: ["stacked split side by side unified inline view"],
+  },
+  {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    to: "/settings/general",
+    searchTerms: ["automatically open diff pull request pr right panel agent completion"],
+  },
+  {
+    id: "composer-collapse",
+    title: "Collapse composer on scroll",
+    to: "/settings/general",
+    searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
+  },
+  {
+    id: "unpin-confirmation",
+    title: "Unpin confirmation",
+    to: "/settings/general",
+    searchTerms: ["ask before thread pinned section"],
+  },
+  {
+    id: "quit-confirmation",
+    title: "Quit shortcut",
+    to: "/settings/general",
+    searchTerms: ["confirmation desktop app exit direct hold double click press twice"],
+    desktopOnly: true,
+  },
   {
     id: "project-defaults",
     title: "Project defaults and overrides",
@@ -86,6 +167,17 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Glass opacity",
     to: "/settings/appearance",
     searchTerms: ["transparent transparency solid menus dialogs composer"],
+  },
+  {
+    id: "diff-color-scheme",
+    title: "Diff colors",
+    to: "/settings/appearance",
+    searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
+  },
+  {
+    id: "panel-animations",
+    title: "Panel animations",
+    to: "/settings/appearance",
   },
   {
     id: "environment-identification",
@@ -315,6 +407,45 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
   },
   {
+    id: "snap-shot-enabled",
+    title: "SnapShots",
+    searchTerms: ["window capture screenshot"],
+    to: "/settings/snap-shot",
+  },
+  {
+    id: "snap-shot-accessibility",
+    title: "Include app text",
+    to: "/settings/snap-shot",
+    targetId: "snap-shot-enabled",
+    searchTerms: [
+      "capture accessibility data text UI structure elements privacy omit agent context",
+    ],
+  },
+  {
+    id: "snap-shot-shortcut",
+    title: "Capture shortcut",
+    to: "/settings/snap-shot",
+    targetId: "snap-shot-enabled",
+  },
+  {
+    id: "snap-shot-sound",
+    title: "Capture sound",
+    to: "/settings/snap-shot",
+    targetId: "snap-shot-enabled",
+  },
+  {
+    id: "snap-shot-flash",
+    title: "Capture flash",
+    to: "/settings/snap-shot",
+    targetId: "snap-shot-enabled",
+  },
+  {
+    id: "snap-shot-animations",
+    title: "Capture animations",
+    to: "/settings/snap-shot",
+    targetId: "snap-shot-enabled",
+  },
+  {
     id: "providers",
     title: "Providers",
     to: "/settings/providers",
@@ -344,44 +475,78 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow open drive preview tools sessions"],
   },
   {
+    id: "device-hosts",
+    title: "Device hosts",
+    to: "/settings/integrations",
+    searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+  },
+  {
+    id: "agent-device-access",
+    title: "Agent device access",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["allow simulator emulator ios android drive tools sessions"],
+  },
+  {
+    id: "device-hub",
+    title: "Device hub",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["simulator emulator ios android install start"],
+  },
+  {
+    id: "device-platform-support",
+    title: "Simulator support",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["xcode android studio sdk avd runtime"],
+  },
+  {
+    id: "browser-profiles",
+    title: "Browser profiles",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-profile",
+    title: "Default browser profile",
+    to: "/settings/integrations",
+    targetId: "browser-profiles",
+  },
+  {
     id: "browser-default-viewport",
     title: "Default browser viewport",
-    to: "/settings/general",
+    to: "/settings/integrations",
     searchTerms: ["preview size width height device desktop mobile rotate"],
   },
   {
     id: "browser-default-zoom",
     title: "Default browser zoom",
-    to: "/settings/general",
+    to: "/settings/integrations",
     searchTerms: ["preview page scale tabs percent"],
   },
   {
     id: "browser-default-appearance",
     title: "Default browser appearance",
-    to: "/settings/general",
+    to: "/settings/integrations",
     searchTerms: ["preview color scheme light dark system os"],
   },
   {
     id: "browser-recording-frame-rate",
     title: "Browser recording frame rate",
-    to: "/settings/general",
+    to: "/settings/integrations",
   },
   {
     id: "browser-link-target",
     title: "Open browser links in",
-    to: "/settings/general",
+    to: "/settings/integrations",
     searchTerms: ["links default browser in-app browser external open"],
   },
   {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
-    to: "/settings/general",
+    to: "/settings/integrations",
     searchTerms: ["agent opens browser pop into view hide"],
-  },
-  {
-    id: "browser-profiles",
-    title: "Browser profiles",
-    to: "/settings/general",
   },
   {
     id: "source-control",
@@ -417,11 +582,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Contrast",
     to: "/settings/appearance",
     searchTerms: ["colors borders interface"],
-  },
-  {
-    id: "panel-animations",
-    title: "Panel animations",
-    to: "/settings/appearance",
   },
   {
     id: "git-fetch-interval",

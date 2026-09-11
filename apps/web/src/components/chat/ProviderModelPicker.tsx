@@ -17,7 +17,11 @@ import {
   getTriggerDisplayModelName,
 } from "./providerIconUtils";
 import type { ProviderInstanceEntry } from "../../providerInstances";
-import { ComposerControl, ComposerControlChevron } from "./ComposerControl";
+import {
+  type ComposerControlSize,
+  ComposerControl,
+  ComposerControlChevron,
+} from "./ComposerControl";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -34,6 +38,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   activeProviderIconClassName?: string;
   compact?: boolean;
+  instanceIndicatorBackground?: string;
+  size?: ComposerControlSize;
+  isComposerOwned?: boolean;
   disabled?: boolean;
   terminalOpen?: boolean;
   open?: boolean;
@@ -157,8 +164,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             variant={props.triggerVariant ?? "ghost"}
             data-chat-provider-model-picker="true"
             className={cn(
-              "min-w-0 justify-between whitespace-nowrap",
-              props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56",
+              "min-w-0 shrink justify-between whitespace-nowrap",
+              !props.isComposerOwned && "max-w-48 sm:max-w-56",
               props.triggerClassName,
             )}
             disabled={props.disabled}

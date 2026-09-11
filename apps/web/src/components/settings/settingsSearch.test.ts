@@ -83,6 +83,7 @@ describe("searchSettings", () => {
 
   it("lists thread confirmations in panel order", () => {
     expect(searchSettings("confirmation").map((item) => item.id)).toEqual([
+      "unpin-confirmation",
       "archive-confirmation",
       "delete-confirmation",
     ]);
@@ -106,10 +107,10 @@ describe("searchSettings", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("does not offer controls absent from the local d4 settings panels", () => {
+  it("includes restored local controls without advertising hosted-only features", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => String(item.id));
-    expect(ids).not.toContain("composer-collapse");
-    expect(ids).not.toContain("legacy-plan-mode");
+    expect(ids).toContain("composer-collapse");
+    expect(ids).toContain("legacy-plan-mode");
     expect(searchSettings("push notifications")).toEqual([]);
     expect(searchSettings("handoff")[0]?.id).toBe("handoff");
     expect(searchSettings("tool guard")[0]?.to).toBe("/settings/tool-guard");
@@ -133,6 +134,52 @@ describe("searchSettings", () => {
       id: "environment-identification",
       to: "/settings/appearance",
       targetId: "appearance",
+    });
+  });
+
+  it("routes conditional window capture settings to the stable toggle row", () => {
+    const targets = [
+      "capture accessibility data",
+      "capture shortcut",
+      "capture sound",
+      "capture flash",
+      "capture animations",
+    ].map((query) => {
+      const match = searchSettings(query)[0];
+      return [match?.id, match?.targetId];
+    });
+
+    expect(targets).toEqual([
+      ["snap-shot-accessibility", "snap-shot-enabled"],
+      ["snap-shot-shortcut", "snap-shot-enabled"],
+      ["snap-shot-sound", "snap-shot-enabled"],
+      ["snap-shot-flash", "snap-shot-enabled"],
+      ["snap-shot-animations", "snap-shot-enabled"],
+    ]);
+  });
+
+  it("routes browser recording quality to integrations", () => {
+    const result = searchSettings("recording frame rate")[0];
+    expect(result).toMatchObject({
+      id: "browser-recording-frame-rate",
+      to: "/settings/integrations",
+    });
+    expect(result).not.toHaveProperty("targetId");
+  });
+
+  it("routes where links open to integrations", () => {
+    expect(searchSettings("open links in")[0]).toMatchObject({
+      id: "browser-link-target",
+      to: "/settings/integrations",
+    });
+    expect(searchSettings("external links")[0]).toMatchObject({ id: "browser-link-target" });
+  });
+
+  it("finds the default browser profile action in the profiles list", () => {
+    expect(searchSettings("default profile")[0]).toMatchObject({
+      id: "browser-default-profile",
+      to: "/settings/integrations",
+      targetId: "browser-profiles",
     });
   });
 });

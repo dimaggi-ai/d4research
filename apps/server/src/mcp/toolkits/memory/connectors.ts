@@ -4,7 +4,7 @@ import { HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "eff
 
 export type MemoryConnector = "local";
 
-export class MemoryConnectorError extends Schema.TaggedErrorClass<MemoryConnectorError>()(
+export class MemoryConnectorError extends Schema.TaggedError<MemoryConnectorError>()(
   "MemoryConnectorError",
   {
     connector: Schema.Literal("local"),

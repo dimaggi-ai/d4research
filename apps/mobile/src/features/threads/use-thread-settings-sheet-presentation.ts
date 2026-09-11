@@ -71,7 +71,6 @@ export function useThreadSettingsSheetPresentation(input: {
     shouldRestoreAfterDismissRef.current = false;
     restoreFocusOnSaveRef.current = false;
     isActiveRef.current = false;
-    setPhase("closed");
 
     if (shouldRestoreFocus) {
       input.editorRef.current?.focus();

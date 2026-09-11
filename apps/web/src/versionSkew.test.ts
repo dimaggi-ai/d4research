@@ -2,18 +2,72 @@ import { EnvironmentId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { APP_VERSION } from "./branding";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 import {
   appendVersionMismatchHint,
   buildVersionMismatchDismissalKey,
   dismissVersionMismatch,
+  dismissServerUpdateFailure,
+  isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
   serverUpdateGuidance,
+  supportsDesktopAppUpdate,
+  supportsServerUpdateThreadContinuation,
 } from "./versionSkew";
 
 describe("versionSkew", () => {
+  it.each([undefined, false, true])("requires advertised update capabilities (%s)", (enabled) => {
+    const config = {
+      environment: {
+        environmentId: EnvironmentId.make("environment-update"),
+        label: "Desktop",
+        platform: { os: "darwin", arch: "arm64" },
+        serverVersion: APP_VERSION,
+        capabilities: {
+          repositoryIdentity: true,
+          ...(enabled === undefined
+            ? {}
+            : {
+                desktopAppUpdate: enabled,
+                serverUpdateThreadContinuation: enabled,
+              }),
+        },
+      },
+    } as const;
+    expect(supportsDesktopAppUpdate(config)).toBe(enabled === true);
+    expect(supportsServerUpdateThreadContinuation(config)).toBe(enabled === true);
+    expect(supportsDesktopAppUpdate(null)).toBe(false);
+    expect(supportsServerUpdateThreadContinuation(null)).toBe(false);
+  });
+
+  it("dismisses one failed attempt without hiding retries or another environment", () => {
+    const failure = {
+      status: "failed",
+      stage: "downloading",
+      fromVersion: "0.1.0",
+      targetVersion: "0.2.0",
+      message: "Download failed.",
+    } as const satisfies ServerUpdateState;
+    dismissServerUpdateFailure(failure);
+    expect(isServerUpdateFailureDismissed(failure)).toBe(true);
+    expect(failure.message).toBe("Download failed.");
+    expect(isServerUpdateFailureDismissed({ ...failure })).toBe(false);
+  });
+
+  it("cannot dismiss an update still in progress", () => {
+    const running = {
+      status: "running",
+      stage: "resuming",
+      fromVersion: "0.1.0",
+      targetVersion: "0.2.0",
+    } as const satisfies ServerUpdateState;
+    dismissServerUpdateFailure(running);
+    expect(isServerUpdateFailureDismissed(running)).toBe(false);
+  });
+
   it("does not warn when versions match", () => {
     expect(resolveVersionMismatch(APP_VERSION)).toBeNull();
   });

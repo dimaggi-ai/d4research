@@ -4,6 +4,7 @@ import type {
   ServerSelfUpdateCapability,
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
@@ -15,6 +16,17 @@ export interface VersionMismatch {
 }
 
 const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
+
+// Dismiss one failed attempt without hiding a retry or clearing Settings errors.
+const dismissedServerUpdateFailures = new WeakSet<ServerUpdateState>();
+
+export function isServerUpdateFailureDismissed(state: ServerUpdateState): boolean {
+  return state.status === "failed" && dismissedServerUpdateFailures.has(state);
+}
+
+export function dismissServerUpdateFailure(state: ServerUpdateState): void {
+  if (state.status === "failed") dismissedServerUpdateFailures.add(state);
+}
 
 const VersionMismatchDismissalsSchema = Schema.Struct({
   keys: Schema.Array(Schema.String),
@@ -59,6 +71,18 @@ export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): ServerSelfUpdateCapability | null {
   return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
+}
+
+export function supportsDesktopAppUpdate(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.desktopAppUpdate === true;
+}
+
+export function supportsServerUpdateThreadContinuation(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
 }
 
 /** The command to hand users whose server cannot update itself. */

@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off
+// Standalone Node asset-export CLI.
 import * as NodeCrypto from "node:crypto";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -115,7 +117,9 @@ async function exportD4Icons() {
     new URL(manifestPath, root),
     `${JSON.stringify({ source: digest(source), outputs }, null, 2)}\n`,
   );
-  console.log(`Generated ${Object.keys(outputs).length} d4 icon assets from ${sourcePath}`);
+  process.stdout.write(
+    `Generated ${Object.keys(outputs).length} d4 icon assets from ${sourcePath}\n`,
+  );
 }
 
 if (process.argv[1] === NodeURL.fileURLToPath(import.meta.url)) {

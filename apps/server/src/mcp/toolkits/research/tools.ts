@@ -29,7 +29,7 @@ export const ResearchDelegateFailureKind = Schema.Literals([
 ]);
 export type ResearchDelegateFailureKind = typeof ResearchDelegateFailureKind.Type;
 
-export class ResearchDelegateError extends Schema.TaggedErrorClass<ResearchDelegateError>()(
+export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateError>()(
   "ResearchDelegateError",
   {
     detail: Schema.String,

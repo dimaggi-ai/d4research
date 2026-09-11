@@ -98,6 +98,7 @@ export class CheckpointStore extends Context.Service<
   }
 >()("d4research/checkpointing/CheckpointStore") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
 

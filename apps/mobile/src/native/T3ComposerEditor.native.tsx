@@ -18,7 +18,8 @@ import { resolveMarkdownFileIcon } from "@d4research/mobile-markdown-text/links"
 import { MOBILE_TYPOGRAPHY } from "../lib/typography";
 import { useNativePaste } from "../lib/useNativePaste";
 import { useFontFamily } from "../lib/useFontFamily";
-import { useThemeColor } from "../lib/useThemeColor";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 import {
   acknowledgeComposerNativeEvent,
   isComposerNativeEcho,
@@ -101,6 +102,7 @@ export function ComposerEditor({
   ...props
 }: ComposerEditorProps) {
   const nativeRef = useRef<NativeComposerEditorRef>(null);
+  const theme = useUniwindTheme();
   const mostRecentEventCountRef = useRef(0);
   const [mostRecentEventCount, setMostRecentEventCount] = useState(0);
   const [nativeEventSequence, setNativeEventSequence] = useState(0);
@@ -110,15 +112,6 @@ export function ComposerEditor({
   ]);
   const [initialConfirmedTokens] = useState(() => collectComposerInlineTokens(props.value));
   const confirmedTokensRef = useRef(initialConfirmedTokens);
-  const textColor = useThemeColor("--color-foreground");
-  const placeholderColor = useThemeColor("--color-placeholder");
-  const chipBackground = useThemeColor("--color-subtle");
-  const chipBorder = useThemeColor("--color-border");
-  const chipText = useThemeColor("--color-foreground");
-  const skillBackground = useThemeColor("--color-inline-skill-background");
-  const skillBorder = useThemeColor("--color-inline-skill-border");
-  const skillText = useThemeColor("--color-inline-skill-foreground");
-  const fileTint = useThemeColor("--color-icon-muted");
   const handlePaste = useNativePaste((uris) => onPasteImages?.(uris));
 
   useImperativeHandle(
@@ -210,16 +203,18 @@ export function ComposerEditor({
     },
     [],
   );
+  const { systemColorsActive } = useAppearancePreferences();
   const themeJson = JSON.stringify({
-    text: String(textColor),
-    placeholder: String(placeholderColor),
-    chipBackground: String(chipBackground),
-    chipBorder: String(chipBorder),
-    chipText: String(chipText),
-    skillBackground: String(skillBackground),
-    skillBorder: String(skillBorder),
-    skillText: String(skillText),
-    fileTint: String(fileTint),
+    selection: systemColorsActive ? theme["--color-primary"] : null,
+    text: theme["--color-foreground"],
+    placeholder: theme["--color-placeholder"],
+    chipBackground: theme["--color-subtle"],
+    chipBorder: theme["--color-border"],
+    chipText: theme["--color-foreground"],
+    skillBackground: theme["--color-inline-skill-background"],
+    skillBorder: theme["--color-inline-skill-border"],
+    skillText: theme["--color-inline-skill-foreground"],
+    fileTint: theme["--color-icon-muted"],
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   const regularFontFamily = useFontFamily("regular");

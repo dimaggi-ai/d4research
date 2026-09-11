@@ -1,4 +1,5 @@
-import { EnvironmentId } from "@d4research/contracts";
+import { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -41,6 +42,7 @@ function server(port: number) {
 function render(recentEntries: Array<{ url: string; lastVisitedAt: number; title?: string }>) {
   return renderToStaticMarkup(
     <PreviewEmptyState
+      threadRef={scopeThreadRef(environmentId, ThreadId.make("preview-test"))}
       environmentId={environmentId}
       recentEntries={recentEntries}
       onRemoveRecent={() => undefined}

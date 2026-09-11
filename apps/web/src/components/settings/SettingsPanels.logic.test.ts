@@ -15,7 +15,44 @@ import {
   isProjectGroupingEnabled,
   projectGroupingModeFromToggle,
   resolveBackgroundActivityProfileOption,
+  getChangedTypographySettingLabels,
+  getChangedBrowserSettingLabels,
 } from "./SettingsPanels.logic";
+
+describe("restore-defaults change labels", () => {
+  it.each([
+    ["fontSizeInterface", "Interface font"],
+    ["fontSizePrompt", "Prompt font"],
+    ["fontSizeCode", "Code font"],
+    ["fontSizeTerminal", "Terminal font"],
+  ] as const)("detects a size-only change to %s", (key, label) => {
+    expect(
+      getChangedTypographySettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        [key]: (DEFAULT_UNIFIED_SETTINGS[key] ?? 14) + 1,
+      }),
+    ).toEqual([label]);
+  });
+
+  it("does not flag an equivalent browser viewport copy", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { ...DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport },
+      }),
+    ).toEqual([]);
+  });
+
+  it("detects a browser-only preference change", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultZoomFactor:
+          DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor === 1.25 ? 1.5 : 1.25,
+      }),
+    ).toEqual(["Browser zoom"]);
+  });
+});
 
 describe("background activity settings restore", () => {
   it("detects legacy interval values even when the structured setting is at its default", () => {

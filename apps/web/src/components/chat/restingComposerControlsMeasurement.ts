@@ -66,15 +66,26 @@ export function measureRestingComposerControls(
   const separatorWidth = separator ? elementOuterWidth(separator) : 0;
   const overflow = controls.querySelector<HTMLElement>("[data-resting-controls-overflow]");
   const separatorAndGapWidth = separatorWidth > 0 ? separatorWidth + gap : 0;
+  // d4's session skills and pipeline controls stay together rather than
+  // moving individual actions into upstream's traits overflow. Reserve their
+  // full width in both layouts so context labels cannot reclaim their space.
+  const fixedControlsWidth = Array.from(
+    controls.querySelectorAll<HTMLElement>("[data-resting-fixed-control]"),
+  ).reduce((total, element) => {
+    const width = elementOuterWidth(element);
+    return total + (width > 0 ? width + gap : 0);
+  }, 0);
   const blocks = Array.from(controls.querySelectorAll<HTMLElement>("[data-resting-block]"));
   return {
     gap,
     naturalFixedWidth:
       (picker ? providerModelPickerNaturalWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      separatorAndGapWidth +
+      fixedControlsWidth,
     minimumFixedWidth:
       (picker ? providerModelPickerMinimumWidth(picker) : elementOuterWidth(leadingControl)) +
-      separatorAndGapWidth,
+      separatorAndGapWidth +
+      fixedControlsWidth,
     blockWidths: blocks.map(elementOuterWidth),
     overflowWidth: overflow ? elementOuterWidth(overflow) : 0,
   };

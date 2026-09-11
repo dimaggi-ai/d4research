@@ -8,7 +8,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --passWithNoTests --project unit",
     "test:e2e": "node e2e/ui.e2e.mjs",
     "test:regressions": "node e2e/ui-regressions.e2e.mjs"

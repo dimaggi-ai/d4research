@@ -1,13 +1,14 @@
-import { useCSSVariable } from "uniwind";
-import defaultThemeVariables from "../../generated-uniwind-default-theme-variables.json";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import type { MobileThemeVariables } from "./mobileTheme";
 
-const variableNames = Object.keys(defaultThemeVariables.light);
-
-/** Reads the active CSS palette, including d4's current native theme overrides. */
+/**
+ * Complete JS palette for native and third-party APIs that cannot consume a
+ * Uniwind className (React Navigation, native editors, Markdown, SVG gradients,
+ * Reanimated worklets). Ordinary React Native rendering must use className.
+ *
+ * This bridge follows the same single React theme commit as the root
+ * ScopedTheme instead of subscribing every consumer to CSS-variable updates.
+ */
 export function useUniwindTheme(): MobileThemeVariables {
-  const values = useCSSVariable(variableNames);
-  return Object.fromEntries(
-    variableNames.map((name, index) => [name, String(values[index] ?? "")]),
-  );
+  return useAppearancePreferences().themeVariables;
 }

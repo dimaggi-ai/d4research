@@ -6,8 +6,8 @@ This document covers the unified release workflow for stable and nightly desktop
 
 ## Publication is opt-in for this fork
 
-The d4research release line stays isolated from upstream's distribution channels, though it uses
-upstream's inherited CLI package name. Every outward-facing job (npm publish, GitHub Release
+The d4research release line stays isolated from upstream's distribution channels and publishes
+under the `d4research` CLI package name. Every outward-facing job (npm publish, GitHub Release
 publication, the version-alignment commit to `main`, and the Discord announcement) is gated behind
 the repository variable `RELEASE_PUBLISH_ENABLED`.
 
@@ -71,7 +71,7 @@ independent from the shared Release App installation.
 ## Server self-update release invariant
 
 Connected servers update to the client's exact version, not to an npm dist-tag. Every released
-desktop or hosted client version must therefore have a matching `d4research@<version>` package available on
+desktop or separately served web client version must therefore have a matching `d4research@<version>` package available on
 npm before users can receive that client.
 
 The workflow enforces this ordering:
@@ -111,6 +111,49 @@ desktop-managed guidance when those environments are available.
   - `electron-updater` reads `latest-mac.yml` on stable and `nightly-mac.yml` on nightly, for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one channel-specific mac manifest before publishing the GitHub Release.
 
+### Windows payload topology and update validation
+
+Windows packages the bundled server and only its runtime-external/native
+dependency closure in `resources/server.asar`. Native modules and helper
+executables declared as unpacked by that archive must be present at the matching
+paths below `resources/server.asar.unpacked`. The Windows-native backend reads
+the archive in place through Electron. Packaged Windows builds also ship a
+Linux-only `resources/wsl-runtime.tar.gz` plus its SHA-256 sidecar. WSL verifies
+and extracts that archive into `~/.t3/wsl-runtime/sha256-<archive-digest>` inside
+the selected distro, then reuses it for later launches of the same update. The
+Windows-side `wsl-server-tree/<version>` extraction remains a fallback and is
+removed after the distro-local runtime passes preflight.
+
+Windows keeps JavaScript and package metadata inside `app.asar` and unpacks only
+native libraries and helper executables. Avoid enabling whole-package smart
+unpacking: each loose file adds work to NSIS installation and counts against
+the payload limit.
+
+The artifact builder rejects a Windows package when any of these invariants
+break:
+
+- `resources/server.asar` is absent or does not contain the server entry.
+- Any file marked unpacked in the ASAR header is absent from
+  `resources/server.asar.unpacked`.
+- On same-architecture Windows builds, the packaged primary cannot load the fff
+  native library from inside `server.asar` through its `.unpacked` sibling.
+- The isolated, extracted sidecar cannot load the server entry with plain Node.
+- A Windows build with a WSL node-pty prebuild omits the WSL archive or SHA-256
+  sidecar, the sidecar digest does not match the emitted archive, or required
+  Linux runtime members are absent.
+- The emitted WSL archive contains Windows/Darwin node-pty payloads, ConPTY,
+  pnpm install metadata, or Windows-only FFF, ffi-rs, or msgpackr bindings.
+- The external Windows resource monitor is absent.
+- The unpacked Windows application contains more than 80 files.
+
+Cross-architecture Windows builds retain every structural and extracted-sidecar
+check, but skip executing the target Electron binary. A same-architecture build
+for each release target must exercise the primary native-load probe.
+
+NSIS differential packaging remains enabled. A sidecar layout transition can
+produce a larger one-time download; subsequent small releases retain their
+blockmaps, with a 60 MB maximum for a representative sidecar-to-sidecar update.
+
 ## 0) npm OIDC trusted publishing setup (CLI)
 
 The workflow runs `node apps/server/scripts/cli.ts publish` after aligning package versions. That
@@ -135,19 +178,20 @@ Checklist:
 
 ## 1) Release validation and unsigned builds
 
-There is no dry-run tag path. Pushing any accepted non-nightly tag, including
+With `RELEASE_PUBLISH_ENABLED=true`, there is no dry-run tag path. Pushing any accepted non-nightly tag, including
 `v0.0.0-test.1`, classifies the run as the stable channel. It publishes `d4research` with npm dist-tag
 `latest`, creates a real GitHub Release, and can commit a version bump to `main` in the finalize
 job. Do not push a test tag
 to validate the workflow.
 
-The workflow has no non-publishing `workflow_dispatch` mode. Use normal CI or local quality gates to
+Publication is disabled while `RELEASE_PUBLISH_ENABLED` is unset. Once it is enabled, the workflow
+has no per-run non-publishing `workflow_dispatch` mode. Use normal CI or local quality gates to
 validate checks and builds without shipping. To exercise the complete release graph at lower stable
 risk, manually dispatch `channel=nightly`; this still publishes a real nightly npm package, GitHub
 prerelease, and desktop updater release, but it does not update the stable channel or commit a
 version bump to `main`. Only run it when a real nightly release is acceptable.
 
-Manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
+With publication enabled, manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
 secrets only makes platform artifacts unsigned; it does not prevent publication.
 
 ## 2) Apple signing + notarization setup (macOS)

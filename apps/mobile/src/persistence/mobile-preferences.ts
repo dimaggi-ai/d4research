@@ -6,6 +6,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { SidebarProjectGroupingMode } from "@d4research/contracts";
+import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
@@ -19,6 +20,11 @@ export interface Preferences {
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListSettledShelfExpanded?: boolean;
   readonly liveActivitiesEnabled?: boolean;
+  readonly themeId?: MobileThemeId;
+  readonly lightThemeId?: MobileThemeId;
+  readonly darkThemeId?: MobileThemeId;
+  readonly themeMode?: MobileThemeMode;
+  readonly materialYouStyleLayoutEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
   readonly markdownFontSize?: number;
@@ -38,7 +44,7 @@ export interface Preferences {
   readonly legacyThreadListEnabled?: boolean;
 }
 
-export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
+export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
   "MobilePreferencesLoadError",
   { cause: Schema.Defect() },
 ) {
@@ -47,7 +53,7 @@ export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePr
   }
 }
 
-export class MobilePreferencesSaveError extends Schema.TaggedErrorClass<MobilePreferencesSaveError>()(
+export class MobilePreferencesSaveError extends Schema.TaggedError<MobilePreferencesSaveError>()(
   "MobilePreferencesSaveError",
   { cause: Schema.Defect() },
 ) {
@@ -81,6 +87,11 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSnoozedShelfExpanded?: boolean;
     threadListSettledShelfExpanded?: boolean;
     liveActivitiesEnabled?: boolean;
+    themeId?: MobileThemeId;
+    lightThemeId?: MobileThemeId;
+    darkThemeId?: MobileThemeId;
+    themeMode?: MobileThemeMode;
+    materialYouStyleLayoutEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
     markdownFontSize?: number;
@@ -101,6 +112,34 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
+  }
+  if (
+    typeof parsed.themeId === "string" &&
+    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.themeId)
+  ) {
+    preferences.themeId = parsed.themeId as MobileThemeId;
+  }
+  if (
+    typeof parsed.lightThemeId === "string" &&
+    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.lightThemeId)
+  ) {
+    preferences.lightThemeId = parsed.lightThemeId as MobileThemeId;
+  }
+  if (
+    typeof parsed.darkThemeId === "string" &&
+    (MOBILE_THEME_IDS as readonly string[]).includes(parsed.darkThemeId)
+  ) {
+    preferences.darkThemeId = parsed.darkThemeId as MobileThemeId;
+  }
+  if (
+    parsed.themeMode === "system" ||
+    parsed.themeMode === "light" ||
+    parsed.themeMode === "dark"
+  ) {
+    preferences.themeMode = parsed.themeMode;
+  }
+  if (typeof parsed.materialYouStyleLayoutEnabled === "boolean") {
+    preferences.materialYouStyleLayoutEnabled = parsed.materialYouStyleLayoutEnabled;
   }
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {

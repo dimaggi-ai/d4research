@@ -6,7 +6,13 @@ import {
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 
-function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?: string }) {
+function measurePicker(input: {
+  clientWidth: number;
+  flexGrow: string;
+  maxWidth?: string;
+  fixedControlWidth?: number;
+  blockWidth?: number;
+}) {
   const label = { clientWidth: input.clientWidth, scrollWidth: 160 };
   const picker = {
     getBoundingClientRect: () => ({ width: 52 }),
@@ -20,7 +26,16 @@ function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?
       }
       return null;
     },
-    querySelectorAll: () => [{ getBoundingClientRect: () => ({ width: 140 }) }],
+    querySelectorAll: (selector: string) => {
+      if (selector === "[data-resting-fixed-control]") {
+        return input.fixedControlWidth
+          ? [{ getBoundingClientRect: () => ({ width: input.fixedControlWidth }) }]
+          : [];
+      }
+      return input.blockWidth === 0
+        ? []
+        : [{ getBoundingClientRect: () => ({ width: input.blockWidth ?? 140 }) }];
+    },
   };
   vi.stubGlobal("getComputedStyle", (element: unknown) => {
     if (element === label) return { flexGrow: input.flexGrow };
@@ -33,6 +48,26 @@ function measurePicker(input: { clientWidth: number; flexGrow: string; maxWidth?
 afterEach(() => vi.unstubAllGlobals());
 
 describe("measureRestingComposerControls", () => {
+  it("reserves d4 controls when deciding both label space and collapsed visibility", () => {
+    const measurement = measurePicker({
+      clientWidth: 0,
+      flexGrow: "0",
+      fixedControlWidth: 120,
+      blockWidth: 0,
+    });
+
+    expect(measurement.minimumFixedWidth).toBe(176);
+    expect(resolveRestingComposerControlsNaturalWidth(measurement)).toBe(176);
+    const hidden = resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 160 });
+    expect(hidden).toEqual({ hiddenCount: 0, visible: false });
+    expect(
+      resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 160, previous: hidden }),
+    ).toEqual(hidden);
+    expect(
+      resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200, previous: hidden }),
+    ).toEqual({ hiddenCount: 0, visible: true });
+  });
+
   it("keeps controls inline when the model label is deliberately collapsed", () => {
     const measurement = measurePicker({ clientWidth: 0, flexGrow: "0" });
 

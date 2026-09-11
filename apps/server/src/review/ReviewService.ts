@@ -31,6 +31,7 @@ export class ReviewService extends Context.Service<
   }
 >()("d4research/review/ReviewService") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;

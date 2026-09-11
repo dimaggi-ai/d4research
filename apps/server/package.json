@@ -18,7 +18,7 @@
     "dev": "node --watch src/bin.ts",
     "build:bundle": "node scripts/prepare-server-dist.ts && vp pack --no-clean && vp pack src/service-launcher.ts --out-dir dist --no-clean && node scripts/copy-tool-guard-assets.ts",
     "start": "node dist/bin.mjs",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run",
     "qa:provider:junie": "T3_JUNIE_ACP_PROBE=1 vp test run src/provider/acp/JunieAcpCliProbe.test.ts --reporter=verbose"
   },
@@ -40,6 +40,7 @@
   "devDependencies": {
     "@d4research/contracts": "workspace:*",
     "@d4research/shared": "workspace:*",
+    "@d4research/ssh": "workspace:*",
     "@d4research/tailscale": "workspace:*",
     "@d4research/web": "workspace:*",
     "@effect/vitest": "catalog:",

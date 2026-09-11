@@ -1,3 +1,4 @@
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { EnvironmentId, SidebarThreadSortOrder } from "@d4research/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import Constants from "expo-constants";
@@ -66,6 +67,7 @@ function checkedMenuState(checked: boolean) {
 }
 
 function AndroidHomeHeader(props: HomeHeaderProps) {
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const insets = useSafeAreaInsets();
   const iconColor = useThemeColor("--color-icon");
   const mutedColor = useThemeColor("--color-foreground-muted");
@@ -201,7 +203,11 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     <>
       <NativeStackScreenOptions options={{ headerShown: false }} />
       <View
-        className="border-b border-header-border bg-header pb-3"
+        className={
+          materialYouStyleLayoutActive
+            ? "bg-header pb-3"
+            : "border-b border-header-border bg-header pb-3"
+        }
         style={{
           paddingHorizontal: HOME_HORIZONTAL_INSET,
           paddingTop: Math.max(insets.top, 12),
@@ -266,8 +272,19 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
             </Pressable>
           </View>
 
-          <View className="min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5">
-            <SymbolView name="magnifyingglass" size={17} tintColor={mutedColor} type="monochrome" />
+          <View
+            className={
+              materialYouStyleLayoutActive
+                ? "min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
+                : "min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5"
+            }
+          >
+            <SymbolView
+              name="magnifyingglass"
+              size={17}
+              tintColorClassName={"accent-foreground-muted"}
+              type="monochrome"
+            />
             <TextInput
               accessibilityLabel="Search threads"
               autoCapitalize="none"

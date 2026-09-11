@@ -28,9 +28,14 @@ export function nextPendingReviewCommentId(): string {
   return `pending-review-comment-${pendingCommentSequence}`;
 }
 
-/** One pull request's draft, scoped by project as well as repository: a repository can be checked out twice. */
+/** A project's thread can review the same repository path and number on different hosts. */
 export function pullRequestReviewKey(reference: PullRequestRef): string {
-  return `${reference.projectId}/${reference.repository}#${reference.number}`;
+  return JSON.stringify([
+    reference.projectId,
+    reference.host?.toLowerCase() ?? null,
+    reference.repository.toLowerCase(),
+    reference.number,
+  ]);
 }
 
 interface PullRequestReviewStoreState {
@@ -85,11 +90,9 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
 }));
 
 /** The comments a pull request's draft holds, stable across renders while it is empty. */
-export function usePendingReviewComments(reference: {
-  readonly projectId: ProjectId;
-  readonly repository: string;
-  readonly number: number;
-}): ReadonlyArray<PendingReviewComment> {
+export function usePendingReviewComments(
+  reference: PullRequestRef,
+): ReadonlyArray<PendingReviewComment> {
   return usePullRequestReviewStore(
     (store) => store.drafts[pullRequestReviewKey(reference)] ?? EMPTY,
   );

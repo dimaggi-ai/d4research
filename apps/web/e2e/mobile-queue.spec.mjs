@@ -163,6 +163,29 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
     );
     NodeAssert.equal(await send.isEnabled(), true);
     await stop.waitFor();
+    const header = page.locator("[data-chat-header]");
+    const actions = await header.locator("[data-chat-header-actions]").boundingBox();
+    const panelControls = await header.locator("[data-workspace-titlebar-controls]").boundingBox();
+    NodeAssert.ok(
+      actions &&
+        panelControls &&
+        actions.x >= 0 &&
+        actions.x + actions.width <= panelControls.x &&
+        panelControls.x + panelControls.width <= width,
+      `Header actions must fit before panel controls without overlap at ${width}px`,
+    );
+    const initializeGit = header.getByRole("button", { name: "Initialize Git", exact: true });
+    await initializeGit.waitFor({ state: "visible", timeout: 5000 });
+    NodeAssert.equal(
+      await initializeGit.evaluate((button) => {
+        const rect = button.getBoundingClientRect();
+        return button.contains(
+          document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+        );
+      }),
+      true,
+      "The compact Git action must stay named and unobstructed",
+    );
     await page.screenshot({
       path: NodePath.join(screenshotDir, `mobile-queue-actions-${width}.png`),
       timeout: 10000,

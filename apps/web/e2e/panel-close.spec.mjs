@@ -13,6 +13,11 @@ export async function panelCloseReachability({ page, webUrl, screenshotDir }) {
       await header.waitFor({ state: "visible" });
       const close = header.getByRole("button", { name: "Toggle right panel", exact: true });
       await close.waitFor({ state: "visible", timeout: 5000 });
+      NodeAssert.equal(
+        await right.count(),
+        1,
+        `An open panel must have one visible toggle, without a duplicate in the chat at width ${width}`,
+      );
       const box = await close.boundingBox();
       NodeAssert.ok(
         box && box.y >= 0 && box.y + box.height <= 52 && box.x + box.width <= width,

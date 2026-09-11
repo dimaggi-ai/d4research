@@ -1,5 +1,4 @@
 import type { MenuAction, MenuComponentProps } from "@react-native-menu/menu";
-import { BlurView } from "expo-blur";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -8,11 +7,12 @@ import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 import { appBlurTargetRef } from "../lib/appBlurTarget";
-import { useThemeColor } from "../lib/useThemeColor";
 import { cn } from "../lib/cn";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { type AppSymbolName, SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
+import { GlassBackdrop } from "./GlassBackdrop";
 
 const MENU_WIDTH = 250;
 const SCREEN_MARGIN = 12;
@@ -79,13 +79,13 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const anchorRef = useRef<View>(null);
   const overlayRef = useRef<View>(null);
 
-  const isDarkMode = useColorScheme() === "dark";
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboardHeight = useKeyboardState((state) => state.height);
-  const rippleColor = useThemeColor("--color-subtle");
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const dangerColor = useThemeColor("--color-danger-foreground");
+  const theme = useUniwindTheme();
+  const rippleColor = theme["--color-subtle"];
+  const iconColor = theme["--color-icon"];
+  const iconSubtleColor = theme["--color-icon-subtle"];
+  const dangerColor = theme["--color-danger-foreground"];
 
   const close = useCallback(() => {
     setAnchor(null);
@@ -231,16 +231,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
                 }}
               >
-                {/* Frosted backdrop: blur of the app content behind the menu,
-                  washed with the translucent card tone so rows keep contrast. */}
-                <BlurView
-                  blurMethod="dimezisBlurView"
-                  blurTarget={appBlurTargetRef}
-                  intensity={40}
-                  tint={isDarkMode ? "dark" : "light"}
-                  className="absolute inset-0"
-                />
-                <View className="absolute inset-0 bg-card-translucent" />
+                <GlassBackdrop blurTarget={appBlurTargetRef} />
                 {/* keyboardShouldPersistTaps: the menu often opens over an
                   active editor; the first item tap must act, not just
                   dismiss the keyboard. */}

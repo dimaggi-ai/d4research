@@ -80,6 +80,7 @@ export interface AppModelOption {
   isCustom: boolean;
   isDefault?: boolean;
   isLegacy?: boolean;
+  isUnavailable?: boolean;
 }
 
 function toAppModelOption(model: ServerProvider["models"][number]): AppModelOption {
@@ -196,6 +197,7 @@ function getAppModelOptions(
 export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
   entry: ProviderInstanceEntry,
+  selectedModel?: string | null,
 ): AppModelOption[] {
   const options: AppModelOption[] = entry.models.map(toAppModelOption);
   const seen = new Set(options.map((option) => option.slug));
@@ -215,10 +217,22 @@ export function getAppModelOptionsForInstance(
     options.push({ slug: custom.slug, name: custom.name, isCustom: true });
   }
 
-  return applyInstanceModelPreferences(
-    options,
-    readInstanceModelPreferences(settings, entry.instanceId),
-  );
+  const preferences = readInstanceModelPreferences(settings, entry.instanceId);
+  const availableOptions = applyInstanceModelPreferences(options, preferences);
+  const selectedSlug = normalizeCustomModelSlug(selectedModel);
+  if (
+    entry.driverKind === "opencode" &&
+    selectedSlug &&
+    resolveSelectableModel(entry.driverKind, selectedSlug, entry.models) === null &&
+    !preferences.hiddenModels.includes(selectedSlug) &&
+    !availableOptions.some((option) => option.slug === selectedSlug)
+  ) {
+    return [
+      ...availableOptions,
+      { slug: selectedSlug, name: selectedSlug, isCustom: false, isUnavailable: true },
+    ];
+  }
+  return availableOptions;
 }
 
 export function resolveAppModelSelection(
@@ -266,12 +280,19 @@ export function resolveAppModelSelectionForInstance(
 export function getCustomModelOptionsByInstance(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
-  _selectedInstanceId?: ProviderInstanceId | null,
-  _selectedModel?: string | null,
+  selectedInstanceId?: ProviderInstanceId | null,
+  selectedModel?: string | null,
 ): ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> {
   const out = new Map<ProviderInstanceId, ReadonlyArray<ModelEsque>>();
   for (const entry of deriveProviderInstanceEntries(providers)) {
-    out.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+    out.set(
+      entry.instanceId,
+      getAppModelOptionsForInstance(
+        settings,
+        entry,
+        entry.instanceId === selectedInstanceId ? selectedModel : undefined,
+      ),
+    );
   }
   return out;
 }

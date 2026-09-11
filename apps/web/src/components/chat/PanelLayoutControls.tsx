@@ -53,7 +53,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   const tasksActionLabel = tasksOpen ? `Close ${tasksLabel}` : `Open ${tasksLabel}`;
   return (
     <div
-      className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
+      className="flex h-full shrink-0 items-center gap-0 sm:gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
       {showLocalTools ? (

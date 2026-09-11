@@ -179,8 +179,11 @@ export async function openProject(page, workspacePath) {
   // Once a project exists the app opens a draft on load, so only register it
   // the first time. "Add project" is always in the sidebar and is therefore not
   // a usable signal for whether registration already happened.
+  // Persisted threads use /<environment>/<thread>, while drafts retain their
+  // own route. Detect the mounted composer rather than an obsolete URL shape.
   const alreadyOpen = await page
-    .waitForURL(/\/(draft|thread)\//, { timeout: 5_000 })
+    .locator('[data-chat-composer-form="true"]')
+    .waitFor({ state: "visible", timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
 

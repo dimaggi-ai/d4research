@@ -85,6 +85,7 @@ import { RateLimitResumeReactor } from "../src/orchestration/Services/RateLimitR
 import { ResearchIntegrityReactor } from "../src/orchestration/Services/ResearchIntegrityReactor.ts";
 import { InlineDelegationRunner } from "../src/mcp/toolkits/research/inlineDelegation.ts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "../src/orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -113,6 +114,7 @@ import * as McpSessionRegistry from "../src/mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "../src/mcp/PreviewAutomationBroker.ts";
 import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 import * as PullRequestService from "../src/pullRequest/PullRequestService.ts";
+import * as DeviceService from "../src/device/DeviceService.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 const decodeClaudeSettings = Schema.decodeUnknownEffect(ClaudeSettings);
@@ -153,12 +155,9 @@ export function gitShowFileAtRef(cwd: string, ref: string, filePath: string): st
   return runGit(cwd, ["show", `${ref}:${filePath}`]);
 }
 
-class WaitForTimeoutError extends Schema.TaggedErrorClass<WaitForTimeoutError>()(
-  "WaitForTimeoutError",
-  {
-    description: Schema.String,
-  },
-) {}
+class WaitForTimeoutError extends Schema.TaggedError<WaitForTimeoutError>()("WaitForTimeoutError", {
+  description: Schema.String,
+}) {}
 
 function waitFor<A, E>(
   read: Effect.Effect<A, E>,
@@ -197,7 +196,7 @@ function waitFor<A, E>(
   );
 }
 
-class OrchestrationHarnessRuntimeError extends Schema.TaggedErrorClass<OrchestrationHarnessRuntimeError>()(
+class OrchestrationHarnessRuntimeError extends Schema.TaggedError<OrchestrationHarnessRuntimeError>()(
   "OrchestrationHarnessRuntimeError",
   {
     operation: Schema.String,
@@ -534,6 +533,13 @@ export const makeOrchestrationIntegrationHarness = (
         }),
       ),
       Layer.provideMerge(
+        Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+          requestSync: () => Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
         Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
           start: () => Effect.void,
           drain: Effect.void,
@@ -616,9 +622,15 @@ export const makeOrchestrationIntegrationHarness = (
             useRealCodex ? realCodexRegistry : fakeRegistry!,
             providerSessionDirectoryLayer,
             serverSettingsLayer,
+            Layer.mock(DeviceService.DeviceService)({}),
+            orchestrationLayer.pipe(Layer.provide(projectionSnapshotQueryLayer)),
+            projectionSnapshotQueryLayer,
           ),
         ),
         Layer.provide(persistenceLayer),
+        Layer.provide(RepositoryIdentityResolver.layer),
+        Layer.provide(ThreadBackgroundLiveness.layer),
+        Layer.provide(ThreadPlanProgress.layer),
         Layer.provide(ServerConfig.layerTest(workspaceDir, rootDir)),
         Layer.provide(NodeServices.layer),
       );

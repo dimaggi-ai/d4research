@@ -177,6 +177,56 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  it("persists independent light and dark theme choices", async () => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        themeId: "grove",
+        lightThemeId: "iris",
+        darkThemeId: "ocean",
+        themeMode: "system",
+      }),
+      10,
+    );
+
+    await expect(loadPreferences()).resolves.toEqual({
+      themeId: "grove",
+      lightThemeId: "iris",
+      darkThemeId: "ocean",
+      themeMode: "system",
+    });
+  });
+
+  it("persists Material You independently for each appearance", async () => {
+    const themes = { lightThemeId: "material-you", darkThemeId: "ocean" } as const;
+    await savePreferencesPatch(themes);
+    await expect(loadPreferences()).resolves.toEqual(themes);
+    await savePreferencesPatch({ lightThemeId: "t3-chat" });
+    await expect(loadPreferences()).resolves.toEqual({ ...themes, lightThemeId: "t3-chat" });
+  });
+
+  it("persists the Material You layout independently of the selected theme", async () => {
+    await savePreferencesPatch({
+      lightThemeId: "material-you",
+      materialYouStyleLayoutEnabled: true,
+    });
+    await savePreferencesPatch({ lightThemeId: "t3-chat" });
+    await expect(loadPreferences()).resolves.toEqual({
+      lightThemeId: "t3-chat",
+      materialYouStyleLayoutEnabled: true,
+    });
+    await savePreferencesPatch({ materialYouStyleLayoutEnabled: false });
+    await expect(loadPreferences()).resolves.toEqual({
+      lightThemeId: "t3-chat",
+      materialYouStyleLayoutEnabled: false,
+    });
+  });
+
+  it("drops the removed theme transition preference", async () => {
+    mocks.setPreferencesJson(JSON.stringify({ themeTransition: "circle-bottom-left" }), 10);
+
+    await expect(loadPreferences()).resolves.toEqual({});
+  });
+
   it("falls back to secure storage when SQLite cannot save preferences", async () => {
     mocks.setDatabaseFailures(true, true);
     await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual({ baseFontSize: 19 });

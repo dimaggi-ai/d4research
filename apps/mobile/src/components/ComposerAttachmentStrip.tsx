@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, View } from "react-native";
 import { useThemeColor } from "../lib/useThemeColor";
 
 import { AppText as Text } from "./AppText";
+import { PierreEntryIcon } from "./PierreEntryIcon";
 import {
   isFileBackedComposerAttachment,
   type DraftComposerAttachment,
@@ -188,12 +189,7 @@ function ComposerAttachmentContent(props: ComposerAttachmentThumbnailProps) {
         }
         style={style}
       >
-        <SymbolView
-          name="doc.text"
-          size={props.compact ? 15 : 22}
-          tintColorClassName="accent-icon-subtle"
-          type="monochrome"
-        />
+        <PierreEntryIcon path={attachment.name} kind="file" size={props.compact ? 15 : 22} />
         {!props.compact ? (
           <Text className="w-full text-center text-2xs text-foreground" numberOfLines={1}>
             {attachment.name}

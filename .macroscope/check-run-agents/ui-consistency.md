@@ -12,6 +12,15 @@ include:
   - "apps/web/src/**/*.ts"
   - "apps/web/src/**/*.tsx"
   - "apps/web/src/**/*.css"
+exclude:
+  - "apps/web/src/**/*.test.tsx"
+labels:
+  - vouch:trusted
+  - macroscope-review
+requires:
+  - Check
+maxBudgetPerRun: 2
+maxBudgetPerPR: 10
 conclusion: failure
 showToolCalls: true
 ---

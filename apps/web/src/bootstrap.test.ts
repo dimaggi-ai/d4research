@@ -30,6 +30,10 @@ describe("app startup failures", () => {
 
   beforeEach(() => {
     vi.resetModules();
+    vi.stubGlobal(
+      "window",
+      Object.assign(new EventTarget(), { navigator: {}, location: { reload: vi.fn() } }),
+    );
     bootShell = new BootElement("div");
     vi.stubGlobal("document", {
       getElementById: () => bootShell,
@@ -59,12 +63,15 @@ describe("app startup failures", () => {
       throw new Error("@vitejs/plugin-react can't detect preamble. Something is wrong.");
     });
     const reload = vi.fn();
-    vi.stubGlobal("window", { location: { reload } });
+    vi.stubGlobal(
+      "window",
+      Object.assign(new EventTarget(), { navigator: {}, location: { reload } }),
+    );
 
     await import("./bootstrap");
     await vi.dynamicImportSettled();
 
-    expect(bootShell?.text).toContain("T3 Code could not load.");
+    expect(bootShell?.text).toContain("d4research could not load.");
     const reloadButton = bootShell?.children[0]?.children.find(
       (element) => element.tagName === "button",
     );
@@ -78,7 +85,7 @@ describe("app startup failures", () => {
 
     showBootError(new Error("internal module path"));
 
-    expect(bootShell?.text).toContain("T3 Code could not load.");
+    expect(bootShell?.text).toContain("d4research could not load.");
     expect(bootShell?.text.includes("internal module path")).toBe(dev);
   });
 

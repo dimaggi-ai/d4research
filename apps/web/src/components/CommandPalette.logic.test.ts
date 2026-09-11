@@ -72,7 +72,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: localEnvironmentId,
-          title: "T3 Code",
+          title: "d4research",
           workspaceRoot: "/Users/theo/Projects/t3code",
         },
         {
@@ -85,7 +85,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
     });
 
     expect(metadata.searchTerms).toEqual([
-      "T3 Code",
+      "d4research",
       "/Users/theo/Projects/t3code",
       "Local",
       "t3code",
@@ -102,7 +102,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
         {
           kind: "action",
           value: "project:t3code",
-          title: "T3 Code",
+          title: "d4research",
           searchTerms: metadata.searchTerms,
           icon: null,
           run: async () => undefined,
@@ -118,12 +118,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "T3 Code",
+          title: "d4research",
           workspaceRoot: "/srv/t3code",
         },
         {
           environmentId: remoteEnvironmentId,
-          title: "T3 Code worktree",
+          title: "d4research worktree",
           workspaceRoot: "/srv/t3code-feature",
         },
       ],
@@ -139,12 +139,12 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "T3 Code",
+          title: "d4research",
           workspaceRoot: "/srv/t3code",
         },
         {
           environmentId: secondRemoteEnvironmentId,
-          title: "T3 Code mirror",
+          title: "d4research mirror",
           workspaceRoot: "/srv/mirror/t3code",
         },
       ],
@@ -162,7 +162,7 @@ describe("buildCommandPaletteProjectMetadata", () => {
       projects: [
         {
           environmentId: remoteEnvironmentId,
-          title: "T3 Code",
+          title: "d4research",
           workspaceRoot: "/srv/t3code",
         },
       ],
@@ -563,7 +563,7 @@ describe("buildThreadActionItems", () => {
   it("keeps message excerpts searchable without replacing thread metadata", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search" })],
-      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
+      projectTitleById: new Map([[PROJECT_ID, "d4research"]]),
       sortOrder: "updated_at",
       icon: null,
       getContentMatch: () => ({
@@ -580,13 +580,13 @@ describe("buildThreadActionItems", () => {
       snippet: "The relay reconnect is now bounded.",
       query: "reconnect",
     });
-    expect(item?.description).toBe("T3 Code · #feat/search");
+    expect(item?.description).toBe("d4research · #feat/search");
   });
 
   it("prefers renderDescription when provided", () => {
     const [item] = buildThreadActionItems({
       threads: [makeThread({ branch: "feat/search", worktreePath: "/tmp/wt" })],
-      projectTitleById: new Map([[PROJECT_ID, "T3 Code"]]),
+      projectTitleById: new Map([[PROJECT_ID, "d4research"]]),
       sortOrder: "updated_at",
       icon: null,
       renderDescription: (thread, { projectTitle }) =>
@@ -594,7 +594,7 @@ describe("buildThreadActionItems", () => {
       runThread: async (_thread) => undefined,
     });
 
-    expect(item?.description).toBe("T3 Code:feat/search:wt");
+    expect(item?.description).toBe("d4research:feat/search:wt");
   });
 
   it("filters archived threads out of thread search items", () => {

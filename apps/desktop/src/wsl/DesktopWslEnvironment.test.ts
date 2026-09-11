@@ -157,7 +157,7 @@ describe("WSL runtime cache", () => {
 
   it("installs through a temporary directory and only reuses valid completed caches", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "1.2.3-x64",
       "b".repeat(64),
     );
@@ -175,7 +175,7 @@ describe("WSL runtime cache", () => {
     expect(script).toContain('mv -T "$runtime_root" "$runtime_stale"');
     expect(script).toContain('mktemp -d "$runtime_parent/.1.2.3-x64.tmp.XXXXXX"');
     expect(script).toContain(
-      "tar -xzf '/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz' -C \"$runtime_tmp\"",
+      "tar -xzf '/mnt/c/Program Files/d4research/wsl-runtime.tar.gz' -C \"$runtime_tmp\"",
     );
     expect(script).toContain('test -f "$runtime_tmp/apps/server/dist/bin.mjs"');
     expect(script).toContain('test -f "$runtime_tmp/node_modules/node-pty/package.json"');
@@ -192,14 +192,14 @@ describe("WSL runtime cache", () => {
 
   it("verifies the archive digest before extracting, and only on a cache miss", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "1.2.3-x64",
       "b".repeat(64),
     );
 
     const expected = "b".repeat(64);
     expect(script).toContain(
-      "archive_sha=$(sha256sum '/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz' | cut -d ' ' -f 1)",
+      "archive_sha=$(sha256sum '/mnt/c/Program Files/d4research/wsl-runtime.tar.gz' | cut -d ' ' -f 1)",
     );
     expect(script).toContain(`if [ "$archive_sha" != '${expected}' ]; then`);
 
@@ -221,7 +221,7 @@ describe("WSL runtime cache", () => {
   // the install path has to refuse too.
   it("moves an in-use runtime aside instead of deleting it under a live backend", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "sha256-" + "c".repeat(64),
       "b".repeat(64),
     );
@@ -250,7 +250,7 @@ describe("WSL runtime cache", () => {
 
   it("treats a runtime whose native payload went missing as a cache miss", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "1.2.3-x64",
       "b".repeat(64),
     );
@@ -280,7 +280,7 @@ describe("WSL runtime cache", () => {
   // reinstalls. The digest the install records is what turns that into a miss.
   it("re-hashes the server entry against the digest the install recorded", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "1.2.3-x64",
       "b".repeat(64),
     );
@@ -312,7 +312,7 @@ describe("WSL runtime cache", () => {
 
   it("refuses to mark an archive without a native payload as ready", () => {
     const script = buildWslRuntimeInstallScript(
-      "/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz",
+      "/mnt/c/Program Files/d4research/wsl-runtime.tar.gz",
       "1.2.3-x64",
       "b".repeat(64),
     );

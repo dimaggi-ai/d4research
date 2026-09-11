@@ -17,9 +17,9 @@ const environmentLayer = DesktopEnvironment.layer({
   platform: "darwin",
   processArch: "arm64",
   appVersion: "1.2.3",
-  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  appPath: "/Applications/d4research.app/Contents/Resources/app.asar",
   isPackaged: true,
-  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  resourcesPath: "/Applications/d4research.app/Contents/Resources",
   runningUnderArm64Translation: false,
 }).pipe(
   Layer.provide(

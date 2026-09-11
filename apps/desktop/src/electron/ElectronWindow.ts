@@ -345,6 +345,7 @@ export const make = Effect.gen(function* () {
         }
       }),
     destroyAll: Effect.gen(function* () {
+      let firstError: ElectronWindowOperationError | undefined;
       for (const window of yield* listWindows) {
         yield* Effect.try({
           try: () => window.destroy(),
@@ -356,8 +357,15 @@ export const make = Effect.gen(function* () {
               channel: null,
               cause,
             }),
-        }).pipe(Effect.orDie);
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              firstError ??= error;
+            }),
+          ),
+        );
       }
+      if (firstError) return yield* Effect.die(firstError);
     }),
     syncAllAppearance: Effect.fn("desktop.electron.window.syncAllAppearance")(function* <E, R>(
       sync: (window: Electron.BrowserWindow) => Effect.Effect<void, E, R>,

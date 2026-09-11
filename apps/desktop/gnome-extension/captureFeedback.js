@@ -110,7 +110,7 @@ export class CaptureFeedback {
         check();
       }));
     if (this._owned(sender) !== session || !target)
-      throw new Error("T3 Code's window is not available for activation.");
+      throw new Error("d4research's window is not available for activation.");
     session.target = target;
     Main.activateWindow(target, global.get_current_time());
   }

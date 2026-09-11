@@ -2,6 +2,17 @@ import * as assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 
+export async function onboardingBranding({ page, webUrl, screenshotDir }) {
+  await page.goto(`${webUrl}/welcome`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("dialog", { name: "Set up d4research", exact: true }).waitFor();
+  const identity = page.getByRole("img", { name: "d4research", exact: true });
+  await identity.waitFor();
+  assert.equal(await identity.locator("svg image").getAttribute("href"), "/d4-mark.svg");
+  await identity.getByText("[Research]", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Set up T3 Code", { exact: true }).count(), 0);
+  await page.screenshot({ path: path.join(screenshotDir, "onboarding-d4-branding.png") });
+}
+
 export async function branding({ page, webUrl, screenshotDir }) {
   let release;
   const held = new Promise((resolve) => {

@@ -984,6 +984,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --toolbar-control-hover: var(--accent);
   --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
   --foreground: var(--color-zinc-800);
+  --heading-foreground: var(--foreground);
   --card: var(--color-white);
   --card-foreground: var(--color-zinc-800);
   --popover: var(--color-white);
@@ -1043,48 +1044,72 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     color-scheme: dark;
-    /* Keep controls and floating surfaces close to the neutral-black canvas.
-       Borders and hover states provide separation without milky gray fills. */
-    --background: var(--color-neutral-950);
-    --surface-raised: color-mix(in srgb, var(--background) 97%, var(--color-white));
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 97%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 97%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.571 0.21 264);
-    --secondary: --alpha(var(--color-white) / 3%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
-    --accent: --alpha(var(--color-white) / 4%);
-    --accent-foreground: var(--color-neutral-100);
+    /* d4's dark palette. Keep semantic aliases shared by chat, settings,
+       portaled panels, and the desktop shell. */
+    --bg-page: #121317;
+    --bg-card: #16171b;
+    --bg-raised: #1b1c20;
+    --brand-navy: #0a1031;
+    --brand-orange: #ff982e;
+    --orange-highlight: #ffac52;
+    --github-bg: #34457c;
+    --github-hover: #40538a;
+    --github-text: #ffffff;
+    --text-heading: #ffffff;
+    --text-body: #c7ccd4;
+    --text-secondary: #9aa0a6;
+    --text-link: #a3b1e4;
+    --diagram-fill: #141e49;
+    --diagram-raised: #293971;
+    --cable-dim: #40538a;
+    --cable: #697bbc;
+    --cable-highlight: #b8c5ed;
+    --packet: #e3e9ff;
+    --border-strong: rgb(255 255 255 / 12%);
+    --background: var(--bg-page);
+    --surface-raised: var(--bg-raised);
+    --foreground: var(--text-body);
+    --heading-foreground: var(--text-heading);
+    --card: var(--bg-card);
+    --card-foreground: var(--text-body);
+    --popover: var(--bg-raised);
+    --popover-foreground: var(--text-body);
+    --primary: var(--brand-orange);
+    /* White on orange is not readable enough for small action labels. */
+    --primary-foreground: var(--brand-navy);
+    --message-action-hover: var(--orange-highlight);
+    --secondary: var(--bg-raised);
+    --secondary-foreground: var(--text-body);
+    --muted: var(--bg-card);
+    --muted-foreground: var(--text-secondary);
+    --accent: var(--bg-raised);
+    --accent-foreground: var(--text-heading);
     --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
     --error-foreground: var(--color-red-400);
     --tool-error-icon: #fca5a5;
     --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
-    --border: --alpha(var(--color-white) / 6%);
-    --input: --alpha(var(--color-white) / 8%);
-    --info-foreground: var(--color-blue-400);
+    --border: rgb(255 255 255 / 7%);
+    --input: var(--border-strong);
+    --info-foreground: var(--text-link);
     --success-foreground: var(--color-emerald-400);
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
-    --update-foreground: var(--color-blue-400);
+    --update: var(--text-link);
+    --update-foreground: var(--text-link);
     --update-surface: color-mix(in srgb, var(--update) 18%, transparent);
     --sidebar: var(--card);
-    --sidebar-control-surface: var(--muted);
+    --sidebar-control-surface: var(--bg-raised);
     --sidebar-row-hover: var(--accent);
-    --sidebar-row-active: var(--accent);
-    --sidebar-row-selected: var(--muted);
+    --sidebar-row-active: var(--diagram-fill);
+    --sidebar-row-selected: var(--diagram-fill);
     --sidebar-stage-fade: var(--card);
-    --terminal-cursor: rgb(180 203 255);
-    --terminal-selection-background: rgb(180 203 255 / 25%);
+    --code-background: var(--bg-card);
+    --terminal-cursor: var(--cable-highlight);
+    --terminal-selection-background: var(--diagram-raised);
   }
 }
 
-/* Keep both sidebar implementations (default and legacy) on the same quiet
-   zinc hierarchy: zinc-50 navigation, zinc-25 hover, and white selected/raised
-   surfaces. */
+/* Keep default and legacy sidebars on the same surface hierarchy in each mode. */
 [data-app-sidebar] {
   --background: var(--color-zinc-25);
   --foreground: var(--color-zinc-800);
@@ -1107,23 +1132,23 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-stage-fade: var(--sidebar);
 
   @variant dark {
-    --background: #000;
-    --foreground: #f1f3f7;
-    --card: #000;
+    --background: var(--bg-page);
+    --foreground: var(--text-body);
+    --card: var(--bg-card);
     --card-foreground: var(--foreground);
-    --accent: #191a1d;
-    --accent-foreground: #f7f9ff;
-    --muted: #0a0a0a;
-    --muted-foreground: #a3a3a3;
-    --border: rgb(255 255 255 / 8%);
-    --input: rgb(255 255 255 / 18%);
+    --accent: var(--bg-raised);
+    --accent-foreground: var(--text-heading);
+    --muted: var(--bg-card);
+    --muted-foreground: var(--text-secondary);
+    --border: rgb(255 255 255 / 7%);
+    --input: var(--border-strong);
     --sidebar: var(--card);
     --sidebar-foreground: var(--foreground);
     --sidebar-muted-foreground: var(--muted-foreground);
-    --sidebar-control-surface: var(--muted);
-    --sidebar-row-hover: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
-    --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
-    --sidebar-row-selected: color-mix(in srgb, var(--contrast-foreground) 7%, transparent);
+    --sidebar-control-surface: var(--bg-raised);
+    --sidebar-row-hover: var(--bg-raised);
+    --sidebar-row-active: var(--diagram-fill);
+    --sidebar-row-selected: var(--diagram-fill);
     --sidebar-border: var(--border);
     --sidebar-stage-fade: var(--card);
   }
@@ -1148,6 +1173,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --toolbar-control-hover: var(--app-theme-toolbar-control-hover);
   --surface-raised: var(--app-theme-surface-raised);
   --foreground: var(--app-theme-text);
+  --heading-foreground: var(--app-theme-text);
   --card: var(--app-theme-surface);
   --card-foreground: var(--app-theme-text);
   --popover: var(--app-theme-surface-overlay);
@@ -1763,6 +1789,15 @@ code {
 .chat-markdown a {
   color: var(--info-foreground);
   text-decoration: none;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--heading-foreground);
+  }
 }
 
 .chat-markdown a:not(.chat-markdown-file-link):hover,

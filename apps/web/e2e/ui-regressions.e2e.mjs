@@ -1,5 +1,8 @@
 import { createPairingUrl } from "./harness.mjs";
-import { branding } from "./branding.spec.mjs";
+import { branding, onboardingBranding } from "./branding.spec.mjs";
+import { darkPalette } from "./dark-palette.spec.mjs";
+import { reconnectBanner } from "./reconnect-banner.spec.mjs";
+import { sidebarFooterSurface } from "./sidebar-footer-surface.spec.mjs";
 import { mobileQueueWhileRunning } from "./mobile-queue.spec.mjs";
 import { composerSurfaceOcclusion } from "./composer-surface.spec.mjs";
 import { mobileSidebarReachability, mobileStatusBarReachability } from "./mobile-sidebar.spec.mjs";
@@ -27,4 +30,8 @@ await runProductionBrowserSuite([
   { name: "sidebar-footer-reachability", run: authenticated(mobileSidebarReachability) },
   { name: "status-bar-safe-areas", run: authenticated(mobileStatusBarReachability) },
   { name: "panel-close-and-maximize", run: authenticated(panelCloseReachability) },
+  { name: "dark-palette-and-light-mode", run: authenticated(darkPalette) },
+  { name: "single-reconnect-banner", run: reconnectBanner },
+  { name: "sidebar-footer-surface", run: authenticated(sidebarFooterSurface) },
+  { name: "onboarding-d4-branding", run: authenticated(onboardingBranding) },
 ]);

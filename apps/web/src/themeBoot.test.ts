@@ -149,6 +149,11 @@ const CHARCOAL_DARK_ONLY = {
 };
 
 describe("index.html boot script", () => {
+  it("starts dark mode with the same canvas as the loaded d4 palette", () => {
+    const result = runBootScript({ prefersDark: true });
+    expect(result.backgroundColor).toBe("#121317");
+    expect(result.metaContent).toBe("#121317");
+  });
   const parityCases: ReadonlyArray<{
     name: string;
     storage: Record<string, string>;

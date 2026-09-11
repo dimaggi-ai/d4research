@@ -90,17 +90,40 @@ describe("theme files", () => {
     }
   });
 
-  it("keeps stock dark controls in the neutral-black surface hierarchy", () => {
+  it("keeps stock dark controls in the d4 charcoal and orange palette", () => {
     expectThemeColors(getStandardThemeColors("dark"), {
-      canvas: "#0a0a0a",
-      surface: "#111111",
-      surfaceRaised: "#111111",
-      surfaceOverlay: "#111111",
-      toolbarControl: "#111111",
-      secondary: "#111111",
-      muted: "#111111",
-      accentSurface: "#141414",
+      canvas: "#121317",
+      surface: "#16171b",
+      surfaceRaised: "#1b1c20",
+      surfaceOverlay: "#1b1c20",
+      toolbarControl: "#1b1c20",
+      secondary: "#1b1c20",
+      muted: "#16171b",
+      accentSurface: "#1b1c20",
+      messageAction: "#ff982e",
+      messageActionForeground: "#0a1031",
+      messageActionHover: "#ffac52",
+      sidebar: "#16171b",
     });
+  });
+
+  it("keeps dark text and action labels readable across their actual surfaces", () => {
+    const colors = getStandardThemeColors("dark");
+    for (const surface of [
+      colors.canvas,
+      colors.surface,
+      colors.surfaceRaised,
+      colors.sidebarRowActive,
+    ]) {
+      expect(contrastRatio(colors.text, surface)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(colors.textMuted, surface)).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(
+      contrastRatio(colors.messageActionForeground, colors.messageAction),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(colors.messageActionForeground, colors.messageActionHover),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it("derives readable, distinctive vivid palettes from exact seeds", () => {

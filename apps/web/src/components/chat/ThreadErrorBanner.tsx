@@ -13,6 +13,13 @@ export function shouldShowThreadErrorBanner(
   error: string | null,
   isDismissed: boolean,
 ): boolean {
+  // Restart reconciliation persists this notice even after navigating away.
+  // Keep the diagnostic in session state without making it a sticky banner.
+  if (
+    error === "The provider session ended while d4research was offline. Retry the turn to continue."
+  ) {
+    return false;
+  }
   return getThreadErrorBannerKey(threadKey, error) !== null && !isDismissed;
 }
 

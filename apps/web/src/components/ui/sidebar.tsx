@@ -256,7 +256,7 @@ function Sidebar({
             </SheetHeader>
             <div
               className={cn(
-                "flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-contain pb-safe pt-safe",
+                "flex min-h-0 w-full flex-1 flex-col overflow-y-auto overscroll-contain pb-safe pt-safe [&:has([data-slot=sidebar-footer])]:pb-0",
                 side === "left" ? "pl-safe" : "pr-safe",
               )}
             >
@@ -293,7 +293,7 @@ function Sidebar({
         />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            "fixed inset-y-0 z-10 hidden h-dvh w-(--sidebar-width) md:flex",
             "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
@@ -309,7 +309,7 @@ function Sidebar({
         >
           <div
             // Fixed sidebars bypass #root's safe-area padding, including on iPad.
-            className="flex h-full w-full flex-col bg-sidebar surface-grain pt-safe pb-safe group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
+            className="flex h-full w-full flex-col bg-sidebar surface-grain pt-safe pb-safe [&:has([data-slot=sidebar-footer])]:pb-0 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm/5"
             data-sidebar="sidebar"
             data-slot="sidebar-inner"
           >
@@ -671,7 +671,10 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex shrink-0 flex-col gap-2 p-2", className)}
+      className={cn(
+        "flex w-full shrink-0 flex-col gap-2 border-t border-sidebar-border bg-sidebar-control-surface p-2 pb-[max(var(--sidebar-content-inset),env(safe-area-inset-bottom))]! [--sidebar-icon-color:var(--contrast-sidebar-foreground)] [&_[data-sidebar=menu-button]]:text-sidebar-foreground",
+        className,
+      )}
       data-sidebar="footer"
       data-slot="sidebar-footer"
       {...props}

@@ -10,6 +10,26 @@ import {
 } from "./ThreadErrorBanner";
 
 describe("ThreadErrorBanner", () => {
+  it("automatically hides the persisted offline-session notice without a dismissal", () => {
+    const notice =
+      "The provider session ended while d4research was offline. Retry the turn to continue.";
+    for (const threadKey of ["env:restarted-thread", "other-env:restarted-thread"]) {
+      const key = getThreadErrorBannerKey(threadKey, notice);
+      expect(isThreadErrorBannerDismissedForSession(key)).toBe(false);
+      expect(shouldShowThreadErrorBanner(threadKey, notice, false)).toBe(false);
+      expect(shouldShowThreadErrorBanner(threadKey, "Provider crashed", false)).toBe(true);
+      expect(shouldShowThreadErrorBanner(threadKey, notice, false)).toBe(false);
+    }
+  });
+
+  it.each([
+    "Failed to authenticate: OAuth session expired and could not be refreshed",
+    "The provider session ended unexpectedly.",
+    "Network offline. Retry the turn to continue.",
+  ])("keeps other provider failures visible: %s", (error) => {
+    expect(shouldShowThreadErrorBanner("env:restarted-thread", error, false)).toBe(true);
+  });
+
   it("stays hidden after its current error is dismissed", () => {
     const bannerKey = getThreadErrorBannerKey("env:thread-a", "Aborted");
     dismissThreadErrorBannerForSession(bannerKey);

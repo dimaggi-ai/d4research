@@ -20,7 +20,7 @@ export const APP_BUNDLE_ID = isDevelopment
   ? `ai.dimaggi.d4research.dev.${devBundleIdSuffix || "local"}`
   : "ai.dimaggi.d4research";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 19;
+const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
   "assets",
@@ -355,6 +355,8 @@ function buildMacLauncher(electronBinaryPath) {
   NodeFS.mkdirSync(runtimeDir, { recursive: true });
 
   const expectedMetadata = {
+    displayName: APP_DISPLAY_NAME,
+    bundleInfo: resolveMacBundleInfoPlistStrings(NodePath.basename(launcherBinaryPath)),
     launcherVersion: LAUNCHER_VERSION,
     sourceAppBundlePath,
     sourceAppMtimeMs: NodeFS.statSync(sourceAppBundlePath).mtimeMs,

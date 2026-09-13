@@ -2,6 +2,55 @@ import { describe, expect, it } from "vite-plus/test";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 
 describe("ThreadBackgroundLiveness", () => {
+  it("allows an explicitly idle task to resume on a start", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    const task = { threadId: "thread", taskId: "task", taskType: "subagent" };
+    liveness.recordTaskLiveness({ ...task, status: "completed", kind: "completed" });
+    liveness.recordTaskLiveness({ ...task, status: "idle", kind: "updated" });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+    liveness.recordTaskLiveness({ ...task, status: undefined, kind: "started" });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBe("working");
+  });
+
+  it.each(["completed", "failed", "stopped", "cancelled", "interrupted", undefined])(
+    "does not resurrect a %s task when a delayed start arrives",
+    (status) => {
+      const liveness = ThreadBackgroundLiveness.make();
+      const task = { threadId: "thread", taskId: "task", taskType: "subagent" };
+      liveness.recordTaskLiveness({ ...task, status, kind: status ? "updated" : "completed" });
+      for (const startStatus of [undefined, "running"]) {
+        liveness.recordTaskLiveness({ ...task, status: startStatus, kind: "started" });
+        expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+      }
+    },
+  );
+
+  it.each(["progress", "updated"] as const)(
+    "allows an explicit %s restart after completion",
+    (kind) => {
+      const liveness = ThreadBackgroundLiveness.make();
+      const task = { threadId: "thread", taskId: "task", taskType: "subagent" };
+      liveness.recordTaskLiveness({ ...task, status: "completed", kind: "completed" });
+      liveness.recordTaskLiveness({ ...task, status: "running", kind });
+      expect(liveness.getThreadBackgroundLiveness("thread")).toBe("working");
+      liveness.recordTaskLiveness({ ...task, status: "completed", kind: "completed" });
+      expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+    },
+  );
+
+  it("keeps terminal history thread-scoped and releases it when the session exits", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    const task = { taskId: "task", taskType: "local_bash", status: undefined };
+    liveness.recordTaskLiveness({ ...task, threadId: "one", kind: "completed" });
+    liveness.recordTaskLiveness({ ...task, threadId: "one", kind: "started" });
+    liveness.recordTaskLiveness({ ...task, threadId: "two", kind: "started" });
+    expect(liveness.getThreadBackgroundLiveness("one")).toBeNull();
+    expect(liveness.getThreadBackgroundLiveness("two")).toBe("monitoring");
+    liveness.clearThreadLiveness("one");
+    liveness.recordTaskLiveness({ ...task, threadId: "one", kind: "started" });
+    expect(liveness.getThreadBackgroundLiveness("one")).toBe("monitoring");
+  });
+
   it("does not let status-free progress or metadata restart an idle task", () => {
     const liveness = ThreadBackgroundLiveness.make();
     liveness.recordTaskLiveness({

@@ -25,6 +25,7 @@ export type ThreadBackgroundLiveness = "working" | "monitoring" | null;
 interface ThreadLivenessState {
   readonly agents: Set<string>;
   readonly monitors: Set<string>;
+  readonly settled: Set<string>;
 }
 
 // Classification sets are the shared contracts copies (MONITOR_TASK_TYPES:
@@ -80,7 +81,11 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
     if (existing) {
       return existing;
     }
-    const created: ThreadLivenessState = { agents: new Set(), monitors: new Set() };
+    const created: ThreadLivenessState = {
+      agents: new Set(),
+      monitors: new Set(),
+      settled: new Set(),
+    };
     stateByThreadId.set(threadId, created);
     return created;
   };
@@ -96,7 +101,7 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
     }
     state.agents.delete(taskId);
     state.monitors.delete(taskId);
-    if (state.agents.size === 0 && state.monitors.size === 0) {
+    if (state.agents.size === 0 && state.monitors.size === 0 && state.settled.size === 0) {
       stateByThreadId.delete(threadId);
     }
   };
@@ -123,10 +128,25 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
       // doing anything, and an all-idle fleet must not pin Working.
       const terminal =
         input.kind === "completed" ||
-        input.status === "idle" ||
         (input.status !== undefined && TERMINAL_STATUSES.has(input.status));
       if (terminal) {
+        stateFor(input.threadId).settled.add(input.taskId);
         drop(input.threadId, input.taskId);
+        return;
+      }
+      if (input.status === "idle") {
+        stateByThreadId.get(input.threadId)?.settled.delete(input.taskId);
+        drop(input.threadId, input.taskId);
+        return;
+      }
+
+      // Match the client activity fold: late starts only supply metadata for
+      // settled tasks. Keep this history until session exit, even with no live
+      // tasks. Explicit progress/update statuses can reactivate a task.
+      if (
+        input.kind === "started" &&
+        stateByThreadId.get(input.threadId)?.settled.has(input.taskId)
+      ) {
         return;
       }
 
@@ -144,6 +164,7 @@ export function make(): ThreadBackgroundLivenessService["Service"] {
 
       drop(input.threadId, input.taskId);
       const state = stateFor(input.threadId);
+      state.settled.delete(input.taskId);
       const bucket =
         taskType !== undefined && MONITOR_TASK_TYPES.has(taskType) ? state.monitors : state.agents;
       bucket.add(input.taskId);

@@ -1,4 +1,5 @@
 import type {
+  EnvironmentId,
   ResourceTelemetryHistoryInput,
   ResourceTelemetrySnapshot,
 } from "@d4research/contracts";
@@ -18,9 +19,14 @@ export interface ResourceTelemetryState {
   readonly retry: () => Promise<ResourceTelemetrySnapshot>;
 }
 
-export function useResourceTelemetry(): ResourceTelemetryState {
+export function useResourceTelemetry(
+  targetEnvironmentId?: EnvironmentId | null,
+): ResourceTelemetryState {
   const primaryEnvironment = usePrimaryEnvironment();
-  const environmentId = primaryEnvironment?.environmentId ?? null;
+  const environmentId =
+    targetEnvironmentId === undefined
+      ? (primaryEnvironment?.environmentId ?? null)
+      : targetEnvironmentId;
   const query = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -43,9 +49,15 @@ export function useResourceTelemetry(): ResourceTelemetryState {
   return { ...query, retry };
 }
 
-export function useResourceTelemetryHistory(input: ResourceTelemetryHistoryInput) {
+export function useResourceTelemetryHistory(
+  input: ResourceTelemetryHistoryInput,
+  targetEnvironmentId?: EnvironmentId | null,
+) {
   const primaryEnvironment = usePrimaryEnvironment();
-  const environmentId = primaryEnvironment?.environmentId ?? null;
+  const environmentId =
+    targetEnvironmentId === undefined
+      ? (primaryEnvironment?.environmentId ?? null)
+      : targetEnvironmentId;
   return useEnvironmentQuery(
     environmentId === null
       ? null

@@ -3,15 +3,19 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@d4research/contracts";
-import { memo, useCallback, useEffect, useMemo } from "react";
-import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
-import { usePreferredEditor } from "../../editorPreferences";
 import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
-import { Button } from "../ui/button";
-import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
+import { memo, useCallback, useEffect, useMemo } from "react";
+import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
+import { shellEnvironment } from "~/state/shell";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { editorLabelForPlatform } from "../../editorLabels";
+import { usePreferredEditor } from "../../editorPreferences";
+import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
 import {
+  AntigravityIcon,
   CursorIcon,
+  FileExplorerIcon,
+  FinderIcon,
   Icon,
   KiroIcon,
   TraeIcon,
@@ -34,9 +38,9 @@ import {
   RustRoverIcon,
   WebStormIcon,
 } from "../JetBrainsIcons";
-import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
-import { shellEnvironment } from "~/state/shell";
-import { useAtomCommand } from "~/state/use-atom-command";
+import { Button } from "../ui/button";
+import { Group, GroupSeparator } from "../ui/group";
+import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 
 type OpenInOption = {
   label: string;
@@ -49,136 +53,121 @@ export const resolveOpenInOptions = (
   platform: string,
   availableEditors: ReadonlyArray<EditorId>,
 ) => {
-  const baseOptions: ReadonlyArray<OpenInOption> = [
+  const baseOptions: ReadonlyArray<Omit<OpenInOption, "label">> = [
     {
-      label: "Cursor",
       Icon: CursorIcon,
       value: "cursor",
       kind: "brand",
     },
     {
-      label: "Trae",
       Icon: TraeIcon,
       value: "trae",
       kind: "brand",
     },
     {
-      label: "Kiro",
       Icon: KiroIcon,
       value: "kiro",
       kind: "brand",
     },
     {
-      label: "VS Code",
       Icon: VisualStudioCode,
       value: "vscode",
       kind: "brand",
     },
     {
-      label: "VS Code Insiders",
       Icon: VisualStudioCodeInsiders,
       value: "vscode-insiders",
       kind: "brand",
     },
     {
-      label: "VSCodium",
       Icon: VSCodium,
       value: "vscodium",
       kind: "brand",
     },
     {
-      label: "Zed",
       Icon: Zed,
       value: "zed",
       kind: "brand",
     },
     {
-      label: "IntelliJ IDEA",
+      Icon: AntigravityIcon,
+      value: "antigravity",
+      kind: "brand",
+    },
+    {
       Icon: IntelliJIdeaIcon,
       value: "idea",
       kind: "brand",
     },
     {
-      label: "Aqua",
       Icon: AquaIcon,
       value: "aqua",
       kind: "brand",
     },
     {
-      label: "CLion",
       Icon: CLionIcon,
       value: "clion",
       kind: "brand",
     },
     {
-      label: "DataGrip",
       Icon: DataGripIcon,
       value: "datagrip",
       kind: "brand",
     },
     {
-      label: "DataSpell",
       Icon: DataSpellIcon,
       value: "dataspell",
       kind: "brand",
     },
     {
-      label: "GoLand",
       Icon: GoLandIcon,
       value: "goland",
       kind: "brand",
     },
     {
-      label: "PhpStorm",
       Icon: PhpStormIcon,
       value: "phpstorm",
       kind: "brand",
     },
     {
-      label: "PyCharm",
       Icon: PyCharmIcon,
       value: "pycharm",
       kind: "brand",
     },
     {
-      label: "Rider",
       Icon: RiderIcon,
       value: "rider",
       kind: "brand",
     },
     {
-      label: "RubyMine",
       Icon: RubyMineIcon,
       value: "rubymine",
       kind: "brand",
     },
     {
-      label: "RustRover",
       Icon: RustRoverIcon,
       value: "rustrover",
       kind: "brand",
     },
     {
-      label: "WebStorm",
       Icon: WebStormIcon,
       value: "webstorm",
       kind: "brand",
     },
     {
-      label: isMacPlatform(platform)
-        ? "Finder"
+      Icon: isMacPlatform(platform)
+        ? FinderIcon
         : isWindowsPlatform(platform)
-          ? "Explorer"
-          : "Files",
-      Icon: FolderClosedIcon,
+          ? FileExplorerIcon
+          : FolderClosedIcon,
       value: "file-manager",
-      kind: "generic",
+      kind: isMacPlatform(platform) || isWindowsPlatform(platform) ? "brand" : "generic",
     },
   ];
   const availableEditorSet = new Set(availableEditors);
-  return baseOptions.filter(
-    (option) => option.value === "file-manager" || availableEditorSet.has(option.value),
-  );
+  return baseOptions
+    .filter((option) => availableEditorSet.has(option.value))
+    .map((option) => ({ ...option, label: editorLabelForPlatform(option.value, platform) }));
 };
 
 function getOpenInIconClass(kind: OpenInOption["kind"]) {
@@ -204,8 +193,12 @@ export const OpenInPicker = memo(function OpenInPicker({
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
   const options = useMemo(
-    () => resolveOpenInOptions(navigator.platform, availableEditors),
-    [availableEditors],
+    () =>
+      resolveOpenInOptions(
+        navigator.platform,
+        onOpenFiles ? [...availableEditors, "file-manager"] : availableEditors,
+      ),
+    [availableEditors, onOpenFiles],
   );
   const availableOpenTargets = useMemo(() => options.map((option) => option.value), [options]);
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);

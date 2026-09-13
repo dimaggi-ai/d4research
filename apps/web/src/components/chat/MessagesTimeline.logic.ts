@@ -1,15 +1,3 @@
-import { type TurnPlanEntry } from "../../session-logic";
-import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
-import {
-  extractTrailingProviderHandoffContext,
-  parseProviderHandoffPrompt,
-} from "@d4research/shared/providerHandoffPrompt";
-import {
-  mightBeInlineDelegateTrigger,
-  parseInlineDelegateTrigger,
-} from "@d4research/shared/researchPipeline";
-import * as Equal from "effect/Equal";
-import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@d4research/client-runtime/codex-markdown-directives";
 import { commandProgramName } from "@d4research/client-runtime/work-log/command-label";
 import {
@@ -22,29 +10,46 @@ import {
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
 } from "@d4research/client-runtime/work-log/presentation";
-export {
-  normalizeCompactToolLabel,
-  toolGroupAction,
-} from "@d4research/client-runtime/work-log/presentation";
+import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@d4research/contracts";
+import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
+import {
+  extractTrailingProviderHandoffContext,
+  parseProviderHandoffPrompt,
+} from "@d4research/shared/providerHandoffPrompt";
+import {
+  mightBeInlineDelegateTrigger,
+  parseInlineDelegateTrigger,
+} from "@d4research/shared/researchPipeline";
+import * as Equal from "effect/Equal";
+import { shallow } from "zustand/vanilla/shallow";
+import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   formatDuration,
   inferCheckpointTurnCountByTurnId,
   isStreamingMessageTextUpdate,
   workEntryDisplayIndicatesToolFailure,
-  workEntryIndicatesToolSuccess,
   workEntryIndicatesToolNeutralStatus,
+  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
   type TimelineEntry,
+  type TurnPlanEntry,
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@d4research/contracts";
-import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+
+export {
+  normalizeCompactToolLabel,
+  toolGroupAction,
+} from "@d4research/client-runtime/work-log/presentation";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
+
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
+
 const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
+
 const TIMELINE_CONTENT_MAX_WIDTH = 768;
+
 const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
@@ -246,7 +251,9 @@ export function resolveTimelineMinimapHasPersistentGutter(viewportWidth: number)
 }
 
 const TIMELINE_MINIMAP_HIT_STRIP_LEFT = 12;
+
 const TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH = 40;
+
 const TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH = "22rem";
 
 /**
@@ -671,10 +678,11 @@ function deriveTurnFolds(input: {
       if (!isCompaction && index > terminalEntryIndex && !isSingleTrailingActivity) {
         continue;
       }
-      // Agent-spawn CTA rows never fold: workflows outlive their launching
-      // turn (dynamic spawns, background execution), and folding the CTA
-      // when the turn settles makes a still-running fleet invisible.
-      if (entry.kind === "work" && entry.entry.agentSpawn !== undefined) {
+      // User input and subagent batches stay visible after their turn settles.
+      if (
+        entry.kind === "work" &&
+        (entry.entry.questionAnswer !== undefined || entry.entry.agentSpawn !== undefined)
+      ) {
         continue;
       }
       hiddenEntryIds.add(entry.id);
@@ -871,6 +879,7 @@ export function deriveMessagesTimelineRows(input: {
   revertTurnCountByUserMessageId?: ReadonlyMap<MessageId, number>;
   expandedHandoffMessageIds?: ReadonlySet<MessageId>;
   supportsConversationRollback?: boolean;
+  liveAgentTaskIds?: ReadonlySet<string> | undefined;
 }): MessagesTimelineRow[] {
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>(
     input.turnDiffSummaryByAssistantMessageId,
@@ -940,7 +949,7 @@ export function deriveMessagesTimelineRows(input: {
     if (
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
-      entry.entry.agentSpawn !== undefined ||
+      entry.entry.questionAnswer !== undefined ||
       entry.entry.sourceActivityKind === "context-compaction" ||
       entry.entry.tone === "error"
     ) {
@@ -954,9 +963,14 @@ export function deriveMessagesTimelineRows(input: {
   );
   const activeWorkAnchor = activeToolEntries[0];
   const latestVisibleToolEntry = visibleActiveToolEntries.at(-1);
-  const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) =>
-    workEntryIsActiveTurnActivity(entry.entry),
-  );
+  const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) => {
+    const spawn = entry.entry.agentSpawn;
+    return spawn
+      ? entry === latestVisibleToolEntry &&
+          ((spawn.workflowId !== null && input.liveAgentTaskIds?.has(spawn.workflowId)) ||
+            spawn.agentTaskIds.some((taskId) => input.liveAgentTaskIds?.has(taskId)))
+      : workEntryIsActiveTurnActivity(entry.entry);
+  });
   const latestToolFailed =
     latestRunningToolEntry === undefined &&
     latestVisibleToolEntry !== undefined &&
@@ -965,7 +979,10 @@ export function deriveMessagesTimelineRows(input: {
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (latestVisibleToolEntry !== undefined &&
-      workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry));
+      latestVisibleToolEntry.entry.agentSpawn === undefined &&
+      (workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) ||
+        (latestVisibleToolEntry.entry.toolLifecycleStatus === "completed" &&
+          !workEntryDisplayIndicatesToolFailure(latestVisibleToolEntry.entry))));
   const activeWorkPlacementEntryId = latestVisibleToolEntry?.id;
   const activeWorkRow =
     activeWorkAnchor && latestVisibleToolEntry && !latestToolFailed
@@ -1007,7 +1024,7 @@ export function deriveMessagesTimelineRows(input: {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
     hasActivityRow ||= activeWorkRow.active;
-    if (!activeWorkRow.expanded) return;
+    if (!activeWorkRow.expanded || activeWorkRow.entry.agentSpawn) return;
     nextRows.push(
       expandedWorkGroupRow(
         activeWorkRow.groupId,
@@ -1065,7 +1082,17 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
-      if (timelineEntry.entry.agentSpawn !== undefined || timelineEntry.entry.tone === "error") {
+      if (
+        timelineEntry.entry.agentSpawn !== undefined ||
+        timelineEntry.entry.questionAnswer !== undefined ||
+        timelineEntry.entry.tone === "error"
+      ) {
+        const spawn = timelineEntry.entry.agentSpawn;
+        if (spawn && entryBelongsToActiveTurn(timelineEntry, index)) {
+          hasActivityRow ||=
+            (spawn.workflowId !== null && input.liveAgentTaskIds?.has(spawn.workflowId)) ||
+            spawn.agentTaskIds.some((taskId) => input.liveAgentTaskIds?.has(taskId));
+        }
         nextRows.push({
           kind: "work",
           id: timelineEntry.id,
@@ -1083,6 +1110,7 @@ export function deriveMessagesTimelineRows(input: {
           !nextEntry ||
           nextEntry.kind !== "work" ||
           nextEntry.entry.agentSpawn !== undefined ||
+          nextEntry.entry.questionAnswer !== undefined ||
           nextEntry.entry.sourceActivityKind === "context-compaction" ||
           nextEntry.entry.tone === "error" ||
           activeWorkEntryIds.has(nextEntry.id) ||
@@ -1470,6 +1498,7 @@ export interface TimelineHandoff {
    */
   readonly kind: "legacy" | "combined";
 }
+
 function deriveUserMessageHandoff(text: string): TimelineHandoff | null {
   const looksLegacy = text.startsWith("Handoff to ");
   const looksCombined = text.includes("<handoff_context>");
@@ -1486,6 +1515,7 @@ function deriveUserMessageHandoff(text: string): TimelineHandoff | null {
   const { handoff } = extractTrailingProviderHandoffContext(promptText);
   return handoff ? { target: handoff.target, kind: "combined" } : null;
 }
+
 export interface TimelineDelegate {
   /** Directive as typed, e.g. `!codex:sol`, for the "requested" disclosure. */
   readonly requested: string;
@@ -1494,7 +1524,9 @@ export interface TimelineDelegate {
   /** True when the model that ran differs from what the trigger named. */
   readonly substituted: boolean;
 }
+
 const delegateByUserMessage = new WeakMap<object, TimelineDelegate | null>();
+
 function deriveUserMessageDelegate(message: ChatMessage): TimelineDelegate | null {
   const cached = delegateByUserMessage.get(message);
   if (cached !== undefined) return cached;
@@ -1512,7 +1544,9 @@ function deriveUserMessageDelegate(message: ChatMessage): TimelineDelegate | nul
   delegateByUserMessage.set(message, delegate);
   return delegate;
 }
+
 const NO_TIMELINE_DELEGATES: ReadonlyMap<string, TimelineDelegate> = new Map();
+
 function deriveTimelineDelegates(
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): ReadonlyMap<string, TimelineDelegate> {
@@ -1550,6 +1584,7 @@ function deriveTimelineDelegates(
   }
   return byMessageId ?? NO_TIMELINE_DELEGATES;
 }
+
 function resolveTurnDelegate(
   requested: TimelineDelegate,
   resolvedTarget: string | undefined,

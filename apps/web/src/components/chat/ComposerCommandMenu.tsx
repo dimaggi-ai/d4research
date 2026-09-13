@@ -1,23 +1,30 @@
-import { type ProviderSkillSourceKind } from "@d4research/client-runtime/providerSkills";
-import { BlocksIcon } from "lucide-react";
-import { FolderIcon } from "lucide-react";
-import { PackageIcon } from "lucide-react";
-import { SettingsIcon } from "lucide-react";
-import { UserRoundIcon } from "lucide-react";
-import { type LucideIcon } from "lucide-react";
-import { Badge } from "../ui/badge";
+import {
+  formatProviderSkillDisplayName,
+  resolveProviderSkillSourceKind,
+  type ProviderSkillSourceKind,
+} from "@d4research/client-runtime/providerSkills";
 import {
   type ProjectEntry,
   type ProviderDriverKind,
+  type PullRequestContextMetadata,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@d4research/contracts";
-import { ArrowRightIcon, BotIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  BlocksIcon,
+  BotIcon,
+  FolderIcon,
+  PackageIcon,
+  SettingsIcon,
+  UserRoundIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
-
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
-import { formatProviderSkillInstallSource } from "~/providerSkillPresentation";
 import { cn } from "~/lib/utils";
+import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
+import { Badge } from "../ui/badge";
 import {
   Command,
   CommandGroup,
@@ -63,10 +70,17 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "directive";
+      label: string;
+      description: string;
       /** Full replacement for the `!` token, e.g. `!codex:` or `!codex:gpt-5.6-sol`. */
       insert: string;
       /** True once the insert names a model, so the composer adds the space. */
       complete: boolean;
+    }
+  | {
+      id: string;
+      type: "pull-request";
+      pullRequest: PullRequestContextMetadata;
       label: string;
       description: string;
     };
@@ -242,6 +256,10 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
 }) {
   const skillSourceKind =
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
+  const isSlashSkill =
+    props.triggerKind === "slash-command" && props.item.type === "skill" ? props.item.skill : null;
+  const pullRequestPresentation =
+    props.item.type === "pull-request" ? resolvePullRequestState(props.item.pullRequest) : null;
 
   return (
     <CommandItem
@@ -283,6 +301,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : null}
       {props.item.type === "directive" ? (
         <ArrowRightIcon className="size-4 shrink-0 text-icon-muted" />
+      ) : null}
+      {pullRequestPresentation ? (
+        <pullRequestPresentation.Icon
+          role="img"
+          aria-label={pullRequestPresentation.label}
+          className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
+        />
       ) : null}
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0">
@@ -334,7 +359,3 @@ function SkillSourceBadge(props: { kind: ProviderSkillSourceKind; showSkillSuffi
     </Badge>
   );
 }
-import {
-  resolveProviderSkillSourceKind,
-  formatProviderSkillDisplayName,
-} from "@d4research/client-runtime/providerSkills";

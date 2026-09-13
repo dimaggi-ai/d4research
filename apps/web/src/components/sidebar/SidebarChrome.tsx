@@ -1,9 +1,4 @@
-import type { ReactNode } from "react";
-import { Tooltip } from "../ui/tooltip";
-import { TooltipPopup } from "../ui/tooltip";
-import { TooltipTrigger } from "../ui/tooltip";
-import { useEnvironments } from "../../state/environments";
-import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ActivityIcon,
   ArrowLeftIcon,
@@ -11,12 +6,11 @@ import {
   GitPullRequestIcon,
   SettingsIcon,
 } from "lucide-react";
-import { memo, useCallback } from "react";
-import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-
+import { memo, useCallback, type ReactNode } from "react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -34,6 +28,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -164,7 +159,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   }, [canGoBack, closeMobileSidebar, navigate]);
 
   return (
-    <SidebarFooter className="p-[var(--sidebar-content-inset)]">
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>

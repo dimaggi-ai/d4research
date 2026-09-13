@@ -93,6 +93,35 @@ describe("clientPersistenceStorage", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it("defaults word wrap on when no wrapping preference is saved", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+    const settings = readBrowserClientSettings();
+
+    expect(settings).toEqual(
+      expect.objectContaining({
+        wordWrap: true,
+      }),
+    );
+    expect(settings).not.toHaveProperty("chatWordWrap");
+    expect(settings).not.toHaveProperty("diffWordWrap");
+  });
+  it("keeps the default diff file state across reloads and defaults it to expanded", async () => {
+    const testWindow = getTestWindow();
+    const { readBrowserClientSettings, writeBrowserClientSettings } =
+      await import("./clientPersistenceStorage");
+
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
+    expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(false);
+
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: true });
+    expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(true);
+
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: false });
+    expect(readBrowserClientSettings()?.diffFilesCollapsed).toBe(false);
+  });
+
   it("migrates the obsolete diff wrapping preference", async () => {
     const testWindow = getTestWindow();
     testWindow.localStorage.setItem(
@@ -130,5 +159,18 @@ describe("clientPersistenceStorage", () => {
         wordWrap: true,
       }),
     );
+  });
+
+  it("keeps the diff layout across reloads and defaults it to stacked", async () => {
+    const testWindow = getTestWindow();
+    const { readBrowserClientSettings, writeBrowserClientSettings } =
+      await import("./clientPersistenceStorage");
+
+    expect(readBrowserClientSettings()).toBeNull();
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
+    expect(readBrowserClientSettings()?.diffLayout).toBe("stacked");
+
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, diffLayout: "split" });
+    expect(readBrowserClientSettings()?.diffLayout).toBe("split");
   });
 });

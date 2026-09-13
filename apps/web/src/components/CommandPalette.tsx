@@ -1,34 +1,6 @@
-"use client";
-
-import { getLocalFileManagerName } from "../lib/utils";
-import { browseInputEndPaddingClass, filterPinnedBrowseEntries } from "./CommandPalette.logic";
-import { BitbucketIcon } from "./Icons";
-import {
-  COMMAND_PALETTE_META_ICON_CLASS,
-  CommandPaletteMetaDot,
-  ThreadCommandSubtitle,
-} from "./ThreadCommandSubtitle";
-import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
-import { CommandFooterAction } from "./ui/command";
-import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
-import { resolveEnvironmentMachineKind } from "@d4research/contracts";
-import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { searchSettings } from "./settings/settingsSearch";
-import { SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
-
-import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
-
-import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
-import {
-  canCreateProjectInEnvironment,
-  getCloneDestinationBrowsePath,
-  getCloneDestinationPath,
-  getCloneDirectoryName,
-  getDefaultCloneUrl,
-  normalizePastedCloneUrl,
-} from "@d4research/client-runtime/operations/projects";
 import { connectionStatusText } from "@d4research/client-runtime/connection";
-import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -40,7 +12,11 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
+import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
+import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
 import {
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+  resolveEnvironmentMachineKind,
   type DesktopWslState,
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -49,10 +25,11 @@ import {
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
-  PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@d4research/contracts";
-import { useNavigate, useParams, useLocation } from "@tanstack/react-router";
-import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
+import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
+import { useAtomValue } from "@effect/atom-react";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
@@ -80,27 +57,18 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useAtomValue } from "@effect/atom-react";
-
-import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
+import { onOpenCommandPalette } from "../commandPaletteBus";
+import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
+import { desktopLocalBackendId, isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
-import { readLocalApi } from "../localApi";
-import { desktopLocalBackendId } from "../connection/desktopLocal";
-import { filesystemEnvironment } from "../state/filesystem";
-import { projectEnvironment } from "../state/projects";
-import { useEnvironmentQuery } from "../state/query";
-import { sourceControlEnvironment } from "../state/sourceControl";
-import { useAtomCommand } from "../state/use-atom-command";
-import { useAtomQueryRunner } from "../state/use-atom-query-runner";
-import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
-import { useThreadSearch } from "../state/queries";
+import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+import { isPreviewFocused } from "../lib/previewFocus";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -112,73 +80,91 @@ import {
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
-import { onOpenCommandPalette } from "../commandPaletteBus";
-import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
+import { cn, getLocalFileManagerName, isMacPlatform, newProjectId } from "../lib/utils";
+import { readLocalApi } from "../localApi";
+import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import {
+  deriveProviderInstanceEntries,
+  resolveDefaultProviderModelSelection,
+  type ProviderInstanceEntry,
+} from "../providerInstances";
 import {
   PULL_REQUESTS_PANEL_REF,
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
-import { cn, isMacPlatform, newProjectId } from "../lib/utils";
+import {
+  buildSidebarProjectPickerEntries,
+  buildSidebarProjectSnapshots,
+} from "../sidebarProjectGrouping";
+import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { filesystemEnvironment } from "../state/filesystem";
+import { projectEnvironment } from "../state/projects";
+import { useThreadSearch } from "../state/queries";
+import { useEnvironmentQuery } from "../state/query";
+import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
+import { sourceControlEnvironment } from "../state/sourceControl";
+import { useAtomCommand } from "../state/use-atom-command";
+import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { type Project } from "../types";
+import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
   resolveProjectPickerTarget,
   resolveWslProjectSelection,
 } from "../wslPaths";
+import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
+import { type ChatComposerHandle } from "./chat/ChatComposer";
 import {
   ADDON_ICON_CLASS,
   buildBrowseGroups,
   buildCommandPaletteProjectMetadata,
+  buildLinkedThreadActionItems,
   buildProjectActionItems,
   buildRootGroups,
   buildThreadActionItems,
-  buildLinkedThreadActionItems,
   enumerateCommandPaletteItems,
-  type CommandPaletteActionItem,
-  type CommandPaletteOpenIntent,
-  type CommandPaletteSubmenuItem,
-  type CommandPaletteView,
   filterCommandPaletteGroups,
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
+  type CommandPaletteActionItem,
+  type CommandPaletteOpenIntent,
+  type CommandPaletteSubmenuItem,
+  type CommandPaletteView,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
-import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
-import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
-import { AzureDevOpsIcon, GitHubIcon, GitLabIcon } from "./Icons";
-import { ProjectFavicon } from "./ProjectFavicon";
+import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
+import { AzureDevOpsIcon, ForgejoIcon, GitHubIcon, GitLabIcon } from "./Icons";
+import { ProjectFavicon } from "./ProjectFavicon";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
+import { searchSettings, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
+import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
+import {
+  COMMAND_PALETTE_META_ICON_CLASS,
+  CommandPaletteMetaDot,
+  ThreadCommandSubtitle,
+} from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
-import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
-import { resolveDefaultProviderModelSelection } from "../providerInstances";
-import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
-import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Button } from "./ui/button";
+import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
-import type { ChatComposerHandle } from "./chat/ChatComposer";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
-import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
-import {
-  buildSidebarProjectPickerEntries,
-  buildSidebarProjectSnapshots,
-} from "../sidebarProjectGrouping";
-import type { Project } from "../types";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -242,8 +228,9 @@ interface AddProjectEnvironmentOption {
 
 type AddProjectRemoteProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "azure-devops"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
 >;
+
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
 type AddProjectCloneFlow =
@@ -265,11 +252,16 @@ const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
   "url",
   "github",
   "gitlab",
+  "forgejo",
+  "bitbucket",
   "azure-devops",
 ];
+
 const REMOTE_PROJECT_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
   "github",
   "gitlab",
+  "forgejo",
+  "bitbucket",
   "azure-devops",
 ];
 
@@ -277,8 +269,12 @@ function remoteProjectSourceLabel(source: AddProjectRemoteSource): string {
   switch (source) {
     case "github":
       return "GitHub";
+    case "forgejo":
+      return "Forgejo / Gitea";
     case "gitlab":
       return "GitLab";
+    case "bitbucket":
+      return "Bitbucket";
     case "azure-devops":
       return "Azure DevOps";
     case "url":
@@ -288,7 +284,9 @@ function remoteProjectSourceLabel(source: AddProjectRemoteSource): string {
 
 function remoteProjectSourcePathHint(source: AddProjectRemoteSource): string {
   switch (source) {
+    case "forgejo":
     case "github":
+    case "bitbucket":
       return "owner/repo";
     case "gitlab":
       return "group/project";
@@ -309,6 +307,8 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
   switch (source) {
     case "github":
       return <GitHubIcon className={className} />;
+    case "forgejo":
+      return <ForgejoIcon className={className} />;
     case "gitlab":
       return <GitLabIcon className={className} />;
     case "azure-devops":
@@ -360,6 +360,8 @@ function buildAddProjectRemoteSourceReadiness(
     url: { ready: true, hint: null },
     github: unavailable,
     gitlab: unavailable,
+    forgejo: unavailable,
+    bitbucket: unavailable,
     "azure-devops": unavailable,
   };
 
@@ -1653,6 +1655,7 @@ function OpenCommandPaletteDialog(props: {
         value: "action:open-thread-pull-requests",
         searchTerms: ["pull requests", "linked", "stack", "prs"],
         title: "Show linked pull requests",
+        disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
         icon: <GitPullRequestArrowIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");
@@ -1701,6 +1704,8 @@ function OpenCommandPaletteDialog(props: {
       "git",
       "github",
       "gitlab",
+      "forgejo",
+      "bitbucket",
       "azure",
       "devops",
       "url",
@@ -1757,8 +1762,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  // There is no projects listing page; the action targets the contextual
-  // project (active thread/draft, falling back to the first sidebar group).
+  // Target the active thread or draft's project, falling back to the first sidebar group.
   const contextualProjectGroup =
     (contextualProjectRef
       ? projectGroupByTargetKey.get(
@@ -1798,8 +1802,6 @@ function OpenCommandPaletteDialog(props: {
     run: async () => {
       await navigate({
         to: item.to,
-        search: (previous) =>
-          item.to === "/settings/projects" ? { ...previous, project: undefined } : previous,
         hash: item.targetId ?? item.id,
         replace: pathname === item.to,
         hashScrollIntoView: false,

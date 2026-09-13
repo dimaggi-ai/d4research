@@ -22,7 +22,7 @@ import type {
   VcsStatusStreamEvent,
 } from "@d4research/contracts";
 import { mergeGitStatusParts } from "@d4research/shared/git";
-import { resolveProjectAutoPull } from "@d4research/shared/serverSettings";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -160,7 +160,7 @@ export const autoPullPolicyLayer = Layer.effect(
           const project = yield* snapshots.getActiveProjectByWorkspaceRoot(cwd);
           if (project._tag === "None") return false;
           const settings = yield* serverSettings.getSettings;
-          return resolveProjectAutoPull(settings, project.value.id, project.value.autoPull);
+          return resolveProjectSettings(settings, project.value.id).settings.defaultAutoPull;
         },
         Effect.orElseSucceed(() => false),
       ),

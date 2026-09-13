@@ -1,22 +1,22 @@
-// @effect-diagnostics nodeBuiltinImport:off globalDate:off - Production build bootstrap stamps the emitted PWA worker before an Effect runtime exists.
-import * as NodeZlib from "node:zlib";
-import tailwindcss from "@tailwindcss/vite";
-import * as NodeFSP from "node:fs/promises";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import babel from "@rolldown/plugin-babel";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import compression from "compression";
-import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
-import "vite-plus/test/config";
-import { defineConfig, type Connect, type Plugin } from "vite-plus";
-import pkg from "./package.json" with { type: "json" };
-
+// @effect-diagnostics nodeBuiltinImport:off - Vite build hooks run outside the Effect server runtime.
 import { DEV_PROXIED_PATH_PREFIXES } from "@d4research/shared/devProxy";
-
+import babel from "@rolldown/plugin-babel";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import compression from "compression";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeZlib from "node:zlib";
+import { defineConfig, type Connect, type Plugin } from "vite-plus";
+import "vite-plus/test/config";
+import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import { loadRepoEnv } from "../../scripts/lib/repo-env";
+import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import pkg from "./package.json";
 import { stampPwaServiceWorker } from "./src/pwaServiceWorkerBuild";
 
 const repoEnv = loadRepoEnv();
+
 Object.assign(process.env, repoEnv);
 
 // Single-origin dev is signalled positively, because it cannot be inferred
@@ -29,14 +29,22 @@ Object.assign(process.env, repoEnv);
 const isSingleOriginDev = process.env.T3CODE_SINGLE_ORIGIN_DEV === "1";
 
 const port = Number(process.env.PORT ?? 5733);
+
 const explicitHost = process.env.HOST?.trim();
+
 const host = explicitHost || "localhost";
+
 const configuredWsUrl = isSingleOriginDev ? undefined : process.env.VITE_WS_URL?.trim();
+
 const configuredHttpUrl = isSingleOriginDev ? undefined : process.env.VITE_HTTP_URL?.trim();
+
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
+
 const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
+
 const pwaBuildId =
   process.env.T3CODE_PWA_BUILD_ID?.trim() || `${configuredAppVersion}-${Date.now().toString(36)}`;
+
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -50,6 +58,7 @@ const configuredHostedAppUrl = (() => {
   }
   return undefined;
 })();
+
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
 // Vite 8.1's experimental bundled dev mode: serves rolldown-bundled chunks in
@@ -58,6 +67,7 @@ const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
 // The dev runner defaults this on for --share runs (remote browsers pay a
 // round trip per import level in unbundled dev); T3CODE_BUNDLED_DEV=0 opts out.
 const bundledDevEnv = process.env.T3CODE_BUNDLED_DEV?.trim().toLowerCase();
+
 const bundledDev = bundledDevEnv === "1" || bundledDevEnv === "true";
 
 const buildSourcemap: boolean | "hidden" =
@@ -147,6 +157,7 @@ const configuredAllowedHosts = (process.env.T3CODE_DEV_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);
+
 const allowedHosts = [".ts.net", ...configuredAllowedHosts];
 
 export default defineConfig(() => {
@@ -154,6 +165,15 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
+      thirdPartyLicensesPlugin({
+        bundleName: "web",
+        configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+        packageManifests: [
+          { bundle: "web", path: new URL("./package.json", import.meta.url) },
+          { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
+          { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
+        ],
+      }),
       // Route components load as split chunks so settings, pull-request, and
       // usage code stay out of the cold-start payload; the router prefetches
       // them on navigation intent (see getRouter's defaultPreload).

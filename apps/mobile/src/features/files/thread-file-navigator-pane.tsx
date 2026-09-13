@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectListEntriesResult } from "@d4research/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, useColorScheme, View, type NativeSyntheticEvent } from "react-native";
@@ -14,9 +14,8 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/App
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import { projectEnvironment } from "../../state/projects";
-import { useEnvironmentQuery } from "../../state/query";
 import { FileTreeBrowser } from "./FileTreeBrowser";
+import { useFileTreeEntries } from "./useFileTreeEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 
@@ -36,13 +35,11 @@ export function ThreadFileNavigatorPane(props: {
   const foregroundColor = theme["--color-foreground"];
   const sheetColor = theme["--color-sheet"];
   const headerScrollEdgeEffects = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
-  const entriesQuery = useEnvironmentQuery(
-    projectEnvironment.listEntries({
-      environmentId: props.environmentId,
-      input: { cwd: props.cwd },
-    }),
-  );
-  const entriesData = entriesQuery.data as ProjectListEntriesResult | null;
+  const entriesQuery = useFileTreeEntries({
+    environmentId: props.environmentId,
+    cwd: props.cwd,
+    searchQuery,
+  });
   const handlePreviewFile = useCallback(
     (relativePath: string) => {
       preloadWorkspaceFileContents({
@@ -83,10 +80,14 @@ export function ThreadFileNavigatorPane(props: {
 
   const fileTree = (
     <FileTreeBrowser
-      entries={entriesData?.entries ?? []}
+      key={JSON.stringify([props.environmentId, props.cwd])}
+      entries={entriesQuery.entries}
+      loadedDirectories={entriesQuery.loadedDirectories}
+      onLoadDirectory={entriesQuery.loadDirectory}
       error={entriesQuery.error}
       isPending={entriesQuery.isPending}
       searchQuery={searchQuery}
+      searchTruncated={entriesQuery.searchTruncated}
       selectedPath={props.selectedPath}
       onPreviewFile={handlePreviewFile}
       onRefresh={entriesQuery.refresh}

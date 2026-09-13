@@ -56,6 +56,8 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { isRateLimitFailure, resolveResumeAt } from "../rateLimitDetection.ts";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
+import { canReplaceThreadTitle } from "../threadTitles.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -1740,7 +1742,10 @@ const make = Effect.gen(function* () {
 
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
           serverSettingsService.getSettings,
-          (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
+          (settings) =>
+            resolveProjectSettings(settings, thread.projectId).settings.enableLegacyTokenStreaming
+              ? "streaming"
+              : "buffered",
         );
         if (assistantDeliveryMode === "buffered") {
           const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
@@ -1781,7 +1786,10 @@ const make = Effect.gen(function* () {
         });
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
           serverSettingsService.getSettings,
-          (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
+          (settings) =>
+            resolveProjectSettings(settings, thread.projectId).settings.enableLegacyTokenStreaming
+              ? "streaming"
+              : "buffered",
         );
         const flushedMessageIds =
           assistantDeliveryMode === "buffered"

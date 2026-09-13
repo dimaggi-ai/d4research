@@ -1,37 +1,75 @@
-import { MessageId, PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@d4research/contracts";
-import { collectAssistantCitations } from "@d4research/shared/assistantCitations";
-import { serializeAssistantCitation } from "@d4research/shared/assistantCitations";
 import {
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@d4research/client-runtime/environment";
-import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
   EnvironmentId,
+  MessageId,
   ProjectId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   type ModelSelection,
+  type PreviewAnnotationPayload,
   type ProviderOptionSelection,
 } from "@d4research/contracts";
+import {
+  collectAssistantCitations,
+  serializeAssistantCitation,
+} from "@d4research/shared/assistantCitations";
 import { createModelSelection } from "@d4research/shared/model";
+import * as Schema from "effect/Schema";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  clearComposerDraftsEnvironment,
+  COMPOSER_DRAFT_STORAGE_KEY,
+  composerDraftHasUserContent,
+  composerFileNeedsReattach,
+  DraftId,
+  finalizePromotedDraftThreadByRef,
+  markPromotedDraftThread,
+  markPromotedDraftThreadByRef,
+  markPromotedDraftThreads,
+  markPromotedDraftThreadsByRef,
+  partializeComposerDraftStoreState,
+  useComposerDraftStore,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+} from "./composerDraftStore";
+import { removeLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
+import { terminalContextReference } from "./lib/composerContextRecords";
+import { insertInlineContextReference } from "./lib/composerContextReferences";
+import { PASTED_CONTEXT_MAX_CHARS } from "./lib/pastedContext";
+import { createDebouncedJsonStorage, createDeferredStorage } from "./lib/storage";
+import {
+  formatTerminalContextReference,
+  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
+  type TerminalContextDraft,
+} from "./lib/terminalContext";
 
 // The composer draft's `modelSelectionByProvider` and
 // `stickyModelSelectionByProvider` maps are keyed by `ProviderInstanceId`
 // in production; these aliases keep the legacy-key migration tests concise.
 const CODEX_INSTANCE = ProviderInstanceId.make("codex");
+
 const CODEX_SECONDARY_INSTANCE = ProviderInstanceId.make("codex_secondary");
+
 const CLAUDE_AGENT_INSTANCE = ProviderInstanceId.make("claudeAgent");
+
 const CURSOR_INSTANCE = ProviderInstanceId.make("cursor");
+
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
+
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
+
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 
 type ProviderOptionSelectionBag = ReadonlyArray<ProviderOptionSelection>;
+
 type ProviderOptionSelectionsByProvider = Partial<Record<string, ProviderOptionSelectionBag>>;
 
 function toSelections(
@@ -58,33 +96,6 @@ function selectionsByProvider(
   }
   return result;
 }
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-
-import {
-  COMPOSER_DRAFT_STORAGE_KEY,
-  clearComposerDraftsEnvironment,
-  composerDraftHasUserContent,
-  finalizePromotedDraftThreadByRef,
-  markPromotedDraftThreadByRef,
-  markPromotedDraftThreads,
-  markPromotedDraftThreadsByRef,
-  type ComposerImageAttachment,
-  type ComposerFileAttachment,
-  composerFileNeedsReattach,
-  partializeComposerDraftStoreState,
-  useComposerDraftStore,
-  DraftId,
-} from "./composerDraftStore";
-import { removeLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
-import {
-  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
-  insertInlineTerminalContextPlaceholder,
-  type TerminalContextDraft,
-} from "./lib/terminalContext";
-import { createDebouncedJsonStorage } from "./lib/storage";
-import { markPromotedDraftThread } from "./composerDraftStore";
-import { PASTED_CONTEXT_MAX_CHARS } from "./lib/pastedContext";
-import { createDeferredStorage } from "./lib/storage";
 
 function makeImage(input: {
   id: string;
@@ -140,6 +151,7 @@ function makeTerminalContext(input: {
 
 function resetComposerDraftStore() {
   useComposerDraftStore.setState({
+    rewindingThreadKeys: new Set(),
     draftsByThreadKey: {},
     draftThreadsByThreadKey: {},
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
@@ -163,7 +175,9 @@ function providerModelOptions(
 }
 
 const TEST_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
+
 const OTHER_TEST_ENVIRONMENT_ID = EnvironmentId.make("environment-remote");
+
 const LEGACY_TEST_ENVIRONMENT_ID = EnvironmentId.make("__legacy__");
 
 function threadKeyFor(
@@ -227,6 +241,7 @@ describe("composerDraftStore assistant citations", () => {
     }
   });
 });
+
 describe("composerDraftStore addImages", () => {
   const threadId = ThreadId.make("thread-dedupe");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -267,6 +282,28 @@ describe("composerDraftStore addImages", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft?.images.map((image) => image.id)).toEqual(["img-1"]);
     expect(revokeSpy).toHaveBeenCalledWith("blob:duplicate");
+  });
+
+  it("restores images with matching metadata without replacing unsent bytes", () => {
+    const store = useComposerDraftStore.getState();
+    const unsent = makeImage({ id: "unsent", previewUrl: "blob:unsent" });
+    const restored = {
+      ...unsent,
+      id: "restored",
+      previewUrl: "blob:restored",
+      file: new File([new Uint8Array(unsent.sizeBytes).fill(2)], unsent.name, {
+        type: unsent.mimeType,
+        lastModified: unsent.file.lastModified,
+      }),
+    };
+    store.addImages(threadRef, [unsent]);
+    store.addImages(threadRef, [restored, restored], { allowDuplicates: true });
+
+    const images = store.getComposerDraft(threadRef)?.images;
+    expect(images?.map((image) => image.id)).toEqual(["unsent", "restored"]);
+    expect(images?.[0]?.file).toBe(unsent.file);
+    expect(images?.[1]?.file).toBe(restored.file);
+    expect(revokeSpy).not.toHaveBeenCalled();
   });
 
   it("deduplicates against existing images across calls by file signature", () => {
@@ -545,6 +582,391 @@ describe("composerDraftStore clearComposerContent", () => {
   });
 });
 
+describe("composerDraftStore unsent draft marker", () => {
+  const threadId = ThreadId.make("thread-unsent-marker");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("reports content for typed text and clears when the composer is emptied", () => {
+    const hasDraft = () =>
+      composerDraftHasUserContent(useComposerDraftStore.getState().getComposerDraft(threadRef));
+
+    expect(hasDraft()).toBe(false);
+
+    useComposerDraftStore.getState().setPrompt(threadRef, "   ");
+    expect(hasDraft()).toBe(false);
+
+    useComposerDraftStore.getState().setPrompt(threadRef, "follow up on the relay case");
+    expect(hasDraft()).toBe(true);
+
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+    expect(hasDraft()).toBe(false);
+  });
+
+  it("does not persist active rewind locks", () => {
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    useComposerDraftStore.setState({ rewindingThreadKeys: new Set([threadKey]) });
+
+    expect(useComposerDraftStore.getState().rewindingThreadKeys.has(threadKey)).toBe(true);
+    expect(partializeComposerDraftStoreState(useComposerDraftStore.getState())).not.toHaveProperty(
+      "rewindingThreadKeys",
+    );
+  });
+});
+
+describe("composerDraftStore file attachments", () => {
+  const threadId = ThreadId.make("thread-files");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("persists uploaded file references without including file contents", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [
+      { ...makeFile("file-1"), source: { _tag: "pasted-text" as const } },
+    ]);
+    store.setFileUpload(threadRef, "file-1", TEST_ENVIRONMENT_ID, "pending-report-pdf");
+
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const options = persistApi.getOptions();
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+
+    expect(persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.files).toEqual(
+      [
+        {
+          id: "file-1",
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 10,
+          attachmentId: "pending-report-pdf",
+          environmentId: TEST_ENVIRONMENT_ID,
+          source: { _tag: "pasted-text" },
+        },
+      ],
+    );
+
+    const hydrated = options.merge(persisted, useComposerDraftStore.getState());
+    expect(hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.files).toEqual([
+      {
+        type: "file",
+        id: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 10,
+        file: null,
+        uploadedAttachmentId: "pending-report-pdf",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+        source: { _tag: "pasted-text" },
+      },
+    ]);
+  });
+
+  it("persists a pending file as a needs-reattach marker instead of dropping it", () => {
+    const store = useComposerDraftStore.getState();
+    // No setFileUpload: the upload never finished, so there is no attachment
+    // id and the File handle cannot serialize.
+    store.addFiles(threadRef, [makeFile("file-pending")]);
+
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const options = persistApi.getOptions();
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+
+    expect(persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.files).toEqual(
+      [
+        {
+          id: "file-pending",
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 10,
+        },
+      ],
+    );
+
+    const hydrated = options.merge(persisted, useComposerDraftStore.getState());
+    const hydratedFiles =
+      hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.files;
+    expect(hydratedFiles).toEqual([
+      {
+        type: "file",
+        id: "file-pending",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 10,
+        file: null,
+      },
+    ]);
+    expect(hydratedFiles?.every(composerFileNeedsReattach)).toBe(true);
+  });
+
+  it("marks only the matching byte-less upload as missing", () => {
+    const store = useComposerDraftStore.getState();
+    const hydrated: ComposerFileAttachment = {
+      ...makeFile("file-hydrated"),
+      file: null,
+      uploadedAttachmentId: "pending-old",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+    const local: ComposerFileAttachment = {
+      ...makeFile("file-local"),
+      name: "local.txt",
+      mimeType: "text/plain",
+    };
+    store.addFiles(threadRef, [hydrated, local]);
+    store.setFileUpload(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-new");
+    store.setFileUpload(threadRef, local.id, TEST_ENVIRONMENT_ID, "pending-local");
+
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, OTHER_TEST_ENVIRONMENT_ID, "pending-new"),
+    ).toBe(false);
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-old"),
+    ).toBe(false);
+    expect(
+      store.markFileUploadMissing(threadRef, local.id, TEST_ENVIRONMENT_ID, "pending-local"),
+    ).toBe(false);
+
+    expect(store.getComposerDraft(threadRef)?.files).toMatchObject([
+      {
+        id: hydrated.id,
+        uploadedAttachmentId: "pending-new",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+      {
+        id: local.id,
+        file: local.file,
+        uploadedAttachmentId: "pending-local",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+    ]);
+
+    expect(
+      store.markFileUploadMissing(threadRef, hydrated.id, TEST_ENVIRONMENT_ID, "pending-new"),
+    ).toBe(true);
+    const marker = store.getComposerDraft(threadRef)?.files[0];
+    expect(marker && composerFileNeedsReattach(marker)).toBe(true);
+    expect(marker?.uploadedAttachmentId).toBeUndefined();
+    expect(marker?.uploadEnvironmentId).toBeUndefined();
+  });
+
+  it("removes generic files when the composer is cleared", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [makeFile("file-clear")]);
+
+    store.clearComposerContent(threadRef);
+
+    expect(store.getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("removes generic files when a prompt is moved into the stash", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Review the report");
+    store.addFiles(threadRef, [makeFile("file-stash")]);
+
+    store.clearComposerPromptAndImages(threadRef);
+
+    expect(store.getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("enforces the combined file and image limit across separate updates", () => {
+    const store = useComposerDraftStore.getState();
+    const images = Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) =>
+      makeImage({
+        id: `image-${index}`,
+        name: `image-${index}.png`,
+        previewUrl: `blob:image-${index}`,
+      }),
+    );
+    store.addImages(threadRef, images);
+    store.addFiles(threadRef, [
+      makeFile("file-accepted"),
+      { ...makeFile("file-overflow"), name: "other.pdf" },
+    ]);
+    expect(
+      store.addImage(
+        threadRef,
+        makeImage({ id: "image-overflow", name: "overflow.png", previewUrl: "blob:overflow" }),
+      ),
+    ).toBe(false);
+
+    const draft = store.getComposerDraft(threadRef);
+    expect(draft?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    expect(draft?.files.map((file) => file.id)).toEqual(["file-accepted"]);
+  });
+
+  it("replaces a needs-reattach marker when the same file is picked again", () => {
+    const store = useComposerDraftStore.getState();
+    // A hydrated marker: same metadata as the original pick, no bytes and no
+    // server-side upload.
+    const marker: ComposerFileAttachment = { ...makeFile("file-marker"), file: null };
+    store.addFiles(threadRef, [marker]);
+    expect(store.getComposerDraft(threadRef)?.files.every(composerFileNeedsReattach)).toBe(true);
+
+    // Following the "Attach again" instruction produces a fresh id with the
+    // exact metadata the dedup key hashes.
+    const repicked = makeFile("file-repicked");
+    store.addFiles(threadRef, [repicked]);
+
+    const files = store.getComposerDraft(threadRef)?.files;
+    expect(files?.map((file) => file.id)).toEqual(["file-repicked"]);
+    expect(files?.[0]?.file).not.toBeNull();
+    expect(files?.some(composerFileNeedsReattach)).toBe(false);
+  });
+
+  it("replaces a legacy video marker after its MIME type is normalized", () => {
+    const store = useComposerDraftStore.getState();
+    const marker: ComposerFileAttachment = {
+      type: "file",
+      id: "file-marker",
+      name: "clip.mkv",
+      mimeType: "application/octet-stream",
+      sizeBytes: 6,
+      file: null,
+    };
+    store.addFiles(threadRef, [marker]);
+
+    const file = new File(["report"], marker.name, { type: "video/x-matroska" });
+    const repicked: ComposerFileAttachment = {
+      type: "file",
+      id: "file-repicked",
+      name: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      file,
+    };
+    store.addFiles(threadRef, [repicked, { ...repicked, id: "file-repicked-duplicate" }]);
+
+    const files = store.getComposerDraft(threadRef)?.files;
+    expect(files?.map((entry) => entry.id)).toEqual(["file-repicked"]);
+    expect(files?.some(composerFileNeedsReattach)).toBe(false);
+  });
+
+  it("replaces a needs-reattach marker with a stash-restored uploaded file", () => {
+    const store = useComposerDraftStore.getState();
+    const marker: ComposerFileAttachment = { ...makeFile("file-marker"), file: null };
+    store.addFiles(threadRef, [marker]);
+    expect(store.getComposerDraft(threadRef)?.files.every(composerFileNeedsReattach)).toBe(true);
+
+    // A stash restore carries a finished server-side upload instead of bytes.
+    // Matching metadata must replace the marker, not be dropped as a
+    // duplicate: the marker cannot send, and the restored ids are the only
+    // valid copy.
+    const restored: ComposerFileAttachment = {
+      ...makeFile("file-restored"),
+      file: null,
+      uploadedAttachmentId: "pending-stash-pdf",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+    store.addFiles(threadRef, [restored]);
+
+    const files = store.getComposerDraft(threadRef)?.files;
+    expect(files?.map((file) => file.id)).toEqual(["file-restored"]);
+    expect(files?.[0]?.uploadedAttachmentId).toBe("pending-stash-pdf");
+    expect(files?.[0]?.uploadEnvironmentId).toBe(TEST_ENVIRONMENT_ID);
+    expect(files?.some(composerFileNeedsReattach)).toBe(false);
+  });
+
+  it("still dedupes a re-pick against a file that does not need reattaching", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(threadRef, [makeFile("file-original")]);
+
+    store.addFiles(threadRef, [makeFile("file-duplicate")]);
+
+    expect(store.getComposerDraft(threadRef)?.files.map((file) => file.id)).toEqual([
+      "file-original",
+    ]);
+  });
+
+  it("restores files with matching metadata without replacing unsent bytes", () => {
+    const store = useComposerDraftStore.getState();
+    const unsent = makeFile("unsent");
+    const restored = {
+      ...unsent,
+      id: "restored",
+      file: new File(["edited"], unsent.name, { type: unsent.mimeType }),
+    };
+    store.addFiles(threadRef, [unsent]);
+    store.addFiles(threadRef, [restored, restored], { allowDuplicates: true });
+
+    const files = store.getComposerDraft(threadRef)?.files;
+    expect(files?.map((file) => file.id)).toEqual(["unsent", "restored"]);
+    expect(files?.[0]?.file).toBe(unsent.file);
+    expect(files?.[1]?.file).toBe(restored.file);
+  });
+
+  it("keeps same-name videos with different MIME types", () => {
+    const store = useComposerDraftStore.getState();
+    const mp4 = new File(["report"], "clip", { type: "video/mp4" });
+    const webm = new File(["report"], "clip", { type: "video/webm" });
+
+    store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "video-mp4",
+        name: mp4.name,
+        mimeType: mp4.type,
+        sizeBytes: mp4.size,
+        file: mp4,
+      },
+      {
+        type: "file",
+        id: "video-webm",
+        name: webm.name,
+        mimeType: webm.type,
+        sizeBytes: webm.size,
+        file: webm,
+      },
+    ]);
+
+    expect(store.getComposerDraft(threadRef)?.files.map((file) => file.id)).toEqual([
+      "video-mp4",
+      "video-webm",
+    ]);
+  });
+
+  it("keeps the remaining file slot available after a duplicate is skipped", () => {
+    const store = useComposerDraftStore.getState();
+    store.addImages(
+      threadRef,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2 }, (_, index) =>
+        makeImage({
+          id: `image-${index}`,
+          name: `image-${index}.png`,
+          previewUrl: `blob:image-${index}`,
+        }),
+      ),
+    );
+    store.addFiles(threadRef, [makeFile("file-original")]);
+    store.addFiles(threadRef, [
+      makeFile("file-duplicate"),
+      { ...makeFile("file-unique"), name: "unique.pdf" },
+    ]);
+
+    expect(store.getComposerDraft(threadRef)?.files.map((file) => file.id)).toEqual([
+      "file-original",
+      "file-unique",
+    ]);
+  });
+});
+
 describe("composerDraftStore syncPersistedAttachments", () => {
   const threadId = ThreadId.make("thread-sync-persisted");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -625,6 +1047,60 @@ describe("composerDraftStore terminal contexts", () => {
     expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-1"]);
   });
 
+  it("inserts terminal selections at the caret without overwriting the updated prompt", () => {
+    const store = useComposerDraftStore.getState();
+    const context = makeTerminalContext({ id: "caret-context" });
+    const reference = formatTerminalContextReference(context);
+    store.setPrompt(threadRef, "before after");
+    const unregister = store.setContextInsertionHandler(threadRef, () => {
+      store.setPrompt(threadRef, `before ${reference} after`);
+      return true;
+    });
+    store.addTerminalContexts(threadRef, [context]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`before ${reference} after`);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.terminalContexts).toHaveLength(1);
+    unregister?.();
+  });
+
+  it.each([false, true])(
+    "appends terminal selections with insertAtCaret=%s when not placed",
+    (insertAtCaret) => {
+      const store = useComposerDraftStore.getState();
+      const context = makeTerminalContext({ id: "append-context" });
+      const handler = vi.fn(() => false);
+      const unregister = store.setContextInsertionHandler(threadRef, handler);
+      store.setPrompt(threadRef, "before");
+      store.addTerminalContexts(threadRef, [context], { insertAtCaret });
+      expect(handler).toHaveBeenCalledTimes(insertAtCaret ? 1 : 0);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+        `before ${formatTerminalContextReference(context)} `,
+      );
+      unregister?.();
+    },
+  );
+
+  it("normalizes legacy terminal ids before storing and removing their references", () => {
+    const store = useComposerDraftStore.getState();
+    store.setTerminalContexts(threadRef, [makeTerminalContext({ id: "old terminal:one" })]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+    const id = draft.terminalContexts[0]!.id;
+    expect(id).toMatch(/^[a-z0-9_-]+$/i);
+    expect(draft.prompt).toContain(`/terminal/terminal_${id})`);
+    store.removeTerminalContext(threadRef, id);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it.each(["replace", "remove", "clear"])("removes terminal links on %s", (operation) => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Explain");
+    store.addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-1" }));
+    if (operation === "replace") store.setTerminalContexts(threadRef, []);
+    else if (operation === "remove") store.removeTerminalContext(threadRef, "ctx-1");
+    else store.clearTerminalContexts(threadRef);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Explain");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.terminalContexts).toEqual([]);
+  });
+
   it("clears terminal contexts when clearing composer content", () => {
     useComposerDraftStore
       .getState()
@@ -636,41 +1112,43 @@ describe("composerDraftStore terminal contexts", () => {
   });
 
   it("inserts terminal contexts at the requested inline prompt position", () => {
-    const firstInsertion = insertInlineTerminalContextPlaceholder("alpha beta", 6);
-    const secondInsertion = insertInlineTerminalContextPlaceholder(firstInsertion.prompt, 0);
+    const first = makeTerminalContext({ id: "ctx-1" });
+    const second = makeTerminalContext({
+      id: "ctx-2",
+      terminalLabel: "Terminal 2",
+      lineStart: 9,
+      lineEnd: 10,
+    });
+    const firstInsertion = insertInlineContextReference(
+      "alpha beta",
+      6,
+      terminalContextReference(first),
+    );
+    const secondInsertion = insertInlineContextReference(
+      firstInsertion.prompt,
+      0,
+      terminalContextReference(second),
+    );
 
     expect(
       useComposerDraftStore
         .getState()
-        .insertTerminalContext(
-          threadRef,
-          firstInsertion.prompt,
-          makeTerminalContext({ id: "ctx-1" }),
-          firstInsertion.contextIndex,
-        ),
+        .insertTerminalContext(threadRef, firstInsertion.prompt, first, 0),
     ).toBe(true);
     expect(
-      useComposerDraftStore.getState().insertTerminalContext(
-        threadRef,
-        secondInsertion.prompt,
-        makeTerminalContext({
-          id: "ctx-2",
-          terminalLabel: "Terminal 2",
-          lineStart: 9,
-          lineEnd: 10,
-        }),
-        secondInsertion.contextIndex,
-      ),
+      useComposerDraftStore
+        .getState()
+        .insertTerminalContext(threadRef, secondInsertion.prompt, second, 0),
     ).toBe(true);
 
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft?.prompt).toBe(
-      `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} alpha ${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} beta`,
+      `${formatTerminalContextReference(second)} alpha ${formatTerminalContextReference(first)} beta`,
     );
     expect(draft?.terminalContexts.map((context) => context.id)).toEqual(["ctx-2", "ctx-1"]);
   });
 
-  it("omits terminal context text from persisted drafts", () => {
+  it("persists terminal context snapshot text", () => {
     useComposerDraftStore
       .getState()
       .addTerminalContext(threadRef, makeTerminalContext({ id: "ctx-persist" }));
@@ -695,10 +1173,10 @@ describe("composerDraftStore terminal contexts", () => {
     expect(
       persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
         ?.terminalContexts?.[0]?.text,
-    ).toBeUndefined();
+    ).toBe(makeTerminalContext({ id: "ctx-persist" }).text);
   });
 
-  it("hydrates persisted terminal contexts without in-memory snapshot text", () => {
+  it("keeps legacy terminal contexts without saved snapshot text unavailable", () => {
     const persistApi = useComposerDraftStore.persist as unknown as {
       getOptions: () => {
         merge: (
@@ -732,6 +1210,9 @@ describe("composerDraftStore terminal contexts", () => {
       useComposerDraftStore.getInitialState(),
     );
 
+    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toBe(
+      "[Terminal 1 lines 4-5](t3-context://v1/terminal/terminal_ctx-rehydrated)",
+    );
     expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.terminalContexts).toMatchObject([
       {
         id: "ctx-rehydrated",
@@ -773,6 +1254,71 @@ describe("composerDraftStore terminal contexts", () => {
     expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]).toBeUndefined();
     expect(mergedState.draftThreadsByThreadKey).toEqual({});
     expect(mergedState.logicalProjectDraftThreadKeyByLogicalProjectKey).toEqual({});
+  });
+});
+
+describe("composerDraftStore context persistence", () => {
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("context-persistence"));
+  const annotation: PreviewAnnotationPayload = {
+    id: "retry-note",
+    pageUrl: "http://localhost:3000/checkout",
+    pageTitle: "Checkout",
+    comment: "Keep the cart after a failed payment",
+    elements: [],
+    regions: [{ id: "error-region", rect: { x: 10, y: 20, width: 100, height: 50 } }],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: "2026-09-06T10:00:00.000Z",
+  };
+
+  beforeEach(resetComposerDraftStore);
+
+  it("preserves snapshots and inline positions through repeated persistence and hydration", () => {
+    const terminal = {
+      ...makeTerminalContext({ id: "checkout-console" }),
+      threadId: threadRef.threadId,
+    };
+    const store = useComposerDraftStore.getState();
+    store.addTerminalContext(threadRef, terminal);
+    store.addPreviewAnnotation(threadRef, annotation);
+    const terminalLink = formatTerminalContextReference(terminal);
+    const prompt = `Inspect ${terminalLink}. Apply [Retry note](t3-context://v1/preview-annotation/preview-annotation_retry-note). Compare ${terminalLink} again.`;
+    store.setPrompt(threadRef, prompt);
+    let state = useComposerDraftStore.getState();
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+
+    for (let reload = 0; reload < 3; reload++) {
+      state = merge(
+        JSON.parse(JSON.stringify(partializeComposerDraftStoreState(state))),
+        useComposerDraftStore.getInitialState(),
+      );
+      const draft = state.draftsByThreadKey[scopedThreadKey(threadRef)];
+      expect(draft?.prompt).toBe(prompt);
+      expect(draft?.terminalContexts).toEqual([terminal]);
+      expect(draft?.previewAnnotations).toEqual([annotation]);
+    }
+  });
+
+  it("retains annotation-only drafts and filters malformed annotations", () => {
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+    const state = merge(
+      {
+        draftsByThreadKey: {
+          [scopedThreadKey(threadRef)]: {
+            prompt: "",
+            attachments: [],
+            previewAnnotations: [annotation, { id: "invalid" }, null],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    const draft = state.draftsByThreadKey[scopedThreadKey(threadRef)];
+    expect(draft?.previewAnnotations).toEqual([annotation]);
+    expect(draft?.prompt).toContain(
+      "t3-context://v1/preview-annotation/preview-annotation_retry-note",
+    );
   });
 });
 
@@ -928,16 +1474,27 @@ describe("composerDraftStore review comments", () => {
 
 describe("composerDraftStore project draft thread mapping", () => {
   const projectId = ProjectId.make("project-a");
+
   const otherProjectId = ProjectId.make("project-b");
+
   const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, projectId);
+
   const otherProjectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, otherProjectId);
+
   const remoteProjectRef = scopeProjectRef(OTHER_TEST_ENVIRONMENT_ID, projectId);
+
   const threadId = ThreadId.make("thread-a");
+
   const otherThreadId = ThreadId.make("thread-b");
+
   const draftId = DraftId.make("draft-a");
+
   const otherDraftId = DraftId.make("draft-b");
+
   const sharedDraftId = DraftId.make("draft-shared");
+
   const localDraftId = DraftId.make("draft-local");
+
   const remoteDraftId = DraftId.make("draft-remote");
 
   beforeEach(() => {
@@ -962,10 +1519,19 @@ describe("composerDraftStore project draft thread mapping", () => {
       store.addImage(localDraftId, makeImage({ id: "img-local", previewUrl: "blob:local-draft" }));
       store.setPrompt(localThreadRef, "local thread draft");
       store.setPrompt(remoteThreadRef, "remote thread draft");
+      useComposerDraftStore.setState({
+        rewindingThreadKeys: new Set([
+          threadKeyFor(threadId, TEST_ENVIRONMENT_ID),
+          threadKeyFor(otherThreadId, OTHER_TEST_ENVIRONMENT_ID),
+        ]),
+      });
 
       clearComposerDraftsEnvironment(TEST_ENVIRONMENT_ID);
 
       const next = useComposerDraftStore.getState();
+      expect([...next.rewindingThreadKeys]).toEqual([
+        threadKeyFor(otherThreadId, OTHER_TEST_ENVIRONMENT_ID),
+      ]);
       expect(next.getDraftThreadByProjectRef(projectRef)).toBeNull();
       expect(next.getDraftThreadByProjectRef(remoteProjectRef)).not.toBeNull();
       expect(next.getComposerDraft(localDraftId)).toBeNull();
@@ -1062,6 +1628,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       "keep this prompt",
     );
   });
+
   it("clears only matching project draft mapping entries", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
@@ -1336,6 +1903,19 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
+  it("moves composer edits made during promotion to the canonical thread", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+    store.setPrompt(draftId, "typed during setup");
+
+    finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
+  });
   it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
@@ -1543,6 +2123,7 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
     expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
   });
+
   it("clears branch and worktree but keeps env mode when changing a draft thread project ref", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, {
@@ -1605,6 +2186,46 @@ describe("composerDraftStore modelSelection", () => {
     ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4"));
   });
 
+  it("persists the explicit marker through storage round-trips", async () => {
+    vi.useFakeTimers();
+    try {
+      useComposerDraftStore
+        .getState()
+        .setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+        });
+      // Land the debounced persist write.
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Hydrate from the same storage the store persists into and verify the
+      // marker survives the partialize → decode → merge path.
+      resetComposerDraftStore();
+      await useComposerDraftStore.persist.rehydrate();
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
+      expect(
+        draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
+      ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks picker writes explicit and seeding writes non-explicit", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+      explicit: true,
+    });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
+
+    // Last writer defines intent: a later seed clears the marker.
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+      replaceOptions: true,
+    });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+  });
   it("replaces only the targeted provider options on the current model selection", () => {
     const store = useComposerDraftStore.getState();
 
@@ -1647,6 +2268,22 @@ describe("composerDraftStore modelSelection", () => {
     );
   });
 
+  it("marks trait edits as explicit model intent", () => {
+    const store = useComposerDraftStore.getState();
+    store.setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBeUndefined();
+
+    store.setProviderModelOptions(
+      threadRef,
+      CODEX_DRIVER,
+      toSelections({ reasoningEffort: "xhigh" }),
+    );
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionExplicit).toBe(true);
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[CODEX_INSTANCE],
+    ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "xhigh" }));
+  });
   it("keeps explicit default-state overrides on the selection", () => {
     const store = useComposerDraftStore.getState();
 
@@ -2016,8 +2653,291 @@ describe("composerDraftStore sticky composer settings", () => {
       activeProvider: "claudeAgent",
     });
   });
+
+  it("clears a non-explicit stale model when there is no sticky state", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-stale-without-sticky");
+
+    store.setModelSelection(draftId, modelSelection(CODEX_DRIVER, "stale-model"));
+    store.applyStickyState(draftId);
+
+    expect(draftByKey(draftId)).toBeUndefined();
+  });
+
+  it("replaces a non-explicit stale model and its options with sticky state", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-stale-sticky-seed");
+
+    store.setModelSelection(
+      draftId,
+      modelSelection(CODEX_DRIVER, "stale-model", { reasoningEffort: "low" }),
+    );
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "sticky-model", { reasoningEffort: "xhigh" }),
+    );
+    store.applyStickyState(draftId);
+
+    expect(draftByKey(draftId)).toMatchObject({
+      activeProvider: CODEX_INSTANCE,
+      modelSelectionByProvider: {
+        [CODEX_INSTANCE]: modelSelection(CODEX_DRIVER, "sticky-model", {
+          reasoningEffort: "xhigh",
+        }),
+      },
+    });
+  });
 });
 
+describe("composerDraftStore model seed migration", () => {
+  const staleDraftId = DraftId.make("draft-legacy-stale-model");
+  const explicitDraftId = DraftId.make("draft-legacy-explicit-model");
+  const typedDraftId = DraftId.make("draft-legacy-typed-model");
+  const staleThreadId = ThreadId.make("thread-legacy-stale-model");
+  const explicitThreadId = ThreadId.make("thread-legacy-explicit-model");
+  const typedThreadId = ThreadId.make("thread-legacy-typed-model");
+  const serverThreadId = ThreadId.make("thread-server-model");
+  const serverThreadKey = scopedThreadKey(scopeThreadRef(TEST_ENVIRONMENT_ID, serverThreadId));
+  const projectId = ProjectId.make("project-model-migration");
+  const logicalProjectKey = `${TEST_ENVIRONMENT_ID}:/tmp/project-model-migration`;
+
+  const draftThread = (threadId: ThreadId) => ({
+    threadId,
+    environmentId: TEST_ENVIRONMENT_ID,
+    projectId,
+    logicalProjectKey,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    envMode: "local",
+    startFromOrigin: false,
+    promotedTo: null,
+  });
+
+  beforeEach(async () => {
+    resetComposerDraftStore();
+    await useComposerDraftStore.persist.clearStorage();
+  });
+
+  afterEach(async () => {
+    await useComposerDraftStore.persist.clearStorage();
+  });
+
+  it.each([1, 2])(
+    "keeps the legacy sticky Codex selection when v%s storage omitted the provider",
+    async (version) => {
+      vi.useFakeTimers();
+      try {
+        const stickySelection = modelSelection(CODEX_DRIVER, "gpt-5.6-terra", {
+          reasoningEffort: "xhigh",
+        });
+        const storage = useComposerDraftStore.persist.getOptions().storage;
+        expect(storage).toBeDefined();
+        storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+          version,
+          state: {
+            draftsByThreadId: {},
+            draftThreadsByThreadId: {},
+            projectDraftThreadIdByProjectId: {},
+            stickyModel: stickySelection.model,
+            stickyModelOptions: providerModelOptions({
+              [CODEX_DRIVER]: { reasoningEffort: "xhigh" },
+            }),
+          },
+        } as never);
+        await vi.advanceTimersByTimeAsync(300);
+
+        await useComposerDraftStore.persist.rehydrate();
+
+        expect(useComposerDraftStore.getState()).toMatchObject({
+          stickyModelSelectionByProvider: { [CODEX_INSTANCE]: stickySelection },
+          stickyActiveProvider: null,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("strips seeded models only from empty draft sessions when upgrading storage", async () => {
+    vi.useFakeTimers();
+    try {
+      const staleSelection = modelSelection(CODEX_DRIVER, "gpt-5.4");
+      const stickySelection = modelSelection(CODEX_DRIVER, "gpt-5.6-terra", {
+        reasoningEffort: "xhigh",
+      });
+      const storage = useComposerDraftStore.persist.getOptions().storage;
+      expect(storage).toBeDefined();
+      storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+        version: 8,
+        state: {
+          draftsByThreadKey: {
+            [staleDraftId]: {
+              prompt: "",
+              attachments: [],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+              runtimeMode: "approval-required",
+            },
+            [typedDraftId]: {
+              prompt: "keep this prompt",
+              attachments: [],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+            },
+            [explicitDraftId]: {
+              prompt: "",
+              attachments: [],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+              modelSelectionExplicit: true,
+            },
+            [serverThreadKey]: {
+              prompt: "",
+              attachments: [],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+            },
+          },
+          draftThreadsByThreadKey: {
+            [staleDraftId]: draftThread(staleThreadId),
+            [explicitDraftId]: draftThread(explicitThreadId),
+            [typedDraftId]: draftThread(typedThreadId),
+          },
+          logicalProjectDraftThreadKeyByLogicalProjectKey: {
+            [logicalProjectKey]: staleDraftId,
+          },
+          stickyModelSelectionByProvider: { [CODEX_INSTANCE]: stickySelection },
+          stickyActiveProvider: CODEX_INSTANCE,
+        },
+      } as never);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await useComposerDraftStore.persist.rehydrate();
+
+      expect(draftByKey(staleDraftId)).toMatchObject({
+        modelSelectionByProvider: {},
+        activeProvider: null,
+        runtimeMode: "approval-required",
+      });
+      expect(draftByKey(typedDraftId)).toMatchObject({
+        prompt: "keep this prompt",
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+      });
+      expect(draftByKey(explicitDraftId)).toMatchObject({
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+        modelSelectionExplicit: true,
+      });
+      expect(draftByKey(serverThreadKey)).toMatchObject({
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+      });
+      expect(useComposerDraftStore.getState().draftThreadsByThreadKey[staleDraftId]).toMatchObject({
+        environmentId: TEST_ENVIRONMENT_ID,
+        projectId,
+        logicalProjectKey,
+      });
+      expect(useComposerDraftStore.getState()).toMatchObject({
+        stickyModelSelectionByProvider: { [CODEX_INSTANCE]: stickySelection },
+        stickyActiveProvider: CODEX_INSTANCE,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps v8 file-only draft sessions and their seeded models", async () => {
+    vi.useFakeTimers();
+    try {
+      const uploadedDraftId = DraftId.make("draft-legacy-uploaded-file");
+      const markerDraftId = DraftId.make("draft-legacy-file-marker");
+      const uploadedThreadId = ThreadId.make("thread-legacy-uploaded-file");
+      const markerThreadId = ThreadId.make("thread-legacy-file-marker");
+      const staleSelection = modelSelection(CODEX_DRIVER, "gpt-5.4");
+      const storage = useComposerDraftStore.persist.getOptions().storage;
+      expect(storage).toBeDefined();
+      storage?.setItem(COMPOSER_DRAFT_STORAGE_KEY, {
+        version: 8,
+        state: {
+          draftsByThreadKey: {
+            [uploadedDraftId]: {
+              prompt: "",
+              attachments: [],
+              files: [
+                {
+                  id: "file-uploaded",
+                  name: "uploaded-report.pdf",
+                  mimeType: "application/pdf",
+                  sizeBytes: 128,
+                  attachmentId: "attachment-uploaded",
+                  environmentId: TEST_ENVIRONMENT_ID,
+                },
+              ],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+            },
+            [markerDraftId]: {
+              prompt: "",
+              attachments: [],
+              files: [
+                {
+                  id: "file-needs-reattach",
+                  name: "local-notes.txt",
+                  mimeType: "text/plain",
+                  sizeBytes: 64,
+                },
+              ],
+              modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+              activeProvider: CODEX_INSTANCE,
+              runtimeMode: "approval-required",
+            },
+          },
+          draftThreadsByThreadKey: {
+            [uploadedDraftId]: draftThread(uploadedThreadId),
+            [markerDraftId]: draftThread(markerThreadId),
+          },
+          logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+          stickyModelSelectionByProvider: {},
+          stickyActiveProvider: null,
+        },
+      } as never);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await useComposerDraftStore.persist.rehydrate();
+
+      expect(draftByKey(uploadedDraftId)).toMatchObject({
+        files: [
+          {
+            id: "file-uploaded",
+            name: "uploaded-report.pdf",
+            uploadedAttachmentId: "attachment-uploaded",
+            uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+          },
+        ],
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+      });
+      expect(draftByKey(markerDraftId)).toMatchObject({
+        files: [
+          {
+            id: "file-needs-reattach",
+            name: "local-notes.txt",
+            file: null,
+          },
+        ],
+        modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
+        activeProvider: CODEX_INSTANCE,
+        runtimeMode: "approval-required",
+      });
+      expect(draftByKey(markerDraftId)?.files.every(composerFileNeedsReattach)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 describe("composerDraftStore provider-scoped option updates", () => {
   const threadId = ThreadId.make("thread-provider");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -2276,6 +3196,472 @@ describe("createDeferredStorage", () => {
     vi.advanceTimersByTime(300);
     expect(base.setItem).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledWith("key", "s:v2");
+  });
+});
+
+describe("composerDraftStore inline context references", () => {
+  const threadId = ThreadId.make("thread-inline-context");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const reviewComment = {
+    id: "rc-1",
+    sectionId: "file:a/b.ts",
+    sectionTitle: "File comment",
+    filePath: "a/b.ts",
+    startIndex: 3,
+    endIndex: 3,
+    rangeLabel: "L4",
+    text: "Why?",
+    diff: "const x = 1;",
+  };
+  const reviewLink = "[b.ts L4](t3-context://v1/review-comment/review-comment_rc-1)";
+  const annotation = {
+    id: "ann-1",
+    pageUrl: "http://localhost:3000/",
+    pageTitle: "Home",
+    comment: "Bigger",
+    elements: [],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const annotationLink = "[Bigger](t3-context://v1/preview-annotation/preview-annotation_ann-1)";
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("appends a link when a review comment is added and strips it on removal", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "look");
+    store.addReviewComment(threadRef, reviewComment);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`look ${reviewLink} `);
+    // Re-adding the same comment replaces the record without a second link.
+    store.addReviewComment(threadRef, { ...reviewComment, text: "edited" });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`look ${reviewLink} `);
+    store.removeReviewComment(threadRef, "rc-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("look");
+  });
+
+  it("can add another reference while upserting one backing review record", () => {
+    const store = useComposerDraftStore.getState();
+    store.addReviewComment(threadRef, reviewComment);
+    const insertionHandler = vi.fn(() => true);
+    store.setContextInsertionHandler(threadRef, insertionHandler);
+    store.addReviewComment(
+      threadRef,
+      { ...reviewComment, text: "edited" },
+      {
+        allowDuplicateReference: true,
+        insertAtCaret: false,
+      },
+    );
+
+    expect(insertionHandler).not.toHaveBeenCalled();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`${reviewLink} ${reviewLink} `);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([
+      { ...reviewComment, text: "edited" },
+    ]);
+  });
+
+  it("keeps bulk-set review records and their inline references in sync", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Explain this pull request.");
+    store.setReviewComments(threadRef, [reviewComment]);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      `Explain this pull request. ${reviewLink} `,
+    );
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([reviewComment]);
+
+    store.setReviewComments(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Explain this pull request.");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([]);
+  });
+
+  it("hands new review comments to a registered caret handler instead of appending", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "look");
+    const seen: string[] = [];
+    store.setContextInsertionHandler(threadRef, (references) => {
+      seen.push(...references.map((reference) => reference.contextId));
+      return true;
+    });
+    store.addReviewComment(threadRef, reviewComment);
+    expect(seen).toEqual(["review-comment_rc-1"]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("look");
+    store.setContextInsertionHandler(threadRef, null);
+    store.addReviewComment(threadRef, { ...reviewComment, id: "rc-2" });
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      "look [b.ts L4](t3-context://v1/review-comment/review-comment_rc-2) ",
+    );
+  });
+
+  it("does not overwrite a prompt update made by the caret handler", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "before after");
+    store.setContextInsertionHandler(threadRef, (references) => {
+      const reference = references[0];
+      if (!reference) return false;
+      useComposerDraftStore
+        .getState()
+        .setPrompt(
+          threadRef,
+          `before [${reference.label}](t3-context://v1/${reference.kind}/${reference.contextId}) after`,
+        );
+      return true;
+    });
+
+    store.addReviewComment(threadRef, reviewComment);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`before ${reviewLink} after`);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([reviewComment]);
+    store.setContextInsertionHandler(threadRef, null);
+  });
+
+  it("appends a link when a preview annotation is added and strips it on removal", () => {
+    const store = useComposerDraftStore.getState();
+    store.addPreviewAnnotation(threadRef, annotation);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`${annotationLink} `);
+    store.removePreviewAnnotation(threadRef, "ann-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("keeps bulk-set preview annotations and their inline references in sync", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Explain this preview.");
+    store.setPreviewAnnotations(threadRef, [annotation]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      `Explain this preview. ${annotationLink} `,
+    );
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.previewAnnotations).toEqual([annotation]);
+
+    const edited = { ...annotation, comment: "Updated comment" };
+    store.setPreviewAnnotations(threadRef, [edited]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
+      `Explain this preview. ${annotationLink} `,
+    );
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.previewAnnotations).toEqual([edited]);
+
+    store.setPreviewAnnotations(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("Explain this preview.");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.previewAnnotations).toEqual([]);
+  });
+
+  it("removes an annotation-only draft when bulk-cleared", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPreviewAnnotations(threadRef, [annotation]);
+    store.setPreviewAnnotations(threadRef, []);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("keeps links for retained context when clearing text and attachments", () => {
+    const store = useComposerDraftStore.getState();
+    store.addReviewComment(threadRef, reviewComment);
+    store.addPreviewAnnotation(threadRef, annotation);
+    store.clearComposerPromptAndImages(threadRef);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.prompt).toContain(reviewLink);
+    expect(draft?.prompt).toContain(annotationLink);
+    expect(draft?.reviewComments).toEqual([reviewComment]);
+    expect(draft?.previewAnnotations).toEqual([annotation]);
+  });
+
+  it("rehydrates annotation-only drafts with their references", () => {
+    const merged = useComposerDraftStore.persist.getOptions().merge!(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId)]: {
+            prompt: "",
+            attachments: [],
+            previewAnnotations: [annotation],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(merged.draftsByThreadKey[threadKeyFor(threadId)]?.previewAnnotations).toEqual([
+      annotation,
+    ]);
+    expect(merged.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toContain(annotationLink);
+  });
+
+  it("adds links for persisted review comments that predate references", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadId: {
+          [threadId]: {
+            prompt: "old draft",
+            attachments: [],
+            reviewComments: [reviewComment],
+          },
+        },
+        draftThreadsByThreadId: {},
+        projectDraftThreadIdByProjectKey: {},
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toBe(
+      `old draft ${reviewLink} `,
+    );
+  });
+});
+
+describe("composerDraftStore attachment references", () => {
+  const threadId = ThreadId.make("thread-attachment-refs");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const fileLink = "[notes.txt](t3-context://v1/file/file_file-1)";
+  const imageLink = "[shot.png](t3-context://v1/image/image_img-1)";
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("reports which attachments it accepted so only those get chips", () => {
+    const store = useComposerDraftStore.getState();
+    const file = {
+      type: "file" as const,
+      id: "file-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      sizeBytes: 3,
+      file: null,
+      uploadedAttachmentId: "p",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+    expect(store.addFiles(threadRef, [file])).toEqual(["file-1"]);
+    expect(store.addFiles(threadRef, [{ ...file, id: "file-2" }])).toEqual([]);
+    const image = makeImage({ id: "img-1", previewUrl: "blob:img-1", name: "shot.png" });
+    expect(store.addImages(threadRef, [image])).toEqual(["img-1"]);
+    expect(
+      store.addImages(threadRef, [
+        makeImage({ id: "img-2", previewUrl: "blob:img-2", name: "shot.png" }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("strips references when an image or file is removed", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, `see ${imageLink} and ${fileLink} ok`);
+    store.addImages(threadRef, [
+      makeImage({ id: "img-1", previewUrl: "blob:img-1", name: "shot.png" }),
+    ]);
+    store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: null,
+        uploadedAttachmentId: "pending-1",
+        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+      },
+    ]);
+    store.removeImage(threadRef, "img-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(`see and ${fileLink} ok`);
+    store.removeFile(threadRef, "file-1");
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("see and ok");
+  });
+
+  it("moves a needs-reattach marker's chip to the re-picked file", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "see [notes.txt](t3-context://v1/file/file_marker-1) ok");
+    store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "marker-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: null,
+      },
+    ]);
+    const acceptedIds = store.addFiles(threadRef, [
+      {
+        type: "file",
+        id: "fresh-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: new File(["abc"], "notes.txt", { type: "text/plain" }),
+      },
+    ]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(acceptedIds).toEqual([]);
+    expect(draft?.files.map((file) => file.id)).toEqual(["fresh-1"]);
+    expect(draft?.prompt).toBe("see [notes.txt](t3-context://v1/file/file_fresh-1) ok");
+  });
+
+  it("restores a file-only draft with a reference and preserves it through prompt edits", () => {
+    const store = useComposerDraftStore.getState();
+    store.addFiles(
+      threadRef,
+      [
+        {
+          type: "file",
+          id: "restored",
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 3,
+          file: null,
+          uploadedAttachmentId: "uploaded",
+          uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+        },
+      ],
+      { appendReference: true },
+    );
+    const restored = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+    expect(restored.prompt).toBe("[notes.txt](t3-context://v1/file/file_restored) ");
+    store.setPrompt(threadRef, `${restored.prompt}explain this`);
+    const edited = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+    expect(edited.files.map((file) => file.id)).toEqual(["restored"]);
+    expect(edited.prompt).toContain("t3-context://v1/file/file_restored");
+  });
+
+  it.each(["old.file:1", "file-1"])(
+    "rewrites persisted attachment references before removal: %s",
+    (id) => {
+      const merged = useComposerDraftStore.persist.getOptions().merge!(
+        {
+          draftsByThreadKey: {
+            [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+              prompt: `before [notes.txt](t3-context://v1/file/${id}) after`,
+              attachments: [],
+              files: [{ id, name: "notes.txt", mimeType: "text/plain", sizeBytes: 3 }],
+            },
+          },
+        },
+        useComposerDraftStore.getInitialState(),
+      );
+      useComposerDraftStore.setState(merged);
+      const draft = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
+      expect(draft.prompt.match(/t3-context:/g)).toHaveLength(1);
+      expect(draft.prompt).not.toContain(`/file/${id})`);
+      useComposerDraftStore.getState().removeFile(threadRef, id);
+      expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("before after");
+    },
+  );
+
+  it.each(["", "Fix this"])("migrates saved element context with prompt %j", (prompt) => {
+    const element = {
+      id: "old-element",
+      threadId,
+      pickedAt: "2026-01-01T00:00:00Z",
+      pageUrl: "https://example.com",
+      pageTitle: "Example",
+      tagName: "button",
+      selector: "#save",
+      htmlPreview: "<button>Save</button>",
+      componentName: "SaveButton",
+      source: null,
+      styles: "color: red;",
+    };
+    const merged = useComposerDraftStore.persist.getOptions().merge!(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt,
+            attachments: [],
+            elementContexts: [element],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    const draft = merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]!;
+    expect(draft.previewAnnotations[0]?.elements[0]?.element).toMatchObject({
+      htmlPreview: element.htmlPreview,
+      styles: element.styles,
+      selector: element.selector,
+    });
+    expect(draft.prompt).toContain("t3-context://v1/preview-annotation/");
+    expect(draft.prompt).toContain(prompt);
+  });
+
+  it("appends chips for persisted files that predate references", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const mergedState = persistApi.getOptions().merge(
+      {
+        draftsByThreadId: {
+          [threadId]: {
+            prompt: "old",
+            attachments: [],
+            files: [{ id: "file-1", name: "notes.txt", mimeType: "text/plain", sizeBytes: 3 }],
+          },
+        },
+        draftThreadsByThreadId: {},
+        projectDraftThreadIdByProjectKey: {},
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.prompt).toBe(`old ${fileLink} `);
+  });
+
+  it("migrates legacy image references without doubling their image marker", () => {
+    const merged = useComposerDraftStore.persist.getOptions().merge!(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "see ![shot.png](t3-context://v1/image/img-1) after",
+            attachments: [
+              {
+                id: "img-1",
+                name: "shot.png",
+                mimeType: "image/png",
+                sizeBytes: 1,
+                dataUrl: "data:image/png;base64,YQ==",
+              },
+            ],
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
+      "see ![shot.png](t3-context://v1/image/image_img-1) after",
+    );
+  });
+
+  it("preserves canonical references when another producer ID matches their namespace", () => {
+    const prompt =
+      "![x.png](t3-context://v1/image/image_x) ![image_x.png](t3-context://v1/image/image_image_x)";
+    const merged = useComposerDraftStore.persist.getOptions().merge!(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt,
+            attachments: ["x", "image_x"].map((id) => ({
+              id,
+              name: `${id}.png`,
+              mimeType: "image/png",
+              sizeBytes: 1,
+              dataUrl: "data:image/png;base64,YQ==",
+            })),
+          },
+        },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
+      prompt,
+    );
   });
 });
 

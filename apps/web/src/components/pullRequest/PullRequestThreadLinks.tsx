@@ -12,6 +12,7 @@ import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pul
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
+import { normalizeThreadPullRequestKey } from "@d4research/shared/threadPullRequests";
 import { useProjects, useServerConfigs, useThreadShell, useThreadShells } from "~/state/entities";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -61,7 +62,10 @@ function EnabledPullRequestThreadLinks({
     linking.mode === "multiple" && display !== "menu-item"
       ? pullRequestEnvironment.linkedThreads({
           environmentId,
-          input: parsed === null ? reference : { ...reference, ...parsed },
+          input:
+            parsed === null
+              ? reference
+              : { ...reference, ...normalizeThreadPullRequestKey(parsed) },
         })
       : null,
   );
@@ -90,7 +94,10 @@ function EnabledPullRequestThreadLinks({
     }
     if (linking.mode === "multiple") {
       appAtomRegistry.refresh(
-        pullRequestEnvironment.linkedThreads({ environmentId, input: { ...reference, ...parsed } }),
+        pullRequestEnvironment.linkedThreads({
+          environmentId,
+          input: { ...reference, ...normalizeThreadPullRequestKey(parsed) },
+        }),
       );
     }
     onPickerOpenChange?.(false);

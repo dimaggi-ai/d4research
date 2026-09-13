@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildNativeReviewDiffData,
+  buildNativeReviewSnippetRows,
+  createNativeReviewDiffTheme,
   getCachedNativeReviewDiffData,
   type BuildNativeReviewDiffDataInput,
 } from "./nativeReviewDiffAdapter";
@@ -18,6 +21,31 @@ const parsedDiff = buildReviewParsedDiff(
   ].join("\n"),
   "native-review-cache-test",
 );
+
+describe("buildNativeReviewSnippetRows", () => {
+  it("preserves selected code and change types without inventing line numbers", () => {
+    const rows = buildNativeReviewSnippetRows({
+      id: "selection",
+      diff: "  unchanged\r\n-  before\r\n+  after\r\n",
+    });
+    expect(
+      rows.map((row) => [row.content, row.change, row.oldLineNumber, row.newLineNumber]),
+    ).toEqual([
+      [" unchanged", "context", null, null],
+      ["  before", "delete", null, null],
+      ["  after", "add", null, null],
+    ]);
+  });
+
+  it("leaves full patches, unrecognized text, and non-diff code to their existing renderers", () => {
+    for (const diff of ["@@ -1 +1 @@\n-old\n+new", "--- a/file\n+++ b/file", "plain text", ""]) {
+      expect(buildNativeReviewSnippetRows({ id: "selection", diff })).toEqual([]);
+    }
+    expect(
+      buildNativeReviewSnippetRows({ id: "code", diff: "+value", fenceLanguage: "typescript" }),
+    ).toEqual([]);
+  });
+});
 
 function makeComment(text: string): ReviewInlineComment {
   return {

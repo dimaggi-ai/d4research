@@ -11,7 +11,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
-import { EnvironmentId } from "@d4research/contracts";
+import {
+  EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+} from "@d4research/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
+import {
+  pastedTextDisposition,
+  replaceTextSelection,
+  nextPastedTextFileName,
+} from "@d4research/client-runtime/text-paste";
+import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
+import {
+  composerContextImportsAtom,
+  countComposerDraftAttachmentsAfterSelection,
+} from "../../state/use-composer-drafts";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -33,7 +50,13 @@ import { ThreadSettingsSheet, threadSettingsSummaryLabel } from "./ThreadSetting
 import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-presentation";
 
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
-import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
+import {
+  convertPastedImagesToAttachments,
+  pickComposerMedia,
+  pickComposerFiles,
+  createPastedTextComposerAttachment,
+  removePersistedComposerAttachmentFile,
+} from "../../lib/composerImages";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
@@ -135,6 +158,13 @@ export function NewTaskDraftScreen(props: {
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const contextImports = useAtomValue(composerContextImportsAtom);
+  const [pendingPastes, setPendingPastes] = useState(0);
+  const pendingPastesRef = useRef(0);
+  const pastedTextFileNamesRef = useRef<{ draftKey: string | null; names: Set<string> }>({
+    draftKey: null,
+    names: new Set(),
+  });
   const settingsSheetPresentation = useThreadSettingsSheetPresentation({
     editorRef: promptInputRef,
     isEditorFocused: isComposerFocused,
@@ -741,11 +771,121 @@ export function NewTaskDraftScreen(props: {
     if (isIncomingShareTransferPending) {
       return;
     }
-    const result = await pickComposerImages({ existingCount: flow.attachments.length });
-    if (result.images.length > 0) {
-      flow.appendAttachments(result.images);
+    const result = await pickComposerMedia({
+      existingCount: flow.attachments.length,
+      maxVideoBytes:
+        selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments?.maxUploadBytes,
+    });
+    if (result.attachments.length > 0) {
+      flow.appendAttachments(result.attachments);
     }
+    if (result.error) Alert.alert("Could not attach photo or video", result.error);
   }
+
+  async function handlePickFiles(): Promise<void> {
+    if (isIncomingShareTransferPending) return;
+    const maxBytes =
+      selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments?.maxUploadBytes;
+    if (maxBytes === undefined) return;
+    const result = await pickComposerFiles({ existingCount: flow.attachments.length, maxBytes });
+    if (result.files.length > 0) flow.appendAttachments(result.files);
+    if (result.error) Alert.alert("Could not attach file", result.error);
+  }
+
+  const handleNativePasteText = useCallback(
+    async (paste: ComposerTextPaste) => {
+      const draftKey = flow.draftKey;
+      if (!draftKey) return;
+      const insertion = { text: paste.value, ...paste.selection };
+      const insertPaste = () => {
+        const insertion = replaceTextSelection({
+          value: paste.value,
+          selection: paste.selection,
+          text: paste.text,
+        });
+        const selection = { start: insertion.cursor, end: insertion.cursor };
+        flow.setPrompt(insertion.value);
+        promptInputRef.current?.setSelection(selection);
+      };
+      const capabilities = selectedEnvironmentServerConfig?.environment.capabilities;
+      const advertisedMax =
+        capabilities?.attachmentUploads === true
+          ? capabilities.fileAttachments?.maxUploadBytes
+          : undefined;
+      const maxBytes =
+        advertisedMax === undefined ? null : clampFileAttachmentUploadBytes(advertisedMax);
+      const wouldExceedInputLimit =
+        paste.value.length -
+          Math.max(0, paste.selection.end - paste.selection.start) +
+          paste.text.length >
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS;
+      const canAttach =
+        maxBytes !== null &&
+        countComposerDraftAttachmentsAfterSelection(draftKey, insertion) <
+          PROVIDER_SEND_TURN_MAX_ATTACHMENTS &&
+        new TextEncoder().encode(paste.text).byteLength <= maxBytes;
+      if (
+        pastedTextDisposition({
+          text: paste.text,
+          wouldExceedInputLimit,
+          canAttach: true,
+        }) === "attachment"
+      ) {
+        if (canAttach && maxBytes !== null) {
+          pendingPastesRef.current += 1;
+          setPendingPastes(pendingPastesRef.current);
+          try {
+            if (pastedTextFileNamesRef.current.draftKey !== draftKey) {
+              pastedTextFileNamesRef.current = { draftKey, names: new Set() };
+            }
+            const reservedNames = pastedTextFileNamesRef.current.names;
+            for (const attachment of flow.attachments) reservedNames.add(attachment.name);
+            const name = nextPastedTextFileName([...reservedNames]);
+            reservedNames.add(name);
+            const attachment = await createPastedTextComposerAttachment({
+              text: paste.text,
+              name,
+              maxBytes,
+            });
+            if (latestDraftKeyRef.current !== draftKey) {
+              await removePersistedComposerAttachmentFile(attachment.fileUri);
+              return;
+            }
+            if (flow.appendAttachments([attachment], insertion) > 0) {
+              await removePersistedComposerAttachmentFile(attachment.fileUri);
+              Alert.alert(
+                "Could not attach pasted text",
+                `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
+              );
+            }
+          } catch (error) {
+            Alert.alert(
+              "Could not attach pasted text",
+              error instanceof Error ? error.message : "Try again.",
+            );
+          } finally {
+            pendingPastesRef.current = Math.max(0, pendingPastesRef.current - 1);
+            setPendingPastes(pendingPastesRef.current);
+          }
+        } else if (!wouldExceedInputLimit) {
+          insertPaste();
+        } else {
+          Alert.alert(
+            wouldExceedInputLimit
+              ? "Pasted text is too large for this message"
+              : "Could not attach pasted text",
+            wouldExceedInputLimit
+              ? "Remove some text or an attachment, then paste again."
+              : "Remove an attachment or use a smaller paste, then try again.",
+          );
+        }
+        return;
+      }
+
+      insertPaste();
+    },
+    [flow, selectedEnvironmentServerConfig],
+  );
 
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
@@ -765,6 +905,7 @@ export function NewTaskDraftScreen(props: {
   );
 
   async function handleStart(): Promise<void> {
+    if (pendingPastesRef.current > 0 || (flow.draftKey && contextImports[flow.draftKey])) return;
     const selectedProject = flow.selectedProject;
     const draftKey = flow.draftKey;
     if (!selectedProject || !draftKey) {
@@ -917,6 +1058,8 @@ export function NewTaskDraftScreen(props: {
   // draft composer expanded through the blur (mirrors ThreadComposer).
   const isExpanded = !isAndroid || isComposerFocused || settingsSheetPresentation.isActive;
   const canStart =
+    pendingPastes === 0 &&
+    !(flow.draftKey && contextImports[flow.draftKey]) &&
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
     flow.prompt.trim().length > 0 &&
@@ -926,6 +1069,8 @@ export function NewTaskDraftScreen(props: {
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
   const promptEditor = (
     <ComposerEditor
+      draftKey={flow.draftKey}
+      environmentId={selectedProject.environmentId}
       ref={promptInputRef}
       // Native autoFocus fires becomeFirstResponder in didMoveToWindow, which
       // forces the iOS keyboard bring-up during the formSheet present
@@ -941,6 +1086,7 @@ export function NewTaskDraftScreen(props: {
       onFocus={() => setIsComposerFocused(true)}
       onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
+      onPasteText={(paste) => void handleNativePasteText(paste)}
       placeholder={`Describe a coding task in ${selectedProject.title}`}
       // Same collapsed centering as ThreadComposer: native vertical gravity
       // in a pill-height box.
@@ -963,10 +1109,12 @@ export function NewTaskDraftScreen(props: {
 
   const toolbarPills = (
     <>
-      <ComposerToolbarButton
-        icon="plus"
-        onPress={() => void handlePickImages()}
-        showChevron={false}
+      <ComposerAttachmentButton
+        supportsFiles={Boolean(
+          selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments,
+        )}
+        onPickMedia={handlePickImages}
+        onPickFiles={handlePickFiles}
         disabled={isIncomingShareTransferPending}
       />
       <ComposerToolbarTrigger

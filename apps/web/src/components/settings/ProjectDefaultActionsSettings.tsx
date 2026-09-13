@@ -11,7 +11,7 @@ import {
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { ProjectActionsList } from "./ProjectActionsList";
-import { useProjectScriptSettings } from "./ProjectSettingsPanel";
+import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 
 export function ProjectDefaultActionsSettings({

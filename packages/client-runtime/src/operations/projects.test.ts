@@ -8,6 +8,8 @@ import {
 import * as Option from "effect/Option";
 
 import {
+  addProjectRemoteSourceLabel,
+  addProjectRemoteSourcePathHint,
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
   canCreateProjectInEnvironment,
@@ -24,6 +26,10 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
+  it("guides Bitbucket repository entry", () => {
+    expect(addProjectRemoteSourceLabel("bitbucket")).toBe("Bitbucket");
+    expect(addProjectRemoteSourcePathHint("bitbucket")).toBe("workspace/repository");
+  });
   it("only allows project creation in connected environments", () => {
     expect(canCreateProjectInEnvironment("connected")).toBe(true);
     expect(canCreateProjectInEnvironment("available")).toBe(false);
@@ -76,6 +82,13 @@ describe("add project shared logic", () => {
         sshUrl: "git@github.com:imputnet/helium.git",
       }),
     ).toBe("https://github.com/imputnet/helium");
+    expect(
+      getDefaultCloneUrl({
+        provider: "forgejo",
+        url: "https://forgejo.example.test:8443/owner/repo.git",
+        sshUrl: "ssh://git@forgejo.example.test:2222/owner/repo.git",
+      }),
+    ).toBe("https://forgejo.example.test:8443/owner/repo.git");
   });
 
   it("preserves existing clone transport behavior for other providers", () => {

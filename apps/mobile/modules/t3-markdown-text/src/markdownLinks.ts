@@ -132,7 +132,7 @@ const FILE_ICON_BY_NAME: Readonly<Record<string, MarkdownFileIcon>> = {
   "next.config.mjs": "nextjs",
   "next.config.mts": "nextjs",
   "next.config.ts": "nextjs",
-  "package.json": "package",
+  "package.json": "npm",
   "pnpm-lock.yaml": "pnpm",
   "pnpm-workspace.yaml": "pnpm",
   "postcss.config.js": "postcss",
@@ -143,7 +143,7 @@ const FILE_ICON_BY_NAME: Readonly<Record<string, MarkdownFileIcon>> = {
   "prettier.config.cjs": "prettier",
   "prettier.config.mjs": "prettier",
   rakefile: "ruby",
-  "readme.md": "readme",
+  "readme.md": "markdown",
   "stylelint.config.js": "stylelint",
   "stylelint.config.cjs": "stylelint",
   "stylelint.config.mjs": "stylelint",
@@ -155,7 +155,7 @@ const FILE_ICON_BY_NAME: Readonly<Record<string, MarkdownFileIcon>> = {
   "tailwind.config.cjs": "tailwind",
   "tailwind.config.mjs": "tailwind",
   "tailwind.config.ts": "tailwind",
-  "tsconfig.json": "tsconfig",
+  "tsconfig.json": "typescript",
   "vite.config.js": "vite",
   "vite.config.mjs": "vite",
   "vite.config.mts": "vite",
@@ -368,7 +368,7 @@ export function resolveMarkdownFileIcon(value: string): MarkdownFileIcon {
   const exactIcon = FILE_ICON_BY_NAME[basename];
   if (exactIcon) return exactIcon;
   if (basename.startsWith("tsconfig.") && basename.endsWith(".json")) {
-    return "tsconfig";
+    return "typescript";
   }
   const segments = basename.split(".");
   for (let index = 1; index < segments.length; index += 1) {

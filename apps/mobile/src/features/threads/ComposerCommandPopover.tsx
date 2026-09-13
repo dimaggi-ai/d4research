@@ -1,4 +1,9 @@
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import {
+  resolveProviderSkillSourceKind,
+  type ProviderSkillSourceKind,
+} from "@d4research/client-runtime/providerSkills";
+import type { PullRequestContextMetadata } from "@d4research/contracts";
 import type { ComposerTriggerKind } from "@d4research/shared/composerTrigger";
 import type { ServerProviderSkill, ServerProviderSlashCommand } from "@d4research/contracts";
 import { SymbolView } from "../../components/AppSymbol";
@@ -8,6 +13,13 @@ import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "rea
 import { AppText as Text } from "../../components/AppText";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 export type ComposerCommandItem =
+  | {
+      readonly id: string;
+      readonly type: "pull-request";
+      readonly pullRequest: PullRequestContextMetadata;
+      readonly label: string;
+      readonly description: string;
+    }
   | {
       readonly id: string;
       readonly type: "path";
@@ -52,6 +64,7 @@ interface ComposerCommandPopoverProps {
   readonly items: ReadonlyArray<ComposerCommandItem>;
   readonly triggerKind: ComposerTriggerKind | null;
   readonly isLoading: boolean;
+  readonly error?: string | null;
   readonly onSelect: (item: ComposerCommandItem) => void;
 }
 
@@ -98,6 +111,8 @@ function PopoverSurface(props: {
 
 function itemIcon(item: ComposerCommandItem) {
   switch (item.type) {
+    case "pull-request":
+      return { ios: "arrow.triangle.pull", android: "merge" } as const;
     case "slash-command":
     case "provider-slash-command":
       return "terminal" as const;
@@ -110,6 +125,8 @@ function itemIcon(item: ComposerCommandItem) {
 
 function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
   switch (triggerKind) {
+    case "pull-request":
+      return "Pull requests";
     case "slash-command":
       return "Commands";
     case "skill":
@@ -126,6 +143,8 @@ function emptyText(triggerKind: ComposerTriggerKind | null, isLoading: boolean):
     return triggerKind === "path" ? "Searching files…" : "Loading…";
   }
   switch (triggerKind) {
+    case "pull-request":
+      return "No matching pull requests.";
     case "path":
       return "No matching files or folders.";
     case "skill":
@@ -209,7 +228,7 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
       ) : (
         <View className="px-3.5 py-2.5">
           <Text className="text-xs text-foreground-tertiary">
-            {emptyText(props.triggerKind, props.isLoading)}
+            {props.error ?? emptyText(props.triggerKind, props.isLoading)}
           </Text>
         </View>
       )}

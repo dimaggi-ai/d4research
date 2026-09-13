@@ -1,32 +1,23 @@
-import { useAtomValue } from "@effect/atom-react";
-import { type ScopedThreadRef } from "@d4research/contracts";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
-import type {
-  GitActionProgressEvent,
-  GitRunStackedActionResult,
-  GitStackedAction,
-  SourceControlCloneProtocol,
-  SourceControlProviderDiscoveryItem,
-  SourceControlProviderKind,
-  SourceControlPublishRepositoryResult,
-  SourceControlRepositoryVisibility,
-  VcsStatusResult,
+import {
+  type GitActionProgressEvent,
+  type GitRunStackedActionResult,
+  type GitStackedAction,
+  type ScopedThreadRef,
+  type SourceControlCloneProtocol,
+  type SourceControlProviderDiscoveryItem,
+  type SourceControlProviderKind,
+  type SourceControlPublishRepositoryResult,
+  type SourceControlRepositoryVisibility,
+  type VcsStatusResult,
 } from "@d4research/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import {
-  type MouseEvent,
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { flushSync } from "react-dom";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -34,32 +25,22 @@ import {
   CloudUploadIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
+  GlobeIcon,
   InfoIcon,
   LockIcon,
-  GlobeIcon,
 } from "lucide-react";
-import { Radio as RadioPrimitive } from "@base-ui/react/radio";
-import { AzureDevOpsIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
-import { RadioGroup } from "~/components/ui/radio-group";
-import { Spinner } from "~/components/ui/spinner";
-import { toggleVariants } from "~/components/ui/toggle";
-import { cn } from "~/lib/utils";
 import {
-  buildGitActionProgressStages,
-  buildMenuItems,
-  type GitActionIconName,
-  type GitActionMenuItem,
-  type GitQuickAction,
-  type DefaultBranchConfirmableAction,
-  requiresDefaultBranchConfirmation,
-  resolveDefaultBranchActionDialogCopy,
-  resolveLiveThreadBranchUpdate,
-  resolveThreadBranchMetadataPatch,
-  resolveQuickAction,
-  resolveThreadBranchUpdate,
-} from "./GitActionsControl.logic";
-import { WizardPopup, WizardHeader, WizardSteps, WizardPanel, WizardFooter } from "./ui/wizard";
-import { StartTruncatedPath } from "./StartTruncatedPath";
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+import { flushSync } from "react-dom";
+import { useOpenLink } from "~/browser/useOpenLink";
+import { AzureDevOpsIcon, ForgejoIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -75,11 +56,16 @@ import { Group, GroupSeparator } from "~/components/ui/group";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { RadioGroup } from "~/components/ui/radio-group";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Spinner } from "~/components/ui/spinner";
 import { Textarea } from "~/components/ui/textarea";
 import { stackedThreadToast, toastManager, type ThreadToastData } from "~/components/ui/toast";
+import { toggleVariants } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useComposerDraftStore, type DraftId } from "~/composerDraftStore";
 import { useOpenInPreferredEditor } from "~/editorPreferences";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import {
   useGitStackedAction,
   useSourceControlActionRunning,
@@ -87,6 +73,8 @@ import {
   useVcsInitAction,
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
+import { cn, randomUUID } from "~/lib/utils";
+import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
@@ -94,12 +82,23 @@ import { sourceControlEnvironment } from "~/state/sourceControl";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
-import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "~/terminal-links";
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { getSourceControlPresentation } from "~/sourceControlPresentation";
-import { useOpenLink } from "~/browser/useOpenLink";
-import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import {
+  buildGitActionProgressStages,
+  buildMenuItems,
+  requiresDefaultBranchConfirmation,
+  resolveDefaultBranchActionDialogCopy,
+  resolveLiveThreadBranchUpdate,
+  resolveQuickAction,
+  resolveThreadBranchMetadataPatch,
+  resolveThreadBranchUpdate,
+  type DefaultBranchConfirmableAction,
+  type GitActionIconName,
+  type GitActionMenuItem,
+  type GitQuickAction,
+} from "./GitActionsControl.logic";
+import { StartTruncatedPath } from "./StartTruncatedPath";
+import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "./ui/wizard";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -121,7 +120,10 @@ interface PendingDefaultBranchAction {
   filePaths?: string[];
 }
 
-type PublishProviderKind = Extract<SourceControlProviderKind, "github" | "gitlab" | "azure-devops">;
+type PublishProviderKind = Extract<
+  SourceControlProviderKind,
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
+>;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
 
@@ -165,9 +167,18 @@ function requestVcsStatusRefresh(
   }
   void refresh({ environmentId, input: { cwd } });
 }
+
 const RUNNING_SOURCE_CONTROL_ACTIONS = ["runStackedAction", "pull", "publishRepository"] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = [
+  {
+    value: "forgejo",
+    label: "Forgejo / Gitea",
+    description: "Your signed-in server",
+    host: "your server",
+    pathPlaceholder: "owner/repo",
+    Icon: ForgejoIcon,
+  },
   {
     value: "github",
     label: "GitHub",
@@ -292,7 +303,7 @@ function getMenuActionDisabledReason({
 
   if (item.id === "push") {
     if (!hasBranch) {
-      return "Detached HEAD: checkout a refName before pushing.";
+      return "Detached HEAD: check out a branch before pushing.";
     }
     if (hasChanges) {
       return "Commit or stash local changes before pushing.";
@@ -313,7 +324,7 @@ function getMenuActionDisabledReason({
     return `View ${terminology.singular} is currently unavailable.`;
   }
   if (!hasBranch) {
-    return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
+    return `Detached HEAD: check out a branch before creating a ${terminology.singular}.`;
   }
   if (hasChanges) {
     return `Commit local changes before creating a ${terminology.singular}.`;
@@ -331,6 +342,7 @@ function getMenuActionDisabledReason({
 }
 
 const COMMIT_DIALOG_TITLE = "Commit changes";
+
 const COMMIT_DIALOG_DESCRIPTION =
   "Review and confirm your commit. Leave the message blank to auto-generate one.";
 
@@ -414,6 +426,8 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     const accounts: Record<PublishProviderKind, string | null> = {
       github: null,
       gitlab: null,
+      forgejo: null,
+      bitbucket: null,
       "azure-devops": null,
     };
     for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {
@@ -464,7 +478,14 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
-  const publishHost = currentPublishProvider.host;
+  const publishHost =
+    publishProvider === "forgejo"
+      ? (Option.getOrNull(
+          sourceControlDiscovery.data?.sourceControlProviders.find(
+            (provider) => provider.kind === "forgejo",
+          )?.auth.host ?? Option.none(),
+        ) ?? currentPublishProvider.host)
+      : currentPublishProvider.host;
   const publishPathPlaceholder = currentPublishProvider.pathPlaceholder;
   const publishProviderLabel = currentPublishProvider.label;
   const publishWizardSteps = ["Provider", "Repository", "Summary"] as const;
@@ -1742,7 +1763,7 @@ export default function GitActionsControl({
               ) : null}
               {gitStatusForActions?.refName === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a refName to enable push and pull request
+                  Detached HEAD: create and check out a branch to enable push and pull request
                   actions.
                 </p>
               )}
@@ -1787,9 +1808,7 @@ export default function GitActionsControl({
                   <span className="font-medium">
                     {gitStatusForActions?.refName ?? "(detached HEAD)"}
                   </span>
-                  {isDefaultRef && (
-                    <span className="text-right text-warning">Warning: default refName</span>
-                  )}
+                  {isDefaultRef && <span className="text-right text-warning">Default branch</span>}
                 </span>
               </div>
               <div className="space-y-1">
@@ -1920,7 +1939,7 @@ export default function GitActionsControl({
               disabled={noneSelected}
               onClick={runDialogActionOnNewBranch}
             >
-              Commit on new refName
+              Commit on new branch
             </Button>
             <Button size="sm" disabled={noneSelected} onClick={runDialogAction}>
               Commit
@@ -1948,7 +1967,7 @@ export default function GitActionsControl({
         <DialogPopup className="max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {pendingDefaultBranchActionCopy?.title ?? "Run action on default refName?"}
+              {pendingDefaultBranchActionCopy?.title ?? "Run action on default branch?"}
             </DialogTitle>
             <DialogDescription>{pendingDefaultBranchActionCopy?.description}</DialogDescription>
           </DialogHeader>
@@ -1974,7 +1993,7 @@ export default function GitActionsControl({
               size="sm"
               onClick={checkoutFeatureBranchAndContinuePendingAction}
             >
-              Checkout feature branch & continue
+              Check out feature branch & continue
             </Button>
           </DialogFooter>
         </DialogPopup>

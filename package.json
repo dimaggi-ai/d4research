@@ -20,6 +20,7 @@
     "screenshots:mobile": "node scripts/mobile-showcase.ts",
     "icons:export": "node scripts/export-d4-icons.ts",
     "icons:check": "node scripts/export-d4-icons.ts --check",
+    "licenses:sync": "node scripts/sync-third-party-license-notices.ts",
     "build": "vp run --filter './apps/*' --filter './packages/*' --filter './oxlint-plugin-t3code' --filter './scripts' build",
     "build:marketing": "vp run --filter @d4research/marketing build",
     "build:desktop": "vp run --filter @d4research/desktop --filter d4research build",

@@ -50,6 +50,7 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           [54, "ProjectionThreadBranchPullRequest"],
           [55, "ProjectionThreadsActiveOrderKey"],
           [56, "ProjectionThreadPullRequests"],
+          [57, "ProjectionThreadMessageContext"],
         ],
       );
 
@@ -105,6 +106,7 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [54, "ProjectionThreadBranchPullRequest"],
           [55, "ProjectionThreadsActiveOrderKey"],
           [56, "ProjectionThreadPullRequests"],
+          [57, "ProjectionThreadMessageContext"],
         ],
       );
 
@@ -134,6 +136,7 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [54, "ProjectionThreadBranchPullRequest"],
           [55, "ProjectionThreadsActiveOrderKey"],
           [56, "ProjectionThreadPullRequests"],
+          [57, "ProjectionThreadMessageContext"],
         ],
       );
     }),
@@ -170,7 +173,7 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
       const executed = yield* runMigrations();
       assert.deepStrictEqual(
         executed.map(([id]) => id),
-        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       assert.ok(columns.some((column) => column.name === "auto_pull"));

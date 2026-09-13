@@ -1,54 +1,117 @@
 import { InfoIcon } from "lucide-react";
-import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { ChevronDownIcon, GitPullRequestIcon } from "lucide-react";
-import * as Duration from "effect/Duration";
-import * as Option from "effect/Option";
-import { useState, type ReactNode } from "react";
-import type {
-  BackgroundActivitySettings,
-  SourceControlProviderKind,
-  SourceControlDiscoveryResult,
-  SourceControlProviderAuth,
-  SourceControlProviderDiscoveryItem,
-  VcsDriverKind,
-  VcsDiscoveryItem,
-} from "@d4research/contracts";
-import {
-  getBackgroundActivityBaseProfile,
-  getBackgroundActivityPresetSettings,
-  resolveServerBackgroundActivitySettings,
-} from "@d4research/shared/backgroundActivitySettings";
 
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+
+import { ChevronDownIcon } from "lucide-react";
+
+import { GitPullRequestIcon } from "lucide-react";
+
+import * as Duration from "effect/Duration";
+
+import * as Option from "effect/Option";
+
+import { useState } from "react";
+
+import { type ReactNode } from "react";
+
+import { type BackgroundActivitySettings } from "@d4research/contracts";
+
+import { type SourceControlProviderKind } from "@d4research/contracts";
+
+import { type SourceControlDiscoveryResult } from "@d4research/contracts";
+
+import { type SourceControlProviderAuth } from "@d4research/contracts";
+
+import { type SourceControlProviderDiscoveryItem } from "@d4research/contracts";
+
+import { type VcsDriverKind } from "@d4research/contracts";
+
+import { type VcsDiscoveryItem } from "@d4research/contracts";
+
+import { getBackgroundActivityBaseProfile } from "@d4research/shared/backgroundActivitySettings";
+
+import { getBackgroundActivityPresetSettings } from "@d4research/shared/backgroundActivitySettings";
+
+import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
+
+import { useScopedSettings } from "./useScopedSettings";
+
+import { useUpdateScopedSettings } from "./useScopedSettings";
+
+import { useSettingsScope } from "./SettingsScopeContext";
+
+import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+
 import { cn } from "../../lib/utils";
-import { usePrimaryEnvironment } from "../../state/environments";
+
 import { useEnvironmentQuery } from "../../state/query";
+
 import { sourceControlEnvironment } from "../../state/sourceControl";
+
 import { Badge } from "../ui/badge";
+
 import { Button } from "../ui/button";
-import { Collapsible, CollapsibleContent } from "../ui/collapsible";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../ui/empty";
+
+import { Collapsible } from "../ui/collapsible";
+
+import { CollapsibleContent } from "../ui/collapsible";
+
+import { Empty } from "../ui/empty";
+
+import { EmptyContent } from "../ui/empty";
+
+import { EmptyDescription } from "../ui/empty";
+
+import { EmptyHeader } from "../ui/empty";
+
+import { EmptyMedia } from "../ui/empty";
+
+import { EmptyTitle } from "../ui/empty";
+
 import { Skeleton } from "../ui/skeleton";
-import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "../ui/number-field";
+
+import { NumberField } from "../ui/number-field";
+
+import { NumberFieldDecrement } from "../ui/number-field";
+
+import { NumberFieldGroup } from "../ui/number-field";
+
+import { NumberFieldIncrement } from "../ui/number-field";
+
+import { NumberFieldInput } from "../ui/number-field";
+
 import { Switch } from "../ui/switch";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AzureDevOpsIcon, GitHubIcon, GitIcon, GitLabIcon, JujutsuIcon, type Icon } from "../Icons";
+
+import { Tooltip } from "../ui/tooltip";
+
+import { TooltipPopup } from "../ui/tooltip";
+
+import { TooltipTrigger } from "../ui/tooltip";
+
+import { AzureDevOpsIcon } from "../Icons";
+
+import { GitHubIcon } from "../Icons";
+
+import { GitIcon } from "../Icons";
+
+import { GitLabIcon } from "../Icons";
+
+import { ForgejoIcon } from "../Icons";
+
+import { JujutsuIcon } from "../Icons";
+
+import { type Icon } from "../Icons";
+
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
+
+import { SettingResetButton } from "./settingsLayout";
+
+import { SettingsPageContainer } from "./settingsLayout";
+
+import { SettingsSection } from "./settingsLayout";
+
 import { searchableSetting } from "./settingsSearch";
 
 const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
@@ -59,6 +122,7 @@ const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
 const SOURCE_CONTROL_PROVIDER_ICONS: Partial<Record<SourceControlProviderKind, Icon>> = {
   github: GitHubIcon,
   gitlab: GitLabIcon,
+  forgejo: ForgejoIcon,
   "azure-devops": AzureDevOpsIcon,
 };
 
@@ -68,7 +132,9 @@ const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {
 };
 
 const SOURCE_CONTROL_SKELETON_ROWS = ["primary", "secondary"] as const;
+
 const GIT_FETCH_INTERVAL_STEP_SECONDS = 5;
+
 type BackgroundActivityOverridePatch = Partial<{
   [K in keyof BackgroundActivitySettings["overrides"]]:
     | BackgroundActivitySettings["overrides"][K]
@@ -340,8 +406,8 @@ function DiscoveryItemRow({
 }
 
 function GitFetchIntervalSettings() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
   const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
   const automaticGitFetchIntervalSeconds = durationToSeconds(
     resolvedBackgroundActivity.automaticGitFetchInterval,
@@ -495,7 +561,14 @@ function EmptySourceControlDiscovery({
 }
 
 export function SourceControlSettingsPanel() {
-  const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
+  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  // Discovery scans one machine's tools, so it shows the representative
+  // environment (named in the section title when several are selected);
+  // the settings rows above it fan out like everywhere else.
+  const environmentId =
+    environment?.connection.phase === "connected" ? environment.environmentId : null;
+  const aggregate = scope.environmentIds.length !== 1 && connectedEnvironments.length > 1;
+  const environmentSuffix = aggregate && environment ? ` · ${environment.label}` : "";
   const discovery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -533,9 +606,19 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      {isInitialScanPending ? (
+      <ProjectDefaultsSettings category="source-control" />
+      {environmentId === null ? (
+        <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+          <p className="px-4 py-3 text-sm text-muted-foreground">
+            Connect an environment to inspect its version control tools and hosting integrations.
+          </p>
+        </SettingsSection>
+      ) : isInitialScanPending ? (
         <>
-          <SourceControlSectionSkeleton title="Version Control" headerAction={scanButton} />
+          <SourceControlSectionSkeleton
+            title={`Version Control${environmentSuffix}`}
+            headerAction={scanButton}
+          />
           <SourceControlSectionSkeleton title="Source Control Providers" />
         </>
       ) : hasDiscoveryItems ? (
@@ -543,7 +626,7 @@ export function SourceControlSettingsPanel() {
           {hasVersionControlSystems ? (
             <SettingsSection
               id={searchableSetting("source-control").id}
-              title="Version Control"
+              title={`Version Control${environmentSuffix}`}
               headerAction={scanButton}
             >
               {result.versionControlSystems.map((item) => (
@@ -557,7 +640,11 @@ export function SourceControlSettingsPanel() {
           {result.sourceControlProviders.length > 0 ? (
             <SettingsSection
               id={hasVersionControlSystems ? undefined : searchableSetting("source-control").id}
-              title="Source Control Providers"
+              title={
+                hasVersionControlSystems
+                  ? "Source Control Providers"
+                  : `Source Control Providers${environmentSuffix}`
+              }
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
@@ -574,7 +661,7 @@ export function SourceControlSettingsPanel() {
         />
       )}
 
-      {environmentId !== null ? <SourceControlWritingSettingsSection /> : null}
+      <SourceControlWritingSettingsSection />
     </SettingsPageContainer>
   );
 }

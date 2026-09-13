@@ -15,6 +15,9 @@ import type {
 } from "@d4research/contracts";
 import {
   ApprovalRequestId,
+  AssistantCitation,
+  ASSISTANT_CITATION_MAX_TEXT_LENGTH,
+  EnvironmentId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   EventId,
   MessageId,
@@ -27,8 +30,24 @@ import {
   TurnId,
 } from "@d4research/contracts";
 import { createModelSelection } from "@d4research/shared/model";
+import {
+  expandAssistantCitationsForProvider,
+  serializeAssistantCitation,
+} from "@d4research/shared/assistantCitations";
 import { it, assert, describe, vi } from "@effect/vitest";
 import { afterAll } from "vite-plus/test";
+const assistantQuoteText = 'Keep the shared parser for "résumé".\nPreserve line breaks.';
+const assistantCitation = {
+  version: 1,
+  environmentId: EnvironmentId.make("source-environment/remote"),
+  threadId: ThreadId.make("source-thread/earlier"),
+  messageId: MessageId.make("source-message/first"),
+  text: assistantQuoteText,
+  start: 17,
+  end: 17 + assistantQuoteText.length,
+  prefix: "Previous advice. ",
+  suffix: " Next steps.",
+} satisfies AssistantCitation;
 
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
@@ -1725,6 +1744,9 @@ routing.layer("ProviderServiceLive routing", (it) => {
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
+      const modelSelection = createModelSelection(codexInstanceId, "gpt-5.6-sol", [
+        { id: "reasoningEffort", value: "high" },
+      ]);
 
       const session = yield* provider.startSession(asThreadId("thread-1"), {
         provider: ProviderDriverKind.make("codex"),
@@ -1742,6 +1764,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         threadId: session.threadId,
         input: "hello",
         attachments: [],
+        modelSelection,
       });
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
 
@@ -1779,6 +1802,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
         numTurns: 0,
       });
 
+      const rewindCursor = { threadId: "rewound-provider-thread" };
+      routing.codex.updateSession(session.threadId, (session) => ({
+        ...session,
+        resumeCursor: rewindCursor,
+      }));
+      yield* provider.rollbackConversation({ threadId: session.threadId, numTurns: 1 });
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const rewoundBinding = yield* directory.getBinding(session.threadId);
+      assert(Option.isSome(rewoundBinding));
+      assert.deepEqual(rewoundBinding.value.resumeCursor, rewindCursor);
+      assert.deepEqual(
+        (rewoundBinding.value.runtimePayload as { modelSelection?: unknown }).modelSelection,
+        modelSelection,
+      );
+
       yield* provider.stopSession({ threadId: session.threadId });
       routing.codex.startSession.mockClear();
       routing.codex.sendTurn.mockClear();
@@ -1798,13 +1836,90 @@ routing.layer("ProviderServiceLive routing", (it) => {
           cwd?: string;
           resumeCursor?: unknown;
           threadId?: string;
+          modelSelection?: unknown;
         };
         assert.equal(startPayload.provider, "codex");
         assert.equal(startPayload.cwd, fixtureCwd("project"));
-        assert.deepEqual(startPayload.resumeCursor, session.resumeCursor);
+        assert.deepEqual(startPayload.resumeCursor, rewindCursor);
+        assert.deepEqual(startPayload.modelSelection, modelSelection);
         assert.equal(startPayload.threadId, session.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("preserves background turn boundaries when stopping before rollback recovery", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-background-rewind");
+      const initial = yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const cursor = {
+        resume: "550e8400-e29b-41d4-a716-446655440010",
+        turnCount: 2,
+        turnStartMessageIds: ["user-prompt", "background-assistant"],
+      };
+      routing.claude.updateSession(threadId, (session) => ({ ...session, resumeCursor: cursor }));
+      const completed = yield* provider.streamEvents.pipe(
+        Stream.filter((event) => event.eventId === "evt-background-rewind"),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-background-rewind"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("background-turn"),
+        payload: { state: "completed" },
+      });
+      yield* Fiber.join(completed);
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const binding = yield* directory.getBinding(threadId);
+      assert(Option.isSome(binding));
+      assert.deepEqual(binding.value.resumeCursor, cursor);
+      yield* provider.stopSession({ threadId });
+      routing.claude.startSession.mockClear();
+      yield* provider.rollbackConversation({ threadId, numTurns: 1 });
+      assert.deepEqual(routing.claude.startSession.mock.calls[0]?.[0].resumeCursor, cursor);
+
+      const replacement = yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.claude.listSessions.mockReturnValueOnce(
+        Effect.succeed([{ ...initial, resumeCursor: cursor }]),
+      );
+      const staleCompleted = yield* provider.streamEvents.pipe(
+        Stream.filter((event) => event.eventId === "evt-stale-background-rewind"),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-stale-background-rewind"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:01.000Z",
+        threadId,
+        turnId: asTurnId("old-background-turn"),
+        payload: { state: "completed" },
+      });
+      yield* Fiber.join(staleCompleted);
+      const replacementBinding = yield* directory.getBinding(threadId);
+      assert(Option.isSome(replacementBinding));
+      assert.equal(replacementBinding.value.providerInstanceId, codexInstanceId);
+      assert.deepEqual(replacementBinding.value.resumeCursor, replacement.resumeCursor);
     }),
   );
 
@@ -2175,6 +2290,51 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const imageOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
       assert.equal(imageOnlyInput.input?.startsWith('[Attached image "screenshot.png"'), true);
 
+      const fileAttachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-pdf",
+        name: "report.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 456,
+      };
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "summarize the report",
+        attachments: [attachment, fileAttachment],
+      });
+      const mixedInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(mixedInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.include(mixedInput.input ?? "", `${fileAttachment.id}.pdf]`);
+      // Every attachment reaches the adapter; each adapter decides what its
+      // provider ingests natively.
+      assert.deepEqual(mixedInput.attachments, [attachment, fileAttachment]);
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({ threadId: session.threadId, attachments: [fileAttachment] });
+      const fileOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(fileOnlyInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.deepEqual(fileOnlyInput.attachments, [fileAttachment]);
+
+      const pastedTextAttachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-txt",
+        name: "pasted-text.txt",
+        mimeType: "text/plain;charset=utf-8",
+        sizeBytes: 32_768,
+        source: { _tag: "pasted-text" as const },
+      };
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "Investigate this crash",
+        attachments: [pastedTextAttachment],
+      });
+      const pastedInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(pastedInput.input ?? "", '[Pasted text "pasted-text.txt" is saved at: ');
+      assert.include(pastedInput.input ?? "", ". Inspect it as needed.]");
+      assert.deepEqual(pastedInput.attachments, [pastedTextAttachment]);
       yield* provider.stopSession({ threadId: session.threadId });
     }),
   );
@@ -4457,6 +4617,81 @@ readyRestart.layer("ProviderServiceLive ready-restart fence", (it) => {
 
 const validation = makeProviderServiceLayer();
 validation.layer("ProviderServiceLive validation", (it) => {
+  it.effect("rejects input that leaves no room for pasted-text attachment context", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const attachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-txt",
+        name: "pasted-text.txt",
+        mimeType: "text/plain;charset=utf-8",
+        sizeBytes: 32_768,
+        source: { _tag: "pasted-text" as const },
+      };
+      validation.codex.sendTurn.mockClear();
+
+      const failure = yield* provider
+        .sendTurn({
+          threadId: asThreadId("thread-pasted-text-context-limit"),
+          input: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+          attachments: [attachment],
+        })
+        .pipe(Effect.flip);
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(PROVIDER_SEND_TURN_MAX_INPUT_CHARS));
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("rejects citation-expanded input over the provider character limit", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const citation = serializeAssistantCitation(assistantCitation);
+      const input = `${"x".repeat(
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+          expandAssistantCitationsForProvider(citation).length +
+          1,
+      )}${citation}`;
+      assert.isBelow(input.length, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+      validation.codex.sendTurn.mockClear();
+
+      const failure = yield* provider
+        .sendTurn({ threadId: asThreadId("thread-citation-expanded-limit"), input })
+        .pipe(Effect.flip);
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(PROVIDER_SEND_TURN_MAX_INPUT_CHARS));
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("rejects oversized encoded citations even when the expanded input fits", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const citation = serializeAssistantCitation({
+        ...assistantCitation,
+        text: "é".repeat(ASSISTANT_CITATION_MAX_TEXT_LENGTH),
+        end: assistantCitation.start + ASSISTANT_CITATION_MAX_TEXT_LENGTH,
+      });
+      const input = `${"x".repeat(
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS - citation.length + 1,
+      )}${citation}`;
+      assert.isBelow(
+        expandAssistantCitationsForProvider(input).length,
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+      );
+      validation.codex.sendTurn.mockClear();
+
+      const failure = yield* provider
+        .sendTurn({ threadId: asThreadId("thread-citation-encoded-limit"), input })
+        .pipe(Effect.flip);
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(PROVIDER_SEND_TURN_MAX_INPUT_CHARS));
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
   it.effect("rejects session starts without an explicit provider instance id", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -4624,7 +4859,8 @@ describe("agent browser access", () => {
   const startSessionWith = (
     access: boolean | { readonly browser: boolean; readonly device: boolean },
     threadId: ThreadId,
-    projectOverride?: boolean,
+    projectOverride?: boolean | { readonly browser?: boolean; readonly device?: boolean },
+    options?: { readonly withoutOrchestration?: boolean },
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
@@ -4653,6 +4889,7 @@ describe("agent browser access", () => {
         getCounts: () => Effect.die("unused"),
         getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.die("unused"),
+        getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
         getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
         getThreadCheckpointContext: () => Effect.die("unused"),
@@ -4697,13 +4934,26 @@ describe("agent browser access", () => {
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(projectionLayer),
+        Layer.provide(options?.withoutOrchestration ? Layer.empty : projectionLayer),
         Layer.provide(
           ServerSettings.ServerSettingsService.layerTest({
             enableAgentBrowserAccess,
             enableAgentDeviceAccess,
-            projectAgentBrowserAccessOverrides:
-              projectOverride === undefined ? {} : { [projectId]: projectOverride },
+            projectSettingsOverrides:
+              projectOverride === undefined
+                ? {}
+                : typeof projectOverride === "boolean"
+                  ? { [projectId]: { enableAgentBrowserAccess: projectOverride } }
+                  : {
+                      [projectId]: {
+                        ...(projectOverride.browser !== undefined
+                          ? { enableAgentBrowserAccess: projectOverride.browser }
+                          : {}),
+                        ...(projectOverride.device !== undefined
+                          ? { enableAgentDeviceAccess: projectOverride.device }
+                          : {}),
+                      },
+                    },
           }),
         ),
         Layer.provide(serverConfigTestLayer),
@@ -4783,6 +5033,31 @@ describe("agent browser access", () => {
     Effect.gen(function* () {
       const threadId = asThreadId("thread-project-browser-on");
       const issued = yield* startSessionWith({ browser: false, device: false }, threadId, true);
+      assert.deepEqual(issued, [{ threadId, capabilities: ["preview", "pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("a project device override grants device access when the environment denies it", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-project-device-on");
+      const issued = yield* startSessionWith({ browser: false, device: false }, threadId, {
+        device: true,
+      });
+      assert.deepEqual(issued, [{ threadId, capabilities: ["device", "pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  // Without orchestration the project cannot be resolved, so an overridden
+  // capability is withheld; one no project overrides keeps its environment value.
+  it.effect("withholds only the overridden capability when the project cannot be resolved", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-no-orchestration-device-override");
+      const issued = yield* startSessionWith(
+        { browser: true, device: true },
+        threadId,
+        { device: false },
+        { withoutOrchestration: true },
+      );
       assert.deepEqual(issued, [{ threadId, capabilities: ["preview", "pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );

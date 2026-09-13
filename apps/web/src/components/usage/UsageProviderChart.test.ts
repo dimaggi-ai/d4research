@@ -98,6 +98,20 @@ describe("buildPeriodColumns", () => {
       expect(column.total).toBeCloseTo(sum, 9);
     }
   });
+
+  it("filters plotted bands and tooltip totals to selected providers", () => {
+    expect(buildPeriodColumns(days, byDay, "cost", ["claude"])).toEqual([
+      { bands: [{ provider: "claude", value: 20 }], total: 20 },
+      { bands: [{ provider: "claude", value: 0 }], total: 0 },
+      { bands: [{ provider: "claude", value: 5 }], total: 5 },
+    ]);
+  });
+
+  it("does not plot unselected data when no providers are selected", () => {
+    expect(buildPeriodColumns(days, byDay, "tokens", [])).toEqual(
+      days.map(() => ({ bands: [], total: 0 })),
+    );
+  });
 });
 
 describe("providersWithUsage", () => {

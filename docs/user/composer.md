@@ -158,3 +158,124 @@ See [Research workflows](./research-workflows.md).
 The controls beside the composer set the thread's access mode (see
 [Permission modes](./permission-modes.md)) and the interaction mode (**Default** or **Plan**). On
 narrow layouts they collapse into one compact controls menu.
+
+## Quote an assistant response
+
+On web and desktop, select text within one assistant response and choose
+**Cite in composer**. You can add a comment about the quote and write instructions
+around it.
+
+Select the quote in a draft or sent message to return to its source. If the source
+is unavailable or has changed, the saved quote remains readable.
+
+The chip shows your comment when it has one, or a short quote preview otherwise. Use the pencil
+button to add or change the comment. To remove the citation, place the caret beside its chip and
+delete it like other inline context. Copying, reloading, and restoring a
+[stashed prompt](#prompt-stash) keep each comment
+with its quote, and sending tells the agent which words were quoted and which comment you wrote.
+The quoted text and comment count toward the message limit.
+
+Mobile displays saved quotes and comments, but does not create citations or
+navigate to their sources.
+
+## Recall a sent prompt
+
+Press `ArrowUp` in an empty composer to bring back the last prompt you sent in this thread. Press
+`ArrowUp` again to go further back, and `ArrowDown` to come forward. Moving forward past the newest
+prompt clears the composer. Recall walks the prompts loaded in the thread. Attachments, terminal
+context, and other extras from the original message are not restored, only the text you typed. A
+composer that holds an attachment or a picked element does not count as empty.
+
+When the composer has text, the arrow keys move the caret as usual. Recall takes over only while
+the text is an unedited recalled prompt, with the caret on the first visual line for `ArrowUp` or
+the last visual line for `ArrowDown`, counting wrapped lines. Editing a recalled prompt turns it
+into a normal draft.
+
+## Edit an earlier prompt
+
+On web and desktop, choose **Edit from here** beneath a sent message to rewind
+the conversation to before that message. Choose **Revert and keep changes** to
+leave workspace files as they are, or **Revert files too** to restore them as well.
+The selected prompt and its attachments return to the composer for editing and
+resending. Any unsent draft stays above the restored prompt.
+
+This removes the selected message and later conversation from the active thread
+and provider history. It does not undo external actions or separate provider
+memory. The action is available only when the provider supports rewind.
+
+## Context in your message
+
+Context you attach lands where your cursor is, as a chip inside your text: a terminal excerpt,
+a review comment from a diff or file, a preview annotation, or a file. You can type before and
+after a chip, move it by cutting and pasting, and delete it like a character. Hover a chip for
+its brief details. Select a terminal excerpt to open its captured output, or select a review
+comment, picked element, or preview annotation to open its full details. Chips read as "Terminal
+excerpt, Terminal 1 lines 3-4" and similar to screen readers.
+
+A pull request appears as its icon and number. Its color reflects whether it was open, draft,
+merged, or closed when it was attached. Select it to inspect the captured title and branches,
+then choose **Open pull request** to visit the pull request. On web and desktop, type `#` to browse the newest
+pull requests in the current project's repository. Continue typing digits to filter the recent list
+by any part of its pull request numbers. A complete number is also resolved directly, even when that
+pull request is older than the recent list. Type a single word after `#` to search pull requests in
+the repository by text. Choose a result to insert it as a chip.
+
+Images keep their thumbnail shelf above the text and also get a chip at your cursor, so you can
+say exactly which image you mean. Deleting an image chip leaves the image on the shelf; removing
+the thumbnail asks first when the image is still mentioned in your text, then removes both. Files
+exist only as chips: deleting a file's last chip removes the file from the message.
+
+Copy text that holds chips and paste it into another draft, in the same thread or another one,
+and the chips come along with what they point to. Images and files are fetched again from the
+environment they came from; while that happens the chip shows a dashed outline, and if it cannot
+complete d4research tells you and leaves the chip for you to remove or replace. A chip whose
+context is no longer available shows the same dashed outline; hover it for what to do.
+
+Copying a message with the copy button, or copying text out of it, gives other apps readable
+Markdown with a link in place of each chip. Older messages that were sent before chips still
+show their context. Stashing a prompt keeps its chips and what they point to; restoring brings
+them back.
+
+On mobile, tap a chip to inspect its content. File references open the current file; attached
+files show the copy that was attached to the message.
+
+## Attached files
+
+Select a file chip in your draft or a sent message to preview it. Code and JSON use syntax
+highlighting; Markdown, HTML, CSV, and TSV offer rendered and raw views. Audio files have
+playback controls. Large text files show a limited preview; save the file to read it in full.
+
+On web and desktop, files open beside the conversation with the same controls as a workspace
+file: a header row with the view toggle, **Copy contents** and **Save file**. On mobile, documents
+open in the same file screen as workspace files; its menu holds **Copy contents**, **Save or
+share** and **Open in file viewer**. Pictures, videos and PDFs keep their native viewers, and
+other document formats such as Word or Pages open in the device's own viewer when it has one.
+If nothing on the device can show a format, save or share it to open it elsewhere.
+
+## Images and videos in messages
+
+Select an image or video attachment or link to preview it. Playback support depends
+on your browser or device; save an unsupported video to open it in another app.
+
+On web and desktop, right-click media to save it or copy its path or URL. On mobile,
+touch and hold an image or video thumbnail and choose **Save or share**. On iOS,
+return to the thumbnail to open this menu after watching a full-screen video.
+
+File links refer to the environment's machine, including when you connect remotely.
+Previews use the original file, even outside the workspace. Moving or deleting it
+can break the preview, so save a copy if you need to keep it.
+
+## Files outside the workspace
+
+Follow an agent's file link to read a report or other file outside the workspace.
+These files open read-only. An HTML file outside the workspace cannot load scripts,
+styles, or images from neighboring files.
+
+## HTML and PDF files in the file viewer
+
+On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
+file to source view to read its markup; a link to a specific line opens source
+automatically. HTML previews cannot access your d4research session.
+
+On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
+Android opens a compatible installed file viewer.

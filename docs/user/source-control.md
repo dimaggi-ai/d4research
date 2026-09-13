@@ -1,120 +1,132 @@
-# Source Control Integrations
+# Source control
 
-d4research connects to your Git hosting provider so you can create pull requests, review code, and manage repositories without leaving the app.
+d4research integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, and Azure DevOps to clone and publish
+repositories, create pull requests, and review changes.
 
-## Supported Providers
+## Connect an account
 
-d4research works with the platforms your team already uses:
+Install Git and configure authentication on the machine running your d4research server. For a remote
+environment, do this on the remote machine. After signing in, open **Settings → Source Control**
+and choose **Rescan**.
 
-- **GitHub** – Pull requests, repository creation, and clone integration
-- **GitLab** – Merge requests, repository publishing, and hosted clones
-- **Azure DevOps** – Pull request support for Microsoft-hosted repositories
+### GitHub
 
-## What You Can Do
+Install [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, then sign in:
 
-### Start Projects from Anywhere
+```bash
+gh auth login
+```
 
-**Clone repositories directly**
+### Forgejo and Gitea
 
-- Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Azure DevOps repository**, or paste any **Git URL**
-- Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
+Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or
+[Gitea CLI (`tea`)](https://gitea.com/gitea/tea) 0.16 or later on your d4research server.
+Sign in with `fj --host https://your-server auth add-token` or `tea login add`.
+Repeat for each server you use, including Codeberg.
 
-**Publish local projects to the cloud**
+d4research prefers a matching `fj` login and falls back to `tea` when `fj` is unavailable
+or has no login for that server. Once an account is selected, failed actions stay on that
+account. Settings shows the detected CLI. Forgejo and Gitea share one integration entry.
+Servers hosted under a URL subpath, such as `https://example.com/forgejo`, use `tea` because
+fj 0.6 does not preserve the subpath when checking its account.
 
-- Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, or Azure DevOps), add it as your origin remote, and push, in one flow
-- If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
+When cloning or publishing, use a full repository URL to select a specific server.
+You can use `owner/repo` when only one fj server is configured, or with your default `tea`
+login when fj is unavailable or unconfigured. With multiple fj servers, use the full URL.
+If you have multiple `tea` accounts on one server, select one with
+`tea login default <login-name>`. Git push and clone also need Git credentials or an SSH key
+for that server.
 
-### Manage Code Reviews Without Context Switching
+### GitLab
 
-**Create pull requests while you work**
+Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 
-- Push a branch and create a pull request from the Git actions controls in the toolbar
-- d4research can suggest titles and descriptions based on your commits
-- Supports GitHub Pull Requests, GitLab Merge Requests, and Azure DevOps Pull Requests
+```bash
+glab auth login
+```
 
-**Stay on top of open reviews**
+### Bitbucket
 
-- See if your current branch already has an open PR/MR
-- Open several reviews from the **Pull requests** page as tabs in the right panel
-- While working in a thread, open linked reviews in the same compact right-panel tabs without
-  leaving the conversation
-- Open the review directly in your browser with one click
-- Check out a teammate's branch to review code locally
+Set an access token in the server's environment:
 
-### Know Your Setup at a Glance
+```bash
+export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
+```
 
-The **Source Control settings** page shows you exactly what's connected:
+Or use an Atlassian account email and API token with read/write access to repositories and pull
+requests, plus user read access (`read:user:bitbucket`):
 
-- ✅ Which providers are authenticated and ready
-- ⚠️ What's missing and how to fix it
-- 👤 Which account is signed in (when available)
+```bash
+export T3CODE_BITBUCKET_EMAIL="you@example.com"
+export T3CODE_BITBUCKET_API_TOKEN="your-token"
+```
 
-Run a quick **Rescan** after setting up a new machine or changing credentials.
+The access token takes precedence if both are configured. Restart the server after changing these
+variables.
 
-## Getting Started
+### Azure DevOps
 
-### For GitHub (Recommended for most users)
+Install [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/), add the DevOps extension, and sign in:
 
-1. Install the GitHub CLI on the machine running d4research:
-   ```bash
-   brew install gh
-   ```
-2. Sign in:
-   ```bash
-   gh auth login
-   ```
-3. Open **Settings → Source Control** in d4research and verify GitHub shows as authenticated
+```bash
+az extension add --name azure-devops
+az login
+```
 
-You can now clone, publish, and create pull requests.
+## Clone or publish a project
 
-### For GitLab
+Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
+provider or paste a Git URL, then choose where to save it.
 
-1. Install the GitLab CLI:
-   ```bash
-   brew install glab
-   ```
-2. Authenticate:
-   ```bash
-   glab auth login
-   ```
-3. Check **Settings → Source Control** to confirm the connection
+For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
+adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
+make your first commit before pushing.
 
-### For Azure DevOps
+## Create a pull request
 
-1. Install Azure CLI:
-   ```bash
-   brew install azure-cli
-   ```
-2. Add the DevOps extension:
-   ```bash
-   az extension add --name azure-devops
-   ```
-3. Sign in:
-   ```bash
-   az login
-   ```
+Use a thread's Git actions to commit, push, and create a pull request. d4research can generate commit
+messages, review titles, and descriptions from your changes.
 
----
+Choose the writing style and model in **Settings → Source Control**. **Repository conventions**
+uses the project's instructions and recent commit subjects.
 
-## Requirements & Troubleshooting
+## Review and merge
 
-**Git is required** – d4research uses Git for all local operations. Ensure `git` is installed on your server.
+Open **Pull requests** to review changes and comments, request reviewers, check out a branch,
+or merge. You can edit review titles and descriptions and your own comments where the host allows it.
+GitLab calls these merge requests.
 
-**Server-side setup** – Authentication happens on the machine running d4research (the server), not your local browser. If you're using a hosted or team instance, your administrator may have already configured providers.
+GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
+supports approving waiting fork workflows and opening a revert pull request for a merged change.
 
-**Common issues:**
+GitHub routing is off by default. In web or desktop Settings → Connections, choose
+**Read PRs** or **Read and act** for each environment you trust to share GitHub access.
+Enable both the original environment and the environment answering its requests on this client.
+**Read and act** can use broader GitHub permissions than the original environment's credential;
+only enable it for environments you control and trust. Changing a saved endpoint or removing an
+environment clears its permission.
 
-- **Provider shows "Not authenticated"** – Run the login command for that provider (e.g., `gh auth login`) in a terminal on the server, then rescan in Settings
-- **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
-- **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
+GitHub review details, linked PR status, and permitted review actions can then use another
+connected environment signed in to the same GitHub account. Each needs a project on that host.
+A connected local environment is preferred for actions and can answer slow or failed reads.
+Browsers and mobile clients need a paired environment to use its GitHub CLI credentials.
+Credentials stay on their machines. Previously verified credentials remain usable for routing
+for ten minutes during a GitHub outage; new credentials must be verified first. An action with
+an uncertain result is never automatically retried elsewhere. Listings, diffs, and checkout or
+PR creation from Git actions continue to use the project's environment.
 
-**Need more help?** Check your provider's CLI documentation:
+For Azure DevOps, use the host website to view diffs or change comments. Bitbucket does not support
+reopening a declined pull request.
 
-- [GitHub CLI](https://cli.github.com/)
-- [GitLab CLI](https://gitlab.com/gitlab-org/cli)
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/)
+## Troubleshooting
+
+- **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,
+  confirm the running server received the environment variables.
+- **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0.
+- **Push fails despite a connected account:** check the Git remote's credentials. SSH and HTTPS
+  remotes can require separate setup from the hosting provider's API access.
+- **A review cannot load:** open it on the host website while resolving connectivity, permissions,
+  or rate limits.
 
 ## Linked pull requests
 

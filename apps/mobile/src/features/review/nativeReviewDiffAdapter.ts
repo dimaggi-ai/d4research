@@ -8,7 +8,12 @@ import { pipe } from "effect/Function";
 import type { ResolvedMobileCodeSurface } from "../../lib/appearancePreferences";
 import { resolveMobileCodeSurface } from "../../lib/appearancePreferences";
 import { MOBILE_CODE_SURFACE } from "../../lib/typography";
-import { getPierreTerminalTheme, type TerminalAppearanceScheme } from "../terminal/terminalTheme";
+import type { MobileThemeId, MobileThemeVariables } from "../../lib/mobileTheme";
+import {
+  getPierreTerminalTheme,
+  getMobileTerminalTheme,
+  type TerminalAppearanceScheme,
+} from "../terminal/terminalTheme";
 import { computeWordAltDiffRanges } from "./reviewWordDiffs";
 import {
   getReviewFilePreviewState,
@@ -20,12 +25,48 @@ import type { ReviewInlineComment } from "./reviewCommentSelection";
 
 const NATIVE_REVIEW_MAX_WORD_DIFF_RANGE_COUNT = 4;
 const NATIVE_REVIEW_MAX_WORD_DIFF_COVERAGE = 0.45;
+const NATIVE_HEX_COLOR = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i;
+const NATIVE_RGBA_COLOR =
+  /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/;
 
 export const NATIVE_REVIEW_DIFF_CONTENT_WIDTH = 2_800;
 
 export const NATIVE_REVIEW_DIFF_STYLE = createNativeReviewDiffStyle(
   resolveMobileCodeSurface(MOBILE_CODE_SURFACE.fontSize),
 );
+/** Render headerless selections without guessing file line numbers from selection indices. */
+export function buildNativeReviewSnippetRows(
+  comment: Pick<ReviewInlineComment, "id" | "diff" | "fenceLanguage">,
+): NativeReviewDiffRow[] {
+  if ((comment.fenceLanguage ?? "diff") !== "diff" || !comment.diff.trim()) return [];
+  const lines = comment.diff.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
+  if (lines.some((line) => !/^[ +-]/.test(line) || /^(---|\+\+\+) /.test(line))) return [];
+  return lines.map((line, index) => ({
+    kind: "line",
+    id: `${comment.id}:snippet:${index}`,
+    content: line.slice(1),
+    change: line[0] === "+" ? "add" : line[0] === "-" ? "delete" : "context",
+    oldLineNumber: null,
+    newLineNumber: null,
+  }));
+}
+
+function opaqueNativeHexColor(color: string, background: string): string {
+  const hex = NATIVE_HEX_COLOR.exec(color);
+  if (hex) return color;
+
+  const rgba = NATIVE_RGBA_COLOR.exec(color);
+  const backgroundHex = NATIVE_HEX_COLOR.exec(background);
+  if (!rgba || !backgroundHex) return background;
+
+  const alpha = rgba[4] === undefined ? 1 : Math.min(1, Math.max(0, Number(rgba[4])));
+  const channels = [1, 2, 3].map((index) => {
+    const foreground = Number(rgba[index]);
+    const behind = Number.parseInt(backgroundHex[index] ?? "0", 16);
+    return Math.round(foreground * alpha + behind * (1 - alpha));
+  });
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
 
 export function createNativeReviewDiffStyle(codeSurface: ResolvedMobileCodeSurface) {
   return {
@@ -126,7 +167,11 @@ function buildReviewCommentsCacheKey(comments: ReadonlyArray<ReviewInlineComment
 
 export function createNativeReviewDiffTheme(
   scheme: TerminalAppearanceScheme,
+  themeId?: MobileThemeId,
+  appTheme?: MobileThemeVariables,
 ): NativeReviewDiffTheme {
+  if (themeId !== undefined && appTheme !== undefined)
+    return createAppNativeReviewDiffTheme(scheme, themeId, appTheme);
   const terminalTheme = getPierreTerminalTheme(scheme);
   const [, terminalRed, , , terminalBlue] = terminalTheme.palette;
 
@@ -160,6 +205,58 @@ export function createNativeReviewDiffTheme(
     border: terminalTheme.border,
     hunkBackground: "#e0f2ff",
     hunkText: terminalBlue ?? "#009fff",
+    addBackground: "#e5f8f5",
+    deleteBackground: "#ffe6e7",
+    addBar: "#00cab1",
+    deleteBar: terminalRed ?? "#ff2e3f",
+    addText: "#199F43",
+    deleteText: "#D52C36",
+  };
+}
+
+function createAppNativeReviewDiffTheme(
+  scheme: TerminalAppearanceScheme,
+  themeId: MobileThemeId,
+  appTheme: MobileThemeVariables,
+): NativeReviewDiffTheme {
+  const terminalTheme = getMobileTerminalTheme(themeId, scheme);
+  const [, terminalRed] = terminalTheme.palette;
+  // Swift expects #RRGGBB/#RRGGBBAA while Android expects #RRGGBB/#AARRGGBB.
+  // Flatten translucent app tokens onto the code surface so both native
+  // implementations receive the one unambiguous shared format.
+  const background = opaqueNativeHexColor(appTheme["--color-sheet"], appTheme["--color-screen"]);
+  const nativeColor = (color: string) => opaqueNativeHexColor(color, background);
+
+  if (scheme === "dark") {
+    return {
+      // Match the app surface (--color-sheet) so code views blend with the rest of
+      // the app instead of using a distinct code-editor background.
+      background,
+      text: nativeColor(appTheme["--color-md-code-text"]),
+      mutedText: nativeColor(appTheme["--color-foreground-muted"]),
+      headerBackground: background,
+      border: nativeColor(appTheme["--color-border"]),
+      hunkBackground: nativeColor(appTheme["--color-subtle-strong"]),
+      hunkText: nativeColor(appTheme["--color-primary"]),
+      addBackground: "#0d2f28",
+      deleteBackground: "#391415",
+      addBar: "#00cab1",
+      deleteBar: terminalRed ?? "#ff2e3f",
+      addText: "#5ECC71",
+      deleteText: "#FF6762",
+    };
+  }
+
+  return {
+    // Match the app surface (--color-sheet) so code views blend with the rest of the
+    // app instead of using a distinct code-editor background.
+    background,
+    text: nativeColor(appTheme["--color-md-code-text"]),
+    mutedText: nativeColor(appTheme["--color-foreground-muted"]),
+    headerBackground: background,
+    border: nativeColor(appTheme["--color-border"]),
+    hunkBackground: nativeColor(appTheme["--color-subtle-strong"]),
+    hunkText: nativeColor(appTheme["--color-primary"]),
     addBackground: "#e5f8f5",
     deleteBackground: "#ffe6e7",
     addBar: "#00cab1",
@@ -319,6 +416,9 @@ function addNativeWordDiffRanges(
     for (let pairIndex = 0; pairIndex < pairedCount; pairIndex += 1) {
       const deletedRowIndex = deletedRowIndexes[pairIndex];
       const addedRowIndex = addedRowIndexes[pairIndex];
+      if (deletedRowIndex === undefined || addedRowIndex === undefined) {
+        continue;
+      }
       const deletedRow = nextRows[deletedRowIndex];
       const addedRow = nextRows[addedRowIndex];
       if (!deletedRow?.content || !addedRow?.content) {

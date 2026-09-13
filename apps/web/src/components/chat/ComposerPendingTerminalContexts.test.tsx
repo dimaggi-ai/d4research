@@ -8,6 +8,7 @@ describe("ComposerPendingTerminalContextChip", () => {
   it("renders expired terminal contexts with error styling", () => {
     const markup = renderToStaticMarkup(
       <ComposerPendingTerminalContextChip
+        detailsMode="popover"
         context={{
           id: "ctx-expired",
           threadId: ThreadId.make("thread-1"),

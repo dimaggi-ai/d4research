@@ -1,27 +1,26 @@
-import { useAtomValue } from "@effect/atom-react";
-import type {
-  AtomCommandFailure,
-  AtomCommandResult,
-  AtomCommandSuccess,
+import {
+  type AtomCommandFailure,
+  type AtomCommandResult,
+  type AtomCommandSuccess,
 } from "@d4research/client-runtime/state/runtime";
 import {
   VcsActionUnavailableError,
   type VcsActionOperation,
 } from "@d4research/client-runtime/state/vcs";
-import type {
-  EnvironmentId,
-  GitActionProgressEvent,
-  GitResolvePullRequestResult,
-  GitStackedAction,
-  SourceControlCloneProtocol,
-  SourceControlRepositoryVisibility,
-  ThreadId,
+import {
+  type EnvironmentId,
+  type GitActionProgressEvent,
+  type GitResolvePullRequestResult,
+  type GitStackedAction,
+  type SourceControlCloneProtocol,
+  type SourceControlRepositoryVisibility,
+  type ThreadId,
 } from "@d4research/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback } from "react";
-
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { gitEnvironment } from "./git";
 import { useEnvironmentQuery } from "./query";
@@ -269,7 +268,7 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
   );
   const action = useCallback(
     async (input: {
-      provider: "github" | "gitlab" | "azure-devops";
+      provider: "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops";
       repository: string;
       visibility: SourceControlRepositoryVisibility;
       remoteName: string;

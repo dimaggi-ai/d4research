@@ -9,7 +9,22 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@d4research/contracts";
-import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@d4research/contracts";
+import {
+  ENABLED_BY_DEFAULT_SKILL_MAX_COUNT,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+} from "@d4research/contracts";
+import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
+import { useAtomValue } from "@effect/atom-react";
+import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
+import { pastedTextDisposition, replaceTextSelection } from "@d4research/client-runtime/text-paste";
+import {
+  composerContextImportsAtom,
+  countComposerDraftAttachmentsAfterSelection,
+} from "../../state/use-composer-drafts";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { canStartProviderTurn } from "@d4research/contracts";
 import {
   deriveDirectiveSuggestions,
@@ -139,7 +154,9 @@ export interface ThreadComposerProps {
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftImages: () => Promise<void>;
+  readonly onPickDraftFiles: () => Promise<void>;
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
+  readonly onNativePasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
   readonly onReconnectEnvironment: () => void;
@@ -318,6 +335,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     reportFailure: true,
   });
   const projectSkillNames = useProjectSkillNames(props.environmentId, props.projectCwd);
+  const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const contextImports = useAtomValue(composerContextImportsAtom);
+  const pendingPastedTextAttachmentCountRef = useRef(0);
+  const [pendingPastedTextAttachmentCount, setPendingPastedTextAttachmentCount] = useState(0);
+  const [filePreview, setFilePreview] = useState<FilePreviewSource | null>(null);
+  const [videoPreview, setVideoPreview] = useState<VideoPreviewSource | null>(null);
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
@@ -386,7 +409,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
   const selectedProviderReady =
     selectedProviderStatus === null || canStartProviderTurn(selectedProviderStatus);
-  const canSend = hasContent && selectedProviderReady;
+  const canSend =
+    hasContent &&
+    selectedProviderReady &&
+    !contextImports[composerOwnerKey] &&
+    pendingPastedTextAttachmentCount === 0;
   const providerReadinessMessage = selectedProviderReady
     ? null
     : (selectedProviderStatus?.readiness?.remediation ??
@@ -597,6 +624,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
 
   const handleSend = useCallback(async () => {
+    if (pendingPastedTextAttachmentCountRef.current > 0 || contextImports[composerOwnerKey]) return;
     // A delegation is answered by the model the message names, so an
     // unresolvable one would fail the whole turn on the server. Say so here
     // and keep the draft instead of spending a turn to find out.
@@ -618,6 +646,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
   }, [
     delegateCandidates,
+    composerOwnerKey,
+    contextImports,
     draftMessage,
     onSendMessage,
     props.environmentId,
@@ -968,15 +998,29 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               exiting={FadeOut.duration(120)}
             >
               <ComposerAttachmentStrip
+                environmentId={props.environmentId}
                 attachments={props.draftAttachments}
                 onRemove={props.onRemoveDraftImage}
-                onPressImage={onPressImage}
+                onPressPreview={setFilePreview}
+                onPressVideo={(attachment, sourceIdentifier) =>
+                  setVideoPreview({ type: "local", attachment, sourceIdentifier })
+                }
+                onPressDocument={(attachment) =>
+                  setFilePreview({
+                    kind: "document",
+                    attachment,
+                    name: attachment.name,
+                    mimeType: attachment.mimeType,
+                  })
+                }
               />
             </Animated.View>
           ) : null}
 
           <View className={isExpanded ? undefined : "min-w-0 flex-1"}>
             <ComposerEditor
+              draftKey={composerOwnerKey}
+              environmentId={props.environmentId}
               ref={inputRef}
               multiline
               value={props.draftMessage}
@@ -985,6 +1029,76 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               onChangeText={props.onChangeDraftMessage}
               onSelectionChange={handleSelectionChange}
               onPasteImages={(uris) => void props.onNativePasteImages(uris)}
+              onPasteText={(paste) => {
+                const insertPaste = () => {
+                  const insertion = replaceTextSelection({
+                    value: paste.value,
+                    selection: paste.selection,
+                    text: paste.text,
+                  });
+                  const selection = { start: insertion.cursor, end: insertion.cursor };
+                  props.onChangeDraftMessage(insertion.value);
+                  handleSelectionChange(selection);
+                };
+                const capabilities = props.serverConfig?.environment.capabilities;
+                const advertisedMax =
+                  capabilities?.attachmentUploads === true
+                    ? capabilities.fileAttachments?.maxUploadBytes
+                    : undefined;
+                const maxBytes =
+                  advertisedMax === undefined
+                    ? null
+                    : clampFileAttachmentUploadBytes(advertisedMax);
+                const wouldExceedInputLimit =
+                  paste.value.length -
+                    Math.max(0, paste.selection.end - paste.selection.start) +
+                    paste.text.length >
+                  PROVIDER_SEND_TURN_MAX_INPUT_CHARS;
+                const canAttach =
+                  maxBytes !== null &&
+                  countComposerDraftAttachmentsAfterSelection(composerOwnerKey, {
+                    text: paste.value,
+                    ...paste.selection,
+                  }) < PROVIDER_SEND_TURN_MAX_ATTACHMENTS &&
+                  new TextEncoder().encode(paste.text).byteLength <= maxBytes;
+                if (
+                  pastedTextDisposition({
+                    text: paste.text,
+                    wouldExceedInputLimit,
+                    canAttach: true,
+                  }) === "attachment"
+                ) {
+                  if (canAttach) {
+                    pendingPastedTextAttachmentCountRef.current += 1;
+                    setPendingPastedTextAttachmentCount(
+                      pendingPastedTextAttachmentCountRef.current,
+                    );
+                    const finishAttachment = () => {
+                      pendingPastedTextAttachmentCountRef.current = Math.max(
+                        0,
+                        pendingPastedTextAttachmentCountRef.current - 1,
+                      );
+                      setPendingPastedTextAttachmentCount(
+                        pendingPastedTextAttachmentCountRef.current,
+                      );
+                    };
+                    void props.onNativePasteText(paste).then(finishAttachment, finishAttachment);
+                  } else if (!wouldExceedInputLimit) {
+                    insertPaste();
+                  } else {
+                    Alert.alert(
+                      wouldExceedInputLimit
+                        ? "Pasted text is too large for this message"
+                        : "Could not attach pasted text",
+                      wouldExceedInputLimit
+                        ? "Remove some text or an attachment, then paste again."
+                        : "Remove an attachment or use a smaller paste, then try again.",
+                    );
+                  }
+                  return;
+                }
+                insertPaste();
+              }}
               placeholder={props.placeholder}
               onFocus={handleFocus}
               onBlur={handleBlur}
@@ -1068,11 +1182,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 fadeOpaque={toolbarFadeOpaque}
                 fadeTransparent={toolbarFadeTransparent}
               >
-                <ComposerToolbarButton
-                  accessibilityLabel="Add attachment"
-                  icon="plus"
-                  onPress={() => void props.onPickDraftImages()}
-                  showChevron={false}
+                <ComposerAttachmentButton
+                  supportsFiles={Boolean(
+                    props.serverConfig?.environment.capabilities.fileAttachments,
+                  )}
+                  onPickMedia={props.onPickDraftImages}
+                  onPickFiles={props.onPickDraftFiles}
                 />
                 {settingsMenu ? (
                   <ControlPillMenu
@@ -1160,6 +1275,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onSelectDevPipeline={selectDevPipeline}
       />
 
+      <FilePreviewModal source={filePreview} onRequestClose={() => setFilePreview(null)} />
+      <VideoPreviewModal source={videoPreview} onRequestClose={() => setVideoPreview(null)} />
       <ImageViewing
         images={previewImageUri ? [{ uri: previewImageUri }] : []}
         imageIndex={0}

@@ -1,12 +1,12 @@
+import type {
+  PickedElementPayload,
+  PickedElementStackFrame,
+  PreviewAnnotationPayload,
+} from "@d4research/contracts";
 import { type ThreadId } from "@d4research/contracts";
-import type { PickedElementPayload, PickedElementStackFrame } from "@d4research/contracts";
 
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
-const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
-
-const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
-  /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
 
 /**
  * Stable, persistable element selection captured from the in-app preview
@@ -31,25 +31,6 @@ export interface ElementContextSelection {
   source: PickedElementStackFrame | null;
   /** Author CSS (no UA defaults). May be empty. */
   styles: string;
-}
-
-export interface ElementContextDraft extends ElementContextSelection {
-  /** Stable composer-side id used for keyed rendering + dedupe. */
-  id: string;
-  threadId: ThreadId;
-  /** ISO-8601 wall clock pick time. */
-  pickedAt: string;
-}
-
-export interface ParsedElementContextEntry {
-  header: string;
-  body: string;
-}
-
-export interface ExtractedElementContexts {
-  promptText: string;
-  contextCount: number;
-  contexts: ParsedElementContextEntry[];
 }
 
 function truncateString(value: string, limit: number): string {
@@ -92,6 +73,56 @@ export function normalizeElementContextSelection(
       : null,
     styles: truncateString(normalizeText(raw.styles), ELEMENT_CONTEXT_STYLES_LIMIT),
   };
+}
+
+/** Converts a saved element pick into the annotation shape used by current drafts. */
+export function elementContextToPreviewAnnotation(
+  element: ElementContextSelection,
+  id: string,
+  pickedAt: string,
+): PreviewAnnotationPayload {
+  return {
+    id,
+    pageUrl: element.pageUrl,
+    pageTitle: element.pageTitle,
+    comment: "",
+    elements: [
+      {
+        id,
+        element: { ...element, stack: [], pickedAt },
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+      },
+    ],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: pickedAt,
+  };
+}
+
+const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
+
+const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
+  /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
+
+export interface ElementContextDraft extends ElementContextSelection {
+  /** Stable composer-side id used for keyed rendering + dedupe. */
+  id: string;
+  threadId: ThreadId;
+  /** ISO-8601 wall clock pick time. */
+  pickedAt: string;
+}
+
+export interface ParsedElementContextEntry {
+  header: string;
+  body: string;
+}
+
+export interface ExtractedElementContexts {
+  promptText: string;
+  contextCount: number;
+  contexts: ParsedElementContextEntry[];
 }
 
 /**
@@ -198,6 +229,7 @@ export function appendElementContextsToPrompt(
 }
 
 const ELEMENT_CONTEXT_ID_PREFIX = "el_";
+
 let nextElementContextSequence = 0;
 
 export function newElementContextId(): string {

@@ -1,6 +1,7 @@
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
+  isWorkspaceAudioPreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@d4research/shared/filePreview";
 
@@ -107,6 +108,10 @@ export function isImagePreviewFile(path: string): boolean {
   return isWorkspaceImagePreviewPath(path);
 }
 
+export function isAudioPreviewFile(path: string): boolean {
+  return isWorkspaceAudioPreviewPath(path.split(/[?#]/, 1)[0] ?? "");
+}
+
 export function isSvgImagePreviewFile(path: string): boolean {
   return /\.svg$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 }
@@ -125,4 +130,18 @@ export function fileBreadcrumbs(projectName: string, relativePath: string): File
       kind: index === parts.length - 1 ? ("file" as const) : ("directory" as const),
     })),
   ];
+}
+
+/**
+ * The location line under a file's name: `project · parent/dir`. A host file outside the
+ * workspace is not under the project, so it shows its directory alone.
+ */
+export function fileHeaderSubtitle(projectName: string, relativePath: string): string {
+  const parentDir = relativePath.slice(
+    0,
+    Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"), 0),
+  );
+  return isAbsolutePath(relativePath)
+    ? parentDir
+    : [projectName, parentDir].filter(Boolean).join(" · ");
 }

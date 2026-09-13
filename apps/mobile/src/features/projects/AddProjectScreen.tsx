@@ -94,7 +94,14 @@ function stringParam(value: string | string[] | undefined): string | null {
 
 function sourceFromParam(value: string | string[] | undefined): AddProjectRemoteSource {
   const source = stringParam(value);
-  if (source === "url" || source === "github" || source === "gitlab" || source === "azure-devops") {
+  if (
+    source === "url" ||
+    source === "github" ||
+    source === "gitlab" ||
+    source === "forgejo" ||
+    source === "bitbucket" ||
+    source === "azure-devops"
+  ) {
     return source;
   }
   return "url";

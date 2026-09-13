@@ -28,15 +28,17 @@ import {
   ProviderUploadFeedbackInput,
   ThreadId,
   TurnId,
+  type ProjectId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  type ServerSettings as ServerSettingsValue,
 } from "@d4research/contracts";
 import { expandAssistantCitationsForProvider } from "@d4research/shared/assistantCitations";
 import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import { causeErrorTag } from "@d4research/shared/observability";
-import { resolveProjectAgentBrowserAccess } from "@d4research/shared/serverSettings";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -675,34 +677,40 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    * "off" silently becoming "on" would violate the user's stated choice,
    * whereas the reverse costs an agent one toolset and is visible immediately.
    */
-  const agentBrowserAccessEnabled = Effect.fn("ProviderService.agentBrowserAccessEnabled")(
+  const agentAccessSettings = Effect.fn("ProviderService.agentAccessSettings")(
     function* (threadId: ThreadId) {
       const settings = yield* serverSettings.getSettings;
-      if (Object.keys(settings.projectAgentBrowserAccessOverrides).length === 0) {
-        return settings.enableAgentBrowserAccess;
-      }
+      const entries = Object.values(settings.projectSettingsOverrides);
+      const browserOverridden = entries.some(
+        (entry) => entry.enableAgentBrowserAccess !== undefined,
+      );
+      const deviceOverridden = entries.some((entry) => entry.enableAgentDeviceAccess !== undefined);
+      const environment = {
+        browser: settings.enableAgentBrowserAccess,
+        device: settings.enableAgentDeviceAccess,
+      };
+      if (!browserOverridden && !deviceOverridden) return environment;
       // Provider-only runtimes may omit orchestration. An unresolved project
-      // must not bypass an explicit browser override.
-      if (Option.isNone(projectionQuery)) return false;
+      // must not bypass an explicit project override, but a capability no
+      // project overrides keeps its environment value.
+      const denied = {
+        browser: browserOverridden ? false : environment.browser,
+        device: deviceOverridden ? false : environment.device,
+      };
+      if (Option.isNone(projectionQuery)) return denied;
       const thread = yield* projectionQuery.value.getThreadShellById(threadId);
-      if (Option.isNone(thread)) return false;
-      return resolveProjectAgentBrowserAccess(settings, thread.value.projectId);
+      if (Option.isNone(thread)) return denied;
+      const resolved = resolveProjectSettings(settings, thread.value.projectId).settings;
+      return {
+        browser: resolved.enableAgentBrowserAccess,
+        device: resolved.enableAgentDeviceAccess,
+      };
     },
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser access for this session.",
+        "Could not read server settings; withholding agent browser and device access for this session.",
         { cause },
-      ).pipe(Effect.as(false)),
-    ),
-  );
-
-  const agentDeviceAccessEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.enableAgentDeviceAccess),
-    Effect.catch((cause) =>
-      Effect.logWarning(
-        "Could not read server settings; withholding agent device access for this session.",
-        { cause },
-      ).pipe(Effect.as(false)),
+      ).pipe(Effect.as({ browser: false, device: false })),
     ),
   );
 
@@ -710,8 +718,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
   ) {
     const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
-    if (yield* agentBrowserAccessEnabled(threadId)) capabilities.add("preview");
-    if (yield* agentDeviceAccessEnabled) capabilities.add("device");
+    const access = yield* agentAccessSettings(threadId);
+    if (access.browser) capabilities.add("preview");
+    if (access.device) capabilities.add("device");
     return capabilities;
   });
 
@@ -1868,6 +1877,37 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               );
             }
           }
+          if (canonicalEvent.type === "turn.completed" || canonicalEvent.type === "turn.aborted") {
+            if (source.provider === "claudeAgent") {
+              // Background Claude turns have no sendTurn response to persist their
+              // new native boundary. Save it before clients can checkpoint the turn.
+              yield* Effect.gen(function* () {
+                const adapter = yield* registry.getByInstance(source.instanceId);
+                const session = (yield* adapter.listSessions()).find(
+                  (session) => session.threadId === canonicalEvent.threadId,
+                );
+                if (session?.resumeCursor !== undefined) {
+                  const binding = yield* directory.getBinding(session.threadId);
+                  if (
+                    Option.isNone(binding) ||
+                    binding.value.providerInstanceId !== source.instanceId
+                  ) {
+                    return;
+                  }
+                  yield* directory.upsert({
+                    threadId: session.threadId,
+                    provider: source.provider,
+                    providerInstanceId: source.instanceId,
+                    resumeCursor: session.resumeCursor,
+                  });
+                }
+              }).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("failed to persist Claude turn resume state", { cause }),
+                ),
+              );
+            }
+          }
           yield* increment(providerRuntimeEventsTotal, {
             provider: canonicalEvent.provider,
             eventType: canonicalEvent.type,
@@ -2573,30 +2613,45 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
     // Every attachment gets an on-disk path in the prompt so the model's tools
     // can dereference the actual file. All attachments then go to the adapter,
-    // and each adapter decides what its provider ingests natively: OpenCode
-    // sends generic files as file parts, the others send images only and rely
-    // on the path line for everything else. Unresolvable ids are skipped here
-    // and surface as adapter errors when the file is read.
+    // and each adapter decides what its provider ingests natively. Folded
+    // clipboard text remains path-only everywhere: eagerly embedding it would
+    // spend the same context the client deliberately preserved by folding it.
+    // Unresolvable ids are skipped here and surface as adapter errors when the
+    // file is read.
     let inputTextWithAttachmentContext = inputTextWithCitations;
     const appendAttachmentContext = (context: string | undefined) => {
-      if (context === undefined) return;
+      if (context === undefined) return true;
       const candidate = inputTextWithAttachmentContext
         ? `${inputTextWithAttachmentContext}\n\n${context}`
         : context;
       if (candidate.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
         inputTextWithAttachmentContext = candidate;
+        return true;
       }
+      return false;
     };
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,
         attachment,
       });
-      appendAttachmentContext(
+      const isPastedText =
+        attachment.type === "file" &&
+        "source" in attachment &&
+        attachment.source?._tag === "pasted-text";
+      const appended = appendAttachmentContext(
         attachmentPath === null
           ? undefined
-          : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
+          : isPastedText
+            ? `[Pasted text "${attachment.name}" is saved at: ${attachmentPath}. Inspect it as needed.]`
+            : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
       );
+      if (isPastedText && !appended) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          `Input plus pasted-text attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+        );
+      }
     }
     for (const attachment of attachments) {
       const source =
@@ -3365,6 +3420,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.rollback_turns": input.numTurns,
         });
         yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+        const session = (yield* routed.adapter.listSessions()).find(
+          (session) => session.threadId === routed.threadId,
+        );
+        if (session) {
+          yield* upsertSessionBinding(
+            { ...session, providerInstanceId: routed.instanceId },
+            input.threadId,
+          );
+        }
       }).pipe(
         withMetrics({
           counter: providerTurnsTotal,
@@ -3387,10 +3451,30 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         cause: causeErrorTag(cause),
       });
 
-    const continueAfterRestart = yield* serverSettings.getSettings.pipe(
-      Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
-      Effect.orElseSucceed(() => false),
+    // Continuation is project-scopable, so decide it per session's project;
+    // without orchestration the environment value is all there is.
+    const stopSettings = yield* serverSettings.getSettings.pipe(
+      Effect.map(Option.some),
+      Effect.orElseSucceed(() => Option.none<ServerSettingsValue>()),
     );
+    const continueAfterRestartFor = Effect.fn("continueAfterRestartFor")(function* (
+      threadId: ThreadId,
+    ) {
+      if (Option.isNone(stopSettings)) return false;
+      const settings = stopSettings.value;
+      const overridden = Object.values(settings.projectSettingsOverrides).some(
+        (entry) => entry.continueThreadsAfterServerUpdate !== undefined,
+      );
+      if (!overridden || Option.isNone(projectionQuery)) {
+        return settings.continueThreadsAfterServerUpdate;
+      }
+      const thread = yield* projectionQuery.value
+        .getThreadShellById(threadId)
+        .pipe(Effect.orElseSucceed(() => Option.none<{ projectId: ProjectId }>()));
+      if (Option.isNone(thread)) return settings.continueThreadsAfterServerUpdate;
+      return resolveProjectSettings(settings, thread.value.projectId).settings
+        .continueThreadsAfterServerUpdate;
+    });
     const initialAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(
       initialAdapters,
@@ -3416,16 +3500,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     // broken adapter or database write prevent the remaining providers from
     // being stopped and their credentials revoked.
     yield* Effect.forEach(activeSessions, (session) =>
-      Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
-        upsertSessionBinding(session, session.threadId, {
-          ...(continueAfterRestart && session.status === "running" && session.activeTurnId
+      Effect.gen(function* () {
+        const continueAfterRestart =
+          session.status === "running" && session.activeTurnId
+            ? yield* continueAfterRestartFor(session.threadId)
+            : false;
+        const lastRuntimeEventAt = yield* nowIso;
+        return yield* upsertSessionBinding(session, session.threadId, {
+          ...(continueAfterRestart && session.activeTurnId
             ? { continueAfterServerUpdate: session.activeTurnId }
             : {}),
           lastRuntimeEvent: "provider.stopAll",
           lastRuntimeEventAt,
           allowDuringShutdown: true,
-        }).pipe(Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS), Effect.exit),
-      ).pipe(
+        }).pipe(Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS), Effect.exit);
+      }).pipe(
         Effect.flatMap((exit) =>
           Exit.isFailure(exit) ? logFailure("directory.snapshot", exit.cause) : Effect.void,
         ),

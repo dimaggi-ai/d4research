@@ -10,11 +10,9 @@ unlock prompt if one appears.
 This is a one-time copy. Later login changes stay separate between the two browsers, and some
 sites may still require you to sign in again.
 
-On macOS, Safari is also available. Safari protects its cookies with Full Disk Access rather than
-a keychain, so the import wizard asks you to grant it: **Open System Settings** takes you to the
-right pane, and macOS may ask you to quit and reopen T3 Code before the grant applies. You can
-revoke Full Disk Access after the import is done. Choose the Safari profile whose cookies you want
-to copy.
+On macOS, Safari imports need Full Disk Access. Choose **Allow**, drag d4research into the
+System Settings permission list, and turn access on. **Continue** becomes available when access
+is detected. You can revoke Full Disk Access once the import is done.
 
 On Windows, import supports Firefox and Helium profiles that use standard profile encryption.
 Other Chromium-based browsers use app-bound encryption and cannot be imported. Partitioned cookies

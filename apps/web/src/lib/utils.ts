@@ -1,5 +1,5 @@
 import { CommandId, MessageId, ProjectId, ThreadId } from "@d4research/contracts";
-import { type CxOptions, cx } from "class-variance-authority";
+import { cx, type CxOptions } from "class-variance-authority";
 import * as Encoding from "effect/Encoding";
 import { twMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
@@ -47,7 +47,7 @@ export function getLocalFileManagerName(platform: string): string {
     return "Finder";
   }
   if (isWindowsPlatform(platform)) {
-    return "Explorer";
+    return "File Explorer";
   }
   return "Files";
 }

@@ -1,5 +1,6 @@
-import { type ThreadId } from "@d4research/contracts";
-
+import type { ThreadId } from "@d4research/contracts";
+import { formatComposerContextReference } from "@d4research/shared/composerContextReferences";
+import { toKindScopedComposerContextId } from "./composerContextReferences";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -16,36 +17,24 @@ export interface TerminalContextDraft extends TerminalContextSelection {
   createdAt: string;
 }
 
-export interface ExtractedTerminalContexts {
-  promptText: string;
-  contextCount: number;
-  previewTitle: string | null;
-  contexts: ParsedTerminalContextEntry[];
-}
-
-export interface DisplayedUserMessageState {
-  visibleText: string;
-  copyText: string;
-  contextCount: number;
-  previewTitle: string | null;
-  contexts: ParsedTerminalContextEntry[];
-  /**
-   * Element-context entries extracted from the trailing `<element_context>`
-   * block (if any). Stripped from `visibleText` so the raw block doesn't
-   * leak into the user's bubble.
-   */
-  elementContexts: ParsedElementContextEntry[];
-}
-
-export interface ParsedTerminalContextEntry {
-  header: string;
-  body: string;
-}
-
+/** Legacy ordinal placeholder from drafts saved before context references. Migration only. */
 export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
 
-const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
-  /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+export interface TerminalContextReferenceSource {
+  id: string;
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+/** The canonical inline link that stands for this context in the prompt. */
+export function formatTerminalContextReference(context: TerminalContextReferenceSource): string {
+  return formatComposerContextReference({
+    kind: "terminal",
+    contextId: toKindScopedComposerContextId("terminal", context.id),
+    label: formatTerminalContextLabel(context),
+  });
+}
 
 export function normalizeTerminalContextText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
@@ -98,6 +87,49 @@ export function formatTerminalContextLabel(selection: {
 }): string {
   return `${selection.terminalLabel} ${formatTerminalContextRange(selection)}`;
 }
+
+/** Binds legacy U+FFFC placeholders to contexts in array order; leftover placeholders vanish. */
+export function migrateLegacyTerminalContextPlaceholders(
+  prompt: string,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
+): string {
+  if (!prompt.includes(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)) return prompt;
+  let index = 0;
+  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, () => {
+    const context = contexts[index];
+    index += 1;
+    return context ? formatTerminalContextReference(context) : "";
+  });
+}
+
+export interface ExtractedTerminalContexts {
+  promptText: string;
+  contextCount: number;
+  previewTitle: string | null;
+  contexts: ParsedTerminalContextEntry[];
+}
+
+export interface DisplayedUserMessageState {
+  visibleText: string;
+  copyText: string;
+  contextCount: number;
+  previewTitle: string | null;
+  contexts: ParsedTerminalContextEntry[];
+  /**
+   * Element-context entries extracted from the trailing `<element_context>`
+   * block (if any). Stripped from `visibleText` so the raw block doesn't
+   * leak into the user's bubble.
+   */
+  elementContexts: ParsedElementContextEntry[];
+}
+
+export interface ParsedTerminalContextEntry {
+  header: string;
+  body: string;
+}
+
+const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
+  /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
 
 export function formatInlineTerminalContextLabel(selection: {
   terminalLabel: string;

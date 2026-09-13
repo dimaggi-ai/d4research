@@ -1,53 +1,90 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentType,
-  type KeyboardEvent,
-} from "react";
-import {
-  ArchiveIcon,
-  TelescopeIcon,
-  BracesIcon,
-  ShieldCheckIcon,
-  SparklesIcon,
-  BlocksIcon,
-  BotIcon,
-  createLucideIcon,
-  GitBranchIcon,
-  PanelsTopLeftIcon,
-  KeyboardIcon,
-  Link2Icon,
-  PaletteIcon,
-  SearchIcon,
-  Settings2Icon,
-  XIcon,
-} from "lucide-react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useCallback } from "react";
+
+import { useEffect } from "react";
+
+import { useMemo } from "react";
+
+import { useRef } from "react";
+
+import { useState } from "react";
+
+import { type ComponentType } from "react";
+
+import { type KeyboardEvent } from "react";
+
+import { ArchiveIcon } from "lucide-react";
+
+import { TelescopeIcon } from "lucide-react";
+
+import { BracesIcon } from "lucide-react";
+
+import { ShieldCheckIcon } from "lucide-react";
+
+import { SparklesIcon } from "lucide-react";
+
+import { BlocksIcon } from "lucide-react";
+
+import { BotIcon } from "lucide-react";
+
+import { createLucideIcon } from "lucide-react";
+
+import { GitBranchIcon } from "lucide-react";
+
+import { PanelsTopLeftIcon } from "lucide-react";
+
+import { KeyboardIcon } from "lucide-react";
+
+import { Link2Icon } from "lucide-react";
+
+import { PaletteIcon } from "lucide-react";
+
+import { SearchIcon } from "lucide-react";
+
+import { Settings2Icon } from "lucide-react";
+
+import { XIcon } from "lucide-react";
+
+import { useLocation } from "@tanstack/react-router";
+
+import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
+
 import { Input } from "../ui/input";
+
 import { Kbd } from "../ui/kbd";
-import {
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "../ui/sidebar";
+
+import { SidebarContent } from "../ui/sidebar";
+
+import { SidebarFooter } from "../ui/sidebar";
+
+import { SidebarGroup } from "../ui/sidebar";
+
+import { SidebarMenu } from "../ui/sidebar";
+
+import { SidebarMenuButton } from "../ui/sidebar";
+
+import { SidebarMenuItem } from "../ui/sidebar";
+
+import { useSidebar } from "../ui/sidebar";
+
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
+
 import { scrollToSettingsTarget } from "./settingsLayout";
-import {
-  searchSettings,
-  SETTINGS_SECTION_LABELS,
-  type SettingsPath,
-  type SettingsSearchItem,
-} from "./settingsSearch";
+
+import { searchSettings } from "./settingsSearch";
+
+import { isSettingsOverviewVisible } from "./settingsSearch";
+
+import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
+
+import { type SettingsPath } from "./settingsSearch";
+
+import { type SettingsSearchItem } from "./settingsSearch";
+
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
+
+import { validateSettingsScopeSearch } from "./settingsScope";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -60,6 +97,7 @@ const SnapShotIcon = createLucideIcon("snap-shot", [
   ["rect", { width: "10", height: "8", x: "7", y: "8", rx: "2", key: "window" }],
   ["circle", { cx: "12", cy: "12", r: "1.5", key: "lens" }],
 ]);
+
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
@@ -97,6 +135,11 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
+  const currentSearch = useLocation({ select: (location) => location.search });
+  const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
+  const navItems = SETTINGS_NAV_ITEMS.filter(
+    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
+  );
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -175,18 +218,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         setOpenMobile(false);
       }
       const targetId = item.targetId ?? item.id;
-      if (
-        item.to !== "/settings/projects" &&
-        pathname === item.to &&
-        currentHash.replace(/^#/, "") === targetId
-      ) {
+      if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
         scrollToSettingsTarget(targetId);
         return;
       }
       void navigate({
         to: item.to,
-        search: (previous) =>
-          item.to === "/settings/projects" ? { ...previous, project: undefined } : previous,
         hash: targetId,
         replace: true,
         hashScrollIntoView: false,
@@ -313,9 +350,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             </SidebarMenu>
           ) : (
             <SidebarMenu className="ps-px">
-              {SETTINGS_NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                const isGeneralDetailPage =
+                  item.to === "/settings/general" && pathname === "/settings/open-source-licenses";
+                const isActive =
+                  isGeneralDetailPage || pathname === item.to || pathname.startsWith(`${item.to}/`);
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton

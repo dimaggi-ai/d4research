@@ -18,6 +18,7 @@ import { createModelSelection } from "@d4research/shared/model";
 import {
   ApprovalRequestId,
   CommandId,
+  ComposerContextId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
@@ -1429,6 +1430,51 @@ describe("ProviderCommandReactor", () => {
       const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
       expect(thread?.session?.status).toBe("error");
       expect(thread?.session?.lastError).toContain("cannot carry a provider handoff");
+    }),
+  );
+
+  effectIt.effect("projects inline context before sending the provider turn", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-context"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-context"),
+          role: "user",
+          text: "Inspect [build](t3-context://v1/terminal/terminal-1)",
+          attachments: [],
+          context: {
+            version: 1,
+            records: [
+              {
+                version: 1,
+                kind: "terminal",
+                contextId: ComposerContextId.make("terminal-1"),
+                label: "build",
+                terminalId: "terminal-1",
+                terminalLabel: "Build",
+                lineStart: 7,
+                lineEnd: 7,
+                text: "compiled successfully",
+              },
+            ],
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        input: expect.stringContaining("[Terminal: build; ref=terminal-1]"),
+      });
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        input: expect.stringContaining('<context kind="terminal" id="terminal-1">'),
+      });
     }),
   );
 

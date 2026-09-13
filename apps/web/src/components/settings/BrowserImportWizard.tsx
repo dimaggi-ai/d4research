@@ -1,39 +1,78 @@
-import type { BrowserImportSource } from "@d4research/contracts";
-import { BROWSER_IMPORT_FAILURE_COPY } from "@d4research/contracts";
-import { ArrowDownIcon, ArrowRightIcon, CheckIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { PermissionChecklist } from "../permissions/PermissionChecklist";
 
-import { cn, randomUUID } from "~/lib/utils";
+import { PermissionContinueButton } from "../permissions/PermissionChecklist";
+
+import { usePermissionStatus } from "../permissions/usePermissionStatus";
+
+import { type BrowserImportSource } from "@d4research/contracts";
+
+import { BROWSER_IMPORT_FAILURE_COPY } from "@d4research/contracts";
+
+import { ArrowDownIcon } from "lucide-react";
+
+import { ArrowRightIcon } from "lucide-react";
+
+import { CheckIcon } from "lucide-react";
+
+import { HardDriveIcon } from "lucide-react";
+
+import { useRef } from "react";
+
+import { useState } from "react";
+
+import { cn } from "~/lib/utils";
+
+import { randomUUID } from "~/lib/utils";
 
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
+
+import { Dialog } from "../ui/dialog";
+
+import { DialogClose } from "../ui/dialog";
+
+import { DialogDescription } from "../ui/dialog";
+
+import { DialogFooter } from "../ui/dialog";
+
+import { DialogHeader } from "../ui/dialog";
+
+import { DialogPanel } from "../ui/dialog";
+
+import { DialogPopup } from "../ui/dialog";
+
+import { DialogTitle } from "../ui/dialog";
+
 import { Spinner } from "../ui/spinner";
-import {
-  initialWizardStep,
-  initialTargetSelection,
-  canCloseWizard,
-  isRetryableReason,
-  formatSkippedDomains,
-  fullDiskAccessRecheckStep,
-  outcomeToStep,
-  refreshedSourceProfileDirectory,
-  refreshedSourceStep,
-  resolveWizardTarget,
-  type ImportOutcome,
-  type WizardTarget,
-  type WizardTargetProfile,
-  type WizardTargetSelection,
-  type WizardStep,
-} from "./browserImportWizard.logic";
+
+import { initialWizardStep } from "./browserImportWizard.logic";
+
+import { initialTargetSelection } from "./browserImportWizard.logic";
+
+import { canCloseWizard } from "./browserImportWizard.logic";
+
+import { isRetryableReason } from "./browserImportWizard.logic";
+
+import { formatSkippedDomains } from "./browserImportWizard.logic";
+
+import { fullDiskAccessRecheckStep } from "./browserImportWizard.logic";
+
+import { outcomeToStep } from "./browserImportWizard.logic";
+
+import { refreshedSourceProfileDirectory } from "./browserImportWizard.logic";
+
+import { refreshedSourceStep } from "./browserImportWizard.logic";
+
+import { resolveWizardTarget } from "./browserImportWizard.logic";
+
+import { type ImportOutcome } from "./browserImportWizard.logic";
+
+import { type WizardTarget } from "./browserImportWizard.logic";
+
+import { type WizardTargetProfile } from "./browserImportWizard.logic";
+
+import { type WizardTargetSelection } from "./browserImportWizard.logic";
+
+import { type WizardStep } from "./browserImportWizard.logic";
 
 export type { WizardTarget } from "./browserImportWizard.logic";
 
@@ -57,7 +96,8 @@ interface BrowserImportWizardProps {
   /** Re-checks the source's availability after the user quits the browser. */
   readonly onRefreshSource: () => Promise<BrowserImportSource | undefined>;
   /** Opens the OS setting that grants access to a protected cookie store. */
-  readonly onOpenFullDiskAccessSettings: () => void;
+  readonly onOpenFullDiskAccessSettings: () => void | Promise<void>;
+  readonly onCheckFullDiskAccess?: (() => Promise<boolean>) | undefined;
   readonly onClose: () => void;
 }
 
@@ -76,6 +116,7 @@ export function BrowserImportWizard({
   onImport,
   onRefreshSource,
   onOpenFullDiskAccessSettings,
+  onCheckFullDiskAccess,
   onClose,
 }: BrowserImportWizardProps) {
   const [source, setSource] = useState(initialSource);
@@ -147,6 +188,13 @@ export function BrowserImportWizard({
             source={source}
             onCancel={onClose}
             onOpenSettings={onOpenFullDiskAccessSettings}
+            onCheck={
+              onCheckFullDiskAccess ??
+              (async () => {
+                const refreshed = await onRefreshSource();
+                return refreshed !== undefined && refreshed.unavailable === undefined;
+              })
+            }
             onGranted={step.resume === "import" ? runImport : recheckFullDiskAccess}
             stillRequired={step.checked === true}
           />
@@ -248,13 +296,29 @@ function FullDiskAccessStep({
   onOpenSettings,
   onGranted,
   stillRequired,
+  onCheck,
 }: {
   readonly source: BrowserImportSource;
   readonly onCancel: () => void;
-  readonly onOpenSettings: () => void;
+  readonly onOpenSettings: () => void | Promise<void>;
+  readonly onCheck: () => Promise<boolean>;
   readonly onGranted: () => void;
   readonly stillRequired: boolean;
 }) {
+  const [opening, setOpening] = useState(false);
+  const [openingError, setOpeningError] = useState<string | null>(null);
+  const permission = usePermissionStatus(async () => ({ fullDiskAccess: await onCheck() }), {
+    fullDiskAccess: false,
+  });
+  const allow = () => {
+    if (opening) return;
+    setOpening(true);
+    setOpeningError(null);
+    void Promise.resolve()
+      .then(onOpenSettings)
+      .catch(() => setOpeningError("Could not open System Settings. Try Allow again."))
+      .finally(() => setOpening(false));
+  };
   return (
     <>
       <DialogHeader>
@@ -265,26 +329,54 @@ function FullDiskAccessStep({
           import is done.
         </DialogDescription>
       </DialogHeader>
-      {stillRequired ? (
-        <DialogPanel>
-          <p role="status" className="text-sm text-muted-foreground">
-            Full Disk Access is still required. If you just turned it on, quit and reopen
-            d4research, then try again.
+      <DialogPanel>
+        <PermissionChecklist
+          busy={opening}
+          permissions={[
+            {
+              id: "fullDiskAccess",
+              icon: (
+                <HardDriveIcon
+                  className="size-8 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              ),
+              title: "Full Disk Access",
+              description: `Read ${source.name}'s cookies for this import.`,
+              granted: permission.status.fullDiskAccess,
+              onAllow: () => void allow(),
+            },
+          ]}
+        />
+        {openingError || permission.error ? (
+          <p role="status" className="mt-3 text-xs text-muted-foreground">
+            {openingError ?? permission.error}
           </p>
-        </DialogPanel>
-      ) : null}
+        ) : null}
+        {!permission.isReady(["fullDiskAccess"]) ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {stillRequired
+              ? "Access is still required. Quit and reopen d4research if you just allowed it, then retry the import."
+              : "If access doesn't update after you allow it, quit and reopen d4research, then retry the import."}
+          </p>
+        ) : null}
+      </DialogPanel>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={onOpenSettings}>
-          Open System Settings
-        </Button>
-        <Button onClick={onGranted}>I&rsquo;ve turned it on</Button>
+        <PermissionContinueButton
+          ready={permission.isReady(["fullDiskAccess"])}
+          busy={opening}
+          onClick={onGranted}
+        >
+          Continue
+        </PermissionContinueButton>
       </DialogFooter>
     </>
   );
 }
+
 function ConfigureStep({
   source,
   destinationEnvironmentName,

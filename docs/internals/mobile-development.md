@@ -46,6 +46,12 @@ notifies subscribers. The digest is committed only after initialization succeeds
 Web and production retain their existing initialization behavior.
 
 After installing or changing the Uniwind patch, restart Metro once with
-`vp run dev:client:reset` from `apps/mobile`. pnpm gives patched packages new
+`vp run dev:client` from `apps/mobile`. This command clears Metro's cache. pnpm gives patched packages new
 filesystem paths, and cached transforms can otherwise retain references to the
-previous package. Ordinary development starts should retain the transform cache.
+previous package.
+
+The native modules under `apps/mobile/modules/` are `file:` dependencies, and pnpm
+copies those into its virtual store instead of linking them. Metro bundles the copy,
+so an edit to a module's TypeScript is invisible to a running dev client until
+`vp i` re-syncs it, while Gradle and CocoaPods compile the worktree directory
+directly. A JavaScript change that "has no effect" on device is usually this.

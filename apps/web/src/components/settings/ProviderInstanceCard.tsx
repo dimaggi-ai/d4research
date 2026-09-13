@@ -1,65 +1,131 @@
-"use client";
+import { ArrowUpCircleIcon } from "lucide-react";
 
-import {
-  ArrowUpCircleIcon,
-  ChevronDownIcon,
-  CopyIcon,
-  DownloadIcon,
-  LoaderIcon,
-  PlusIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
+
+import { CopyIcon } from "lucide-react";
+
+import { DownloadIcon } from "lucide-react";
+
+import { LoaderIcon } from "lucide-react";
+
+import { PlusIcon } from "lucide-react";
+
+import { Trash2Icon } from "lucide-react";
+
+import { XIcon } from "lucide-react";
+
 import * as Arr from "effect/Array";
+
 import * as Result from "effect/Result";
-import { useState, type ReactNode } from "react";
-import {
-  isProviderDriverKind,
-  type ProviderInstanceConfig,
-  type ProviderInstanceEnvironmentVariable,
-  type ProviderInstanceId,
-  type ProviderDriverKind,
-  type ServerProvider,
-  type ServerProviderModel,
-} from "@d4research/contracts";
+
+import { useState } from "react";
+
+import { type ReactNode } from "react";
+
+import { isProviderDriverKind } from "@d4research/contracts";
+
+import { type ProviderInstanceConfig } from "@d4research/contracts";
+
+import { type ProviderInstanceEnvironmentVariable } from "@d4research/contracts";
+
+import { type ProviderInstanceId } from "@d4research/contracts";
+
+import { type ProviderDriverKind } from "@d4research/contracts";
+
+import { type ServerProvider } from "@d4research/contracts";
+
+import { type ServerProviderModel } from "@d4research/contracts";
 
 import { cn } from "../../lib/utils";
+
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+
 import { normalizeProviderAccentColor } from "../../providerInstances";
+
 import { Badge } from "../ui/badge";
+
 import { Button } from "../ui/button";
+
 import { Checkbox } from "../ui/checkbox";
-import { Collapsible, CollapsibleContent } from "../ui/collapsible";
+
+import { Collapsible } from "../ui/collapsible";
+
+import { CollapsibleContent } from "../ui/collapsible";
+
 import { DraftInput } from "../ui/draft-input";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+
+import { Popover } from "../ui/popover";
+
+import { PopoverPopup } from "../ui/popover";
+
+import { PopoverTrigger } from "../ui/popover";
+
 import { ScrollArea } from "../ui/scroll-area";
+
 import { Switch } from "../ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import type { DriverOption } from "./providerDriverMeta";
+
+import { Table } from "../ui/table";
+
+import { TableBody } from "../ui/table";
+
+import { TableCell } from "../ui/table";
+
+import { TableHead } from "../ui/table";
+
+import { TableHeader } from "../ui/table";
+
+import { TableRow } from "../ui/table";
+
+import { stackedThreadToast } from "../ui/toast";
+
+import { toastManager } from "../ui/toast";
+
+import { Tooltip } from "../ui/tooltip";
+
+import { TooltipPopup } from "../ui/tooltip";
+
+import { TooltipTrigger } from "../ui/tooltip";
+
+import { type DriverOption } from "./providerDriverMeta";
+
 import { ProviderSettingsForm } from "./ProviderSettingsForm";
+
 import { ProviderModelsSection } from "./ProviderModelsSection";
+
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
+
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import {
-  applyOllamaClaudePreset,
-  discoverOllamaModels,
-  isOllamaClaudePresetConfigured,
-  removeOllamaClaudePreset,
-} from "./ollamaClaudePreset";
-import {
-  getProviderVersionAdvisoryPresentation,
-  PROVIDER_STATUS_STYLES,
-  getProviderSummary,
-  getProviderVersionLabel,
-  type ProviderStatusKey,
-} from "./providerStatus";
+
+import { applyOllamaClaudePreset } from "./ollamaClaudePreset";
+
+import { discoverOllamaModels } from "./ollamaClaudePreset";
+
+import { isOllamaClaudePresetConfigured } from "./ollamaClaudePreset";
+
+import { removeOllamaClaudePreset } from "./ollamaClaudePreset";
+
+import { getProviderVersionAdvisoryPresentation } from "./providerStatus";
+
+import { PROVIDER_STATUS_STYLES } from "./providerStatus";
+
+import { getProviderSummary } from "./providerStatus";
+
+import { getProviderVersionLabel } from "./providerStatus";
+
+import { type ProviderStatusKey } from "./providerStatus";
+
+import { readCustomModelEntries } from "@d4research/shared/model";
+
+import { toCustomModelSetting } from "@d4research/shared/model";
+
+import { type CustomModelDefinition } from "@d4research/shared/model";
 
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 let environmentVariableDraftId = 0;
+
 const nextEnvironmentVariableDraftId = () => `provider-env-${environmentVariableDraftId++}`;
 
 type EnvironmentDraftRow = {
@@ -207,120 +273,110 @@ function ProviderEnvironmentSection(props: {
     setRows(nextRows);
     publishRows(nextRows);
   };
+  const addVariable = () =>
+    setRows([
+      ...rows,
+      {
+        id: nextEnvironmentVariableDraftId(),
+        name: "",
+        value: "",
+        sensitive: true,
+      },
+    ]);
 
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-foreground">Environment variables</span>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 px-2 text-xs"
-          onClick={() =>
-            setRows([
-              ...rows,
-              {
-                id: nextEnvironmentVariableDraftId(),
-                name: "",
-                value: "",
-                sensitive: true,
-              },
-            ])
-          }
-        >
+    <SettingsRow
+      title="Variables"
+      description="API keys, base URLs, and other per-instance CLI settings."
+      control={
+        <Button type="button" size="sm" variant="outline" onClick={addVariable}>
           <PlusIcon className="size-3" />
           Add
         </Button>
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Add variables to pass API keys, base URLs, or other per-instance CLI settings.
-        </p>
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border/70">
-          <Table>
-            <TableHeader className="bg-muted/25 text-[11px] text-muted-foreground">
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Variable</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead className="w-20">Sensitive</TableHead>
-                <TableHead className="w-12 text-right">
-                  <span className="sr-only">Options</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((variable, index) => (
-                <TableRow
-                  key={variable.id}
-                  className="border-border/60 odd:bg-muted/20 even:bg-background/20"
-                >
-                  <TableCell>
-                    <DraftInput
-                      value={variable.name}
-                      onCommit={(name) => updateVariable(variable.id, { name: name.trim() })}
-                      placeholder="VARIABLE_NAME"
-                      spellCheck={false}
-                      aria-label={`Environment variable name ${index + 1}`}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <DraftInput
-                      value={variable.valueRedacted ? "" : variable.value}
-                      onCommit={(value) => updateVariable(variable.id, { value })}
-                      type={variable.sensitive ? "password" : undefined}
-                      autoComplete="off"
-                      placeholder={
-                        variable.valueRedacted
-                          ? "Stored secret - enter a new value to replace"
-                          : "Value"
-                      }
-                      spellCheck={false}
-                      aria-label={`Environment variable value ${index + 1}`}
-                    />
-                  </TableCell>
-                  <TableCell className="w-20">
-                    <div className="flex h-8 items-center justify-center">
-                      <Checkbox
-                        checked={variable.sensitive}
-                        onCheckedChange={(checked) => {
-                          const sensitive = Boolean(checked);
-                          updateVariable(variable.id, {
-                            sensitive,
-                            ...(sensitive && variable.valueRedacted === undefined
-                              ? {}
-                              : { valueRedacted: sensitive ? variable.valueRedacted : false }),
-                          });
-                        }}
-                        aria-label={`Mark environment variable ${variable.name || index + 1} as sensitive`}
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell className="w-12">
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        className="size-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeVariable(variable.id)}
-                        aria-label={`Remove environment variable ${variable.name || index + 1}`}
-                      >
-                        <XIcon className="size-3.5" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      }
+    >
+      {rows.length > 0 ? (
+        <div className="mt-3 min-w-0 space-y-2 pb-2">
+          {rows.map((variable, index) => (
+            <div key={variable.id} className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <DraftInput
+                size="sm"
+                className="w-full min-w-0 font-mono sm:w-44 sm:shrink-0"
+                value={variable.name}
+                onCommit={(name) => updateVariable(variable.id, { name: name.trim() })}
+                placeholder="VARIABLE_NAME"
+                spellCheck={false}
+                aria-label={`Environment variable name ${index + 1}`}
+              />
+              <span className="hidden text-xs text-muted-foreground sm:inline" aria-hidden>
+                =
+              </span>
+              <DraftInput
+                size="sm"
+                className="min-w-0 flex-1 font-mono"
+                value={variable.valueRedacted ? "" : variable.value}
+                onCommit={(value) => updateVariable(variable.id, { value })}
+                type={variable.sensitive ? "password" : undefined}
+                autoComplete="off"
+                placeholder={
+                  variable.valueRedacted ? "Stored secret, enter a new value to replace" : "value"
+                }
+                spellCheck={false}
+                aria-label={`Environment variable value ${index + 1}`}
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-micro"
+                      variant="ghost-muted"
+                      className={cn(
+                        "[--control-icon-color:currentColor]",
+                        variable.sensitive && "text-foreground",
+                      )}
+                      onClick={() => {
+                        const sensitive = !variable.sensitive;
+                        updateVariable(variable.id, {
+                          sensitive,
+                          ...(sensitive && variable.valueRedacted === undefined
+                            ? {}
+                            : { valueRedacted: sensitive ? variable.valueRedacted : false }),
+                        });
+                      }}
+                      aria-pressed={variable.sensitive}
+                      aria-label={`Mark environment variable ${variable.name || index + 1} as sensitive`}
+                    >
+                      {variable.sensitive ? (
+                        <LockIcon className="size-3" />
+                      ) : (
+                        <LockOpenIcon className="size-3" />
+                      )}
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">
+                  {variable.sensitive ? "Sensitive, stored separately" : "Plain text"}
+                </TooltipPopup>
+              </Tooltip>
+              <Button
+                type="button"
+                size="icon-micro"
+                variant="ghost-muted"
+                className="[--control-icon-color:currentColor] hover:text-destructive"
+                onClick={() => removeVariable(variable.id)}
+                aria-label={`Remove environment variable ${variable.name || index + 1}`}
+              >
+                <XIcon className="size-3" />
+              </Button>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            Sensitive values are stored separately and never returned to the app.
+          </p>
         </div>
-      )}
-      <span className="text-xs text-muted-foreground">
-        Sensitive values are stored separately and are not returned to the app after saving.
-      </span>
-    </div>
+      ) : null}
+    </SettingsRow>
   );
 }
 
@@ -939,55 +995,79 @@ export function ProviderInstanceCard({
               />
             </div>
 
-            <div>
+            <SettingsSection
+              title="Runtime"
+              inert={readOnly}
+              aria-disabled={readOnly || undefined}
+              className={readOnly ? "opacity-50 select-none" : undefined}
+            >
+              {driverOption ? (
+                <ProviderSettingsForm
+                  definition={driverOption}
+                  value={instance.config}
+                  idPrefix={`provider-instance-${instanceId}`}
+                  variant="settings"
+                  onChange={updateConfig}
+                />
+              ) : (
+                <SettingsRow
+                  title="Driver"
+                  description={
+                    <span>
+                      This instance uses{" "}
+                      <code className="text-foreground">{String(instance.driver)}</code>, which is
+                      not available in this build. Its configuration is preserved.
+                    </span>
+                  }
+                />
+              )}
+            </SettingsSection>
+
+            <SettingsSection
+              title="Environment"
+              inert={readOnly}
+              aria-disabled={readOnly || undefined}
+              className={readOnly ? "opacity-50 select-none" : undefined}
+            >
               <ProviderEnvironmentSection
                 environment={instance.environment ?? []}
                 onChange={updateEnvironment}
               />
-            </div>
-
-            {driverOption ? (
-              <ProviderSettingsForm
-                definition={driverOption}
-                value={instance.config}
-                idPrefix={`provider-instance-${instanceId}`}
-                variant="card"
-                onChange={updateConfig}
-              />
-            ) : null}
+            </SettingsSection>
 
             {driverOption !== undefined ? (
-              <ProviderModelsSection
-                instanceId={instanceId}
-                driverKind={driverKind}
-                models={modelsForDisplay}
-                customModels={customModelDefinitions}
-                hiddenModels={hiddenModels}
-                favoriteModels={favoriteModels}
-                modelOrder={modelOrder}
-                onChange={updateCustomModels}
-                onHiddenModelsChange={onHiddenModelsChange}
-                onFavoriteModelsChange={onFavoriteModelsChange}
-                onModelOrderChange={onModelOrderChange}
-              />
-            ) : (
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  This instance uses a driver (
-                  <code className="text-foreground">{String(instance.driver)}</code>) that is not
-                  shipped with the current build. Configuration values are preserved but cannot be
-                  edited from this surface.
-                </p>
-              </div>
-            )}
+              <SettingsSection
+                title="Models"
+                inert={readOnly}
+                aria-disabled={readOnly || undefined}
+                className={readOnly ? "opacity-50 select-none" : undefined}
+              >
+                <div className="px-3 py-3 sm:px-4">
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Favorites, visibility, and ordering are saved on this device. Custom models are
+                    saved on the selected environment.
+                  </p>
+                  <ProviderModelsSection
+                    instanceId={instanceId}
+                    driverKind={driverKind}
+                    models={modelsForDisplay}
+                    customModels={customModelDefinitions}
+                    hiddenModels={hiddenModels}
+                    favoriteModels={favoriteModels}
+                    modelOrder={modelOrder}
+                    onChange={updateCustomModels}
+                    onHiddenModelsChange={onHiddenModelsChange}
+                    onFavoriteModelsChange={onFavoriteModelsChange}
+                    onModelOrderChange={onModelOrderChange}
+                  />
+                </div>
+              </SettingsSection>
+            ) : null}
           </div>
         </CollapsibleContent>
       </Collapsible>
     </div>
   );
 }
-import {
-  readCustomModelEntries,
-  toCustomModelSetting,
-  type CustomModelDefinition,
-} from "@d4research/shared/model";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { LockIcon, LockOpenIcon } from "lucide-react";

@@ -444,6 +444,8 @@ import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
   agentControlledBrowserCloseConfirmation,
   audioArtifactDismissKey,
+  collectAudioArtifactPaths,
+  hasLiveAgentSession,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
@@ -464,7 +466,6 @@ import {
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
-  isAudioArtifactPath,
   isBranchMismatchDismissedForSession,
   isPaintOnlyThreadTimeline,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -2991,7 +2992,8 @@ function ChatViewContent(props: ChatViewProps) {
       ? null
       : JSON.stringify([activityId, latestCheckpointCompletedAt]);
   }, [latestCheckpointCompletedAt, threadActivities]);
-  const agentSessionLive = phase !== "disconnected";
+  const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
+  const agentSessionLive = hasLiveAgentSession(phase, activeThreadShell?.backgroundLiveness);
   const agentPanelModel = useMemo(
     () =>
       deriveAgentPanelModel({
@@ -3731,21 +3733,20 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return byMessageId;
   }, [turnDiffSummaries]);
-  // Audio files the agent produced in this thread become playable artifacts.
-  // Distinct paths, in the order they were first touched across turns.
-  const audioArtifactPaths = useMemo(() => {
-    const seen = new Set<string>();
-    const paths: string[] = [];
-    for (const summary of turnDiffSummaries) {
-      for (const file of summary.files) {
-        if (isAudioArtifactPath(file.path) && !seen.has(file.path)) {
-          seen.add(file.path);
-          paths.push(file.path);
-        }
-      }
-    }
-    return paths;
-  }, [turnDiffSummaries]);
+  const audioArtifactPaths = useMemo(
+    () =>
+      collectAudioArtifactPaths(
+        turnDiffSummaries,
+        displayServerMessages,
+        activeThread?.worktreePath ?? activeProject?.workspaceRoot,
+      ),
+    [
+      turnDiffSummaries,
+      displayServerMessages,
+      activeThread?.worktreePath,
+      activeProject?.workspaceRoot,
+    ],
+  );
   const [dismissedAudioArtifacts, setDismissedAudioArtifacts] = useLocalStorage(
     DISMISSED_AUDIO_ARTIFACTS_KEY,
     EMPTY_DISMISSED_AUDIO_ARTIFACTS,
@@ -4777,7 +4778,6 @@ function ChatViewContent(props: ChatViewProps) {
   const threadRepository = activeProject?.repositoryIdentity?.displayName ?? null;
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
-  const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const visiblePullRequestCount = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
   ).length;

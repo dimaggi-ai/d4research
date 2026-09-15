@@ -4,6 +4,7 @@ import { darkPalette } from "./dark-palette.spec.mjs";
 import { reconnectBanner } from "./reconnect-banner.spec.mjs";
 import { sidebarFooterSurface } from "./sidebar-footer-surface.spec.mjs";
 import { mobileQueueWhileRunning } from "./mobile-queue.spec.mjs";
+import { idleAgentsAndAudio } from "./idle-agents-audio.spec.mjs";
 import { composerSurfaceOcclusion } from "./composer-surface.spec.mjs";
 import { mobileSidebarReachability, mobileStatusBarReachability } from "./mobile-sidebar.spec.mjs";
 import { panelCloseReachability } from "./panel-close.spec.mjs";
@@ -25,6 +26,7 @@ await runProductionBrowserSuite([
   { name: "consistent-branding-and-loading", run: branding },
   ...pwaRecoverySpecs,
   { name: "mobile-queue-while-running", run: mobileQueueWhileRunning },
+  { name: "idle-agents-and-unrequested-audio", run: idleAgentsAndAudio },
   { name: "sidebar-header-safe-area", run: authenticated(sidebarHeaderSafeArea) },
   { name: "composer-history-occlusion", run: authenticated(composerSurfaceOcclusion) },
   { name: "sidebar-footer-reachability", run: authenticated(mobileSidebarReachability) },

@@ -32,6 +32,8 @@ import { type Thread, type ThreadShell, type TurnDiffSummary } from "../types";
 import {
   agentControlledBrowserCloseConfirmation,
   audioArtifactDismissKey,
+  collectAudioArtifactPaths,
+  hasLiveAgentSession,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
@@ -225,6 +227,51 @@ describe("provider-bound message size", () => {
 });
 
 describe("audio artifacts", () => {
+  const files = ["apps/web/src/assets/notification-completion.mp3", "out/show.mp3"].map((path) => ({
+    path,
+    kind: "added",
+    additions: 0,
+    deletions: 0,
+  }));
+
+  it("does not turn merged sound assets or user mentions into a podcast", () => {
+    expect(collectAudioArtifactPaths([{ files }], [], "/workspace")).toEqual([]);
+    expect(
+      collectAudioArtifactPaths(
+        [{ files }],
+        [
+          { role: "assistant", text: "Updated notification-completion.mp3 and out/show.mp3." },
+          { role: "user", text: "[recording](out/show.mp3)" },
+        ],
+        "/workspace",
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps explicitly delivered workspace audio without duplicate players", () => {
+    expect(
+      collectAudioArtifactPaths(
+        [{ files }, { files }],
+        [{ role: "assistant", text: "[Listen](/workspace/out/show.mp3) [Again](out/show.mp3)" }],
+        "/workspace",
+      ),
+    ).toEqual(["out/show.mp3"]);
+  });
+
+  it("does not surface remote, outside-workspace, unchanged, or deleted files", () => {
+    expect(
+      collectAudioArtifactPaths(
+        [{ files }, { files: [{ ...files[1]!, kind: "deleted" }] }],
+        [
+          {
+            role: "assistant",
+            text: "[remote](https://example.com/show.mp3) [outside](/tmp/show.mp3) [unchanged](old.mp3) [deleted](out/show.mp3)",
+          },
+        ],
+        "/workspace",
+      ),
+    ).toEqual([]);
+  });
   it("recognizes supported extensions case-insensitively without substring matches", () => {
     for (const path of ["show.mp3", "voice.WAV", "clip.m4a", "voice.opus", "stream.weba"]) {
       expect(isAudioArtifactPath(path)).toBe(true);
@@ -239,6 +286,21 @@ describe("audio artifacts", () => {
     expect(audioArtifactDismissKey("thread-b", "out/show.mp3")).not.toBe(
       audioArtifactDismissKey("thread-a", "out/show.mp3"),
     );
+  });
+});
+
+describe("historical agent liveness", () => {
+  it("does not count a ready connection as background work", () => {
+    expect(hasLiveAgentSession("ready", null)).toBe(false);
+    expect(hasLiveAgentSession("ready", undefined)).toBe(false);
+    expect(hasLiveAgentSession("disconnected", "working")).toBe(false);
+  });
+
+  it("a new parent turn does not revive old children, but genuine child work stays live", () => {
+    expect(hasLiveAgentSession("running", null)).toBe(false);
+    expect(hasLiveAgentSession("running", "working")).toBe(true);
+    expect(hasLiveAgentSession("ready", "working")).toBe(true);
+    expect(hasLiveAgentSession("ready", "monitoring")).toBe(true);
   });
 });
 

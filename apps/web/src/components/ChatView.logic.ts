@@ -41,6 +41,7 @@ import {
   type DraftThreadState,
 } from "../composerDraftStore";
 import { isDevPipelinePrompt } from "../devPipeline";
+import { extractMarkdownLinkHrefs, resolveMarkdownFileLinkMeta } from "../markdown-links";
 import { filterTerminalContextsWithText, type TerminalContextDraft } from "../lib/terminalContext";
 import { type PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import { type DesktopPreviewOverlay } from "../previewStateStore";
@@ -665,6 +666,40 @@ export function isAudioArtifactPath(path: string): boolean {
 
 export function audioArtifactDismissKey(threadId: string, path: string): string {
   return `${threadId}::${path}`;
+}
+
+export function collectAudioArtifactPaths(
+  summaries: ReadonlyArray<Pick<TurnDiffSummary, "files">>,
+  messages: ReadonlyArray<Pick<ChatMessage, "role" | "text">>,
+  workspaceRoot: string | undefined,
+): string[] {
+  // A changed sound asset is not a recording delivered to the user. Require
+  // an explicit assistant link as well as a checkpoint entry.
+  const linkedPaths = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const href of extractMarkdownLinkHrefs(message.text)) {
+      const path = resolveMarkdownFileLinkMeta(href, workspaceRoot)?.workspaceRelativePath;
+      if (path && isAudioArtifactPath(path)) linkedPaths.add(path);
+    }
+  }
+  const paths = new Set<string>();
+  for (const summary of summaries) {
+    for (const file of summary.files) {
+      if (file.kind === "deleted") paths.delete(file.path);
+      else if (linkedPaths.has(file.path)) paths.add(file.path);
+    }
+  }
+  return [...paths];
+}
+
+export function hasLiveAgentSession(
+  phase: SessionPhase,
+  backgroundLiveness: "working" | "monitoring" | null | undefined,
+): boolean {
+  // Neither a connected provider nor a new parent turn revives old children.
+  // The server tracks live child work during active and settled parent turns.
+  return phase !== "disconnected" && backgroundLiveness != null;
 }
 
 /** Delete only a research shell whose first turn was never accepted. */

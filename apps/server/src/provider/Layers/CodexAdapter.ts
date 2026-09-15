@@ -806,6 +806,13 @@ function mapCollabAgentEvent(
       ];
     case "collabAgent/activity": {
       const activityKind = typeof payload.activityKind === "string" ? payload.activityKind : "";
+      if (activityKind === "completed") {
+        // Parent-side completion can follow the child's idle/turnCompleted
+        // notifications. It is not another activation of this resumable child.
+        return [
+          { ...base, type: "task.updated", payload: { taskId, status: "idle", ...statusLinkage } },
+        ];
+      }
       if (activityKind === "interrupted") {
         return [
           {
@@ -835,6 +842,7 @@ function mapCollabAgentEvent(
           },
         ];
       }
+      if (activityKind !== "interacted") return [];
       // interacted → the child is (again) actively driven.
       return [
         {

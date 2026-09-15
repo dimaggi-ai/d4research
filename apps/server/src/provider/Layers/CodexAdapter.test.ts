@@ -930,6 +930,44 @@ function codexTurnEvent(method: "turn/started" | "turn/completed", turnId: strin
 }
 
 lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
+  it.effect("does not reactivate completed children from parent activity notifications", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* runtime.emit(codexTurnEvent("turn/started", "parent-turn"));
+      const emitChild = (method: string, payload: Record<string, unknown>) =>
+        runtime.emit({
+          id: asEventId(`child-${method}-${JSON.stringify(payload)}`),
+          kind: "notification",
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("thread-1"),
+          turnId: asTurnId("parent-turn"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          method,
+          payload: { agentThreadId: "child-1", agentPath: "/root/reviewer", ...payload },
+        });
+      yield* emitChild("collabAgent/activity", { activityKind: "started" });
+      yield* emitChild("collabAgent/statusChanged", { status: { type: "idle" } });
+      yield* emitChild("collabAgent/turnCompleted", { turn: { status: "completed" } });
+      // Captured live order: duplicate parent completions follow child idle.
+      yield* emitChild("collabAgent/activity", { activityKind: "completed" });
+      yield* emitChild("collabAgent/activity", { activityKind: "completed" });
+      yield* emitChild("collabAgent/activity", { activityKind: "unknown-future-kind" });
+      yield* emitChild("collabAgent/turnStarted", {});
+      yield* emitChild("collabAgent/activity", { activityKind: "completed" });
+      yield* runtime.emit(codexTurnEvent("turn/completed", "parent-turn"));
+      const events = yield* Fiber.join(eventsFiber);
+      NodeAssert.deepStrictEqual(
+        events.flatMap((event) => (event.type === "task.updated" ? [event.payload.status] : [])),
+        ["idle", "idle", "idle", "idle", "running", "idle"],
+      );
+    }),
+  );
+
   it.effect("calculates one Codex turn total from cumulative counters", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

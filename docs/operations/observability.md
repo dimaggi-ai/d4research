@@ -6,7 +6,7 @@ d4research has one server-side observability model:
 
 - pretty logs go to stdout for humans
 - completed spans go to a local NDJSON trace file
-- traces and metrics can also be exported over OTLP to a real backend like Grafana LGTM
+- metrics stay in-process; external trace and metric exporters are not included
 
 The local trace file is the persisted source of truth for normal local launches. Those launches do not
 write a separate server log file, but SSH-managed launches also persist the remote process's
@@ -60,10 +60,10 @@ request.
 Metrics are not written to a local file.
 
 - local persistence: none
-- remote export: OTLP only, when configured
+- remote export: none
 - current definitions: `apps/server/src/observability/Metrics.ts`
 
-If OTLP is not configured, metrics still exist in-process, but you will not have a local artifact to inspect.
+Metrics exist in-process, but there is no local metrics artifact to inspect.
 
 ### Related Artifacts
 
@@ -71,14 +71,12 @@ Provider event NDJSON files still exist for provider runtime streams. Those are 
 
 ## Run The Server In Instrumented Mode
 
-There are two useful modes:
+Diagnostics stay on the environment you connect to. Browser spans are sent to that environment's
+local trace collector, not an external analytics service. Legacy `T3CODE_OTLP_*` configuration and
+saved exporter URLs no longer enable exports. Provider CLIs are separate processes; their own
+telemetry settings are outside this guarantee.
 
-- local-only: stdout + local `server.trace.ndjson`
-- full local observability: stdout + local trace file + OTLP export to Grafana/Tempo/Prometheus
-
-The local trace file is always on. OTLP export is opt-in.
-
-### Option 1: Local Traces Only
+### Local Traces
 
 You do not need any extra env vars. Just run the app normally and inspect `server.trace.ndjson`.
 
@@ -95,89 +93,6 @@ node --run dev
 ```bash
 node --run dev:desktop
 ```
-
-### Option 2: Run With A Local LGTM Stack
-
-#### 1. Start Grafana LGTM
-
-```bash
-docker run --name lgtm \
-  -p 3000:3000 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  --rm -ti \
-  grafana/otel-lgtm
-```
-
-Then open `http://localhost:3000`.
-
-Default Grafana login:
-
-- username: `admin`
-- password: `admin`
-
-#### 2. Export OTLP env vars
-
-```bash
-export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
-export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics
-export T3CODE_OTLP_SERVICE_NAME=t3-local
-```
-
-Optional:
-
-```bash
-export T3CODE_TRACE_MIN_LEVEL=Info
-export T3CODE_TRACE_TIMING_ENABLED=true
-```
-
-#### 3. Launch the app from that same shell
-
-CLI:
-
-```bash
-npx d4research
-```
-
-Monorepo web/server dev:
-
-```bash
-node --run dev
-```
-
-Monorepo desktop dev:
-
-```bash
-node --run dev:desktop
-```
-
-Packaged desktop app:
-
-Launch the actual app executable from the same shell so the desktop app and embedded backend inherit `T3CODE_OTLP_*`.
-
-macOS app bundle example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-"/Applications/T3 Code.app/Contents/MacOS/T3 Code"
-```
-
-Direct binary example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-./path/to/your/desktop-app-binary
-```
-
-Do not rely on launching from Finder, Spotlight, the dock, or the Start menu after setting shell env vars. Those launches usually will not pick them up.
-
-#### 4. Fully restart after changing env
-
-The backend reads observability config at process start. If you change OTLP env vars, stop the app completely and start it again.
 
 ## How To Use Traces And Metrics To Debug The Server
 
@@ -286,33 +201,6 @@ jq -c 'select(.attributes["git.operation"] != null) | {
 }' "$TRACE_FILE"
 ```
 
-### Use Tempo When You Need A Real Trace Viewer
-
-Tempo is better than raw NDJSON when you want to:
-
-- search across many traces
-- inspect parent/child relationships visually
-- compare many slow traces
-- drill into one failing request without hand-joining by `traceId`
-
-Recommended flow in Grafana:
-
-1. Open `Explore`.
-2. Pick the `Tempo` data source.
-3. Set the time range to something recent like `Last 15 minutes`.
-4. Start broad. Do not begin with a very narrow query.
-5. Look for spans from your configured service name, then narrow by span name or attributes.
-
-Good first searches:
-
-- service name such as `t3-local`, `t3-dev`, or `t3-desktop`
-- span names like `sendTurn` or a Git operation such as `GitVcsDriver.statusDetails.status`
-- Git spans whose `git.operation` attribute identifies the operation
-- orchestration spans with attributes like `orchestration.command_type`
-
-Once you know traces are arriving, narrower TraceQL queries for names such as `sendTurn` or Git
-operation names become useful.
-
 ### Use Metrics To See Systemic Problems
 
 Traces are best for one request. Metrics are best for trends.
@@ -367,11 +255,10 @@ If you need those later, add client-side instrumentation or a dedicated server f
 2. Find `effect-span` records where `exit._tag != "Success"`.
 3. Group by `traceId`.
 4. Inspect sibling spans and span events.
-5. If needed, move to Tempo for the full trace tree.
 
 ### "Why is the UI feeling slow?"
 
-1. Search for slow top-level spans in the trace file or Tempo.
+1. Search for slow top-level spans in the trace file.
 2. Check child spans for sqlite, git, provider, or terminal work.
 3. Look at the matching duration metrics to see whether the slowness is systemic.
 
@@ -507,8 +394,6 @@ It provides:
 - pretty stdout logger
 - `Logger.tracerLogger`
 - local NDJSON tracer
-- optional OTLP trace exporter
-- optional OTLP metrics exporter
 - Effect trace-level and timing refs
 
 ### Env Vars
@@ -518,18 +403,9 @@ Local trace file:
 - `T3CODE_TRACE_FILE`: override trace file path
 - `T3CODE_TRACE_MAX_BYTES`: per-file rotation size, default `10485760`
 - `T3CODE_TRACE_MAX_FILES`: rotated file count, default `10`
-- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `200`
+- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `1000`
 - `T3CODE_TRACE_MIN_LEVEL`: minimum trace level, default `Info`
 - `T3CODE_TRACE_TIMING_ENABLED`: enable timing metadata, default `true`
-
-OTLP export:
-
-- `T3CODE_OTLP_TRACES_URL`: OTLP trace endpoint
-- `T3CODE_OTLP_METRICS_URL`: OTLP metric endpoint
-- `T3CODE_OTLP_EXPORT_INTERVAL_MS`: export interval, default `10000`
-- `T3CODE_OTLP_SERVICE_NAME`: service name, default `t3-server`
-
-If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
 
 ### What Is Instrumented Today
 

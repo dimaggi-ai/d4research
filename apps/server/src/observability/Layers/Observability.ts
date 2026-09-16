@@ -4,17 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
-import * as OtlpExporter from "effect/unstable/observability/OtlpExporter";
-import * as OtlpMetrics from "effect/unstable/observability/OtlpMetrics";
-import * as OtlpSerialization from "effect/unstable/observability/OtlpSerialization";
-import * as OtlpTracer from "effect/unstable/observability/OtlpTracer";
 
 import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
 import { ServerLoggerLive } from "../../serverLogger.ts";
 import * as BrowserTraceCollector from "../BrowserTraceCollector.ts";
-
-const otlpSerializationLayer = OtlpSerialization.layerJson;
 
 export const ObservabilityLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -43,28 +37,12 @@ export const ObservabilityLive = Layer.unwrap(
               durationMs: stats.durationMs,
             }),
         });
-        const delegate =
-          config.otlpTracesUrl === undefined
-            ? undefined
-            : yield* OtlpTracer.make({
-                url: config.otlpTracesUrl,
-                exportInterval: `${config.otlpExportIntervalMs} millis`,
-                resource: {
-                  serviceName: config.otlpServiceName,
-                  attributes: {
-                    "service.runtime": "t3-server",
-                    "service.mode": config.mode,
-                  },
-                },
-              });
-
         const tracer = yield* makeLocalFileTracer({
           filePath: config.serverTracePath,
           maxBytes: config.traceMaxBytes,
           maxFiles: config.traceMaxFiles,
           batchWindowMs: config.traceBatchWindowMs,
           sink,
-          ...(delegate ? { delegate } : {}),
         });
 
         return Layer.mergeAll(
@@ -72,23 +50,8 @@ export const ObservabilityLive = Layer.unwrap(
           BrowserTraceCollector.layer(sink),
         );
       }),
-    ).pipe(Layer.provide(OtlpExporter.layerFlusher), Layer.provideMerge(otlpSerializationLayer));
+    );
 
-    const metricsLayer =
-      config.otlpMetricsUrl === undefined
-        ? Layer.empty
-        : OtlpMetrics.layer({
-            url: config.otlpMetricsUrl,
-            exportInterval: `${config.otlpExportIntervalMs} millis`,
-            resource: {
-              serviceName: config.otlpServiceName,
-              attributes: {
-                "service.runtime": "t3-server",
-                "service.mode": config.mode,
-              },
-            },
-          }).pipe(Layer.provideMerge(otlpSerializationLayer));
-
-    return Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer, metricsLayer);
+    return Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer);
   }),
 );

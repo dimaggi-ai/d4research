@@ -1155,14 +1155,8 @@ const makeWsRpcLayer = (
             observability: {
               logsDirectoryPath: config.logsDir,
               localTracingEnabled: true,
-              ...(config.otlpTracesUrl !== undefined
-                ? { otlpTracesUrl: config.otlpTracesUrl }
-                : {}),
-              otlpTracesEnabled: config.otlpTracesUrl !== undefined,
-              ...(config.otlpMetricsUrl !== undefined
-                ? { otlpMetricsUrl: config.otlpMetricsUrl }
-                : {}),
-              otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
+              otlpTracesEnabled: false,
+              otlpMetricsEnabled: false,
             },
             settings,
             shellResumeCompletionMarker: true,

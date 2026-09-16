@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { FetchHttpClient } from "effect/unstable/http";
+import { vi } from "vite-plus/test";
 
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -56,6 +58,7 @@ const makeEnvironmentLayer = (baseDir: string, isDevelopment = true) =>
         NodeServices.layer,
         DesktopConfig.layerTest({
           T3CODE_HOME: baseDir,
+          T3CODE_OTLP_TRACES_URL: "https://collector.example.test/v1/traces",
           VITE_DEV_SERVER_URL: isDevelopment ? "http://127.0.0.1:5733" : undefined,
         }),
       ),
@@ -86,6 +89,8 @@ describe("DesktopObservability", () => {
 
   it.effect("persists desktop Effect logs as span events in desktop.trace.ndjson", () =>
     Effect.gen(function* () {
+      const fetchFn = vi.fn<typeof fetch>();
+      fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-desktop-observability-test-",
@@ -106,7 +111,16 @@ describe("DesktopObservability", () => {
           yield* Effect.logInfo("desktop trace event");
         }).pipe(
           Effect.withSpan("desktop-observability-test"),
-          Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(environmentLayer))),
+          Effect.provide(
+            DesktopObservability.layer.pipe(
+              Layer.provideMerge(environmentLayer),
+              Layer.provide(
+                FetchHttpClient.layer.pipe(
+                  Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
+                ),
+              ),
+            ),
+          ),
         ),
       );
 
@@ -127,6 +141,7 @@ describe("DesktopObservability", () => {
         true,
       );
       assert.isFalse(yield* fileSystem.exists(logPath));
+      assert.equal(fetchFn.mock.calls.length, 0);
     }).pipe(
       Effect.scoped,
       Effect.provide(Layer.mergeAll(NodeServices.layer, NodeHttpClient.layerUndici)),

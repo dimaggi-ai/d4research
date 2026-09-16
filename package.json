@@ -42,6 +42,7 @@
     "test:system:handoff": "T3_REAL_HANDOFF=1 vp test run apps/server/integration/providerHandoffMatrix.real.integration.test.ts",
     "test:system:mcp": "T3_REAL_MCP=1 vp test run apps/server/integration/mcpDelegateTool.real.integration.test.ts",
     "qa:provider:junie": "vp run --filter d4research qa:provider:junie",
+    "qa:provider:muse": "vp run --filter d4research qa:provider:muse",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",
     "build:contracts": "vp run --filter @d4research/contracts build",

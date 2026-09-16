@@ -56,6 +56,7 @@ that server does not supply provider credentials.
 | Grok Build | `grok`         | `grok login`                   |
 | OpenCode   | `opencode`     | `opencode auth login`          |
 | Junie      | `junie`        | Run `junie` and sign in        |
+| Muse       | `muse`         | `muse login`                   |
 | Agy        | `agy`          | Follow the CLI's login flow    |
 
 If a CLI is outside the server process's `PATH`, set its absolute **Binary path** on the provider

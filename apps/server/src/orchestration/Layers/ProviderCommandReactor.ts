@@ -2161,7 +2161,7 @@ const make = Effect.gen(function* () {
           new ProviderAdapterRequestError({
             provider: String(desiredProvider.instanceId),
             method: "thread.turn.start",
-            detail: `${desiredProvider.displayName ?? desiredProvider.instanceId} cannot orchestrate ${pipelineKind} pipelines because its adapter does not expose MCP tools. Select Claude, Codex, Cursor, Grok, or OpenCode for the orchestrator; the pipeline may still delegate work to ${desiredProvider.displayName ?? desiredProvider.instanceId}.`,
+            detail: `${desiredProvider.displayName ?? desiredProvider.instanceId} cannot orchestrate ${pipelineKind} pipelines because its adapter does not expose MCP tools. Select Claude, Codex, Cursor, Grok, Muse, or OpenCode for the orchestrator; the pipeline may still delegate work to ${desiredProvider.displayName ?? desiredProvider.instanceId}.`,
           }),
         ),
       );

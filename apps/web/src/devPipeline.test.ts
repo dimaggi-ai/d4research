@@ -506,6 +506,7 @@ describe("pipeline orchestrator capability", () => {
     expect(providerDriverSupportsPipelineOrchestration("codex")).toBe(true);
     expect(providerDriverSupportsPipelineOrchestration("cursor")).toBe(true);
     expect(providerDriverSupportsPipelineOrchestration("grok")).toBe(true);
+    expect(providerDriverSupportsPipelineOrchestration("muse")).toBe(true);
     expect(providerDriverSupportsPipelineOrchestration("opencode")).toBe(true);
     expect(providerDriverSupportsPipelineOrchestration("agy")).toBe(false);
     expect(providerDriverSupportsPipelineOrchestration("junie")).toBe(false);

@@ -762,6 +762,93 @@ export const GrokSettings = makeProviderSettingsSchema(
 );
 export type GrokSettings = typeof GrokSettings.Type;
 
+export const MUSE_REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const;
+export const MUSE_APPROVAL_MODES = [
+  "allowAll",
+  "promptUnmatched",
+  "onRequest",
+  "denyUnmatched",
+] as const;
+
+export const MuseSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("muse").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Muse CLI binary.",
+        providerSettingsForm: { placeholder: "muse", clearWhenEmpty: "omit" },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Model",
+        providerSettingsForm: { placeholder: "host default", clearWhenEmpty: "omit" },
+      }),
+    ),
+    reasoningEffort: Schema.optionalKey(Schema.Literals(MUSE_REASONING_EFFORTS)).pipe(
+      Schema.annotateKey({
+        title: "Reasoning effort",
+        providerSettingsForm: {
+          control: "select",
+          options: MUSE_REASONING_EFFORTS.map((value) => ({ value, label: value })),
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    approvalMode: Schema.optionalKey(Schema.Literals(MUSE_APPROVAL_MODES)).pipe(
+      Schema.annotateKey({
+        title: "Approval mode",
+        description: "Override the approval mode selected by the thread's runtime mode.",
+        providerSettingsForm: {
+          control: "select",
+          options: MUSE_APPROVAL_MODES.map((value) => ({ value, label: value })),
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    disableSandbox: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ title: "Disable sandbox", providerSettingsForm: { control: "switch" } }),
+    ),
+    sandboxNetwork: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Sandbox network",
+        providerSettingsForm: { clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: [
+      "binaryPath",
+      "model",
+      "reasoningEffort",
+      "approvalMode",
+      "disableSandbox",
+      "sandboxNetwork",
+    ],
+  },
+);
+export type MuseSettings = typeof MuseSettings.Type;
+
 export const ANTIGRAVITY_AUTH_METHODS = [
   { value: "oauth-personal", label: "Google account" },
   { value: "oauth-business", label: "Gemini Enterprise" },
@@ -1437,6 +1524,7 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     agy: AgySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    muse: MuseSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     junie: JunieSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1602,6 +1690,17 @@ const CursorSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   apiEndpoint: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
+});
+
+const MuseSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  model: Schema.optionalKey(TrimmedString),
+  reasoningEffort: Schema.optionalKey(Schema.Literals(MUSE_REASONING_EFFORTS)),
+  approvalMode: Schema.optionalKey(Schema.Literals(MUSE_APPROVAL_MODES)),
+  disableSandbox: Schema.optionalKey(Schema.Boolean),
+  sandboxNetwork: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
 });
 
@@ -1787,6 +1886,7 @@ export const ServerSettingsPatch = Schema.Struct({
       agy: Schema.optionalKey(AgySettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
+      muse: Schema.optionalKey(MuseSettingsPatch),
       junie: Schema.optionalKey(JunieSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       antigravity: Schema.optionalKey(

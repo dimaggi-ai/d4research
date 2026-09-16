@@ -29,6 +29,8 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("codex.sdk.thread-event"),
   Schema.Literal("opencode.sdk.event"),
   Schema.Literal("agy.stream-json"),
+  Schema.Literal("muse.msp.notification"),
+  Schema.Literal("muse.msp.request"),
   Schema.Literal("acp.jsonrpc"),
   Schema.TemplateLiteral(["acp.", Schema.String, ".extension"]),
 ]);

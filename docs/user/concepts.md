@@ -23,7 +23,7 @@ it does not create a replacement history.
 ## Provider and Model
 
 A **provider** is the local agent runtime d4research controls, such as Codex, Claude, Cursor, Grok,
-Junie, OpenCode, or Agy. A provider instance can represent a separate account or configuration. A
+Junie, Muse, OpenCode, or Agy. A provider instance can represent a separate account or configuration. A
 model selection always belongs to a provider instance.
 
 Pipelines record the requested target and the target that actually ran. An explicitly authored

@@ -677,6 +677,11 @@ describe("provider enabled defaults", () => {
   });
 
   it("resolves instance enabled state with explicit false winning", () => {
+    const muse = ProviderDriverKind.make("muse");
+    expect(resolveProviderInstanceEnabled({ driver: muse, config: {} })).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({ driver: muse, enabled: true, config: { enabled: false } }),
+    ).toBe(false);
     const grok = ProviderDriverKind.make("grok");
     const codex = ProviderDriverKind.make("codex");
     // No flags anywhere: driver default applies.

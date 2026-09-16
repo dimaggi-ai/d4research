@@ -813,6 +813,26 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("restores Muse from history and preserves its explicit disable", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* recordProviderUsage("muse");
+
+      assert.isTrue((yield* serverSettings.getSettings).providers.muse.enabled);
+
+      const settings = yield* serverSettings.updateSettings({
+        providers: { muse: { enabled: false } },
+      });
+      assert.isFalse(settings.providers.muse.enabled);
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.isFalse(JSON.parse(raw).providers.muse.enabled);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("persists explicit provider enables before their first use", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1066,6 +1086,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           grok: {
             enabled: false,
           },
+          muse: { enabled: false },
           opencode: {
             enabled: false,
             serverUrl: "http://127.0.0.1:4096",

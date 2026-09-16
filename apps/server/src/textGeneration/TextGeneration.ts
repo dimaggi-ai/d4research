@@ -12,6 +12,7 @@ export type TextGenerationProvider =
   | "codex"
   | "claudeAgent"
   | "cursor"
+  | "muse"
   | "grok"
   | "junie"
   | "opencode"

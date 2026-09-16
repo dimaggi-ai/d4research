@@ -27,6 +27,7 @@ const PIPELINE_ORCHESTRATOR_DRIVERS = new Set([
   "codex",
   "cursor",
   "grok",
+  "muse",
   "opencode",
 ]);
 
@@ -40,6 +41,7 @@ const CLI_BY_DRIVER: Readonly<Record<string, string>> = {
   codex: "codex",
   cursor: "cursor-agent",
   grok: "grok",
+  muse: "muse",
   junie: "junie",
   opencode: "opencode",
 };

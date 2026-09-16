@@ -211,3 +211,9 @@ describe("readCustomModelEntries", () => {
     });
   });
 });
+
+it("preserves Muse's host-default sentinel and custom model slugs", () => {
+  const driver = ProviderDriverKind.make("muse");
+  expect(normalizeModelSlug("default", driver)).toBe("default");
+  expect(normalizeModelSlug("muse-spark-1.3", driver)).toBe("muse-spark-1.3");
+});

@@ -7,7 +7,7 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS`, which contains seven entries
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS`, which contains eight entries
 that all support multiple instances.
 
 | Driver kind   | Display name | Transport                     | Driver source                           |
@@ -18,6 +18,7 @@ that all support multiple instances.
 | `cursor`      | Cursor       | ACP over stdio (`effect-acp`) | [`Drivers/CursorDriver.ts`][cursor]     |
 | `grok`        | Grok         | ACP over stdio (`effect-acp`) | [`Drivers/GrokDriver.ts`][grok]         |
 | `junie`       | Junie        | ACP over stdio (reuses Grok)  | [`Drivers/JunieDriver.ts`][junie]       |
+| `muse`        | Muse         | MSP JSON-RPC over stdio       | [`Drivers/MuseDriver.ts`][muse]         |
 | `opencode`    | OpenCode     | OpenCode SDK over HTTP        | [`Drivers/OpenCodeDriver.ts`][opencode] |
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
@@ -28,7 +29,7 @@ transport, config, and event shapes are mapped.
 
 ### Transport protocols
 
-The seven drivers use four distinct transport protocols:
+The eight drivers use five distinct transport protocols:
 
 - **Claude Agent SDK** — Claude only. Calls `@anthropic-ai/claude-agent-sdk`'s `query()` which
   returns an `AsyncIterable<SDKMessage>`. Also discovers local **Ollama models** when
@@ -38,6 +39,11 @@ The seven drivers use four distinct transport protocols:
 - **ACP over stdio** — Cursor, Grok, and Junie. Uses the `effect-acp` library. Junie reuses the
   Grok adapter core (`makeGrokAdapter`) with a Junie-specific ACP runtime, so the orchestration
   logic is shared.
+- **MSP JSON-RPC over stdio** — Muse only. Spawns `muse serve --trust-workspace` per thread and
+  speaks the Muse Session Protocol (newline-delimited JSON-RPC 2.0) through
+  `apps/server/src/provider/msp/`. Turns are notification-driven like Codex's app-server: `turn/start`
+  acks immediately and `turn/completed` ends the turn. Approvals and agent questions arrive as
+  server-to-client requests.
 - **NDJSON stream over stdio** — Agy only. Spawns `agy --print` per turn and reads
   newline-delimited JSON events (`init`, `step_update`, `result`). Requires a PTY wrapper on Linux
   for model discovery.
@@ -68,6 +74,27 @@ a new thread.
 **Junie** — reuses the Grok adapter and text generation with a Junie-specific ACP runtime. Ships
 with a `default` model. Supports custom Ollama models (e.g. `custom:t3-local-ollama`). Model
 changes require a new thread.
+
+**Muse** — every command carries a client-minted UUIDv7 `commandId`; the host rejects v4. `TMPDIR`
+must point outside the workspace or the runtime host fails to start, so the runtime sets it under
+the OS temp dir. Never pass `--no-session-log`: the ephemeral host seals the approval ceiling and
+emits nothing after `turn/start` is accepted, so the turn text never arrives. `session/start` can
+reject an approval mode above the host's ceiling (`approval_mode_ceiling`); the adapter retries
+with the host default and warns. Resume goes through `session/resume` with `excludeItems: true`
+because d4research owns the visible transcript. Rollback stays unsupported: `session/fork`
+rejects cuts at earlier turns with `forkBoundaryInvalid` and stalls the host without answering when
+the cut names a text-only turn. Plan mode is a host posture: a plan turn respawns the host with
+`--disable-write --disable-shell` and resumes the same session under it. A dying host emits
+`session/closed` with reason `hostShutdown` as a last gasp, so the adapter tags frames per host
+generation and drops stale ones. Edit-family `toolCall` items carry a `patchRef`; the adapter
+fetches the stored patch through `item/readOutput` and emits it as a `turn.diff.updated` unified
+diff. Text generation deletes the exact session log Muse returned when it sits under the CLI's own
+session store. The adapter injects the per-thread `t3-code` MCP server through
+`session/start`/`session/resume` `config.mcpServers` (streamableHttp), so Muse can orchestrate Dev
+and Research pipelines; the handshake requests the `sessionMcp` capability, which the host must
+grant before `config.mcpServers` is accepted. The
+mock host for tests is `apps/server/scripts/msp-mock-host.ts`. See
+[providers-muse.md](../user/providers-muse.md) for user-facing details.
 
 **OpenCode** — spawns an OpenCode server process and communicates via the `@opencode-ai/sdk/v2`
 TypeScript client. Minimum version: 1.14.19. Supports native updates via `opencode upgrade`.
@@ -323,6 +350,7 @@ environment unchanged, leaving the hooks inert. See [tool-guard.md](./tool-guard
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
 [junie]: ../../apps/server/src/provider/Drivers/JunieDriver.ts
+[muse]: ../../apps/server/src/provider/Drivers/MuseDriver.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts

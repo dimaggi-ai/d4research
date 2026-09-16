@@ -32,7 +32,7 @@ d4research is a private workspace for long-running research across models and co
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md) · [Muse](./user/providers-muse.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 

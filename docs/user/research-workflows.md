@@ -78,7 +78,7 @@ a strict execution protocol. Scenario text therefore does not appear in message 
 or another client's transcript.
 
 The orchestrator must use a provider adapter that exposes d4research MCP tools: Claude, Codex,
-Cursor, Grok, or OpenCode. Junie and Agy can still be delegation targets inside the pipeline, but
+Cursor, Grok, Muse, or OpenCode. Junie and Agy can still be delegation targets inside the pipeline, but
 cannot orchestrate it themselves.
 
 1. **Trace** — the orchestrator keeps one plan entry per step, marks exactly one in progress, and

@@ -1,6 +1,6 @@
 # d4research
 
-A multi-provider coding agent workspace for structured research built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy agents side by side. Hand off context between them mid-conversation without leaving the thread. Replay authored pipelines that delegate steps across models under server-enforced budgets. Layer optional tool-safety policies on top.
+A multi-provider coding agent workspace for structured research built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run Codex, Claude, Cursor, Grok, Junie, Muse, OpenCode, and Agy agents side by side. Hand off context between them mid-conversation without leaving the thread. Replay authored pipelines that delegate steps across models under server-enforced budgets. Layer optional tool-safety policies on top.
 
 ## Installation
 
@@ -78,7 +78,7 @@ vp run dev
 Everything from the upstream T3 Code platform is available:
 
 - **Multi-surface clients** -- Web app, Electron desktop (macOS/Windows/Linux), and React Native mobile (iOS/Android)
-- **7 provider adapters** -- Codex, Claude, Cursor, Grok, Junie, OpenCode, Agy. Each runs in its own process with native auth
+- **8 provider adapters** -- Codex, Claude, Cursor, Grok, Junie, Muse, OpenCode, Agy. Each runs in its own process with native auth
 - **Integrated terminals** -- Full PTY terminals alongside the chat, with provider tool access
 - **Source control** -- Git integration, diffs, checkpoints, branch management, commit message generation
 - **File previews** -- Syntax-highlighted code, images, PDFs, and Jupyter notebooks
@@ -120,7 +120,7 @@ model.
 
 **Tracing and honesty.** Every message is prefixed `[step N | visit K]`, the banner above the composer shows the step ledger, and delegations appear in the thread as ordinary tool calls with their step and visit numbers. Each run ends with a `RUN STATE` report naming every step's targets, visits used, and outcome. A delegate that timed out, refused, or returned empty is reported as failed — never paraphrased into a result, and never claimed to have run at all.
 
-Research pipelines can orchestrate from Claude, Codex, Cursor, Grok, or OpenCode (the adapters that expose d4research MCP tools). Junie and Agy can be delegation targets inside any pipeline but cannot orchestrate one.
+Research pipelines can orchestrate from Claude, Codex, Cursor, Grok, Muse, or OpenCode (the adapters that expose d4research MCP tools). Junie and Agy can be delegation targets inside any pipeline but cannot orchestrate one.
 
 ### Same-Thread Provider Handoff
 
@@ -199,6 +199,7 @@ Install and authenticate each CLI before starting sessions. See [provider setup 
 | Cursor                                    | `cursor-agent` | Cursor agent mode       |
 | Grok                                      | `grok`         | xAI Grok CLI            |
 | [Junie](./docs/user/providers-junie.md)   | `junie`        | JetBrains Junie CLI     |
+| [Muse](./docs/user/providers-muse.md)     | `muse`         | Meta Muse Code CLI      |
 | OpenCode                                  | `opencode`     | OpenCode CLI            |
 | Agy                                       | `agy`          | Google Agy (Gemini) CLI |
 

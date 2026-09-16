@@ -231,18 +231,17 @@ function makeFakeCodexAdapter(
       Effect.void,
   );
 
-  const compactThread = vi.fn(
-    (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() =>
-        emit({
-          type: "thread.state.changed",
-          eventId: asEventId("evt-native-compact"),
-          provider,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          threadId,
-          payload: { state: "compacted" },
-        }),
-      ),
+  const compactThread = vi.fn((threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
+    Effect.sync(() =>
+      emit({
+        type: "thread.state.changed",
+        eventId: asEventId("evt-native-compact"),
+        provider,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        payload: { state: "compacted" },
+      }),
+    ),
   );
   const respondToRequest = vi.fn(
     (
@@ -260,24 +259,22 @@ function makeFakeCodexAdapter(
     ): Effect.Effect<void, ProviderAdapterError> => Effect.void,
   );
 
-  const stopSession = vi.fn(
-    (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
-      (beforeStop?.() ?? Effect.void).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            sessions.delete(threadId);
-          }),
-        ),
+  const stopSession = vi.fn((threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
+    (beforeStop?.() ?? Effect.void).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          sessions.delete(threadId);
+        }),
       ),
+    ),
   );
 
-  const listSessions = vi.fn(
-    (): Effect.Effect<ReadonlyArray<ProviderSession>> =>
-      Effect.sync(() => Array.from(sessions.values())),
+  const listSessions = vi.fn((): Effect.Effect<ReadonlyArray<ProviderSession>> =>
+    Effect.sync(() => Array.from(sessions.values())),
   );
 
-  const hasSession = vi.fn(
-    (threadId: ThreadId): Effect.Effect<boolean> => Effect.succeed(sessions.has(threadId)),
+  const hasSession = vi.fn((threadId: ThreadId): Effect.Effect<boolean> =>
+    Effect.succeed(sessions.has(threadId)),
   );
 
   const readThread = vi.fn(
@@ -311,11 +308,10 @@ function makeFakeCodexAdapter(
       Effect.succeed({ feedbackId: `feedback-${input.threadId}` }),
   );
 
-  const stopAll = vi.fn(
-    (): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() => {
-        sessions.clear();
-      }),
+  const stopAll = vi.fn((): Effect.Effect<void, ProviderAdapterError> =>
+    Effect.sync(() => {
+      sessions.clear();
+    }),
   );
 
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
@@ -1146,6 +1142,86 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
     assert.include(failure.issue, "Provider instance 'codex_personal' is disabled");
     assert.equal(codex.startSession.mock.calls.length, 0);
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "ProviderServiceLive starts a fresh session when switching between incompatible instances of one driver",
+  () =>
+    Effect.gen(function* () {
+      const ollamaInstanceId = ProviderInstanceId.make("ollama");
+      const ollama = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+      const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
+      const registry = makeStaticInstanceRegistry([
+        [ollamaInstanceId, ollama.adapter],
+        [claudeAgentInstanceId, claude.adapter],
+      ]);
+      const providerAdapterLayer = Layer.succeed(
+        ProviderAdapterRegistry.ProviderAdapterRegistry,
+        registry,
+      );
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const providerLayer = makeProviderServiceLive().pipe(
+        Layer.provide(NodeServices.layer),
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+      const threadId = asThreadId("thread-instance-handoff");
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+        const initial = yield* provider.startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: ollamaInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        const persisted = yield* directory.getBinding(threadId);
+        assert(Option.isSome(persisted));
+        assert.deepEqual(persisted.value.resumeCursor, initial.resumeCursor);
+
+        // Explicitly reusing the other instance's cursor is still rejected.
+        const failure = yield* Effect.flip(
+          provider.startSession(threadId, {
+            provider: CLAUDE_AGENT_DRIVER,
+            providerInstanceId: claudeAgentInstanceId,
+            threadId,
+            runtimeMode: "full-access",
+            resumeCursor: initial.resumeCursor,
+          }),
+        );
+        assert.instanceOf(failure, ProviderValidationError);
+        assert.include(failure.issue, "provider resume state is incompatible");
+        assert.equal(claude.startSession.mock.calls.length, 0);
+
+        // A cursor-less switch starts a fresh session on the new instance.
+        const switched = yield* provider.startSession(threadId, {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        assert.equal(switched.providerInstanceId, claudeAgentInstanceId);
+        assert.equal(claude.startSession.mock.calls.length, 1);
+        assert.equal(claude.startSession.mock.calls[0]?.[0].resumeCursor, undefined);
+        const rebound = yield* directory.getBinding(threadId);
+        assert(Option.isSome(rebound));
+        assert.equal(rebound.value.providerInstanceId, claudeAgentInstanceId);
+      }).pipe(Effect.provide(Layer.mergeAll(providerLayer, directoryLayer)));
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 const routing = makeProviderServiceLayer();
@@ -3918,7 +3994,7 @@ const antigravityInstanceRouting = makeProviderServiceLayer({
 });
 antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversations", (it) => {
   it.effect(
-    "does not replace a native conversation with another instance or a removed-instance fallback",
+    "does not resume a native conversation on another instance or a removed-instance fallback",
     () =>
       Effect.gen(function* () {
         const provider = yield* ProviderService.ProviderService;
@@ -3926,40 +4002,69 @@ antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversatio
 
         for (const originalAvailable of [true, false]) {
           originalAntigravityInstanceAvailable = originalAvailable;
-          for (const passCursor of [true, false]) {
-            const threadId = asThreadId(
-              `thread-antigravity-instance-${originalAvailable}-${passCursor}`,
-            );
-            const resumeCursor = { sessionId: "native-session" };
-            yield* directory.upsert({
+          const threadId = asThreadId(`thread-antigravity-instance-${originalAvailable}`);
+          const resumeCursor = { sessionId: "native-session" };
+          yield* directory.upsert({
+            threadId,
+            provider: antigravityDriver,
+            providerInstanceId: originalAntigravityInstanceId,
+            status: "stopped",
+            runtimeMode: "approval-required",
+          });
+          const originalBinding = yield* directory.getBinding(threadId);
+          replacementAntigravity.startSession.mockClear();
+
+          const error = yield* Effect.flip(
+            provider.startSession(threadId, {
+              providerInstanceId: replacementAntigravityInstanceId,
               threadId,
-              provider: antigravityDriver,
-              providerInstanceId: originalAntigravityInstanceId,
-              status: "stopped",
               runtimeMode: "approval-required",
-              ...(passCursor ? {} : { resumeCursor }),
-            });
-            const originalBinding = yield* directory.getBinding(threadId);
-            replacementAntigravity.startSession.mockClear();
+              resumeCursor,
+            }),
+          );
 
-            const error = yield* Effect.flip(
-              provider.startSession(threadId, {
-                providerInstanceId: replacementAntigravityInstanceId,
-                threadId,
-                runtimeMode: "approval-required",
-                ...(passCursor ? { resumeCursor } : {}),
-              }),
-            );
-
-            assert.equal(
-              error._tag,
-              originalAvailable ? "ProviderValidationError" : "ProviderUnsupportedError",
-            );
-            assert.equal(replacementAntigravity.startSession.mock.calls.length, 0);
-            assert.deepEqual(yield* directory.getBinding(threadId), originalBinding);
-          }
+          assert.equal(
+            error._tag,
+            originalAvailable ? "ProviderValidationError" : "ProviderUnsupportedError",
+          );
+          assert.equal(replacementAntigravity.startSession.mock.calls.length, 0);
+          assert.deepEqual(yield* directory.getBinding(threadId), originalBinding);
         }
       }),
+  );
+
+  // A same-thread handoff to another instance drops the old instance's native
+  // cursor and starts fresh; the visible thread stays authoritative.
+  it.effect("starts a fresh session on another instance when no cursor is requested", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      originalAntigravityInstanceAvailable = true;
+      const threadId = asThreadId("thread-antigravity-instance-handoff");
+      yield* directory.upsert({
+        threadId,
+        provider: antigravityDriver,
+        providerInstanceId: originalAntigravityInstanceId,
+        status: "stopped",
+        runtimeMode: "approval-required",
+        resumeCursor: { sessionId: "native-session" },
+      });
+      replacementAntigravity.startSession.mockClear();
+
+      const session = yield* provider.startSession(threadId, {
+        providerInstanceId: replacementAntigravityInstanceId,
+        threadId,
+        runtimeMode: "approval-required",
+      });
+
+      assert.equal(session.providerInstanceId, replacementAntigravityInstanceId);
+      assert.equal(replacementAntigravity.startSession.mock.calls.length, 1);
+      assert.equal(replacementAntigravity.startSession.mock.calls[0]?.[0].resumeCursor, undefined);
+      const rebound = yield* directory.getBinding(threadId);
+      assert(Option.isSome(rebound));
+      assert.equal(rebound.value.providerInstanceId, replacementAntigravityInstanceId);
+      yield* provider.stopSession({ threadId });
+    }),
   );
 });
 

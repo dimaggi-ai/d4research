@@ -2393,10 +2393,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               );
             }
             const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+            // A persisted cursor from another instance is never reused (see
+            // effectiveResumeCursor below), so only a request that explicitly
+            // carries one can be incompatible. A cursor-less switch is a fresh
+            // session with a context handoff and must go through.
             if (
               persistedBinding?.provider === resolvedProvider &&
               persistedBinding.providerInstanceId !== resolvedInstanceId &&
-              (input.resumeCursor != null || persistedBinding.resumeCursor != null)
+              input.resumeCursor != null
             ) {
               const previousInstanceId = yield* requireBindingInstanceId(
                 "ProviderService.startSession",

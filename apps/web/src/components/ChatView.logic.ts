@@ -20,19 +20,19 @@ import {
   type TurnId,
   WORKTREE_SETUP_ACTIVITY_KIND,
   WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+} from "@d4research/contracts";
+import { parseScopedThreadKey } from "@d4research/client-runtime/environment";
+import { resolveAssetUrl } from "@d4research/client-runtime/state/assets";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { videoMimeType } from "@t3tools/shared/video";
+} from "@d4research/client-runtime/state/runtime";
+import { videoMimeType } from "@d4research/shared/video";
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
-} from "@t3tools/client-runtime/codex-artifact-templates";
+} from "@d4research/client-runtime/codex-artifact-templates";
 import {
   type ChatMessage,
   isImageAttachment,

@@ -16,7 +16,7 @@ import {
   cliArchiveTarCommand,
   cliReleaseDownloadBaseUrl,
   parseChecksums,
-} from "@t3tools/shared/cliRelease";
+} from "@d4research/shared/cliRelease";
 
 import * as ProcessRunner from "../processRunner.ts";
 
@@ -27,7 +27,7 @@ import * as ProcessRunner from "../processRunner.ts";
  * unit or launch agent at the executable, and server self-update installs the
  * target version here before switching over. The runtime never depends on a
  * Node or npm on the machine; the only npm involvement in T3 Code is the `t3`
- * package for people who prefer `npx t3` or `npm install -g t3`, and even a
+ * package for people who prefer `npx d4research` or `npm install -g t3`, and even a
  * CLI installed that way pins an archive when it sets up the service.
  */
 const PINNED_RUNTIME_DIR = "runtime";

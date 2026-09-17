@@ -31,7 +31,7 @@ import {
   localSnoozeTime,
   resolveCustomSnooze,
   type CustomSnoozeInput,
-} from "@t3tools/client-runtime/state/thread-settled";
+} from "@d4research/client-runtime/state/thread-settled";
 import { useState } from "react";
 import { useWindowDimensions } from "react-native";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";

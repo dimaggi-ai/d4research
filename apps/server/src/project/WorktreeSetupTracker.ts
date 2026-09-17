@@ -4,13 +4,13 @@ import type {
   WorktreeSetupStage,
   WorktreeSetupStageId,
   WorktreeSetupStageStatus,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   WORKTREE_SETUP_DETAIL_MAX_LENGTH,
   WORKTREE_SETUP_ERROR_MAX_LENGTH,
   WORKTREE_SETUP_STAGE_ORDER,
   WORKTREE_SETUP_TAIL_LINE_MAX_LENGTH,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -84,7 +84,7 @@ export class WorktreeSetupTracker extends Context.Service<
     /** Emits the current snapshot (or null) first, then every change until unsubscribed. */
     readonly stream: (threadId: ThreadId) => Stream.Stream<WorktreeSetupSnapshot | null>;
   }
->()("t3/project/WorktreeSetupTracker") {}
+>()("d4research/project/WorktreeSetupTracker") {}
 
 const TAIL_LINE_LIMIT = 4;
 

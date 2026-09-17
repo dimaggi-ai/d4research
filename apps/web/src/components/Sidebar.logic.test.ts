@@ -57,7 +57,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   DEFAULT_INTERACTION_MODE,

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 
-import { HostProcessArguments } from "@t3tools/shared/hostProcess";
+import { HostProcessArguments } from "@d4research/shared/hostProcess";
 
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -38,19 +38,19 @@ function detectCliRunner(entryPath: string): CliRunner | null {
 
 /**
  * The `t3` package spec to suggest. The literal spec the user typed (e.g.
- * `t3@nightly`) is resolved away before our process starts, so re-derive it
+ * `d4research@nightly`) is resolved away before our process starts, so re-derive it
  * from the running version: nightly builds re-suggest the nightly channel,
  * anything else suggests the bare package.
  */
 function suggestedPackageSpec(version: string): string {
   const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "t3" : `t3@${channel}`;
+  return channel === undefined ? "t3" : `d4research@${channel}`;
 }
 
 /**
  * Render a `t3 <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx t3 connect` suggests
- * `npx t3 serve`, a global install suggests `t3 serve`, and a nightly build
+ * launched, so copy/pasting it actually works: `npx d4research connect` suggests
+ * `npx d4research serve`, a global install suggests `t3 serve`, and a nightly build
  * keeps the `@nightly` tag.
  */
 export function formatCliCommand(input: {

@@ -6,13 +6,13 @@ import type {
   ProjectCloneStartResult,
   ProjectId,
   SourceControlRepositoryInfo,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   OrchestrationDispatchCommandError,
   PROJECT_CLONE_DETAIL_MAX_LENGTH,
   PROJECT_CLONE_ERROR_MAX_LENGTH,
   SourceControlRepositoryError,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -70,7 +70,7 @@ export class ProjectCloneTracker extends Context.Service<
     /** Emits every tracked clone first, then the full list after each change. */
     readonly stream: Stream.Stream<ReadonlyArray<ProjectCloneSnapshot>>;
   }
->()("t3/project/ProjectCloneTracker") {}
+>()("d4research/project/ProjectCloneTracker") {}
 
 /**
  * Orchestration side effects the caller owns. The tracker never depends on the

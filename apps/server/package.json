@@ -1,14 +1,14 @@
 {
-  "name": "t3",
+  "name": "d4research",
   "version": "0.0.42",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "https://github.com/dimaggi-ai/d4research",
     "directory": "apps/server"
   },
   "bin": {
-    "t3": "./dist/bin.mjs"
+    "d4research": "./dist/bin.mjs"
   },
   "files": [
     "dist"
@@ -38,11 +38,11 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/ssh": "workspace:*",
-    "@t3tools/tailscale": "workspace:*",
-    "@t3tools/web": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/ssh": "workspace:*",
+    "@d4research/tailscale": "workspace:*",
+    "@d4research/web": "workspace:*",
     "@types/node": "catalog:",
     "@types/yauzl": "^3.4.0",
     "effect-acp": "workspace:*",

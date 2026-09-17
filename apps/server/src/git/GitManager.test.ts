@@ -21,7 +21,7 @@ import type {
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -29,7 +29,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   TextGenerationError,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";

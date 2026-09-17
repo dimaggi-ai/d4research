@@ -5,49 +5,49 @@ import * as NodeOS from "node:os";
 import * as NodeSea from "node:sea";
 
 export const HostProcessPlatform = Context.Reference<NodeJS.Platform>(
-  "@t3tools/shared/hostProcess/HostProcessPlatform",
+  "@d4research/shared/hostProcess/HostProcessPlatform",
   {
     defaultValue: () => process.platform,
   },
 );
 
 export const HostProcessArchitecture = Context.Reference<NodeJS.Architecture>(
-  "@t3tools/shared/hostProcess/HostProcessArchitecture",
+  "@d4research/shared/hostProcess/HostProcessArchitecture",
   {
     defaultValue: () => process.arch,
   },
 );
 
 export const HostProcessHostname = Context.Reference<string>(
-  "@t3tools/shared/hostProcess/HostProcessHostname",
+  "@d4research/shared/hostProcess/HostProcessHostname",
   {
     defaultValue: () => NodeOS.hostname(),
   },
 );
 
 export const HostProcessEnvironment = Context.Reference<NodeJS.ProcessEnv>(
-  "@t3tools/shared/hostProcess/HostProcessEnvironment",
+  "@d4research/shared/hostProcess/HostProcessEnvironment",
   {
     defaultValue: () => process.env,
   },
 );
 
 export const HostProcessWorkingDirectory = Context.Reference<string>(
-  "@t3tools/shared/hostProcess/HostProcessWorkingDirectory",
+  "@d4research/shared/hostProcess/HostProcessWorkingDirectory",
   {
     defaultValue: () => process.cwd(),
   },
 );
 
 export const HostProcessExecutablePath = Context.Reference<string>(
-  "@t3tools/shared/hostProcess/HostProcessExecutablePath",
+  "@d4research/shared/hostProcess/HostProcessExecutablePath",
   {
     defaultValue: () => process.execPath,
   },
 );
 
 export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
-  "@t3tools/shared/hostProcess/HostProcessArguments",
+  "@d4research/shared/hostProcess/HostProcessArguments",
   {
     defaultValue: () => process.argv,
   },
@@ -59,7 +59,7 @@ export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
  * path. `process.argv[0]` and `execPath` are always the resolved binary.
  */
 export const HostProcessInvokedAs = Context.Reference<string>(
-  "@t3tools/shared/hostProcess/HostProcessInvokedAs",
+  "@d4research/shared/hostProcess/HostProcessInvokedAs",
   {
     defaultValue: () => process.argv0,
   },
@@ -72,7 +72,7 @@ export const HostProcessInvokedAs = Context.Reference<string>(
  * subcommands of itself.
  */
 export const HostProcessIsExecutable = Context.Reference<boolean>(
-  "@t3tools/shared/hostProcess/HostProcessIsExecutable",
+  "@d4research/shared/hostProcess/HostProcessIsExecutable",
   {
     defaultValue: () => NodeSea.isSea(),
   },
@@ -89,7 +89,7 @@ export const HostProcessIsExecutable = Context.Reference<boolean>(
  * Best effort: a failed lookup just leaves the interface set.
  */
 export const HostProcessAddresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
-  "@t3tools/shared/hostProcess/HostProcessAddresses",
+  "@d4research/shared/hostProcess/HostProcessAddresses",
   {
     defaultValue: () =>
       Effect.gen(function* () {
@@ -109,7 +109,7 @@ export const HostProcessAddresses = Context.Reference<Effect.Effect<ReadonlySet<
 
 /** Undefined on platforms without POSIX uids (Windows). */
 export const HostProcessUserId = Context.Reference<number | undefined>(
-  "@t3tools/shared/hostProcess/HostProcessUserId",
+  "@d4research/shared/hostProcess/HostProcessUserId",
   {
     defaultValue: () => process.getuid?.(),
   },

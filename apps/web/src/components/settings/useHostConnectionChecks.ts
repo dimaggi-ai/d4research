@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import * as Cause from "effect/Cause";
-import type { SshDeviceHostConfig } from "@t3tools/contracts";
+import type { SshDeviceHostConfig } from "@d4research/contracts";
 import { deviceEnvironment } from "../../state/device";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {

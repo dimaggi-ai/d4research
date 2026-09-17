@@ -1,6 +1,13 @@
-import { connectionStatusText } from "@d4research/client-runtime/connection";
+"use client";
+
+import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
+
 import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
+import { connectionStatusText } from "@d4research/client-runtime/connection";
+import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
+import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -12,8 +19,6 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
-import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
-import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
 import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
@@ -26,13 +31,12 @@ import {
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
 } from "@d4research/contracts";
-import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
-import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -177,6 +181,7 @@ import { Kbd, KbdGroup } from "./ui/kbd";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -1936,6 +1941,34 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:pull-requests",
+      searchTerms: ["pull requests", "prs", "pr", "github", "review", "merge", "branch"],
+      title: "Open pull requests",
+      icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:usage",
+    searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
+    title: "Open usage",
+    icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/usage" });
+    },
+  });
+
   actionItems.push({
     kind: "action",
     value: "action:settings",
@@ -1983,6 +2016,7 @@ function OpenCommandPaletteDialog(props: {
     searchTerms: [item.title, SETTINGS_SECTION_LABELS[item.to], ...(item.searchTerms ?? [])],
     title: item.title,
     description: `Settings · ${SETTINGS_SECTION_LABELS[item.to]}`,
+    ...(item.secondary ? { secondary: true } : {}),
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({
@@ -2088,7 +2122,7 @@ function OpenCommandPaletteDialog(props: {
           existing.id,
           clientSettings.sidebarThreadSortOrder,
         );
-        if (latestThread) {
+        if (latestThread && latestThread.settledOverride !== "settled") {
           await navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(

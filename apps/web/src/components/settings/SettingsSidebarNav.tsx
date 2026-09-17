@@ -1,52 +1,32 @@
-import { useCallback } from "react";
-
-import { useEffect } from "react";
-
-import { useMemo } from "react";
-
-import { useRef } from "react";
-
-import { useState } from "react";
-
-import { type ComponentType } from "react";
-
-import { type KeyboardEvent } from "react";
-
-import { ArchiveIcon } from "lucide-react";
-
-import { TelescopeIcon } from "lucide-react";
-
-import { BracesIcon } from "lucide-react";
-
-import { ShieldCheckIcon } from "lucide-react";
-
-import { SparklesIcon } from "lucide-react";
-
-import { BlocksIcon } from "lucide-react";
-
-import { BotIcon } from "lucide-react";
-
-import { createLucideIcon } from "lucide-react";
-
-import { GitBranchIcon } from "lucide-react";
-
-import { PanelsTopLeftIcon } from "lucide-react";
-
-import { KeyboardIcon } from "lucide-react";
-
-import { Link2Icon } from "lucide-react";
-
-import { PaletteIcon } from "lucide-react";
-
-import { SearchIcon } from "lucide-react";
-
-import { Settings2Icon } from "lucide-react";
-
-import { XIcon } from "lucide-react";
-
-import { useLocation } from "@tanstack/react-router";
-
-import { useNavigate } from "@tanstack/react-router";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type KeyboardEvent,
+} from "react";
+import {
+  ArchiveIcon,
+  BlocksIcon,
+  BotIcon,
+  createLucideIcon,
+  GitBranchIcon,
+  HardDriveIcon,
+  PanelsTopLeftIcon,
+  KeyboardIcon,
+  Link2Icon,
+  PaletteIcon,
+  SearchIcon,
+  Settings2Icon,
+  XIcon,
+  TelescopeIcon,
+  BracesIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+} from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
 
@@ -54,37 +34,29 @@ import { Input } from "../ui/input";
 
 import { Kbd } from "../ui/kbd";
 
-import { SidebarContent } from "../ui/sidebar";
-
-import { SidebarFooter } from "../ui/sidebar";
-
-import { SidebarGroup } from "../ui/sidebar";
-
-import { SidebarMenu } from "../ui/sidebar";
-
-import { SidebarMenuButton } from "../ui/sidebar";
-
-import { SidebarMenuItem } from "../ui/sidebar";
-
-import { useSidebar } from "../ui/sidebar";
-
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 
 import { scrollToSettingsTarget } from "./settingsLayout";
 
-import { searchSettings } from "./settingsSearch";
-
-import { isSettingsOverviewVisible } from "./settingsSearch";
-
-import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
-
-import { type SettingsPath } from "./settingsSearch";
-
-import { type SettingsSearchItem } from "./settingsSearch";
-
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 
 import { validateSettingsScopeSearch } from "./settingsScope";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "../ui/sidebar";
+import {
+  searchSettings,
+  isSettingsOverviewVisible,
+  SETTINGS_SECTION_LABELS,
+  type SettingsPath,
+  type SettingsSearchItem,
+} from "./settingsSearch";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -111,6 +83,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/research": TelescopeIcon,
   "/settings/dev-pipelines": BracesIcon,
   "/settings/integrations": BlocksIcon,
+  "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/tool-guard": ShieldCheckIcon,
   "/settings/skills": SparklesIcon,

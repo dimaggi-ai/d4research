@@ -1,69 +1,275 @@
-import { type EnvironmentConnectionPresentation } from "@d4research/client-runtime/connection";
+import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
+import { useRightPanelStore } from "~/rightPanelStore";
+import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
+import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+import { filterComposerPullRequestMatches } from "@d4research/shared/composerPullRequestMatches";
+import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import {
-  formatProviderSkillDisplayName,
-  getProviderSkillsForSlashMenu,
-  getProviderSlashCommandsForSlashMenu,
-  resolveProviderSkillsForCwd,
-  resolveProviderSlashCommandsForCwd,
-} from "@d4research/client-runtime/providerSkills";
+  elementContextToPreviewAnnotation,
+  type ElementContextDraft,
+} from "../../lib/elementContext";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
-  fileAttachmentTooLargeMessage,
-  formatAttachmentSize,
-} from "@d4research/client-runtime/state/attachments";
+  questionAttachmentDraftId,
+  countQuestionAttachments,
+  useQuestionAttachmentPreparation,
+  changeQuestionAttachmentPreparation,
+} from "../../questionAttachments";
+import {
+  type ApprovalRequestId,
+  type KeybindingCommand,
+  type AssistantCitation,
+  type ChatFileAttachment,
+  type EnvironmentId,
+  type ModelSelection,
+  type ProjectId,
+  type PullRequestListInput,
+  type PreviewAnnotationPayload,
+  type ProviderApprovalDecision,
+  type ProviderInteractionMode,
+  type ResolvedKeybindingsConfig,
+  type RuntimeMode,
+  type ScopedThreadRef,
+  type ServerProvider,
+  type ThreadId,
+  type SnapShotSource,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  type ServerProviderSkill,
+  type TurnId,
+  type ComposerContextClipboardFragment,
+  type ComposerContextRecord,
+} from "@d4research/contracts";
+import type { EnvironmentConnectionPresentation } from "@d4research/client-runtime/connection";
 import {
   isPasteAsTextShortcut,
   nextPastedTextFileName,
   pastedTextDisposition,
   wouldTextPasteExceedLimit,
 } from "@d4research/client-runtime/text-paste";
-import {
-  type ApprovalRequestId,
-  type AssistantCitation,
-  type ChatFileAttachment,
-  type ComposerContextClipboardFragment,
-  type ComposerContextRecord,
-  type EnvironmentId,
-  type KeybindingCommand,
-  type ModelSelection,
-  type PreviewAnnotationPayload,
-  type ProjectId,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  type ProviderApprovalDecision,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ProviderInteractionMode,
-  type PullRequestListInput,
-  type ResolvedKeybindingsConfig,
-  type RuntimeMode,
-  type ScopedThreadRef,
-  type ServerProvider,
-  type ServerProviderSkill,
-  type SnapShotSource,
-  type ThreadId,
-  type TurnId,
-} from "@d4research/contracts";
-import { type UnifiedSettings } from "@d4research/contracts/settings";
-import { encodeComposerContextFragment } from "@d4research/shared/composerContextClipboard";
-import { replaceComposerContextReferences } from "@d4research/shared/composerContextReferences";
-import { filterComposerPullRequestMatches } from "@d4research/shared/composerPullRequestMatches";
 import { serializeComposerFileLink } from "@d4research/shared/composerTrigger";
+import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { createModelSelection, normalizeModelSlug } from "@d4research/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@d4research/shared/usageLimits";
+import { encodeComposerContextFragment } from "@d4research/shared/composerContextClipboard";
+import { replaceComposerContextReferences } from "@d4research/shared/composerContextReferences";
+import { createPortal, flushSync } from "react-dom";
+import { resolveAssetUrl } from "~/assets/assetUrls";
+import { requestConfirmDialog } from "~/confirmDialog";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
+import { assetEnvironment } from "~/state/assets";
+import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentQuery } from "~/state/query";
+import { readPreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import {
-  BotIcon,
-  CircleAlertIcon,
-  FileIcon,
-  PaperclipIcon,
-  PencilRulerIcon,
-  PlayIcon,
-  ShieldIcon,
-  XIcon,
-} from "lucide-react";
+  deriveComposerSendState,
+  getAntigravitySendBlockReason,
+  readFileAsDataUrl,
+  resolveComposerInteractionMode,
+  resolveComposerProviderSelection,
+  threadShellHasStarted,
+} from "../ChatView.logic";
+import {
+  dataTransferHasComposerMention,
+  makeComposerMentionDragHandlers,
+} from "./composerMentionDrag";
+import {
+  composerFloatingLayerProps,
+  useComposerMenuProps,
+  isInsideCollapsedComposerControls,
+  isInsideComposerFloatingLayer,
+  isInsideRestingComposerControlScope,
+} from "./composerEventScope";
+import {
+  MAX_STASH_ENTRIES,
+  partitionStashAttachments,
+  usePromptStashStore,
+  type PromptStashEntry,
+} from "../../promptStashStore";
+import { ComposerStashBadge } from "./ComposerStashBadge";
+import { ComposerStashMenu } from "./ComposerStashMenu";
+import { useComposerMenuState } from "./useComposerMenuState";
+import { useComposerFocusState } from "./useComposerFocusState";
+import { useComposerMultilinePrompt } from "./useComposerMultilinePrompt";
+import {
+  ComposerTasksBadge,
+  ComposerTasksContent,
+  ComposerTasksDrawer,
+  type ComposerTaskStep,
+  type ComposerTasksProgress,
+} from "./ComposerTasksBadge";
+import { ComposerActivityRow } from "./ComposerActivityStatus";
+import {
+  reconcileAttachmentContextReferences,
+  type RetainedAttachmentContextPayloads,
+} from "./composerContextUndo";
+import type { ThreadSyncPhase } from "../../threadSync";
+import { ComposerBanner } from "./ComposerBanner";
+import { ComposerSurface } from "./ComposerSurface";
+import {
+  ComposerBannerStack,
+  type ComposerBannerStackContent,
+  type ComposerBannerStackItem,
+} from "./ComposerBannerStack";
+import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
+import {
+  fileAttachmentTooLargeMessage,
+  formatAttachmentSize,
+} from "@d4research/client-runtime/state/attachments";
+import {
+  attachmentsToReleaseOnUploadCapabilityLoss,
+  composerOtherFilesForPresentation,
+  classifyComposerAttachmentFile,
+  fileAttachmentCapabilityBlockReason,
+  fileAttachmentStagingLimit,
+  isPreviewableComposerVideo,
+  normalizeComposerImageFileMimeType,
+  shouldHandleComposerAttachmentPaste,
+} from "./composerAttachmentFiles";
+import {
+  readAttachmentUpload,
+  releaseAttachmentUpload,
+  releaseDraftAttachment,
+  releasePersistedAttachmentUpload,
+  retryAttachmentUpload,
+  startAttachmentUpload,
+  useAttachmentUploadStore,
+  verifyStashedAttachmentUpload,
+} from "../../lib/attachmentUploadQueue";
+import {
+  attachmentUploadBlockReason,
+  formatAttachmentUploadProgress,
+} from "../../lib/attachmentUploadState";
+import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import {
+  makePastedContext,
+  PASTED_CONTEXT_MAX_COUNT,
+  type PastedContextDraft,
+  pastedTextLabel,
+  readPastedContextFiles,
+  shouldConvertPasteToContext,
+} from "../../lib/pastedContext";
+import {
+  getPendingSnapShotAnimations,
+  pendingSnapShotAnimationIdsForTarget,
+  scheduleSnapShotAnimationDestination,
+  setSnapShotAnimationDestination,
+  shouldAnimateSnapShotArrival,
+  subscribeToPendingSnapShotAnimations,
+} from "../../lib/snapShotAnimation";
+import { resizeSnapShotSource } from "../../lib/snapShotSource";
+import {
+  type TerminalContextDraft,
+  type TerminalContextSelection,
+} from "../../lib/terminalContext";
+import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
+import {
+  ComposerContextActionsContext,
+  composerContextRecordsFromDraft,
+  uploadedContextRecordFromDraft,
+} from "../composerContextPresentation";
+import {
+  collectInlineContextIds,
+  type ComposerContextReference,
+  ensureInlineContextReferences,
+  formatInlineContextReference,
+  insertInlineContextReference,
+  inlineContextReferenceReplacement,
+  toKindScopedComposerContextId,
+} from "~/lib/composerContextReferences";
+import {
+  asKnownContextRecord,
+  composerContextImportLookupIds,
+  isSameComposerContextPayload,
+  uploadedAttachmentContextRecord,
+  fileContextReference,
+  imageContextReference,
+  previewAnnotationContextId,
+  previewAnnotationContextRecord,
+  previewAnnotationFromRecord,
+  reviewCommentContextId,
+  reviewCommentContextReference,
+  reviewCommentContextRecord,
+  reviewCommentFromRecord,
+  terminalContextDraftFromRecord,
+  terminalContextReference,
+  terminalContextRecord,
+} from "~/lib/composerContextRecords";
+import {
+  pullRequestEnvironment,
+  usePullRequestList,
+  type EnvironmentQueryTarget,
+} from "~/state/pullRequests";
+import { ProviderModelPicker } from "./ProviderModelPicker";
+import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
+import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
+import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import {
+  ComposerControl,
+  ComposerControlIcon,
+  ComposerControlSeparator,
+  ComposerSelectControl,
+} from "./ComposerControl";
+import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
+import { ComposerPendingPastedContexts } from "./ComposerPendingPastedContexts";
+import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
+import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
+import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { ComposerSessionSkillsControl } from "./ComposerSessionSkillsControl";
+import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
+import {
+  providerSupportsManualCompaction,
+  resolveContextWindowModelDisplayName,
+  shouldReserveContextWindowMeter,
+} from "./ContextWindowMeter.logic";
+import {
+  attachVideoThumbnail,
+  buildAttachmentVideoPreview,
+  buildExpandedImagePreview,
+  type ExpandedImagePreview,
+} from "./ExpandedImagePreview";
+import { PierreEntryIcon } from "./PierreEntryIcon";
+import { hasProviderSetup } from "./ProviderStatusBanner";
+import {
+  SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
+  SnapShotAttachmentDetails,
+} from "./SnapShotAttachmentDetails";
+import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
+import { composerDraftOperationKey } from "./composerDraftOperationKey";
+import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
+import {
+  getComposerPromptInjectionState,
+  getComposerProviderState,
+  renderProviderTraitsMenuContent,
+  renderProviderTraitsPicker,
+} from "./composerProviderState";
+import {
+  searchSlashCommandItems,
+  slashCommandItemsForPromptPosition,
+} from "./composerSlashCommandSearch";
+import {
+  getComposerPromptLengthValidationMessage,
+  getComposerSubmissionValidationMessage,
+  submitComposerDraft,
+} from "./composerSubmission";
+import { pendingDraftWork } from "./pendingDraftWork";
+import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
+import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import {
   type ComponentProps,
-  Fragment,
   memo,
   type ReactNode,
   useCallback,
@@ -75,52 +281,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal, flushSync } from "react-dom";
-import { resolveAssetUrl } from "~/assets/assetUrls";
-import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { requestConfirmDialog } from "~/confirmDialog";
 import { type AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
-import {
-  asKnownContextRecord,
-  composerContextImportLookupIds,
-  fileContextReference,
-  imageContextReference,
-  isSameComposerContextPayload,
-  previewAnnotationContextId,
-  previewAnnotationContextRecord,
-  previewAnnotationFromRecord,
-  reviewCommentContextId,
-  reviewCommentContextRecord,
-  reviewCommentContextReference,
-  reviewCommentFromRecord,
-  terminalContextDraftFromRecord,
-  terminalContextRecord,
-  terminalContextReference,
-  uploadedAttachmentContextRecord,
-} from "~/lib/composerContextRecords";
-import {
-  collectInlineContextIds,
-  type ComposerContextReference,
-  ensureInlineContextReferences,
-  formatInlineContextReference,
-  inlineContextReferenceReplacement,
-  insertInlineContextReference,
-  toKindScopedComposerContextId,
-} from "~/lib/composerContextReferences";
-import { useOpenPrLink } from "~/lib/openPullRequestLink";
-import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
-import { useRightPanelStore } from "~/rightPanelStore";
-import { assetEnvironment } from "~/state/assets";
-import {
-  type EnvironmentQueryTarget,
-  pullRequestEnvironment,
-  usePullRequestList,
-} from "~/state/pullRequests";
-import { useDebouncedValue } from "~/state/queries";
-import { useEnvironmentQuery } from "~/state/query";
-import { readPreparedConnection } from "~/state/session";
-import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
-import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
@@ -147,86 +308,18 @@ import {
   useComposerThreadDraft,
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
-import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
   providerSkillsToInventoryEntries,
   toComposerFallbackSkills,
 } from "../../composerSkillFallback";
 import { activeDevScenarioName, applyDevTrigger } from "../../devPipeline";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useSkillsInventory } from "../../hooks/useSkillsInventory";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
-import {
-  readAttachmentUpload,
-  releaseAttachmentUpload,
-  releaseDraftAttachment,
-  releasePersistedAttachmentUpload,
-  retryAttachmentUpload,
-  startAttachmentUpload,
-  useAttachmentUploadStore,
-  verifyStashedAttachmentUpload,
-} from "../../lib/attachmentUploadQueue";
-import {
-  attachmentUploadBlockReason,
-  formatAttachmentUploadProgress,
-} from "../../lib/attachmentUploadState";
-import { useComposerPathSearch } from "../../lib/composerPathSearchState";
-import { type ContextWindowSnapshot } from "../../lib/contextWindow";
-import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
-import {
-  type ElementContextDraft,
-  elementContextToPreviewAnnotation,
-} from "../../lib/elementContext";
-import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
-import {
-  makePastedContext,
-  PASTED_CONTEXT_MAX_COUNT,
-  type PastedContextDraft,
-  pastedTextLabel,
-  readPastedContextFiles,
-  shouldConvertPasteToContext,
-} from "../../lib/pastedContext";
-import {
-  getPendingSnapShotAnimations,
-  pendingSnapShotAnimationIdsForTarget,
-  scheduleSnapShotAnimationDestination,
-  setSnapShotAnimationDestination,
-  shouldAnimateSnapShotArrival,
-  subscribeToPendingSnapShotAnimations,
-} from "../../lib/snapShotAnimation";
-import { resizeSnapShotSource } from "../../lib/snapShotSource";
-import {
-  type TerminalContextDraft,
-  type TerminalContextSelection,
-} from "../../lib/terminalContext";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
-import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
-import { type PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import { basenameOfPath } from "../../pierre-icons";
-import {
-  MAX_STASH_ENTRIES,
-  partitionStashAttachments,
-  type PromptStashEntry,
-  usePromptStashStore,
-} from "../../promptStashStore";
-import { proposedPlanTitle } from "../../proposedPlan";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  NO_PROVIDER_MODEL_SELECTION,
-  type ProviderInstanceEntry,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
-import { searchProviderSkills } from "../../providerSkillSearch";
-import {
-  changeQuestionAttachmentPreparation,
-  countQuestionAttachments,
-  questionAttachmentDraftId,
-  useQuestionAttachmentPreparation,
-} from "../../questionAttachments";
 import {
   deriveDirectiveSuggestions,
   deriveResearchProviderCandidatesFromProviders,
@@ -235,34 +328,8 @@ import {
   resolveResearchDirective,
   stripResearchTrigger,
 } from "../../researchPipeline";
-import { type ReviewCommentContext } from "../../reviewCommentContext";
-import { type PendingApproval, type PendingUserInput } from "../../session-logic";
-import { serverEnvironment } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { type ThreadSyncPhase } from "../../threadSync";
-import {
-  type ChatMessage,
-  isVideoAttachment,
-  type SessionPhase,
-  type Thread,
-  type ThreadShell,
-  videoMimeType,
-} from "../../types";
-import {
-  deriveComposerSendState,
-  getAntigravitySendBlockReason,
-  readFileAsDataUrl,
-  resolveComposerInteractionMode,
-  resolveComposerProviderSelection,
-  threadShellHasStarted,
-} from "../ChatView.logic";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
-import {
-  ComposerContextActionsContext,
-  composerContextRecordsFromDraft,
-  uploadedContextRecordFromDraft,
-} from "../composerContextPresentation";
 import {
   COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX,
   COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
@@ -273,109 +340,11 @@ import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
-import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
-import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
-import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
 import {
   matchesPullRequestQuery,
   rankPullRequestMatches,
 } from "../pullRequest/pullRequestList.logic";
-import { Button } from "../ui/button";
-import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerActivityRow } from "./ComposerActivityStatus";
-import { ComposerBanner } from "./ComposerBanner";
-import {
-  ComposerBannerStack,
-  type ComposerBannerStackContent,
-  type ComposerBannerStackItem,
-} from "./ComposerBannerStack";
-import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
-import {
-  ComposerControl,
-  ComposerControlIcon,
-  ComposerControlSeparator,
-  ComposerSelectControl,
-} from "./ComposerControl";
-import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
-import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
-import { ComposerPendingPastedContexts } from "./ComposerPendingPastedContexts";
-import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
-import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
-import { ComposerSessionSkillsControl } from "./ComposerSessionSkillsControl";
-import { ComposerStashBadge } from "./ComposerStashBadge";
-import { ComposerStashMenu } from "./ComposerStashMenu";
-import { ComposerSurface } from "./ComposerSurface";
-import {
-  ComposerTasksBadge,
-  ComposerTasksContent,
-  ComposerTasksDrawer,
-  type ComposerTasksProgress,
-  type ComposerTaskStep,
-} from "./ComposerTasksBadge";
-import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
-import {
-  providerSupportsManualCompaction,
-  resolveContextWindowModelDisplayName,
-  shouldReserveContextWindowMeter,
-} from "./ContextWindowMeter.logic";
-import {
-  attachVideoThumbnail,
-  buildAttachmentVideoPreview,
-  buildExpandedImagePreview,
-  type ExpandedImagePreview,
-} from "./ExpandedImagePreview";
-import { PierreEntryIcon } from "./PierreEntryIcon";
-import { ProviderModelPicker } from "./ProviderModelPicker";
-import { hasProviderSetup } from "./ProviderStatusBanner";
-import {
-  SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
-  SnapShotAttachmentDetails,
-} from "./SnapShotAttachmentDetails";
-import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
-import {
-  attachmentsToReleaseOnUploadCapabilityLoss,
-  classifyComposerAttachmentFile,
-  composerOtherFilesForPresentation,
-  fileAttachmentCapabilityBlockReason,
-  fileAttachmentStagingLimit,
-  isPreviewableComposerVideo,
-  normalizeComposerImageFileMimeType,
-  shouldHandleComposerAttachmentPaste,
-} from "./composerAttachmentFiles";
-import {
-  reconcileAttachmentContextReferences,
-  type RetainedAttachmentContextPayloads,
-} from "./composerContextUndo";
-import { composerDraftOperationKey } from "./composerDraftOperationKey";
-import {
-  composerFloatingLayerProps,
-  isInsideCollapsedComposerControls,
-  isInsideComposerFloatingLayer,
-  isInsideRestingComposerControlScope,
-  useComposerMenuProps,
-} from "./composerEventScope";
-import {
-  dataTransferHasComposerMention,
-  makeComposerMentionDragHandlers,
-} from "./composerMentionDrag";
-import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
-import {
-  buildComposerPromptHistoryEntries,
-  type ComposerPromptHistoryPosition,
-  stepComposerPromptHistory,
-} from "./composerPromptHistory";
-import {
-  getComposerPromptInjectionState,
-  getComposerProviderState,
-  renderProviderTraitsMenuContent,
-  renderProviderTraitsPicker,
-} from "./composerProviderState";
 import {
   createComposerScrollGestureState,
   recordComposerScrollGestureEvent,
@@ -383,25 +352,6 @@ import {
   shouldCollapseComposerForScrollKey,
   suppressActiveComposerScrollGesture,
 } from "./composerScrollGesture";
-import {
-  searchSlashCommandItems,
-  slashCommandItemsForPromptPosition,
-} from "./composerSlashCommandSearch";
-import {
-  getComposerPromptLengthValidationMessage,
-  getComposerSubmissionValidationMessage,
-  submitComposerDraft,
-} from "./composerSubmission";
-import { pendingDraftWork } from "./pendingDraftWork";
-import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
-import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
-import { useComposerFocusState } from "./useComposerFocusState";
-import { useComposerMenuState } from "./useComposerMenuState";
-import { useComposerMultilinePrompt } from "./useComposerMultilinePrompt";
-import { isLocalEnvironmentDisabled } from "../../localEnvironment";
-import { usePrimaryEnvironmentId } from "../../state/environments";
-import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
-import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 
 function ComposerVideoThumbnail({ file }: { file: File }) {
   const setVideo = useCallback(
@@ -1014,6 +964,57 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
     document.body,
   );
 }
+import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  FileIcon,
+  BotIcon,
+  CircleAlertIcon,
+  PaperclipIcon,
+  PencilRulerIcon,
+  PlayIcon,
+  ShieldIcon,
+  XIcon,
+} from "lucide-react";
+import { proposedPlanTitle } from "../../proposedPlan";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+  sortProviderInstanceEntries,
+  type ProviderInstanceEntry,
+} from "../../providerInstances";
+import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
+import type { UnifiedSettings } from "@d4research/contracts/settings";
+import {
+  isVideoAttachment,
+  type ChatMessage,
+  type SessionPhase,
+  type Thread,
+  type ThreadShell,
+  videoMimeType,
+} from "../../types";
+import {
+  buildComposerPromptHistoryEntries,
+  stepComposerPromptHistory,
+  type ComposerPromptHistoryPosition,
+} from "./composerPromptHistory";
+import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
+import type { PendingApproval, PendingUserInput } from "../../session-logic";
+import type { ContextWindowSnapshot } from "../../lib/contextWindow";
+import {
+  formatProviderSkillDisplayName,
+  getProviderSlashCommandsForSlashMenu,
+  getProviderSkillsForSlashMenu,
+  resolveProviderSkillsForCwd,
+  resolveProviderSlashCommandsForCwd,
+} from "@d4research/client-runtime/providerSkills";
+import { searchProviderSkills } from "../../providerSkillSearch";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { serverEnvironment } from "../../state/server";
+import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
 
@@ -1308,6 +1309,7 @@ export interface ChatComposerHandle {
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
+    multipleModelSelections: ReadonlyArray<ModelSelection> | null;
     providerAvailable: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
@@ -1317,6 +1319,7 @@ export interface ChatComposerHandle {
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
+  setMultipleModelSelections: (selections: ReadonlyArray<ModelSelection>) => void;
 }
 
 // --------------------------------------------------------------------------
@@ -1348,6 +1351,11 @@ export interface ChatComposerProps {
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
+  multipleModelSelections: ReadonlyArray<ModelSelection> | null;
+  supportsMultipleModels: boolean;
+  onMultipleModelSelectionsChange: React.Dispatch<
+    React.SetStateAction<ReadonlyArray<ModelSelection> | null>
+  >;
 
   // Thread context
   activeThreadId: ThreadId | null;
@@ -1476,7 +1484,11 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onProviderModelSelect: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    options?: { focusComposer?: boolean },
+  ) => void;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
@@ -1522,6 +1534,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     routeKind,
     routeThreadRef,
     draftId,
+    multipleModelSelections,
+    supportsMultipleModels,
+    onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
@@ -1948,7 +1963,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const selectedInstanceId =
     selectedProviderEntry?.instanceId ?? NO_PROVIDER_MODEL_SELECTION.instanceId;
-  const noProviderAvailable = selectedProviderEntry === undefined;
+  const noProviderAvailable =
+    selectedProviderEntry === undefined && multipleModelSelections === null;
   // Before the catalog arrives, every thread resolves to "no provider". Send
   // stays blocked either way; only the chrome waits, keeping the picker with
   // the thread's own selection instead of swapping in the setup button and
@@ -1984,9 +2000,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const sendDisabledReason =
     externalSendDisabledReason ??
+    (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
     (activePendingProgress
       ? attachmentBlockReason
-      : (attachmentBlockReason ?? providerSendBlockReason));
+      : (attachmentBlockReason ??
+        (multipleModelSelections === null ? providerSendBlockReason : null)));
   const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = useMemo(
     () => selectedProviderEntry?.snapshot ?? null,
@@ -3406,7 +3424,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [setIsComposerScrollCollapsed]);
 
   /**
-   * Payloads for chips the prompt no longer references. Lexical's history restores the
+   * Payloads for chips the prompt no longer references. History undo restores the
    * reference text but knows nothing about the draft records behind it, so a delete keeps its
    * payload here and an undo puts it back rather than leaving a dangling chip.
    */
@@ -3562,6 +3580,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       replacement: string,
       options?: {
         expectedText?: string;
+        expandedCursorAfterReplace?: number;
         focusEditorAfterReplace?: boolean;
         citationComment?: { start: number; sourceAnchor: AssistantCitationSourceAnchor };
       },
@@ -3582,7 +3601,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return false;
       }
       const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
-      const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
+      const nextCursor = collapseExpandedComposerCursor(
+        next.text,
+        options?.expandedCursorAfterReplace ?? next.cursor,
+      );
       const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
       if (options?.citationComment) {
         composerEditorRef.current?.requestCitationComment({
@@ -4123,6 +4145,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const onComposerCommandKey = (
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
+    isTaskItem = false,
   ) => {
     if (key === "Tab" && event.shiftKey) {
       if (!planModeUiEnabled) return false;
@@ -4165,6 +4188,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (submissionIntent) {
       submitComposer(undefined, submissionIntent);
       return true;
+    }
+    // Native task splitting preserves marks and chips on both sides of the caret.
+    if (key === "Enter" && isTaskItem) return false;
+    if (!event.isComposing && (key === "Enter" || (key === "Tab" && !event.shiftKey))) {
+      const selection = composerEditorRef.current?.readSelectionRange();
+      const snapshot = readComposerSnapshot();
+      if (selection && selection.start === selection.end && snapshot.value === promptRef.current) {
+        const edit =
+          key === "Enter"
+            ? listContinuationForEnter(snapshot.value, selection.start)
+            : listIndentForTab(snapshot.value, selection.start, selection.end);
+        if (
+          edit &&
+          applyPromptReplacement(
+            edit.start,
+            edit.end,
+            edit.replacement,
+            key === "Tab"
+              ? { expandedCursorAfterReplace: selection.start + edit.replacement.length }
+              : undefined,
+          )
+        ) {
+          return true;
+        }
+      }
     }
     return false;
   };
@@ -5108,7 +5156,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       <ProviderModelPicker
         isComposerOwned
-        disabled={providerCatalogPending}
+        disabled={providerCatalogPending || isSendBusy}
+        {...(routeKind === "draft" && supportsMultipleModels
+          ? {
+              ...(multipleModelSelections !== null
+                ? { selectedModels: multipleModelSelections }
+                : {}),
+              onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
+                const current = multipleModelSelections ?? [selectedModelSelection];
+                const matchesModel = (selection: ModelSelection) => {
+                  if (selection.instanceId !== instanceId) return false;
+                  const entry = providerInstanceEntries.find(
+                    (entry) => entry.instanceId === selection.instanceId,
+                  );
+                  const resolvedModel = resolveModelPickerSelectedModel({
+                    driverKind: entry?.driverKind,
+                    model: selection.model,
+                    options: modelOptionsByInstance.get(selection.instanceId) ?? [],
+                  });
+                  return (resolvedModel?.slug ?? selection.model) === model;
+                };
+                const exists = current.some(matchesModel);
+                const next = exists
+                  ? current.filter((selection) => !matchesModel(selection))
+                  : [...current, createModelSelection(instanceId, model)];
+                if (next.length > 1) {
+                  setMultipleModelSelections(next);
+                } else {
+                  setMultipleModelSelections(null);
+                  const remaining = next[0] ?? selectedModelSelection;
+                  onProviderModelSelect(remaining.instanceId, remaining.model, {
+                    focusComposer: false,
+                  });
+                }
+              },
+            }
+          : {})}
         activeInstanceId={
           providerCatalogPending
             ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
@@ -5149,7 +5232,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenChange={setIsComposerModelPickerOpen}
         getModelDisabledReason={getModelDisabledReason}
         allowCrossProviderSelection={routeKind === "server"}
-        onInstanceModelChange={onProviderModelSelect}
+        onInstanceModelChange={(instanceId, model) => {
+          setMultipleModelSelections(null);
+          onProviderModelSelect(instanceId, model);
+        }}
         onOpenProviderSetup={onOpenProviderSetup}
       />
 
@@ -6132,13 +6218,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
-        providerAvailable: !noProviderAvailable && providerSendBlockReason === null,
+        multipleModelSelections:
+          routeKind === "draft" && multipleModelSelections !== null
+            ? multipleModelSelections.map((selection) =>
+                selection.instanceId === selectedModelSelection.instanceId &&
+                selection.model === selectedModelSelection.model
+                  ? selectedModelSelection
+                  : selection,
+              )
+            : null,
+        providerAvailable:
+          multipleModelSelections !== null ||
+          (!noProviderAvailable && providerSendBlockReason === null),
         selectedProvider,
         selectedModel,
         selectedProviderModels,
         interactionMode,
         interactionModeEnabled: planModeUiEnabled,
       }),
+      setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
           prompt: promptRef.current,
@@ -6181,6 +6279,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
+      multipleModelSelections,
+      setMultipleModelSelections,
+      routeKind,
       noProviderAvailable,
       providerSendBlockReason,
       selectedPromptEffort,
@@ -6979,6 +7080,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerContextActionsContext value={composerContextActions}>
                   <ComposerPromptEditor
                     editorRef={composerEditorRef}
+                    richTextEnabled={settings.composerRichTextEnabled}
                     value={
                       isComposerApprovalState
                         ? ""

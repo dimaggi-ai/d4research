@@ -1,20 +1,18 @@
 import { isElectron } from "~/env";
-
-import { isMacPlatform } from "~/lib/utils";
-
-import { isWindowsPlatform } from "~/lib/utils";
-
-import { normalizeSearchText } from "~/lib/utils";
-
-import { type EnvironmentId } from "@d4research/contracts";
-
-import { type EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
-
-import { validateSettingsScopeSearch } from "./settingsScope";
-
-import { type ResolvedSettingsScope } from "./settingsScope";
-
-import { type SettingsScopeSearch } from "./settingsScope";
+import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
+import {
+  STATIC_KEYBINDING_COMMANDS,
+  type KeybindingCommand,
+  type EnvironmentId,
+} from "@d4research/contracts";
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
+import { DEFAULT_KEYBINDINGS } from "@d4research/shared/keybindings";
+import { commandLabel } from "./KeybindingsSettings.logic";
+import {
+  validateSettingsScopeSearch,
+  type ResolvedSettingsScope,
+  type SettingsScopeSearch,
+} from "./settingsScope";
 
 export type SettingsPath =
   | "/settings/projects"
@@ -27,6 +25,7 @@ export type SettingsPath =
   | "/settings/research"
   | "/settings/dev-pipelines"
   | "/settings/integrations"
+  | "/settings/storage"
   | "/settings/connections"
   | "/settings/tool-guard"
   | "/settings/skills"
@@ -55,6 +54,11 @@ export interface SettingsSearchItem {
   readonly providerSettingsOnly?: boolean;
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
+  /**
+   * Sorts after every other match. Keybinding commands mirror rows on other
+   * surfaces, so "model" must still lead with Default model, not Model Picker.
+   */
+  readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
   readonly searchTerms?: ReadonlyArray<string>;
   readonly id: string;
@@ -78,11 +82,39 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/research": "Research",
   "/settings/dev-pipelines": "Dev pipelines",
   "/settings/integrations": "Integrations",
+  "/settings/storage": "Storage",
   "/settings/connections": "Connections",
   "/settings/tool-guard": "Tool Guard",
   "/settings/skills": "Skills",
   "/settings/archived": "Archive",
 };
+
+/** Anchor id of the first row bound to `command` on the Keybindings page. */
+export function keybindingSearchAnchorId<Command extends KeybindingCommand>(command: Command) {
+  return `keybinding-${command}` as const;
+}
+
+/**
+ * One result per built-in command, alphabetical by label. The anchor is
+ * the command's first row; default keys are searchable so "mod+b" lands on
+ * Sidebar: Toggle. A command with no default binding may have no row, so it
+ * points at the section instead.
+ */
+const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right) =>
+  commandLabel(left).localeCompare(commandLabel(right)),
+).map((command) => {
+  const defaultKeys = DEFAULT_KEYBINDINGS.filter((binding) => binding.command === command).map(
+    (binding) => binding.key,
+  );
+  return {
+    id: keybindingSearchAnchorId(command),
+    title: commandLabel(command),
+    to: "/settings/keybindings" as const,
+    searchTerms: [command, ...defaultKeys],
+    secondary: true,
+    ...(defaultKeys.length === 0 ? { targetId: "keybindings" } : {}),
+  };
+});
 
 /**
  * Every searchable setting, in result order. This catalog is the single
@@ -91,6 +123,22 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * here once instead of separately in the panel and the index.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "storage-worktrees",
+    title: "Worktree cleanup",
+    to: "/settings/storage",
+    scope: "project-defaults",
+    searchTerms: [
+      "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
+    ],
+  },
+  {
+    id: "storage-artifacts",
+    title: "Artifacts and logs",
+    to: "/settings/storage",
+    scope: "environment-defaults",
+    searchTerms: ["disk storage browser screenshots captures rotated logs cleanup retention"],
+  },
   {
     id: "project-defaults",
     title: "Project defaults and overrides",
@@ -294,6 +342,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["command menu dollar $ slash /"],
   },
   {
+    id: "composer-rich-text",
+    title: "Rich text composer",
+    to: "/settings/general",
+    searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
+  },
+  {
     id: "composer-collapse",
     title: "Collapse composer on scroll",
     to: "/settings/general",
@@ -424,6 +478,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/keybindings",
     searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
   },
+  ...KEYBINDING_SEARCH_ITEMS,
   {
     id: "snap-shot-enabled",
     title: "SnapShots",
@@ -820,6 +875,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/providers": null,
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
+  "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
   "/settings/research": "environment",
@@ -969,7 +1025,12 @@ export function searchSettings(
                   : 0;
       return [{ item, index, rank }];
     })
-    .toSorted((left, right) => right.rank - left.rank || left.index - right.index)
+    .toSorted(
+      (left, right) =>
+        Number(left.item.secondary ?? false) - Number(right.item.secondary ?? false) ||
+        right.rank - left.rank ||
+        left.index - right.index,
+    )
     .map(({ item }) => item);
 }
 

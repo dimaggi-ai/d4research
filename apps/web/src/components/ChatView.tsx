@@ -1,81 +1,85 @@
+import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
+import {
+  type UsageLimitSourceSnapshots,
+  type AssistantCitation,
+  type ApprovalRequestId,
+  type ChatFileAttachment,
+  DEFAULT_MODEL,
+  type EnvironmentId,
+  type MessageId,
+  type ModelSelection,
+  type ProjectScript,
+  type ProjectId,
+  type ProviderApprovalDecision,
+  type PreviewAnnotationPayload,
+  ProviderInstanceId,
+  type ServerProvider,
+  type ResolvedKeybindingsConfig,
+  type ScopedThreadRef,
+  type ThreadId,
+  type ThreadLinkedPullRequest,
+  type TurnId,
+  type KeybindingCommand,
+  OrchestrationThreadActivity,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderInteractionMode,
+  ProviderDriverKind,
+  resolveEnvironmentMachineKind,
+  RuntimeMode,
+  TerminalOpenInput,
+  type WorktreeSetupSnapshot,
+  projectCloneDisplayName,
+  projectCloneProgressSummary,
+  defaultInstanceIdForDriver,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+} from "@d4research/contracts";
+import { collectProviderUsageLimits, hasProviderUsageLimits } from "@d4research/shared/usageLimits";
+import { feedbackBannerItem } from "./chat/ComposerFeedback";
+import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
+import { derivePendingRequests } from "@d4research/client-runtime/pending-requests";
+import {
+  questionAttachmentDraftId,
+  questionAttachmentDraftPrefix,
+  clearQuestionAttachmentDraft,
+  useQuestionAttachmentPreparation,
+} from "../questionAttachments";
+import {
+  useAttachmentUploadStore,
+  awaitAttachmentUploads,
+  getUploadedAttachments,
+  releaseDraftAttachments,
+  startAttachmentUpload,
+} from "../lib/attachmentUploadQueue";
+import {
+  type EnvironmentConnectionPresentation,
+  connectionStatusTitle,
+} from "@d4research/client-runtime/connection";
+import {
+  wasBootstrapThreadDeleted,
+  wasBootstrapThreadNotCreated,
+} from "@d4research/client-runtime/errors";
+import { readPastedComposerContext } from "./composerInlineTokenPaste";
+import { isPasteAsTextShortcut } from "@d4research/client-runtime/text-paste";
 import { type CodexArtifactTemplate } from "@d4research/client-runtime/codex-artifact-templates";
 import {
-  connectionStatusTitle,
-  type EnvironmentConnectionPresentation,
-} from "@d4research/client-runtime/connection";
+  effectiveSnoozed,
+  threadWokeAt,
+  effectiveSettled,
+} from "@d4research/client-runtime/state/thread-settled";
+import {
+  parseCodexFeedbackCommand,
+  submitCodexFeedback,
+  type CodexFeedbackSubmission,
+  requestOlderThreadTurns,
+  threadHasOlderTurns,
+} from "@d4research/client-runtime/state/threads";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@d4research/client-runtime/environment";
-import { wasBootstrapThreadDeleted } from "@d4research/client-runtime/errors";
-import { derivePendingRequests } from "@d4research/client-runtime/pending-requests";
-import { resolveProviderSkillsForCwd } from "@d4research/client-runtime/providerSkills";
-import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
-import {
-  isAtomCommandInterrupted,
-  mapAtomCommandResult,
-  settlePromise,
-  squashAtomCommandFailure,
-  type AtomCommandResult,
-} from "@d4research/client-runtime/state/runtime";
-import {
-  deriveAgentPanelModel,
-  foldSubagentActivities,
-} from "@d4research/client-runtime/state/subagentRuntime";
-import {
-  effectiveSettled,
-  effectiveSnoozed,
-  threadWokeAt,
-} from "@d4research/client-runtime/state/thread-settled";
-import {
-  parseCodexFeedbackCommand,
-  requestOlderThreadTurns,
-  submitCodexFeedback,
-  threadHasOlderTurns,
-  type CodexFeedbackSubmission,
-} from "@d4research/client-runtime/state/threads";
-import { isPasteAsTextShortcut } from "@d4research/client-runtime/text-paste";
-import {
-  DEFAULT_MODEL,
-  defaultInstanceIdForDriver,
-  OrchestrationThreadActivity,
-  projectCloneDisplayName,
-  projectCloneProgressSummary,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  ProviderInteractionMode,
-  resolveEnvironmentMachineKind,
-  RuntimeMode,
-  TerminalOpenInput,
-  type ApprovalRequestId,
-  type AssistantCitation,
-  type ChatFileAttachment,
-  type EnvironmentId,
-  type KeybindingCommand,
-  type MessageId,
-  type ModelSelection,
-  type PreviewAnnotationPayload,
-  type ProjectId,
-  type ProjectScript,
-  type ProviderApprovalDecision,
-  type ResolvedKeybindingsConfig,
-  type ScopedThreadRef,
-  type ServerProvider,
-  type ThreadId,
-  type ThreadLinkedPullRequest,
-  type TurnId,
-  type UsageLimitSourceSnapshots,
-  type WorktreeSetupSnapshot,
-} from "@d4research/contracts";
-import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
-import { serializeLegacyContextMessage } from "@d4research/shared/composerContextLegacySend";
-import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
-import { buildTemporaryWorktreeBranchName } from "@d4research/shared/git";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
@@ -87,37 +91,20 @@ import {
   resolveProjectScripts,
 } from "@d4research/shared/projectScripts";
 import { resolveProjectSettings } from "@d4research/shared/projectSettings";
+import { sourceControlRepositorySelector } from "@d4research/shared/sourceControl";
 import { truncate } from "@d4research/shared/String";
+import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
 import {
   getTerminalLabel,
   nextTerminalId,
   resolveTerminalSessionLabel,
 } from "@d4research/shared/terminalLabels";
-import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
-import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
-import { collectProviderUsageLimits, hasProviderUsageLimits } from "@d4research/shared/usageLimits";
-import { useAtomValue } from "@effect/atom-react";
-import { type LegendListRef } from "@legendapp/list/react";
 import { Debouncer } from "@tanstack/react-pacer";
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import { AsyncResult } from "effect/unstable/reactivity";
-import {
-  AlarmClockIcon,
-  ArrowRightLeftIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  DownloadIcon,
-  GitBranchIcon,
-  Minimize2Icon,
-  PaperclipIcon,
-  TriangleAlertIcon,
-  WifiOffIcon,
-} from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom, AsyncResult } from "effect/unstable/reactivity";
 import {
   memo,
+  type SetStateAction,
   Suspense,
   useCallback,
   useEffect,
@@ -128,79 +115,215 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
+import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
+import { isMacPlatform } from "../lib/utils";
+import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useShallow } from "zustand/react/shallow";
-import { registerFaviconProjectForThread } from "~/browserFaviconStore";
-import { useBrowserHistoryStore } from "~/browserHistoryStore";
-import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { type AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
-import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
+import {
+  isAtomCommandInterrupted,
+  mapAtomCommandResult,
+  settlePromise,
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@d4research/client-runtime/state/runtime";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
+import { isElectron } from "../env";
+import { readLocalApi } from "../localApi";
+import { useDiffPanelStore } from "../diffPanelStore";
+import {
+  collapseExpandedComposerCursor,
+  type ComposerSubmissionIntent,
+  parseStandaloneComposerSlashCommand,
+  describeStagedHandoffBanner,
+} from "../composer-logic";
+import {
+  createMessageAttachmentPreviewProjector,
+  derivePhase,
+  deriveTimelineEntriesWithState,
+  deriveActiveWorkStartedAt,
+  deriveActivePlanState,
+  findLatestProposedPlan,
+  deriveWorkLogEntries,
+  hasActionableProposedPlan,
+  isLatestTurnSettled,
+  type TimelineEntriesProjection,
+  derivePendingApprovals,
+  derivePendingUserInputs,
+  findSidebarProposedPlan,
+} from "../session-logic";
+import { type LegendListRef } from "@legendapp/list/react";
+import {
+  getAnchoredTurnMetrics,
+  readTimelinePosition,
+  type TimelineScrollMode,
+} from "./chat/timelineScrollAnchoring";
+import {
+  buildPendingUserInputAnswers,
+  derivePendingUserInputProgress,
+  setPendingUserInputCustomAnswer,
+  togglePendingUserInputOptionSelection,
+  type PendingUserInputDraftAnswer,
+} from "../pendingUserInput";
+import { useUiStateStore } from "../uiStateStore";
+import { latestWorkspaceMutationId } from "../hooks/useWorkspaceMutationRefresh";
+import {
+  buildPlanImplementationThreadTitle,
+  buildPlanImplementationPrompt,
+  resolvePlanFollowUpSubmission,
+} from "../proposedPlan";
+import {
+  DEFAULT_INTERACTION_MODE,
+  DEFAULT_THREAD_TERMINAL_ID,
+  MAX_TERMINALS_PER_GROUP,
+  type ChatMessage,
+  isImageAttachment,
+  type SessionPhase,
+  type Thread,
+  type TurnDiffSummary,
+} from "../types";
+import { useTheme } from "../hooks/useTheme";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
+import { buildTemporaryWorktreeBranchName } from "@d4research/shared/git";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
+import {
+  pullRequestSurface,
+  selectActiveRightPanel,
+  selectActiveRightPanelSurface,
+  selectThreadRightPanelState,
+  type RightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
+import {
+  isPreviewSupportedInRuntime,
+  setActivePreviewTab,
+  useThreadPreviewState,
+} from "../previewStateStore";
+import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
+import { addBrowserSurface } from "./preview/addBrowserSurface";
+import { closePreviewSession } from "./preview/closePreviewSession";
+import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
+import { subscribePreviewAction } from "./preview/previewActionBus";
+import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
+import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
+import {
+  isSameSidebarThreadRef,
+  useSidebarPendingFileDropStore,
+} from "../sidebarPendingFileDropStore";
+import {
+  browserMiniPlayerSource,
+  previewMiniPlayerSourceKey,
+  selectThreadPreviewMiniPlayer,
+  usePreviewMiniPlayerStore,
+} from "../previewMiniPlayerStore";
+import { pullRequestPanelContext } from "./pullRequest/pullRequestDetail.logic";
+import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
+import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
+import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
+import { RightPanelTabs } from "./RightPanelTabs";
+import { AgentsPanel } from "./AgentsPanel";
+import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
+import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
+import { useDeviceState } from "~/state/device";
+import { DeviceSetup } from "./device/DeviceSetup";
+import { Dialog } from "./ui/dialog";
+import { WizardPopup } from "./ui/wizard";
+import {
+  deriveAgentPanelModel,
+  foldSubagentActivities,
+} from "@d4research/client-runtime/state/subagentRuntime";
+import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import {
+  AlarmClockIcon,
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  DownloadIcon,
+  GitBranchIcon,
+  Minimize2Icon,
+  PaperclipIcon,
+  WifiOffIcon,
+  ArrowRightLeftIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
+import { cn, randomHex, randomUUID, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
-import { cn, newDraftId, newMessageId, newThreadId, randomHex, randomUUID } from "~/lib/utils";
+import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
-import { useDeviceState } from "~/state/device";
-import { useAssetUrls } from "../assets/assetUrls";
-import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
-import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { useBrowserHistoryStore } from "~/browserHistoryStore";
+import { registerFaviconProjectForThread } from "~/browserFaviconStore";
+import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import {
-  collapseExpandedComposerCursor,
-  describeStagedHandoffBanner,
-  parseStandaloneComposerSlashCommand,
-  type ComposerSubmissionIntent,
-} from "../composer-logic";
-import {
-  beginBackgroundDraftSubmissionByRef,
-  clearBackgroundDraftSubmissionByRef,
-  composerDraftHasUserContent,
-  DraftId,
-  finalizePromotedDraftThreadByRef,
-  markPromotedDraftThreadByRef,
-  restoreFailedBackgroundDraftThread,
-  useComposerDraftStore,
-  type ComposerFileAttachment,
-  type ComposerImageAttachment,
-  type DraftThreadEnvMode,
-} from "../composerDraftStore";
-import { useComposerHandleContext } from "../composerHandleContext";
-import { environmentCatalog } from "../connection/catalog";
-import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
-import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
-import { useDiffPanelStore } from "../diffPanelStore";
-import { isElectron } from "../env";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
-import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
-import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useNowMinute } from "../hooks/useNowMinute";
-import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
-import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+  sortProviderInstanceEntries,
+} from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
   useUpdateEnvironmentSettings,
 } from "../hooks/useSettings";
-import { useTheme } from "../hooks/useTheme";
+import { useNowMinute } from "../hooks/useNowMinute";
+import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
+import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useThreadActions } from "../hooks/useThreadActions";
-import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { latestWorkspaceMutationId } from "../hooks/useWorkspaceMutationRefresh";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
-import { lazyWithReload } from "../lazyWithReload";
-import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
+import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import {
-  awaitAttachmentUploads,
-  getUploadedAttachments,
-  releaseDraftAttachments,
-  startAttachmentUpload,
-  useAttachmentUploadStore,
-} from "../lib/attachmentUploadQueue";
+  getComposerPromptInjectionState,
+  getComposerProviderState,
+} from "./chat/composerProviderState";
+import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
+import { isPreviewFocused } from "../lib/previewFocus";
+import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
+import {
+  derivePhysicalProjectKey,
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
+import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
+import {
+  beginBackgroundDraftSubmissionByRef,
+  clearBackgroundDraftSubmissionByRef,
+  composerDraftHasUserContent,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+  type DraftThreadEnvMode,
+  finalizePromotedDraftThreadByRef,
+  markPromotedDraftThreadByRef,
+  restoreFailedBackgroundDraftThread,
+  useComposerDraftStore,
+  DraftId,
+} from "../composerDraftStore";
+import {
+  formatTerminalContextLabel,
+  type TerminalContextDraft,
+  type TerminalContextSelection,
+} from "../lib/terminalContext";
+import {
+  ensureInlineContextReferences,
+  removeInlineContextReference,
+  stripInlineContextReferences,
+} from "../lib/composerContextReferences";
+import { serializeLegacyContextMessage } from "@d4research/shared/composerContextLegacySend";
 import {
   buildMessageContext,
   previewAnnotationContextLabel,
@@ -209,87 +332,226 @@ import {
   terminalContextReference,
 } from "../lib/composerContextRecords";
 import {
-  ensureInlineContextReferences,
-  removeInlineContextReference,
-  stripInlineContextReferences,
-} from "../lib/composerContextReferences";
-import { formatContextWindowTokens } from "../lib/contextWindow";
-import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
+  isQueuedMessageDue,
+  latestCompletedToolActivityId,
+  type QueuedComposerMessage,
+  useQueuedMessages,
+  useQueuedMessageStore,
+} from "../queuedMessageStore";
+import { type ReviewCommentContext } from "../reviewCommentContext";
+import { environmentCatalog } from "../connection/catalog";
+import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
+import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { useEnvironmentQuery } from "../state/query";
+import {
+  environmentServerConfigsAtom,
+  primaryServerAvailableEditorsAtom,
+  primaryServerKeybindingsAtom,
+  serverEnvironment,
+  primaryServerSettingsAtom,
+} from "../state/server";
+import { terminalEnvironment } from "../state/terminal";
+import { threadEnvironment, useEnvironmentThread } from "../state/threads";
+import { resolveProviderSkillsForCwd } from "@d4research/client-runtime/providerSkills";
+import { vcsEnvironment } from "../state/vcs";
+import { sourceControlEnvironment } from "../state/sourceControl";
+import { useProjectClone } from "../state/projectClones";
+import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import {
+  useProject,
+  useProjects,
+  useThread,
+  useThreadRefs,
+  useThreadShell,
+  useThreadProposedPlans,
+} from "../state/entities";
+import { environmentShell } from "../state/shell";
+import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
+import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
+import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
+import { MessagesTimeline } from "./chat/MessagesTimeline";
+import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
+import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
+import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
+import { ChatHeader } from "./chat/ChatHeader";
+import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
+import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
+import { NoActiveThreadState } from "./NoActiveThreadState";
+import { WorkspacePageHeader } from "./WorkspacePageHeader";
+import {
+  resolveEffectiveEnvMode,
+  resolveLocalCheckoutBranchMismatch,
+  shouldShowComposerContextStrip,
+  shouldShowEnvironmentIndicator,
+} from "./BranchToolbar.logic";
+import {
+  getProviderStatusBannerKey,
+  ProviderStatusBanner,
+  shouldShowProviderStatusBanner,
+} from "./chat/ProviderStatusBanner";
+import {
+  getThreadErrorBannerKey,
+  isThreadErrorBannerDismissedForSession,
+  shouldShowThreadErrorBanner,
+  ThreadErrorBanner,
+} from "./chat/ThreadErrorBanner";
+import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerSurface } from "./chat/ComposerSurface";
+import {
+  hasAvailableCompactionProvider,
+  hasDismissedResumeCompaction,
+  shouldOfferResumeCompaction,
+} from "./chat/ContextWindowMeter.logic";
+import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
+import {
+  DRAFT_HERO_TRANSITION_ANIMATION_ID,
+  DRAFT_HERO_TRANSITION_DURATION_MS,
+  DRAFT_HERO_TRANSITION_EASING,
+  MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
+  MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
+  runMobileComposerTransition,
+} from "./chat/draftHeroTransition";
+import {
+  MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  agentControlledBrowserCloseConfirmation,
+  branchMismatchKey,
+  buildExpiredTerminalContextToastCopy,
+  buildLocalDraftThread,
+  buildLoadingThreadFromShell,
+  buildRunningThreadTurnInterruptInput,
+  buildThreadTurnInterruptInput,
+  collectUserMessageBlobPreviewUrls,
+  createLocalDispatchSnapshot,
+  deriveComposerSendState,
+  dismissBranchMismatchForSession,
+  hasEnvironmentReconnectWarningGraceElapsed,
+  latestTurnStartFailureId,
+  scheduleEnvironmentReconnectWarning,
+  hasServerAcknowledgedLocalDispatch,
+  isBranchMismatchDismissedForSession,
+  shouldDockDraftHeroForSubmission,
+  shouldReleaseTimelineAnchorForToolActivity,
+  shouldShowBranchMismatchBanner,
+  shouldOpenProactivePullRequest,
+  shouldRetargetThreadPullRequestPanel,
+  shouldOpenProactiveTurnDiff,
+  shouldRenderPreviewMiniPlayer,
+  getStartedThreadModelChangeBlockReason,
+  LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
+  LastInvokedScriptByProjectSchema,
+  type LocalDispatchSnapshot,
+  PullRequestDialogState,
+  cloneComposerImageForRetry,
+  deriveLockedProvider,
+  readFileAsDataUrl,
+  resolveFileAttachmentUrl,
+  prepareRevertedMessageAttachments,
+  waitForRevertedMessage,
+  reconcileMountedTerminalThreadIds,
+  recallCheckoutIsRepo,
+  rememberCheckoutIsRepo,
+  resolveBackgroundDraftWorkspaceOptions,
+  resolveComposerInteractionMode,
+  resolveComposerProviderSelection,
+  getAntigravitySendBlockReason,
+  resolveDraftHeroState,
+  findRecordedWorktreeSetup,
+  resolveVisibleWorktreeSetup,
+  isPaintOnlyThreadTimeline,
+  peekHeldThreadTimeline,
+  peekRememberedThreadTimeline,
+  rememberReadyThreadTimeline,
+  resolveThreadSwitchTimeline,
+  timelineHasEphemeralPreviewUrls,
+  observeProactivePanelUserChoice,
+  resolveProactiveTurnDiffAction,
+  resolveThreadMetadataUpdateForNextTurn,
+  resolveSendEnvMode,
+  revokeBlobPreviewUrl,
+  revokeUserMessagePreviewUrls,
+  shouldWriteThreadErrorToCurrentServerThread,
+  startNewThreadForProject,
+  codexArtifactTemplatePromptToAppend,
+  waitForStartedServerThread,
+  audioArtifactDismissKey,
+  collectAudioArtifactPaths,
+  hasLiveAgentSession,
+  deriveThreadPipelineKind,
+  DISMISSED_AUDIO_ARTIFACTS_KEY,
+  DismissedAudioArtifactsSchema,
+  EMPTY_DISMISSED_AUDIO_ARTIFACTS,
+  outgoingMessageLengthError,
+  shouldDeleteFailedResearchThread,
+  shouldRestoreComposerSnapshot,
+  threadHasStarted,
+} from "./ChatView.logic";
+import type { ThreadSyncPhase } from "../threadSync";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { useComposerHandleContext } from "../composerHandleContext";
+import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
+import { RightPanelSheet } from "./RightPanelSheet";
+import { previewEnvironment } from "../state/preview";
+import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFiles";
+import { assetEnvironment } from "../state/assets";
+import { readPreparedConnection, usePreparedConnection } from "../state/session";
+import { useAtomCommand } from "../state/use-atom-command";
+import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { Button } from "./ui/button";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { ServerUpdateAction, ServerUpdateProgress } from "./ServerUpdateAction";
+import { useAutoBalanceUpdateBanner } from "./chat/useAutoBalanceUpdateBanner";
+import {
+  buildVersionMismatchDismissalKey,
+  dismissVersionMismatch,
+  isServerUpdateFailureDismissed,
+  isVersionMismatchDismissed,
+  resolveServerConfigVersionMismatch,
+  resolveServerSelfUpdateCapability,
+  serverUpdateGuidance,
+  supportsDesktopAppUpdate,
+  supportsServerUpdateThreadContinuation,
+} from "../versionSkew";
+import { useAssetUrls } from "../assets/assetUrls";
+import {
+  ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  recallableComposerPrompt,
+} from "./chat/composerPromptHistory";
+import * as Option from "effect/Option";
+import PlanSidebar from "./PlanSidebar";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
+import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
+import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
+import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { lazyWithReload } from "../lazyWithReload";
 import { type ElementContextDraft } from "../lib/elementContext";
 import { type PastedContextDraft } from "../lib/pastedContext";
-import { isPreviewFocused } from "../lib/previewFocus";
-import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
-import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
-import {
-  formatTerminalContextLabel,
-  type TerminalContextDraft,
-  type TerminalContextSelection,
-} from "../lib/terminalContext";
-import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { composeUserMessageContexts } from "../lib/userMessageContextComposition";
-import { isMacPlatform } from "../lib/utils";
-import { readLocalApi } from "../localApi";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
-  selectProjectGroupingSettings,
-} from "../logicalProject";
 import {
   makeMemoAttachmentPersistence,
   MEMO_ATTACHMENT_SEND_RESERVE_CHARS,
   pastedContextsNeedMemo,
   prepareMemoPastedContextsForSend,
 } from "../memoAttachments";
-import { resolveAppModelSelectionForInstance } from "../modelSelection";
-import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
-import {
-  buildPendingUserInputAnswers,
-  derivePendingUserInputProgress,
-  setPendingUserInputCustomAnswer,
-  togglePendingUserInputOptionSelection,
-  type PendingUserInputDraftAnswer,
-} from "../pendingUserInput";
-import {
-  browserMiniPlayerSource,
-  previewMiniPlayerSourceKey,
-  selectThreadPreviewMiniPlayer,
-  usePreviewMiniPlayerStore,
-} from "../previewMiniPlayerStore";
-import {
-  isPreviewSupportedInRuntime,
-  setActivePreviewTab,
-  useThreadPreviewState,
-} from "../previewStateStore";
-import {
-  buildPlanImplementationPrompt,
-  buildPlanImplementationThreadTitle,
-  resolvePlanFollowUpSubmission,
-} from "../proposedPlan";
 import {
   buildImmediateProviderHandoffMessage,
   isProviderHandoffCandidate,
   shouldHandoffModelSelection,
 } from "../providerHandoff";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  NO_PROVIDER_MODEL_SELECTION,
-  sortProviderInstanceEntries,
-} from "../providerInstances";
-import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import {
-  clearQuestionAttachmentDraft,
-  questionAttachmentDraftId,
-  questionAttachmentDraftPrefix,
-  useQuestionAttachmentPreparation,
-} from "../questionAttachments";
-import {
-  isQueuedMessageDue,
-  latestCompletedToolActivityId,
-  useQueuedMessages,
-  useQueuedMessageStore,
-  type QueuedComposerMessage,
-} from "../queuedMessageStore";
 import {
   buildResearchMarkdownExport,
   downloadResearchMarkdown,
@@ -304,134 +566,7 @@ import {
   mightBeInlineDelegateTrigger,
   parseInlineDelegateTrigger,
 } from "../researchPipeline";
-import { type ReviewCommentContext } from "../reviewCommentContext";
-import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
-import {
-  pullRequestSurface,
-  selectActiveRightPanel,
-  selectActiveRightPanelSurface,
-  selectThreadRightPanelState,
-  useRightPanelStore,
-  type RightPanelSurface,
-} from "../rightPanelStore";
-import { appAtomRegistry } from "../rpc/atomRegistry";
-import {
-  createMessageAttachmentPreviewProjector,
-  deriveActivePlanState,
-  deriveActiveWorkStartedAt,
-  derivePendingApprovals,
-  derivePendingUserInputs,
-  derivePhase,
-  deriveTimelineEntriesWithState,
-  deriveWorkLogEntries,
-  findLatestProposedPlan,
-  findSidebarProposedPlan,
-  hasActionableProposedPlan,
-  isLatestTurnSettled,
-  type TimelineEntriesProjection,
-} from "../session-logic";
-import {
-  isSameSidebarThreadRef,
-  useSidebarPendingFileDropStore,
-} from "../sidebarPendingFileDropStore";
-import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { assetEnvironment } from "../state/assets";
-import {
-  useProject,
-  useProjects,
-  useThread,
-  useThreadProposedPlans,
-  useThreadRefs,
-  useThreadShell,
-} from "../state/entities";
-import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
-import { previewEnvironment } from "../state/preview";
-import { useProjectClone } from "../state/projectClones";
-import { useEnvironmentQuery } from "../state/query";
-import {
-  environmentServerConfigsAtom,
-  primaryServerAvailableEditorsAtom,
-  primaryServerKeybindingsAtom,
-  primaryServerSettingsAtom,
-  serverEnvironment,
-} from "../state/server";
-import { readPreparedConnection, usePreparedConnection } from "../state/session";
-import { environmentShell } from "../state/shell";
-import { sourceControlEnvironment } from "../state/sourceControl";
-import { terminalEnvironment } from "../state/terminal";
-import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
-import { threadEnvironment, useEnvironmentThread } from "../state/threads";
-import { useAtomCommand } from "../state/use-atom-command";
-import { useAtomQueryRunner } from "../state/use-atom-query-runner";
-import { vcsEnvironment } from "../state/vcs";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
-import { type ThreadSyncPhase } from "../threadSync";
-import {
-  DEFAULT_INTERACTION_MODE,
-  DEFAULT_THREAD_TERMINAL_ID,
-  isImageAttachment,
-  MAX_TERMINALS_PER_GROUP,
-  type ChatMessage,
-  type SessionPhase,
-  type Thread,
-  type TurnDiffSummary,
-} from "../types";
-import { useUiStateStore } from "../uiStateStore";
-import {
-  buildVersionMismatchDismissalKey,
-  dismissVersionMismatch,
-  isServerUpdateFailureDismissed,
-  isVersionMismatchDismissed,
-  resolveServerConfigVersionMismatch,
-  resolveServerSelfUpdateCapability,
-  serverUpdateGuidance,
-  supportsDesktopAppUpdate,
-  supportsServerUpdateThreadContinuation,
-} from "../versionSkew";
-import { AgentsPanel } from "./AgentsPanel";
-import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
-import {
-  resolveEffectiveEnvMode,
-  resolveLocalCheckoutBranchMismatch,
-  shouldShowComposerContextStrip,
-  shouldShowEnvironmentIndicator,
-} from "./BranchToolbar.logic";
-import { type AssistantCitationRequest } from "./chat/AssistantCitationSource";
-import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
-import { ChatHeader } from "./chat/ChatHeader";
-import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFiles";
-import { type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { feedbackBannerItem } from "./chat/ComposerFeedback";
-import { recallableComposerPrompt } from "./chat/composerPromptHistory";
-import { ComposerSurface } from "./chat/ComposerSurface";
-import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
-import {
-  hasAvailableCompactionProvider,
-  hasDismissedResumeCompaction,
-  shouldOfferResumeCompaction,
-} from "./chat/ContextWindowMeter.logic";
-import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
-import {
-  DRAFT_HERO_TRANSITION_ANIMATION_ID,
-  DRAFT_HERO_TRANSITION_DURATION_MS,
-  DRAFT_HERO_TRANSITION_EASING,
-  MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
-  MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
-  runMobileComposerTransition,
-} from "./chat/draftHeroTransition";
-import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
-import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
-import { MessagesTimeline } from "./chat/MessagesTimeline";
-import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
-import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
-import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { PodcastPlayer } from "./chat/PodcastPlayer";
-import {
-  getProviderStatusBannerKey,
-  ProviderStatusBanner,
-  shouldShowProviderStatusBanner,
-} from "./chat/ProviderStatusBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -443,126 +578,10 @@ import {
   ResearchProgressBanner,
   type ResearchDelegation,
 } from "./chat/ResearchProgressBanner";
-import {
-  getThreadErrorBannerKey,
-  isThreadErrorBannerDismissedForSession,
-  shouldShowThreadErrorBanner,
-  ThreadErrorBanner,
-} from "./chat/ThreadErrorBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
-import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
-import { useAutoBalanceUpdateBanner } from "./chat/useAutoBalanceUpdateBanner";
-import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
-import {
-  agentControlledBrowserCloseConfirmation,
-  audioArtifactDismissKey,
-  collectAudioArtifactPaths,
-  hasLiveAgentSession,
-  branchMismatchKey,
-  buildExpiredTerminalContextToastCopy,
-  buildLoadingThreadFromShell,
-  buildLocalDraftThread,
-  buildRunningThreadTurnInterruptInput,
-  buildThreadTurnInterruptInput,
-  cloneComposerImageForRetry,
-  codexArtifactTemplatePromptToAppend,
-  collectUserMessageBlobPreviewUrls,
-  createLocalDispatchSnapshot,
-  deriveComposerSendState,
-  deriveLockedProvider,
-  deriveThreadPipelineKind,
-  dismissBranchMismatchForSession,
-  DISMISSED_AUDIO_ARTIFACTS_KEY,
-  DismissedAudioArtifactsSchema,
-  EMPTY_DISMISSED_AUDIO_ARTIFACTS,
-  findRecordedWorktreeSetup,
-  getStartedThreadModelChangeBlockReason,
-  hasEnvironmentReconnectWarningGraceElapsed,
-  hasServerAcknowledgedLocalDispatch,
-  isBranchMismatchDismissedForSession,
-  isPaintOnlyThreadTimeline,
-  LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
-  LastInvokedScriptByProjectSchema,
-  latestTurnStartFailureId,
-  MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
-  observeProactivePanelUserChoice,
-  outgoingMessageLengthError,
-  peekHeldThreadTimeline,
-  peekRememberedThreadTimeline,
-  prepareRevertedMessageAttachments,
-  PullRequestDialogState,
-  readFileAsDataUrl,
-  recallCheckoutIsRepo,
-  reconcileMountedTerminalThreadIds,
-  rememberCheckoutIsRepo,
-  rememberReadyThreadTimeline,
-  resolveBackgroundDraftWorkspaceOptions,
-  resolveComposerProviderSelection,
-  resolveDraftHeroState,
-  resolveFileAttachmentUrl,
-  resolveProactiveTurnDiffAction,
-  resolveSendEnvMode,
-  resolveThreadMetadataUpdateForNextTurn,
-  resolveThreadSwitchTimeline,
-  resolveVisibleWorktreeSetup,
-  revokeBlobPreviewUrl,
-  revokeUserMessagePreviewUrls,
-  scheduleEnvironmentReconnectWarning,
-  shouldDeleteFailedResearchThread,
-  shouldOpenProactivePullRequest,
-  shouldOpenProactiveTurnDiff,
-  shouldReleaseTimelineAnchorForToolActivity,
-  shouldRenderPreviewMiniPlayer,
-  shouldRestoreComposerSnapshot,
-  shouldRetargetThreadPullRequestPanel,
-  shouldShowBranchMismatchBanner,
-  shouldWriteThreadErrorToCurrentServerThread,
-  startNewThreadForProject,
-  threadHasStarted,
-  timelineHasEphemeralPreviewUrls,
-  waitForRevertedMessage,
-  waitForStartedServerThread,
-  type LocalDispatchSnapshot,
-} from "./ChatView.logic";
-import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
-import { readPastedComposerContext } from "./composerInlineTokenPaste";
-import { DeviceSetup } from "./device/DeviceSetup";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
-import { NoActiveThreadState } from "./NoActiveThreadState";
-import PlanSidebar from "./PlanSidebar";
-import { addBrowserSurface } from "./preview/addBrowserSurface";
-import { closePreviewSession } from "./preview/closePreviewSession";
-import { subscribePreviewAction } from "./preview/previewActionBus";
-import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
-import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
-import { type NewProjectScriptInput } from "./ProjectScriptsControl";
-import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
-import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
-import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
-import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
-import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
-import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
-import { RightPanelSheet } from "./RightPanelSheet";
-import { RightPanelTabs } from "./RightPanelTabs";
-import { ServerUpdateAction, ServerUpdateProgress } from "./ServerUpdateAction";
 import { SystemPanel } from "./SystemPanel";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
-import { Button } from "./ui/button";
-import { Dialog } from "./ui/dialog";
-import { stackedThreadToast, toastManager } from "./ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { WizardPopup } from "./ui/wizard";
-import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 const EMPTY_USAGE_LIMIT_SOURCES: UsageLimitSourceSnapshots = [];
 
@@ -572,13 +591,6 @@ function shouldRedirectInputToComposer(event: Event): boolean {
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
   if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;
   return true;
-}
-
-function pasteTextToFocusComposer(event: ClipboardEvent): string | null {
-  if (!event.clipboardData || event.clipboardData.files.length > 0) return null;
-  if (!shouldRedirectInputToComposer(event)) return null;
-  const text = event.clipboardData.getData("text/plain");
-  return text.length > 0 ? text : null;
 }
 
 function isCompactCommandMessage(message: ChatMessage): boolean {
@@ -772,6 +784,25 @@ function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
 
   return true;
 }
+
+/**
+ * Plain text pasted with nothing editable focused, such as after the resting
+ * composer blurred. Files are left to the composer's own paste handler.
+ */
+function pasteTextToFocusComposer(event: ClipboardEvent): string | null {
+  if (!event.clipboardData || event.clipboardData.files.length > 0) return null;
+  if (!shouldRedirectInputToComposer(event)) return null;
+  const text = event.clipboardData.getData("text/plain");
+  return text.length > 0 ? text : null;
+}
+
+const draftFanoutStateAtom = Atom.family((_routeKey: string) =>
+  Atom.make({
+    selections: null as ReadonlyArray<ModelSelection> | null,
+    sendInFlight: { current: false },
+    uncertainSubmissions: { current: new Map<string, ThreadId>() },
+  }).pipe(Atom.keepAlive),
+);
 
 function formatOutgoingPrompt(params: {
   provider: ProviderDriverKind;
@@ -1912,8 +1943,23 @@ function ChatViewContent(props: ChatViewProps) {
 
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
-  const sendInFlightRef = useRef(false);
-
+  const fanoutStateAtom = draftFanoutStateAtom(routeThreadKey);
+  const fanoutState = useAtomValue(fanoutStateAtom);
+  const sendInFlightRef = fanoutState.sendInFlight;
+  const composerSendGenerationRef = useRef(0);
+  const multipleModelSelections = fanoutState.selections;
+  const setMultipleModelSelections = useCallback(
+    (selections: SetStateAction<ReadonlyArray<ModelSelection> | null>) => {
+      appAtomRegistry.update(fanoutStateAtom, (current) => ({
+        ...current,
+        selections: typeof selections === "function" ? selections(current.selections) : selections,
+      }));
+    },
+    [fanoutStateAtom],
+  );
+  const multipleModelSelectionsRef = useRef(multipleModelSelections);
+  multipleModelSelectionsRef.current = multipleModelSelections;
+  const uncertainMultipleSubmissionsRef = fanoutState.uncertainSubmissions;
   const environmentUnavailableSendToastSlotRef = useRef(0);
 
   const feedbackUploadsInFlightRef = useRef(new Set<string>());
@@ -2355,6 +2401,7 @@ function ChatViewContent(props: ChatViewProps) {
       return {
         id: `project-clone:${projectId}`,
         variant: "info",
+        compact: true,
         priority: "activity",
         icon: <DownloadIcon />,
         title: `Cloning ${name}`,
@@ -2378,6 +2425,7 @@ function ChatViewContent(props: ChatViewProps) {
     return {
       id: `project-clone:${projectId}`,
       variant: cancelled ? "warning" : "error",
+      compact: true,
       icon: <DownloadIcon />,
       title: cancelled ? `Cancelled cloning ${name}` : `Failed to clone ${name}`,
       description: cancelled ? "Retry to bring in the repository." : activeProjectClone.error,
@@ -5183,7 +5231,9 @@ function ChatViewContent(props: ChatViewProps) {
   const hasLinkedPullRequestDetail = activeThreadMetadata?.linkedPullRequest != null;
   const linkedThreadPullRequest =
     activeThreadMetadata?.linkedPullRequest ?? activeThreadMetadata?.branchPullRequest ?? null;
-  const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const activeProjectRepository = sourceControlRepositorySelector(
+    activeProject?.repositoryIdentity,
+  );
   const linkedThreadPullRequestKey = linkedThreadPullRequest
     ? JSON.stringify([
         linkedThreadPullRequest.projectId,
@@ -5810,6 +5860,7 @@ function ChatViewContent(props: ChatViewProps) {
   const settledTimelineAnchorRef = useRef<MessageId | null>(null);
   const activeTimelineAnchorIndexRef = useRef<number | null>(null);
   const anchorUserScrollGenerationRef = useRef(0);
+  const cancelPositionRestoreRef = useRef<(() => void) | null>(null);
   const liveFollowUserScrollGenerationRef = useRef<number | null>(0);
   const pendingAnchorScrollRestoreRef = useRef<{
     readonly messageId: MessageId;
@@ -5818,6 +5869,7 @@ function ChatViewContent(props: ChatViewProps) {
   } | null>(null);
   const anchorScrollRestoreFrameRef = useRef<number | null>(null);
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
+    cancelPositionRestoreRef.current?.();
     anchorUserScrollGenerationRef.current += 1;
     timelineScrollModeRef.current = "free-scrolling";
     liveFollowUserScrollGenerationRef.current = null;
@@ -5914,6 +5966,7 @@ function ChatViewContent(props: ChatViewProps) {
   // Live-follow stays active after send/thread-open until an actual list scroll
   // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
+    cancelPositionRestoreRef.current?.();
     isAtEndRef.current = true;
     timelineScrollModeRef.current = "following-end";
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
@@ -5929,21 +5982,6 @@ function ChatViewContent(props: ChatViewProps) {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
   }, []);
-  const displayedTimelineKeyRef = useRef(displayedTimeline.displayThreadKey);
-  useLayoutEffect(() => {
-    const displayKey = displayedTimeline.displayThreadKey;
-    if (displayKey === null || displayKey !== activeThreadKey) {
-      displayedTimelineKeyRef.current = displayKey;
-      return;
-    }
-    if (displayedTimelineKeyRef.current === displayKey) {
-      return;
-    }
-    displayedTimelineKeyRef.current = displayKey;
-    // Keep the list mounted across jumps; pin the newly displayed thread to
-    // its end the way a remount used to via initialScrollAtEnd.
-    scrollToEnd();
-  }, [activeThreadKey, displayedTimeline.displayThreadKey, scrollToEnd]);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -6202,15 +6240,19 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     setPullRequestDialogState(null);
-    isAtEndRef.current = true;
-    timelineScrollModeRef.current = "following-end";
-    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+    const followEnd = readTimelinePosition(routeThreadKey)?.atEnd !== false;
+    isAtEndRef.current = followEnd;
+    timelineScrollIntentRef.current = null;
+    timelineScrollModeRef.current = followEnd ? "following-end" : "free-scrolling";
+    liveFollowUserScrollGenerationRef.current = followEnd
+      ? anchorUserScrollGenerationRef.current
+      : null;
+    setTimelineLiveFollowEnabled(followEnd);
     pendingTimelineAnchorRef.current = null;
     positionedTimelineAnchorRef.current = null;
     settledTimelineAnchorRef.current = null;
     activeTimelineAnchorIndexRef.current = null;
     showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
     if (planSidebarOpenOnNextThreadRef.current) {
       planSidebarOpenOnNextThreadRef.current = false;
       if (activeThreadRef) {
@@ -6218,8 +6260,9 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     planSidebarDismissedForTurnRef.current = null;
+    setShowScrollToBottom(!followEnd);
     // activeThreadRef resets transitively with the active thread.
-  }, [activeThread?.id]);
+  }, [activeThread?.id, routeThreadKey]);
 
   // Auto-open the plan sidebar when plan/todo steps arrive for the current turn.
   // Don't auto-open for plans carried over from a previous turn (the user can open manually).
@@ -7954,6 +7997,31 @@ function ChatViewContent(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    const multipleModelSelections = queuedMessage ? null : sendCtx.multipleModelSelections;
+    if (
+      multipleModelSelections !== null &&
+      serverConfig?.environment.capabilities.requiredWorktreeBootstrap !== true
+    ) {
+      setThreadError(activeThread.id, "Update this server before starting multiple models.");
+      return;
+    }
+    if (
+      multipleModelSelections !== null &&
+      (!isLocalDraftThread ||
+        !isGitRepo ||
+        !activeThreadBranch ||
+        multipleModelSelections.length === 0)
+    ) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Choose models and a base branch",
+          description:
+            "Multiple models need a new thread in a Git project. Each gets its own worktree.",
+        }),
+      );
+      return;
+    }
     const {
       files: sendContextFiles,
       images: sendContextImages,
@@ -8038,7 +8106,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseCodexFeedbackCommand(trimmed)
         : null;
-    if (feedbackCommand && !queuedRequestForSend) {
+    if (feedbackCommand && !queuedRequestForSend && multipleModelSelections === null) {
       if (!isServerThread || activeThread.session === null) {
         toastManager.add(
           stackedThreadToast({
@@ -8136,7 +8204,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
-    if (standaloneSlashCommand && !queuedRequestForSend) {
+    if (standaloneSlashCommand && !queuedRequestForSend && multipleModelSelections === null) {
       handleInteractionModeChange(standaloneSlashCommand);
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
@@ -8375,7 +8443,53 @@ function ChatViewContent(props: ChatViewProps) {
       };
     };
 
+    const multipleTargets = [];
+    for (const selection of multipleModelSelections ?? []) {
+      const provider = providerInstanceEntries.find(
+        (entry) => entry.instanceId === selection.instanceId,
+      );
+      if (!provider?.enabled || !provider.isAvailable || provider.status !== "ready") {
+        setThreadError(threadIdForSend, `Provider for ${selection.model} is unavailable.`);
+        return;
+      }
+      const providerBlockReason = getAntigravitySendBlockReason(provider.snapshot, selection.model);
+      if (providerBlockReason) {
+        setThreadError(threadIdForSend, providerBlockReason);
+        return;
+      }
+      const providerState = getComposerProviderState({
+        provider: provider.driverKind,
+        model: selection.model,
+        models: provider.models,
+        modelOptions: selection.options,
+        promptInjectionState: getComposerPromptInjectionState(messageTextForSend),
+        planModeEnabled: settings.planModeEnabled,
+      });
+      const text = formatOutgoingPrompt({
+        provider: provider.driverKind,
+        model: selection.model,
+        models: provider.models,
+        effort: providerState.promptEffort,
+        text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      });
+      if (composerRef.current?.validateProviderInput(text) === false) return;
+      multipleTargets.push({
+        selection: createModelSelection(
+          selection.instanceId,
+          selection.model,
+          providerState.modelOptionsForDispatch,
+        ),
+        text,
+        interactionMode: resolveComposerInteractionMode({
+          planModeEnabled: settings.planModeEnabled,
+          provider: provider.snapshot,
+          interactionMode: sendInteractionMode,
+        }).interactionMode,
+      });
+    }
+
     sendInFlightRef.current = true;
+    const sendGeneration = ++composerSendGenerationRef.current;
     // Every early return above leaves a queued message in the queue for a
     // later retry. From here on a failure hands it back to the composer.
     if (queuedRequestForSend) {
@@ -8442,8 +8556,17 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     const resolvedSubmissionIntent =
-      submissionIntent === "background" && isLocalDraftThread ? "background" : "foreground";
-    if (resolvedSubmissionIntent === "foreground" && isDraftHeroState && activeThreadKey) {
+      (multipleModelSelections !== null || submissionIntent === "background") && isLocalDraftThread
+        ? "background"
+        : "foreground";
+    if (
+      shouldDockDraftHeroForSubmission({
+        isDraftHeroState,
+        activeThreadKey,
+        submissionIntent: resolvedSubmissionIntent,
+      }) &&
+      activeThreadKey
+    ) {
       let resolveDockStarted: (() => void) | undefined;
       const dockStarted = new Promise<void>((resolve) => {
         resolveDockStarted = resolve;
@@ -8459,7 +8582,7 @@ function ChatViewContent(props: ChatViewProps) {
       await dockStarted;
     }
     beginLocalDispatch({
-      preparingWorktree: Boolean(baseBranchForWorktree),
+      preparingWorktree: multipleModelSelections !== null || Boolean(baseBranchForWorktree),
       submissionIntent: resolvedSubmissionIntent,
     });
 
@@ -8740,6 +8863,267 @@ function ChatViewContent(props: ChatViewProps) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const turnAttachmentsPromise = buildTurnAttachments();
+    if (multipleModelSelections !== null) {
+      const failedSelections: ModelSelection[] = [];
+      let clearedDraft = false;
+      let releasedComposer = false;
+      let canRestoreDraft = () => false;
+      let startedCount = 0;
+      try {
+        const attachments = await turnAttachmentsPromise;
+        const fileBlockReason = readLiveAttachmentCapabilities().fileBlockReason;
+        if (fileBlockReason !== null) throw new Error(fileBlockReason);
+        const context = buildOutgoingMessageContext(
+          attachments.map((attachment, index) =>
+            "id" in attachment && attachment.id !== undefined
+              ? attachment.id
+              : composerAttachmentsSnapshot[index]!.id,
+          ),
+        );
+        const title = truncate(
+          assistantCitationsToPlainText(stripInlineContextReferences(trimmed)).trim() ||
+            composerAttachmentsSnapshot[0]?.name ||
+            "New thread",
+        );
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        clearedDraft = true;
+        const clearedDraftSnapshot = useComposerDraftStore
+          .getState()
+          .getComposerDraft(composerDraftTarget);
+        const submittedSelections = multipleModelSelectionsRef.current;
+        canRestoreDraft = () =>
+          currentRouteThreadKeyRef.current === routeThreadKey &&
+          composerSendGenerationRef.current === sendGeneration &&
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget) ===
+            clearedDraftSnapshot &&
+          multipleModelSelectionsRef.current === submittedSelections;
+        setThreadError(threadIdForSend, null);
+        const starts = Promise.all(
+          multipleTargets.map(async (target) => {
+            const retryKey = JSON.stringify([
+              routeThreadKey,
+              target.selection.instanceId,
+              target.selection.model,
+            ]);
+            const uncertainThreadId = uncertainMultipleSubmissionsRef.current.get(retryKey);
+            const targetThreadId = uncertainThreadId ?? newThreadId();
+            let requestMayHaveStarted = false;
+            try {
+              if (uncertainThreadId) {
+                throw new Error(
+                  "The previous request may have started. Open its thread to check before sending again.",
+                );
+              }
+              const supportsInlineMessageContext =
+                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment
+                  .capabilities.inlineMessageContext === true;
+              requestMayHaveStarted = true;
+              const result = await startThreadTurn({
+                environmentId,
+                input: {
+                  threadId: targetThreadId,
+                  message: {
+                    messageId: newMessageId(),
+                    role: "user",
+                    text:
+                      context && !supportsInlineMessageContext
+                        ? serializeLegacyContextMessage({
+                            text: target.text,
+                            records: context.records,
+                          })
+                        : target.text,
+                    attachments,
+                    ...(context && supportsInlineMessageContext ? { context } : {}),
+                  },
+                  modelSelection: target.selection,
+                  titleSeed: title,
+                  runtimeMode,
+                  interactionMode: target.interactionMode,
+                  bootstrap: {
+                    createThread: {
+                      projectId: activeProject.id,
+                      title,
+                      modelSelection: target.selection,
+                      runtimeMode,
+                      interactionMode: target.interactionMode,
+                      branch: activeThreadBranch,
+                      worktreePath: null,
+                      createdAt: messageCreatedAt,
+                    },
+                    prepareWorktree: {
+                      projectCwd: activeProject.workspaceRoot,
+                      baseBranch: activeThreadBranch!,
+                      requireWorktree: true,
+                      branch: buildTemporaryWorktreeBranchName(randomHex),
+                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                    },
+                    runSetupScript: true,
+                  },
+                  createdAt: messageCreatedAt,
+                },
+              });
+              if (result._tag === "Failure") {
+                const error = squashAtomCommandFailure(result);
+                if (wasBootstrapThreadDeleted(error) || wasBootstrapThreadNotCreated(error)) {
+                  requestMayHaveStarted = false;
+                }
+                throw error;
+              }
+              startedCount += 1;
+            } catch (error) {
+              if (requestMayHaveStarted && !uncertainMultipleSubmissionsRef.current.has(retryKey)) {
+                uncertainMultipleSubmissionsRef.current.set(retryKey, targetThreadId);
+              }
+              failedSelections.push(target.selection);
+              const retainedThreadId = uncertainMultipleSubmissionsRef.current.get(retryKey);
+              const failureToastId = toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: `Could not start ${target.selection.model}`,
+                  description: error instanceof Error ? error.message : "Failed to send message.",
+                  ...(retainedThreadId
+                    ? {
+                        timeout: 0,
+                        data: {
+                          secondaryActionProps: {
+                            children: "Allow retry",
+                            onClick: () => {
+                              void readLocalApi()
+                                ?.dialogs.confirm(
+                                  "The previous request may already be running. Check its thread first. Allow another send that could create a duplicate thread?",
+                                )
+                                .then(
+                                  (confirmed) => {
+                                    if (
+                                      confirmed &&
+                                      uncertainMultipleSubmissionsRef.current.get(retryKey) ===
+                                        retainedThreadId
+                                    ) {
+                                      uncertainMultipleSubmissionsRef.current.delete(retryKey);
+                                      toastManager.close(failureToastId);
+                                    }
+                                  },
+                                  () => undefined,
+                                );
+                            },
+                          },
+                        },
+                        actionProps: {
+                          children: "Open thread",
+                          onClick: () => {
+                            void navigate({
+                              to: "/$environmentId/$threadId",
+                              params: buildThreadRouteParams(
+                                scopeThreadRef(environmentId, retainedThreadId),
+                              ),
+                            });
+                          },
+                        },
+                      }
+                    : {}),
+                }),
+              );
+            }
+          }),
+        );
+        // Each request now owns its background thread. The original draft is
+        // ready for another prompt while checkout and setup scripts finish.
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+        releasedComposer = true;
+        await starts;
+        if (startedCount > 0) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: `Started ${startedCount} ${startedCount === 1 ? "thread" : "threads"} in background`,
+            }),
+          );
+        }
+        if (failedSelections.length === 0 && turnUsesAttachmentUploads) {
+          releaseDraftAttachments(composerAttachmentsSnapshot);
+        }
+      } catch (error) {
+        failedSelections.push(...multipleModelSelections);
+        setThreadError(
+          threadIdForSend,
+          error instanceof Error ? error.message : "Failed to send messages.",
+        );
+      } finally {
+        const restoreFailedDraft = () => {
+          setMultipleModelSelections(failedSelections);
+          if (clearedDraft) {
+            setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+            addComposerDraftImages(
+              composerDraftTarget,
+              composerImagesSnapshot.map(cloneComposerImageForRetry),
+            );
+            addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
+            setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
+            setComposerDraftPreviewAnnotations(
+              composerDraftTarget,
+              composerPreviewAnnotationsSnapshot,
+            );
+            setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
+            if (composerRef.current && currentRouteThreadKeyRef.current === routeThreadKey) {
+              promptRef.current = messageTextForSend;
+              composerRef.current.resetCursorState({
+                cursor: collapseExpandedComposerCursor(
+                  messageTextForSend,
+                  messageTextForSend.length,
+                ),
+                prompt: messageTextForSend,
+                detectTrigger: true,
+              });
+            }
+          }
+        };
+        if (failedSelections.length > 0) {
+          if (canRestoreDraft() && composerRef.current) {
+            restoreFailedDraft();
+          } else if (clearedDraft) {
+            const recoveryToastId = toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "A background prompt could not be sent",
+                description:
+                  "Your newer draft is unchanged. Restore the failed prompt when this composer is empty.",
+                timeout: 0,
+                actionProps: {
+                  children: "Restore prompt",
+                  onClick: () => {
+                    if (
+                      !draftId ||
+                      !useComposerDraftStore.getState().getDraftSession(draftId) ||
+                      sendInFlightRef.current ||
+                      composerDraftHasUserContent(
+                        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+                      )
+                    ) {
+                      toastManager.update(recoveryToastId, {
+                        description:
+                          "Return to the original draft and send or clear its current prompt before restoring.",
+                      });
+                      return;
+                    }
+                    restoreFailedDraft();
+                    void navigate({ to: "/draft/$draftId", params: { draftId } });
+                    toastManager.close(recoveryToastId);
+                  },
+                },
+              }),
+            );
+          }
+        }
+        if (!releasedComposer) {
+          sendInFlightRef.current = false;
+          resetLocalDispatch();
+        }
+      }
+      return;
+    }
     const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
       attachment.type === "image"
         ? {
@@ -9992,7 +10376,7 @@ function ChatViewContent(props: ChatViewProps) {
   // The switch itself happens on the next send (see onSend), so the user writes
   // their instruction once instead of waiting through an acknowledgement turn.
   const onProviderModelSelect = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
+    (instanceId: ProviderInstanceId, model: string, options?: { focusComposer?: boolean }) => {
       if (!activeThread) return;
       // Look up the configured instance so model normalization and custom
       // model lookup stay scoped to that exact instance. Unknown instance ids
@@ -10004,7 +10388,7 @@ function ChatViewContent(props: ChatViewProps) {
         model,
       );
       if (!resolvedModel) {
-        scheduleComposerFocus();
+        if (options?.focusComposer !== false) scheduleComposerFocus();
         return;
       }
       setComposerDraftModelSelection(scopeThreadRef(activeThread.environmentId, activeThread.id), {
@@ -10012,7 +10396,7 @@ function ChatViewContent(props: ChatViewProps) {
         model: resolvedModel,
       });
       setStickyComposerModelSelection({ instanceId, model: resolvedModel });
-      scheduleComposerFocus();
+      if (options?.focusComposer !== false) scheduleComposerFocus();
     },
     [
       activeThread,
@@ -10025,6 +10409,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
+      if (multipleModelSelections !== null) return;
       if (canOverrideServerThreadEnvMode) {
         setPendingServerThreadEnvMode(mode);
         scheduleComposerFocus();
@@ -10047,6 +10432,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerDraftTarget,
       draftThread?.worktreePath,
       isLocalDraftThread,
+      multipleModelSelections,
       activeProjectSettings.settings.newWorktreesStartFromOrigin,
       setPendingServerThreadEnvMode,
       scheduleComposerFocus,
@@ -10372,12 +10758,15 @@ function ChatViewContent(props: ChatViewProps) {
           repository: renderedRightPanelSurface.repository,
           number: renderedRightPanelSurface.number,
         }}
-        context={
-          activeThreadPr?.number === renderedRightPanelSurface.number &&
-          threadRepository === renderedRightPanelSurface.repository
-            ? "thread"
-            : "page"
-        }
+        context={pullRequestPanelContext(
+          {
+            projectId: activeThreadMetadata?.projectId ?? null,
+            pullRequests: activeThreadMetadata?.pullRequests,
+            linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
+            branchPullRequest: activeThreadMetadata?.branchPullRequest,
+          },
+          renderedRightPanelSurface,
+        )}
         composerDraftTarget={composerDraftTarget}
         onBack={
           activeThreadRef !== null && pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
@@ -10649,6 +11038,7 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                cancelPositionRestoreRef={cancelPositionRestoreRef}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 onContentOverflowChange={setTimelineOverflows}
@@ -10766,6 +11156,12 @@ function ChatViewContent(props: ChatViewProps) {
                         />
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
+                            multipleModelSelections={multipleModelSelections}
+                            supportsMultipleModels={
+                              serverConfig?.environment.capabilities.requiredWorktreeBootstrap ===
+                              true
+                            }
+                            onMultipleModelSelectionsChange={setMultipleModelSelections}
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
@@ -10916,6 +11312,7 @@ function ChatViewContent(props: ChatViewProps) {
                           {mountComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
+                                forceNewWorktree={multipleModelSelections !== null}
                                 ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}

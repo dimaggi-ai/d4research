@@ -1,10 +1,10 @@
+import { filterComposerPullRequestMatches } from "@d4research/shared/composerPullRequestMatches";
 import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@d4research/contracts";
 import {
   collectAssistantCitations,
   expandAssistantCitationsForProvider,
   serializeAssistantCitation,
 } from "@d4research/shared/assistantCitations";
-import { filterComposerPullRequestMatches } from "@d4research/shared/composerPullRequestMatches";
 import { describe, expect, it } from "vite-plus/test";
 import {
   clampCollapsedComposerCursor,
@@ -243,17 +243,20 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("detects $skill trigger at cursor", () => {
-    const text = "Use $gh-fi";
-    const trigger = detectComposerTrigger(text, text.length);
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
+    "detects %sskill trigger at cursor",
+    (prefix) => {
+      const text = `Use ${prefix}gh-fi`;
+      const trigger = detectComposerTrigger(text, text.length);
 
-    expect(trigger).toEqual({
-      kind: "skill",
-      query: "gh-fi",
-      rangeStart: "Use ".length,
-      rangeEnd: text.length,
-    });
-  });
+      expect(trigger).toEqual({
+        kind: "skill",
+        query: "gh-fi",
+        rangeStart: "Use ".length,
+        rangeEnd: text.length,
+      });
+    },
+  );
 
   it("detects a pull request number at a token boundary", () => {
     const text = "Compare this with #8737";
@@ -506,10 +509,10 @@ describe("expandCollapsedComposerCursor", () => {
     expect(detectComposerTrigger(text, expandedCursor)).toBeNull();
   });
 
-  it("maps collapsed skill cursor to expanded text cursor", () => {
-    const text = "run $review-follow-up then";
+  it.each(["$", "€", "𑿝"])("maps collapsed %s skill cursor to expanded text cursor", (prefix) => {
+    const text = `run ${prefix}review-follow-up then`;
     const collapsedCursorAfterSkill = "run ".length + 2;
-    const expandedCursorAfterSkill = "run $review-follow-up ".length;
+    const expandedCursorAfterSkill = `run ${prefix}review-follow-up `.length;
 
     expect(expandCollapsedComposerCursor(text, collapsedCursorAfterSkill)).toBe(
       expandedCursorAfterSkill,
@@ -570,15 +573,22 @@ describe("collapseExpandedComposerCursor", () => {
     expect(expandCollapsedComposerCursor(text, collapsedCursor)).toBe(expandedCursor);
   });
 
-  it("maps expanded skill cursor back to collapsed cursor", () => {
-    const text = "run $review-follow-up then";
+  it.each(["$", "€", "𑿝"])("maps expanded %s skill cursor back to collapsed cursor", (prefix) => {
+    const text = `run ${prefix}review-follow-up then`;
     const collapsedCursorAfterSkill = "run ".length + 2;
-    const expandedCursorAfterSkill = "run $review-follow-up ".length;
+    const expandedCursorAfterSkill = `run ${prefix}review-follow-up `.length;
 
     expect(collapseExpandedComposerCursor(text, expandedCursorAfterSkill)).toBe(
       collapsedCursorAfterSkill,
     );
   });
+});
+
+it("preserves the caret before trailing text after mixed-width skill chips", () => {
+  const text = "𑿝ui a $review tail";
+  const expanded = "𑿝ui a $review ".length;
+  expect(collapseExpandedComposerCursor(text, expanded)).toBe(6);
+  expect(expandCollapsedComposerCursor(text, 6)).toBe(expanded);
 });
 
 describe("clampCollapsedComposerCursor", () => {

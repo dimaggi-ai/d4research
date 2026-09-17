@@ -69,6 +69,7 @@ it.effect("appends one visible warning when a completed pipeline turn faked dele
       readThreadEvents: () => Stream.empty,
       getThreadReplayStats: () => Effect.die("unused"),
       streamDomainEvents: Stream.fromIterable([completion]),
+      subscribeDomainEvents: Effect.succeed(Stream.fromIterable([completion])),
       latestSequence: Effect.succeed(0),
     });
     const layer = ResearchIntegrityReactorLive.pipe(

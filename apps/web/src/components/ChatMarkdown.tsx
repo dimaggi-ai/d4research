@@ -53,6 +53,7 @@ import { inlineCodeFilePathCandidate } from "@d4research/client-runtime/markdown
 import { mediaFileReference, mediaUrlReference } from "@d4research/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@d4research/shared/filePreview";
 import * as Cause from "effect/Cause";
+import { sourceControlRepositorySelector } from "@d4research/shared/sourceControl";
 import { AsyncResult } from "effect/unstable/reactivity";
 import React, {
   Children,
@@ -2905,7 +2906,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
               input: {
                 projectId: pullRequestProject.id,
                 repository:
-                  pullRequestProject.repositoryIdentity?.displayName ??
+                  sourceControlRepositorySelector(pullRequestProject.repositoryIdentity) ??
                   pullRequestCandidate.repository,
                 number: pullRequestCandidate.number,
               },

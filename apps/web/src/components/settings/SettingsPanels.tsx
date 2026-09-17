@@ -1,207 +1,114 @@
 import { Spinner } from "~/components/ui/spinner";
 
 import { NotificationSettings } from "./NotificationSettings";
-
-import { ChevronRightIcon } from "lucide-react";
-
-import { useNavigate } from "@tanstack/react-router";
-
-import { type DiffLayout } from "@d4research/contracts/settings";
-
-import { MAX_APPEARANCE_CONTRAST } from "@d4research/contracts/settings";
-
-import { MAX_PANEL_ANIMATION_DURATION_MS } from "@d4research/contracts/settings";
-
-import { MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS } from "@d4research/contracts/settings";
-
-import { MIN_APPEARANCE_CONTRAST } from "@d4research/contracts/settings";
-
-import { MIN_PANEL_ANIMATION_DURATION_MS } from "@d4research/contracts/settings";
-
-import { MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS } from "@d4research/contracts/settings";
-
-import { type QuitConfirmationMode } from "@d4research/contracts/settings";
-
+import {
+  ArchiveIcon,
+  ArchiveX,
+  CheckIcon,
+  ChevronRightIcon,
+  SettingsIcon,
+  InfoIcon,
+  LoaderIcon,
+  PlusIcon,
+  RefreshCwIcon,
+} from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  type BackgroundActivityProfile,
+  type DesktopUpdateChannel,
+  ProviderDriverKind,
+  type ProviderInstanceId,
+  type ScopedThreadRef,
+  type SidebarProjectGroupingMode,
+  defaultInstanceIdForDriver,
+  type EditorId,
+  type BackgroundActivitySettings,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderInstanceConfig,
+  type ModelSelection,
+} from "@d4research/contracts";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import {
+  isAtomCommandInterrupted,
+  settlePromise,
+  squashAtomCommandFailure,
+} from "@d4research/client-runtime/state/runtime";
+import {
+  DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+  DEFAULT_UNIFIED_SETTINGS,
+  type DiffLayout,
+  type EnvironmentIdentificationMode,
+  MAX_APPEARANCE_CONTRAST,
+  MAX_CODE_FONT_SIZE,
+  MAX_GLASS_OPACITY,
+  MAX_INTERFACE_FONT_SIZE,
+  MAX_PANEL_ANIMATION_DURATION_MS,
+  MAX_PROMPT_FONT_SIZE,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_CODE_FONT_SIZE,
+  MIN_APPEARANCE_CONTRAST,
+  MIN_GLASS_OPACITY,
+  MIN_INTERFACE_FONT_SIZE,
+  MIN_PANEL_ANIMATION_DURATION_MS,
+  MIN_PROMPT_FONT_SIZE,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  type ResponseStreamingMode,
+  MIN_TERMINAL_FONT_SIZE,
+  type QuitConfirmationMode,
+  DEFAULT_HANDOFF_LOCAL_MODEL,
+  DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS,
+  DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS,
+} from "@d4research/contracts/settings";
+import {
+  resolveServerBackgroundActivitySettings,
+  getBackgroundActivityBaseProfile,
+  getBackgroundActivityPresetSettings,
+} from "@d4research/shared/backgroundActivitySettings";
+import { createModelSelection } from "@d4research/shared/model";
+import * as Duration from "effect/Duration";
+import * as Equal from "effect/Equal";
+import * as Schema from "effect/Schema";
+import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import {
+  canCheckForUpdate,
+  getDesktopUpdateButtonTooltip,
+  getDesktopUpdateInstallConfirmationMessage,
+  isDesktopUpdateButtonDisabled,
+  resolveDesktopUpdateButtonAction,
+} from "../../components/desktopUpdate.logic";
+import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { TraitsPicker } from "../chat/TraitsPicker";
+import {
+  resolveEnvironmentIdentificationPillLabel,
+  useEnvironmentStageLabel,
+} from "../SidebarStageBackdrop";
+import { isElectron } from "../../env";
+import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
-
-import { readAppearanceModePreference } from "../../hooks/useTheme";
-
-import { readThemeHalves } from "../../hooks/useTheme";
-
-import { readThemePreference } from "../../hooks/useTheme";
-
-import { Collapsible } from "../ui/collapsible";
-
-import { CollapsiblePanel } from "../ui/collapsible";
-
-import { CollapsibleTrigger } from "../ui/collapsible";
-
-import { resolveTerminalFontSizePreference } from "../../appearanceFonts";
 
 import { ThemeLibrary } from "./ThemeSettings";
 
-import { getChangedBrowserSettingLabels } from "./SettingsPanels.logic";
-
-import { getChangedTypographySettingLabels } from "./SettingsPanels.logic";
-
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
-
-import { useSettingsSearchTarget } from "./settingsLayout";
-
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
-
-import { ArchiveIcon } from "lucide-react";
-
-import { ArchiveX } from "lucide-react";
-
-import { InfoIcon } from "lucide-react";
-
-import { LoaderIcon } from "lucide-react";
-
-import { PlusIcon } from "lucide-react";
-
-import { RefreshCwIcon } from "lucide-react";
-
-import { SettingsIcon } from "lucide-react";
-
-import { Link } from "@tanstack/react-router";
-
-import { type CSSProperties } from "react";
-
-import { type ReactNode } from "react";
-
-import { useCallback } from "react";
-
-import { useEffect } from "react";
-
-import { useMemo } from "react";
-
-import { useRef } from "react";
-
-import { useState } from "react";
-
-import { defaultInstanceIdForDriver } from "@d4research/contracts";
-
-import { type EditorId } from "@d4research/contracts";
-
-import { type BackgroundActivityProfile } from "@d4research/contracts";
-
-import { type BackgroundActivitySettings } from "@d4research/contracts";
-
-import { type DesktopUpdateChannel } from "@d4research/contracts";
-
-import { PROVIDER_DISPLAY_NAMES } from "@d4research/contracts";
-
-import { ProviderDriverKind } from "@d4research/contracts";
-
-import { type ProviderInstanceConfig } from "@d4research/contracts";
-
-import { type ProviderInstanceId } from "@d4research/contracts";
-
-import { type ScopedThreadRef } from "@d4research/contracts";
-
-import { type ModelSelection } from "@d4research/contracts";
-
-import { type SidebarProjectGroupingMode } from "@d4research/contracts";
-
-import { scopeThreadRef } from "@d4research/client-runtime/environment";
 
 import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
 
-import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
-
-import { settlePromise } from "@d4research/client-runtime/state/runtime";
-
-import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
-
-import { DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE } from "@d4research/contracts/settings";
-
-import { DEFAULT_UNIFIED_SETTINGS } from "@d4research/contracts/settings";
-
-import { type EnvironmentIdentificationMode } from "@d4research/contracts/settings";
-
-import { MAX_CODE_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MAX_GLASS_OPACITY } from "@d4research/contracts/settings";
-
-import { MAX_INTERFACE_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MAX_PROMPT_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MAX_TERMINAL_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MIN_CODE_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MIN_GLASS_OPACITY } from "@d4research/contracts/settings";
-
-import { MIN_INTERFACE_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MIN_PROMPT_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { MIN_TERMINAL_FONT_SIZE } from "@d4research/contracts/settings";
-
-import { getBackgroundActivityBaseProfile } from "@d4research/shared/backgroundActivitySettings";
-
-import { getBackgroundActivityPresetSettings } from "@d4research/shared/backgroundActivitySettings";
-
-import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
-
-import { createModelSelection } from "@d4research/shared/model";
-
 import * as Arr from "effect/Array";
-
-import { CheckIcon } from "lucide-react";
-
-import { type ResponseStreamingMode } from "@d4research/contracts/settings";
-import * as Duration from "effect/Duration";
-
-import * as Equal from "effect/Equal";
 
 import * as Result from "effect/Result";
 
-import * as Schema from "effect/Schema";
-
-import { APP_VERSION } from "../../branding";
-
-import { HOSTED_APP_CHANNEL } from "../../branding";
-
-import { HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-
-import { canCheckForUpdate } from "../../components/desktopUpdate.logic";
-
-import { getDesktopUpdateButtonTooltip } from "../../components/desktopUpdate.logic";
-
-import { getDesktopUpdateInstallConfirmationMessage } from "../../components/desktopUpdate.logic";
-
-import { isDesktopUpdateButtonDisabled } from "../../components/desktopUpdate.logic";
-
-import { resolveDesktopUpdateButtonAction } from "../../components/desktopUpdate.logic";
-
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-
 import { resolveOpenInOptions } from "../chat/OpenInPicker";
 
-import { TraitsPicker } from "../chat/TraitsPicker";
-
-import { resolveEnvironmentIdentificationPillLabel } from "../SidebarStageBackdrop";
-
-import { useEnvironmentStageLabel } from "../SidebarStageBackdrop";
-
-import { isElectron } from "../../env";
-
-import { buildHostedChannelSelectionUrl } from "../../hostedPairing";
-
-import { type HostedAppChannel } from "../../hostedPairing";
-
-import { useTheme } from "../../hooks/useTheme";
-
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-
-import { useScopedSettings } from "./useScopedSettings";
-
-import { useScopedSettingsMixed } from "./useScopedSettings";
-
-import { useUpdateScopedSettings } from "./useScopedSettings";
 
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 
@@ -213,37 +120,27 @@ import { useThreadActions } from "../../hooks/useThreadActions";
 
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
-
-import { resolveAppModelSelectionState } from "../../modelSelection";
-
-import { applyProviderInstanceSettings } from "../../providerInstances";
-
-import { deriveProviderInstanceEntries } from "../../providerInstances";
-
-import { getRedundantProviderInstanceIds } from "../../providerInstances";
-
-import { sortProviderInstanceEntries } from "../../providerInstances";
-
-import { ensureLocalApi } from "../../localApi";
-
-import { readLocalApi } from "../../localApi";
+import {
+  getRedundantProviderInstanceIds,
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  sortProviderInstanceEntries,
+} from "../../providerInstances";
 
 import { isMacPlatform } from "../../lib/utils";
 
-import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-
-import { primaryServerAvailableEditorsAtom } from "../../state/server";
-
-import { serverEnvironment } from "../../state/server";
+import {
+  EMPTY_SERVER_PROVIDERS,
+  primaryServerAvailableEditorsAtom,
+  serverEnvironment,
+  primaryServerProvidersAtom,
+} from "../../state/server";
 
 import { usePrimaryEnvironment } from "../../state/environments";
 
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 
-import { formatRelativeTimeLabel } from "../../timestampFormat";
-
-import { getRelativeTimeState } from "../../timestampFormat";
+import { formatRelativeTimeLabel, getRelativeTimeState } from "../../timestampFormat";
 
 import {
   AlertDialog,
@@ -256,129 +153,51 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 
-import { Dialog } from "../ui/dialog";
-
-import { DialogDescription } from "../ui/dialog";
-
-import { DialogFooter } from "../ui/dialog";
-
-import { DialogHeader } from "../ui/dialog";
-
-import { DialogPanel } from "../ui/dialog";
-
-import { DialogPopup } from "../ui/dialog";
-
-import { DialogTitle } from "../ui/dialog";
-
 import { DraftInput } from "../ui/draft-input";
 
 import { Input } from "../ui/input";
-
-import { DEFAULT_CODE_FONT_STACK } from "../../appearanceFonts";
-
-import { DEFAULT_SANS_FONT_STACK } from "../../appearanceFonts";
-
-import { isFontFamilyAvailable } from "../../appearanceFonts";
-
-import { isMonospaceFamily } from "../../appearanceFonts";
-
-import { resolveDefaultFamilyLabel } from "../../appearanceFonts";
-
-import { resolveTerminalFontPreference } from "../../appearanceFonts";
-
-import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
-
-import { CodeFontPreview } from "./SettingsFontPreviews";
-
-import { PromptFontPreview } from "./SettingsFontPreviews";
-
-import { TerminalFontPreview } from "./SettingsFontPreviews";
-
-import { discoverInstalledFonts } from "./FontFamilyPicker";
-
-import { FontFamilyPicker } from "./FontFamilyPicker";
-
-import { useFontEnumeration } from "./FontFamilyPicker";
-
-import { NumberField } from "../ui/number-field";
-
-import { NumberFieldDecrement } from "../ui/number-field";
-
-import { NumberFieldGroup } from "../ui/number-field";
-
-import { NumberFieldIncrement } from "../ui/number-field";
-
-import { NumberFieldInput } from "../ui/number-field";
-
-import { Select } from "../ui/select";
-
-import { SelectItem } from "../ui/select";
-
-import { SelectPopup } from "../ui/select";
-
-import { SelectTrigger } from "../ui/select";
-
-import { SelectValue } from "../ui/select";
 
 import { Switch } from "../ui/switch";
 
 import { ScopedSwitch } from "./ScopedSwitch";
 
-import { stackedThreadToast } from "../ui/toast";
-
-import { toastManager } from "../ui/toast";
-
-import { Tooltip } from "../ui/tooltip";
-
-import { TooltipPopup } from "../ui/tooltip";
-
-import { TooltipTrigger } from "../ui/tooltip";
-
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 
-import { canOneClickUpdateProviderCandidate } from "../ProviderUpdateLaunchNotification.logic";
-
-import { collectProviderUpdateCandidates } from "../ProviderUpdateLaunchNotification.logic";
-
-import { hasOneClickUpdateProviderCandidate } from "../ProviderUpdateLaunchNotification.logic";
-
-import { isProviderUpdateActive } from "../ProviderUpdateLaunchNotification.logic";
-
-import { type ProviderUpdateCandidate } from "../ProviderUpdateLaunchNotification.logic";
+import {
+  canOneClickUpdateProviderCandidate,
+  collectProviderUpdateCandidates,
+  hasOneClickUpdateProviderCandidate,
+  isProviderUpdateActive,
+  type ProviderUpdateCandidate,
+} from "../ProviderUpdateLaunchNotification.logic";
 
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 
-import { DRIVER_OPTIONS } from "./providerDriverMeta";
+import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 
-import { getDriverOption } from "./providerDriverMeta";
+import {
+  buildProviderInstanceUpdatePatch,
+  getChangedBrowserSettingLabels,
+  getChangedTypographySettingLabels,
+  backgroundActivitySharedPolicySettings,
+  hasChangedBackgroundActivitySettings,
+  isProjectGroupingEnabled,
+  projectGroupingModeFromToggle,
+  readLastEnabledProjectGroupingMode,
+  rememberEnabledProjectGroupingMode,
+  resolveBackgroundActivityProfileOption,
+} from "./SettingsPanels.logic";
 
-import { backgroundActivitySharedPolicySettings } from "./SettingsPanels.logic";
-
-import { buildProviderInstanceUpdatePatch } from "./SettingsPanels.logic";
-
-import { hasChangedBackgroundActivitySettings } from "./SettingsPanels.logic";
-
-import { isProjectGroupingEnabled } from "./SettingsPanels.logic";
-
-import { projectGroupingModeFromToggle } from "./SettingsPanels.logic";
-
-import { readLastEnabledProjectGroupingMode } from "./SettingsPanels.logic";
-
-import { rememberEnabledProjectGroupingMode } from "./SettingsPanels.logic";
-
-import { resolveBackgroundActivityProfileOption } from "./SettingsPanels.logic";
-
-import { SettingResetButton } from "./settingsLayout";
-
-import { SettingsPageContainer } from "./settingsLayout";
-
-import { SettingsRow } from "./settingsLayout";
-
-import { SettingsSection } from "./settingsLayout";
-
-import { useRelativeTimeTick } from "./settingsLayout";
-
-import { useSettingsSearchTargetId } from "./settingsLayout";
+import {
+  useRelativeTimeTick,
+  SETTINGS_PICKER_TRIGGER_CLASSNAME,
+  useSettingsSearchTarget,
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+  useSettingsSearchTargetId,
+} from "./settingsLayout";
 
 import { searchableSetting } from "./settingsSearch";
 
@@ -388,11 +207,53 @@ import { useAtomCommand } from "../../state/use-atom-command";
 
 import { usePreferredEditor } from "../../editorPreferences";
 
-import { DEFAULT_HANDOFF_LOCAL_MODEL } from "@d4research/contracts/settings";
-
-import { DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS } from "@d4research/contracts/settings";
-
-import { DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS } from "@d4research/contracts/settings";
+import {
+  readAppearanceModePreference,
+  readThemeHalves,
+  readThemePreference,
+  useTheme,
+} from "../../hooks/useTheme";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
+import {
+  getCustomModelOptionsByInstance,
+  resolveAppModelSelectionState,
+} from "../../modelSelection";
+import { ensureLocalApi, readLocalApi } from "../../localApi";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import {
+  DEFAULT_CODE_FONT_STACK,
+  DEFAULT_SANS_FONT_STACK,
+  isFontFamilyAvailable,
+  isMonospaceFamily,
+  resolveDefaultFamilyLabel,
+  resolveTerminalFontPreference,
+  TYPOGRAPHY_ADVANCED_STORAGE_KEY,
+} from "../../appearanceFonts";
+import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
+import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
   turn: "Wait for the full response",
@@ -975,6 +836,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer on scroll"]
         : []),
+      ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
+        ? ["Rich text composer"]
+        : []),
       ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
       ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
         ? ["Follow-up behavior"]
@@ -1037,6 +901,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
+      settings.composerRichTextEnabled,
       settings.sendShortcut,
       settings.followUpBehavior,
       settings.addProjectBaseDirectory,
@@ -1156,6 +1021,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
@@ -2954,6 +2820,33 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("composer-rich-text")}
+          description="Show formatted Markdown as you type."
+          resetAction={
+            settings.composerRichTextEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled ? (
+              <SettingResetButton
+                label="rich text composer"
+                onClick={() =>
+                  updateSettings({
+                    composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.composerRichTextEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ composerRichTextEnabled: Boolean(checked) })
+              }
+              aria-label="Rich text composer"
+            />
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("composer-collapse")}
           description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
           resetAction={
@@ -4560,4 +4453,3 @@ export function ArchivedThreadsPanel() {
 }
 import { useAtomValue } from "@effect/atom-react";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
-import { primaryServerProvidersAtom } from "../../state/server";

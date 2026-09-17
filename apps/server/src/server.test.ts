@@ -46,6 +46,7 @@ import {
   WsRpcGroup,
   EditorId,
   WorktreeSetupSnapshot,
+  type WorktreeSetupStageId,
 } from "@d4research/contracts";
 import {
   computeDpopAccessTokenHash,
@@ -761,7 +762,11 @@ const buildAppUnderTest = (options?: {
     );
 
     const servedRoutesLayer = HttpRouter.serve(
-      makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
+      // Viewed-file marks for a host that keeps none of its own are rows, so the routes want a
+      // database. Its own, in memory: nothing here shares a table with the auth store.
+      makeRoutesLayer.pipe(
+        Layer.provide(Layer.mergeAll(serviceLauncherClientLayer, SqlitePersistenceMemory)),
+      ),
       {
         disableListenLog: true,
         disableLogger: true,
@@ -9396,6 +9401,102 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect.each([
+    { caseName: "a non-repository", isRepository: false, failFetch: false },
+    { caseName: "a base without a commit", isRepository: true, failFetch: false },
+    { caseName: "a fetch failure", isRepository: true, failFetch: true },
+  ])(
+    "rejects required worktree bootstrap before creating a thread for $caseName",
+    ({ isRepository, failFetch }) =>
+      Effect.gen(function* () {
+        const dispatchedCommands: Array<OrchestrationCommand> = [];
+        const createWorktree = vi.fn(
+          (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
+            Effect.die(new Error("createWorktree must not run before a valid base is found")),
+        );
+
+        yield* buildAppUnderTest({
+          layers: {
+            vcsDriver: {
+              isInsideWorkTree: () => Effect.succeed(isRepository),
+            },
+            gitVcsDriver: {
+              execute: () =>
+                Effect.succeed({
+                  ...SUCCESSFUL_GIT_EXECUTION,
+                  exitCode: ChildProcessSpawner.ExitCode(128),
+                  stderr: "fatal: Needed a single revision",
+                }),
+              remoteExists: () => Effect.succeed(true),
+              fetchRemote: () => Effect.die(new Error("fetch failed before thread creation")),
+              createWorktree,
+            },
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  dispatchedCommands.push(command);
+                  return { sequence: dispatchedCommands.length };
+                }),
+              readEvents: () => Stream.empty,
+            },
+          },
+        });
+
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "thread.turn.start",
+              commandId: CommandId.make("cmd-required-worktree"),
+              threadId: ThreadId.make("thread-required-worktree"),
+              message: {
+                messageId: MessageId.make("msg-required-worktree"),
+                role: "user",
+                text: "hello",
+                attachments: [],
+              },
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              bootstrap: {
+                createThread: {
+                  projectId: defaultProjectId,
+                  title: "Bootstrap Thread",
+                  modelSelection: defaultModelSelection,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  branch: "main",
+                  worktreePath: null,
+                  createdAt,
+                },
+                prepareWorktree: {
+                  projectCwd: "/tmp/project",
+                  baseBranch: "main",
+                  requireWorktree: true,
+                  startFromOrigin: failFetch,
+                },
+              },
+              createdAt,
+            }),
+          ).pipe(Effect.result),
+        );
+
+        assertTrue(result._tag === "Failure");
+        assertTrue(result.failure._tag === "OrchestrationDispatchCommandError");
+        assert.strictEqual(result.failure.bootstrapThreadDisposition, "not-created");
+        assert.include(
+          result.failure.message,
+          failFetch ? "fetch failed" : "separate worktree requires",
+        );
+        assert.equal(createWorktree.mock.calls.length, 0);
+        assert.deepEqual(
+          dispatchedCommands.map((command) => command.type),
+          ["thread.activity.append"],
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("falls back to the project checkout when worktree mode targets a non-repository", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
@@ -9822,6 +9923,193 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         setupActivities.every((command) => command.activity.kind !== "setup-script.failed"),
       );
       assertTrue(dispatchedCommands.every((command) => command.type !== "thread.delete"));
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect.each([
+    {
+      caseName: "async setup scripts let the turn start before the script exits",
+      async: true,
+      cancel: false,
+    },
+    {
+      caseName: "sync setup scripts hold the turn until the script exits",
+      async: false,
+      cancel: false,
+    },
+    {
+      caseName: "cancelling worktree setup publishes its outcome and cleans up the thread",
+      async: false,
+      cancel: true,
+    },
+  ])("$caseName", ({ async, cancel }) =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const scriptExit = yield* Deferred.make<void>();
+      const runForThread = vi.fn(
+        (
+          _: Parameters<
+            ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"]
+          >[0],
+        ) =>
+          Effect.succeed({
+            status: "started" as const,
+            scriptId: "setup",
+            scriptName: "Setup",
+            scriptCommand: "npm install",
+            terminalId: "setup-setup",
+            cwd: "/tmp/bootstrap-worktree",
+            async,
+            completion: Deferred.await(scriptExit).pipe(Effect.as({ exitCode: 0, durationMs: 1 })),
+          }),
+      );
+
+      yield* buildAppUnderTest({
+        layers: {
+          vcsDriver: {
+            isInsideWorkTree: () => Effect.succeed(true),
+          },
+          gitVcsDriver: {
+            execute: () => Effect.succeed(SUCCESSFUL_GIT_EXECUTION),
+            createWorktree: () =>
+              Effect.succeed({
+                worktree: {
+                  refName: "t3code/bootstrap-refName",
+                  path: "/tmp/bootstrap-worktree",
+                },
+              }),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+          projectSetupScriptRunner: {
+            runForThread,
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make(`thread-bootstrap-${async ? "async" : "sync"}-setup`);
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const dispatchFiber = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make(`cmd-bootstrap-${async ? "async" : "sync"}-setup`),
+            threadId,
+            message: {
+              messageId: MessageId.make("msg-bootstrap-setup"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+              prepareWorktree: {
+                projectCwd: "/tmp/project",
+                baseBranch: "main",
+                branch: "t3code/bootstrap-refName",
+              },
+              runSetupScript: true,
+            },
+            createdAt,
+          }),
+        ),
+      ).pipe(Effect.forkChild);
+
+      const turnStarted = () =>
+        dispatchedCommands.some((command) => command.type === "thread.turn.start");
+      const snapshotWhere = (predicate: (snapshot: WorktreeSetupSnapshot) => boolean) =>
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.subscribeWorktreeSetup]({ threadId }).pipe(
+              Stream.filter(
+                (snapshot): snapshot is WorktreeSetupSnapshot =>
+                  snapshot !== null && predicate(snapshot),
+              ),
+              Stream.runHead,
+              Effect.map(Option.getOrThrow),
+            ),
+          ),
+        );
+      const stageStatus = (snapshot: WorktreeSetupSnapshot, id: WorktreeSetupStageId) =>
+        snapshot.stages.find((stage) => stage.id === id)?.status;
+
+      if (async) {
+        // The turn is dispatched while the script is still running.
+        const started = yield* snapshotWhere(
+          (snapshot) => stageStatus(snapshot, "agent") === "done",
+        );
+        assertTrue(turnStarted());
+        assert.equal(started.phase, "running");
+        assert.equal(stageStatus(started, "setup-script"), "running");
+        yield* Fiber.join(dispatchFiber);
+
+        yield* Deferred.succeed(scriptExit, undefined);
+        const settled = yield* snapshotWhere((snapshot) => snapshot.phase !== "running");
+        assert.equal(settled.phase, "done");
+        assert.equal(stageStatus(settled, "setup-script"), "done");
+        return;
+      }
+
+      // The script is running and the turn has not been dispatched yet.
+      const running = yield* snapshotWhere(
+        (snapshot) => stageStatus(snapshot, "setup-script") === "running",
+      );
+      assert.equal(stageStatus(running, "agent"), "pending");
+      assert.isFalse(turnStarted());
+
+      if (cancel) {
+        const cancelled = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) => client[WS_METHODS.worktreeSetupCancel]({ threadId })),
+        );
+        assert.isTrue(cancelled.cancelled);
+        assertTrue(dispatchedCommands.some((command) => command.type === "thread.delete"));
+        const outcome = dispatchedCommands.findLast(
+          (command) =>
+            command.type === "thread.activity.append" && command.activity.kind === "worktree-setup",
+        );
+        assertTrue(outcome?.type === "thread.activity.append");
+        assert.propertyVal(outcome.activity.payload, "phase", "cancelled");
+        const result = yield* Fiber.join(dispatchFiber).pipe(Effect.result);
+        assertTrue(result._tag === "Failure");
+        assert.propertyVal(result.failure, "message", "Worktree setup cancelled.");
+        assert.propertyVal(result.failure, "bootstrapThreadDisposition", "deleted");
+        assert.isFalse(turnStarted());
+        return;
+      }
+
+      // The client that sent the message goes away mid-setup (a reload or a
+      // dropped socket). The bootstrap belongs to the server, not the
+      // connection: the thread already exists for every client, so it must
+      // finish and start the turn regardless.
+      yield* Fiber.interrupt(dispatchFiber);
+      assert.isFalse(turnStarted());
+
+      yield* Deferred.succeed(scriptExit, undefined);
+      yield* snapshotWhere((snapshot) => stageStatus(snapshot, "agent") === "done");
+      assertTrue(turnStarted());
+      const settled = yield* snapshotWhere((snapshot) => snapshot.phase !== "running");
+      assert.equal(settled.phase, "done");
+      assert.equal(stageStatus(settled, "setup-script"), "done");
+      assert.equal(stageStatus(settled, "agent"), "done");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

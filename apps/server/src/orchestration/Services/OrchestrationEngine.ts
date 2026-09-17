@@ -86,7 +86,7 @@ export interface OrchestrationEngineShape {
    * Acquire a domain-event subscription before starting a consumer.
    * The subscription is ready when this effect returns and closes with the scope.
    */
-  readonly subscribeDomainEvents?: Effect.Effect<
+  readonly subscribeDomainEvents: Effect.Effect<
     Stream.Stream<OrchestrationEvent>,
     never,
     Scope.Scope

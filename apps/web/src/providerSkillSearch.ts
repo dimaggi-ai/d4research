@@ -1,13 +1,14 @@
-import { dedupeProviderSkillsByName } from "@d4research/client-runtime/providerSkills";
-import { isProviderSkillUserInvocable } from "@d4research/client-runtime/providerSkills";
 import type { ServerProviderSkill } from "@d4research/contracts";
+import {
+  dedupeProviderSkillsByName,
+  formatProviderSkillDisplayName,
+  isProviderSkillUserInvocable,
+} from "@d4research/client-runtime/providerSkills";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
 } from "@d4research/shared/searchRanking";
-
-import { formatProviderSkillDisplayName } from "./providerSkillPresentation";
 
 export function scoreProviderSkill(skill: ServerProviderSkill, query: string): number | null {
   const normalizedName = skill.name.toLowerCase();
@@ -74,7 +75,7 @@ export function searchProviderSkills(
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
   const enabledSkills = dedupeProviderSkillsByName(skills.filter(isProviderSkillUserInvocable));
-  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\$+/ });
+  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\p{Sc}+/u });
 
   if (!normalizedQuery) {
     return enabledSkills;

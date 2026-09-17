@@ -33,6 +33,7 @@ import { Route as SettingsResearchRouteImport } from './routes/settings.research
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
+import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsToolGuardRouteImport } from './routes/settings.tool-guard'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
@@ -157,6 +158,11 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsStorageRoute = SettingsStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsToolGuardRoute = SettingsToolGuardRouteImport.update({
   id: '/tool-guard',
   path: '/tool-guard',
@@ -198,6 +204,7 @@ export interface FileRoutesByFullPath {
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tool-guard': typeof SettingsToolGuardRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByTo {
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tool-guard': typeof SettingsToolGuardRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -255,6 +263,7 @@ export interface FileRoutesById {
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tool-guard': typeof SettingsToolGuardRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -286,6 +295,7 @@ export interface FileRouteTypes {
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
+    | '/settings/storage'
     | '/settings/tool-guard'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
+    | '/settings/storage'
     | '/settings/tool-guard'
     | '/'
     | '/$environmentId/$threadId'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
+    | '/settings/storage'
     | '/settings/tool-guard'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
@@ -528,6 +540,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSourceControlRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/storage': {
+      id: '/settings/storage'
+      path: '/storage'
+      fullPath: '/settings/storage'
+      preLoaderRoute: typeof SettingsStorageRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/tool-guard': {
       id: '/settings/tool-guard'
       path: '/tool-guard'
@@ -584,6 +603,7 @@ interface SettingsRouteChildren {
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsToolGuardRoute: typeof SettingsToolGuardRoute
 }
 
@@ -603,6 +623,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSnapShotRoute: SettingsSnapShotRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsStorageRoute: SettingsStorageRoute,
   SettingsToolGuardRoute: SettingsToolGuardRoute,
 }
 

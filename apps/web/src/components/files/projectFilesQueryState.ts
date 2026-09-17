@@ -1,11 +1,13 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  ProjectListEntriesResult,
-  ProjectReadFileResult,
+import {
+  type EnvironmentId,
+  type ProjectListEntriesResult,
+  ProjectReadFileError,
+  type ProjectReadFileResult,
 } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback } from "react";
 
@@ -30,6 +32,11 @@ interface ProjectQueryState<A> {
   readonly error: string | null;
   readonly isPending: boolean;
   readonly refresh: () => void;
+}
+
+interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult> {
+  /** The path exists but is not a regular file, typically a directory. */
+  readonly isNotFile: boolean;
 }
 
 function getProjectEntriesQueryAtom(
@@ -125,56 +132,16 @@ export function clearProjectFileQueryData(
   appAtomRegistry.set(optimisticFileAtom(environmentId, cwd, relativePath), null);
 }
 
-function isMissingFileReadError(cause: unknown): cause is {
-  readonly relativePath?: string;
-  readonly cwd?: string;
-} {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "_tag" in cause &&
-    cause._tag === "ProjectReadFileError" &&
-    "operation" in cause &&
-    cause.operation === "realpath-target"
-  );
+function failureCause<A>(result: AsyncResult.AsyncResult<A, unknown>): unknown {
+  return result._tag === "Failure" ? Cause.squash(result.cause) : null;
 }
 
-function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | null {
-  if (result._tag !== "Failure") return null;
-  const cause = Cause.squash(result.cause);
-  // Chat messages linkify any path-shaped text, including paths that belong
-  // to a different project than the active thread. Opening one fails the
-  // target realpath — explain that instead of surfacing the raw read error.
-  if (isMissingFileReadError(cause)) {
-    const path = cause.relativePath ?? "This file";
-    return `${path} doesn't exist in this workspace. It may belong to a different project, or it was moved or deleted.`;
-  }
+function errorMessage(cause: unknown): string | null {
+  if (cause === null) return null;
   return cause instanceof Error ? cause.message : "Workspace query failed.";
 }
 
-/**
- * Entries for callers that may not have an environment or workspace yet (chat
- * rendering runs before a thread is bound). Missing inputs resolve to a stable
- * empty atom so no query is issued and hook order stays constant.
- */
-export function useOptionalProjectEntriesQuery(
-  environmentId: EnvironmentId | null,
-  cwd: string | undefined,
-): ProjectQueryState<ProjectListEntriesResult> {
-  const atom =
-    environmentId && cwd
-      ? getProjectEntriesQueryAtom(environmentId, cwd)
-      : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
-  const result = useAtomValue(atom);
-  const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
-  return {
-    data: Option.getOrNull(AsyncResult.value(result)),
-    error: errorMessage(result),
-    isPending: result.waiting,
-    refresh,
-  };
-}
+const isProjectReadFileError = Schema.is(ProjectReadFileError);
 
 export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
@@ -187,7 +154,7 @@ export function useProjectEntriesQuery(
   const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
-    error: errorMessage(result),
+    error: errorMessage(failureCause(result)),
     isPending: result.waiting,
     refresh,
   };
@@ -233,7 +200,9 @@ export function useProjectFileQuery(
   cwd: string,
   relativePath: string | null,
   enabled = true,
-): ProjectQueryState<ProjectReadFileResult> {
+): ProjectFileQueryState {
+  // The caller decides what to read. A media path is not skipped here: a folder
+  // named `assets.png` is only knowable as a folder from the read failure.
   const atom = enabled
     ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
     : EMPTY_PROJECT_FILE_QUERY_ATOM;
@@ -245,10 +214,12 @@ export function useProjectFileQuery(
     optimisticFileAtom(environmentId, cwd, relativePath ?? EMPTY_PROJECT_FILE_PATH),
   );
   const optimisticFile = relativePath === null ? null : optimisticResult;
+  const cause = failureCause(result);
 
   return {
     data: optimisticFile?.data ?? data,
-    error: errorMessage(result),
+    error: errorMessage(cause),
+    isNotFile: isProjectReadFileError(cause) && cause.failure === "path_not_file",
     isPending: result.waiting,
     refresh,
   };

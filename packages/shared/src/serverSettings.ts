@@ -301,6 +301,8 @@ export function applyServerSettingsPatch(
     skills: skillsPatch,
     research: researchPatch,
     dev: devPatch,
+    worktreeCleanup: worktreeCleanupPatch,
+    // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
@@ -410,6 +412,26 @@ export function applyServerSettingsPatch(
     : replacedThreadSkills;
   const nextWithReplacementsBase = {
     ...next,
+    ...(worktreeCleanupPatch === undefined
+      ? {}
+      : {
+          worktreeCleanup:
+            worktreeCleanupPatch?.mode === "custom"
+              ? {
+                  mode: "custom" as const,
+                  rules: {
+                    worktreeAfterDays: next.storageCleanup.worktreeAfterDays,
+                    worktreeOnMerge: next.storageCleanup.worktreeOnMerge,
+                    worktreeOnDelete: next.storageCleanup.worktreeOnDelete,
+                    worktreeUnchanged: next.storageCleanup.worktreeUnchanged,
+                    ...(current.worktreeCleanup?.mode === "custom"
+                      ? current.worktreeCleanup.rules
+                      : {}),
+                    ...worktreeCleanupPatch.rules,
+                  },
+                }
+              : worktreeCleanupPatch,
+        }),
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {

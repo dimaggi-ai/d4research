@@ -1,7 +1,7 @@
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
 import type { ServerProviderSkill } from "@d4research/contracts";
+import { formatProviderSkillDisplayName } from "@d4research/client-runtime/providerSkills";
 
-import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import {
   CHAT_INLINE_CHIP_CLASS_NAME,
   CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
@@ -12,7 +12,7 @@ import {
 import { cn } from "~/lib/utils";
 
 const SKILL_TOKEN_REGEX =
-  /(^|\s)\$(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/g;
+  /(^|\s)\p{Sc}(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/gu;
 
 type InlineSkill = Pick<ServerProviderSkill, "name" | "displayName">;
 
@@ -34,7 +34,7 @@ export function SkillInlineText(props: { text: string; skills: ReadonlyArray<Inl
       nodes.push(props.text.slice(cursor, start));
     }
     nodes.push(<SkillChip key={`${start}:${name}`} skill={skill} rawText={rawText} />);
-    cursor = start + rawText.length;
+    cursor = (match.index ?? 0) + match[0].length;
   }
 
   if (cursor === 0) {

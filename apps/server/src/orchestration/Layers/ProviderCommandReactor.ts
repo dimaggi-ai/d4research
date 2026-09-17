@@ -1,4 +1,5 @@
 import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
+import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   canStartProviderTurn,
   type ChatAttachment,
@@ -52,6 +53,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -458,6 +460,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
+  const path = yield* Path.Path;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const inlineDelegationRunner = yield* InlineDelegationRunner;
@@ -2693,16 +2696,26 @@ const make = Effect.gen(function* () {
           return;
         }
         const cachedModelSelection = threadModelSelections.get(event.payload.threadId);
-        yield* ensureSessionForThread(
+        const resume = ensureSessionForThread(
           event.payload.threadId,
           event.occurredAt,
           cachedModelSelection !== undefined ? { modelSelection: cachedModelSelection } : {},
         );
+        yield* thread.worktreePath
+          ? withWorkspaceLease(path.resolve(thread.worktreePath), resume)
+          : resume;
         return;
       }
       case "thread.turn-start-requested":
         {
-          const fiber = yield* processTurnStartRequested(event).pipe(
+          const thread = yield* resolveThreadShell(event.payload.threadId);
+          const startTurn = thread?.worktreePath
+            ? withWorkspaceLease(
+                path.resolve(thread.worktreePath),
+                processTurnStartRequested(event),
+              )
+            : processTurnStartRequested(event);
+          const fiber = yield* startTurn.pipe(
             // A forked turn owns this receipt. Completing it in the event worker
             // would advance the queue before the turn has checked cancellation.
             Effect.ensuring(
@@ -2868,9 +2881,7 @@ const make = Effect.gen(function* () {
     // Acquire the hot PubSub subscription before returning from start. Using
     // streamDomainEvents directly leaves a race where an immediately
     // dispatched command can publish before the forked stream subscribes.
-    const domainEvents = orchestrationEngine.subscribeDomainEvents
-      ? yield* orchestrationEngine.subscribeDomainEvents
-      : orchestrationEngine.streamDomainEvents;
+    const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
     yield* forkParked(Stream.runForEach(domainEvents, processEvent));
 
     // Earlier events do not replay. Clear interrupted requests by their captured

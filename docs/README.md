@@ -55,6 +55,8 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Providers](./internals/providers.md)
 - [Tool Guard internals](./internals/tool-guard.md)
 - [Handoff compression](./internals/handoff-compression.md)
+- [Pull request file revisions](./internals/pull-request-file-revisions.md)
+- [Model classification](./internals/model-manifest.md)
 - [Remote environments](./internals/remote.md)
 - [Server updates](./internals/server-updates.md)
 - [Resource telemetry](./internals/resource-telemetry.md)

@@ -1,3 +1,7 @@
+import { worktreeSetupAgentStarted } from "@d4research/client-runtime/worktree-setup";
+export { worktreeSetupAgentStarted } from "@d4research/client-runtime/worktree-setup";
+import * as Equal from "effect/Equal";
+import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@d4research/client-runtime/codex-markdown-directives";
 import { commandProgramName } from "@d4research/client-runtime/work-log/command-label";
 import {
@@ -9,6 +13,10 @@ import {
   toolGroupAction,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
+} from "@d4research/client-runtime/work-log/presentation";
+export {
+  normalizeCompactToolLabel,
+  toolGroupAction,
 } from "@d4research/client-runtime/work-log/presentation";
 import {
   type MessageId,
@@ -25,8 +33,6 @@ import {
   mightBeInlineDelegateTrigger,
   parseInlineDelegateTrigger,
 } from "@d4research/shared/researchPipeline";
-import * as Equal from "effect/Equal";
-import { shallow } from "zustand/vanilla/shallow";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   formatDuration,
@@ -42,11 +48,6 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
-
-export {
-  normalizeCompactToolLabel,
-  toolGroupAction,
-} from "@d4research/client-runtime/work-log/presentation";
 
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 
@@ -327,7 +328,7 @@ export type TimelineLatestTurn = Pick<
   "turnId" | "state" | "startedAt" | "completedAt"
 >;
 
-export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
+const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 type ActivityEntry = Extract<TimelineEntry, { kind: "message" | "work" }>;
 
@@ -338,8 +339,7 @@ function isActivityEntry(entry: TimelineEntry): entry is ActivityEntry {
         entry.entry.agentSpawn === undefined &&
         entry.entry.questionAnswer === undefined &&
         entry.entry.sourceActivityKind !== "context-compaction" &&
-        entry.entry.tone !== "error" &&
-        !workEntryDisplayIndicatesToolFailure(entry.entry);
+        entry.entry.tone !== "error";
 }
 
 export type MessagesTimelineRow =
@@ -409,7 +409,6 @@ export type MessagesTimelineRow =
       handoffExpanded: boolean;
       delegate: TimelineDelegate | null;
       durationStart: string;
-      reasoningMessages?: ReadonlyArray<ChatMessage>;
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
@@ -1184,7 +1183,9 @@ export function deriveMessagesTimelineRows(input: {
         const active =
           input.isWorking &&
           activityTurnId === unsettledTurnId &&
-          cursor === input.timelineEntries.length;
+          cursor === input.timelineEntries.length &&
+          !latestToolFailed &&
+          (latestVisibleToolEntry === undefined || latestToolKeepsActivityLive);
         const groupId =
           timelineEntry.kind === "work"
             ? workGroupId(timelineEntry.id, timelineEntry.entry)
@@ -1505,11 +1506,6 @@ export function deriveMessagesTimelineRows(input: {
 }
 
 export const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
-
-/** True once the bootstrap handed off to the agent (async setup script may still run). */
-export function worktreeSetupAgentStarted(snapshot: WorktreeSetupSnapshot): boolean {
-  return snapshot.stages.some((stage) => stage.id === "agent" && stage.status === "done");
-}
 
 type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 

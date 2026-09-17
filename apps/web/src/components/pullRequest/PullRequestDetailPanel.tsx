@@ -138,13 +138,13 @@ import {
   isStackedPullRequestBase,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
-  pullRequestComposerTarget,
   pullRequestCheckoutCommand,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   PULL_REQUEST_MERGE_METHOD_LABELS,
   readableFailure,
   readPullRequestDetailSnapshot,
+  resolvePullRequestReferenceHost,
   resolveDisplayedPullRequestDetail,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
@@ -510,10 +510,7 @@ export function PullRequestDetailPanel({
    * again is at best a no-op and at worst git refusing a branch two checkouts.
    */
   context?: "page" | "thread";
-  /**
-   * The open thread's composer. Beside the thread whose own pull request this is, hand-offs
-   * land here instead of opening a new thread — the branch is already under the reader's feet.
-   */
+  /** The open thread's composer. */
   composerDraftTarget?: ScopedThreadRef | DraftId;
   /**
    * Beside a thread, the way back to that thread's list of pull requests. The tab strip can
@@ -523,18 +520,23 @@ export function PullRequestDetailPanel({
   onBack?: (() => void) | undefined;
 }) {
   const environmentConfigs = useServerConfigs();
+  const projects = useProjects();
+  const repositoryIdentity = projects.find(
+    (project) =>
+      project.id === requestedReference.projectId && project.environmentId === environmentId,
+  )?.repositoryIdentity;
   const supportsThreadPullRequests =
     environmentConfigs.get(environmentId)?.environment.capabilities.threadPullRequests === true;
   const reference = useMemo(
     () =>
       supportsThreadPullRequests
-        ? requestedReference
+        ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
         : {
             projectId: requestedReference.projectId,
             repository: requestedReference.repository,
             number: requestedReference.number,
           },
-    [requestedReference, supportsThreadPullRequests],
+    [requestedReference, repositoryIdentity, supportsThreadPullRequests],
   );
   const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
@@ -881,7 +883,6 @@ export function PullRequestDetailPanel({
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projects = useProjects();
   const unavailableGitHubUrl = useMemo(() => {
     const identity = projects.find(
       (project) => project.id === reference.projectId && project.environmentId === environmentId,
@@ -1059,10 +1060,7 @@ export function PullRequestDetailPanel({
     reviewComments?: ReadonlyArray<ReviewCommentContext>;
   };
 
-  // Beside the thread whose own pull request this is, a task belongs in that thread's composer:
-  // the branch is already checked out under it, so opening a second thread would only scatter
-  // the work.
-  const attachTarget = pullRequestComposerTarget(context, composerDraftTarget);
+  const attachTarget = composerDraftTarget ?? null;
   const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {

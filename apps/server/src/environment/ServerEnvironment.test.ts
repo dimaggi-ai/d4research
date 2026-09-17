@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ORCHESTRATION_PROTOCOL_VERSION } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,6 +32,8 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
+    otlpHeaders: undefined,
+    otlpProtocol: "http/json",
     cwd: process.cwd(),
     baseDir,
     mode: "web",
@@ -67,6 +70,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
 
       expect(first.environmentId).toBe(second.environmentId);
+      expect(first.orchestrationProtocolVersion).toBe(ORCHESTRATION_PROTOCOL_VERSION);
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.pullRequests).toBe(true);

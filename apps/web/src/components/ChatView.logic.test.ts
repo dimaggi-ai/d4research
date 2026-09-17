@@ -12,6 +12,7 @@ import {
   ThreadId,
   TurnId,
   type ServerProvider,
+  type WorktreeSetupSnapshot,
 } from "@d4research/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -46,6 +47,7 @@ import {
   deriveThreadPipelineKind,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
+  findRecordedWorktreeSetup,
   getAntigravitySendBlockReason,
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
@@ -76,6 +78,7 @@ import {
   resolveSendEnvMode,
   resolveThreadMetadataUpdateForNextTurn,
   resolveThreadSwitchTimeline,
+  resolveVisibleWorktreeSetup,
   restorePlanFollowUpComposer,
   scheduleEnvironmentReconnectWarning,
   shouldDeleteFailedResearchThread,
@@ -1465,6 +1468,12 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
 
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
+    expect(
+      hasServerAcknowledgedLocalDispatch({
+        ...common,
+        latestTurnStartFailureId: "turn-start-failure-1",
+      }),
+    ).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
   });
 
@@ -2046,29 +2055,35 @@ describe("proactive panels", () => {
     ).toBe(false);
   });
 
-  it("opens a completed turn diff only for changed files", () => {
-    const changedCheckpoint = {
-      status: "ready",
-      files: [{ path: "src/app.ts", kind: "modified", additions: 1, deletions: 0 }],
-    } satisfies Pick<TurnDiffSummary, "status" | "files">;
-    const unchangedCheckpoint = {
-      status: "ready",
-      files: [],
-    } satisfies Pick<TurnDiffSummary, "status" | "files">;
+  it.each([
+    { files: 0, additions: 0, deletions: 0, action: "ignore" },
+    { files: 1, additions: 1, deletions: 0, action: "ignore" },
+    { files: 2, additions: 12, deletions: 12, action: "ignore" },
+    { files: 1, additions: 25, deletions: 24, action: "ignore" },
+    { files: 1, additions: 25, deletions: 25, action: "open" },
+    { files: 1, additions: 0, deletions: 50, action: "open" },
+    { files: 3, additions: 1, deletions: 0, action: "open" },
+  ])(
+    "uses change size for automatic diffs: $files files, +$additions/-$deletions",
+    ({ files, additions, deletions, action }) => {
+      const changedCheckpoint = {
+        status: "ready",
+        files: Array.from({ length: files }, (_, index) => ({
+          path: `src/app-${index}.ts`,
+          kind: "modified" as const,
+          additions,
+          deletions,
+        })),
+      } satisfies Pick<TurnDiffSummary, "status" | "files">;
 
-    expect(
-      resolveProactiveTurnDiffAction({
-        checkpoint: changedCheckpoint,
-        isGitRepo: true,
-      }),
-    ).toBe("open");
-    expect(
-      resolveProactiveTurnDiffAction({
-        checkpoint: unchangedCheckpoint,
-        isGitRepo: true,
-      }),
-    ).toBe("ignore");
-  });
+      expect(
+        resolveProactiveTurnDiffAction({
+          checkpoint: changedCheckpoint,
+          isGitRepo: true,
+        }),
+      ).toBe(action);
+    },
+  );
 
   it("waits for definitive checkpoint and repository state", () => {
     const missingCheckpoint = {
@@ -2251,6 +2266,30 @@ describe("draft hero submission transition", () => {
         isDraftHeroState: true,
         activeThreadKey: "environment-local:thread-1",
         submissionIntent: "background",
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves the hero layout while a worktree setup card is on the timeline", () => {
+    expect(
+      resolveDraftHeroState({
+        isLocalDraftThread: true,
+        hasTimelineEntries: false,
+        isWorking: false,
+        draftHeroDockRequested: false,
+        backgroundSubmissionPending: false,
+        hasWorktreeSetupCard: true,
+      }),
+    ).toBe(false);
+    // A background submission normally pins the hero, but never over the card.
+    expect(
+      resolveDraftHeroState({
+        isLocalDraftThread: true,
+        hasTimelineEntries: false,
+        isWorking: false,
+        draftHeroDockRequested: false,
+        backgroundSubmissionPending: true,
+        hasWorktreeSetupCard: true,
       }),
     ).toBe(false);
   });
@@ -2563,20 +2602,10 @@ describe("draft promotion during worktree setup", () => {
   const serverThreadRef = { environmentId, threadId };
 
   it.each([null, "idle", "starting", "ready"] as const)(
-    "keeps the draft mounted while the first turn waits with session %s",
+    "keeps the draft mounted until the server owns the send, with session %s",
     (status) => {
       const serverThread = makeThread({
-        messages: [
-          {
-            id: MessageId.make("submitted-message"),
-            role: "user",
-            text: "Start in a new worktree",
-            turnId: null,
-            createdAt: now,
-            updatedAt: now,
-            streaming: false,
-          },
-        ],
+        messages: [],
         session: status ? { ...readySession, status } : null,
       });
 
@@ -2589,6 +2618,31 @@ describe("draft promotion during worktree setup", () => {
       ).toBeNull();
     },
   );
+
+  it("promotes once the bootstrap persisted the user message, before any turn", () => {
+    const serverThread = makeThread({
+      messages: [
+        {
+          id: MessageId.make("submitted-message"),
+          role: "user",
+          text: "Start in a new worktree",
+          turnId: null,
+          createdAt: now,
+          updatedAt: now,
+          streaming: false,
+        },
+      ],
+      session: null,
+    });
+
+    expect(
+      resolveDraftPromotionNavigationTarget({
+        serverThreadRef,
+        serverThread,
+        backgroundSubmissionPending: false,
+      }),
+    ).toEqual(serverThreadRef);
+  });
 
   it("promotes when the provider starts the first turn", () => {
     const latestTurn = { ...completedTurn, state: "running" as const, completedAt: null };
@@ -2617,6 +2671,115 @@ describe("draft promotion during worktree setup", () => {
       ).toEqual(serverThreadRef);
     },
   );
+});
+
+describe("worktree setup visibility", () => {
+  const stage = (
+    id: "fetch" | "checkout" | "submodules" | "setup-script" | "agent",
+    status: "done" | "running" | "failed" | "pending",
+  ) => ({
+    id,
+    status,
+    startedAt: now,
+    endedAt: status === "running" || status === "pending" ? null : now,
+    percent: null,
+    detail: null,
+    tail: [],
+  });
+  const base = {
+    threadId,
+    phase: "running" as const,
+    startedAt: now,
+    endedAt: null,
+    branch: "feature",
+    baseRef: "main",
+    worktreePath: null,
+    setupScript: null,
+    stages: [stage("checkout", "running"), stage("agent", "pending")],
+    error: null,
+    sequence: 1,
+  };
+  const settledDone = {
+    ...base,
+    phase: "done" as const,
+    endedAt: now,
+    stages: [stage("checkout", "done"), stage("setup-script", "done"), stage("agent", "done")],
+  };
+
+  it("reads the settled snapshot back from the thread's activities", () => {
+    const activities = [
+      { kind: "setup-script.started", payload: {} },
+      { kind: "worktree-setup", payload: settledDone },
+      { kind: "worktree-setup", payload: { not: "a snapshot" } },
+    ];
+    expect(findRecordedWorktreeSetup(activities, threadId)).toEqual(settledDone);
+    expect(findRecordedWorktreeSetup(activities, ThreadId.make("other"))).toBeNull();
+  });
+
+  it("shows a running setup and drops a clean one once the turn started", () => {
+    const visible = (snapshot: WorktreeSetupSnapshot | null, turnStarted: boolean) =>
+      resolveVisibleWorktreeSetup({
+        live: null,
+        recorded: snapshot,
+        turnStarted,
+        followUpSent: false,
+      });
+    expect(
+      resolveVisibleWorktreeSetup({
+        live: base,
+        recorded: null,
+        turnStarted: false,
+        followUpSent: false,
+      }),
+    ).toEqual(base);
+    expect(visible(settledDone, false)).toEqual(settledDone);
+    expect(visible(settledDone, true)).toBeNull();
+    expect(visible(null, true)).toBeNull();
+  });
+
+  it("keeps a failed script, a failed setup, and a cancelled setup visible", () => {
+    const scriptFailed = {
+      ...settledDone,
+      stages: [stage("checkout", "done"), stage("setup-script", "failed"), stage("agent", "done")],
+    };
+    const visible = (snapshot: WorktreeSetupSnapshot, followUpSent = false) =>
+      resolveVisibleWorktreeSetup({
+        live: null,
+        recorded: snapshot,
+        turnStarted: true,
+        followUpSent,
+      });
+    expect(visible(scriptFailed)).toEqual(scriptFailed);
+    const failed = { ...settledDone, phase: "failed" as const, error: "git exploded" };
+    expect(visible(failed)).toEqual(failed);
+    const cancelled = { ...settledDone, phase: "cancelled" as const };
+    expect(visible(cancelled)).toEqual(cancelled);
+
+    // The setup belongs to the first turn. A follow-up send retires every
+    // settled outcome; only a script that is still running stays.
+    expect(visible(scriptFailed, true)).toBeNull();
+    expect(visible(failed, true)).toBeNull();
+    expect(visible(cancelled, true)).toBeNull();
+    expect(visible(settledDone, true)).toBeNull();
+    const stillRunning = {
+      ...base,
+      stages: [stage("checkout", "done"), stage("setup-script", "running"), stage("agent", "done")],
+    };
+    expect(visible(stillRunning, true)).toEqual(stillRunning);
+  });
+
+  it("prefers whichever snapshot is newer by sequence", () => {
+    const pick = (live: WorktreeSetupSnapshot | null, recorded: WorktreeSetupSnapshot | null) =>
+      resolveVisibleWorktreeSetup({ live, recorded, turnStarted: false, followUpSent: false });
+    expect(pick({ ...base, sequence: 3 }, { ...settledDone, sequence: 7 })).toEqual({
+      ...settledDone,
+      sequence: 7,
+    });
+    expect(pick({ ...settledDone, sequence: 9 }, { ...base, sequence: 1 })).toEqual({
+      ...settledDone,
+      sequence: 9,
+    });
+  });
 });
 
 describe("resolveBackgroundDraftWorkspaceOptions", () => {

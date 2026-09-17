@@ -20,13 +20,6 @@ import * as ServerConfig from "./config.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
-
-it("uses the canonical Codex default for auto-bootstrapped model selection", () => {
-  assert.deepStrictEqual(ServerRuntimeStartup.getAutoBootstrapDefaultModelSelection(), {
-    instanceId: ProviderInstanceId.make("codex"),
-    model: DEFAULT_MODEL,
-  });
-});
 import * as ServerSettings from "./serverSettings.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 
@@ -170,14 +163,15 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        getCommandReadModel: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
-        getEventReplayStats: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
+        getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
           Effect.succeed(
             Option.some({
@@ -216,6 +210,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
             Effect.as({ sequence: 1 }),
           ),
         streamDomainEvents: Stream.empty,
+        subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
       Effect.provide(NodeServices.layer),
@@ -298,14 +293,15 @@ it.effect.each([
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        getCommandReadModel: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
-        getEventReplayStats: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
+        getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () =>
           Effect.succeed(
             existing
@@ -343,6 +339,7 @@ it.effect.each([
             Effect.as({ sequence: 1 }),
           ),
         streamDomainEvents: Stream.empty,
+        subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
       Effect.provide(NodeServices.layer),
@@ -383,6 +380,7 @@ it.effect(
         } as never),
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.succeed([]),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
@@ -445,14 +443,15 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
-        getCommandReadModel: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
-        getEventReplayStats: () => Effect.die("unused"),
+        listActivitiesByKind: () => Effect.succeed([]),
+        getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
+        getEventReplayStats: () => Effect.die("unused"),
         getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
         getProjectShells: () => Effect.die("unused"),
         getProjectShellById: () => Effect.die("unused"),
@@ -476,6 +475,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
             Effect.as({ sequence: 1 }),
           ),
         streamDomainEvents: Stream.empty,
+        subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       } satisfies OrchestrationEngine.OrchestrationEngineService["Service"]),
       Effect.provideService(Crypto.Crypto, {

@@ -26,7 +26,7 @@ import {
   type ServerRemoveKeybindingInput,
   type ServerUpsertKeybindingInput,
 } from "@d4research/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@d4research/shared/keybindings";
+import { mergeWithDefaultKeybindings } from "@d4research/shared/keybindings";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -1334,7 +1334,11 @@ export function KeybindingsSettingsPanel() {
   // fan out to every connected environment in the selection, so one
   // shortcut change reaches each machine the user runs T3 Code on.
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
-  const keybindings = primaryEnvironment?.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
+  const serverKeybindings = primaryEnvironment?.serverConfig?.keybindings;
+  const keybindings = useMemo(
+    () => mergeWithDefaultKeybindings(serverKeybindings ?? []),
+    [serverKeybindings],
+  );
   const keybindingsConfigPath = primaryEnvironment?.serverConfig?.keybindingsConfigPath ?? null;
   const availableEditors = primaryEnvironment?.serverConfig?.availableEditors ?? [];
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {

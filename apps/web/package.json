@@ -9,15 +9,14 @@
     "build": "vp build",
     "preview": "vp preview",
     "typecheck": "tsc --noEmit",
-    "test": "vp test run --passWithNoTests --project unit",
-    "test:e2e": "node e2e/ui.e2e.mjs",
-    "test:regressions": "node e2e/ui-regressions.e2e.mjs"
+    "test": "vp test run --passWithNoTests --project unit"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@d4research/client-runtime": "workspace:*",
     "@d4research/contracts": "workspace:*",
     "@d4research/shared": "workspace:*",
+    "@daypicker/react": "^10.0.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
@@ -69,8 +68,6 @@
     "@vitejs/plugin-react": "^6.0.0",
     "babel-plugin-react-compiler": "1.0.0",
     "compression": "^1.8.1",
-    "msw": "2.12.11",
-    "playwright-core": "1.60.0",
     "react-test-renderer": "19.2.6",
     "tailwindcss": "^4.0.0",
     "unified": "^11.0.5",

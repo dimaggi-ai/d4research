@@ -1,8 +1,32 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { useAtomValue } from "@effect/atom-react";
 import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageProviderKind,
 } from "@d4research/contracts";
+import {
+  CircleAlertIcon,
+  ChevronDownIcon,
+  CircleDashedIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { refreshUsageLimits } from "@d4research/client-runtime/state/usage";
+
+import {
+  isCompatibleUsageContractVersion,
+  isModelCostUnknown,
+  type DailyTotals,
+  type HourlyTotals,
+} from "@d4research/shared/usageMerge";
+
+import { isElectron } from "../../env";
+import { cn } from "../../lib/utils";
+import { environmentPresentations } from "../../state/presentation";
+import { serverEnvironment } from "../../state/server";
+import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -15,27 +39,6 @@ import {
   formatUsd,
   makeWindow,
 } from "@d4research/shared/usageFormat";
-import {
-  isCompatibleUsageContractVersion,
-  isModelCostUnknown,
-  type DailyTotals,
-  type HourlyTotals,
-} from "@d4research/shared/usageMerge";
-import { useAtomValue } from "@effect/atom-react";
-import {
-  ChevronDownIcon,
-  CircleAlertIcon,
-  CircleDashedIcon,
-  SlidersHorizontalIcon,
-} from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { isElectron } from "../../env";
-import { cn } from "../../lib/utils";
-import { environmentPresentations } from "../../state/presentation";
-import { serverEnvironment } from "../../state/server";
-import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -58,14 +61,14 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
+import { UsagePriceOverrides } from "./UsagePriceOverrides";
+import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
+import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
 import {
   readUsagePagePreferences,
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
-import { UsagePriceOverrides } from "./UsagePriceOverrides";
-import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
-import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
 
 type UsageMetric = UsageChartMetric | "limits";
 const METRIC_OPTIONS = [
@@ -163,21 +166,31 @@ export function UsagePage() {
     setPreferences(nextPreferences);
     saveUsagePagePreferences(nextPreferences);
   };
+  const refreshLimits = async (automatic = false) => {
+    try {
+      await Promise.all(
+        Array.from(presentations, ([environmentId, presentation]) => {
+          if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(environmentId)) return;
+          if (presentation.connection.phase === "connected" && presentation.serverConfig !== null) {
+            return refreshUsageLimits(
+              environmentId,
+              () => refreshProviders({ environmentId, input: {} }),
+              automatic,
+            );
+          }
+        }),
+      );
+    } finally {
+      setLimitsNow(Date.now());
+    }
+  };
   const refreshWindow = () => {
     if (refreshingRef.current) return;
 
     if (showingLimits) {
       refreshingRef.current = true;
       setIsRefreshing(true);
-      void Promise.all(
-        Array.from(presentations, ([environmentId, presentation]) => {
-          if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(environmentId)) return;
-          if (presentation.connection.phase === "connected" && presentation.serverConfig !== null) {
-            return refreshProviders({ environmentId, input: {} });
-          }
-        }),
-      ).finally(() => {
-        setLimitsNow(Date.now());
+      void refreshLimits().finally(() => {
         refreshingRef.current = false;
         setIsRefreshing(false);
       });
@@ -199,6 +212,23 @@ export function UsagePage() {
       setIsRefreshing(false);
     });
   };
+  const connectedLimitsEnvironments = [...presentations]
+    .filter(
+      ([environmentId, presentation]) =>
+        presentation.connection.phase === "connected" &&
+        presentation.serverConfig !== null &&
+        (selectedEnvironmentIds === null || selectedEnvironmentIds.has(environmentId)),
+    )
+    .map(([environmentId]) => environmentId)
+    .sort()
+    .join(",");
+  const autoRefreshLimits = useEffectEvent(() => {
+    void refreshLimits(true);
+  });
+  useEffect(() => {
+    if (showingLimits && connectedLimitsEnvironments) autoRefreshLimits();
+  }, [showingLimits, connectedLimitsEnvironments]);
+
   const windowLabel =
     isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
       ? `${formatDateTimeShort(window.sinceTime, window.timeZone)} to ${formatDateTimeShort(window.untilTime, window.timeZone)}`

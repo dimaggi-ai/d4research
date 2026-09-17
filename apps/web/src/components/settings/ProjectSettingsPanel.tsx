@@ -1,91 +1,45 @@
-import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
-
-import { mapAtomCommandResult } from "@d4research/client-runtime/state/runtime";
-
-import { settlePromise } from "@d4research/client-runtime/state/runtime";
-
-import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
-
-import { type AtomCommandResult } from "@d4research/client-runtime/state/runtime";
-
-import { scopeProjectRef } from "@d4research/client-runtime/environment";
-
-import { scopeThreadRef } from "@d4research/client-runtime/environment";
-
+import {
+  isAtomCommandInterrupted,
+  mapAtomCommandResult,
+  settlePromise,
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@d4research/client-runtime/state/runtime";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
 import { AsyncResult } from "effect/unstable/reactivity";
-
-import { type EnvironmentId } from "@d4research/contracts";
-
-import { type ProjectIconOverride } from "@d4research/contracts";
-
-import { useLocation } from "@tanstack/react-router";
-
-import { useNavigate } from "@tanstack/react-router";
-
+import { type EnvironmentId, type ProjectIconOverride } from "@d4research/contracts";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-
 import { Trash2Icon } from "lucide-react";
-
-import { lazy } from "react";
-
-import { Suspense } from "react";
-
-import { useCallback } from "react";
-
-import { useEffect } from "react";
-
-import { useMemo } from "react";
-
-import { useRef } from "react";
-
-import { useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
-
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
-
 import { readLocalApi } from "../../localApi";
-
-import { type SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
-
-import { type SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
-
-import { useEnvironments } from "../../state/environments";
-
-import { usePrimaryEnvironmentId } from "../../state/environments";
-
+import {
+  type SidebarProjectGroupMember,
+  type SidebarProjectSnapshot,
+} from "../../sidebarProjectGrouping";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useThreadShells } from "../../state/entities";
-
 import { projectEnvironment } from "../../state/projects";
-
 import { useAtomCommand } from "../../state/use-atom-command";
-
 import { ProjectFavicon } from "../ProjectFavicon";
-
 import { Button } from "../ui/button";
-
 import { Input } from "../ui/input";
-
-import { stackedThreadToast } from "../ui/toast";
-
-import { toastManager } from "../ui/toast";
-
-import { SettingResetButton } from "./settingsLayout";
-
-import { SettingsPageContainer } from "./settingsLayout";
-
-import { SettingsRow } from "./settingsLayout";
-
-import { SettingsSection } from "./settingsLayout";
-
-import { canPickExternalProjectFavicon } from "./ProjectFaviconPickerDialog";
-
-import { ProjectFaviconPickerDialog } from "./ProjectFaviconPickerDialog";
-
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
+import {
+  canPickExternalProjectFavicon,
+  ProjectFaviconPickerDialog,
+} from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
-
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
-
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -482,9 +436,11 @@ function ProjectDetail({
             description={
               projectIcon?.kind === "lucide"
                 ? `${projectIcon.name} · ${projectIcon.color}`
-                : projectIcon?.kind === "emoji"
-                  ? projectIcon.emoji
-                  : (faviconPath ?? "Automatic")
+                : projectIcon?.kind === "monogram"
+                  ? `${projectIcon.text} · ${projectIcon.color}`
+                  : projectIcon?.kind === "emoji"
+                    ? projectIcon.emoji
+                    : (faviconPath ?? "Automatic")
             }
             resetAction={
               group.memberProjects.some(
@@ -576,6 +532,7 @@ function ProjectDetail({
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}
+            projectName={representative.title}
             open
             onOpenChange={setIconPickerOpen}
             onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}

@@ -1,30 +1,31 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
-  type ProviderDriverKind,
   type ProviderInstanceId,
+  type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@d4research/contracts";
-import { type VariantProps } from "class-variance-authority";
 import { memo, useEffect, useMemo, useState } from "react";
-import { cn } from "~/lib/utils";
-import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
+import type { VariantProps } from "class-variance-authority";
 import { Badge } from "../ui/badge";
 import { buttonVariants } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { cn } from "~/lib/utils";
+import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import {
+  ModelEsque,
+  getTriggerDisplayModelLabel,
+  getTriggerDisplayModelName,
+} from "./providerIconUtils";
+import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import {
   ComposerControl,
   ComposerControlChevron,
   type ComposerControlSize,
 } from "./ComposerControl";
-import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
-import { composerFloatingLayerProps } from "./composerEventScope";
-import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import {
-  getTriggerDisplayModelLabel,
-  getTriggerDisplayModelName,
-  ModelEsque,
-} from "./providerIconUtils";
+import { useComposerMenuProps } from "./composerEventScope";
+import { shortcutLabelForCommand } from "../../keybindings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -35,12 +36,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   model: string;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
+  allowCrossProviderSelection?: boolean | undefined;
   /** Instance entries rendered in the sidebar + used to resolve display name. */
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   keybindings?: ResolvedKeybindingsConfig;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   activeProviderIconClassName?: string;
-  compact?: boolean;
   instanceIndicatorBackground?: string;
   size?: ComposerControlSize;
   isComposerOwned?: boolean;
@@ -53,11 +54,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerLabel?: string;
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
+  onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
-  allowCrossProviderSelection?: boolean | undefined;
-  onOpenProviderSetup?: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
+  const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
   const size = props.size ?? "sm";
@@ -73,8 +74,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   const activeInstanceId = props.activeInstanceId;
   const selectedInstanceOptions = props.modelOptionsByInstance.get(activeInstanceId) ?? [];
-  // Account-specific catalogs retain unavailable selections rather than
-  // displaying a different model as if it were selected.
+  // Account-specific catalogs must keep the selected model label while unavailable.
   const selectedModel =
     resolveModelPickerSelectedModel({
       driverKind: activeEntry?.driverKind,
@@ -103,10 +103,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   };
 
   useEffect(() => {
-    if (props.disabled && isMenuOpen) {
-      setIsMenuOpen(false);
-      return;
-    }
     if (!isMenuOpen) {
       return;
     }
@@ -152,13 +148,20 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       body.style.overflow = previousBodyOverflow;
       body.style.paddingRight = previousBodyPaddingRight;
     };
-  }, [isMenuOpen, props.disabled]);
+  }, [isMenuOpen]);
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;
     props.onInstanceModelChange(instanceId, model);
     setIsMenuOpen(false);
   };
+
+  const shortcutLabel = props.keybindings
+    ? shortcutLabelForCommand(props.keybindings, "modelPicker.toggle")
+    : null;
+  const triggerTooltipContent = shortcutLabel
+    ? `${props.triggerLabel ?? triggerLabel} · ${shortcutLabel}`
+    : (props.triggerLabel ?? triggerLabel);
 
   return (
     <Popover
@@ -188,10 +191,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         }
       >
         <span
-          className={cn(
-            "flex min-w-0 flex-1 items-center",
-            props.size === "xs" ? "gap-1" : "gap-1.5",
-          )}
+          className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}
         >
           {activeEntry && props.triggerLabel === undefined ? (
             <ProviderInstanceIcon
@@ -201,10 +201,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               showBadge={showInstanceBadge}
               className="size-4"
               iconClassName={cn("size-4", props.activeProviderIconClassName)}
-              indicatorBackground={props.instanceIndicatorBackground ?? "var(--input)"}
+              indicatorBackground={props.instanceIndicatorBackground ?? "var(--contrast-input)"}
               badgeClassName={cn(
-                "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3",
-                "px-0.5 text-[7px]",
+                "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-[7px]",
+                size === "xs" && "shadow-none",
               )}
             />
           ) : null}
@@ -219,7 +219,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             >
               {props.triggerLabel ?? triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{props.triggerLabel ?? triggerLabel}</TooltipPopup>
+            <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
           </Tooltip>
           {selectedModel?.isUnavailable && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
@@ -234,8 +234,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <PopoverPopup
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
         align="start"
-        className="border-0 bg-transparent p-0 shadow-none before:hidden [-webkit-backdrop-filter:none]! [--viewport-inline-padding:0] [backdrop-filter:none]!"
-        viewportClassName="rounded-lg !overflow-hidden p-0"
+        className="before:hidden [--viewport-inline-padding:0]"
+        viewportClassName="overflow-hidden! rounded-[calc(var(--radius-lg)-1px)] p-0 [clip-path:inset(0_round_calc(var(--radius-lg)-1px))]"
       >
         <ModelPickerContent
           activeInstanceId={activeInstanceId}
@@ -247,11 +247,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           modelOptionsByInstance={props.modelOptionsByInstance}
           terminalOpen={props.terminalOpen ?? false}
           onRequestClose={() => setIsMenuOpen(false)}
+          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
           {...(props.getModelDisabledReason
             ? { getModelDisabledReason: props.getModelDisabledReason }
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
-          {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
         />
       </PopoverPopup>
     </Popover>

@@ -1,30 +1,34 @@
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
-import { AssetPreviewTypeValidationError, ThreadId } from "@d4research/contracts";
+import * as NodeFSP from "node:fs/promises";
+import { AssetAccessError, AssetPreviewTypeValidationError, ThreadId } from "@d4research/contracts";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@d4research/shared/projectFavicon";
 import { describe, expect, it } from "@effect/vitest";
-import { vi } from "vite-plus/test";
-import * as NodeFSP from "node:fs/promises";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { assetFileResponse } from "../http.ts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
+import { HttpClient, HttpClientResponse, HttpServerResponse } from "effect/unstable/http";
+import { ChildProcessSpawner } from "effect/unstable/process";
+import { vi } from "vite-plus/test";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { assetFileResponse } from "../http.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { openMediaFile } from "./MediaFile.ts";
 import { symlinksSupported } from "@d4research/shared/testing/symlinks";
+import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import { githubMediaResponse } from "./GitHubMediaFetch.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
@@ -47,6 +51,52 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect("loads private media immediately after login and reuses the found credential", () => {
+    let lookups = 0;
+    const authorizations: Array<string | undefined> = [];
+    return Effect.gen(function* () {
+      const asset = {
+        url: "https://raw.githubusercontent.com/owner/repo/main/shot.png",
+        cwd: "/repo",
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      };
+      expect((yield* githubMediaResponse(asset, {})).status).toBe(404);
+      expect((yield* githubMediaResponse(asset, {})).status).toBe(200);
+      expect((yield* githubMediaResponse(asset, {})).status).toBe(200);
+      expect(lookups).toBe(2);
+      expect(authorizations).toEqual([undefined, "Bearer signed-in", "Bearer signed-in"]);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(GitHubCli.GitHubCli)({
+          execute: () =>
+            Effect.sync(() => ({
+              exitCode: ChildProcessSpawner.ExitCode(0),
+              stdout: ++lookups === 1 ? "" : "signed-in",
+              stderr: "",
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            })),
+        }),
+      ),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) => {
+          authorizations.push(request.headers.authorization);
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(null, {
+                status: request.headers.authorization ? 200 : 404,
+                headers: { "content-type": "image/png" },
+              }),
+            ),
+          );
+        }),
+      ),
+      Effect.scoped,
+    );
+  });
+
   it.effect("issues exact URLs for media and browser documents outside the workspace", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -228,7 +278,7 @@ describe("AssetAccess", () => {
             suffix.slice(0, separator),
             suffix.slice(separator + 1),
           );
-          if (!asset) throw new Error("Expected a resolved media file");
+          if (asset?.kind !== "file") throw new Error("Expected a resolved media file");
 
           yield* fs.rename(filePath, savedPath);
           yield* fs.symlink(secretPath, filePath);
@@ -391,7 +441,7 @@ describe("AssetAccess", () => {
       const name = suffix.slice(separator + 1);
       yield* fs.writeFileString(filePath, "in-place edit");
       const edited = yield* resolveAsset(token, name);
-      if (!edited) throw new Error("Expected the edited media file");
+      if (edited?.kind !== "file") throw new Error("Expected the edited media file");
       const editedResponse = HttpServerResponse.toWeb(yield* assetFileResponse(edited));
       expect(yield* Effect.promise(() => editedResponse.text())).toBe("in-place edit");
 
@@ -407,7 +457,7 @@ describe("AssetAccess", () => {
         renewedSuffix.slice(0, renewedSeparator),
         renewedSuffix.slice(renewedSeparator + 1),
       );
-      if (!renewedAsset) throw new Error("Expected the replacement media file");
+      if (renewedAsset?.kind !== "file") throw new Error("Expected the replacement media file");
       const renewedResponse = HttpServerResponse.toWeb(yield* assetFileResponse(renewedAsset));
       expect(yield* Effect.promise(() => renewedResponse.text())).toBe("replacement");
       yield* fs.remove(filePath);
@@ -419,6 +469,7 @@ describe("AssetAccess", () => {
       ).toBeNull();
     }).pipe(Effect.provide(testLayer)),
   );
+
   it.effect("issues workspace URLs that resolve the entry file and sibling assets", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -906,6 +957,44 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("issues an exact capability for a saved favicon outside the workspace", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-workspace-",
+      });
+      const pictures = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-favicon-pictures-",
+      });
+      const externalPath = path.join(pictures, "custom.png");
+      const siblingPath = path.join(pictures, "sibling.png");
+      yield* fileSystem.writeFile(externalPath, new Uint8Array([1, 2, 3]));
+      yield* fileSystem.writeFile(siblingPath, new Uint8Array([4, 5, 6]));
+      const canonicalPath = yield* fileSystem.realPath(externalPath);
+      const canonicalSiblingPath = yield* fileSystem.realPath(siblingPath);
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+        projectFaviconPath: externalPath,
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+
+      expect(result.sourcePath).toBe(externalPath);
+      expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-custom\.png$/);
+      expect(
+        yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
+      ).toEqual({ kind: "file", path: canonicalPath });
+      const tamperedSuffixResult = yield* resolveAsset(
+        suffix.slice(0, separatorIndex),
+        "sibling.png",
+      );
+      expect(tamperedSuffixResult).toEqual({ kind: "file", path: canonicalPath });
+      expect(tamperedSuffixResult).not.toEqual({ kind: "file", path: canonicalSiblingPath });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("ignores a client favicon path hint", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1021,6 +1110,62 @@ describe("AssetAccess", () => {
       expect(error.message).toBe("Failed to resolve project favicon.");
       expect(error._tag).toBe("AssetProjectFaviconResolutionError");
       expect(error.cause).toBe(resolutionCause);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("serves GitHub-hosted pull request media through the repository's credential", () =>
+    Effect.gen(function* () {
+      const resolve = (relativeUrl: string) => {
+        const suffix = relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separator = suffix.indexOf("/");
+        return resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1));
+      };
+      const issue = (url: string) =>
+        issueAssetUrl({ resource: { _tag: "github-media", cwd: "/repo", url } });
+
+      const attachment = yield* issue(
+        "https://github.com/user-attachments/assets/1a1842fb-6383-492f-873c-57aa0033fa6c",
+      );
+      expect(attachment.relativeUrl.endsWith("/1a1842fb-6383-492f-873c-57aa0033fa6c")).toBe(true);
+      expect(yield* resolve(attachment.relativeUrl)).toEqual({
+        kind: "github-media",
+        url: "https://github.com/user-attachments/assets/1a1842fb-6383-492f-873c-57aa0033fa6c",
+        cwd: "/repo",
+        // The signed URL's own expiry, which is how long a client may keep the bytes.
+        expiresAt: attachment.expiresAt,
+      });
+
+      // A `blob` link addresses the page; only the raw host answers a credential with bytes.
+      const committed = yield* issue("https://github.com/owner/repo/blob/main/docs/shot.png");
+      expect(yield* resolve(committed.relativeUrl)).toMatchObject({
+        url: "https://raw.githubusercontent.com/owner/repo/main/docs/shot.png",
+      });
+
+      // The pre-`user-attachments` form, Git LFS bytes, and a name no `decodeURIComponent`
+      // accepts all arrive from real bodies.
+      const legacy = yield* issue("https://github.com/owner/repo/assets/45952064/1a1842fb");
+      expect(yield* resolve(legacy.relativeUrl)).toMatchObject({
+        url: "https://github.com/owner/repo/assets/45952064/1a1842fb",
+      });
+      const lfs = yield* issue("https://media.githubusercontent.com/media/owner/repo/main/a.mp4");
+      expect(yield* resolve(lfs.relativeUrl)).toMatchObject({
+        url: "https://media.githubusercontent.com/media/owner/repo/main/a.mp4",
+      });
+      const awkward = yield* issue("https://raw.githubusercontent.com/o/r/main/100%.png");
+      expect(awkward.relativeUrl.endsWith("/100%25.png")).toBe(true);
+
+      for (const url of [
+        "https://example.com/shot.png",
+        "https://example.com/shot.png?token=private-media-token",
+        "http://github.com/user-attachments/assets/1a1842fb",
+        "https://github.com/owner/repo/pull/1",
+        "https://github.com/owner/repo/blob/main/",
+      ]) {
+        const error = yield* issue(url).pipe(Effect.flip);
+        expect(error._tag).toBe("AssetGitHubMediaUrlValidationError");
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(AssetAccessError))(error);
+        expect(encoded).not.toContain(url);
+      }
     }).pipe(Effect.provide(testLayer)),
   );
 });

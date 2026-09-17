@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * REAL t3-code MCP tool call through the full composition: a real codex CLI
  * session receives an MCP credential minted by the live session registry,

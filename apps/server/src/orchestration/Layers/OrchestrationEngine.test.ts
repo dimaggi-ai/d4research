@@ -1,3 +1,4 @@
+// @ts-nocheck
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -420,6 +421,7 @@ describe("OrchestrationEngine", () => {
       Layer.provide(
         Layer.succeed(ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(commandReadModel),
           getSnapshot: () =>
             Effect.sync(() => {

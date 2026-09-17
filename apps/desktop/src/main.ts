@@ -17,7 +17,6 @@ import * as Electron from "electron";
 
 import * as NetService from "@d4research/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@d4research/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@d4research/ssh/command";
 import type { RemoteT3RunnerOptions } from "@d4research/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
@@ -33,6 +32,7 @@ import * as ElectronTheme from "./electron/ElectronTheme.ts";
 import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
+import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -84,9 +84,11 @@ const desktopEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+// The remote runs the exact release this app is on, from its self-contained
+// archive, so it needs neither Node nor npm. Development points the remote at
+// a source checkout instead so the two sides can be iterated together.
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
-  settings: DesktopAppSettings.DesktopSettings,
 ): RemoteT3RunnerOptions => {
   const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
   if (environment.isDevelopment && devRemoteEntryPath !== undefined) {
@@ -95,24 +97,14 @@ const resolveDesktopSshCliRunner = (
       nodeEngineRange: serverPackageJson.engines.node,
     };
   }
-  return {
-    packageSpec: resolveRemoteT3CliPackageSpec({
-      appVersion: environment.appVersion,
-      updateChannel: settings.updateChannel,
-      isDevelopment: environment.isDevelopment,
-    }),
-    nodeEngineRange: serverPackageJson.engines.node,
-  };
+  return { archiveVersion: environment.appVersion };
 };
 
 const desktopSshEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const settings = yield* DesktopAppSettings.DesktopAppSettings;
     return DesktopSshEnvironment.layer({
-      resolveCliRunner: settings.get.pipe(
-        Effect.map((currentSettings) => resolveDesktopSshCliRunner(environment, currentSettings)),
-      ),
+      resolveCliRunner: Effect.succeed(resolveDesktopSshCliRunner(environment)),
     });
   }),
 );
@@ -168,6 +160,10 @@ const desktopSnapShotLayer = DesktopSnapShot.layer.pipe(
   Layer.provideMerge(desktopWindowLayer),
   Layer.provideMerge(desktopFoundationLayer),
 );
+const desktopAppActivationLayer = DesktopAppActivation.layer.pipe(
+  Layer.provide(desktopWindowLayer),
+);
+
 // Pool layer instantiates the backend factory once for the Windows
 // primary instance and exposes it via pool.primary. Consumers go through
 // the pool now; the legacy DesktopBackendManager service is gone. The
@@ -195,6 +191,7 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
 
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
+  desktopAppActivationLayer,
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
@@ -210,7 +207,13 @@ const desktopApplicationRuntimeLayer = desktopApplicationLayer.pipe(
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(NodeHttpClient.layerUndici),
   Layer.provideMerge(NetService.layer),
-  Layer.provideMerge(electronLayer),
+  // ElectronProtocol (part of electronLayer) reads packaged assets through
+  // FileSystem/Path, so it needs its own NodeServices provision: the chain's
+  // earlier NodeServices.layer only satisfies desktopApplicationLayer, not a
+  // layer merged in after it. Clerk used to carry this transitively through
+  // its own NodeServices provision; with Clerk removed, electronLayer needs
+  // it directly.
+  Layer.provideMerge(electronLayer.pipe(Layer.provideMerge(NodeServices.layer))),
 );
 
 const desktopRuntimeLayer = desktopApplicationRuntimeLayer.pipe(

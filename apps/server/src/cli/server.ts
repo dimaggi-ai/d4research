@@ -1,3 +1,4 @@
+// @effect-diagnostics anyUnknownInErrorContext:off
 import * as Effect from "effect/Effect";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 

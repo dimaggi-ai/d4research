@@ -1,118 +1,73 @@
-import { InfoIcon } from "lucide-react";
-
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-
 import { ChevronDownIcon } from "lucide-react";
-
-import { GitPullRequestIcon } from "lucide-react";
-
 import * as Duration from "effect/Duration";
-
 import * as Option from "effect/Option";
+import { useEffect, useState, type ReactNode } from "react";
+import type {
+  BackgroundActivitySettings,
+  SourceControlProviderKind,
+  SourceControlDiscoveryResult,
+  SourceControlProviderAuth,
+  SourceControlProviderDiscoveryItem,
+  VcsDriverKind,
+  VcsDiscoveryItem,
+} from "@d4research/contracts";
+import {
+  getBackgroundActivityBaseProfile,
+  getBackgroundActivityPresetSettings,
+  resolveServerBackgroundActivitySettings,
+} from "@d4research/shared/backgroundActivitySettings";
 
-import { useState } from "react";
-
-import { type ReactNode } from "react";
-
-import { type BackgroundActivitySettings } from "@d4research/contracts";
-
-import { type SourceControlProviderKind } from "@d4research/contracts";
-
-import { type SourceControlDiscoveryResult } from "@d4research/contracts";
-
-import { type SourceControlProviderAuth } from "@d4research/contracts";
-
-import { type SourceControlProviderDiscoveryItem } from "@d4research/contracts";
-
-import { type VcsDriverKind } from "@d4research/contracts";
-
-import { type VcsDiscoveryItem } from "@d4research/contracts";
-
-import { getBackgroundActivityBaseProfile } from "@d4research/shared/backgroundActivitySettings";
-
-import { getBackgroundActivityPresetSettings } from "@d4research/shared/backgroundActivitySettings";
-
-import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
-
-import { useScopedSettings } from "./useScopedSettings";
-
-import { useUpdateScopedSettings } from "./useScopedSettings";
-
+import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
-
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-
 import { cn } from "../../lib/utils";
-
 import { useEnvironmentQuery } from "../../state/query";
-
 import { sourceControlEnvironment } from "../../state/sourceControl";
-
 import { Badge } from "../ui/badge";
-
 import { Button } from "../ui/button";
-
-import { Collapsible } from "../ui/collapsible";
-
-import { CollapsibleContent } from "../ui/collapsible";
-
-import { Empty } from "../ui/empty";
-
-import { EmptyContent } from "../ui/empty";
-
-import { EmptyDescription } from "../ui/empty";
-
-import { EmptyHeader } from "../ui/empty";
-
-import { EmptyMedia } from "../ui/empty";
-
-import { EmptyTitle } from "../ui/empty";
-
+import { Collapsible, CollapsibleContent } from "../ui/collapsible";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../ui/empty";
 import { Skeleton } from "../ui/skeleton";
-
-import { NumberField } from "../ui/number-field";
-
-import { NumberFieldDecrement } from "../ui/number-field";
-
-import { NumberFieldGroup } from "../ui/number-field";
-
-import { NumberFieldIncrement } from "../ui/number-field";
-
-import { NumberFieldInput } from "../ui/number-field";
-
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
 import { Switch } from "../ui/switch";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-import { Tooltip } from "../ui/tooltip";
-
-import { TooltipPopup } from "../ui/tooltip";
-
-import { TooltipTrigger } from "../ui/tooltip";
-
-import { AzureDevOpsIcon } from "../Icons";
-
-import { GitHubIcon } from "../Icons";
-
-import { GitIcon } from "../Icons";
-
-import { GitLabIcon } from "../Icons";
-
-import { ForgejoIcon } from "../Icons";
-
-import { JujutsuIcon } from "../Icons";
-
-import { type Icon } from "../Icons";
-
+import {
+  AzureDevOpsIcon,
+  BitbucketIcon,
+  GitHubIcon,
+  GitIcon,
+  GitLabIcon,
+  ForgejoIcon,
+  JujutsuIcon,
+  type Icon,
+} from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-
-import { SettingResetButton } from "./settingsLayout";
-
-import { SettingsPageContainer } from "./settingsLayout";
-
-import { SettingsSection } from "./settingsLayout";
-
+import {
+  PolicyTooltip,
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsSearchTarget,
+  SettingsSection,
+  useSettingsSearchTargetId,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
   versionControlSystems: [],
@@ -124,6 +79,7 @@ const SOURCE_CONTROL_PROVIDER_ICONS: Partial<Record<SourceControlProviderKind, I
   gitlab: GitLabIcon,
   forgejo: ForgejoIcon,
   "azure-devops": AzureDevOpsIcon,
+  bitbucket: BitbucketIcon,
 };
 
 const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {
@@ -132,9 +88,7 @@ const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {
 };
 
 const SOURCE_CONTROL_SKELETON_ROWS = ["primary", "secondary"] as const;
-
 const GIT_FETCH_INTERVAL_STEP_SECONDS = 5;
-
 type BackgroundActivityOverridePatch = Partial<{
   [K in keyof BackgroundActivitySettings["overrides"]]:
     | BackgroundActivitySettings["overrides"][K]
@@ -173,27 +127,6 @@ function backgroundActivityOverrideSettings(
       overrides: nextOverrides as BackgroundActivitySettings["overrides"],
     },
   };
-}
-
-function BackgroundPolicyTooltip({ children }: { readonly children: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-            aria-label="Background policy details"
-          >
-            <InfoIcon className="size-3.5" />
-          </button>
-        }
-      />
-      <TooltipPopup side="top" className="max-w-72">
-        {children}
-      </TooltipPopup>
-    </Tooltip>
-  );
 }
 
 function optionLabel(value: Option.Option<string>): string | null {
@@ -314,9 +247,10 @@ function itemSummary({
         </span>
       );
     }
+    const authDetail = optionLabel(auth.detail);
     return (
       <span>
-        Could not verify {item.label}. {item.installHint}
+        Could not verify {item.label}. {authDetail ?? item.installHint}
       </span>
     );
   }
@@ -340,6 +274,13 @@ function DiscoveryItemRow({
   const authAccount = auth ? optionLabel(auth.account) : null;
   const [isExpanded, setIsExpanded] = useState(false);
   const hasDetails = children !== undefined;
+  const searchTargetId = useSettingsSearchTargetId();
+
+  useEffect(() => {
+    if (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) {
+      setIsExpanded(true);
+    }
+  }, [item.kind, searchTargetId]);
 
   return (
     <div
@@ -375,9 +316,8 @@ function DiscoveryItemRow({
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             {hasDetails ? (
               <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                size="icon-xs"
+                variant="ghost-muted"
                 onClick={() => setIsExpanded((open) => !open)}
                 aria-expanded={isExpanded}
                 aria-label={`Toggle ${item.label} details`}
@@ -419,18 +359,19 @@ function GitFetchIntervalSettings() {
   );
   const canResetFetchInterval =
     automaticGitFetchIntervalSeconds !== defaultAutomaticGitFetchIntervalSeconds;
+  const setting = searchableSetting("git-fetch-interval");
 
   return (
-    <div className="grid gap-3">
+    <SettingsSearchTarget id={setting.id} className="grid gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 items-center gap-1">
-            <span className="text-xs font-medium text-foreground">Fetch interval</span>
-            <BackgroundPolicyTooltip>
+            <span className="text-xs font-medium text-foreground">{setting.title}</span>
+            <PolicyTooltip>
               This interval is configured for Git only. The shared Background activity policy still
               decides whether Git refreshes may run when the timer fires. Custom intervals appear as
               Advanced in General settings.
-            </BackgroundPolicyTooltip>
+            </PolicyTooltip>
             <span
               className={cn(
                 "inline-flex size-5 shrink-0 items-center justify-center transition-opacity",
@@ -453,8 +394,7 @@ function GitFetchIntervalSettings() {
             </span>
           </div>
           <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-            Refresh remote branch status in the background. Set this to 0 seconds if Git credentials
-            or security keys should only be prompted by explicit Git actions.
+            Refresh remote branches in the background. Set to 0 to avoid automatic Git prompts.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -481,7 +421,7 @@ function GitFetchIntervalSettings() {
           <span className="text-xs text-muted-foreground">seconds</span>
         </div>
       </div>
-    </div>
+    </SettingsSearchTarget>
   );
 }
 
@@ -537,7 +477,7 @@ function EmptySourceControlDiscovery({
     <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
       <Empty className="min-h-88">
         <EmptyMedia variant="icon">
-          <GitPullRequestIcon />
+          <PullRequestGlyph.pullRequest />
         </EmptyMedia>
         <EmptyHeader>
           <EmptyTitle>
@@ -590,8 +530,7 @@ export function SourceControlSettingsPanel() {
         render={
           <Button
             size="icon-xs"
-            variant="ghost"
-            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+            variant="ghost-muted"
             onClick={handleScan}
             disabled={discovery.isPending}
             aria-label="Rescan server environment"

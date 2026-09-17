@@ -20,9 +20,15 @@ import * as Result from "effect/Result";
 
 import { useState } from "react";
 
+import { useEffect } from "react";
+
+import { useRef } from "react";
+
 import { type ReactNode } from "react";
 
 import { isProviderDriverKind } from "@d4research/contracts";
+
+import { resolveProviderInstanceEnabled } from "@d4research/contracts";
 
 import { type ProviderInstanceConfig } from "@d4research/contracts";
 
@@ -149,6 +155,25 @@ function makeEnvironmentDraftRow(
   };
 }
 
+function providerEnvironmentsEqual(
+  left: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+  right: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((variable, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        variable.name === other.name &&
+        variable.value === other.value &&
+        variable.sensitive === other.sensitive &&
+        variable.valueRedacted === other.valueRedacted
+      );
+    })
+  );
+}
+
 /**
  * Read a string[] at `key` from the opaque config blob, filtering out
  * non-string entries. Used for `customModels`, which is always typed as
@@ -183,7 +208,7 @@ function nextConfigBlobWithValue(
 
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
-  readonly customModels: ReadonlyArray<string>;
+  readonly customModels: ReadonlyArray<CustomModelDefinition>;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
@@ -191,15 +216,13 @@ export function deriveProviderModelsForDisplay(input: {
     ),
   );
   const serverModels = input.liveModels?.filter((model) => !model.isCustom) ?? [];
-  const customModels = input.customModels.map(
-    (slug) =>
-      liveCustomModelsBySlug.get(slug) ?? {
-        slug,
-        name: slug,
-        isCustom: true,
-        capabilities: null,
-      },
-  );
+  const customModels = input.customModels.map((entry) => ({
+    slug: entry.slug,
+    name: entry.name,
+    isCustom: true,
+    capabilities:
+      entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
+  }));
   return [...serverModels, ...customModels];
 }
 
@@ -232,6 +255,26 @@ function ProviderEnvironmentSection(props: {
   const [rows, setRows] = useState<ReadonlyArray<EnvironmentDraftRow>>(() =>
     props.environment.map(makeEnvironmentDraftRow),
   );
+  const previousEnvironmentRef = useRef(props.environment);
+  const lastPublishedEnvironmentRef = useRef<
+    ReadonlyArray<ProviderInstanceEnvironmentVariable> | undefined
+  >(undefined);
+
+  useEffect(() => {
+    const previousEnvironment = previousEnvironmentRef.current;
+    const lastPublishedEnvironment = lastPublishedEnvironmentRef.current;
+    previousEnvironmentRef.current = props.environment;
+    lastPublishedEnvironmentRef.current = undefined;
+    if (
+      previousEnvironment === props.environment ||
+      providerEnvironmentsEqual(previousEnvironment, props.environment) ||
+      (lastPublishedEnvironment !== undefined &&
+        providerEnvironmentsEqual(lastPublishedEnvironment, props.environment))
+    ) {
+      return;
+    }
+    setRows(props.environment.map(makeEnvironmentDraftRow));
+  }, [props.environment]);
 
   const publishRows = (nextRows: ReadonlyArray<EnvironmentDraftRow>) => {
     const published: ProviderInstanceEnvironmentVariable[] = [];
@@ -251,6 +294,7 @@ function ProviderEnvironmentSection(props: {
       const { id: _id, ...rest } = row;
       published.push({ ...rest, name });
     }
+    lastPublishedEnvironmentRef.current = published;
     props.onChange(published);
   };
 
@@ -465,12 +509,13 @@ export function ProviderDetailsButton({
  *     notice instead of editable fields, so fork instances round-trip
  *     without accidentally destroying their config.
  *   - The enabled Switch writes to the envelope's `instance.enabled`
- *     field; the server's registry consults this at `entry.enabled ?? true`
- *     before materializing the instance, and the probe also checks its
- *     driver-specific `config.enabled`. We treat the envelope flag as the
- *     single source of truth from the UI — built-in cards used to write
- *     the inner flag, but on the promotion-to-instance path every edit
- *     flows through the envelope.
+ *     field. Display reads resolve through `resolveProviderInstanceEnabled`
+ *     (an explicit false on either the envelope or the legacy driver
+ *     `config.enabled` wins, then envelope, then config, then the driver
+ *     default), so a card matches how the server actually resolves the
+ *     same instance — built-in cards used to write the inner flag, but on
+ *     the promotion-to-instance path every edit flows through the
+ *     envelope.
  */
 export function ProviderInstanceCard({
   mode = "card",
@@ -498,7 +543,7 @@ export function ProviderInstanceCard({
 }: ProviderInstanceCardProps) {
   const isExpanded = isExpandedProp ?? mode === "editor";
   const onExpandedChange = onExpandedChangeProp ?? (() => undefined);
-  const enabled = instance.enabled ?? true;
+  const enabled = resolveProviderInstanceEnabled(instance);
   // The server-reported status wins when present; otherwise fall back to
   // "disabled"/"warning" based on the local `enabled` flag so the dot
   // reflects the persisted intent even before the first probe completes.
@@ -553,13 +598,12 @@ export function ProviderInstanceCard({
       ? config.customModels
       : undefined,
   );
-  const customModels = customModelDefinitions.map((entry) => entry.slug);
   // Server-returned models may lag behind settings writes. Treat probe
   // models as the source for built-ins only; custom rows come directly
   // from the current instance config so add/remove reflects immediately.
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
-    customModels,
+    customModels: customModelDefinitions,
   });
   const ollamaClaudeConfigured = isOllamaClaudePresetConfigured(instance);
   const [ollamaDiscoveryPending, setOllamaDiscoveryPending] = useState(false);

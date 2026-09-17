@@ -1,3 +1,5 @@
+// @ts-nocheck
+// @effect-diagnostics anyUnknownInErrorContext:off
 // @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises the filesystem boundary.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";

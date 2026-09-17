@@ -1,6 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 
-import type { DesktopSshEnvironmentTarget, DesktopUpdateChannel } from "@d4research/contracts";
+import type { DesktopSshEnvironmentTarget } from "@d4research/contracts";
 import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -14,7 +14,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { buildSshChildEnvironment, type SshAuthOptions } from "./auth.ts";
 import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 
-const PUBLISHABLE_T3_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
 
@@ -363,20 +362,3 @@ export const resolveSshTarget = Effect.fn("ssh/command.resolveSshTarget")(functi
     ),
   );
 });
-
-export function resolveRemoteT3CliPackageSpec(input: {
-  readonly appVersion: string;
-  readonly updateChannel: DesktopUpdateChannel;
-  readonly isDevelopment?: boolean;
-}): string {
-  const appVersion = input.appVersion.trim();
-  if (!input.isDevelopment && PUBLISHABLE_T3_VERSION_PATTERN.test(appVersion)) {
-    return `d4research@${appVersion}`;
-  }
-
-  if (input.isDevelopment) {
-    return "d4research@nightly";
-  }
-
-  return input.updateChannel === "nightly" ? "d4research@nightly" : "d4research@latest";
-}

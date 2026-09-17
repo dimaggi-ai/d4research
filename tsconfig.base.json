@@ -50,7 +50,27 @@
           "globalTimers": "error",
           "globalTimersInEffect": "error",
           "globalFetch": "error",
-          "globalFetchInEffect": "error"
+          "globalFetchInEffect": "error",
+          "abortControllerInEffect": "off",
+          "allOfMapToForEach": "off",
+          "catchUnfailableEffect": "off",
+          "catchConditionalRefailToCatchIf": "off",
+          "catchToIgnore": "off",
+          "catchToOrElseSucceed": "off",
+          "effectSucceedWithVoid": "off",
+          "flatMapConditionalToFilterOrFail": "off",
+          "layerMergeAllWithDependencies": "off",
+          "mapSomeToAsSome": "off",
+          "optionMatchToFromOption": "off",
+          "preferTypedSchemaDecoder": "off",
+          "preferSucceedSomeOrNone": "off",
+          "raceFirstWithSleepToTimeout": "off",
+          "runEffectInsideEffect": "off",
+          "schemaNumber": "off",
+          "syncToSucceed": "off",
+          "tryCatchInEffectGen": "off",
+          "unnecessaryFailYieldableError": "off",
+          "unnecessaryPipeChain": "off"
         }
       }
     ]

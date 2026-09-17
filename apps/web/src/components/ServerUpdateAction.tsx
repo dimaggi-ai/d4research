@@ -77,7 +77,7 @@ function useServerUpdate() {
         description:
           selfUpdate === "desktop-managed"
             ? `Desktop app relaunched on ${result.value.targetVersion}.`
-            : `Reconnected on t3@${result.value.targetVersion}.`,
+            : `Reconnected on d4research@${result.value.targetVersion}.`,
       });
     } catch (error) {
       toastManager.add({

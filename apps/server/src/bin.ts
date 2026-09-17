@@ -1,3 +1,5 @@
+// @effect-diagnostics anyUnknownInErrorContext:off
+// @effect-diagnostics unsafeEffectTypeAssertion:off
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -12,7 +14,14 @@ import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
 import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
+import { uninstallCommand } from "./cli/uninstall.ts";
+import { updateCommand } from "./cli/update.ts";
+import { claudeHistoryCommand } from "./cli/claudeHistory.ts";
+import { serviceLauncherCommand } from "./cli/serviceLauncher.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
+import { sshHelperCommand } from "./cli/sshHelper.ts";
+import { themeCommand } from "./cli/theme.ts";
+import { triageCommand } from "./cli/triage.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -27,16 +36,23 @@ export const makeCli = () =>
       authCommand,
       projectCommand,
       serviceCommand,
+      updateCommand,
+      uninstallCommand,
+      serviceLauncherCommand,
+      claudeHistoryCommand,
       servicePreflightCommand,
+      sshHelperCommand,
+      themeCommand,
+      triageCommand,
     ]),
   );
 
 export const cli = makeCli();
 
 if (import.meta.main) {
-  Command.run(cli, { version: packageJson.version }).pipe(
-    Effect.scoped,
-    Effect.provide(CliRuntimeLayer),
-    NodeRuntime.runMain,
-  );
+  const main = Effect.provide(
+    Effect.scoped(Command.run(cli, { version: packageJson.version })),
+    CliRuntimeLayer,
+  ) as Effect.Effect<void, unknown, never>;
+  NodeRuntime.runMain(main);
 }

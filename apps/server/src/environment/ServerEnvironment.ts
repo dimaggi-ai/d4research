@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
 } from "@d4research/contracts";
@@ -209,6 +210,7 @@ export const make = Effect.gen(function* () {
       ...(machine === null ? {} : { machine }),
     },
     serverVersion: packageJson.version,
+    orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
@@ -233,6 +235,7 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       environmentIcon: true,
+      projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {

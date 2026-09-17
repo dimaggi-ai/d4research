@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @effect-diagnostics anyUnknownInErrorContext:off
 
 /**
  * Rebuild an isolated dev database from a pruned snapshot of the real
@@ -158,6 +159,8 @@ interface KeptProject {
   readonly title: string;
   readonly threads: number;
 }
+
+type ExecutedMigration = readonly [number, string];
 
 const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (databasePath: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -446,7 +449,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     // Running against the full snapshot also exercises new migrations on the
     // same data volume the real database would face.
     yield* Console.log("Running migrations on the snapshot...");
-    const executed = yield* Effect.gen(function* () {
+    const executed: ReadonlyArray<ExecutedMigration> = yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       // Mirror server boot (persistence/Layers/Sqlite.ts).
       yield* sql.unsafe("PRAGMA foreign_keys = ON").unprepared;
@@ -554,8 +557,9 @@ export const migrateDevDbCommand = Command.make(
 );
 
 if (import.meta.main) {
-  Command.run(migrateDevDbCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(NodeServices.layer),
-    NodeRuntime.runMain,
-  );
+  const main = Effect.provide(
+    Command.run(migrateDevDbCommand, { version: "0.0.0" }),
+    NodeServices.layer,
+  ) as Effect.Effect<void, unknown, never>;
+  NodeRuntime.runMain(main);
 }

@@ -1,26 +1,24 @@
+import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAtomSet } from "@effect/atom-react";
 import Constants from "expo-constants";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text } from "../../components/AppText";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
 import { useThemeColor } from "../../lib/useThemeColor";
+import { cn } from "../../lib/cn";
 import { updateMobilePreferencesAtom } from "../../state/preferences";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironments } from "../../state/environments";
-import {
-  DEFAULT_SERVER_SETTINGS,
-  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-} from "@d4research/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
 import { supportsSharedSettingsSync } from "@d4research/client-runtime/state/shared-settings";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import {
@@ -32,22 +30,18 @@ import {
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { planAutoSettleSettingsSync, type AutoSettleSettings } from "./autoSettleSettingsSync";
 
 export function SettingsRouteScreen() {
   const navigation = useNavigation();
+  const content = <LocalSettingsRouteScreen />;
 
   return (
     <>
       <WorkspaceSidebarToolbar />
-      {Platform.OS === "android" ? (
-        <>
-          {/* Android renders its own in-screen header instead of the native bar. */}
-          <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader title="Settings" onBack={() => navigation.goBack()} />
-        </>
-      ) : (
+      {Platform.OS !== "android" ? (
         <NativeStackScreenOptions
           options={{
             unstable_headerRightItems:
@@ -65,8 +59,12 @@ export function SettingsRouteScreen() {
                 : undefined,
           }}
         />
+      ) : null}
+      {Platform.OS === "android" ? (
+        <SettingsScreen title="Settings">{content}</SettingsScreen>
+      ) : (
+        content
       )}
-      <LocalSettingsRouteScreen />
     </>
   );
 }
@@ -92,6 +90,7 @@ function LocalSettingsRouteScreen() {
             icon="desktopcomputer"
             label="Environments"
             value={`${environmentCount}`}
+            valuePosition="trailing"
             target="SettingsEnvironments"
           />
         </SettingsSection>
@@ -116,6 +115,9 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+      {Platform.OS === "ios" ? (
+        <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
+      ) : null}
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
       <AutoSettleSettingsRows />
     </SettingsSection>
@@ -131,6 +133,7 @@ const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterD
  */
 function AutoSettleSettingsRows() {
   const { environments } = useEnvironments();
+  const [pendingWrites, setPendingWrites] = useState(0);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "server settings update",
     reportFailure: true,
@@ -140,16 +143,17 @@ function AutoSettleSettingsRows() {
   const reference = syncTargets[0] ?? null;
   const referenceSettings = reference?.serverConfig?.settings ?? null;
 
-  const [daysDraft, setDaysDraft] = useState<string | null>(null);
-
   if (reference === null || referenceSettings === null) {
     return null;
   }
 
   const writeToAll = (patch: Partial<AutoSettleSettings>) => {
-    for (const environment of syncTargets) {
-      void updateSettings({ environmentId: environment.environmentId, input: { patch } });
-    }
+    setPendingWrites((count) => count + 1);
+    void Promise.allSettled(
+      syncTargets.map((environment) =>
+        updateSettings({ environmentId: environment.environmentId, input: { patch } }),
+      ),
+    ).finally(() => setPendingWrites((count) => count - 1));
   };
 
   const { patch: autoSettlePatch, mismatches } = planAutoSettleSettingsSync(
@@ -162,21 +166,6 @@ function AutoSettleSettingsRows() {
   );
 
   const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
-  const commitDays = () => {
-    const draft = (daysDraft ?? "").trim();
-    setDaysDraft(null);
-    // Whole-string check so "3.5" and "3days" are rejected instead of
-    // silently becoming 3 on every eligible sync target.
-    const parsed = /^\d+$/.test(draft) ? Number(draft) : Number.NaN;
-    if (
-      Number.isInteger(parsed) &&
-      parsed >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
-      parsed <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
-      parsed !== afterDays
-    ) {
-      writeToAll({ sidebarAutoSettleAfterDays: parsed });
-    }
-  };
 
   return (
     <>
@@ -189,28 +178,34 @@ function AutoSettleSettingsRows() {
       <SettingsSwitchRow
         icon="clock"
         label="Auto-settle inactive threads"
-        subtitle={afterDays === null ? undefined : `After ${afterDays} days without activity`}
         value={afterDays !== null}
         onValueChange={(value) =>
           writeToAll({ sidebarAutoSettleAfterDays: value ? AUTO_SETTLE_DEFAULT_DAYS : null })
         }
       />
       {afterDays !== null ? (
-        <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
-          <Text className="flex-1 text-lg text-foreground">Days before auto-settle</Text>
-          <TextInput
-            className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
-            keyboardType="number-pad"
-            returnKeyType="done"
-            value={daysDraft ?? String(afterDays)}
-            onChangeText={setDaysDraft}
-            onBlur={commitDays}
-            onSubmitEditing={commitDays}
-            accessibilityLabel="Days before auto-settle"
+        <View
+          className={cn(
+            "flex-row items-center gap-4 px-4",
+            Platform.OS === "android" ? "min-h-14 py-3" : "py-4",
+          )}
+        >
+          <View style={{ width: Platform.OS === "android" ? 24 : 22 }} />
+          <Text
+            className={cn(
+              "flex-1 text-foreground",
+              Platform.OS === "android" ? "text-base" : "text-lg",
+            )}
+          >
+            Inactive days
+          </Text>
+          <AutoSettleDaysField
+            value={afterDays}
+            onValueChange={(value) => writeToAll({ sidebarAutoSettleAfterDays: value })}
           />
         </View>
       ) : null}
-      {mismatches.length > 0 ? (
+      {pendingWrites === 0 && mismatches.length > 0 ? (
         <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
           <View className="min-w-0 flex-1">
             <Text className="text-lg text-foreground">Auto-settle defaults differ</Text>
@@ -220,14 +215,7 @@ function AutoSettleSettingsRows() {
           </View>
           <Pressable
             accessibilityRole="button"
-            onPress={() => {
-              for (const mismatch of mismatches) {
-                void updateSettings({
-                  environmentId: mismatch.environmentId,
-                  input: { patch: autoSettlePatch },
-                });
-              }
-            }}
+            onPress={() => writeToAll(autoSettlePatch)}
             className="rounded-full bg-subtle px-4 py-2 active:opacity-70"
           >
             <Text className="text-base font-t3-medium text-foreground">

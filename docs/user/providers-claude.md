@@ -175,6 +175,12 @@ CLAUDE_CODE_SUBAGENT_MODEL      anthropic/claude-sonnet-4.6
 
 Add those to the same provider's Environment variables section if you want stable model choices.
 
+Select the model you want in d4research. For an OpenRouter model outside the built-in list, open
+that Claude instance in **Settings > Providers** and add its full model ID with **Add custom
+model**. Then select it in the chat model picker. `ANTHROPIC_DEFAULT_*_MODEL` variables map Claude
+Code aliases such as `sonnet`; they do not replace the explicit model ID selected in d4research.
+Custom models may have fewer effort, thinking, or context controls than built-in models.
+
 ### Verify OpenRouter Is Being Used
 
 Open a Claude session and run:

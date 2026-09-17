@@ -287,6 +287,7 @@ export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
+  inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
@@ -412,6 +413,12 @@ export const ClientSettingsSchema = Schema.Struct({
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   composerCollapseOnBlur: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   composerCollapseOnScroll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("enter")),
+  ),
+  followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("queue")),
+  ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy sidebar (the original per-project tree). Deliberately a fresh key
@@ -1321,6 +1328,15 @@ export const DEFAULT_MEMORY_CONNECTOR_SETTINGS: MemoryConnectorSettings = Schema
  * background activity, theme. UI, search and the write planner derive
  * eligibility from this list, so adding a key here is the whole opt-in.
  */
+/**
+ * How assistant text reaches clients while a turn runs.
+ * - `turn`: hold the whole message until the turn finishes or pauses.
+ * - `paragraph`: deliver each finished paragraph or closed code block.
+ * - `token`: forward every provider delta. Legacy, kept for compatibility.
+ */
+export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph", "token"]);
+export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultModelSelection",
   "defaultRuntimeMode",
@@ -1338,6 +1354,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "sidebarAutoSettleAfterDays",
   "continueThreadsAfterServerUpdate",
   "enableLegacyTokenStreaming",
+  "responseStreamingMode",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
@@ -1363,15 +1380,20 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
+  responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
 } satisfies Record<ProjectScopedServerSettingKey, unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeAfterUsageLimit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Legacy token-by-token assistant output. Deliberately a fresh key (was
+  // How assistant text reaches clients during a turn. Deliberately a fresh
+  // key (was `enableLegacyTokenStreaming`, before that
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
-  // including prior opt-ins, resets to the buffered default.
+  // including prior token-streaming opt-ins, resets to the paragraph default.
+  responseStreamingMode: ResponseStreamingMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+  ),
   enableLegacyTokenStreaming: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1729,6 +1751,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   autoResumeAfterUsageLimit: Schema.optionalKey(Schema.Boolean),
+  responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
@@ -1919,6 +1942,7 @@ export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
+  inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),
@@ -1979,6 +2003,8 @@ export const ClientSettingsPatch = Schema.Struct({
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
+  sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
+  followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),

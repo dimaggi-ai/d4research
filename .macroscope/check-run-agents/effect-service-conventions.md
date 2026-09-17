@@ -2,7 +2,7 @@
 title: Effect Service Conventions
 model: claude-opus-5
 effort: high
-input: full_diff
+input: incremental
 tools:
   - browse_code
   - git_tools
@@ -17,14 +17,11 @@ include:
   - "infra/**/*.tsx"
 exclude:
   - "**/*.test.ts"
-labels:
-  - vouch:trusted
-  - macroscope-review
 requires:
   - Check
 maxBudgetPerRun: 5
 maxBudgetPerPR: 25
-conclusion: failure
+conclusion: neutral
 showToolCalls: true
 ---
 

@@ -1,3 +1,4 @@
+import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopeProjectRef, scopedThreadKey } from "@d4research/client-runtime/environment";
 import {
   type AtomCommandResult,
@@ -12,7 +13,8 @@ import {
   type ChangeRequestStateLike,
 } from "@d4research/client-runtime/state/thread-settled";
 import type { ScopedThreadRef, ThreadId } from "@d4research/contracts";
-import { useCallback } from "react";
+import { useRouter } from "@tanstack/react-router";
+import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets, snoozeWakeDescription } from "../components/Sidebar.snooze";
 import {
@@ -28,8 +30,16 @@ import {
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
+  useProjects,
 } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  derivePhysicalProjectKey,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
+import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -60,19 +70,33 @@ export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
   /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
+  readonly onStartRename: () => void;
   /** PR state feeding auto-settle classification, as resolved by the caller. */
   readonly changeRequestState: ChangeRequestStateLike | null;
-  readonly onStartRename: () => void;
   readonly onExportMarkdown?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, changeRequestState, onStartRename, onExportMarkdown } = input;
+  const { threadRef, projectCwd, onStartRename, changeRequestState, onExportMarkdown } = input;
+  const router = useRouter();
+  const projects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const logicalProjectKeyByPhysicalKey = useMemo(
+    () =>
+      buildPhysicalToLogicalProjectKeyMap({
+        projects,
+        settings: projectGroupingSettings,
+        primaryEnvironmentId,
+      }),
+    [primaryEnvironmentId, projectGroupingSettings, projects],
+  );
   const {
     settleThread,
     unsettleThread,
     snoozeThread,
     unsnoozeThread,
     pinThread,
-    unpinThread,
+    confirmAndUnpinThread,
+    archiveThread,
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -80,9 +104,10 @@ export function useThreadActionMenu(input: {
   });
   const handleNewThread = useNewThreadHandler();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
-  const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
+  const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({ type: "success", title: "Path copied", description: path });
@@ -138,6 +163,7 @@ export function useThreadActionMenu(input: {
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
+          isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
           canExportMarkdown: onExportMarkdown !== undefined,
           supports,
           snoozePresets,
@@ -146,7 +172,10 @@ export function useThreadActionMenu(input: {
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
         if (action.startsWith("snooze:")) {
-          const preset = snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
+          const preset =
+            action === "snooze:custom"
+              ? await requestCustomSnooze()
+              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === action);
           if (!preset) return;
           const result = await snoozeThread(threadRef, preset.snoozedUntil);
           if (result._tag === "Failure") {
@@ -184,6 +213,22 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "project-settings": {
+            const project = projects.find(
+              (candidate) =>
+                candidate.environmentId === thread.environmentId &&
+                candidate.id === thread.projectId,
+            );
+            if (!project) return;
+            const projectKey =
+              logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
+              deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
+            void router.navigate({
+              to: "/projects/$projectKey",
+              params: { projectKey },
+            });
+            return;
+          }
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -212,9 +257,10 @@ export function useThreadActionMenu(input: {
           case "pin":
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
             return;
-          case "unpin":
-            await reportFailure("Failed to unpin thread", () => unpinThread(threadRef));
+          case "unpin": {
+            await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
+          }
           case "rename":
             onStartRename();
             return;
@@ -256,6 +302,27 @@ export function useThreadActionMenu(input: {
           case "export-markdown":
             onExportMarkdown?.();
             return;
+          case "archive": {
+            if (confirmThreadArchive) {
+              const confirmed = await settlePromise(() =>
+                api.dialogs.confirm(`Archive thread "${thread.title}"?`),
+              );
+              if (confirmed._tag === "Failure" || !confirmed.value) return;
+            }
+            let didArchive = false;
+            const result = await archiveThread(threadRef, {
+              onArchived: () => {
+                didArchive = true;
+              },
+            });
+            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+              failureToast(
+                didArchive ? "Thread archived, but navigation failed" : "Failed to archive thread",
+                squashAtomCommandFailure(result),
+              );
+            }
+            return;
+          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -288,24 +355,30 @@ export function useThreadActionMenu(input: {
       })();
     },
     [
+      archiveThread,
       autoSettleAfterDays,
       changeRequestState,
+      confirmThreadArchive,
       confirmThreadDelete,
+      confirmAndUnpinThread,
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,
+      logicalProjectKeyByPhysicalKey,
       markThreadUnread,
-      onStartRename,
       onExportMarkdown,
+      onStartRename,
       pinThread,
       projectCwd,
+      projectGroupingSettings,
+      projects,
+      router,
       settleThread,
       snoozeThread,
       threadRef,
       timestampFormat,
-      unpinThread,
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,

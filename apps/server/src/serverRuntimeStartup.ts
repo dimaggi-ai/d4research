@@ -1,5 +1,6 @@
 import {
   CommandId,
+  EventId,
   DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_SERVER_SETTINGS,
@@ -10,6 +11,9 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnId,
+  WORKTREE_SETUP_ACTIVITY_KIND,
+  WorktreeSetupSnapshot,
+  worktreeSetupActivityId,
 } from "@d4research/contracts";
 import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import * as Cause from "effect/Cause";
@@ -36,14 +40,14 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
+import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
+import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -147,7 +151,7 @@ export const makeCommandGate = Effect.gen(function* () {
   } satisfies CommandGate;
 });
 
-export const getAutoBootstrapDefaultModelSelection = (): ModelSelection => ({
+const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
   instanceId: ProviderInstanceId.make("codex"),
   model: DEFAULT_MODEL,
 });
@@ -179,7 +183,7 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
   if (serverConfig.autoBootstrapProjectFromCwd) {
     const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings;
     const defaultModelSelection =
-      settings.defaultModelSelection ?? getAutoBootstrapDefaultModelSelection();
+      settings.defaultModelSelection ?? getAutoBootstrapThreadModelSelection();
     yield* Effect.gen(function* () {
       const existingProject = yield* projectionReadModelQuery.getActiveProjectByWorkspaceRoot(
         serverConfig.cwd,
@@ -321,7 +325,9 @@ const SERVER_UPDATE_CONTINUATION_PROMPT = "Continue where you left off.";
 
 class ProviderSessionContinuationError extends Schema.TaggedError<ProviderSessionContinuationError>()(
   "ProviderSessionContinuationError",
-  { threadId: ThreadId },
+  {
+    threadId: ThreadId,
+  },
 ) {
   override get message(): string {
     return `Could not continue thread '${this.threadId}': the provider instance is missing.`;
@@ -330,7 +336,9 @@ class ProviderSessionContinuationError extends Schema.TaggedError<ProviderSessio
 
 export class ServerUpdateThreadContinuationError extends Schema.TaggedError<ServerUpdateThreadContinuationError>()(
   "ServerUpdateThreadContinuationError",
-  { cause: Schema.Defect() },
+  {
+    cause: Schema.Defect(),
+  },
 ) {
   override get message(): string {
     return "Could not prepare running threads to continue after the update.";
@@ -356,13 +364,16 @@ function readRuntimePayload(runtimePayload: unknown): Record<string, unknown> {
     : {};
 }
 
+const isServerUpdateThreadContinuationError = Schema.is(ServerUpdateThreadContinuationError);
+
 function readServerUpdateContinuationTurnId(runtimePayload: unknown): TurnId | null {
-  if (!hasServerUpdateContinuationMarker(runtimePayload)) return null;
+  if (!hasServerUpdateContinuationMarker(runtimePayload)) {
+    return null;
+  }
   const value = runtimePayload[SERVER_UPDATE_CONTINUATION_KEY];
   return typeof value === "string" && value.length > 0 ? TurnId.make(value) : null;
 }
 
-const isServerUpdateThreadContinuationError = Schema.is(ServerUpdateThreadContinuationError);
 const toServerUpdateThreadContinuationError = (cause: unknown) =>
   isServerUpdateThreadContinuationError(cause)
     ? cause
@@ -411,6 +422,7 @@ export const markRunningProviderSessionsForContinuation = Effect.gen(function* (
     ),
   );
 }).pipe(Effect.mapError(toServerUpdateThreadContinuationError));
+
 const clearContinuationMarkers = (
   directory: ProviderSessionDirectory.ProviderSessionDirectory["Service"],
   threadIds: ReadonlyArray<ThreadId>,
@@ -437,12 +449,7 @@ const clearContinuationMarkers = (
     { concurrency: "unbounded", discard: true },
   );
 
-const retryOnceUnlessInterrupted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.catchCause((cause) => (Cause.hasInterrupts(cause) ? Effect.failCause(cause) : effect)),
-  );
-
-export const clearProviderSessionContinuationMarkers = (threadIds: ReadonlyArray<ThreadId>) =>
+const clearProviderSessionContinuationMarkers = (threadIds: ReadonlyArray<ThreadId>) =>
   Effect.gen(function* () {
     const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
     yield* clearContinuationMarkers(directory, threadIds);
@@ -468,6 +475,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       ? resolveProjectSettings(restartSettings.value, projectId).settings
           .continueThreadsAfterServerUpdate
       : false;
+
   const liveThreadIds = new Set(
     (yield* providerService.listSessions()).map((session) => session.threadId),
   );
@@ -513,7 +521,9 @@ export const reconcileProviderSessions = Effect.gen(function* () {
 
   for (const thread of orphanedThreads) {
     const session = thread.session;
-    if (session === null) continue;
+    if (session === null) {
+      continue;
+    }
     const binding = yield* directory.getBinding(thread.id).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause)
@@ -554,9 +564,9 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       binding.value.resumeCursor != null;
     const settleAsError = (lastError: string) =>
       Effect.gen(function* () {
-        if (Option.isSome(binding)) {
-          yield* directory
-            .upsert({
+        yield* Effect.gen(function* () {
+          if (Option.isSome(binding)) {
+            yield* directory.upsert({
               ...binding.value,
               status: "stopped",
               runtimePayload: {
@@ -569,37 +579,36 @@ export const reconcileProviderSessions = Effect.gen(function* () {
                     }
                   : {}),
               },
-            })
-            .pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.failCause(cause)
-                  : Effect.logWarning("failed to reconcile orphaned provider session binding", {
-                      threadId: thread.id,
-                      cause,
-                    }),
-              ),
-            );
-        }
-        const reconciledAt = DateTime.formatIso(yield* DateTime.now);
-        const commandId = CommandId.make(yield* crypto.randomUUIDv4);
-        yield* retryOnceUnlessInterrupted(
-          Effect.suspend(() =>
-            orchestrationEngine.dispatch({
-              type: "thread.session.set",
-              commandId,
-              threadId: thread.id,
-              session: {
-                ...session,
-                status: "error",
-                activeTurnId: null,
-                lastError,
-                updatedAt: reconciledAt,
-              },
-              createdAt: reconciledAt,
-            }),
+            });
+          }
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning(
+                  "failed to reconcile orphaned provider session directory binding",
+                  { threadId: thread.id, cause },
+                ),
           ),
-        ).pipe(
+        );
+
+        yield* Effect.gen(function* () {
+          const reconciledAt = DateTime.formatIso(yield* DateTime.now);
+          yield* orchestrationEngine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make(yield* crypto.randomUUIDv4),
+            threadId: thread.id,
+            session: {
+              ...session,
+              status: "error",
+              activeTurnId: null,
+              lastError,
+              updatedAt: reconciledAt,
+            },
+            createdAt: reconciledAt,
+          });
+        }).pipe(
+          Effect.retry({ times: 1 }),
           Effect.catchCause((cause) =>
             Cause.hasInterrupts(cause)
               ? Effect.failCause(cause)
@@ -619,66 +628,78 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       thread.archivedAt === null &&
       thread.deletedAt === null
     ) {
-      const prepared = yield* retryOnceUnlessInterrupted(
-        Effect.gen(function* () {
-          yield* directory.upsert({
-            ...binding.value,
+      const prepared = yield* Effect.gen(function* () {
+        yield* directory.upsert({
+          ...binding.value,
+          status: "starting",
+          runtimePayload: {
+            ...readRuntimePayload(binding.value.runtimePayload),
+            // Keep recovery durable if this process also exits before sending.
+            [SERVER_UPDATE_CONTINUATION_KEY]: session.activeTurnId ?? continuationTurnId,
+            continueAfterServerUpdatePrepared: true,
+            activeTurnId: null,
+          },
+        });
+        const resumedAt = DateTime.formatIso(yield* DateTime.now);
+        yield* orchestrationEngine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make(yield* crypto.randomUUIDv4),
+          threadId: thread.id,
+          session: {
+            ...session,
             status: "starting",
-            runtimePayload: {
-              ...readRuntimePayload(binding.value.runtimePayload),
-              [SERVER_UPDATE_CONTINUATION_KEY]: session.activeTurnId ?? continuationTurnId,
-              continueAfterServerUpdatePrepared: true,
-              activeTurnId: null,
-            },
-          });
-          const resumedAt = DateTime.formatIso(yield* DateTime.now);
-          yield* orchestrationEngine.dispatch({
-            type: "thread.session.set",
-            commandId: CommandId.make(yield* crypto.randomUUIDv4),
-            threadId: thread.id,
-            session: {
-              ...session,
-              status: "starting",
-              activeTurnId: null,
-              lastError: null,
-              updatedAt: resumedAt,
-            },
-            createdAt: resumedAt,
-          });
-        }),
-      ).pipe(Effect.exit);
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: resumedAt,
+          },
+          createdAt: resumedAt,
+        });
+      }).pipe(Effect.retry({ times: 1 }), Effect.exit);
       if (Exit.isFailure(prepared)) {
-        if (Cause.hasInterrupts(prepared.cause)) return yield* Effect.failCause(prepared.cause);
+        if (Cause.hasInterrupts(prepared.cause)) {
+          return yield* Effect.failCause(prepared.cause);
+        }
+        yield* Effect.logWarning("failed to prepare provider session continuation", {
+          threadId: thread.id,
+          cause: prepared.cause,
+        });
         yield* settleAsError(ORPHANED_PROVIDER_SESSION_ERROR);
         continue;
       }
 
       yield* forkParked(
         Effect.gen(function* () {
-          const continuationExit = yield* Effect.exit(
-            Effect.gen(function* () {
-              const providerInstanceId = binding.value.providerInstanceId;
-              if (providerInstanceId === undefined) {
-                return yield* new ProviderSessionContinuationError({ threadId: thread.id });
-              }
-              const capabilities = yield* providerService.getCapabilities(providerInstanceId);
-              yield* providerService.sendTurn({
+          const continuation = Effect.gen(function* () {
+            const providerInstanceId = binding.value.providerInstanceId;
+            if (providerInstanceId === undefined) {
+              return yield* new ProviderSessionContinuationError({
                 threadId: thread.id,
-                ...(capabilities.promptlessTurnContinuation === true
-                  ? { continuation: true }
-                  : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
-                interactionMode: thread.interactionMode,
               });
-            }),
-          );
-          if (Exit.isSuccess(continuationExit)) {
-            yield* clearContinuationMarkers(directory, [thread.id]).pipe(
-              Effect.uninterruptible,
-              Effect.ignoreCause({ log: true }),
-            );
+            }
+            const capabilities = yield* providerService.getCapabilities(providerInstanceId);
+            yield* providerService.sendTurn({
+              threadId: thread.id,
+              ...(capabilities.promptlessTurnContinuation === true
+                ? { continuation: true }
+                : { input: SERVER_UPDATE_CONTINUATION_PROMPT }),
+              interactionMode: thread.interactionMode,
+            });
+          });
+          const continuationExit = yield* Effect.exit(continuation);
+          if (Exit.isSuccess(continuationExit) || Cause.hasInterrupts(continuationExit.cause)) {
+            if (Exit.isSuccess(continuationExit)) {
+              yield* clearContinuationMarkers(directory, [thread.id]).pipe(
+                Effect.uninterruptible,
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("failed to clear completed provider session continuation", {
+                    threadId: thread.id,
+                    cause,
+                  }),
+                ),
+              );
+            }
             return;
           }
-          if (Cause.hasInterrupts(continuationExit.cause)) return;
           yield* Effect.logWarning("failed to continue provider session after server restart", {
             threadId: thread.id,
             cause: continuationExit.cause,
@@ -698,6 +719,91 @@ export const reconcileProviderSessions = Effect.gen(function* () {
     Cause.hasInterrupts(cause)
       ? Effect.failCause(cause)
       : Effect.logWarning("provider session startup reconciliation failed", { cause }),
+  ),
+);
+
+const decodeWorktreeSetupSnapshot = Schema.decodeUnknownOption(WorktreeSetupSnapshot);
+
+/**
+ * A worktree bootstrap records its setup snapshot on the thread while it runs
+ * and settles it when it finishes. The bootstrap itself lives only in memory,
+ * so a process exit mid-setup leaves a `running` record with nobody to finish
+ * it. Before the turn started that also strands the persisted user message, so
+ * the setup is marked failed and the user is told to send again. After the
+ * handoff only an async setup script was still running; its stage is marked
+ * failed and the setup settles as done, like any other script failure.
+ */
+export const reconcileWorktreeSetups = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
+  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  // The command read model carries no activity bodies; read the setup
+  // records directly, live threads only.
+  const recordedSetups = yield* query.listActivitiesByKind(WORKTREE_SETUP_ACTIVITY_KIND);
+  const interruptedAt = DateTime.formatIso(yield* DateTime.now);
+
+  for (const recorded of recordedSetups) {
+    const snapshot = decodeWorktreeSetupSnapshot(recorded.payload);
+    if (Option.isNone(snapshot) || snapshot.value.phase !== "running") continue;
+    if (recorded.id !== worktreeSetupActivityId(snapshot.value.threadId)) continue;
+    const threadId = snapshot.value.threadId;
+
+    const turnStarted = snapshot.value.stages.some(
+      (stage) => stage.id === "agent" && stage.status === "done",
+    );
+    const interrupted: WorktreeSetupSnapshot = {
+      ...snapshot.value,
+      phase: turnStarted ? "done" : "failed",
+      endedAt: interruptedAt,
+      error: turnStarted
+        ? null
+        : "The server restarted before the worktree setup finished. Send the message again.",
+      stages: snapshot.value.stages.map((stage) =>
+        stage.status === "running" || stage.status === "pending"
+          ? {
+              ...stage,
+              status: "failed",
+              endedAt: interruptedAt,
+              detail: "interrupted by a server restart",
+            }
+          : stage,
+      ),
+      sequence: snapshot.value.sequence + 1,
+    };
+    yield* orchestrationEngine
+      .dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make(yield* crypto.randomUUIDv4),
+        threadId,
+        activity: {
+          id: EventId.make(worktreeSetupActivityId(threadId)),
+          tone: "error",
+          kind: WORKTREE_SETUP_ACTIVITY_KIND,
+          summary: turnStarted
+            ? "Setup script interrupted by a server restart"
+            : "Worktree setup interrupted by a server restart",
+          payload: interrupted,
+          turnId: null,
+          createdAt: snapshot.value.startedAt,
+        },
+        createdAt: interruptedAt,
+      })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("failed to settle interrupted worktree setup", {
+                threadId,
+                cause,
+              }),
+        ),
+      );
+  }
+}).pipe(
+  Effect.catchCause((cause) =>
+    Cause.hasInterrupts(cause)
+      ? Effect.failCause(cause)
+      : Effect.logWarning("worktree setup startup reconciliation failed", { cause }),
   ),
 );
 
@@ -796,6 +902,7 @@ export const make = (options?: StartupOptions) =>
         Effect.logWarning("Failed to load projects for automatic pull", { cause }),
       ),
     );
+
     yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));
 
     const startup = Effect.gen(function* () {
@@ -839,6 +946,10 @@ export const make = (options?: StartupOptions) =>
       );
 
       yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);
+      yield* runStartupPhase("worktree-setups.reconcile", reconcileWorktreeSetups);
+
+      yield* Effect.logDebug("startup phase: syncing clean projects");
+      yield* runStartupPhase("projects.auto-pull", syncAutoPullProjects);
 
       const welcomeBase = yield* resolveWelcomeBase;
       const environment = yield* serverEnvironment.getDescriptor;

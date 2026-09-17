@@ -1,8 +1,14 @@
+// @effect-diagnostics anyUnknownInErrorContext:off
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeHttp from "node:http";
+
 import {
   EnvironmentHttpApi,
   ProviderDriverKind,
   type RepositoryIdentity,
 } from "@d4research/contracts";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
@@ -14,6 +20,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
+import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { initializeToolGuardRuntime } from "./toolGuardLifecycle.ts";
 import {
   otlpTracesProxyRouteLayer,
@@ -65,6 +72,7 @@ import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -113,6 +121,8 @@ import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
+import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
@@ -144,6 +154,12 @@ import * as NetService from "@d4research/shared/Net";
 import { disableTailscaleServe, ensureTailscaleServe } from "@d4research/tailscale";
 import { ServerActivation } from "./serverActivation.ts";
 
+// MCP handoff thread IDs include escaped provenance and can exceed find-my-way's
+// 100-character default for one path segment.
+export const HTTP_ROUTER_CONFIG = {
+  maxParamLength: 512,
+} as const;
+
 // Effect's default preemptive shutdown waits 20s before finalizing request scopes.
 // T3's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
 // already closes the websocket gracefully. Do not add an artificial drain before
@@ -154,17 +170,7 @@ const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
-const PtyAdapterLive = Layer.unwrap(
-  Effect.gen(function* () {
-    if (typeof Bun !== "undefined") {
-      const BunPtyAdapter = yield* Effect.promise(() => import("./terminal/BunPtyAdapter.ts"));
-      return BunPtyAdapter.layer;
-    } else {
-      const NodePtyAdapter = yield* Effect.promise(() => import("./terminal/NodePtyAdapter.ts"));
-      return NodePtyAdapter.layer;
-    }
-  }),
-);
+const PtyAdapterLive = NodePtyAdapter.layer;
 
 const ServerSettingsLayerLive = ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer));
 
@@ -205,39 +211,13 @@ const ResourceDiagnosticsLayerLive = Layer.mergeAll(
 const HttpServerLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    if (typeof Bun !== "undefined") {
-      const BunHttpServer = yield* Effect.promise(
-        () => import("@effect/platform-bun/BunHttpServer"),
-      );
-      return BunHttpServer.layer({
-        port: config.port,
-        hostname: config.host ?? "127.0.0.1",
-        gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
-        websocket: {
-          // Negotiate permessage-deflate with clients that offer it; clients
-          // that don't still get uncompressed frames on their connection. A
-          // dedicated compressor keeps a per-connection sliding window
-          // (context takeover) so the compression dictionary is shared across
-          // server-to-client frames. Decompression uses the shared
-          // decompressor: uWebSockets' dedicated decompressor path can abort
-          // connections (close 1006) on valid DEFLATE input — see
-          // https://github.com/uNetworking/uWebSockets.js/issues/633.
-          perMessageDeflate: {
-            compress: "dedicated",
-            decompress: "shared",
-          },
-        },
-      });
-    } else {
-      const [NodeHttpServer, NodeHttp] = yield* Effect.all([
-        Effect.promise(() => import("@effect/platform-node/NodeHttpServer")),
-        Effect.promise(() => import("node:http")),
-      ]);
-      // Bound only the time a peer may spend sending request headers/body.
-      // Long research handler execution happens after ingress completes and
-      // remains governed by the delegate Effect timeout; disabling this server
-      // guard globally allowed slow request bodies to occupy sockets forever.
-      return NodeHttpServer.layer(() => NodeHttp.createServer({ requestTimeout: 120_000 }), {
+    // Bound only the time a peer may spend sending request headers/body.
+    // Long research handler execution happens after ingress completes and
+    // remains governed by the delegate Effect timeout; disabling this server
+    // guard globally allowed slow request bodies to occupy sockets forever.
+    return NodeHttpServer.layer(
+      () => guardHttpResponseWriteErrors(NodeHttp.createServer({ requestTimeout: 120_000 })),
+      {
         host: config.host ?? "127.0.0.1",
         port: config.port,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
@@ -248,22 +228,12 @@ const HttpServerLive = Layer.unwrap(
         // to compress, so no size threshold is set (ws only honors
         // `threshold` when context takeover is disabled).
         websocket: { perMessageDeflate: true },
-      });
-    }
+      },
+    );
   }),
 );
 
-const PlatformServicesLive = Layer.unwrap(
-  Effect.gen(function* () {
-    if (typeof Bun !== "undefined") {
-      const { layer } = yield* Effect.promise(() => import("@effect/platform-bun/BunServices"));
-      return layer;
-    } else {
-      const { layer } = yield* Effect.promise(() => import("@effect/platform-node/NodeServices"));
-      return layer;
-    }
-  }),
-);
+const PlatformServicesLive = NodeServices.layer;
 
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
@@ -371,10 +341,14 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunner.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
   Layer.provideMerge(GitVcsDriver.layer),
+  // `GitHubCli` is the registry's own instance, exposed because the asset route fetches
+  // GitHub-hosted pull request media with the repository's credential.
   Layer.provideMerge(
-    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
+    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive, GitHubCli.layer),
   ),
-  Layer.provideMerge(TextGeneration.layer),
+  Layer.provideMerge(
+    TextGeneration.layer.pipe(Layer.provide(SourceControlProviderRegistryLayerLive)),
+  ),
 );
 
 const GitLayerLive = Layer.empty.pipe(
@@ -387,14 +361,18 @@ const GitWorkflowLayerLive = GitWorkflowService.layer.pipe(
   Layer.provideMerge(GitLayerLive),
 );
 
+const ReviewLayerLive = ReviewService.layer.pipe(
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(VcsDriverRegistryLayerLive),
+);
+
 const SourceControlRepositoryServiceLayerLive = SourceControlRepositoryService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
 );
 
-const ReviewLayerLive = ReviewService.layer.pipe(
-  Layer.provideMerge(GitVcsDriver.layer),
-  Layer.provideMerge(VcsDriverRegistryLayerLive),
+const ProjectCloneTrackerLayerLive = ProjectCloneTracker.layer.pipe(
+  Layer.provide(SourceControlRepositoryServiceLayerLive),
 );
 
 const VcsLayerLive = Layer.empty.pipe(
@@ -404,6 +382,7 @@ const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(GitWorkflowLayerLive),
   Layer.provideMerge(ReviewLayerLive),
   Layer.provideMerge(SourceControlRepositoryServiceLayerLive),
+  Layer.provideMerge(ProjectCloneTrackerLayerLive),
   Layer.provideMerge(
     VcsStatusBroadcaster.layer.pipe(
       Layer.provide(GitWorkflowLayerLive),
@@ -478,6 +457,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
+  Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive, DeviceLayerLive)),
@@ -632,9 +612,11 @@ const makeServerLayer = Layer.unwrap(
             return;
           }
 
+          const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
           const state = yield* makePersistedServerRuntimeState({
             config,
             port: address.port,
+            serviceManaged: launcher.managed,
           });
           yield* persistServerRuntimeState({
             path: config.serverRuntimeStatePath,
@@ -725,11 +707,12 @@ const makeServerLayer = Layer.unwrap(
 
     const routesLayer = HttpRouter.serve(makeRoutesLayer.pipe(Layer.provide(launcherLayer)), {
       disableLogger: !config.logWebSocketEvents,
+      routerConfig: HTTP_ROUTER_CONFIG,
     }).pipe(Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)));
     const serverApplicationLayer = Layer.mergeAll(
       routesLayer,
       httpListeningLayer,
-      runtimeStateLayer,
+      runtimeStateLayer.pipe(Layer.provide(launcherLayer)),
       tailscaleServeLayer,
     );
 

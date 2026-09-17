@@ -8,6 +8,7 @@ import type * as EffectAcpErrors from "effect-acp/errors";
 
 import { type GrokSettings, type ModelSelection } from "@d4research/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
+import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { extractJsonObject } from "@d4research/shared/schemaJson";
 
 import { TextGenerationError } from "@d4research/contracts";
@@ -236,6 +237,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -249,6 +251,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 

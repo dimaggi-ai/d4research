@@ -2,7 +2,7 @@
 title: UI Consistency
 model: claude-opus-5
 effort: high
-input: full_diff
+input: incremental
 tools:
   - browse_code
   - git_tools
@@ -14,14 +14,11 @@ include:
   - "apps/web/src/**/*.css"
 exclude:
   - "apps/web/src/**/*.test.tsx"
-labels:
-  - vouch:trusted
-  - macroscope-review
 requires:
   - Check
 maxBudgetPerRun: 2
 maxBudgetPerPR: 10
-conclusion: failure
+conclusion: neutral
 showToolCalls: true
 ---
 

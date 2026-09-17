@@ -16,7 +16,9 @@ unreadable settings with defaults.
 ## Check providers and import projects
 
 Setup checks Claude Code and Codex on the selected computers. Install and sign-in actions open
-a terminal for the selected provider. Other providers can be configured in Settings.
+a terminal with the correct command ready to run for the selected provider. Install uses the
+vendor's own installer, which keeps **Update now** working in Settings. Other providers can be
+configured in Settings.
 
 Project discovery looks for directories used by Claude Code or Codex. Choose which projects to
 import. Conversation import is best effort: malformed or unreadable history can be skipped, and

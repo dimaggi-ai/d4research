@@ -25,6 +25,8 @@ export interface ProcessRunInput {
   readonly timeout?: Duration.Input | undefined;
   readonly env?: NodeJS.ProcessEnv | undefined;
   readonly stdin?: string | undefined;
+  /** Receives every stdout chunk, including bytes beyond the buffered output limit. */
+  readonly onStdoutChunk?: ((chunk: Uint8Array) => void) | undefined;
   readonly maxOutputBytes?: number | undefined;
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly truncatedMarker?: string | undefined;
@@ -236,13 +238,11 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
         });
       },
     ),
-    Effect.map(
-      (state): CollectedUint8StreamText => ({
-        ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
-        bytes: state.bytes,
-        truncated: false,
-      }),
-    ),
+    Effect.map((state): CollectedUint8StreamText => ({
+      ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
+      bytes: state.bytes,
+      truncated: false,
+    })),
   );
 });
 
@@ -329,6 +329,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     );
 
   const stdin = input.stdin;
+  const onStdoutChunk = input.onStdoutChunk;
   const writeStdin =
     stdin === undefined
       ? Effect.void
@@ -354,7 +355,9 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
         cwd: input.cwd,
         spawnCwd: input.spawnCwd,
         streamName: "stdout",
-        stream: child.stdout,
+        stream: onStdoutChunk
+          ? child.stdout.pipe(Stream.tap((chunk) => Effect.sync(() => onStdoutChunk(chunk))))
+          : child.stdout,
         maxOutputBytes,
         outputMode,
         truncatedMarker,

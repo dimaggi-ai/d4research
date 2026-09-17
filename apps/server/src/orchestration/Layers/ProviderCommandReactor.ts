@@ -108,7 +108,8 @@ type ProviderIntentEvent = Extract<
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
       | "thread.session-stop-requested"
-      | "thread.settled";
+      | "thread.settled"
+      | "thread.session-set";
   }
 >;
 
@@ -239,13 +240,13 @@ const THREAD_TITLE_CONTEXT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n"
 const FIRST_USER_CONTEXT_TRUNCATION_MARKER = "\n[First user message truncated]";
 
 type ThreadTitleMessage = {
-  readonly role: "user" | "assistant" | "system";
+  readonly role: "user" | "assistant" | "system" | "reasoning";
   readonly text: string;
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
 };
 
 function formatThreadTitleSection(message: ThreadTitleMessage): string | undefined {
-  if (message.role === "system") {
+  if (message.role === "system" || message.role === "reasoning") {
     return undefined;
   }
   const text = message.text.trim();
@@ -351,7 +352,6 @@ function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): 
     ],
   };
 }
-
 function providerErrorLabel(value: string | undefined): string {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : "unknown";
@@ -1766,6 +1766,8 @@ const make = Effect.gen(function* () {
       readonly messageText: string;
       readonly attachments?: ReadonlyArray<ChatAttachment>;
       readonly titleSeed?: string;
+      readonly expectedTitle: string;
+      readonly expectedVersion: CommandId | null;
     }) {
       const attachments = input.attachments ?? [];
       yield* Effect.gen(function* () {
@@ -1788,10 +1790,14 @@ const make = Effect.gen(function* () {
         }
 
         yield* orchestrationEngine.dispatch({
-          type: "thread.meta.update",
+          type: "thread.title.generate.complete",
           commandId: yield* serverCommandId("thread-title-rename"),
           threadId: input.threadId,
-          title: generated.title,
+          title: generated.title === DEFAULT_THREAD_TITLE ? input.expectedTitle : generated.title,
+          expectedTitle: input.expectedTitle,
+          expectedVersion: input.expectedVersion,
+          needsRefinement:
+            generated.needsRefinement === true || generated.title === DEFAULT_THREAD_TITLE,
         });
       }).pipe(
         Effect.catchCause((cause) =>
@@ -1804,6 +1810,29 @@ const make = Effect.gen(function* () {
       );
     },
   );
+
+  const maybeRefineThreadTitle = Effect.fn("maybeRefineThreadTitle")(function* (
+    threadId: ThreadId,
+  ) {
+    const thread = yield* resolveThreadShell(threadId);
+    if (
+      !thread?.titleState?.needsRefinement ||
+      thread.titleState.source !== "generated" ||
+      thread.titleRegeneration != null ||
+      thread.latestTurn?.state !== "completed" ||
+      thread.session?.status !== "ready"
+    )
+      return;
+    const detail = yield* resolveThreadDetail(threadId);
+    if (!detail || detail.messages.filter((message) => message.role === "user").length !== 1)
+      return;
+    yield* orchestrationEngine.dispatch({
+      type: "thread.title.refine",
+      commandId: yield* serverCommandId("thread-title-refine"),
+      threadId,
+      expectedVersion: thread.titleState.version,
+    });
+  });
 
   const regenerateThreadTitle = Effect.fn("regenerateThreadTitle")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.meta-updated" }>,
@@ -1874,14 +1903,17 @@ const make = Effect.gen(function* () {
       ...(input.title !== undefined ? { title: input.title } : {}),
     });
   });
-  const findInterruptedThreadTitleRegenerations = Effect.fn(
-    "findInterruptedThreadTitleRegenerations",
-  )(function* () {
+  const findPendingThreadTitles = Effect.fn("findPendingThreadTitles")(function* () {
     const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-    return readModel.threads.flatMap((thread) => {
-      const requestId = thread.titleRegeneration?.requestId;
-      return requestId === undefined ? [] : [{ threadId: thread.id, requestId }];
-    });
+    return {
+      interruptedRegenerations: readModel.threads.flatMap((thread) => {
+        const requestId = thread.titleRegeneration?.requestId;
+        return requestId === undefined ? [] : [{ threadId: thread.id, requestId }];
+      }),
+      refinementThreadIds: readModel.threads
+        .filter((thread) => thread.titleState?.needsRefinement)
+        .map((thread) => thread.id),
+    };
   });
   const clearInterruptedThreadTitleRegenerations = Effect.fn(
     "clearInterruptedThreadTitleRegenerations",
@@ -2144,10 +2176,15 @@ const make = Effect.gen(function* () {
         ...generationInput,
       }).pipe(Effect.forkScoped);
 
-      if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
+      if (
+        thread.titleState?.source !== "manual" &&
+        canReplaceThreadTitle(thread.title, event.payload.titleSeed)
+      ) {
         yield* maybeGenerateThreadTitleForFirstTurn({
           threadId: event.payload.threadId,
           cwd: generationCwd,
+          expectedTitle: thread.title,
+          expectedVersion: thread.titleState?.version ?? null,
           ...generationInput,
         }).pipe(Effect.forkScoped);
       }
@@ -2642,7 +2679,13 @@ const make = Effect.gen(function* () {
     });
     switch (event.type) {
       case "thread.meta-updated":
-        yield* threadTitleRegenerationWorker.enqueue(event);
+        if (event.payload.regenerateTitle) yield* threadTitleRegenerationWorker.enqueue(event);
+        else if (event.payload.titleState?.needsRefinement)
+          yield* maybeRefineThreadTitle(event.payload.threadId);
+        return;
+      case "thread.session-set":
+        if (event.payload.session.status === "ready")
+          yield* maybeRefineThreadTitle(event.payload.threadId);
         return;
       case "thread.runtime-mode-set": {
         const thread = yield* resolveThreadShell(event.payload.threadId);
@@ -2784,20 +2827,23 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
-    const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
+    const pendingTitles = yield* findPendingThreadTitles().pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.interrupt;
         }
-        return Effect.logWarning(
-          "provider command reactor failed to find interrupted title regenerations",
-          { cause: Cause.pretty(cause) },
-        ).pipe(Effect.as([]));
+        return Effect.logWarning("provider command reactor failed to find pending thread titles", {
+          failureKind: Cause.hasDies(cause) ? "defect" : "failure",
+          reasonCount: cause.reasons.length,
+        }).pipe(Effect.as({ interruptedRegenerations: [], refinementThreadIds: [] }));
       }),
     );
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
-        (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
+        (event.type === "thread.meta-updated" &&
+          (event.payload.regenerateTitle === true ||
+            event.payload.titleState?.needsRefinement === true)) ||
+        (event.type === "thread.session-set" && event.payload.session.status === "ready") ||
         event.type === "thread.runtime-mode-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
@@ -2827,29 +2873,34 @@ const make = Effect.gen(function* () {
       : orchestrationEngine.streamDomainEvents;
     yield* forkParked(Stream.runForEach(domainEvents, processEvent));
 
-    // The domain event stream is hot, so work pending before this reactor
-    // starts cannot be resumed. Correlated completions only clear the request
-    // captured here, leaving any newer request untouched.
-    const clearInterrupted = clearInterruptedThreadTitleRegenerations(
-      interruptedTitleRegenerations,
+    // Earlier events do not replay. Clear interrupted requests by their captured
+    // IDs, then schedule persisted refinements after subscribing to their events.
+    const recoverTitles = clearInterruptedThreadTitleRegenerations(
+      pendingTitles.interruptedRegenerations,
     ).pipe(
+      Effect.andThen(
+        Effect.forEach(pendingTitles.refinementThreadIds, maybeRefineThreadTitle, {
+          discard: true,
+        }),
+      ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.interrupt;
         }
         return Effect.logWarning(
-          "provider command reactor failed to clear interrupted title regenerations",
+          "provider command reactor failed to recover pending thread titles",
           {
-            cause: Cause.pretty(cause),
+            failureKind: Cause.hasDies(cause) ? "defect" : "failure",
+            reasonCount: cause.reasons.length,
           },
         );
       }),
     );
     const activation = yield* ServerActivation;
     if (activation === undefined) {
-      yield* clearInterrupted;
+      yield* recoverTitles;
     } else {
-      yield* forkParked(clearInterrupted);
+      yield* forkParked(recoverTitles);
     }
   });
 

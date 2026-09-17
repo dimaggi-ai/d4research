@@ -30,9 +30,12 @@ interface ProviderTransferBudget {
 // deterministic 9 MB retained-result fixture. Full MCP results stay in
 // persistence, so accidentally shipping them again exceeds these caps by
 // orders of magnitude. The CI report preserves exact values for review.
+// The thread snapshot cap was raised from 7_500 after the 2026-09 upstream
+// merge added per-thread title state, worktree setup, and auto-pull fields on
+// top of the fork's pipeline and handoff fields (measured 7_667 bytes).
 const TRANSFER_BUDGET = {
   totalWireBytes: 15_500,
-  threadSnapshotWireBytes: 7_500,
+  threadSnapshotWireBytes: 8_000,
   measuredTurnWebSocketWireBytes: 8_000,
   measuredTurnWebSocketDecodedBytes: 68_000,
   measuredTurnWebSocketMessages: 21,

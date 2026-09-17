@@ -30,6 +30,7 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -292,7 +293,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
-              icon={<GitPullRequestIcon />}
+              icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
               onClick={handlePullRequestsClick}
             />

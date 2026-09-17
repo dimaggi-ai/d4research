@@ -9,6 +9,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@d4research/client-runtime/environment";
+import { wasBootstrapThreadDeleted } from "@d4research/client-runtime/errors";
 import { derivePendingRequests } from "@d4research/client-runtime/pending-requests";
 import { resolveProviderSkillsForCwd } from "@d4research/client-runtime/providerSkills";
 import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
@@ -40,6 +41,8 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   OrchestrationThreadActivity,
+  projectCloneDisplayName,
+  projectCloneProgressSummary,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
@@ -66,6 +69,7 @@ import {
   type ThreadLinkedPullRequest,
   type TurnId,
   type UsageLimitSourceSnapshots,
+  type WorktreeSetupSnapshot,
 } from "@d4research/contracts";
 import { assistantCitationsToPlainText } from "@d4research/shared/assistantCitations";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
@@ -105,6 +109,7 @@ import {
   ArrowRightLeftIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  DownloadIcon,
   GitBranchIcon,
   Minimize2Icon,
   PaperclipIcon,
@@ -155,6 +160,7 @@ import {
   DraftId,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
+  restoreFailedBackgroundDraftThread,
   useComposerDraftStore,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
@@ -162,15 +168,18 @@ import {
 } from "../composerDraftStore";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { environmentCatalog } from "../connection/catalog";
+import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { listDevScenarios, providerDriverSupportsPipelineOrchestration } from "../devPipeline";
 import { useDiffPanelStore } from "../diffPanelStore";
 import { isElectron } from "../env";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -275,10 +284,12 @@ import {
   useQuestionAttachmentPreparation,
 } from "../questionAttachments";
 import {
-  canAutoDispatchQueuedRequest,
-  useRequestQueueStore,
-  type QueuedChatRequest,
-} from "../requestQueueStore";
+  isQueuedMessageDue,
+  latestCompletedToolActivityId,
+  useQueuedMessages,
+  useQueuedMessageStore,
+  type QueuedComposerMessage,
+} from "../queuedMessageStore";
 import {
   buildResearchMarkdownExport,
   downloadResearchMarkdown,
@@ -335,6 +346,7 @@ import {
 } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import { previewEnvironment } from "../state/preview";
+import { useProjectClone } from "../state/projectClones";
 import { useEnvironmentQuery } from "../state/query";
 import {
   environmentServerConfigsAtom,
@@ -345,6 +357,7 @@ import {
 } from "../state/server";
 import { readPreparedConnection, usePreparedConnection } from "../state/session";
 import { environmentShell } from "../state/shell";
+import { sourceControlEnvironment } from "../state/sourceControl";
 import { terminalEnvironment } from "../state/terminal";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
@@ -377,7 +390,7 @@ import {
   supportsServerUpdateThreadContinuation,
 } from "../versionSkew";
 import { AgentsPanel } from "./AgentsPanel";
-import { BranchToolbar } from "./BranchToolbar";
+import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import {
   resolveEffectiveEnvMode,
   resolveLocalCheckoutBranchMismatch,
@@ -410,7 +423,7 @@ import {
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
-import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
+import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { PodcastPlayer } from "./chat/PodcastPlayer";
@@ -419,7 +432,6 @@ import {
   ProviderStatusBanner,
   shouldShowProviderStatusBanner,
 } from "./chat/ProviderStatusBanner";
-import { QueuedRequestsBanner } from "./chat/QueuedRequestsBanner";
 import {
   deriveRateLimitResumeState,
   RATE_LIMIT_CONTINUATION_PROMPT,
@@ -463,6 +475,7 @@ import {
   DISMISSED_AUDIO_ARTIFACTS_KEY,
   DismissedAudioArtifactsSchema,
   EMPTY_DISMISSED_AUDIO_ARTIFACTS,
+  findRecordedWorktreeSetup,
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
@@ -491,6 +504,7 @@ import {
   resolveSendEnvMode,
   resolveThreadMetadataUpdateForNextTurn,
   resolveThreadSwitchTimeline,
+  resolveVisibleWorktreeSetup,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   scheduleEnvironmentReconnectWarning,
@@ -592,6 +606,8 @@ const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
 
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
+
+const EMPTY_QUEUED_MESSAGES: ReadonlyArray<QueuedComposerMessage> = [];
 
 const EMPTY_DELEGATIONS: ReadonlyArray<ResearchDelegation> = [];
 
@@ -772,8 +788,6 @@ function formatOutgoingPrompt(params: {
 const SCRIPT_TERMINAL_COLS = 120;
 
 const SCRIPT_TERMINAL_ROWS = 30;
-
-const EMPTY_QUEUED_REQUESTS: ReadonlyArray<QueuedChatRequest> = [];
 
 type ChatViewProps =
   | {
@@ -1534,17 +1548,6 @@ function ChatViewContent(props: ChatViewProps) {
     routeMountedRef.current &&
     routeGenerationRef.current === generation &&
     routeThreadKeyRef.current === key;
-  const queuedRequests = useRequestQueueStore(
-    (state) => state.byThreadKey[routeThreadKey] ?? EMPTY_QUEUED_REQUESTS,
-  );
-  const enqueueRequest = useRequestQueueStore((state) => state.enqueue);
-  const removeQueuedRequest = useRequestQueueStore((state) => state.remove);
-  const queuedDispatchRef = useRef<QueuedChatRequest | null>(null);
-  const queuedDispatchFailedIdRef = useRef<string | null>(null);
-  const queuedDrainScheduledRef = useRef(false);
-  const onSendRef = useRef<(event?: { preventDefault: () => void }) => Promise<void>>(
-    async () => undefined,
-  );
 
   const currentRouteThreadKeyRef = routeThreadKeyRef;
   const updateProjectScriptSettings = useAtomCommand(serverEnvironment.updateSettings, {
@@ -1603,6 +1606,9 @@ function ChatViewContent(props: ChatViewProps) {
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
+  const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
+    reportFailure: false,
+  });
   const environmentById = useMemo(
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
     [environments],
@@ -1771,6 +1777,7 @@ function ChatViewContent(props: ChatViewProps) {
   const composerPastedContextsRef = useRef<PastedContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const branchToolbarRef = useRef<BranchToolbarHandle>(null);
 
   const pasteAsTextShortcutUntilRef = useRef(0);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
@@ -2121,6 +2128,16 @@ function ChatViewContent(props: ChatViewProps) {
     selectActiveRightPanel(state.byThreadKey, activeThreadRef),
   );
   const diffOpen = activeRightPanelKind === "diff";
+  const explicitDiffOpenRef = useRef<ScopedThreadRef | null>(null);
+  useLayoutEffect(() => {
+    const explicitThreadRef = explicitDiffOpenRef.current;
+    explicitDiffOpenRef.current = null;
+    // Generic openings always show the checkout, including tab fallbacks and thread changes.
+    // A timeline click instead opens the specific turn/file the user requested.
+    if (diffOpen && activeThreadRef && explicitThreadRef !== activeThreadRef) {
+      useDiffPanelStore.getState().selectGitScope(activeThreadRef, "unstaged");
+    }
+  }, [activeThreadRef, diffOpen]);
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
@@ -2288,6 +2305,113 @@ function ChatViewContent(props: ChatViewProps) {
     () => (activeProject ? resolveProjectScripts(settings, activeProject) : []),
     [activeProject, settings],
   );
+  // A project added by cloning exists before its files do. The draft stays
+  // editable throughout; only sending waits for the clone, and a failed
+  // clone offers its retry right where the user is looking.
+  const activeProjectClone = useProjectClone(activeProjectRef);
+  const cancelProjectClone = useAtomCommand(sourceControlEnvironment.cancelProjectClone, {
+    reportFailure: false,
+  });
+  const retryProjectClone = useAtomCommand(sourceControlEnvironment.retryProjectClone, {
+    reportFailure: false,
+  });
+  const removeClonedProject = useRemoveClonedProject();
+  // The banner mirrors the server's clone state, so a request that never got
+  // there needs its own feedback.
+  const runProjectCloneAction = useCallback(
+    async (
+      title: string,
+      action: () => Promise<AtomCommandResult<unknown, unknown>>,
+    ): Promise<void> => {
+      const result = await action();
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title,
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    },
+    [],
+  );
+  const projectCloneSendBlockReason =
+    activeProjectClone === null
+      ? null
+      : activeProjectClone.phase === "running"
+        ? "Cloning repository"
+        : activeProjectClone.phase === "done"
+          ? null
+          : "Repository not cloned";
+  const projectCloneBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (!activeProjectClone || !activeProjectRef || activeProjectClone.phase === "done") {
+      return null;
+    }
+    const name = projectCloneDisplayName(activeProjectClone);
+    const { environmentId, projectId } = activeProjectRef;
+    if (activeProjectClone.phase === "running") {
+      return {
+        id: `project-clone:${projectId}`,
+        variant: "info",
+        priority: "activity",
+        icon: <DownloadIcon />,
+        title: `Cloning ${name}`,
+        description: projectCloneProgressSummary(activeProjectClone),
+        actions: (
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              void runProjectCloneAction("Failed to cancel clone", () =>
+                cancelProjectClone({ environmentId, input: { projectId } }),
+              )
+            }
+          >
+            Cancel
+          </Button>
+        ),
+      };
+    }
+    const cancelled = activeProjectClone.phase === "cancelled";
+    return {
+      id: `project-clone:${projectId}`,
+      variant: cancelled ? "warning" : "error",
+      icon: <DownloadIcon />,
+      title: cancelled ? `Cancelled cloning ${name}` : `Failed to clone ${name}`,
+      description: cancelled ? "Retry to bring in the repository." : activeProjectClone.error,
+      actions: (
+        <>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => void removeClonedProject({ environmentId, projectId })}
+          >
+            Remove project
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              void runProjectCloneAction("Failed to retry clone", () =>
+                retryProjectClone({ environmentId, input: { projectId } }),
+              )
+            }
+          >
+            Retry
+          </Button>
+        </>
+      ),
+    };
+  }, [
+    activeProjectClone,
+    activeProjectRef,
+    cancelProjectClone,
+    removeClonedProject,
+    retryProjectClone,
+    runProjectCloneAction,
+  ]);
   const activeProjectDefaultModelSelection = activeProjectSettings.settings.defaultModelSelection;
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
@@ -2402,6 +2526,37 @@ function ChatViewContent(props: ChatViewProps) {
       }
     },
     [retryEnvironment],
+  );
+  const disconnectDelayElapsed = useEnvironmentDisconnectDelay(
+    activeEnvironmentUnavailable ? (activeEnvironment?.environmentId ?? null) : null,
+  );
+  const canDisconnectActiveEnvironment =
+    disconnectDelayElapsed &&
+    activeEnvironment !== null &&
+    activeEnvironment.entry.target._tag !== "PrimaryConnectionTarget" &&
+    !isDesktopLocalConnectionTarget(activeEnvironment.entry.target);
+  const [disconnectingEnvironment, setDisconnectingEnvironment] = useState(false);
+  const handleDisconnectActiveEnvironment = useCallback(
+    async (environmentId: EnvironmentId) => {
+      setDisconnectingEnvironment(true);
+      const result = await setEnvironmentEnabled({ environmentId, enabled: false });
+      setDisconnectingEnvironment(false);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not disconnect server",
+              description: error instanceof Error ? error.message : "Failed to disconnect.",
+            }),
+          );
+        }
+        return;
+      }
+      void navigate({ to: "/", replace: true });
+    },
+    [navigate, setEnvironmentEnabled],
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
@@ -2697,6 +2852,20 @@ function ChatViewContent(props: ChatViewProps) {
     // restarts) and the update banner already shows progress. Hard failure
     // phases still surface so the Reconnect action stays reachable.
     const suppressUnavailableBanner = updateRunning && environmentReconnecting;
+    const disconnectAction =
+      canDisconnectActiveEnvironment && activeEnvironmentUnavailableState ? (
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={disconnectingEnvironment}
+          title="Hide this server's threads. Switch it on again in Connections."
+          onClick={() =>
+            void handleDisconnectActiveEnvironment(activeEnvironmentUnavailableState.environmentId)
+          }
+        >
+          Disconnect server
+        </Button>
+      ) : undefined;
     if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
       if (reconnectingThroughVersionSkew) {
         items.push({
@@ -2710,6 +2879,7 @@ function ChatViewContent(props: ChatViewProps) {
           ),
           title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentUnavailableState.label}`,
           description: "It may be finishing an update. One moment.",
+          actions: disconnectAction,
         });
       } else {
         items.push({
@@ -2740,6 +2910,7 @@ function ChatViewContent(props: ChatViewProps) {
               >
                 Connections
               </Button>
+              {disconnectAction}
             </>
           ),
         });
@@ -2781,18 +2952,21 @@ function ChatViewContent(props: ChatViewProps) {
           ) : null,
         // The desktop-managed guidance is already the description; the action
         // slot would only repeat it.
-        actions:
-          updateInProgress ||
-          !versionMismatch ||
-          versionMismatchSelfUpdate === "desktop-managed" ? undefined : (
-            <ServerUpdateAction
-              environmentId={serverUpdateEnvironmentId}
-              serverLabel={versionMismatchServerLabel}
-              selfUpdate={versionMismatchSelfUpdate}
-              targetVersion={versionMismatch.clientVersion}
-              {...(updateFailed ? { label: "Retry update" } : {})}
-            />
-          ),
+        actions: updateInProgress ? (
+          disconnectAction
+        ) : !versionMismatch ||
+          (versionMismatchSelfUpdate === "desktop-managed" &&
+            !versionMismatchDesktopAppUpdate) ? undefined : (
+          <ServerUpdateAction
+            environmentId={serverUpdateEnvironmentId}
+            serverLabel={versionMismatchServerLabel}
+            selfUpdate={versionMismatchSelfUpdate}
+            desktopAppUpdate={versionMismatchDesktopAppUpdate}
+            threadContinuation={versionMismatchThreadContinuation}
+            targetVersion={versionMismatch.clientVersion}
+            {...(updateFailed ? { label: "Retry update" } : {})}
+          />
+        ),
         ...(updateInProgress || updateFailed || !versionMismatchDismissKey
           ? {}
           : {
@@ -2810,6 +2984,9 @@ function ChatViewContent(props: ChatViewProps) {
     automaticEnvironment,
     autoBalanceUpdateBanner,
     activeEnvironmentUnavailableState,
+    canDisconnectActiveEnvironment,
+    disconnectingEnvironment,
+    handleDisconnectActiveEnvironment,
     handleReconnectActiveEnvironment,
     navigate,
     setDismissedVersionMismatchKey,
@@ -3323,7 +3500,7 @@ function ChatViewContent(props: ChatViewProps) {
     localDispatchStartedAt,
     latestUserMessageAt,
     backgroundSubmissionPending,
-    isPreparingWorktree,
+    isPreparingWorktree: isLocallyPreparingWorktree,
     isSendBusy,
   } = useLocalDispatchState({
     activeThread,
@@ -3381,7 +3558,30 @@ function ChatViewContent(props: ChatViewProps) {
     compactRequestIsActive &&
     !compactionSettled;
 
-  const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  // The server records a running worktree setup on the thread for the whole
+  // bootstrap window. That record, with no turn yet, is how a reload or another
+  // client sees a worktree still being prepared, so it counts as working like
+  // the local dispatch that started it. It settles on every failure path and
+  // on restart, so this cannot outlive the setup. The placeholder "starting"
+  // session is not used here: an ordinary first turn projects one too, and it
+  // already drives the connecting state on its own.
+  const recordedWorktreeSetup = useMemo(
+    () => findRecordedWorktreeSetup(activeThread?.activities ?? [], routeThreadRef.threadId),
+    [activeThread?.activities, routeThreadRef.threadId],
+  );
+  const awaitingBootstrapTurn =
+    activeServerThread !== null &&
+    activeServerThread.id === routeThreadRef.threadId &&
+    activeServerThread.latestTurn === null &&
+    recordedWorktreeSetup?.phase === "running";
+  const isWorking =
+    phase === "running" ||
+    isSendBusy ||
+    isConnecting ||
+    isRevertingCheckpoint ||
+    isCompacting ||
+    awaitingBootstrapTurn;
+  const isPreparingWorktree = isLocallyPreparingWorktree || awaitingBootstrapTurn;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -3708,6 +3908,87 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadKey,
   );
   const displayedThreadRef = parseScopedThreadKey(displayedTimelineKey);
+  // Last live snapshot from the setup stream. The server drops a finished
+  // snapshot after a grace period and emits null; holding it here bridges the
+  // gap until the settled activity arrives on the thread projection.
+  const [heldWorktreeSetup, setHeldWorktreeSetup] = useState<WorktreeSetupSnapshot | null>(null);
+  // Set by "Work locally": the draft whose restored message should be resent
+  // once the cancelled dispatch has settled and the draft is in local mode.
+  // Keyed by draft id so a bootstrap rotating the thread id keeps it, while
+  // moving to another draft drops it without an effect.
+  const [workLocallyResendDraftId, setWorkLocallyResendDraftId] = useState<DraftId | null>(null);
+  // The draft route reuses this component across drafts, so a resend recorded
+  // for one draft must not fire when the user comes back to it later.
+  useEffect(() => {
+    if (workLocallyResendDraftId !== null && workLocallyResendDraftId !== draftId) {
+      setWorkLocallyResendDraftId(null);
+    }
+  }, [draftId, workLocallyResendDraftId]);
+  // Live stages of a bootstrap worktree setup. A worktree send creates the
+  // server thread under the route's thread id before anything else, so the
+  // stream is keyed by that id alone: no owner bookkeeping, and a remount,
+  // reload, or second client picks it up the same way. The subscription is
+  // held only while a snapshot can still change.
+  const routeThreadPreparesWorktree =
+    (isPreparingWorktree && activeThread?.id === routeThreadRef.threadId) ||
+    heldWorktreeSetup?.phase === "running";
+  const worktreeSetupQuery = useEnvironmentQuery(
+    routeThreadPreparesWorktree
+      ? vcsEnvironment.worktreeSetup({
+          environmentId: routeThreadRef.environmentId,
+          input: { threadId: routeThreadRef.threadId },
+        })
+      : null,
+  );
+  const latestWorktreeSetup = worktreeSetupQuery.data;
+  useEffect(() => {
+    if (latestWorktreeSetup) setHeldWorktreeSetup(latestWorktreeSetup);
+  }, [latestWorktreeSetup]);
+  useEffect(() => {
+    setHeldWorktreeSetup(null);
+  }, [routeThreadKey]);
+  const liveWorktreeSetup =
+    heldWorktreeSetup?.threadId === routeThreadRef.threadId ? heldWorktreeSetup : null;
+  const worktreeSetup = resolveVisibleWorktreeSetup({
+    live: liveWorktreeSetup,
+    recorded: recordedWorktreeSetup,
+    turnStarted: activeThread?.latestTurn?.startedAt != null,
+    // Counts the optimistic send too, so the row retires the moment the
+    // follow-up is on screen rather than when the server echoes it back.
+    followUpSent: timelineMessages.filter((message) => message.role === "user").length > 1,
+  });
+  // Sends wait for the agent handoff, not for the setup script: an async
+  // script keeps the snapshot running while the agent already works, and a
+  // follow-up must not be held behind a slow install. Before the first
+  // snapshot arrives the starting session stands in for it.
+  const worktreeSetupBlocksSend =
+    worktreeSetup !== null
+      ? worktreeSetup.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup)
+      : isServerThread &&
+        activeThreadShell?.session?.status === "starting" &&
+        activeThreadShell.latestTurn === null;
+  const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup, {
+    reportFailure: false,
+  });
+  const onCancelWorktreeSetup = useCallback(() => {
+    if (!worktreeSetup || worktreeSetup.phase !== "running") return;
+    void cancelWorktreeSetup({
+      environmentId: routeThreadRef.environmentId,
+      input: { threadId: worktreeSetup.threadId },
+    });
+  }, [cancelWorktreeSetup, routeThreadRef.environmentId, worktreeSetup]);
+  // The setup terminal belongs to the thread that was set up. A failed
+  // bootstrap deletes that thread and closes its terminals, so only offer the
+  // terminal while the setup thread is still the active one.
+  const onOpenWorktreeSetupTerminal = useMemo(() => {
+    if (!worktreeSetup || !activeThreadRef || worktreeSetup.threadId !== activeThreadRef.threadId) {
+      return null;
+    }
+    const setupThreadRef = activeThreadRef;
+    return (terminalId: string) => {
+      storeEnsureTerminal(setupThreadRef, terminalId, { open: true, active: true });
+    };
+  }, [activeThreadRef, storeEnsureTerminal, worktreeSetup]);
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -3717,6 +3998,9 @@ function ChatViewContent(props: ChatViewProps) {
     isWorking,
     draftHeroDockRequested,
     backgroundSubmissionPending,
+    // A cancelled or failed setup card stays on the draft's timeline; the
+    // hero headline would paint over it.
+    hasWorktreeSetupCard: worktreeSetup !== null,
   });
   const [
     attachDraftHeroTransitionGroupRef,
@@ -4171,10 +4455,20 @@ function ChatViewContent(props: ChatViewProps) {
 
   const interruptContextRef = useRef({ activeThread, phase, setThreadError });
   interruptContextRef.current = { activeThread, phase, setThreadError };
+  const restoreQueuedMessagesRef = useRef<(messages: ReadonlyArray<QueuedComposerMessage>) => void>(
+    () => {},
+  );
   const onInterrupt = useCallback(async () => {
     const { activeThread, phase, setThreadError } = interruptContextRef.current;
     const input = buildRunningThreadTurnInterruptInput(activeThread, phase);
     if (!input || !activeThread) return;
+    // Stop also cancels the queue: the messages return to the composer
+    // instead of starting a new turn the moment the interrupted one settles.
+    restoreQueuedMessagesRef.current(
+      useQueuedMessageStore
+        .getState()
+        .drain(scopedThreadKey(scopeThreadRef(activeThread.environmentId, activeThread.id))),
+    );
     const result = await interruptThreadTurn({
       environmentId: activeThread.environmentId,
       input,
@@ -4757,6 +5051,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (planSidebarOpen) {
       dismissPlanSidebarForCurrentTurn();
     }
+    useDiffPanelStore.getState().selectGitScope(activeThreadRef, "unstaged");
     useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();
   }, [
@@ -4778,9 +5073,10 @@ function ChatViewContent(props: ChatViewProps) {
   const threadRepository = activeProject?.repositoryIdentity?.displayName ?? null;
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
-  const visiblePullRequestCount = visibleThreadPullRequests(
+  const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
-  ).length;
+  );
+  const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
   const addPullRequestsSurface = useCallback(() => {
@@ -4884,6 +5180,7 @@ function ChatViewContent(props: ChatViewProps) {
   // partition (same shell, same capability gate, same PR auto-settle input)
   // so the banner and the sidebar row never disagree.
   const activeThreadMetadata = activeThreadShell ?? activeThread;
+  const hasLinkedPullRequestDetail = activeThreadMetadata?.linkedPullRequest != null;
   const linkedThreadPullRequest =
     activeThreadMetadata?.linkedPullRequest ?? activeThreadMetadata?.branchPullRequest ?? null;
   const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
@@ -4894,6 +5191,11 @@ function ChatViewContent(props: ChatViewProps) {
         linkedThreadPullRequest.number,
       ])
     : null;
+  const proactivePullRequestsKey = pullRequestsSurfaceAvailable
+    ? JSON.stringify(
+        visiblePullRequests.map((link) => [link.host, link.repository, link.number]).sort(),
+      )
+    : linkedThreadPullRequestKey;
   const observedThreadPullRequestRef = useRef<{
     readonly threadKey: string;
     readonly reference: ThreadLinkedPullRequest | null;
@@ -4960,7 +5262,41 @@ function ChatViewContent(props: ChatViewProps) {
         userActionRevision,
       );
     }
-    if (!clientSettingsHydrated || threadDetailLoading) return;
+    if (!clientSettingsHydrated) return;
+
+    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUseRightPanelSheet;
+    const eligibleLink =
+      proactivePanelsEnabled &&
+      shouldOpenProactivePullRequest(previousTargetKey, proactivePullRequestsKey);
+    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
+    proactivePanelObservationRef.current = {
+      ...observation,
+      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : proactivePullRequestsKey,
+    };
+
+    if (eligibleLink && pullRequestsCapabilityKnown) {
+      if (
+        pullRequestsSurfaceAvailable &&
+        (visiblePullRequestCount > 1 || !hasLinkedPullRequestDetail || !supportsPullRequests)
+      ) {
+        panels.openProactive(
+          activeThreadRef,
+          { id: "pull-requests", kind: "pull-requests" },
+          userActionRevision,
+        );
+      } else if (
+        !followSelectedPullRequest &&
+        supportsPullRequests &&
+        linkedThreadPullRequest !== null
+      ) {
+        panels.openProactive(
+          activeThreadRef,
+          pullRequestSurface(linkedThreadPullRequest),
+          userActionRevision,
+        );
+      }
+    }
+    if (threadDetailLoading) return;
 
     const settledTurnId = latestTurnSettled ? (activeLatestTurn?.turnId ?? null) : null;
     const newlyCompletedTurnId = shouldOpenProactiveTurnDiff({
@@ -4971,7 +5307,6 @@ function ChatViewContent(props: ChatViewProps) {
     })
       ? settledTurnId
       : null;
-    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUseRightPanelSheet;
     const eligibleCompletion = proactivePanelsEnabled && newlyCompletedTurnId !== null;
     const completedCheckpoint = eligibleCompletion
       ? activeThread?.checkpoints.find((checkpoint) => checkpoint.turnId === newlyCompletedTurnId)
@@ -4982,35 +5317,17 @@ function ChatViewContent(props: ChatViewProps) {
           isGitRepo: gitStatusQuery.data?.isRepo,
         })
       : "ignore";
-    const eligibleLink =
-      proactivePanelsEnabled &&
-      shouldOpenProactivePullRequest(previousTargetKey, linkedThreadPullRequestKey);
-    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
     proactivePanelObservationRef.current = {
-      ...observation,
-      // Preserve first-entry eligibility while the checkpoint or repository is loading.
-      runningTurnId: diffAction === "defer" ? previousRunningTurnId : activeRunningTurnId,
-      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
+      ...proactivePanelObservationRef.current,
+      // Preserve first-entry eligibility while capabilities, checkpoint or repository load.
+      runningTurnId:
+        diffAction === "defer" || shouldDeferLink ? previousRunningTurnId : activeRunningTurnId,
     };
-
-    if (
-      !followSelectedPullRequest &&
-      eligibleLink &&
-      pullRequestsCapabilityKnown &&
-      supportsPullRequests &&
-      linkedThreadPullRequest !== null
-    ) {
-      panels.openProactive(
-        activeThreadRef,
-        pullRequestSurface(linkedThreadPullRequest),
-        userActionRevision,
-      );
-    }
     if (diffAction !== "open" || newlyCompletedTurnId === null) return;
     if (!panels.openProactive(activeThreadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
       return;
     }
-    useDiffPanelStore.getState().selectTurn(activeThreadRef, newlyCompletedTurnId);
+    useDiffPanelStore.getState().selectGitScope(activeThreadRef, "unstaged");
     onDiffPanelOpen?.();
   }, [
     activeThread?.checkpoints,
@@ -5021,16 +5338,19 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadRef,
     clientSettingsHydrated,
     gitStatusQuery.data?.isRepo,
+    hasLinkedPullRequestDetail,
     isServerThread,
     latestTurnSettled,
     linkedThreadPullRequest,
-    linkedThreadPullRequestKey,
     onDiffPanelOpen,
+    proactivePullRequestsKey,
     pullRequestsCapabilityKnown,
+    pullRequestsSurfaceAvailable,
     settings.proactivePanelsEnabled,
     shouldUseRightPanelSheet,
     supportsPullRequests,
     threadDetailLoading,
+    visiblePullRequestCount,
   ]);
   const closePreviewPanel = useCallback(() => {
     if (activeThreadRef) {
@@ -6756,10 +7076,12 @@ function ChatViewContent(props: ChatViewProps) {
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     const stagedHandoffItems =
       stagedProviderHandoffBannerItem === null ? [] : [stagedProviderHandoffBannerItem];
+    const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
     const prioritizedItems = [
       ...urgentSystemBannerItems,
       ...feedbackBannerItems,
       ...(usageLimitsBanner ? [usageLimitsBanner] : []),
+      ...projectCloneItems,
       ...(resumeCompactionBannerItem ? [resumeCompactionBannerItem] : []),
       ...(wokeThreadBannerItem ? [wokeThreadBannerItem] : []),
       ...backgroundLivenessItems,
@@ -6819,6 +7141,7 @@ function ChatViewContent(props: ChatViewProps) {
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    projectCloneBannerItem,
     showBranchMismatchBanner,
     stagedProviderHandoffBannerItem,
     feedbackBannerItems,
@@ -6944,6 +7267,57 @@ function ChatViewContent(props: ChatViewProps) {
       });
       if (!command) return;
 
+      if (command === "thread.copyReference") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) copyActiveThreadReference();
+        return;
+      }
+
+      if (command === "thread.settle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isServerThread || !activeThreadRef || !supportsSettlement) return;
+        if (activeThreadSettled) {
+          void handleUnsettleActiveThread();
+          return;
+        }
+
+        void settleThread(activeThreadRef).then((result) => {
+          if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to settle thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        });
+        return;
+      }
+
+      if (command === "thread.pin") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isServerThread || !activeThreadRef || !supportsPinning) return;
+        const pinned = activeThreadPinned;
+        void (pinned ? confirmAndUnpinThread(activeThreadRef) : pinThread(activeThreadRef)).then(
+          (result) => {
+            if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: pinned ? "Failed to unpin thread" : "Failed to pin thread",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          },
+        );
+        return;
+      }
+
       if (command === "terminal.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -6955,6 +7329,23 @@ function ChatViewContent(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         toggleRightPanel();
+        return;
+      }
+
+      if (command === "rightPanel.toggleMaximized") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleRightPanelMaximized();
+        return;
+      }
+
+      if (command === "rightPanel.close") {
+        // Nothing open: leave the event alone so the shortcut keeps its
+        // native meaning (close window on desktop, close tab in a browser).
+        if (!activeRightPanelSurface) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
         return;
       }
 
@@ -7022,7 +7413,44 @@ function ChatViewContent(props: ChatViewProps) {
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
+        if (!event.repeat) composerRef.current?.toggleModelPicker();
+        return;
+      }
+
+      if (
+        command === "composer.host" ||
+        command === "composer.effort" ||
+        command === "composer.mode" ||
+        command === "composer.workspace"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.openControl(command);
+        return;
+      }
+
+      if (command === "composer.branch") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.openBranchPicker();
+        return;
+      }
+
+      if (command === "composer.previousWorktree") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
+        return;
+      }
+
+      if (command === "thread.steerQueuedMessage") {
+        const message = activeThreadKey
+          ? useQueuedMessageStore.getState().queuesByThreadKey[activeThreadKey]?.[0]
+          : undefined;
+        if (!message) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) queuedMessageActionsRef.current.steer(message.id);
         return;
       }
 
@@ -7049,6 +7477,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeProject,
     activeRightPanelSurface,
+    activeThreadKey,
     addTerminalSurface,
     activeThreadRef,
     activeThreadPinned,
@@ -7059,6 +7488,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeThreadId,
     closeTerminal,
     closePanelTerminal,
+    closeRightPanelSurface,
     createNewTerminal,
     setTerminalOpen,
     runProjectScript,
@@ -7077,6 +7507,7 @@ function ChatViewContent(props: ChatViewProps) {
     copyActiveThreadReference,
     previewPanelOpen,
     toggleRightPanel,
+    toggleRightPanelMaximized,
     toggleTerminalVisibility,
     composerRef,
   ]);
@@ -7376,16 +7807,101 @@ function ChatViewContent(props: ChatViewProps) {
     }
   };
 
+  const queuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  // Puts queued messages back into the composer, e.g. after Stop or a failed
+  // send. Prompts join with blank lines; attachments and contexts are added.
+  const restoreQueuedMessagesToComposer = (messages: ReadonlyArray<QueuedComposerMessage>) => {
+    if (messages.length === 0) return;
+    const prompts = [promptRef.current, ...messages.map((message) => message.prompt)]
+      .map((prompt) => prompt.trim())
+      .filter((prompt) => prompt.length > 0);
+    const nextPrompt = prompts.join("\n\n");
+    promptRef.current = nextPrompt;
+    setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+    // The draft store silently drops attachments over the per-turn cap. Split
+    // the overflow back into the queue so nothing is lost; the user can send
+    // the first batch and the rest follows as a queued message.
+    const attachmentRoom = Math.max(
+      0,
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS -
+        composerImagesRef.current.length -
+        composerFilesRef.current.length,
+    );
+    const attachments = messages.flatMap((message) => [...message.images, ...message.files]);
+    const restored = attachments.slice(0, attachmentRoom);
+    const overflow = attachments.slice(attachmentRoom);
+    const restoredImages = restored.filter((attachment) => attachment.type === "image");
+    const restoredFiles = restored.filter((attachment) => attachment.type === "file");
+    // The composer syncs these refs from the draft in an effect; a send before
+    // that effect runs must already see the restored content.
+    composerImagesRef.current = [...composerImagesRef.current, ...restoredImages];
+    composerFilesRef.current = [...composerFilesRef.current, ...restoredFiles];
+    if (restoredImages.length > 0) addComposerDraftImages(composerDraftTarget, restoredImages);
+    if (restoredFiles.length > 0) addComposerDraftFiles(composerDraftTarget, restoredFiles);
+    if (overflow.length > 0 && activeThreadKey) {
+      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+        prompt: "",
+        images: overflow.filter((attachment) => attachment.type === "image"),
+        files: overflow.filter((attachment) => attachment.type === "file"),
+        terminalContexts: [],
+        previewAnnotations: [],
+        reviewComments: [],
+        submissionIntent: "foreground",
+        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+        // Restoration is not a send. The user decides when the overflow goes.
+        holdUntilUserAction: true,
+        createdAt: new Date().toISOString(),
+      });
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Some attachments stayed queued",
+          description: `A message holds at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments. Use Send now on the queued row when you want the rest to go.`,
+        }),
+      );
+    }
+    const restoredTerminalContexts = [
+      ...composerTerminalContextsRef.current,
+      ...messages.flatMap((message) => message.terminalContexts),
+    ];
+    composerTerminalContextsRef.current = restoredTerminalContexts;
+    setComposerDraftTerminalContexts(composerDraftTarget, restoredTerminalContexts);
+    const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+    setComposerDraftPreviewAnnotations(composerDraftTarget, [
+      ...(draft?.previewAnnotations ?? []),
+      ...messages.flatMap((message) => message.previewAnnotations),
+    ]);
+    setComposerDraftReviewComments(composerDraftTarget, [
+      ...(draft?.reviewComments ?? []),
+      ...messages.flatMap((message) => message.reviewComments),
+    ]);
+    composerRef.current?.resetCursorState({
+      cursor: nextPrompt.length,
+      prompt: nextPrompt,
+      detectTrigger: true,
+    });
+  };
+
   const onSend = async (
     e?: { preventDefault: () => void },
-    submissionIntent: "foreground" | "background" = "foreground",
+    submissionIntent: ComposerSubmissionIntent = "foreground",
     directAnnotation?: {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    /** A queued message being sent now instead of the live composer draft. */
+    queuedMessage?: QueuedComposerMessage,
   ) => {
     e?.preventDefault();
-    const queuedRequestForSend = queuedDispatchRef.current;
+    const queuedRequestForSend = queuedMessage ?? null;
+    // A queued send that fails goes back to the head of the queue, held. The
+    // messages behind it keep their order and wait; the composer is not
+    // touched. The user retries with Send now or edits with Cancel.
+    const abortQueuedReplay = () => {
+      if (queuedRequestForSend !== null && activeThreadKey) {
+        useQueuedMessageStore.getState().holdAtFront(activeThreadKey, queuedRequestForSend);
+      }
+    };
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -7404,8 +7920,7 @@ function ChatViewContent(props: ChatViewProps) {
       !clientSettingsHydrated ||
       threadDetailLoading ||
       activeEnvironmentUnavailable ||
-      sendInFlightRef.current ||
-      (queuedRequestForSend !== null && phase === "running")
+      sendInFlightRef.current
     ) {
       // A re-press while the previous send is still pending must not vanish
       // silently: the user reads a
@@ -7419,14 +7934,15 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
-      queuedDispatchRef.current = null;
       notifyDirectAnnotationAttached();
       return;
     }
     const sendRouteThreadKey = routeThreadKey;
     const sendRouteGeneration = routeGenerationRef.current;
     if (activePendingProgress) {
-      if (directAnnotation) {
+      // A queued message waits until the question is answered; it must not
+      // be submitted as the answer.
+      if (directAnnotation || queuedRequestForSend) {
         notifyDirectAnnotationAttached();
         return;
       }
@@ -7435,7 +7951,6 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx?.providerAvailable) {
-      queuedDispatchRef.current = null;
       notifyDirectAnnotationAttached();
       return;
     }
@@ -7455,7 +7970,7 @@ function ChatViewContent(props: ChatViewProps) {
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
     } = sendCtx;
-    const composerFiles = queuedRequestForSend ? [] : sendContextFiles;
+    const composerFiles = queuedRequestForSend ? queuedRequestForSend.files : sendContextFiles;
     const annotatedImages =
       directAnnotation?.image &&
       !sendContextImages.some((image) => image.id === directAnnotation.image?.id)
@@ -7476,14 +7991,22 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const composerImages = queuedRequestForSend ? [] : annotatedImages;
-    const composerTerminalContexts = queuedRequestForSend ? [] : sendContextTerminalContexts;
+    const composerImages = queuedRequestForSend ? queuedRequestForSend.images : annotatedImages;
+    const composerTerminalContexts = queuedRequestForSend
+      ? queuedRequestForSend.terminalContexts
+      : sendContextTerminalContexts;
+    // Element and pasted contexts are ephemeral references tied to the live
+    // composer session; a queued message does not carry them.
     const composerElementContexts = queuedRequestForSend ? [] : sendContextElementContexts;
     const composerPastedContexts = queuedRequestForSend ? [] : sendContextPastedContexts;
-    const composerPreviewAnnotations = queuedRequestForSend ? [] : annotatedPreviewAnnotations;
-    const composerReviewComments = queuedRequestForSend ? [] : sendContextReviewComments;
+    const composerPreviewAnnotations = queuedRequestForSend
+      ? queuedRequestForSend.previewAnnotations
+      : annotatedPreviewAnnotations;
+    const composerReviewComments = queuedRequestForSend
+      ? queuedRequestForSend.reviewComments
+      : sendContextReviewComments;
     const promptForSend =
-      queuedRequestForSend?.text ??
+      queuedRequestForSend?.prompt ??
       (directAnnotation
         ? ensureInlineContextReferences(promptRef.current, [
             previewAnnotationContextReference(directAnnotation.annotation),
@@ -7515,7 +8038,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseCodexFeedbackCommand(trimmed)
         : null;
-    if (feedbackCommand) {
+    if (feedbackCommand && !queuedRequestForSend) {
       if (!isServerThread || activeThread.session === null) {
         toastManager.add(
           stackedThreadToast({
@@ -7566,6 +8089,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     if (
       !directAnnotation &&
+      !queuedRequestForSend &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -7612,7 +8136,7 @@ function ChatViewContent(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
-    if (standaloneSlashCommand) {
+    if (standaloneSlashCommand && !queuedRequestForSend) {
       handleInteractionModeChange(standaloneSlashCommand);
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
@@ -7633,6 +8157,12 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
+      // A queued message whose only content expired would retry on every
+      // boundary and block the rest of the queue. Nothing sendable is left
+      // in it, so drop it and let the queue move on.
+      if (queuedRequestForSend && activeThreadKey) {
+        useQueuedMessageStore.getState().remove(activeThreadKey, queuedRequestForSend.id);
+      }
       return;
     }
     if (!activeProject) {
@@ -7641,20 +8171,6 @@ function ChatViewContent(props: ChatViewProps) {
           type: "warning",
           title: "Choose a project first",
           description: "This draft no longer points to an available project.",
-        }),
-      );
-      return;
-    }
-    if (
-      phase === "running" &&
-      queuedRequestForSend === null &&
-      (composerImages.length > 0 || composerFiles.length > 0)
-    ) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "info",
-          title: "Images remain in the composer",
-          description: "Queue text-only requests, or wait and send this request with its images.",
         }),
       );
       return;
@@ -7730,10 +8246,7 @@ function ChatViewContent(props: ChatViewProps) {
             ? error.message
             : "Local Memo could not store the complete attachment.",
         );
-        if (queuedRequestForSend !== null) {
-          queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
-          queuedDispatchRef.current = null;
-        }
+        abortQueuedReplay();
         return;
       }
     }
@@ -7751,10 +8264,7 @@ function ChatViewContent(props: ChatViewProps) {
       // Reject before local dispatch is latched. The composer therefore stays
       // immediately sendable after the user edits or removes the large input.
       setThreadError(activeThread.id, outgoingLengthError);
-      if (queuedRequestForSend !== null) {
-        queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
-        queuedDispatchRef.current = null;
-      }
+      abortQueuedReplay();
       return;
     }
     const notifyAttachedTextPrepared = () => {
@@ -7769,22 +8279,37 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
     };
-    if (phase === "running" && queuedRequestForSend === null) {
-      const queuedText = composeUserMessageContexts({
+    if (
+      phase === "running" &&
+      queuedRequestForSend === null &&
+      (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")
+    ) {
+      // Pasted contexts (possibly rewritten to Memo retrieval references)
+      // and element contexts have no field on QueuedComposerMessage, so fold
+      // them into the prompt text the same way a normal send would render
+      // them. Terminal contexts, preview annotations, and review comments do
+      // have structured fields and ride along separately.
+      const queuedPrompt = composeUserMessageContexts({
         prompt: promptForSend,
         pastedContexts: preparedOutgoingMessage.contexts,
-        terminalContexts: sendableComposerTerminalContexts,
+        terminalContexts: [],
         elementContexts: composerElementContexts,
-        previewAnnotations: composerPreviewAnnotations,
-        reviewComments: composerReviewComments,
+        previewAnnotations: [],
+        reviewComments: [],
       }).trim();
-      enqueueRequest(routeThreadKey, {
-        id: randomUUID(),
-        // Store the context-composed prompt, not a provider-specific effort
-        // prefix; the queued turn may use a different selected model later.
-        text: queuedText,
-        createdAt: new Date().toISOString(),
-      });
+      if (activeThreadKey) {
+        useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+          prompt: queuedPrompt,
+          images: composerImages,
+          files: composerFiles,
+          terminalContexts: sendableComposerTerminalContexts,
+          previewAnnotations: composerPreviewAnnotations,
+          reviewComments: composerReviewComments,
+          submissionIntent,
+          queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+          createdAt: new Date().toISOString(),
+        });
+      }
       setThreadError(activeThread.id, null);
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
@@ -7851,10 +8376,32 @@ function ChatViewContent(props: ChatViewProps) {
     };
 
     sendInFlightRef.current = true;
+    // Every early return above leaves a queued message in the queue for a
+    // later retry. From here on a failure hands it back to the composer.
+    if (queuedRequestForSend) {
+      const taken = activeThreadKey
+        ? useQueuedMessageStore
+            .getState()
+            .take(
+              activeThreadKey,
+              queuedRequestForSend.id,
+              latestCompletedToolActivityId(threadActivities),
+            )
+        : null;
+      if (!taken) {
+        sendInFlightRef.current = false;
+        return;
+      }
+    }
+    // Stop drains the queue. A queued send whose upload was still running at
+    // that moment must not start a turn afterwards; it checks this before
+    // dispatch and hands the message back to the composer instead.
+    const drainGenerationAtTake = useQueuedMessageStore.getState().drainGeneration;
     const attachmentCapabilitiesBeforeUpload = readLiveAttachmentCapabilities();
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
       sendInFlightRef.current = false;
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
+      abortQueuedReplay();
       return;
     }
     const turnUsesAttachmentUploads =
@@ -7874,13 +8421,24 @@ function ChatViewContent(props: ChatViewProps) {
       if (attachmentCapabilitiesAfterUpload.fileBlockReason !== null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, attachmentCapabilitiesAfterUpload.fileBlockReason);
+        abortQueuedReplay();
         return;
       }
       if (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, "Retry or remove failed uploads before sending.");
+        abortQueuedReplay();
         return;
       }
+    }
+
+    if (
+      queuedRequestForSend &&
+      useQueuedMessageStore.getState().drainGeneration !== drainGenerationAtTake
+    ) {
+      sendInFlightRef.current = false;
+      restoreQueuedMessagesToComposer([queuedRequestForSend]);
+      return;
     }
 
     const resolvedSubmissionIntent =
@@ -8096,10 +8654,7 @@ function ChatViewContent(props: ChatViewProps) {
       // Nothing has been cleared or dispatched yet, so abandoning here keeps
       // the composer's message and the thread's current provider intact.
       const abandonSend = () => {
-        if (queuedRequestForSend !== null) {
-          queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
-          queuedDispatchRef.current = null;
-        }
+        abortQueuedReplay();
         sendInFlightRef.current = false;
         setDockedDraftHeroThreadKey((currentThreadKey) =>
           currentThreadKey === activeThreadKey ? null : currentThreadKey,
@@ -8142,11 +8697,12 @@ function ChatViewContent(props: ChatViewProps) {
             },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-          if (queuedRequestForSend !== null) {
-            removeQueuedRequest(sendRouteThreadKey, queuedRequestForSend.id);
-          } else if (
+          // The queued message, if any, already left the queue at the take()
+          // above; nothing further to remove here.
+          if (
+            queuedRequestForSend === null &&
             useComposerDraftStore.getState().getComposerDraft(composerDraftTarget) ===
-            draftBeforeHandoff
+              draftBeforeHandoff
           ) {
             clearComposerDraftContent(composerDraftTarget);
           }
@@ -8518,8 +9074,37 @@ function ChatViewContent(props: ChatViewProps) {
             detectTrigger: true,
           });
       }
+      if (resolvedSubmissionIntent === "background" && draftId && draftThread) {
+        restoreFailedBackgroundDraftThread(
+          draftId,
+          draftThread,
+          wasBootstrapThreadDeleted(squashAtomCommandFailure(failure))
+            ? newThreadId()
+            : threadIdForSend,
+        );
+        clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
+      }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
+        if (
+          resolvedSubmissionIntent !== "background" &&
+          isLocalDraftThread &&
+          draftId &&
+          wasBootstrapThreadDeleted(error)
+        ) {
+          const failedDraftSession = getDraftSession(draftId);
+          if (failedDraftSession?.threadId === threadIdForSend) {
+            setLogicalProjectDraftThreadId(
+              failedDraftSession.logicalProjectKey,
+              scopeProjectRef(failedDraftSession.environmentId, failedDraftSession.projectId),
+              draftId,
+              {
+                threadId: newThreadId(),
+                createdAt: new Date().toISOString(),
+              },
+            );
+          }
+        }
         setThreadError(
           threadIdForSend,
           error instanceof Error ? error.message : "Failed to send message.",
@@ -8527,13 +9112,12 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     sendInFlightRef.current = false;
-    if (turnStartSucceeded && queuedRequestForSend !== null) {
-      removeQueuedRequest(routeThreadKey, queuedRequestForSend.id);
-      queuedDispatchFailedIdRef.current = null;
-    } else if (queuedRequestForSend !== null) {
-      queuedDispatchFailedIdRef.current = queuedRequestForSend.id;
+    // The queued message, if any, already left the queue at the take() above;
+    // a failed turn start hands it back to the composer instead of retrying
+    // silently on the next boundary.
+    if (!turnStartSucceeded) {
+      abortQueuedReplay();
     }
-    queuedDispatchRef.current = null;
     if (!turnStartSucceeded && isCurrentRoute(sendRouteGeneration, sendRouteThreadKey)) {
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
@@ -8541,53 +9125,151 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
-  onSendRef.current = onSend;
 
+  // "Work locally" on the setup card: cancel the bootstrap and remember the
+  // draft. The cancelled dispatch deletes the half-made thread and puts the
+  // message back in the composer; the effect below then flips the draft to
+  // local mode and resends. The draft is a server thread for the whole
+  // setup (the bootstrap created it), so this keys off the route, not
+  // `isLocalDraftThread`.
+  const onWorktreeSetupWorkLocally = useCallback(() => {
+    if (!worktreeSetup || worktreeSetup.phase !== "running" || !draftId) {
+      return;
+    }
+    const target = {
+      environmentId: routeThreadRef.environmentId,
+      input: { threadId: worktreeSetup.threadId },
+    };
+    void (async () => {
+      const result = await cancelWorktreeSetup(target);
+      if (result._tag !== "Success" || !result.value.cancelled) return;
+      setWorkLocallyResendDraftId(draftId);
+    })();
+  }, [cancelWorktreeSetup, draftId, routeThreadRef.environmentId, worktreeSetup]);
+  // Resend once the cancelled dispatch has settled and the composer is free.
+  // Every state that makes `onSend` bail and wait is part of the readiness
+  // check, so the flag survives a reconnect, a reverting checkpoint, or a
+  // feedback upload in between. What remains inside `onSend` are the checks
+  // that need the user to change something, and those should not auto retry.
+  const workLocallyResendReady =
+    workLocallyResendDraftId !== null &&
+    workLocallyResendDraftId === draftId &&
+    isLocalDraftThread &&
+    !isSendBusy &&
+    !isConnecting &&
+    !isRevertingCheckpoint &&
+    !threadDetailLoading &&
+    clientSettingsHydrated &&
+    !needsLoadBalancing &&
+    !activeEnvironmentUnavailable &&
+    !activePendingProgress &&
+    !feedbackUploading;
+  const resendAfterWorkLocally = useEffectEvent(() => {
+    void onSend();
+  });
   useEffect(() => {
-    const nextRequest = queuedRequests[0];
-    const blocked = Boolean(
-      isSendBusy ||
-      isConnecting ||
-      threadDetailLoading ||
-      activeEnvironmentUnavailable ||
-      activePendingProgress ||
-      showPlanFollowUpPrompt ||
-      queuedDispatchRef.current !== null ||
-      queuedDrainScheduledRef.current,
-    );
     if (
-      !nextRequest ||
-      !canAutoDispatchQueuedRequest({
-        request: nextRequest,
-        running: phase === "running",
-        blocked,
-        failedRequestId: queuedDispatchFailedIdRef.current,
+      !workLocallyResendReady ||
+      sendInFlightRef.current ||
+      feedbackUploadsInFlightRef.current.has(routeThreadKey)
+    ) {
+      return;
+    }
+    if (sendEnvMode !== "local") {
+      // The draft is back; switch it to the project checkout and let the next
+      // render resend.
+      setDraftThreadContext(composerDraftTarget, { envMode: "local", startFromOrigin: false });
+      return;
+    }
+    setWorkLocallyResendDraftId(null);
+    resendAfterWorkLocally();
+  }, [
+    composerDraftTarget,
+    routeThreadKey,
+    sendEnvMode,
+    setDraftThreadContext,
+    workLocallyResendReady,
+  ]);
+
+  // Sends the oldest queued message once it is due: a tool call finished
+  // after it was queued, or the turn ended. Only one leaves per boundary; the
+  // take inside onSend re-anchors the rest.
+  const sendQueuedMessage = useEffectEvent((message: QueuedComposerMessage) => {
+    void onSend(undefined, message.submissionIntent, undefined, message);
+  });
+  const nextQueuedMessage = queuedMessages[0] ?? null;
+  const latestQueuedToolActivityId = useMemo(
+    () => (nextQueuedMessage ? latestCompletedToolActivityId(threadActivities) : null),
+    [nextQueuedMessage, threadActivities],
+  );
+  // Approvals and questions block the agent; a steer landing on top of them
+  // would answer nothing and confuse the turn, so the queue holds until the
+  // user resolves them.
+  const queueBlockedByPendingRequest =
+    activePendingApproval !== null ||
+    pendingUserInputs.length > 0 ||
+    activePendingProgress ||
+    showPlanFollowUpPrompt;
+  // onSend bails early on transient gates (environment offline, settings not
+  // hydrated, checkpoint rewinding, messages loading, machine not chosen) and
+  // leaves the message queued. Re-run when any of them clear so a due message
+  // does not wait for an unrelated phase change.
+  const queueSendGate =
+    activeEnvironmentUnavailable ||
+    !clientSettingsHydrated ||
+    isRevertingCheckpoint ||
+    threadDetailLoading ||
+    needsLoadBalancing ||
+    activeProviderStatus === null;
+  useEffect(() => {
+    if (!nextQueuedMessage || isSendBusy || queueBlockedByPendingRequest || queueSendGate) return;
+    if (sendInFlightRef.current) return;
+    if (
+      !isQueuedMessageDue({
+        message: nextQueuedMessage,
+        phase,
+        latestToolActivityId: latestQueuedToolActivityId,
       })
     ) {
       return;
     }
-    queuedDrainScheduledRef.current = true;
-    const timer = window.setTimeout(() => {
-      queuedDrainScheduledRef.current = false;
-      if (queuedDispatchRef.current !== null) return;
-      queuedDispatchRef.current = nextRequest;
-      void onSendRef.current();
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      queuedDrainScheduledRef.current = false;
-    };
+    sendQueuedMessage(nextQueuedMessage);
   }, [
-    activeEnvironmentUnavailable,
-    activePendingProgress,
-    isConnecting,
     isSendBusy,
+    latestQueuedToolActivityId,
+    nextQueuedMessage,
     phase,
-    providerStatuses,
-    queuedRequests,
-    showPlanFollowUpPrompt,
-    threadDetailLoading,
+    queueBlockedByPendingRequest,
+    queueSendGate,
   ]);
+
+  // The row handlers are read from refs at call-time so their identity stays
+  // stable and does not bust TimelineRowCtx on every ChatView render.
+  const queuedMessageActionsRef = useRef({
+    steer: (_id: string) => {},
+    remove: (_id: string) => {},
+  });
+  queuedMessageActionsRef.current = {
+    steer: (id) => {
+      const message = queuedMessages.find((entry) => entry.id === id);
+      if (!message || sendInFlightRef.current || queueBlockedByPendingRequest) return;
+      void onSend(undefined, message.submissionIntent, undefined, message);
+    },
+    remove: (id) => {
+      if (!activeThreadKey) return;
+      const message = useQueuedMessageStore.getState().remove(activeThreadKey, id);
+      if (message) restoreQueuedMessagesToComposer([message]);
+    },
+  };
+  const onSteerQueuedMessage = useCallback((id: string) => {
+    queuedMessageActionsRef.current.steer(id);
+  }, []);
+  const onRemoveQueuedMessage = useCallback((id: string) => {
+    queuedMessageActionsRef.current.remove(id);
+  }, []);
+  // Stop also cancels the queue: the messages return to the composer instead
+  // of starting a new turn the moment the interrupted one settles.
+  restoreQueuedMessagesRef.current = restoreQueuedMessagesToComposer;
 
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
@@ -9394,11 +10076,12 @@ function ChatViewContent(props: ChatViewProps) {
   const onOpenTurnDiff = useCallback(
     (turnId: TurnId, filePath?: string) => {
       if (!isServerThread || !activeThreadRef) return;
+      explicitDiffOpenRef.current = diffOpen ? null : activeThreadRef;
       useDiffPanelStore.getState().selectTurn(activeThreadRef, turnId, filePath);
       useRightPanelStore.getState().open(activeThreadRef, "diff");
       onDiffPanelOpen?.();
     },
-    [activeThreadRef, isServerThread, onDiffPanelOpen],
+    [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen],
   );
   // Both the Map and the revert handler are read from refs at call-time so
   // the callback reference is fully stable and never busts context identity.
@@ -9651,7 +10334,7 @@ function ChatViewContent(props: ChatViewProps) {
           key={`${activeThreadKey}:${diffPanelGitStatusResolutionKey}`}
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
-          initialGitScope={initialDiffPanelGitScope}
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
@@ -9665,6 +10348,14 @@ function ChatViewContent(props: ChatViewProps) {
       <PullRequestDetailPanel
         key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
         environmentId={activeThread.environmentId}
+        shortcutsEnabled={activeRightPanelSurface?.id === renderedRightPanelSurface.id}
+        getShortcutContext={() => ({
+          terminalFocus: getTerminalFocusOwner() !== null,
+          terminalOpen: Boolean(terminalUiState.terminalOpen),
+          previewFocus: isPreviewFocused(),
+          previewOpen: previewPanelOpen,
+          modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+        })}
         onSelectPullRequest={(reference) => {
           if (activeThreadRef)
             useRightPanelStore.getState().openPullRequest(activeThreadRef, {
@@ -9781,6 +10472,7 @@ function ChatViewContent(props: ChatViewProps) {
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: (files) => composerRef.current?.addDroppedFiles(files),
+    addFolders: (folders) => composerRef.current?.addDroppedFolders(folders),
   });
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
@@ -9962,6 +10654,13 @@ function ChatViewContent(props: ChatViewProps) {
                 onContentOverflowChange={setTimelineOverflows}
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
                 loadEarlier={paintOnlyDisplayedTimeline ? null : loadEarlierTurns}
+                queuedMessages={paintOnlyDisplayedTimeline ? EMPTY_QUEUED_MESSAGES : queuedMessages}
+                onSteerQueuedMessage={onSteerQueuedMessage}
+                onRemoveQueuedMessage={onRemoveQueuedMessage}
+                worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
+                onCancelWorktreeSetup={onCancelWorktreeSetup}
+                {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
+                {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
@@ -10065,10 +10764,6 @@ function ChatViewContent(props: ChatViewProps) {
                           disabled={isWorking}
                           onResumeNow={() => void onResumeAfterUsageLimit()}
                         />
-                        <QueuedRequestsBanner
-                          requests={queuedRequests}
-                          onRemove={(requestId) => removeQueuedRequest(routeThreadKey, requestId)}
-                        />
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}
@@ -10101,7 +10796,9 @@ function ChatViewContent(props: ChatViewProps) {
                                   ? "Sending feedback"
                                   : threadDetailLoading
                                     ? "Messages loading"
-                                    : null
+                                    : worktreeSetupBlocksSend
+                                      ? "Preparing worktree"
+                                      : projectCloneSendBlockReason
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             memoAttachmentPersistenceState={memoAttachmentPersistenceState}
@@ -10219,6 +10916,7 @@ function ChatViewContent(props: ChatViewProps) {
                           {mountComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
+                                ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
                                 showGitControls={isGitRepo}

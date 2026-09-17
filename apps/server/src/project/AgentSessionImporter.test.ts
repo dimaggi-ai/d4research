@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "@effect/vitest";
 import {

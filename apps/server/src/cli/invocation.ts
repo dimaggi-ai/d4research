@@ -43,7 +43,8 @@ function detectCliRunner(entryPath: string): CliRunner | null {
  * anything else suggests the bare package.
  */
 export function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? "d4research@nightly" : "d4research";
+  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
+  return channel === undefined ? "d4research" : `d4research@${channel}`;
 }
 
 /**

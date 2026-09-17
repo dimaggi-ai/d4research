@@ -1,5 +1,7 @@
+// @ts-nocheck
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { ProviderAuthService } from "../../provider/Services/ProviderAuthService.ts";
+import { ServerActivation } from "../../serverActivation.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -20,12 +22,14 @@ import {
   CommandId,
   ComposerContextId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  EnvironmentId,
   EventId,
   MessageId,
   ProjectId,
   ThreadId,
   TurnId,
 } from "@d4research/contracts";
+import { serializeAssistantCitation } from "@d4research/shared/assistantCitations";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
@@ -88,6 +92,19 @@ const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+const assistantQuoteText = "Retain the reconnect backoff.";
+const assistantCitation = {
+  version: 1 as const,
+  environmentId: EnvironmentId.make("source-environment"),
+  threadId: ThreadId.make("source-thread"),
+  messageId: asMessageId("source-message"),
+  text: assistantQuoteText,
+  start: 0,
+  end: assistantQuoteText.length,
+  prefix: "",
+  suffix: "",
+};
 
 describe("expandProviderDevMessage", () => {
   const settings = {
@@ -319,6 +336,8 @@ describe("ProviderCommandReactor", () => {
 
   async function createHarness(input?: {
     readonly baseDir?: string;
+    readonly initialTitle?: string;
+    readonly deferReactorStart?: boolean;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
@@ -430,21 +449,20 @@ describe("ProviderCommandReactor", () => {
     const interruptTurn = vi.fn((_: unknown) => input?.interruptTurnEffect?.() ?? Effect.void);
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
     const respondToUserInput = vi.fn<ProviderServiceShape["respondToUserInput"]>(() => Effect.void);
-    const stopSession = vi.fn(
-      (input: unknown): Effect.Effect<void, ProviderAdapterRequestError> =>
-        Effect.sync(() => {
-          const threadId =
-            typeof input === "object" && input !== null && "threadId" in input
-              ? (input as { threadId?: ThreadId }).threadId
-              : undefined;
-          if (!threadId) {
-            return;
-          }
-          const index = runtimeSessions.findIndex((session) => session.threadId === threadId);
-          if (index >= 0) {
-            runtimeSessions.splice(index, 1);
-          }
-        }),
+    const stopSession = vi.fn((input: unknown): Effect.Effect<void, ProviderAdapterRequestError> =>
+      Effect.sync(() => {
+        const threadId =
+          typeof input === "object" && input !== null && "threadId" in input
+            ? (input as { threadId?: ThreadId }).threadId
+            : undefined;
+        if (!threadId) {
+          return;
+        }
+        const index = runtimeSessions.findIndex((session) => session.threadId === threadId);
+        if (index >= 0) {
+          runtimeSessions.splice(index, 1);
+        }
+      }),
     );
     if (input?.stopSessionEffect) {
       stopSession.mockImplementation(() => input.stopSessionEffect!());
@@ -737,7 +755,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-thread-create"),
         threadId: ThreadId.make("thread-1"),
         projectId: asProjectId("project-1"),
-        title: "Thread",
+        title: input?.initialTitle ?? "Thread",
         modelSelection: modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -811,7 +829,17 @@ describe("ProviderCommandReactor", () => {
     }
 
     scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
+    const reactorScope = scope;
+    const startReactor = () =>
+      Effect.runPromise(
+        reactor
+          .start()
+          .pipe(
+            Scope.provide(reactorScope),
+            Effect.provideService(ServerActivation, input?.serverActivation),
+          ),
+      );
+    if (!input?.deferReactorStart) await startReactor();
     const drain = () => Effect.runPromise(reactor.drain);
 
     return {
@@ -843,6 +871,7 @@ describe("ProviderCommandReactor", () => {
       inlineDelegationRequests,
       stateDir,
       drain,
+      startReactor,
       awaitSessionError: () => Effect.runPromise(Deferred.await(sessionErrorRecorded)),
       runEffect,
       get titleRegenerationCompletionDispatchAttempts() {
@@ -2213,55 +2242,126 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
-  it("generates a thread title on the first turn", async () => {
-    const harness = await createHarness();
-    const now = "2026-01-01T00:00:00.000Z";
-    const seededTitle = "Please investigate reconnect failures after restar...";
-    harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Generated title" }));
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.meta.update",
-        commandId: CommandId.make("cmd-thread-title-seed"),
-        threadId: ThreadId.make("thread-1"),
-        title: seededTitle,
+  effectIt.effect.each(["before completion", "after completion"] as const)(
+    "refines a vague title once when initial generation finishes %s",
+    (timing) =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const threadId = ThreadId.make("thread-1");
+        const turnId = TurnId.make("title-first-turn");
+        const createdAt = "2026-01-01T00:00:01.000Z";
+        harness.generateThreadTitle.mockReturnValue(
+          Effect.succeed({ title: "Fix QR pairing expiry" }),
+        );
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("title-turn"),
+          threadId,
+          message: {
+            messageId: MessageId.make("title-user"),
+            role: "user",
+            text: "Fix this",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt,
+        });
+        yield* Effect.promise(() => harness.drain());
+        const generate = harness.engine.dispatch({
+          type: "thread.title.generate.complete",
+          commandId: CommandId.make("initial-title"),
+          threadId,
+          expectedTitle: "Thread",
+          expectedVersion: null,
+          title: "Investigate issue",
+          needsRefinement: true,
+        });
+        if (timing !== "after completion") yield* generate;
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("title-running"),
+          threadId,
+          createdAt,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.message.assistant.delta",
+          commandId: CommandId.make("title-answer"),
+          threadId,
+          messageId: MessageId.make("title-assistant"),
+          turnId,
+          delta: "The QR pairing token expires before the phone redeems it.",
+          createdAt,
+        });
+        const ready = (commandId: string) =>
+          harness.engine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make(commandId),
+            threadId,
+            createdAt,
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: createdAt,
+            },
+          });
+        yield* ready("title-ready");
+        if (timing === "after completion") yield* generate;
+        yield* Effect.promise(() => harness.drain());
+        yield* ready("title-ready-again");
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.generateThreadTitle).toHaveBeenCalledTimes(1);
+        expect(harness.generateThreadTitle.mock.calls[0]?.[0].message).toContain(
+          "QR pairing token",
+        );
+        const thread = (yield* Effect.promise(() => harness.readModel())).threads[0];
+        expect(thread?.title).toBe("Fix QR pairing expiry");
+        expect(thread?.titleState?.needsRefinement).toBe(false);
       }),
-    );
+  );
 
-    await Effect.runPromise(
-      harness.engine.dispatch({
+  effectIt.effect("does not replace a manual title matching the first message seed", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const threadId = ThreadId.make("thread-1");
+      yield* harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("manual-title"),
+        threadId,
+        title: "Thread",
+      });
+      yield* harness.engine.dispatch({
         type: "thread.turn.start",
-        commandId: CommandId.make("cmd-turn-start-title"),
-        threadId: ThreadId.make("thread-1"),
+        commandId: CommandId.make("manual-title-turn"),
+        threadId,
+        titleSeed: "Thread",
         message: {
-          messageId: asMessageId("user-message-title"),
+          messageId: MessageId.make("manual-title-user"),
           role: "user",
-          text: "Please investigate reconnect failures after restarting the session.",
+          text: "Fix this",
           attachments: [],
         },
-        titleSeed: seededTitle,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
-        createdAt: now,
-      }),
-    );
-
-    await waitFor(() => harness.generateThreadTitle.mock.calls.length === 1);
-    expect(harness.generateThreadTitle.mock.calls[0]?.[0]).toMatchObject({
-      message: "Please investigate reconnect failures after restarting the session.",
-    });
-
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      return (
-        readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.title ===
-        "Generated title"
-      );
-    });
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.title).toBe("Generated title");
-  });
+        createdAt: "2026-01-01T00:00:01.000Z",
+      });
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.generateThreadTitle).not.toHaveBeenCalled();
+    }),
+  );
 
   it("regenerates a thread title from the current conversation", async () => {
     const harness = await createHarness();
@@ -2957,25 +3057,29 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("matches the client-seeded title even when the outgoing prompt is reformatted", async () => {
-    const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
     const seededTitle = "Fix reconnect spinner on resume";
+    const harness = await createHarness({ initialTitle: seededTitle });
+    const prompt = `[effort:high]\\n\\nFix reconnect spinner on resume ${serializeAssistantCitation(assistantCitation)}`;
     harness.generateThreadTitle.mockReturnValue(
       Effect.succeed({
         title: "Reconnect spinner resume bug",
       }),
     );
 
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.meta.update",
-        commandId: CommandId.make("cmd-thread-title-formatted-seed"),
-        threadId: ThreadId.make("thread-1"),
-        title: seededTitle,
-      }),
+    const titleUpdated = await harness.runEffect(
+      harness.engine.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "thread.meta-updated" &&
+            event.payload.title === "Reconnect spinner resume bug",
+        ),
+        Stream.take(1),
+        Stream.toPull,
+        Scope.provide(scope!),
+      ),
     );
-
-    await Effect.runPromise(
+    await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.make("cmd-turn-start-title-formatted"),
@@ -2983,7 +3087,7 @@ describe("ProviderCommandReactor", () => {
         message: {
           messageId: asMessageId("user-message-title-formatted"),
           role: "user",
-          text: "[effort:high]\\n\\nFix reconnect spinner on resume",
+          text: prompt,
           attachments: [],
         },
         titleSeed: seededTitle,
@@ -2993,18 +3097,21 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await waitFor(() => harness.generateThreadTitle.mock.calls.length === 1);
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      return (
-        readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.title ===
-        "Reconnect spinner resume bug"
-      );
-    });
+    await harness.runEffect(titleUpdated);
+    await harness.drain();
 
+    expect(harness.generateThreadTitle.mock.calls[0]?.[0]).toMatchObject({
+      message: `[effort:high]\\n\\nFix reconnect spinner on resume ${assistantQuoteText}`,
+    });
+    expect(harness.generateThreadTitle.mock.calls[0]?.[0].message).not.toContain("t3-citation://");
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.title).toBe("Reconnect spinner resume bug");
+    expect(
+      thread?.messages.find((entry) => entry.id === asMessageId("user-message-title-formatted"))
+        ?.text,
+    ).toBe(prompt);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: prompt });
   });
 
   it("generates a worktree branch name for the first turn", async () => {

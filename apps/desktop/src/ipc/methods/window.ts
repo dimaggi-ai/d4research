@@ -13,6 +13,7 @@ import {
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
 } from "@d4research/contracts";
+import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@d4research/shared/filePreview";
 import { isCommandAvailable } from "@d4research/shared/shell";
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
@@ -27,6 +28,7 @@ import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
+import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
@@ -65,6 +67,15 @@ export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getAppBranding")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return environment.branding;
+  }),
+});
+
+export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_LOCALE_CHANNEL,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
+    const electronApp = yield* ElectronApp.ElectronApp;
+    return yield* electronApp.systemLocale;
   }),
 });
 
@@ -171,6 +182,11 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+    const settings = yield* appSettings.get;
+    // A picked path only means something to a backend on this machine.
+    if (!settings.localEnvironmentEnabled) {
+      return null;
+    }
     // Three picker modes:
     //   - targetEnvironmentId omitted: default to the primary picker. Keeps
     //     the historical behavior unchanged for users who never enabled the
@@ -189,7 +205,6 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       targetId !== undefined &&
       targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
       targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
-    const settings = yield* appSettings.get;
     // Fall back to the persisted wslDistro when the id is the
     // "wsl:default" sentinel; the orchestrator uses the same fallback
     // for the actual backend.
@@ -225,6 +240,32 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       selectedPath.value,
     );
     return Option.getOrElse(converted, () => selectedPath.value);
+  }),
+});
+
+export const pickProjectFavicon = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PICK_PROJECT_FAVICON_CHANNEL,
+  payload: Schema.UndefinedOr(Schema.String),
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.pickProjectFavicon")(function* (initialPath) {
+    const dialog = yield* ElectronDialog.ElectronDialog;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    if (!(yield* appSettings.get).localEnvironmentEnabled) {
+      return null;
+    }
+    const paths = yield* dialog.pickFiles({
+      owner: yield* electronWindow.focusedMainOrFirst,
+      defaultPath: Option.fromNullishOr(initialPath),
+      multiple: false,
+      filters: [
+        {
+          name: "Images",
+          extensions: WORKSPACE_IMAGE_PREVIEW_EXTENSIONS.map((extension) => extension.slice(1)),
+        },
+      ],
+    });
+    return paths[0] ?? null;
   }),
 });
 

@@ -1,19 +1,23 @@
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import {
+  StackActions,
+  useNavigation,
+  useRoute,
+  type StaticScreenProps,
+} from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import { Alert, Linking, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useThemeColor } from "../../lib/useThemeColor";
-
-import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
-import { extractPairingUrlFromQrPayload } from "./pairing";
+import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
-import { buildPairingUrl, parsePairingUrl } from "./pairing";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -29,6 +33,7 @@ export function ConnectionsNewRouteScreen({
     pairingConnectionError,
   } = useRemoteConnections();
   const navigation = useNavigation();
+  const routeName = useRoute().name;
   const params = route.params ?? {};
   const insets = useSafeAreaInsets();
   const [hostInput, setHostInput] = useState("");
@@ -38,7 +43,7 @@ export function ConnectionsNewRouteScreen({
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [scannerLocked, setScannerLocked] = useState(false);
 
-  const headerIconColor = useThemeColor("--color-icon");
+  const headerIconColor = useUniwindTheme()["--color-icon"];
 
   const connectDisabled = isSubmitting || hostInput.trim().length === 0;
 
@@ -76,9 +81,21 @@ export function ConnectionsNewRouteScreen({
       return;
     }
 
+    if (permission.canAskAgain) {
+      Alert.alert(
+        "Camera access needed",
+        "Allow camera access to scan an environment pairing QR code.",
+      );
+      return;
+    }
+
     Alert.alert(
       "Camera access needed",
-      "Allow camera access to scan an environment pairing QR code.",
+      "Camera access was denied for this app. Open Settings to enable it.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Open Settings", onPress: () => void Linking.openSettings() },
+      ],
     );
   }, [cameraPermission?.granted, requestCameraPermission]);
 
@@ -116,51 +133,52 @@ export function ConnectionsNewRouteScreen({
     [onChangeConnectionPairingUrl, scannerLocked],
   );
 
-  const handleSubmit = useCallback(async () => {
-    setIsSubmitting(true);
-
-    const pairingUrl = buildPairingUrl(hostInput, codeInput);
-    onChangeConnectionPairingUrl(pairingUrl);
-    const result = await onConnectPress(pairingUrl);
-    if (AsyncResult.isSuccess(result)) {
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      } else {
-        navigation.dispatch(StackActions.replace("Home"));
+  const connectAndClose = useCallback(
+    async (pairingUrl: string) => {
+      setIsSubmitting(true);
+      onChangeConnectionPairingUrl(pairingUrl);
+      try {
+        const result = await onConnectPress(pairingUrl);
+        if (AsyncResult.isSuccess(result)) {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.dispatch(StackActions.replace("Home"));
+          }
+        }
+      } finally {
+        setIsSubmitting(false);
       }
-    } else {
-      setIsSubmitting(false);
-    }
-  }, [codeInput, hostInput, onChangeConnectionPairingUrl, onConnectPress, navigation]);
+    },
+    [navigation, onChangeConnectionPairingUrl, onConnectPress],
+  );
+
+  const handleSubmit = useCallback(async () => {
+    await connectAndClose(buildPairingUrl(hostInput, codeInput));
+  }, [codeInput, connectAndClose, hostInput]);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen
+      formSheet={routeName === "ConnectionsNew"}
+      title={showScanner ? "Scan QR Code" : "Add Environment"}
+      actions={[
+        {
+          accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
+          icon: showScanner ? "xmark" : "camera",
+          onPress: () => {
+            if (showScanner) {
+              closeScanner();
+            } else {
+              void openScanner();
+            }
+          },
+        },
+      ]}
+    >
       <NativeStackScreenOptions
-        options={{
-          // Android renders its own in-screen header below instead of the native bar.
-          ...(Platform.OS === "android" ? { headerShown: false } : null),
-          title: showScanner ? "Scan QR Code" : "Add Environment",
-        }}
+        options={{ title: showScanner ? "Scan QR Code" : "Add Environment" }}
       />
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title={showScanner ? "Scan QR Code" : "Add Environment"}
-          onBack={() => navigation.goBack()}
-          actions={[
-            {
-              accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
-              icon: showScanner ? "xmark" : "camera",
-              onPress: () => {
-                if (showScanner) {
-                  closeScanner();
-                } else {
-                  void openScanner();
-                }
-              },
-            },
-          ]}
-        />
-      ) : (
+      {Platform.OS !== "android" ? (
         <NativeHeaderToolbar placement="right">
           <NativeHeaderToolbar.Button
             icon={showScanner ? "xmark" : "qrcode.viewfinder"}
@@ -175,7 +193,7 @@ export function ConnectionsNewRouteScreen({
             tintColor={headerIconColor}
           />
         </NativeHeaderToolbar>
-      )}
+      ) : null}
 
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -246,19 +264,21 @@ export function ConnectionsNewRouteScreen({
 
               {pairingConnectionError ? <ErrorBanner message={pairingConnectionError} /> : null}
 
-              <ConnectionSheetButton
-                icon="plus"
-                label={isSubmitting ? "Pairing..." : "Add environment"}
-                disabled={connectDisabled}
-                tone="primary"
-                onPress={() => {
-                  void handleSubmit();
-                }}
-              />
+              <View className={Platform.OS === "android" ? "flex-row justify-end" : undefined}>
+                <ConnectionSheetButton
+                  icon="plus"
+                  label={isSubmitting ? "Pairing..." : "Add environment"}
+                  disabled={connectDisabled}
+                  tone="primary"
+                  onPress={() => {
+                    void handleSubmit();
+                  }}
+                />
+              </View>
             </View>
           )}
         </View>
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }

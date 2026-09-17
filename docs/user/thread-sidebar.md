@@ -160,3 +160,10 @@ pill** fallback because their colors are not controlled by T3 Code.
 To generate a fresh title from the conversation, open a thread's context menu and choose
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
+
+## Snooze until later
+
+Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
+local time zone, or a duration in minutes, hours, or days. Durations start when
+you confirm; one day means 24 hours. On web and desktop, you can also snooze
+several selected threads together. Choose **Wake thread** to bring a thread back early.

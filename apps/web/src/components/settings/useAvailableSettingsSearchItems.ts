@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { AuthAccessWriteScope } from "@d4research/contracts";
 
 import { isElectron } from "~/env";
-
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 
 import { useEnvironments } from "~/state/environments";
@@ -23,12 +23,16 @@ import { getThreadAutoSettlementSearchAvailability } from "./settingsSearch";
 export function useAvailableSettingsSearchItems() {
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
-  const desktopWsl = useEnvironmentQuery(isElectron ? desktopWslStateAtom : null);
+  const localEnvironmentDisabled = isLocalEnvironmentDisabled();
+  const desktopWsl = useEnvironmentQuery(
+    isElectron && !localEnvironmentDisabled ? desktopWslStateAtom : null,
+  );
   const canManageLocalBackend =
-    isElectron ||
-    ((primarySessionState.data?.authenticated &&
-      primarySessionState.data.scopes?.includes(AuthAccessWriteScope)) ??
-      false);
+    !localEnvironmentDisabled &&
+    (isElectron ||
+      ((primarySessionState.data?.authenticated &&
+        primarySessionState.data.scopes?.includes(AuthAccessWriteScope)) ??
+        false));
 
   return useMemo(
     () =>

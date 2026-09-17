@@ -88,9 +88,19 @@ hint. See [Handoff](./concepts.md#handoff).
 
 ## Queued follow-ups
 
-Sending while a turn is still running does not interrupt the agent: the request is queued and shown
-in a **Queued · n** banner above the composer, where individual entries can be removed before they
-run. Queued requests are dispatched when the current turn settles.
+On web and desktop, a message sent during a running turn waits at the end of the conversation as a
+dashed bubble. It goes out on its own when the agent finishes its next tool call, or when the turn
+ends. Use the arrow under the bubble to send it right away, or the X to move it back into the
+composer. Stop returns every queued message to the composer.
+
+**Settings → General → Follow-up behavior** determines what a message sent during a running turn
+does. **Queue** keeps this behavior; **Steer** sends new messages immediately. The setting applies
+to the current client, and messages already queued keep their place.
+
+`Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux sends the oldest queued message
+now. Change `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut. The
+current draft stays in the composer, and the send waits while the agent needs an approval or an
+answer.
 
 ## Approvals and user input
 

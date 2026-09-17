@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off - Packaging native archives needs Node's filesystem and archive APIs.
+// @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
 import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
+
 import {
   createPackageWithOptions,
   extractAll,
@@ -27,24 +28,241 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import {
+  findInlinedExternalPackages,
+  selectCliRuntimeExternalDependencies,
+} from "./lib/cli-external-packages.ts";
+import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
-import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Config from "effect/Config";
-import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+
+const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
+const DESKTOP_APP_ID = "ai.dimaggi.d4research";
+
+const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
+const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
+
+const WorkspaceConfig = Schema.Struct({
+  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+});
+type WorkspaceConfig = typeof WorkspaceConfig.Type;
+
+const StageWorkspaceConfig = Schema.Struct({
+  supportedArchitectures: Schema.Struct({
+    os: Schema.Array(Schema.String),
+    cpu: Schema.Array(Schema.String),
+    libc: Schema.optional(Schema.Array(Schema.String)),
+  }),
+  // pnpm 11 only reads these from pnpm-workspace.yaml (not package.json#pnpm).
+  // Without allowBuilds the staged `vp install --prod` fails with
+  // ERR_PNPM_IGNORED_BUILDS for packages that have lifecycle scripts.
+  allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  nodeLinker: Schema.optional(Schema.Literals(["hoisted"])),
+});
+type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
+
+const RepoRoot = Effect.service(Path.Path).pipe(
+  Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
+);
+const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
+const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
+
+const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const repoRoot = yield* RepoRoot;
+  const workspaceYaml = yield* fs.readFileString(path.join(repoRoot, "pnpm-workspace.yaml"));
+  return yield* decodeWorkspaceConfig(workspaceYaml);
+});
+
+interface DesktopBuildIconAssets {
+  readonly macIconPng: string;
+  readonly linuxIconPng: string;
+  readonly windowsIconIco: string;
+}
+
+interface PlatformConfig {
+  readonly cliFlag: "--mac" | "--linux" | "--win";
+  readonly defaultTarget: string;
+  readonly archChoices: ReadonlyArray<typeof BuildArch.Type>;
+}
+
+export function resolveResourceMonitorRustTargets(
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+): ReadonlyArray<string> {
+  if (platform === "mac") {
+    if (arch === "universal") {
+      return ["aarch64-apple-darwin", "x86_64-apple-darwin"];
+    }
+    return [arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"];
+  }
+  if (platform === "linux") {
+    return [arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"];
+  }
+  return [arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"];
+}
+
+export function resourceMonitorExecutableName(platform: typeof BuildPlatform.Type): string {
+  return platform === "win" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
+}
+
+const PLATFORM_CONFIG: Record<typeof BuildPlatform.Type, PlatformConfig> = {
+  mac: {
+    cliFlag: "--mac",
+    defaultTarget: "dmg",
+    archChoices: ["arm64", "x64", "universal"],
+  },
+  linux: {
+    cliFlag: "--linux",
+    defaultTarget: "AppImage",
+    archChoices: ["x64", "arm64"],
+  },
+  win: {
+    cliFlag: "--win",
+    defaultTarget: "nsis",
+    archChoices: ["x64", "arm64"],
+  },
+};
+
+interface BuildCliInput {
+  readonly platform: Option.Option<typeof BuildPlatform.Type>;
+  readonly target: Option.Option<string>;
+  readonly arch: Option.Option<typeof BuildArch.Type>;
+  readonly buildVersion: Option.Option<string>;
+  readonly outputDir: Option.Option<string>;
+  readonly skipBuild: Option.Option<boolean>;
+  readonly keepStage: Option.Option<boolean>;
+  readonly signed: Option.Option<boolean>;
+  readonly verbose: Option.Option<boolean>;
+  readonly mockUpdates: Option.Option<boolean>;
+  readonly mockUpdateServerPort: Option.Option<number>;
+  readonly wslRuntime: Option.Option<string>;
+}
+
+function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
+  if (hostPlatform === "darwin") return "mac";
+  if (hostPlatform === "linux") return "linux";
+  if (hostPlatform === "win32") return "win";
+  return undefined;
+}
+
+const getDefaultArch = Effect.fn("getDefaultArch")(function* (platform: typeof BuildPlatform.Type) {
+  const config = PLATFORM_CONFIG[platform];
+  if (!config) {
+    return "x64";
+  }
+
+  return yield* getDefaultBuildArch(platform, config);
+});
+
+export class KeyringNativePackageMissingError extends Schema.TaggedError<KeyringNativePackageMissingError>()(
+  "KeyringNativePackageMissingError",
+  {
+    packageName: Schema.String,
+    binaryFileName: Schema.String,
+    packageEntryPath: Schema.String,
+    platform: BuildPlatform,
+    arch: BuildArch,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Keyring native package is missing: ${this.packageName}`;
+  }
+}
+
+export class UnsupportedHostBuildPlatformError extends Schema.TaggedError<UnsupportedHostBuildPlatformError>()(
+  "UnsupportedHostBuildPlatformError",
+  {
+    hostPlatform: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Unsupported host platform '${this.hostPlatform}'.`;
+  }
+}
+
+export class UnsupportedDesktopBuildArchitectureError extends Schema.TaggedError<UnsupportedDesktopBuildArchitectureError>()(
+  "UnsupportedDesktopBuildArchitectureError",
+  {
+    platform: BuildPlatform,
+    arch: BuildArch,
+    supportedArchitectures: Schema.Array(BuildArch),
+  },
+) {
+  override get message(): string {
+    return `Unsupported architecture '${this.arch}' for ${this.platform}.`;
+  }
+}
+
+const InvalidMockUpdateServerPortReason = Schema.Literals([
+  "not-numeric",
+  "not-integer",
+  "out-of-range",
+]);
+
+export class InvalidMockUpdateServerPortError extends Schema.TaggedError<InvalidMockUpdateServerPortError>()(
+  "InvalidMockUpdateServerPortError",
+  {
+    reason: InvalidMockUpdateServerPortReason,
+    inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Invalid mock update server port.";
+  }
+
+  static fromConfigValue(configuredPort: string, cause: unknown) {
+    return new InvalidMockUpdateServerPortError({
+      reason: invalidMockUpdateServerPortReason(configuredPort),
+      inputLength: configuredPort.length,
+      cause,
+    });
+  }
+}
+
+export class BuildCommandFailedError extends Schema.TaggedError<BuildCommandFailedError>()(
+  "BuildCommandFailedError",
+  {
+    command: Schema.String,
+    exitCode: Schema.Int,
+    stdoutTail: Schema.optionalKey(Schema.String),
+    stderrTail: Schema.optionalKey(Schema.String),
+  },
+) {
+  override get message(): string {
+    const outputSections = [
+      `Command: ${this.command}`,
+      formatOutputSection("stdout", this.stdoutTail ?? ""),
+      formatOutputSection("stderr", this.stderrTail ?? ""),
+    ].filter((section): section is string => section !== undefined);
+    const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
+    return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
+  }
+}
 
 export const LINUX_DESKTOP_BUILD_PREREQUISITES = [
   { id: "cargo", description: "Rust compiler and Cargo", packages: ["cargo", "rustc"] },
@@ -140,7 +358,7 @@ const WINDOWS_DESKTOP_BUILD_PREREQUISITES = [
     id: "msvc",
     description: "Visual Studio Build Tools with C++, Windows SDK, and Spectre libraries",
   },
-  { id: "tar", description: "tar for the bundled WSL runtime" },
+  { id: "tar", description: "tar to inspect the bundled WSL runtime archive" },
 ] as const;
 
 export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedError<WindowsDesktopBuildPrerequisitesMissingError>()(
@@ -170,364 +388,6 @@ export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedE
   }
 }
 
-export class LinuxBrowserSecretHostError extends Schema.TaggedError<LinuxBrowserSecretHostError>()(
-  "LinuxBrowserSecretHostError",
-  { hostPlatform: Schema.String },
-) {
-  override get message(): string {
-    return `Linux desktop builds must run on a Linux host: the browser secret helper links against libsecret and cannot be built on '${this.hostPlatform}'.`;
-  }
-}
-
-export class DesktopDmgBackgroundSourceMissingError extends Schema.TaggedError<DesktopDmgBackgroundSourceMissingError>()(
-  "DesktopDmgBackgroundSourceMissingError",
-  {
-    channel: Schema.Literals(["latest", "nightly"]),
-    sourcePath: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Desktop ${this.channel} DMG background source is missing at ${this.sourcePath}`;
-  }
-}
-
-export class BundleNotSelfContainedError extends Schema.TaggedError<BundleNotSelfContainedError>()(
-  "BundleNotSelfContainedError",
-  { exitCode: Schema.Number, output: Schema.String },
-) {
-  override get message(): string {
-    return `The packaged server bundle could not load from the isolated, extracted sidecar (exit ${this.exitCode}). Anything it imports that is neither a Node built-in nor in the selected runtime-external closure is unavailable to both backends. Output:
-${this.output}`;
-  }
-}
-
-export class WindowsServerSidecarPackError extends Schema.TaggedError<WindowsServerSidecarPackError>()(
-  "WindowsServerSidecarPackError",
-  {
-    asarPath: Schema.String,
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
-  override get message(): string {
-    return `Failed to pack the Windows server sidecar at ${this.asarPath}.`;
-  }
-}
-
-export class WindowsPrimaryNativeProbeError extends Schema.TaggedError<WindowsPrimaryNativeProbeError>()(
-  "WindowsPrimaryNativeProbeError",
-  {
-    executablePath: Schema.String,
-    exitCode: Schema.Number,
-    output: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `The packaged Windows primary could not load fff from server.asar (exit ${this.exitCode}). Output:\n${this.output}`;
-  }
-}
-
-const WindowsPackagedPayloadValidationReason = Schema.Literals([
-  "packaged-app-missing",
-  "sidecar-missing",
-  "sidecar-invalid",
-  "unpacked-native-missing",
-  "resource-monitor-missing",
-  "wsl-runtime-missing",
-  "wsl-runtime-invalid",
-  "file-limit-exceeded",
-]);
-
-export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<WindowsPackagedPayloadValidationError>()(
-  "WindowsPackagedPayloadValidationError",
-  {
-    reason: WindowsPackagedPayloadValidationReason,
-    packagedAppDir: Schema.String,
-    missingFiles: Schema.optionalKey(Schema.Array(Schema.String)),
-    fileCount: Schema.optionalKey(Schema.Int),
-    fileLimit: Schema.optionalKey(Schema.Int),
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {
-  override get message(): string {
-    if (this.reason === "file-limit-exceeded") {
-      return `Windows packaged payload contains ${String(this.fileCount)} files; expected at most ${String(this.fileLimit)}.`;
-    }
-    if (this.reason === "unpacked-native-missing") {
-      return `Windows server sidecar is missing ${String(this.missingFiles?.length ?? 0)} unpacked native files.`;
-    }
-    if (this.reason === "resource-monitor-missing") {
-      return "Windows packaged payload is missing the resource monitor executable.";
-    }
-    if (this.reason === "wsl-runtime-missing") {
-      return "Windows packaged payload is missing the WSL runtime archive or SHA-256 sidecar.";
-    }
-    if (this.reason === "wsl-runtime-invalid") {
-      return "Windows packaged payload contains an invalid WSL runtime archive.";
-    }
-    if (this.reason === "sidecar-invalid") {
-      return "Windows packaged payload contains an invalid server.asar sidecar.";
-    }
-    if (this.reason === "sidecar-missing") {
-      return "Windows packaged payload is missing resources/server.asar.";
-    }
-    return `Windows packaged application directory was not found at ${this.packagedAppDir}.`;
-  }
-}
-
-export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (input: {
-  readonly repoRoot: string;
-  readonly stageResourcesDir: string;
-  readonly platform: typeof BuildPlatform.Type;
-  readonly arch: typeof BuildArch.Type;
-  readonly verbose: boolean;
-}) {
-  if (input.platform !== "linux") return;
-  // The helper links against the host's libsecret, so it can only be built on
-  // Linux; the build script is a no-op elsewhere. A Linux artifact from
-  // another host would ship without it and every v11 cookie import would
-  // report the keyring as unavailable, so refuse rather than package that
-  // silently. `universal` is a mac-only arch the option type still admits;
-  // the helper script rejects it, so it maps to the concrete x64 the Linux
-  // resource monitor uses for the same request.
-  const hostPlatform = yield* HostProcessPlatform;
-  if (hostPlatform !== "linux") {
-    return yield* new LinuxBrowserSecretHostError({ hostPlatform });
-  }
-  const path = yield* Path.Path;
-  yield* runCommand(
-    ChildProcess.make(
-      "node",
-      [
-        path.join(input.repoRoot, "apps/desktop/scripts/build-browser-secret.mjs"),
-        "--arch",
-        input.arch === "arm64" ? "arm64" : "x64",
-        "--output",
-        path.join(input.stageResourcesDir, "browser-secret", "t3-browser-secret"),
-      ],
-      { cwd: input.repoRoot },
-    ),
-    { label: "build Linux browser secret helper", verbose: input.verbose },
-  );
-});
-const BUNDLE_SELF_CHECK_TIMEOUT = Duration.seconds(120);
-const WINDOWS_PRIMARY_NATIVE_PROBE_TIMEOUT = Duration.seconds(30);
-
-const WINDOWS_PRIMARY_FFF_PROBE_SOURCE = `
-const { join } = await import("node:path");
-const { pathToFileURL } = await import("node:url");
-const { FileFinder } = await import(pathToFileURL(process.argv[1]).href);
-const probeRoot = process.argv[2];
-const result = FileFinder.create({
-  basePath: probeRoot,
-  frecencyDbPath: join(probeRoot, "frecency.mdb"),
-  historyDbPath: join(probeRoot, "history.mdb"),
-  disableWatch: true,
-  disableMmapCache: true,
-  disableContentIndexing: true,
-});
-if (!result.ok) throw new Error(result.error);
-result.value.destroy();
-`;
-const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "ai.dimaggi.d4research";
-
-const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
-const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
-
-const WorkspaceConfig = Schema.Struct({
-  catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
-});
-type WorkspaceConfig = typeof WorkspaceConfig.Type;
-
-const StageWorkspaceConfig = Schema.Struct({
-  nodeLinker: Schema.optional(Schema.Literal("hoisted")),
-  supportedArchitectures: Schema.Struct({
-    os: Schema.Array(Schema.String),
-    cpu: Schema.Array(Schema.String),
-    libc: Schema.optional(Schema.Array(Schema.String)),
-  }),
-  // pnpm 11 only reads these from pnpm-workspace.yaml (not package.json#pnpm).
-  // Without allowBuilds the staged `vp install --prod` fails with
-  // ERR_PNPM_IGNORED_BUILDS for packages that have lifecycle scripts.
-  allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
-  patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-});
-type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
-
-const RepoRoot = Effect.service(Path.Path).pipe(
-  Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
-);
-const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
-const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
-const decodeNodePtyManifest = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
-);
-const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
-
-const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const repoRoot = yield* RepoRoot;
-  const workspaceYaml = yield* fs.readFileString(path.join(repoRoot, "pnpm-workspace.yaml"));
-  return yield* decodeWorkspaceConfig(workspaceYaml);
-});
-
-interface DesktopBuildIconAssets {
-  readonly macIconPng: string;
-  readonly linuxIconPng: string;
-  readonly windowsIconIco: string;
-}
-
-interface PlatformConfig {
-  readonly cliFlag: "--mac" | "--linux" | "--win";
-  readonly defaultTarget: string;
-  readonly archChoices: ReadonlyArray<typeof BuildArch.Type>;
-}
-
-export function resolveResourceMonitorRustTargets(
-  platform: typeof BuildPlatform.Type,
-  arch: typeof BuildArch.Type,
-): ReadonlyArray<string> {
-  if (platform === "mac") {
-    if (arch === "universal") {
-      return ["aarch64-apple-darwin", "x86_64-apple-darwin"];
-    }
-    return [arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"];
-  }
-  if (platform === "linux") {
-    return [arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"];
-  }
-  return [arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"];
-}
-
-export function resourceMonitorExecutableName(platform: typeof BuildPlatform.Type): string {
-  return platform === "win" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
-}
-
-const PLATFORM_CONFIG: Record<typeof BuildPlatform.Type, PlatformConfig> = {
-  mac: {
-    cliFlag: "--mac",
-    defaultTarget: "dmg",
-    archChoices: ["arm64", "x64", "universal"],
-  },
-  linux: {
-    cliFlag: "--linux",
-    defaultTarget: "AppImage",
-    archChoices: ["x64", "arm64"],
-  },
-  win: {
-    cliFlag: "--win",
-    defaultTarget: "nsis",
-    archChoices: ["x64", "arm64"],
-  },
-};
-
-interface BuildCliInput {
-  readonly platform: Option.Option<typeof BuildPlatform.Type>;
-  readonly target: Option.Option<string>;
-  readonly arch: Option.Option<typeof BuildArch.Type>;
-  readonly buildVersion: Option.Option<string>;
-  readonly outputDir: Option.Option<string>;
-  readonly skipBuild: Option.Option<boolean>;
-  readonly keepStage: Option.Option<boolean>;
-  readonly signed: Option.Option<boolean>;
-  readonly verbose: Option.Option<boolean>;
-  readonly mockUpdates: Option.Option<boolean>;
-  readonly mockUpdateServerPort: Option.Option<number>;
-  readonly wslPrebuild: Option.Option<string>;
-}
-
-function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
-  if (hostPlatform === "darwin") return "mac";
-  if (hostPlatform === "linux") return "linux";
-  if (hostPlatform === "win32") return "win";
-  return undefined;
-}
-
-const getDefaultArch = Effect.fn("getDefaultArch")(function* (platform: typeof BuildPlatform.Type) {
-  const config = PLATFORM_CONFIG[platform];
-  if (!config) {
-    return "x64";
-  }
-
-  return yield* getDefaultBuildArch(platform, config);
-});
-
-export class UnsupportedHostBuildPlatformError extends Schema.TaggedError<UnsupportedHostBuildPlatformError>()(
-  "UnsupportedHostBuildPlatformError",
-  {
-    hostPlatform: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Unsupported host platform '${this.hostPlatform}'.`;
-  }
-}
-
-export class UnsupportedDesktopBuildArchitectureError extends Schema.TaggedError<UnsupportedDesktopBuildArchitectureError>()(
-  "UnsupportedDesktopBuildArchitectureError",
-  {
-    platform: BuildPlatform,
-    arch: BuildArch,
-    supportedArchitectures: Schema.Array(BuildArch),
-  },
-) {
-  override get message(): string {
-    return `Unsupported architecture '${this.arch}' for ${this.platform}.`;
-  }
-}
-
-const InvalidMockUpdateServerPortReason = Schema.Literals([
-  "not-numeric",
-  "not-integer",
-  "out-of-range",
-]);
-
-export class InvalidMockUpdateServerPortError extends Schema.TaggedError<InvalidMockUpdateServerPortError>()(
-  "InvalidMockUpdateServerPortError",
-  {
-    reason: InvalidMockUpdateServerPortReason,
-    inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return "Invalid mock update server port.";
-  }
-
-  static fromConfigValue(configuredPort: string, cause: unknown) {
-    return new InvalidMockUpdateServerPortError({
-      reason: invalidMockUpdateServerPortReason(configuredPort),
-      inputLength: configuredPort.length,
-      cause,
-    });
-  }
-}
-
-export class BuildCommandFailedError extends Schema.TaggedError<BuildCommandFailedError>()(
-  "BuildCommandFailedError",
-  {
-    command: Schema.String,
-    exitCode: Schema.Int,
-    stdoutTail: Schema.optionalKey(Schema.String),
-    stderrTail: Schema.optionalKey(Schema.String),
-  },
-) {
-  override get message(): string {
-    const outputSections = [
-      `Command: ${this.command}`,
-      formatOutputSection("stdout", this.stdoutTail ?? ""),
-      formatOutputSection("stderr", this.stderrTail ?? ""),
-    ].filter((section): section is string => section !== undefined);
-    const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
-    return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
-  }
-}
-
 export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedError<ResourceMonitorBuildOutputMissingError>()(
   "ResourceMonitorBuildOutputMissingError",
   {
@@ -548,6 +408,15 @@ const desktopIconPlatformNames = {
   win: "Windows",
 } satisfies Record<typeof BuildPlatform.Type, string>;
 
+export class LinuxBrowserSecretHostError extends Schema.TaggedError<LinuxBrowserSecretHostError>()(
+  "LinuxBrowserSecretHostError",
+  { hostPlatform: Schema.String },
+) {
+  override get message(): string {
+    return `Linux desktop builds must run on a Linux host: the browser secret helper links against libsecret and cannot be built on '${this.hostPlatform}'.`;
+  }
+}
+
 export class DesktopIconSourceMissingError extends Schema.TaggedError<DesktopIconSourceMissingError>()(
   "DesktopIconSourceMissingError",
   {
@@ -557,6 +426,18 @@ export class DesktopIconSourceMissingError extends Schema.TaggedError<DesktopIco
 ) {
   override get message(): string {
     return `Desktop ${desktopIconPlatformNames[this.platform]} icon source is missing at ${this.sourcePath}`;
+  }
+}
+
+export class DesktopDmgBackgroundSourceMissingError extends Schema.TaggedError<DesktopDmgBackgroundSourceMissingError>()(
+  "DesktopDmgBackgroundSourceMissingError",
+  {
+    channel: Schema.Literals(["latest", "nightly"]),
+    sourcePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Desktop ${this.channel} DMG background source is missing at ${this.sourcePath}`;
   }
 }
 
@@ -634,6 +515,70 @@ const desktopBuildInputArtifactNames = {
   "bundled-server-client": "bundled server client",
 } satisfies Record<DesktopBuildInputArtifact, string>;
 
+/**
+ * Imported by every server module, so it is inlined in any correctly bundled
+ * build. Its absence means the bundle went back to externalizing its
+ * dependencies, which the sidecar's selected runtime closure does not cover.
+ */
+const BUNDLE_SELF_CONTAINED_SENTINEL = "effect";
+
+const BUNDLE_SELF_CHECK_TIMEOUT = Duration.seconds(120);
+const WINDOWS_PRIMARY_NATIVE_PROBE_TIMEOUT = Duration.seconds(30);
+
+const WINDOWS_PRIMARY_FFF_PROBE_SOURCE = `
+const { join } = await import("node:path");
+const { pathToFileURL } = await import("node:url");
+const { FileFinder } = await import(pathToFileURL(process.argv[1]).href);
+const probeRoot = process.argv[2];
+const result = FileFinder.create({
+  basePath: probeRoot,
+  frecencyDbPath: join(probeRoot, "frecency.mdb"),
+  historyDbPath: join(probeRoot, "history.mdb"),
+  disableWatch: true,
+  disableMmapCache: true,
+  disableContentIndexing: true,
+});
+if (!result.ok) throw new Error(result.error);
+result.value.destroy();
+`;
+
+export class ExternalizedBundleError extends Schema.TaggedError<ExternalizedBundleError>()(
+  "ExternalizedBundleError",
+  { sentinel: Schema.String, inlinedPackageCount: Schema.Number },
+) {
+  override get message(): string {
+    return `The server bundle did not inline "${this.sentinel}" (${this.inlinedPackageCount} packages inlined). The bundle is meant to be self-contained apart from the runtime externals; if its dependencies are external again they will be absent from the sidecar, and the backend will fail with ERR_MODULE_NOT_FOUND. Check the deps.alwaysBundle wiring in apps/server/vite.config.ts.`;
+  }
+}
+
+export class BundleNotSelfContainedError extends Schema.TaggedError<BundleNotSelfContainedError>()(
+  "BundleNotSelfContainedError",
+  { exitCode: Schema.Number, output: Schema.String },
+) {
+  override get message(): string {
+    return `The packaged server bundle could not load from the isolated, extracted sidecar (exit ${this.exitCode}). Anything it imports that is neither a Node built-in nor in the selected runtime-external closure is unavailable to both backends. Output:
+${this.output}`;
+  }
+}
+
+export class InlinedNativePackageError extends Schema.TaggedError<InlinedNativePackageError>()(
+  "InlinedNativePackageError",
+  { packages: Schema.Array(Schema.String) },
+) {
+  override get message(): string {
+    return `The server bundle inlined packages that load native binaries: ${this.packages.join(", ")}. A node-gyp-build style loader resolves prebuilds relative to its own file, so inlined into a chunk it finds none and the importer quietly falls back to a slower JS path. Add them to CLI_RUNTIME_EXTERNAL_PREFIXES in scripts/lib/cli-external-packages.ts so they stay external and are staged in the sidecar.`;
+  }
+}
+
+export class InlinedExternalPackageError extends Schema.TaggedError<InlinedExternalPackageError>()(
+  "InlinedExternalPackageError",
+  { packages: Schema.Array(Schema.String) },
+) {
+  override get message(): string {
+    return `The server bundle inlined packages that must stay external: ${this.packages.join(", ")}. These are native addons or their loaders; inlined, they resolve prebuilds relative to the bundle and silently lose native acceleration. Check the deps.neverBundle wiring in apps/server/vite.config.ts.`;
+  }
+}
+
 export class MissingDesktopBuildInputError extends Schema.TaggedError<MissingDesktopBuildInputError>()(
   "MissingDesktopBuildInputError",
   {
@@ -673,26 +618,87 @@ export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedError<Des
   }
 }
 
-export class WslNodePtyPrebuildMissingError extends Schema.TaggedError<WslNodePtyPrebuildMissingError>()(
-  "WslNodePtyPrebuildMissingError",
+export class WslRuntimeArchiveMissingError extends Schema.TaggedError<WslRuntimeArchiveMissingError>()(
+  "WslRuntimeArchiveMissingError",
   {
-    prebuildPath: Schema.String,
+    archivePath: Schema.String,
   },
 ) {
   override get message(): string {
-    return `WSL node-pty prebuild not found at ${this.prebuildPath}.`;
+    return `WSL runtime archive not found at ${this.archivePath}.`;
   }
 }
 
-export class WslNodePtyManifestReadError extends Schema.TaggedError<WslNodePtyManifestReadError>()(
-  "WslNodePtyManifestReadError",
+export class WindowsServerSidecarPackError extends Schema.TaggedError<WindowsServerSidecarPackError>()(
+  "WindowsServerSidecarPackError",
   {
-    manifestPath: Schema.String,
-    cause: Schema.Defect(),
+    asarPath: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {
   override get message(): string {
-    return `Could not read node-pty version from ${this.manifestPath}.`;
+    return `Failed to pack the Windows server sidecar at ${this.asarPath}.`;
+  }
+}
+
+export class WindowsPrimaryNativeProbeError extends Schema.TaggedError<WindowsPrimaryNativeProbeError>()(
+  "WindowsPrimaryNativeProbeError",
+  {
+    executablePath: Schema.String,
+    exitCode: Schema.Number,
+    output: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `The packaged Windows primary could not load fff from server.asar (exit ${this.exitCode}). Output:\n${this.output}`;
+  }
+}
+
+const WindowsPackagedPayloadValidationReason = Schema.Literals([
+  "packaged-app-missing",
+  "sidecar-missing",
+  "sidecar-invalid",
+  "unpacked-native-missing",
+  "resource-monitor-missing",
+  "wsl-runtime-missing",
+  "wsl-runtime-invalid",
+  "file-limit-exceeded",
+]);
+
+export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<WindowsPackagedPayloadValidationError>()(
+  "WindowsPackagedPayloadValidationError",
+  {
+    reason: WindowsPackagedPayloadValidationReason,
+    packagedAppDir: Schema.String,
+    missingFiles: Schema.optionalKey(Schema.Array(Schema.String)),
+    fileCount: Schema.optionalKey(Schema.Int),
+    fileLimit: Schema.optionalKey(Schema.Int),
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    if (this.reason === "file-limit-exceeded") {
+      return `Windows packaged payload contains ${String(this.fileCount)} files; expected at most ${String(this.fileLimit)}.`;
+    }
+    if (this.reason === "unpacked-native-missing") {
+      return `Windows server sidecar is missing ${String(this.missingFiles?.length ?? 0)} unpacked native files.`;
+    }
+    if (this.reason === "resource-monitor-missing") {
+      return "Windows packaged payload is missing the resource monitor executable.";
+    }
+    if (this.reason === "wsl-runtime-missing") {
+      return "Windows packaged payload is missing the WSL runtime archive or SHA-256 sidecar.";
+    }
+    if (this.reason === "wsl-runtime-invalid") {
+      return "Windows packaged payload contains an invalid WSL runtime archive.";
+    }
+    if (this.reason === "sidecar-invalid") {
+      return "Windows packaged payload contains an invalid server.asar sidecar.";
+    }
+    if (this.reason === "sidecar-missing") {
+      return "Windows packaged payload is missing resources/server.asar.";
+    }
+    return `Windows packaged application directory was not found at ${this.packagedAppDir}.`;
   }
 }
 
@@ -863,7 +869,7 @@ interface ResolvedBuildOptions {
   readonly verbose: boolean;
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
-  readonly wslPrebuild: string | undefined;
+  readonly wslRuntime: string | undefined;
 }
 
 interface StagePackageJson {
@@ -890,6 +896,10 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  // Nothing in the packaged app enables source maps or serves them: the web
+  // client's maps alone were 50 MB of app.asar that no request ever read.
+  "!**/*.map",
+  "!**/*.d.cts",
   "!apps/desktop/resources/browser-secret",
   "!apps/desktop/resources/browser-secret/**/*",
   "!apps/desktop/prod-resources/browser-secret",
@@ -909,6 +919,12 @@ export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
+// Linux builds node-pty from source, so every prebuild in the package is for
+// another platform (58 MB of it Windows debug symbols).
+export const LINUX_FILE_EXCLUSIONS = [
+  ...MAC_FILE_EXCLUSIONS,
+  "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
+] as const;
 
 // node-pty publishes both Darwin prebuilds in one package. Single-architecture
 // apps only need the native target; universal apps need both. An omitted arch
@@ -927,8 +943,8 @@ export function resolveMacFileExclusions(arch?: typeof BuildArch.Type) {
 // then extracts a handful of large archives instead of thousands of small
 // files, which dominates install (and update) time. The Windows primary runs
 // the server from inside server.asar via the asar-aware ELECTRON_RUN_AS_NODE
-// runtime. WSL normally uses the dedicated compressed Linux runtime below;
-// DesktopWslServerTree can still materialize this sidecar as a fallback.
+// runtime. WSL does not use this sidecar: it runs the Linux CLI archive
+// embedded as resources/wsl-runtime.tar.gz (see WSL_RUNTIME_ARCHIVE_NAME).
 export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
 // dlopen/spawn need real files, so native modules, shared libraries, and
 // helper executables live in each archive's .unpacked sibling (the standard
@@ -944,6 +960,7 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
   "**/node_modules/.bin",
   "**/node_modules/.bin/**",
+  "**/*.map",
 ] as const;
 
 export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type) {
@@ -983,50 +1000,21 @@ export const WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE = {
   from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_HASH_NAME}`,
   to: WSL_RUNTIME_ARCHIVE_HASH_NAME,
 } as const;
-export const WSL_RUNTIME_ARCHIVE_CONTENT_ROOTS = ["apps/server/dist", "node_modules"] as const;
 
-// The WSL runtime uses only the Linux half of the shared Windows/WSL sidecar.
-// Keep build/install metadata and target-native packages that cannot run in
-// WSL out of the compressed archive.
-export const WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES = [
-  "node_modules/@anthropic-ai/claude-agent-sdk-",
-  "node_modules/.bin",
-  "node_modules/.pnpm",
-  "node_modules/.modules.yaml",
-  "node_modules/.pnpm-workspace-state-v1.json",
-  "node_modules/node-pty/prebuilds/darwin-",
-  "node_modules/node-pty/prebuilds/win32-",
-  "node_modules/node-pty/build",
-  "node_modules/node-pty/third_party/conpty",
-  "node_modules/@ff-labs/fff-bin-win32-",
-  "node_modules/@yuuang/ffi-rs-win32-",
-  "node_modules/@msgpackr-extract/msgpackr-extract-win32-",
-] as const;
-// WSL runs the same CPU arch as the Windows host; universal is mac-only.
-export const resolveWslPrebuildArch = (arch: typeof BuildArch.Type): "x64" | "arm64" | undefined =>
-  arch === "x64" ? "x64" : arch === "arm64" ? "arm64" : undefined;
-
-// A packaged WSL runtime is only usable when a Linux pty.node is bundled with
-// it, so this one predicate decides both whether the archive is built and
-// whether the packaging config ships it. Without it the build would produce an
-// archive that can never pass the install script's payload check, and every
-// launch would extract a few hundred MB from /mnt/c only to throw it away.
+// The WSL runtime is the Linux CLI release archive (t3-<version>-linux-<arch>
+// .tar.gz, built by scripts/build-cli-archive.ts) copied in verbatim, so WSL
+// runs the exact bytes a Linux user downloads. This one predicate decides both
+// whether the archive is staged and whether the packaging config ships it:
+// listing an extraResource whose source was never written fails electron-builder.
 export const bundlesWslRuntime = (input: {
-  readonly arch: typeof BuildArch.Type;
-  readonly prebuildPath: string | undefined;
-}): boolean => input.prebuildPath !== undefined && resolveWslPrebuildArch(input.arch) !== undefined;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly runtimeArchivePath: string | undefined;
+}): boolean => input.platform === "win" && input.runtimeArchivePath !== undefined;
 
 export const WSL_RUNTIME_EXTRA_RESOURCES = [
   WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE,
   WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE,
 ] as const;
-// The WSL backend launches the server with plain `wsl.exe -- node`, which
-// cannot read inside an asar archive — and the server bundle externalizes its
-// runtime deps, so the whole node_modules tree must be unpacked, not just the
-// bundle (otherwise ERR_MODULE_NOT_FOUND: "Cannot find package 'effect'").
-// The Windows primary backend reads the same files through the asar redirect,
-// so nothing is duplicated.
-export const WINDOWS_ASAR_UNPACK = ["apps/server/dist/**", "**/node_modules/**"] as const;
 export const DESKTOP_EXTRA_RESOURCES = [
   {
     from: "apps/desktop/prod-resources/resource-monitor",
@@ -1078,21 +1066,103 @@ export function resolveFffNativeDependencies(
   );
 }
 
+// macOS and Linux run both processes from one app.asar, so the stage installs
+// the union of what each bundle leaves external and nothing else.
+export function resolveMergedStageDependencies(input: {
+  readonly platform: "mac" | "linux";
+  readonly serverDependencies: Record<string, string>;
+  readonly desktopDependencies: Record<string, string>;
+  readonly arch: typeof BuildArch.Type;
+  readonly fffNodeVersion: string;
+}) {
+  return {
+    ...selectCliRuntimeExternalDependencies(input.serverDependencies),
+    ...input.desktopDependencies,
+    ...resolveFffNativeDependencies(input.platform, input.arch, input.fffNodeVersion),
+  };
+}
+
+export interface NativeBinaryArtifact {
+  readonly packageName: string;
+  readonly binaryFileName: string;
+}
+
+export function resolveKeyringNativeArtifacts(
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+): readonly NativeBinaryArtifact[] {
+  const architectures = arch === "universal" ? (["arm64", "x64"] as const) : [arch];
+
+  if (platform === "mac") {
+    return architectures.map((architecture) => ({
+      packageName: `@napi-rs/keyring-darwin-${architecture}`,
+      binaryFileName: `keyring.darwin-${architecture}.node`,
+    }));
+  }
+
+  if (platform === "win") {
+    return architectures.map((architecture) => ({
+      packageName: `@napi-rs/keyring-win32-${architecture}-msvc`,
+      binaryFileName: `keyring.win32-${architecture}-msvc.node`,
+    }));
+  }
+
+  return architectures.map((architecture) => ({
+    packageName: `@napi-rs/keyring-linux-${architecture}-gnu`,
+    binaryFileName: `keyring.linux-${architecture}-gnu.node`,
+  }));
+}
+
+/**
+ * pnpm keeps the platform package under `@napi-rs/keyring`, electron-builder
+ * only retains collected top-level dependencies, and the generated loader
+ * checks for a sibling
+ * `keyring.<platform>.node` before falling back to the package. Staging the
+ * binary beside `index.js` lets that first branch win.
+ */
+const stageKeyringNativeBinaries = Effect.fn("stageKeyringNativeBinaries")(function* (
+  stageAppDir: string,
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const packageEntryPath = yield* fs.realPath(
+    path.join(stageAppDir, "node_modules", "@napi-rs", "keyring", "index.js"),
+  );
+  const packageDir = path.dirname(packageEntryPath);
+  const packageRequire = NodeModule.createRequire(packageEntryPath);
+
+  for (const artifact of resolveKeyringNativeArtifacts(platform, arch)) {
+    const sourcePath = yield* Effect.try({
+      try: () => packageRequire.resolve(`${artifact.packageName}/${artifact.binaryFileName}`),
+      catch: (cause) =>
+        new KeyringNativePackageMissingError({
+          packageName: artifact.packageName,
+          binaryFileName: artifact.binaryFileName,
+          packageEntryPath,
+          platform,
+          arch,
+          cause,
+        }),
+    });
+    yield* fs.copyFile(sourcePath, path.join(packageDir, artifact.binaryFileName));
+  }
+});
+
 export function createStageWorkspaceConfig(input: {
   readonly platform: typeof BuildPlatform.Type;
   readonly arch: typeof BuildArch.Type;
   readonly allowBuilds?: Record<string, boolean>;
   readonly patchedDependencies?: Record<string, string>;
   readonly overrides?: Record<string, string>;
-  readonly linuxServerBackend?: boolean;
 }): StageWorkspaceConfig {
-  const { platform, arch, allowBuilds, patchedDependencies, overrides, linuxServerBackend } = input;
+  const { platform, arch, allowBuilds, patchedDependencies, overrides } = input;
   const hostOs = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
   const hostCpu = arch === "universal" ? ["arm64", "x64"] : [arch];
-  // Linux AppImages and Windows WSL backends both execute a Linux/glibc Node
-  // process that loads Linux-native optional deps at runtime (e.g.
-  // @yuuang/ffi-rs-linux-x64-gnu). Keep libc explicit so pnpm includes those
-  // optional packages in the staged production install.
+  // Linux AppImages execute a Linux/glibc Node process that loads
+  // Linux-native optional deps at runtime. Keep libc explicit so pnpm
+  // includes those optional packages in the staged production install.
   const supportedArchitectures =
     platform === "linux"
       ? {
@@ -1100,16 +1170,10 @@ export function createStageWorkspaceConfig(input: {
           cpu: hostCpu,
           libc: ["glibc"],
         }
-      : linuxServerBackend
-        ? {
-            os: Array.from(new Set([hostOs, "linux"])),
-            cpu: hostCpu,
-            libc: ["glibc"],
-          }
-        : {
-            os: [hostOs],
-            cpu: hostCpu,
-          };
+      : {
+          os: [hostOs],
+          cpu: hostCpu,
+        };
 
   return {
     supportedArchitectures,
@@ -1118,7 +1182,6 @@ export function createStageWorkspaceConfig(input: {
       ? { patchedDependencies }
       : {}),
     ...(overrides && Object.keys(overrides).length > 0 ? { overrides } : {}),
-    ...(linuxServerBackend ? { nodeLinker: "hoisted" as const } : {}),
   };
 }
 
@@ -1164,11 +1227,10 @@ const BuildEnvConfig = Config.all({
   verbose: Config.boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
   mockUpdates: Config.boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.string("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
-  // Path to a prebuilt Linux node-pty binary (pty.node) for the target arch,
-  // produced by the Linux CI job and handed to the Windows packaging job. Placed
-  // into the staged node-pty so the WSL backend ships a ready binary and never
-  // compiles on the user's machine.
-  wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
+  // Path to the Linux CLI release archive (t3-<version>-linux-x64.tar.gz) built
+  // by the build_linux_cli CI job. The Windows build embeds it verbatim as the
+  // WSL runtime.
+  wslRuntime: Config.string("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1260,8 +1322,8 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
           ),
         ));
 
-  const wslPrebuild =
-    Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const wslRuntime =
+    Option.getOrUndefined(input.wslRuntime) ?? Option.getOrUndefined(env.wslRuntime);
 
   return {
     platform,
@@ -1275,7 +1337,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     verbose,
     mockUpdates,
     mockUpdateServerPort,
-    wslPrebuild,
+    wslRuntime,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -1884,6 +1946,42 @@ export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* 
   }
 });
 
+export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  if (input.platform !== "linux") return;
+  // The helper links against the host's libsecret, so it can only be built on
+  // Linux; the build script is a no-op elsewhere. A Linux artifact from
+  // another host would ship without it and every v11 cookie import would
+  // report the keyring as unavailable, so refuse rather than package that
+  // silently. `universal` is a mac-only arch the option type still admits;
+  // the helper script rejects it, so it maps to the concrete x64 the Linux
+  // resource monitor uses for the same request.
+  const hostPlatform = yield* HostProcessPlatform;
+  if (hostPlatform !== "linux") {
+    return yield* new LinuxBrowserSecretHostError({ hostPlatform });
+  }
+  const path = yield* Path.Path;
+  yield* runCommand(
+    ChildProcess.make(
+      "node",
+      [
+        path.join(input.repoRoot, "apps/desktop/scripts/build-browser-secret.mjs"),
+        "--arch",
+        input.arch === "arm64" ? "arm64" : "x64",
+        "--output",
+        path.join(input.stageResourcesDir, "browser-secret", "t3-browser-secret"),
+      ],
+      { cwd: input.repoRoot },
+    ),
+    { label: "build Linux browser secret helper", verbose: input.verbose },
+  );
+});
+
 function generateMacIconSet(
   sourcePng: string,
   targetIcns: string,
@@ -1980,6 +2078,7 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
     );
   }
 });
+
 function stageLinuxIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -2093,6 +2192,11 @@ function validateBundledClientAssets(clientDir: string) {
   });
 }
 
+// The main-process bundle inlines every JS dependency (see
+// apps/desktop/vite.config.ts), so the packaged app only installs the packages
+// that bundle leaves external: native addons and playwright-core. Everything
+// else already lives inside dist-electron and would only duplicate what the
+// server bundle carries too.
 export function resolveDesktopRuntimeDependencies(
   dependencies: Record<string, string> | undefined,
   catalog: Record<string, string>,
@@ -2101,27 +2205,25 @@ export function resolveDesktopRuntimeDependencies(
     return {};
   }
 
-  const runtimeDependencies = Object.fromEntries(
-    Object.entries(dependencies).filter(
-      ([dependencyName, dependencySpec]) =>
-        dependencyName !== "electron" && !dependencySpec.startsWith("workspace:"),
-    ),
+  return resolveCatalogDependencies(
+    selectDesktopRuntimeExternalDependencies(dependencies),
+    catalog,
+    "apps/desktop",
   );
-
-  return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
-  // The update feed comes only from an explicit T3CODE_DESKTOP_UPDATE_REPOSITORY.
-  // We deliberately do not fall back to the ambient GITHUB_REPOSITORY so a build
-  // never inherits an update channel from whatever repo it happens to run in,
-  // keeping the d4research release line isolated from upstream T3 channels.
   const env = yield* Config.all({
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
+    githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
-  const rawRepo = (Option.getOrUndefined(env.updateRepository)?.trim() || "").trim();
+  const rawRepo = (
+    Option.getOrUndefined(env.updateRepository)?.trim() ||
+    Option.getOrUndefined(env.githubRepository)?.trim() ||
+    ""
+  ).trim();
   if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
@@ -2138,6 +2240,17 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+}
+
+// Pull request builds (`-pr.<n>.`) and the maintainers' preview train
+// (`-preview.<date>.<run>`) are downloaded by hand and never through an
+// updater. Building them without a publish config means electron-builder
+// emits no `latest*.yml`/`nightly*.yml` manifests or blockmaps for them and
+// the app ships without `app-update.yml`, so neither a stable nor a nightly
+// install can be pointed at one of these releases, and the build itself
+// reports that no update feed is configured instead of polling.
+export function isDesktopPreviewVersion(version: string): boolean {
+  return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
 }
 
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
@@ -2177,18 +2290,6 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveMacStageDependencies(input: {
-  readonly serverDependencies: Record<string, string>;
-  readonly desktopDependencies: Record<string, string>;
-  readonly arch: typeof BuildArch.Type;
-  readonly fffNodeVersion: string;
-}) {
-  return {
-    ...selectCliRuntimeExternalDependencies(input.serverDependencies),
-    ...input.desktopDependencies,
-    ...resolveFffNativeDependencies("mac", input.arch, input.fffNodeVersion),
-  };
-}
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "d4research (Nightly)"
@@ -2202,6 +2303,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
+  // Windows only, and false when no Linux CLI archive was handed to the build:
+  // staging skips the archive in that case, and listing a resource whose
+  // source file was never written fails the electron-builder step.
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
@@ -2212,7 +2316,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
-      ...(platform === "mac" ? resolveMacFileExclusions(arch) : []),
+      ...(platform === "mac"
+        ? resolveMacFileExclusions(arch)
+        : platform === "linux"
+          ? LINUX_FILE_EXCLUSIONS
+          : []),
     ],
     directories: {
       buildResources: "apps/desktop/resources",
@@ -2232,19 +2340,23 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-  if (publishConfig) {
-    buildConfig.publish = [publishConfig];
-  } else if (mockUpdates) {
-    buildConfig.publish = [
-      {
-        provider: "generic",
-        url: resolveMockUpdateServerUrl(mockUpdateServerPort),
-      },
-    ];
+  if (!isDesktopPreviewVersion(version)) {
+    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+    if (publishConfig) {
+      buildConfig.publish = [publishConfig];
+    } else if (mockUpdates) {
+      buildConfig.publish = [
+        {
+          provider: "generic",
+          url: resolveMockUpdateServerUrl(mockUpdateServerPort),
+        },
+      ];
+    }
   }
 
   if (platform === "mac") {
+    const path = yield* Path.Path;
+    const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
@@ -2259,6 +2371,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           schemes: ["t3code", "t3code-dev"],
         },
       ],
+      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
     };
   }
 
@@ -2309,6 +2422,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "win") {
     buildConfig.npmRebuild = false;
+    // Keep blockmap-based differential downloads enabled while changing the
+    // installed file topology. The optimization is in the payload shape, not
+    // in trading update bandwidth for install speed.
+    buildConfig.nsis = { differentialPackage: true };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
@@ -2320,7 +2437,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     if (signed) {
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
     }
-    buildConfig.nsis = { differentialPackage: true };
     buildConfig.win = winConfig;
   }
 
@@ -2348,115 +2464,25 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   }
 });
 
-// Stage the prebuilt Linux node-pty binary into the packaged app so the WSL
-// backend never compiles on the user's machine. node-pty publishes no Linux
-// prebuilt and the WSL Linux Node can't load the Windows/Electron binary, so the
-// Linux CI job builds pty.node and hands it here. We drop it into the staged
-// node-pty's prebuilds/linux-<arch>/ with a t3code marker the WSL preflight
-// checks (arch + node-pty version; the binary is N-API, hence ABI-stable across
-// Node versions). A missing prebuild is a warning, not an error, so local and
-// non-Windows builds still succeed — they just won't ship a working WSL backend.
-const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (input: {
-  readonly stageAppDir: string;
-  readonly arch: typeof BuildArch.Type;
-  readonly prebuildPath: string | undefined;
-}) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-
-  if (input.prebuildPath === undefined) {
-    yield* Effect.logWarning(
-      "[desktop-artifact] No WSL node-pty prebuild provided (--wsl-prebuild / T3CODE_DESKTOP_WSL_PREBUILD); the packaged WSL backend will not start until a Linux pty.node is bundled.",
-    );
-    return;
-  }
-
-  // WSL runs the same CPU arch as the Windows host; universal is mac-only.
-  const linuxArch = input.arch === "x64" ? "x64" : input.arch === "arm64" ? "arm64" : undefined;
-  if (linuxArch === undefined) {
-    yield* Effect.logWarning(
-      `[desktop-artifact] No WSL node-pty prebuild mapping for arch "${input.arch}"; skipping WSL backend bundling.`,
-    );
-    return;
-  }
-
-  const prebuildExists = yield* fs
-    .exists(input.prebuildPath)
-    .pipe(Effect.orElseSucceed(() => false));
-  if (!prebuildExists) {
-    return yield* new WslNodePtyPrebuildMissingError({
-      prebuildPath: input.prebuildPath,
-    });
-  }
-
-  // Resolve through the (pnpm) symlink so we write into the stage's own node-pty
-  // copy, never a shared content-addressable store.
-  const nodePtyLink = path.join(input.stageAppDir, "node_modules", "node-pty");
-  const nodePtyDir = yield* fs.realPath(nodePtyLink).pipe(Effect.orElseSucceed(() => nodePtyLink));
-
-  const manifestPath = path.join(nodePtyDir, "package.json");
-  const pkgRaw = yield* fs.readFileString(manifestPath);
-  const manifest = yield* decodeNodePtyManifest(pkgRaw).pipe(
-    Effect.mapError(
-      (cause) =>
-        new WslNodePtyManifestReadError({
-          manifestPath,
-          cause,
-        }),
-    ),
-  );
-  const nodePtyVersion = manifest.version;
-
-  const prebuildDir = path.join(nodePtyDir, "prebuilds", `linux-${linuxArch}`);
-  yield* fs.makeDirectory(prebuildDir, { recursive: true });
-  yield* fs.copyFile(input.prebuildPath, path.join(prebuildDir, "pty.node"));
-  const markerJson = yield* encodeJsonString({ arch: linuxArch, nodePtyVersion });
-  yield* fs.writeFileString(path.join(prebuildDir, "t3code-wsl-node-pty.json"), `${markerJson}\n`);
-
-  yield* Effect.log(
-    `[desktop-artifact] Staged WSL node-pty prebuild (linux-${linuxArch}, node-pty ${nodePtyVersion}).`,
-  );
-});
-
-// tar reads an `-f` target containing a colon as `host:path` and tries to reach
-// it over rsh, so handing it a Windows drive path (C:\...\wsl-runtime.tar.gz)
-// makes Git for Windows' GNU tar fail with "Cannot connect to C: resolve
-// failed". The staged source tree and the archive both live under the build's
-// stage root, so the target is always expressible relative to tar's cwd.
-export const wslRuntimeArchiveTarTarget = (relativeArchivePath: string): string =>
-  relativeArchivePath.replaceAll("\\", "/");
-
-// `archivePath` is relative to the cwd tar runs in; see wslRuntimeArchiveTarTarget.
-export const buildWslRuntimeArchiveArgs = (
-  archivePath: string = WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE.from,
-): ReadonlyArray<string> => [
-  "-czf",
-  archivePath,
-  ...WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES.map((prefix) => `--exclude=${prefix}*`),
-  ...WSL_RUNTIME_ARCHIVE_CONTENT_ROOTS,
-];
-
-export const parseWslRuntimeArchiveMembers = (listing: string): ReadonlyArray<string> =>
-  listing
-    .split(/\r?\n/)
-    .map((member) => member.replace(/^\.\//, "").replace(/\/$/, ""))
-    .filter((member) => member.length > 0);
-
+// Copy the Linux CLI release archive into the stage verbatim and record its
+// SHA-256 beside it. The desktop app verifies the digest inside the distro
+// before extracting, and the digest also names the extracted runtime's cache
+// directory, so it must be computed from the exact bytes that ship.
 export const stageWslRuntimeArchive = Effect.fn("stageWslRuntimeArchive")(function* (input: {
-  readonly sourceDir: string;
+  readonly sourceArchivePath: string;
   readonly archivePath: string;
   readonly hashPath: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const sourceExists = yield* fs
+    .exists(input.sourceArchivePath)
+    .pipe(Effect.orElseSucceed(() => false));
+  if (!sourceExists) {
+    return yield* new WslRuntimeArchiveMissingError({ archivePath: input.sourceArchivePath });
+  }
   yield* fs.makeDirectory(path.dirname(input.archivePath), { recursive: true });
-  const tarTarget = wslRuntimeArchiveTarTarget(path.relative(input.sourceDir, input.archivePath));
-  yield* runCommand(
-    ChildProcess.make("tar", buildWslRuntimeArchiveArgs(tarTarget), {
-      cwd: input.sourceDir,
-    }),
-    { label: "tar WSL runtime", verbose: false },
-  );
+  yield* fs.copyFile(input.sourceArchivePath, input.archivePath);
   const hash = NodeCrypto.createHash("sha256");
   yield* fs
     .stream(input.archivePath)
@@ -2464,16 +2490,27 @@ export const stageWslRuntimeArchive = Effect.fn("stageWslRuntimeArchive")(functi
   const digest = hash.digest("hex");
   yield* fs.writeFileString(input.hashPath, `${digest}\n`);
   yield* Effect.log(
-    `[desktop-artifact] Staged compressed WSL runtime at ${input.archivePath} (${digest}).`,
+    `[desktop-artifact] Staged WSL runtime archive at ${input.archivePath} (${digest}).`,
   );
 });
 
+// Mirrors cliArchiveStem in scripts/build-cli-archive.ts (which imports from
+// this module, so it cannot be imported here). WSL runs the same CPU arch as
+// the Windows host.
+export const wslRuntimeArchiveStem = (version: string, arch: typeof BuildArch.Type): string =>
+  `t3-${version}-linux-${arch}`;
+
+export const parseWslRuntimeArchiveMembers = (listing: string): ReadonlyArray<string> =>
+  listing
+    .split(/\r?\n/)
+    .map((member) => member.replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter((member) => member.length > 0);
+
 // Stage and pack the Windows server sidecar: the bundled server plus a hoisted
-// install of only its runtime-external/native dependency closure for win32 and
-// WSL Linux. The Windows primary runs from the archive through the asar-aware
-// ELECTRON_RUN_AS_NODE runtime; enabling WSL extracts it to a real directory.
-// Shipping one packed archive instead of thousands of loose files is what
-// makes the NSIS install/update fast.
+// install of only its runtime-external/native dependency closure for win32.
+// The Windows primary runs from the archive through the asar-aware
+// ELECTRON_RUN_AS_NODE runtime. Shipping one packed archive instead of
+// thousands of loose files is what makes the NSIS install/update fast.
 export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function* (input: {
   readonly sourceDir: string;
   readonly asarPath: string;
@@ -2524,10 +2561,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   readonly allowBuilds: Record<string, boolean>;
   readonly patchedDependencies: Record<string, string>;
   readonly overrides: Record<string, string>;
-  readonly wslPrebuildPath: string | undefined;
   readonly asarPath: string;
-  readonly wslRuntimeArchivePath: string;
-  readonly wslRuntimeArchiveHashPath: string;
   readonly verbose: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
@@ -2539,11 +2573,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
 
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
-    // The sidecar serves two processes: the Windows primary loads win32
-    // natives, and the WSL backend loads the matching Linux natives (fff via
-    // ffi-rs) from the extracted copy of this same tree.
     ...resolveFffNativeDependencies("win", input.arch, input.fffNodeVersion),
-    ...resolveFffNativeDependencies("linux", input.arch, input.fffNodeVersion),
   };
   const sidecarPatchedDependencies = createStagePatchedDependencies(
     input.patchedDependencies,
@@ -2561,14 +2591,18 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
     path.join(serverStageDir, "package.json"),
     `${sidecarPackageJsonString}\n`,
   );
-  const sidecarWorkspaceConfig = createStageWorkspaceConfig({
-    platform: "win",
-    arch: input.arch,
-    allowBuilds: input.allowBuilds,
-    patchedDependencies: sidecarPatchedDependencies,
-    overrides: input.overrides,
-    linuxServerBackend: true,
-  });
+  const sidecarWorkspaceConfig = {
+    ...createStageWorkspaceConfig({
+      platform: "win",
+      arch: input.arch,
+      allowBuilds: input.allowBuilds,
+      patchedDependencies: sidecarPatchedDependencies,
+      overrides: input.overrides,
+    }),
+    // The tree gets packed into server.asar, which cannot carry pnpm's
+    // symlink/junction layout, so install a physical, hoisted node_modules.
+    nodeLinker: "hoisted" as const,
+  };
   const sidecarWorkspaceConfigString = yield* encodeStageWorkspaceConfig(sidecarWorkspaceConfig);
   yield* fs.writeFileString(
     path.join(serverStageDir, "pnpm-workspace.yaml"),
@@ -2587,22 +2621,6 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
     }),
     { label: "vp install --prod (server sidecar)", verbose: input.verbose },
   );
-
-  yield* stageWslNodePtyPrebuild({
-    stageAppDir: serverStageDir,
-    arch: input.arch,
-    prebuildPath: input.wslPrebuildPath,
-  });
-  // Skip the archive entirely rather than shipping one the install script must
-  // extract and reject on every launch. The desktop app treats a missing
-  // archive as "no WSL-local runtime" and goes straight to the mounted tree.
-  if (bundlesWslRuntime({ arch: input.arch, prebuildPath: input.wslPrebuildPath })) {
-    yield* stageWslRuntimeArchive({
-      sourceDir: serverStageDir,
-      archivePath: input.wslRuntimeArchivePath,
-      hashPath: input.wslRuntimeArchiveHashPath,
-    });
-  }
 
   yield* Effect.log("[desktop-artifact] Packing server.asar...");
   yield* fs.makeDirectory(path.dirname(input.asarPath), { recursive: true });
@@ -2747,6 +2765,9 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly stageDistDir: string;
   readonly appExecutableName: string;
   readonly targetArch: typeof BuildArch.Type;
+  // The version the embedded Linux CLI archive must carry; its top-level
+  // directory is named t3-<version>-linux-<arch>.
+  readonly appVersion: string;
   readonly expectWslRuntime?: boolean;
   readonly fileLimit?: number;
   readonly verbose?: boolean;
@@ -2910,24 +2931,22 @@ export const validateWindowsPackagedPayload = Effect.fn(
       );
     }
     const members = parseWslRuntimeArchiveMembers(listing.stdout);
-    const forbiddenMember = members.find((member) =>
-      WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES.some((prefix) => member.startsWith(prefix)),
-    );
-    if (forbiddenMember !== undefined) {
+    // A release archive unpacks to one directory named after its stem; the
+    // desktop app's WSL install script relies on that layout to find `t3`.
+    const stem = wslRuntimeArchiveStem(input.appVersion, input.targetArch);
+    const topLevel = new Set(members.map((member) => member.split("/")[0]));
+    if (topLevel.size !== 1 || !topLevel.has(stem)) {
       return yield* invalidWslRuntime(
-        new Error(`WSL runtime archive contains forbidden member ${forbiddenMember}`),
+        new Error(
+          `WSL runtime archive must contain a single top-level directory ${stem}, found ${[...topLevel].join(", ") || "nothing"}`,
+        ),
       );
     }
-    const wslArch = resolveWslPrebuildArch(input.targetArch);
     const requiredMembers = [
-      "apps/server/dist/bin.mjs",
-      "node_modules/node-pty/package.json",
-      ...(wslArch === undefined
-        ? []
-        : [
-            `node_modules/node-pty/prebuilds/linux-${wslArch}/pty.node`,
-            `node_modules/node-pty/prebuilds/linux-${wslArch}/t3code-wsl-node-pty.json`,
-          ]),
+      `${stem}/t3`,
+      `${stem}/client`,
+      `${stem}/node_modules`,
+      `${stem}/node_modules/node-pty/build/Release/pty.node`,
     ];
     const missingMembers = requiredMembers.filter((member) => !members.includes(member));
     if (missingMembers.length > 0) {
@@ -2935,8 +2954,15 @@ export const validateWindowsPackagedPayload = Effect.fn(
         reason: "wsl-runtime-invalid",
         packagedAppDir,
         missingFiles: missingMembers,
-        cause: new Error("WSL runtime archive is incomplete"),
+        cause: new Error("WSL runtime archive is not a Linux CLI release archive"),
       });
+    }
+    // The CLI archive runs the single-executable, never a loose server bundle.
+    const bundleEntry = members.find((member) => member.endsWith("/bin.mjs"));
+    if (bundleEntry !== undefined) {
+      return yield* invalidWslRuntime(
+        new Error(`WSL runtime archive contains a server bundle entry ${bundleEntry}`),
+      );
     }
   }
 
@@ -2968,6 +2994,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
   );
   return { packagedAppDir, fileCount, unpackedFiles } as const;
 });
+
 const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   options: ResolvedBuildOptions,
 ) {
@@ -2975,7 +3002,6 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
-  const workspaceConfig = yield* readWorkspaceConfig();
   if (hostPlatform === "linux" && options.platform === "linux") {
     yield* preflightLinuxDesktopBuild(options.arch);
   }
@@ -2986,11 +3012,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* preflightWindowsDesktopBuild({
       arch: options.arch,
       bundlesWslRuntime: bundlesWslRuntime({
-        arch: options.arch,
-        prebuildPath: options.wslPrebuild,
+        platform: options.platform,
+        runtimeArchivePath: options.wslRuntime,
       }),
     });
   }
+  const workspaceConfig = yield* readWorkspaceConfig();
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
@@ -3031,6 +3058,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         cause,
       }),
   });
+  const resolvedServerRuntimeExternalDependencies = selectCliRuntimeExternalDependencies(
+    resolvedServerDependencies,
+  );
   const resolvedDesktopRuntimeDependencies = yield* Effect.try({
     try: () => resolveDesktopRuntimeDependencies(desktopPackageJson.dependencies, workspaceCatalog),
     catch: (cause) =>
@@ -3084,6 +3114,68 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }
   }
 
+  // Assert against the emitted bundle, not the bundler config. `alwaysBundle`
+  // only forces packages IN, so a transitive dependency of an external package
+  // is bundled by default however the predicate is written — that silently
+  // inlined msgpackr-extract and its native loader while every list-based test
+  // still passed. An inlined native loader resolves its prebuilds relative to
+  // the bundle and quietly falls back to a slower pure-JS path, so this fails
+  // the build rather than shipping a silent regression.
+  {
+    const chunkNames = (yield* fs.readDirectory(distDirs.serverDist)).filter((entry) =>
+      entry.endsWith(".mjs"),
+    );
+    let totalRegions = 0;
+    const inlined = new Set<string>();
+    const inlinedPackages = new Set<string>();
+    for (const chunkName of chunkNames) {
+      const source = yield* fs.readFileString(path.join(distDirs.serverDist, chunkName));
+      const scan = findInlinedExternalPackages(source);
+      totalRegions += scan.regionCount;
+      for (const name of scan.inlined) inlined.add(name);
+      for (const name of scan.inlinedPackages) inlinedPackages.add(name);
+    }
+    if (inlined.size > 0) {
+      return yield* new InlinedExternalPackageError({
+        packages: [...inlined].sort(),
+      });
+    }
+    // No regions at all means the scan went blind (marker format changed), not
+    // that the bundle is clean.
+    if (totalRegions === 0) {
+      return yield* new InlinedExternalPackageError({
+        packages: ["<no module regions found; the bundle scan needs updating>"],
+      });
+    }
+    // The check above is one-directional: it only proves nothing external got
+    // inlined. A regression to externalizing everything would also pass it,
+    // since source-file regions still exist -- and that is the failure this
+    // whole change exists to prevent, because those packages are not in the
+    // selected sidecar closure and both backends would die on ERR_MODULE_NOT_FOUND.
+    // `effect` is imported by every server module, so it is inlined in any
+    // correctly bundled build.
+    // The list-based check above only sees packages someone already thought to
+    // list. bufferutil and utf-8-validate were inlined for exactly that reason:
+    // native, but absent from the list, so nothing flagged them. Ask the store
+    // what each inlined package actually is instead.
+    const nativeInlined: string[] = [];
+    for (const name of [...inlinedPackages].sort()) {
+      const packageDir = yield* findStorePackageDirectory(repoRoot, name);
+      if (packageDir === null) continue;
+      if (yield* hasNativeLoaderMarkers(packageDir)) nativeInlined.push(name);
+    }
+    if (nativeInlined.length > 0) {
+      return yield* new InlinedNativePackageError({ packages: nativeInlined });
+    }
+
+    if (!inlinedPackages.has(BUNDLE_SELF_CONTAINED_SENTINEL)) {
+      return yield* new ExternalizedBundleError({
+        sentinel: BUNDLE_SELF_CONTAINED_SENTINEL,
+        inlinedPackageCount: inlinedPackages.size,
+      });
+    }
+  }
+
   if (!(yield* fs.exists(bundledClientEntry))) {
     return yield* new MissingDesktopBuildInputError({
       artifact: "bundled-server-client",
@@ -3098,7 +3190,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
 
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/desktop"), { recursive: true });
-  yield* fs.makeDirectory(path.join(stageAppDir, "apps/server"), { recursive: true });
+  if (options.platform !== "win") {
+    yield* fs.makeDirectory(path.join(stageAppDir, "apps/server"), { recursive: true });
+  }
 
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
@@ -3162,27 +3256,31 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   );
 
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
-  yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
+  const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
+  yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
-  const stageDependencies = {
-    ...(options.platform === "win"
-      ? {}
-      : options.platform === "mac"
-        ? selectCliRuntimeExternalDependencies(resolvedServerDependencies)
-        : resolvedServerDependencies),
-    ...resolvedDesktopRuntimeDependencies,
-    ...(options.platform === "win"
-      ? {}
-      : resolveFffNativeDependencies(
-          options.platform,
-          options.arch,
-          serverPackageJson.dependencies["@ff-labs/fff-node"],
-        )),
-  };
+  // Windows splits dependencies per process: app.asar carries only the
+  // desktop main-process externals, while the server bundle's externals live
+  // in the server.asar sidecar (see stageWindowsServerSidecar). macOS and
+  // Linux merge both sets into one app.asar.
+  const stageDependencies =
+    options.platform === "win"
+      ? { ...resolvedDesktopRuntimeDependencies }
+      : resolveMergedStageDependencies({
+          platform: options.platform,
+          serverDependencies: resolvedServerDependencies,
+          desktopDependencies: resolvedDesktopRuntimeDependencies,
+          arch: options.arch,
+          fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+        });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
     stageDependencies,
   );
+  const windowsServerAsarPath =
+    options.platform === "win"
+      ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
+      : undefined;
   const stagePackageJson: StagePackageJson = {
     name: "d4research",
     version: appVersion,
@@ -3200,7 +3298,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
-      bundlesWslRuntime({ arch: options.arch, prebuildPath: options.wslPrebuild }),
+      bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
     ),
     dependencies: stageDependencies,
@@ -3237,37 +3335,34 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }),
     { label: "vp install --prod", verbose: options.verbose },
   );
-  // WSL is Windows-only, so only the Windows artifact carries the Linux backend
-  // binary; other platforms ignore the prebuild input.
-  if (options.platform === "win") {
-    yield* stageWslNodePtyPrebuild({
-      stageAppDir,
-      arch: options.arch,
-      prebuildPath: options.wslPrebuild,
-    });
+  yield* stageKeyringNativeBinaries(stageAppDir, options.platform, options.arch);
+
+  // Only the Windows artifact carries the server sidecar and the WSL runtime;
+  // other platforms ignore the --wsl-runtime input.
+  if (options.platform === "win" && windowsServerAsarPath) {
     yield* stageWindowsServerSidecar({
       stageRoot,
       repoRoot,
       serverDistDir: distDirs.serverDist,
       arch: options.arch,
       appVersion,
-      runtimeExternalDependencies: selectCliRuntimeExternalDependencies(resolvedServerDependencies),
+      runtimeExternalDependencies: resolvedServerRuntimeExternalDependencies,
       fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
       allowBuilds: workspaceAllowBuilds,
       patchedDependencies: workspacePatchedDependencies,
       overrides: resolvedOverrides,
-      wslPrebuildPath: options.wslPrebuild,
-      asarPath: path.join(
-        stageAppDir,
-        WINDOWS_SERVER_RESOURCE_SOURCE_DIR,
-        WINDOWS_SERVER_ASAR_RESOURCE,
-      ),
-      wslRuntimeArchivePath: path.join(stageAppDir, WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE.from),
-      wslRuntimeArchiveHashPath: path.join(
-        stageAppDir,
-        WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE.from,
-      ),
+      asarPath: windowsServerAsarPath,
       verbose: options.verbose,
+    });
+  }
+  if (
+    options.wslRuntime !== undefined &&
+    bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime })
+  ) {
+    yield* stageWslRuntimeArchive({
+      sourceArchivePath: options.wslRuntime,
+      archivePath: path.join(stageAppDir, WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE.from),
+      hashPath: path.join(stageAppDir, WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE.from),
     });
   }
 
@@ -3302,10 +3397,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     buildEnv.GYP_MSVS_VERSION = buildEnv.GYP_MSVS_VERSION ?? "2022";
   }
   if (options.verbose) {
-    buildEnv.DEBUG =
-      buildEnv.DEBUG === undefined
-        ? "electron-builder,electron-builder:*"
-        : `${buildEnv.DEBUG},electron-builder,electron-builder:*`;
+    const debugNamespaces = [
+      "electron-builder",
+      "electron-builder:*",
+      ...(options.platform === "mac" ? ["electron-osx-sign*", "electron-notarize*"] : []),
+    ];
+    buildEnv.DEBUG = [buildEnv.DEBUG, ...debugNamespaces].filter(Boolean).join(",");
   }
 
   yield* Effect.log(
@@ -3346,18 +3443,32 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
+  // Prove the packaged bundle is self-contained by loading it the way the WSL
+  // backend does, rather than by reasoning about the emitted source.
+  //
+  // Static analysis kept getting this wrong here. Scanning for bare imports
+  // matched specifiers inside effect's JSDoc examples and inside ajv's runtime
+  // codegen template, and asserting that one sentinel package was inlined
+  // missed a build that inlined `effect` while leaving `yaml` external. Node's
+  // resolver has no such ambiguity: it either finds every import or it does not.
+  //
+  // Only Windows unpacks anything; macOS and Linux keep the whole tree inside
+  // the app asar. Windows validates and executes the separately packed server
+  // sidecar after electron-builder copies it into the final payload.
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
       appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
       targetArch: options.arch,
+      appVersion,
       expectWslRuntime: bundlesWslRuntime({
-        arch: options.arch,
-        prebuildPath: options.wslPrebuild,
+        platform: options.platform,
+        runtimeArchivePath: options.wslRuntime,
       }),
       verbose: options.verbose,
     });
   }
+
   const stageEntries = yield* fs.readDirectory(stageDistDir);
   yield* fs.makeDirectory(options.outputDir, { recursive: true });
 
@@ -3437,9 +3548,9 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.withDescription("Mock update server port (env: T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
     Flag.optional,
   ),
-  wslPrebuild: Flag.string("wsl-prebuild").pipe(
+  wslRuntime: Flag.string("wsl-runtime").pipe(
     Flag.withDescription(
-      "Path to a prebuilt Linux node-pty (pty.node) for the target arch, staged for the WSL backend (env: T3CODE_DESKTOP_WSL_PREBUILD).",
+      "Path to the Linux CLI release archive (t3-<version>-linux-x64.tar.gz) to embed as the WSL runtime of a Windows build (env: T3CODE_DESKTOP_WSL_RUNTIME).",
     ),
     Flag.optional,
   ),

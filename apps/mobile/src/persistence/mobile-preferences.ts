@@ -6,8 +6,8 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { SidebarProjectGroupingMode } from "@d4research/contracts";
+import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
-
 import * as MobileDatabase from "./mobile-database";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-storage";
@@ -16,21 +16,19 @@ const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
-  readonly planModeEnabled?: boolean;
-  readonly threadListSnoozedShelfExpanded?: boolean;
-  readonly threadListSettledShelfExpanded?: boolean;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
   readonly themeMode?: MobileThemeMode;
-  readonly materialYouStyleLayoutEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
   readonly markdownFontSize?: number;
   readonly codeFontSize?: number | null;
   readonly codeWordBreak?: boolean;
   readonly collapsedProjectGroups?: readonly string[];
+  /** What the Return key does in the composer on a hardware keyboard. iOS only. */
+  readonly composerEnterBehavior?: ComposerEnterBehavior;
   /** @deprecated Kept temporarily so older OTA bundles retain the selected mode. */
   readonly projectGroupingEnabled?: boolean;
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
@@ -42,6 +40,11 @@ export interface Preferences {
    * default flat list — see `resolveThreadListV2Enabled`.
    */
   readonly legacyThreadListEnabled?: boolean;
+  /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
+  readonly planModeEnabled?: boolean;
+  /** Fresh keys reset both shelves to collapsed when users update. */
+  readonly threadListSettledShelfExpanded?: boolean;
+  readonly threadListSnoozedShelfExpanded?: boolean;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -83,32 +86,25 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
-    planModeEnabled?: boolean;
-    threadListSnoozedShelfExpanded?: boolean;
-    threadListSettledShelfExpanded?: boolean;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
     themeMode?: MobileThemeMode;
-    materialYouStyleLayoutEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
     markdownFontSize?: number;
     codeFontSize?: number | null;
     codeWordBreak?: boolean;
     collapsedProjectGroups?: readonly string[];
+    composerEnterBehavior?: ComposerEnterBehavior;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
     legacyThreadListEnabled?: boolean;
+    planModeEnabled?: boolean;
+    threadListSettledShelfExpanded?: boolean;
+    threadListSnoozedShelfExpanded?: boolean;
   } = {};
-
-  if (typeof parsed.planModeEnabled === "boolean")
-    preferences.planModeEnabled = parsed.planModeEnabled;
-  if (typeof parsed.threadListSnoozedShelfExpanded === "boolean")
-    preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
-  if (typeof parsed.threadListSettledShelfExpanded === "boolean")
-    preferences.threadListSettledShelfExpanded = parsed.threadListSettledShelfExpanded;
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
@@ -138,9 +134,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   ) {
     preferences.themeMode = parsed.themeMode;
   }
-  if (typeof parsed.materialYouStyleLayoutEnabled === "boolean") {
-    preferences.materialYouStyleLayoutEnabled = parsed.materialYouStyleLayoutEnabled;
-  }
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {
     preferences.terminalFontSize = parsed.terminalFontSize;
@@ -157,6 +150,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       (key): key is string => typeof key === "string",
     );
   }
+  if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {
+    preferences.composerEnterBehavior = parsed.composerEnterBehavior;
+  }
   if (typeof parsed.projectGroupingEnabled === "boolean") {
     preferences.projectGroupingEnabled = parsed.projectGroupingEnabled;
   }
@@ -169,6 +165,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.legacyThreadListEnabled === "boolean") {
     preferences.legacyThreadListEnabled = parsed.legacyThreadListEnabled;
+  }
+  if (typeof parsed.planModeEnabled === "boolean") {
+    preferences.planModeEnabled = parsed.planModeEnabled;
+  }
+  if (typeof parsed.threadListSettledShelfExpanded === "boolean") {
+    preferences.threadListSettledShelfExpanded = parsed.threadListSettledShelfExpanded;
+  }
+  if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
+    preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
   }
   return preferences;
 }

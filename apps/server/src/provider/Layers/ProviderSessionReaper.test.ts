@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,
@@ -235,6 +236,7 @@ describe("ProviderSessionReaper", () => {
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),

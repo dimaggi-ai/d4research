@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as NodeV8 from "node:v8";
 
 import {

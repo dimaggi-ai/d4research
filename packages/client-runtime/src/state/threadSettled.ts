@@ -3,6 +3,14 @@ import type { OrchestrationThreadShell } from "@d4research/contracts";
 
 export type ChangeRequestStateLike = "open" | "closed" | "merged";
 
+/**
+ * A queued turn start lives for at most this long: session adoption takes
+ * seconds, so a user message still unadopted after the grace window is a
+ * failed start (or stale data — shells from older servers can carry user
+ * messages with no latestTurn at all), not pending work. Without this bound
+ * such threads would be permanently unsettleable.
+ */
+export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export function threadLastActivityAt(shell: OrchestrationThreadShell): string | null {
@@ -26,15 +34,6 @@ export function threadLastActivityAt(shell: OrchestrationThreadShell): string | 
 
   return latest;
 }
-
-/**
- * A queued turn start lives for at most this long: session adoption takes
- * seconds, so a user message still unadopted after the grace window is a
- * failed start (or stale data — shells from older servers can carry user
- * messages with no latestTurn at all), not pending work. Without this bound
- * such threads would be permanently unsettleable.
- */
-export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 /**
  * A user message no turn has picked up yet: the turn.start command was
@@ -72,9 +71,7 @@ export function hasQueuedTurnStart(
 /**
  * A thread may be settled only when none of effectiveSettled's activity
  * blockers hold. This is deliberately the same list: anything the partition
- * refuses to CLASSIFY as settled must also be refused as a settle TARGET.
- * The server enforces its own invariants; this client-side twin exists so
- * the UI can disable/reject before a round trip.
+ * refuses to classify as settled must also be refused as a settle target.
  */
 export function canSettle(
   shell: Pick<
@@ -85,8 +82,6 @@ export function canSettle(
 ): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
   if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
-  // Queued work is as blocked-on-progress as a live session: settling it
-  // (or auto-settling it on a closed PR) would hide a just-requested turn.
   if (hasQueuedTurnStart(shell, options)) return false;
   return true;
 }
@@ -113,8 +108,7 @@ export type ThreadSnoozeShell = Pick<
  * the session failed, or a run completed after the snooze was set — the
  * v1 taste of event-based snooze ("something happened" wakes early).
  * Raising a hand never clears the server-side snooze fields; it only stops
- * the thread from CLASSIFYING as snoozed, exactly like blocked work and
- * effectiveSettled.
+ * the thread from classifying as snoozed.
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;
@@ -218,14 +212,9 @@ export function threadWokeAt(
 /**
  * Settled resolution over the server-backed settled lifecycle. Activity
  * blockers (pending approval/user-input, a live session, an unadjudicated
- * queued turn) are checked first and hold a thread active regardless of any
- * override. Past the blockers, the explicit user override (thread.settle /
- * thread.unsettle commands, projected into settledOverride + settledAt)
- * wins in both directions; without one, a thread auto-settles on a
- * merged/closed PR immediately or on inactivity past the window — except
- * that an open PR blocks the inactivity path entirely. The server
- * un-settles on real activity (user message, session start, approval/
- * user-input request), so an override never goes stale silently.
+ * queued turn) hold a thread active regardless of any override. Past the
+ * blockers, explicit user overrides win; without one, merged/closed change
+ * requests or configured inactivity can settle the thread.
  */
 export function effectiveSettled(
   shell: OrchestrationThreadShell,
@@ -235,18 +224,9 @@ export function effectiveSettled(
     readonly changeRequestState?: ChangeRequestStateLike | null;
   },
 ): boolean {
-  // Blocked work must remain visible even when a user explicitly settled it.
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
   if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
   if (hasQueuedTurnStart(shell, { now: options.now })) {
-    // The queued-turn blocker alone is forgivable: it is clock-derived, and
-    // list callers pass a coarser `now` than the settle action used. When
-    // the server already adjudicated the queued message by accepting a
-    // settle after it (settledAt stamps server accept time), trust that
-    // ruling — otherwise a settle near the grace boundary leaves the row
-    // pinned active until the caller's clock ticks over. A message NEWER
-    // than settledAt is genuinely new work and keeps the block until the
-    // server's auto-unsettle lands.
     const serverAdjudicated =
       shell.settledOverride === "settled" &&
       shell.settledAt !== null &&
@@ -255,26 +235,15 @@ export function effectiveSettled(
     if (!serverAdjudicated) return false;
   }
   if (shell.settledOverride === "settled") return true;
-  // "active" is the explicit keep-active pin: it suppresses auto-settle
-  // until real activity clears it server-side.
   if (shell.settledOverride === "active") return false;
   if (options.changeRequestState === "merged" || options.changeRequestState === "closed") {
     return true;
   }
-  // An open PR is unfinished business regardless of how long the thread has
-  // been quiet: review can take days, and hiding the thread would bury the
-  // work waiting on it. Only merge/close (above) or an explicit user settle
-  // resolves it.
   if (options.changeRequestState === "open") return false;
   if (options.autoSettleAfterDays === null) return false;
 
   const lastActivityAt = threadLastActivityAt(shell);
   if (lastActivityAt === null) return false;
-
-  // threadLastActivityAt only returns candidates whose Date.parse beat
-  // -Infinity, so this parse is a real number; a malformed `now` yields NaN,
-  // the comparison is false, and the thread stays active (never a surprise
-  // auto-settle on bad input).
   return (
     Date.parse(lastActivityAt) < Date.parse(options.now) - options.autoSettleAfterDays * DAY_MS
   );
@@ -318,7 +287,9 @@ function addSnoozeDays(base: Date, days: number): Date {
 /**
  * Shared "snooze until" choices for every client. "This evening" only
  * appears while it is meaningfully before evening; after that the calendar
- * choices start at "Tomorrow".
+ * choices start at "Tomorrow". Calendar presets that land on the same
+ * instant collapse: on Sundays "Tomorrow" and "Next week" are both Monday
+ * morning, so only "Tomorrow" is offered.
  */
 export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   const inAnHour = new Date(now.getTime() + HOUR_MS);
@@ -358,12 +329,14 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
 
   const daysUntilMonday = (1 - now.getDay() + 7) % 7 || 7;
   const nextWeek = snoozeAtHour(addSnoozeDays(now, daysUntilMonday), MORNING_HOUR);
-  presets.push({
-    id: "next-week",
-    label: "Next week",
-    whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${snoozeTimeOfDayLabel(nextWeek)}`,
-    snoozedUntil: nextWeek.toISOString(),
-  });
+  if (nextWeek.getTime() !== tomorrow.getTime()) {
+    presets.push({
+      id: "next-week",
+      label: "Next week",
+      whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${snoozeTimeOfDayLabel(nextWeek)}`,
+      snoozedUntil: nextWeek.toISOString(),
+    });
+  }
 
   return presets;
 }
@@ -382,4 +355,39 @@ export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: s
   if (remainingMs < HOUR_MS) return `${Math.max(1, Math.ceil(remainingMs / 60_000))}m`;
   if (remainingMs < DAY_MS) return `${Math.ceil(remainingMs / HOUR_MS)}h`;
   return `${Math.ceil(remainingMs / DAY_MS)}d`;
+}
+
+export type CustomSnoozeInput =
+  | { readonly mode: "date"; readonly date: string; readonly time: string }
+  | {
+      readonly mode: "duration";
+      readonly amount: string;
+      readonly unit: "minutes" | "hours" | "days";
+    };
+
+/** Resolve local calendar input or elapsed time, rejecting past and invalid dates. */
+export function resolveCustomSnooze(input: CustomSnoozeInput, now: Date): string | null {
+  let wake: Date;
+  if (input.mode === "duration") {
+    const amount = Number(input.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const unitMs = { minutes: 60_000, hours: HOUR_MS, days: 24 * HOUR_MS }[input.unit];
+    wake = new Date(now.getTime() + amount * unitMs);
+  } else {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !/^\d{2}:\d{2}$/.test(input.time)) return null;
+    wake = new Date(`${input.date}T${input.time}:00`);
+    // Reject rolled-over dates and nonexistent local times during DST changes.
+    if (localSnoozeDate(wake) !== input.date || localSnoozeTime(wake) !== input.time) return null;
+  }
+  return Number.isFinite(wake.getTime()) && wake.getTime() > now.getTime()
+    ? wake.toISOString()
+    : null;
+}
+
+export function localSnoozeDate(date: Date): string {
+  return `${String(date.getFullYear()).padStart(4, "0")}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function localSnoozeTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }

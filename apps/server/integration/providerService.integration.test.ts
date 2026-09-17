@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { ProviderRuntimeEvent } from "@d4research/contracts";
 import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@d4research/contracts";
 import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts/settings";

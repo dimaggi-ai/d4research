@@ -4,16 +4,15 @@ import type { ComponentType } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Platform,
+  RefreshControl,
   ScrollView,
   Text as NativeText,
-  useColorScheme,
-  RefreshControl,
   useWindowDimensions,
   View,
 } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { LoadingStrip } from "../../components/LoadingStrip";
 import {
   type NativeReviewDiffViewProps,
@@ -25,6 +24,8 @@ import type { ReviewHighlightedToken } from "../review/shikiReviewHighlighter";
 import { cn } from "../../lib/cn";
 import type { ResolvedMobileCodeSurface } from "../../lib/appearancePreferences";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import {
   buildNativeSourceTokens,
   NATIVE_SOURCE_CONTENT_WIDTH,
@@ -73,6 +74,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
       </NativeText>
       <NativeText
         selectable
+        selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
         numberOfLines={props.wordBreak ? undefined : 1}
         className="flex-1 font-normal text-foreground"
         style={{
@@ -102,6 +104,9 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
                   <NativeText
                     key={`${start}:${token.content.length}:${token.color ?? ""}`}
                     selectable
+                    selectionColorClassName={
+                      Platform.OS === "android" ? "accent-primary/32" : undefined
+                    }
                     style={{
                       color: token.color ?? undefined,
                       fontFamily: REVIEW_MONO_FONT_FAMILY,
@@ -121,8 +126,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
 });
 
 function useSourceFileModel(props: SourceFileSurfaceProps) {
-  const colorScheme = useColorScheme();
-  const theme: "dark" | "light" = colorScheme === "dark" ? "dark" : "light";
+  const { themeAppearance: theme } = useAppearancePreferences();
   const document = useMemo(() => prepareSourceFileDocument(props.contents), [props.contents]);
   const { contents: normalizedContents, lines, rowsJson } = document;
   const targetIndex =
@@ -181,15 +185,20 @@ function NativeSourceFileSurface(
 ) {
   const { NativeView, onRefresh } = props;
   const { codeSurface, codeWordBreak, nativeSourceStyle } = useAppearanceCodeSurface();
+  const { themeAppearance, themeId } = useAppearancePreferences();
+  const appTheme = useUniwindTheme();
   const { width: viewportWidth } = useWindowDimensions();
-  const { rowsJson, status, targetIndex, theme, tokens } = useSourceFileModel(props);
+  const { rowsJson, status, targetIndex, tokens } = useSourceFileModel(props);
   const { isPullRefreshing, handlePullToRefresh } = useSourceFileRefresh(onRefresh);
   const tokensJson = useMemo(() => JSON.stringify(buildNativeSourceTokens(tokens)), [tokens]);
   const selectedRowIdsJson = useMemo(
     () => JSON.stringify(targetIndex === null ? [] : [nativeSourceRowId(targetIndex)]),
     [targetIndex],
   );
-  const themeJson = useMemo(() => JSON.stringify(createNativeReviewDiffTheme(theme)), [theme]);
+  const themeJson = useMemo(
+    () => JSON.stringify(createNativeReviewDiffTheme(themeAppearance, themeId, appTheme)),
+    [appTheme, themeAppearance, themeId],
+  );
   const styleJson = useMemo(() => JSON.stringify(nativeSourceStyle), [nativeSourceStyle]);
   const contentWidth = codeWordBreak
     ? Math.max(240, viewportWidth - codeSurface.gutterWidth - 24)
@@ -202,7 +211,7 @@ function NativeSourceFileSurface(
         collapsable={false}
         testID="source-native-code-view"
         style={{ flex: 1 }}
-        appearanceScheme={theme}
+        appearanceScheme={themeAppearance}
         contentResetKey={props.path}
         contentWidth={contentWidth}
         initialRowIndex={targetIndex ?? -1}
@@ -270,6 +279,7 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     <MarkdownTextPrimitive
       uiTextView
       selectable
+      selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
       style={{
         color: foreground,
         fontFamily: REVIEW_MONO_FONT_FAMILY,

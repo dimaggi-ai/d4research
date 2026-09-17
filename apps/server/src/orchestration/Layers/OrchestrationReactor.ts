@@ -12,8 +12,6 @@ import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { RateLimitResumeReactor } from "../Services/RateLimitResumeReactor.ts";
 import { ResearchIntegrityReactor } from "../Services/ResearchIntegrityReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
-import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
-import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
@@ -23,8 +21,6 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const rateLimitResumeReactor = yield* RateLimitResumeReactor;
   const researchIntegrityReactor = yield* ResearchIntegrityReactor;
   const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
-  const pullRequestSyncReactor = yield* PullRequestSyncReactor.PullRequestSyncReactor;
-  const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* providerRuntimeIngestion.start();
@@ -33,9 +29,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* threadDeletionReactor.start();
     yield* rateLimitResumeReactor.start();
     yield* researchIntegrityReactor.start();
-    yield* threadPullRequestReactor.start();
     yield* threadSettlementReactor.start();
-    yield* pullRequestSyncReactor.start();
   });
 
   return {

@@ -17,21 +17,22 @@ import {
   wouldTextPasteExceedLimit,
 } from "@d4research/client-runtime/text-paste";
 import {
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  ProviderDriverKind,
-  ProviderInstanceId,
   type ApprovalRequestId,
   type AssistantCitation,
   type ChatFileAttachment,
   type ComposerContextClipboardFragment,
   type ComposerContextRecord,
   type EnvironmentId,
+  type KeybindingCommand,
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ProjectId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type ProviderApprovalDecision,
+  ProviderDriverKind,
+  ProviderInstanceId,
   type ProviderInteractionMode,
   type PullRequestListInput,
   type ResolvedKeybindingsConfig,
@@ -53,13 +54,18 @@ import { USAGE_LIMITS_COMMAND } from "@d4research/shared/usageLimits";
 import {
   BotIcon,
   CircleAlertIcon,
+  FileIcon,
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  ShieldIcon,
   XIcon,
 } from "lucide-react";
 import {
+  type ComponentProps,
+  Fragment,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -68,10 +74,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ComponentProps,
-  type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -96,21 +100,21 @@ import {
 } from "~/lib/composerContextRecords";
 import {
   collectInlineContextIds,
+  type ComposerContextReference,
   ensureInlineContextReferences,
   formatInlineContextReference,
   inlineContextReferenceReplacement,
   insertInlineContextReference,
   toKindScopedComposerContextId,
-  type ComposerContextReference,
 } from "~/lib/composerContextReferences";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { assetEnvironment } from "~/state/assets";
 import {
+  type EnvironmentQueryTarget,
   pullRequestEnvironment,
   usePullRequestList,
-  type EnvironmentQueryTarget,
 } from "~/state/pullRequests";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
@@ -120,28 +124,28 @@ import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
+  type ComposerSubmissionIntent,
   composerSubmissionIntentForEnter,
+  type ComposerTrigger,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
   replaceTextRange,
-  type ComposerSubmissionIntent,
-  type ComposerTrigger,
 } from "../../composer-logic";
 import {
+  type ComposerFileAttachment,
   composerFileDedupKey,
   composerFileMatchesReattachMarker,
   composerFileNeedsReattach,
+  type ComposerImageAttachment,
   composerTargetKey,
+  type DraftId,
   hydrateImagesFromPersisted,
+  type PersistedComposerFileAttachment,
+  type PersistedComposerImageAttachment,
   useComposerDraftStore,
   useComposerThreadDraft,
   useEffectiveComposerModelState,
-  type ComposerFileAttachment,
-  type ComposerImageAttachment,
-  type DraftId,
-  type PersistedComposerFileAttachment,
-  type PersistedComposerImageAttachment,
 } from "../../composerDraftStore";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
@@ -171,17 +175,17 @@ import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { type ContextWindowSnapshot } from "../../lib/contextWindow";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import {
-  elementContextToPreviewAnnotation,
   type ElementContextDraft,
+  elementContextToPreviewAnnotation,
 } from "../../lib/elementContext";
 import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
 import {
   makePastedContext,
   PASTED_CONTEXT_MAX_COUNT,
+  type PastedContextDraft,
   pastedTextLabel,
   readPastedContextFiles,
   shouldConvertPasteToContext,
-  type PastedContextDraft,
 } from "../../lib/pastedContext";
 import {
   getPendingSnapShotAnimations,
@@ -198,23 +202,23 @@ import {
 } from "../../lib/terminalContext";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
-import { getAppModelOptionsForInstance, type AppModelOption } from "../../modelSelection";
+import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import { type PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import { basenameOfPath } from "../../pierre-icons";
 import {
   MAX_STASH_ENTRIES,
   partitionStashAttachments,
-  usePromptStashStore,
   type PromptStashEntry,
+  usePromptStashStore,
 } from "../../promptStashStore";
 import { proposedPlanTitle } from "../../proposedPlan";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
-  sortProviderInstanceEntries,
   type ProviderInstanceEntry,
+  sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import {
@@ -238,12 +242,12 @@ import { usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { type ThreadSyncPhase } from "../../threadSync";
 import {
-  isVideoAttachment,
-  videoMimeType,
   type ChatMessage,
+  isVideoAttachment,
   type SessionPhase,
   type Thread,
   type ThreadShell,
+  videoMimeType,
 } from "../../types";
 import {
   deriveComposerSendState,
@@ -289,7 +293,7 @@ import {
   type ComposerBannerStackContent,
   type ComposerBannerStackItem,
 } from "./ComposerBannerStack";
-import { ComposerCommandMenu, type ComposerCommandItem } from "./ComposerCommandMenu";
+import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import {
   ComposerControl,
   ComposerControlIcon,
@@ -352,7 +356,9 @@ import { composerDraftOperationKey } from "./composerDraftOperationKey";
 import {
   composerFloatingLayerProps,
   isInsideCollapsedComposerControls,
+  isInsideComposerFloatingLayer,
   isInsideRestingComposerControlScope,
+  useComposerMenuProps,
 } from "./composerEventScope";
 import {
   dataTransferHasComposerMention,
@@ -361,8 +367,8 @@ import {
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import {
   buildComposerPromptHistoryEntries,
-  stepComposerPromptHistory,
   type ComposerPromptHistoryPosition,
+  stepComposerPromptHistory,
 } from "./composerPromptHistory";
 import {
   getComposerPromptInjectionState,
@@ -392,6 +398,10 @@ import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { useComposerFocusState } from "./useComposerFocusState";
 import { useComposerMenuState } from "./useComposerMenuState";
 import { useComposerMultilinePrompt } from "./useComposerMultilinePrompt";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
+import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 
 function ComposerVideoThumbnail({ file }: { file: File }) {
   const setVideo = useCallback(
@@ -1072,6 +1082,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   const size = props.size ?? "sm";
+  const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
@@ -1138,6 +1149,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           <TooltipTrigger
             render={
               <ComposerSelectControl
+                data-composer-shortcut="composer.mode"
                 size={size}
                 className={size === "xs" ? undefined : "font-medium"}
                 aria-label="Runtime mode"
@@ -1199,7 +1211,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1233,7 +1244,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
-        showSendWhileRunning={props.showSendWhileRunning ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -1254,6 +1264,7 @@ export interface ChatComposerHandle {
   restoreAfterTimelineReachedEnd: () => void;
   collapseForTimelineScrollKey: (key: string) => void;
   addDroppedFiles: (files: File[]) => void;
+  addDroppedFolders: (folders: File[]) => void;
   hasPendingAttachments: () => boolean;
   insertTextAtEnd: (
     text: string,
@@ -1267,6 +1278,7 @@ export interface ChatComposerHandle {
   ) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
+  openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   compactContext: () => void;
   readSnapshot: () => {
@@ -1592,6 +1604,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onExpandImage,
     onFileOpen,
   } = props;
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeTasksProgress = props.threadSyncPhase === null ? props.activeTasksProgress : null;
   const activeTaskSteps = props.threadSyncPhase === null ? props.activeTaskSteps : null;
   // ------------------------------------------------------------------
@@ -4144,6 +4157,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             shiftKey: event.shiftKey,
             modifierKey: event.metaKey || event.ctrlKey,
             isDraftThread: routeKind === "draft",
+            isRunning: phase === "running",
+            sendShortcut: settings.sendShortcut,
+            prompt: promptRef.current,
           })
         : null;
     if (submissionIntent) {
@@ -4866,7 +4882,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             }}
           >
             {image.previewUrl ? (
-              <img src={image.previewUrl} alt="" className="size-full object-cover" />
+              <ComposerImageThumbnail
+                file={image.file}
+                alt=""
+                className="size-full object-cover"
+                fallback={
+                  <PierreEntryIcon
+                    pathValue={image.name}
+                    kind="file"
+                    theme={resolvedTheme}
+                    className="m-auto size-3.5"
+                  />
+                }
+              />
             ) : (
               <PierreEntryIcon
                 pathValue={image.name}
@@ -5951,6 +5979,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           if (!inserted) focusComposer();
         });
       },
+      addDroppedFolders: (folders: File[]) => {
+        const target = folderDropTarget({
+          localEnvironmentDisabled: isLocalEnvironmentDisabled(),
+          environmentId,
+          primaryEnvironmentId,
+        });
+        if (target === "remote") {
+          toastManager.add({
+            type: "error",
+            title: "Folders can't be dropped into remote environments",
+          });
+          return;
+        }
+        for (const folder of folders) {
+          const path = resolveDroppedFolderPath(folder, window.desktopBridge?.getPathForFile);
+          if (path === null) {
+            toastManager.add({
+              type: "error",
+              title: `Couldn't get the path of "${folder.name}"`,
+              description: "Type the folder path with @ instead.",
+            });
+            continue;
+          }
+          insertComposerTextAtEnd(`${serializeComposerFileLink(path)} `, {
+            ensureLeadingBoundary: true,
+          });
+        }
+        focusComposer();
+      },
       hasPendingAttachments: () =>
         (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0,
       insertTextAtEnd: insertComposerTextAtEnd,
@@ -5984,6 +6041,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         } else {
           openModelPicker();
         }
+      },
+      openControl: (command) => {
+        if (composerBlurFrameRef.current !== null) {
+          window.cancelAnimationFrame(composerBlurFrameRef.current);
+          composerBlurFrameRef.current = null;
+        }
+        flushSync(() => {
+          setIsComposerScrollCollapsed(false);
+          setIsComposerFocused(true);
+        });
+        const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
+        const trigger = Array.from(
+          shell?.querySelectorAll<HTMLButtonElement>(
+            `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
+          ) ?? [],
+        ).find(
+          (element) =>
+            !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }),
+        );
+        if (!trigger) return;
+        trigger.focus({ preventScroll: true });
+        trigger.click();
       },
       compactContext: compactThreadContext,
       isModelPickerOpen: () => isComposerModelPickerOpen,
@@ -6088,6 +6167,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerPreviewAnnotations,
       composerReviewComments,
       focusComposer,
+      environmentId,
+      primaryEnvironmentId,
       isConnecting,
       isComposerApprovalState,
       isChoiceOnlyPendingQuestion,
@@ -6229,13 +6310,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
                 variant={activePendingApproval ? "warning" : "info"}
+                density={activePendingApproval ? "spacious" : "default"}
               >
                 {activePendingApproval ? (
                   <ComposerBanner.Row
-                    layout="wrap-actions"
+                    layout="approval"
                     data-chat-composer-collapsed-controls="true"
                   >
-                    <ComposerBanner.Icon />
+                    <ComposerBanner.Icon>
+                      <ShieldIcon />
+                    </ComposerBanner.Icon>
                     <ComposerBanner.Content>
                       <ComposerPendingApprovalPanel
                         approval={activePendingApproval}
@@ -6551,10 +6635,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   onExpandImage(preview);
                                 }}
                               >
-                                <img
-                                  src={image.previewUrl}
+                                <ComposerImageThumbnail
+                                  file={image.file}
                                   alt={image.name}
                                   className="h-full w-full object-cover"
+                                  fallback={
+                                    <span className="flex h-full items-center justify-center px-1 text-[10px] text-secondary-label">
+                                      {image.name}
+                                    </span>
+                                  }
                                 />
                               </button>
                             ) : (
@@ -6907,6 +6996,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showMobilePendingAnswerActions && "max-sm:pb-11",
                       isComposerResting &&
                         "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
+                      isComposerApprovalState && "min-h-8",
                     )}
                     placeholderClassName={cn(
                       isComposerResting &&
@@ -6922,8 +7012,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPaste={onComposerPaste}
                     placeholder={
                       isComposerApprovalState
-                        ? (activePendingApproval?.detail ??
-                          "Resolve this approval request to continue")
+                        ? "Resolve this approval request to continue"
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"
@@ -7091,7 +7180,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
-                    showSendWhileRunning={isMobileViewport}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

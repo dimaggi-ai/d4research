@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { GrokSettings } from "@d4research/contracts";
 
 import {
@@ -17,9 +18,11 @@ import {
   buildGrokModelsFromSessionModelState,
   buildInitialGrokProviderSnapshot,
   checkGrokProviderStatus,
+  grokSlashCommandsFromInitialize,
   parseGrokModelsCliOutput,
 } from "./GrokProvider.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
+import { grokUsageResponseToLimits, readGrokUsageLimits } from "./grokUsageLimits.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -44,6 +47,298 @@ const makeGrokMockCli = async () => {
   await NodeFSP.chmod(wrapperPath, 0o755);
   return wrapperPath;
 };
+
+const LOGGED_IN_MODELS_OUTPUT = [
+  "You are logged in with grok.com.",
+  "",
+  "Default model: grok-4.6",
+  "",
+  "Available models:",
+  "  * grok-4.6 (default)",
+  "  - grok-4.5",
+  "",
+].join("\n");
+
+const LOGGED_OUT_MODELS_OUTPUT = LOGGED_IN_MODELS_OUTPUT.replace(
+  "You are logged in with grok.com.",
+  "You are not authenticated.",
+);
+
+describe("parseGrokModelsCliOutput", () => {
+  it("reads login state and model slugs, marking the default", () => {
+    const parsed = parseGrokModelsCliOutput(LOGGED_IN_MODELS_OUTPUT);
+    expect(parsed.authenticated).toBe(true);
+    expect(parsed.models.map((model) => [model.slug, model.isDefault ?? false])).toEqual([
+      ["grok-4.6", true],
+      ["grok-4.5", false],
+    ]);
+  });
+
+  it("detects a logged-out CLI even though it exits 0", () => {
+    expect(parseGrokModelsCliOutput(LOGGED_OUT_MODELS_OUTPUT).authenticated).toBe(false);
+  });
+
+  it("returns unknown auth for unrecognized output", () => {
+    expect(parseGrokModelsCliOutput("grok 9.9.9\n").authenticated).toBeNull();
+  });
+});
+
+describe("grokSlashCommandsFromInitialize", () => {
+  it("publishes native ACP commands and input hints without permission overrides", () => {
+    const commands = grokSlashCommandsFromInitialize({
+      protocolVersion: 1,
+      _meta: {
+        availableCommands: [
+          { name: "compact", description: "Compress history", input: { hint: "what to preserve" } },
+          {
+            name: "always-approve",
+            description: "Skip permission prompts",
+            input: { hint: "on|off" },
+          },
+          { name: "context", description: "Show context usage", input: null },
+          { name: "session-info", description: "Show session details" },
+          { name: "deep-research", description: "Research a topic", input: { hint: "<query>" } },
+          { name: "workflow", description: "Manage workflows", input: { hint: "runs" } },
+          { name: "goal", description: "Manage an autonomous goal", input: { hint: "status" } },
+        ],
+      },
+    });
+    expect(commands.map((command) => command.name)).toEqual([
+      "compact",
+      "session-info",
+      "deep-research",
+      "workflow",
+      "goal",
+    ]);
+    expect(commands[0]?.input).toEqual({ hint: "what to preserve" });
+    expect(commands[2]).toEqual({
+      name: "deep-research",
+      description: "Research a topic",
+      input: { hint: "<query>" },
+    });
+  });
+
+  it("keeps valid commands when other metadata entries are malformed", () => {
+    const commands = grokSlashCommandsFromInitialize({
+      protocolVersion: 1,
+      _meta: {
+        availableCommands: [
+          null,
+          { name: "broken", description: 42 },
+          { name: " ", description: "Empty name" },
+          { name: " session-info ", description: " Session details " },
+          { name: "session-info", description: "Updated session details" },
+        ],
+      },
+    });
+    expect(commands.map((command) => command.name)).toEqual(["compact", "session-info"]);
+    expect(commands[1]?.description).toBe("Updated session details");
+  });
+
+  it("keeps compact available for older agents without command metadata", () => {
+    for (const _meta of [undefined, {}, { availableCommands: "invalid" }]) {
+      expect(
+        grokSlashCommandsFromInitialize({ protocolVersion: 1, ...(_meta ? { _meta } : {}) }).map(
+          (command) => command.name,
+        ),
+      ).toEqual(["compact"]);
+    }
+  });
+});
+
+describe("buildGrokModelsFromSessionModelState", () => {
+  it("marks the agent's current model as default and keeps reasoning options", () => {
+    const models = buildGrokModelsFromSessionModelState({
+      currentModelId: "grok-4.6",
+      availableModels: [
+        {
+          modelId: "grok-4.6",
+          name: "Grok 4.6",
+          _meta: {
+            supportsReasoningEffort: true,
+            reasoningEffort: "high",
+            reasoningEfforts: [{ value: "high", label: "High", default: true }],
+          },
+        },
+        { modelId: "grok-4.5", name: "Grok 4.5" },
+      ],
+    });
+    expect(models.map((model) => [model.slug, model.isDefault ?? false])).toEqual([
+      ["grok-4.6", true],
+      ["grok-4.5", false],
+    ]);
+    expect(models[0]?.capabilities?.optionDescriptors).toHaveLength(1);
+  });
+});
+
+describe("buildGrokModelCapabilities", () => {
+  it("preserves ACP-provided reasoning labels and the active default", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: "xhigh",
+        reasoningEfforts: [
+          { value: "xhigh", label: "Extra High Effort", default: true },
+          { value: "high", label: "High Effort", default: true },
+          { value: "medium", label: "Medium Effort" },
+          { value: "low", label: "Low Effort" },
+        ],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toEqual([
+      {
+        id: "reasoningEffort",
+        label: "Reasoning",
+        type: "select",
+        currentValue: "xhigh",
+        options: [
+          { id: "xhigh", label: "Extra High Effort", isDefault: true },
+          { id: "high", label: "High Effort" },
+          { id: "medium", label: "Medium Effort" },
+          { id: "low", label: "Low Effort" },
+        ],
+      },
+    ]);
+  });
+
+  it("uses raw ACP values when option labels are omitted", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: "xhigh",
+        reasoningEfforts: [{ value: "xhigh" }, { value: "medium" }],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toEqual([
+      {
+        id: "reasoningEffort",
+        label: "Reasoning",
+        type: "select",
+        currentValue: "xhigh",
+        options: [
+          { id: "xhigh", label: "xhigh" },
+          { id: "medium", label: "medium" },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps ACP current effort separate from its collapsed advertised default", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: "medium",
+        reasoningEfforts: [
+          { value: "xhigh", label: "Extra High Effort", default: true },
+          { value: "high", label: "High Effort", default: true },
+          { value: "medium", label: "Medium Effort" },
+        ],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toEqual([
+      {
+        id: "reasoningEffort",
+        label: "Reasoning",
+        type: "select",
+        currentValue: "medium",
+        options: [
+          { id: "xhigh", label: "Extra High Effort", isDefault: true },
+          { id: "high", label: "High Effort" },
+          { id: "medium", label: "Medium Effort" },
+        ],
+      },
+    ]);
+  });
+
+  it("preserves ACP descriptions and falls back from invalid values to valid ids", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        supportsReasoningEffort: true,
+        reasoningEffort: "high",
+        reasoningEfforts: [
+          {
+            id: "high",
+            value: "not a token",
+            label: "High Effort",
+            description: "Higher implementation quality",
+            default: true,
+          },
+          { id: "bad id", value: "also invalid", label: "Invalid" },
+        ],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toEqual([
+      {
+        id: "reasoningEffort",
+        label: "Reasoning",
+        type: "select",
+        currentValue: "high",
+        options: [
+          {
+            id: "high",
+            label: "High Effort",
+            description: "Higher implementation quality",
+            isDefault: true,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("accepts an advertised ACP menu when the support flag is omitted", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        reasoningEffort: "high",
+        reasoningEfforts: [{ value: "high", label: "High Effort", default: true }],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toHaveLength(1);
+  });
+
+  it("honors an explicit ACP opt-out even when a menu is present", () => {
+    const capabilities = buildGrokModelCapabilities({
+      modelId: "grok-4.6",
+      name: "Grok 4.6",
+      _meta: {
+        supportsReasoningEffort: false,
+        reasoningEfforts: [{ value: "high", label: "High Effort", default: true }],
+      },
+    });
+
+    expect(capabilities.optionDescriptors).toEqual([]);
+  });
+
+  it("does not synthesize a reasoning menu when ACP omits it", () => {
+    expect(
+      buildGrokModelCapabilities({
+        modelId: "grok-4.6",
+        name: "Grok 4.6",
+        _meta: { supportsReasoningEffort: true, reasoningEffort: "xhigh" },
+      }).optionDescriptors,
+    ).toEqual([]);
+  });
+
+  it("keeps non-reasoning Grok models free of reasoning controls", () => {
+    expect(
+      buildGrokModelCapabilities({ modelId: "grok-build", name: "Grok Build" }).optionDescriptors,
+    ).toEqual([]);
+  });
+});
 
 describe("buildInitialGrokProviderSnapshot", () => {
   it.effect("returns a disabled snapshot when settings.enabled is false", () =>
@@ -173,6 +468,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.installed).toBe(true);
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
       expect(snapshot.message).toContain("ACP initialize failed");
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["compact"]);
     }),
   );
 
@@ -185,6 +481,255 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
       expect(snapshot.status).toBe("ready");
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-mock-alt"]);
+    }),
+  );
+});
+
+describe("Grok usage limits", () => {
+  const checkedAt = "2026-09-16T00:00:00.000Z";
+
+  it("uses the reported subscription percentage and weekly reset", () => {
+    const limits = grokUsageResponseToLimits(
+      {
+        config: {
+          creditUsagePercent: 100,
+          currentPeriod: {
+            type: "USAGE_PERIOD_TYPE_WEEKLY",
+            end: "2026-09-18T03:10:30.159171+00:00",
+          },
+        },
+      },
+      checkedAt,
+    );
+    expect(limits.windows).toEqual([
+      {
+        id: "subscription",
+        kind: "weekly",
+        label: "Weekly",
+        usedPercent: 100,
+        resetsAt: "2026-09-18T03:10:30.159Z",
+      },
+    ]);
+  });
+
+  it("does not invent allowance or reset dates when billing omits them", () => {
+    for (const response of [{}, { config: {} }, { config: { creditUsagePercent: NaN } }]) {
+      const limits = grokUsageResponseToLimits(response, checkedAt);
+      expect(limits.windows).toEqual([]);
+      expect(limits.unavailable?.reason).toBe("unsupported");
+    }
+    expect(
+      grokUsageResponseToLimits({ config: { creditUsagePercent: 0 } }, checkedAt).windows,
+    ).toEqual([{ id: "subscription", kind: "other", label: "Subscription", usedPercent: 0 }]);
+    expect(
+      grokUsageResponseToLimits(
+        {
+          config: {
+            creditUsagePercent: 120,
+            currentPeriod: { type: "USAGE_PERIOD_TYPE_MONTHLY", end: "invalid" },
+          },
+        },
+        checkedAt,
+      ).windows,
+    ).toEqual([{ id: "subscription", kind: "monthly", label: "Monthly", usedPercent: 100 }]);
+  });
+});
+
+it.layer(NodeServices.layer)("readGrokUsageLimits", (it) => {
+  it.effect("reads the configured Grok home and prefers the current login scope to legacy", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      yield* fs.writeFileString(
+        NodePath.join(directory, "auth.json"),
+        '{"https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828":{"key":"session-token","auth_mode":"oauth"},"https://accounts.x.ai/sign-in":{"key":"legacy-token"}}',
+      );
+      const limits = yield* readGrokUsageLimits({
+        GROK_HOME: directory,
+        HOME: "/unrelated-home",
+      }).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            expect(request.method).toBe("GET");
+            expect(request.url).toBe("https://cli-chat-proxy.grok.com/v1/billing?format=credits");
+            expect(request.headers.authorization).toBe("Bearer session-token");
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ config: { creditUsagePercent: 37 } }),
+              ),
+            );
+          }),
+        ),
+      );
+      expect(limits.windows[0]?.usedPercent).toBe(37);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "uses GROK_AUTH without reading stored credentials and accepts the legacy login scope",
+    () =>
+      readGrokUsageLimits({
+        GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"legacy-token"}}',
+      }).pipe(
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.makeNoop({
+            readFileString: (path) =>
+              path.endsWith("auth.json")
+                ? Effect.die("must not read stored credentials")
+                : Effect.succeed(""),
+          }),
+        ),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            expect(request.headers.authorization).toBe("Bearer legacy-token");
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ config: { creditUsagePercent: 12 } }),
+              ),
+            );
+          }),
+        ),
+        Effect.tap((limits) => Effect.sync(() => expect(limits.windows[0]?.usedPercent).toBe(12))),
+      ),
+  );
+
+  it.effect("does not use unrelated scopes, API keys, or custom auth deployments", () =>
+    Effect.gen(function* () {
+      for (const environment of [
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"stored-account"}}',
+          XAI_API_KEY: "different-api-account",
+        },
+        { GROK_AUTH: '{"https://other.example":{"key":"unrelated-token"}}' },
+        { GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"api-key","auth_mode":"api_key"}}' },
+        { GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":" "}}' },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"session-token"}}',
+          GROK_OIDC_ISSUER: "https://custom.example",
+        },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"stored-account"}}',
+          GROK_MODELS_BASE_URL: "https://custom.example/v1",
+        },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"stored-account"}}',
+          GROK_OAUTH2_PRINCIPAL_TYPE: "Team",
+        },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"stored-account"}}',
+          GROK_OAUTH2_PRINCIPAL_ID: "team-id",
+        },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"session-token"}}',
+          GROK_CONFIG: '{"auth_provider_command":"custom-auth"}',
+        },
+        {
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"session-token"}}',
+          GROK_CONFIG_PATH: "/custom-config.toml",
+        },
+      ]) {
+        const limits = yield* readGrokUsageLimits({
+          HOME: "/definitely/not/a/grok-home",
+          ...environment,
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("must not request another account's quota")),
+          ),
+        );
+        expect(limits.windows).toEqual([]);
+        expect(limits.unavailable?.reason).toBe("unsupported");
+      }
+    }),
+  );
+
+  it.effect(
+    "reports a missing login as unsupported and malformed credentials as a sanitized failure",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped();
+        const client = HttpClient.make(() => Effect.die("must not request without credentials"));
+        const missing = yield* readGrokUsageLimits({ HOME: directory }).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+        );
+        expect(missing.unavailable?.reason).toBe("unsupported");
+        for (const contents of [
+          "private-token-invalid-json",
+          '{"https://accounts.x.ai/sign-in":{"key":42}}',
+        ]) {
+          const malformed = yield* readGrokUsageLimits({
+            GROK_HOME: directory,
+            GROK_AUTH: contents,
+          }).pipe(Effect.provideService(HttpClient.HttpClient, client));
+          expect(malformed.unavailable).toEqual({
+            reason: "probeFailed",
+            message: "Grok could not read usage limits.",
+          });
+        }
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "does not request subscription limits for custom account or endpoint configuration",
+    () =>
+      Effect.gen(function* () {
+        for (const config of [
+          '[auth]\nprovider_command = "custom-auth"',
+          '[grok_com_config]\nissuer = "https://custom.example"',
+          'endpoints.proxy = "https://custom.example"',
+        ]) {
+          const limits = yield* readGrokUsageLimits({
+            GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"stored-token"}}',
+          }).pipe(
+            Effect.provideService(
+              FileSystem.FileSystem,
+              FileSystem.makeNoop({
+                readFileString: (path) => {
+                  expect(path.endsWith("config.toml")).toBe(true);
+                  return Effect.succeed(config);
+                },
+              }),
+            ),
+            Effect.provideService(
+              HttpClient.HttpClient,
+              HttpClient.make(() => Effect.die("must not request another account's quota")),
+            ),
+          );
+          expect(limits.windows).toEqual([]);
+          expect(limits.unavailable?.reason).toBe("unsupported");
+        }
+      }),
+  );
+
+  it.effect("sanitizes HTTP failures and malformed billing responses", () =>
+    Effect.gen(function* () {
+      for (const response of [
+        new Response("private response", { status: 401 }),
+        Response.json({ config: { creditUsagePercent: "private-value" } }),
+      ]) {
+        const limits = yield* readGrokUsageLimits({
+          HOME: "/definitely/not/a/grok-home",
+          GROK_AUTH: '{"https://accounts.x.ai/sign-in":{"key":"private-token"}}',
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(HttpClientResponse.fromWeb(request, response)),
+            ),
+          ),
+        );
+        expect(limits.windows).toEqual([]);
+        expect(limits.unavailable).toEqual({
+          reason: "probeFailed",
+          message: "Grok could not read usage limits.",
+        });
+      }
     }),
   );
 });

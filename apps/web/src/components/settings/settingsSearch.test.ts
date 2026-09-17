@@ -1,27 +1,17 @@
-import { describe, vi } from "vite-plus/test";
-import { filterAvailableSettingsSearchItems } from "./settingsSearch";
-
-import { expect } from "vite-plus/test";
-
-import { it } from "vite-plus/test";
-
+import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId } from "@d4research/contracts";
 
-import { getSettingsSearchTargetScope } from "./settingsSearch";
-
-import { getThreadAutoSettlementSearchAvailability } from "./settingsSearch";
-
-import { isSettingsOverviewVisible } from "./settingsSearch";
-
-import { isSettingsSearchScopeAvailable } from "./settingsSearch";
-
-import { searchableSetting } from "./settingsSearch";
-
-import { searchSettings } from "./settingsSearch";
-
-import { SETTINGS_SEARCH_ITEMS } from "./settingsSearch";
-
-import { type SettingsSearchItem } from "./settingsSearch";
+import {
+  filterAvailableSettingsSearchItems,
+  getSettingsSearchTargetScope,
+  getThreadAutoSettlementSearchAvailability,
+  isSettingsOverviewVisible,
+  isSettingsSearchScopeAvailable,
+  searchableSetting,
+  searchSettings,
+  SETTINGS_SEARCH_ITEMS,
+  type SettingsSearchItem,
+} from "./settingsSearch";
 
 const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
@@ -55,7 +45,11 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
-  it("matches setting titles, sections, and search aliases", () => {
+  it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
+    expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
+  });
+
+  it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
     expect(searchSettings("connections", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
@@ -172,6 +166,20 @@ describe("searchSettings", () => {
       "days-before-auto-settle",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
+  });
+
+  it("keeps the local toggle searchable when the local environment is disabled", () => {
+    const availability = {
+      hasCloudPublicConfig: false,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const remoteOnly = filterAvailableSettingsSearchItems(availability).map((item) => item.id);
+    expect(remoteOnly).toContain("local-environment");
+    expect(remoteOnly).not.toContain("wsl-backend");
   });
 
   it("shows automatic settlement settings when the server supports them", () => {
@@ -349,7 +357,7 @@ describe("settings search targets", () => {
     expect(isSettingsSearchScopeAvailable(updates.scope, "environment")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "all")).toBe(true);
     expect(isSettingsSearchScopeAvailable(updates.scope, "project")).toBe(false);
-    const streaming = getSettingsSearchTargetScope("legacy-token-streaming")!;
+    const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
     for (const id of ["legacy-plan-mode", "legacy-context-window-indicator", "legacy-sidebar"]) {

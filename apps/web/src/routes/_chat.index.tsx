@@ -4,7 +4,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
+import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
+import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
@@ -17,8 +20,6 @@ import {
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
-import { cn } from "~/lib/utils";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -112,23 +113,21 @@ export const Route = createFileRoute("/_chat/")({
 });
 
 function HostedStaticOnboardingState() {
-  const cloudEnabled = false;
+  const localEnvironmentOff = isLocalEnvironmentDisabled();
+  const description = localEnvironmentOff
+    ? "The local environment is turned off. Connect a remote environment, or turn the local environment back on in Connections."
+    : "Open Connections and add that machine using its pairing link. This app must be able to reach it.";
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <header
-          className={cn(
-            "border-b border-border px-3 py-2 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5 sm:py-3",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
+        <WorkspacePageHeader electron={isElectron} className="border-b border-border">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
               {APP_DISPLAY_NAME}
             </span>
           </div>
-        </header>
+        </WorkspacePageHeader>
 
         <Empty className="flex-1">
           <div className="w-full max-w-xl rounded-3xl border border-border/55 bg-card/20 px-8 py-12 shadow-sm/5">
@@ -140,13 +139,11 @@ function HostedStaticOnboardingState() {
                 Connect to a computer running d4research
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                This browser connects to d4research running on your computer or a server. Start the
+                This app connects to d4research running on your computer or a server. Start the
                 d4research desktop app or command-line server on that machine and keep it running.
               </EmptyDescription>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                {cloudEnabled
-                  ? "Enable T3 Connect on that machine, then open Connections here to sign in with the same account. You can also add the machine using a pairing link."
-                  : "Open Connections and add that machine using its pairing link. This browser must be able to reach it."}
+                {description}
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button render={<Link to="/settings/connections" />} size="sm">

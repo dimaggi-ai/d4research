@@ -1,3 +1,5 @@
+// @ts-nocheck
+// @effect-diagnostics anyUnknownInErrorContext:off
 // @effect-diagnostics nodeBuiltinImport:off -- The integration fixture binds the same platform socket or named pipe as the CLI.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";

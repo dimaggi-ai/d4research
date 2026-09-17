@@ -491,10 +491,10 @@ function PairingForm({
             <p className="text-sm text-muted-foreground">
               Run this on the computer with your code.
             </p>
-            <CommandBlock command="npx t3 pair" className="mt-2" />
+            <CommandBlock command="npx d4research pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start d4research first, or run <code className="font-mono">npx t3 serve</code>. Add{" "}
-              <code className="font-mono">--tailscale</code> to use your tailnet.
+              Start d4research first, or run <code className="font-mono">npx d4research serve</code>
+              . Add <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>
         </Collapsible>

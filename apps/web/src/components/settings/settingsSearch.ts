@@ -245,10 +245,23 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
   {
+    id: "in-app-notifications",
+    title: "In-app notifications",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
+  },
+  {
+    id: "response-streaming",
+    title: "Response streaming",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["output token paragraph buffered wait turn legacy"],
   },
   {
     id: "hide-whitespace-changes",
@@ -285,6 +298,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Collapse composer on scroll",
     to: "/settings/general",
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
+  },
+  {
+    id: "send-shortcut",
+    title: "Send shortcut",
+    to: "/settings/general",
+    searchTerms: ["enter return command ctrl multiline prompt new line composer"],
+  },
+  {
+    id: "follow-up-behavior",
+    title: "Follow-up behavior",
+    to: "/settings/general",
+    searchTerms: ["queue steer running turn send default behavior composer"],
   },
   {
     id: "provider-update-checks",
@@ -386,13 +411,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Context window indicator (legacy)",
     to: "/settings/general",
     searchTerms: ["composer meter usage tokens circle old"],
-  },
-  {
-    id: "legacy-token-streaming",
-    title: "Stream token by token (legacy)",
-    to: "/settings/general",
-    scope: "project-defaults",
-    searchTerms: ["response output old compatibility"],
   },
   {
     id: "legacy-sidebar",
@@ -624,6 +642,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     localBackendManagementOnly: true,
   },
   {
+    id: "local-environment",
+    title: "Local environment",
+    to: "/settings/connections",
+    targetId: "connections-environment",
+    searchTerms: ["turn off on disable enable local server agents remote only restart"],
+    desktopOnly: true,
+  },
+  {
     id: "network-access",
     title: "Network access",
     to: "/settings/connections",
@@ -685,11 +711,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Archived threads",
     to: "/settings/archived",
     searchTerms: ["restore reopen deleted history projects"],
-  },
-  {
-    id: "assistant-output",
-    title: "Assistant output",
-    to: "/settings/general",
   },
   {
     id: "auto-resume-usage-limit",

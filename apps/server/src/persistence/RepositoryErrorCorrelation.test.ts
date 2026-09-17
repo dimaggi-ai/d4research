@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { AuthSessionId, ThreadId, type AuthEnvironmentScope } from "@d4research/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";

@@ -24,6 +24,25 @@ Ordinary pairing links grant the four client-operation scopes:
 The desktop bootstrap credential and command-line administrative bootstrap
 credentials also grant `access:read access:write`.
 
+### Reusable dev credential
+
+Web development environments can accept one `T3CODE_DEV_AUTH_TOKEN` across
+worktrees and ports on one hostname. The token and startup URLs that contain it
+grant administrative access. Desktop and non-development servers ignore it. See
+the [development runbook](../operations/development.md#reusable-dev-credential)
+for setup.
+
+Each environment hashes the value and seeds its own database record at startup.
+Environments do not share SQLite data, signing keys, environment IDs, session
+records, pairing grants, or revocation state. Local revocation persists after
+restart and does not affect another worktree. Removing or rotating the value
+and restarting invalidates the old credential and its WebSocket tickets.
+
+Normal credentials keep precedence. A rejected normal credential never falls
+back to the reusable credential. OAuth exchanges create ordinary local bearer
+or DPoP children with normal expiry and revocation. The reusable cookie expires
+after 30 days.
+
 ## Host file access
 
 Clients with `orchestration:read` can read files anywhere the environment's server account can

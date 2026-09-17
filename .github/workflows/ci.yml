@@ -131,6 +131,9 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @d4research/desktop ensure:electron
 
+      - name: Test preview artifact validation
+        run: python3 -B .github/scripts/stage-preview-bundle.test.py
+
       - name: Test
         env:
           T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/t3code-transfer-budget.md

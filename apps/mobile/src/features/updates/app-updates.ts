@@ -243,3 +243,44 @@ export function createAppUpdateLaunchCheck(
 }
 
 export const checkForAppUpdateOnLaunch = createAppUpdateLaunchCheck();
+
+/**
+ * Below this, a backgrounded-then-foregrounded app is treated as a brief app
+ * switch, not a return worth an update check. Above it, an OTA could plausibly
+ * have published while it was in memory.
+ */
+export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;
+
+export function shouldRecheckAppUpdateOnForeground(
+  backgroundedAtMs: number | null,
+  activeAtMs: number,
+): boolean {
+  return (
+    backgroundedAtMs !== null &&
+    activeAtMs - backgroundedAtMs >= FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS
+  );
+}
+
+export function createAppUpdateForegroundRecheck(client: AppUpdateClient = Updates): () => void {
+  let started = false;
+
+  return () => {
+    if (started || !isAppUpdateCheckAvailable(client)) return;
+    started = true;
+    void import("react-native").then(({ AppState }) => {
+      let backgroundedAtMs: number | null = null;
+      AppState.addEventListener("change", (state) => {
+        if (state === "background") {
+          backgroundedAtMs = Date.now();
+          return;
+        }
+        if (state !== "active") return;
+        const shouldCheck = shouldRecheckAppUpdateOnForeground(backgroundedAtMs, Date.now());
+        backgroundedAtMs = null;
+        if (shouldCheck) void runAppUpdateCheck({ client });
+      });
+    });
+  };
+}
+
+export const startAppUpdateForegroundRecheck = createAppUpdateForegroundRecheck();

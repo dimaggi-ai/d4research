@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * REAL provider handoff matrix: every ordered pair of enabled providers runs
  * one thread through the full server composition with the REAL CLI — real

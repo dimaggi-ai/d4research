@@ -64,6 +64,8 @@ import { type DesktopWslState } from "@d4research/contracts";
 
 import { type EnvironmentId } from "@d4research/contracts";
 
+import { resolveEnvironmentMachineKind } from "@d4research/contracts";
+
 import { connectionStatusText } from "@d4research/client-runtime/connection";
 
 import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
@@ -106,7 +108,17 @@ import { useRelativeTimeTick } from "./settingsLayout";
 
 import { searchableSetting } from "./settingsSearch";
 
-import { EnvironmentIconPicker } from "./EnvironmentIconPicker";
+import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
+
+import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
+
+import { EnvironmentRow } from "./EnvironmentRow";
+
+import { environmentTransportLabel } from "./EnvironmentRow";
+
+import { formatDesktopSshTarget } from "./EnvironmentRow";
+
+import { FoldedSettingsSection } from "./FoldedSettingsSection";
 
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 
@@ -176,6 +188,8 @@ import { MenuItem } from "../ui/menu";
 
 import { MenuPopup } from "../ui/menu";
 
+import { MenuSeparator } from "../ui/menu";
+
 import { MenuTrigger } from "../ui/menu";
 
 import { Switch } from "../ui/switch";
@@ -229,6 +243,8 @@ import { type ServerClientSessionRecord } from "~/environments/primary";
 import { type ServerPairingLinkRecord } from "~/environments/primary";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 
 import { useUiStateStore } from "~/uiStateStore";
 
@@ -393,11 +409,6 @@ function AccessScopeSummary({
   );
 }
 
-function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): string {
-  const authority = target.username ? `${target.username}@${target.hostname}` : target.hostname;
-  return target.port ? `${authority}:${target.port}` : authority;
-}
-
 function parseManualDesktopSshTarget(input: {
   readonly host: string;
   readonly username: string;
@@ -533,6 +544,19 @@ function endpointRowClassName(presentation: AccessSectionPresentation, isAvailab
   }
 
   return cn(ENDPOINT_ROW_CLASSNAME, !isAvailable && "bg-muted/24");
+}
+
+function summarizeAuthorizedClients(
+  sessions: ReadonlyArray<ServerClientSessionRecord>,
+  links: ReadonlyArray<ServerPairingLinkRecord>,
+): string {
+  const parts = [
+    `${sessions.length} ${sessions.length === 1 ? "client" : "clients"}`,
+    links.length > 0
+      ? `${links.length} ${links.length === 1 ? "pairing link" : "pairing links"}`
+      : null,
+  ];
+  return parts.filter((part): part is string => part !== null).join(" · ");
 }
 
 function sortDesktopPairingLinks(links: ReadonlyArray<ServerPairingLinkRecord>) {
@@ -1490,6 +1514,48 @@ type SavedBackendListRowProps = {
   onRemove: (environment: EnvironmentPresentation) => void;
 };
 
+/**
+ * Status word for a row subtitle: "Reconnecting: <reason>" instead of the
+ * long-form sentence, since the row has one line and the full text is one
+ * hover away.
+ */
+function savedBackendStatus(environment: EnvironmentPresentation): {
+  readonly text: string;
+  readonly tone: "muted" | "error";
+} {
+  if (!environment.entry.enabled && environment.connection.phase !== "unsupported")
+    return { text: "Off", tone: "muted" };
+  const { connection } = environment;
+  switch (connection.phase) {
+    case "connected":
+      return { text: "Connected", tone: "muted" };
+    case "connecting":
+      return { text: "Connecting", tone: "muted" };
+    case "reconnecting":
+      return {
+        text: connection.error ? `Reconnecting: ${connection.error}` : "Reconnecting",
+        tone: "error",
+      };
+    // Not a failure: the machine is fine, this build just cannot talk to it.
+    case "unsupported":
+      return { text: "Client not supported", tone: "muted" };
+    case "error":
+      return {
+        text: connection.error ? `Connection failed: ${connection.error}` : "Connection failed",
+        tone: "error",
+      };
+    case "offline":
+      return { text: "Offline", tone: "muted" };
+    case "available":
+      return { text: "Not connected", tone: "muted" };
+  }
+}
+
+/**
+ * One added machine in the Environments list. The switch is the main action;
+ * the update icon appears only when that machine can take an update; the
+ * row menu holds the icon override, trace ID, and removal.
+ */
 function SavedBackendListRow({
   environment,
   removingEnvironmentId,
@@ -1497,20 +1563,10 @@ function SavedBackendListRow({
   onRemove,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
-  const enabled = environment.entry.enabled;
-  const connectionState = environment.connection.phase;
-  const isConnected = connectionState === "connected";
+  const unsupported = environment.connection.phase === "unsupported";
+  const enabled = environment.entry.enabled && !unsupported;
+  const isConnected = environment.connection.phase === "connected";
   const isRemoving = removingEnvironmentId === environmentId;
-  const stateDotClassName = !enabled
-    ? "bg-muted-foreground/40"
-    : connectionState === "connected"
-      ? "bg-success"
-      : connectionState === "connecting" || connectionState === "reconnecting"
-        ? "bg-warning"
-        : connectionState === "error"
-          ? "bg-destructive"
-          : "bg-muted-foreground/40";
-  const statusTooltip = enabled ? connectionStatusText(environment.connection) : "Off";
   const errorTraceId = environment.connection.traceId;
   const { copyToClipboard: copyTraceIdToClipboard } = useCopyToClipboard<{ traceId: string }>({
     target: "trace ID",
@@ -1541,25 +1597,19 @@ function SavedBackendListRow({
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
-  const sshTarget =
-    environment.entry.target._tag === "SshConnectionTarget" &&
-    Option.isSome(environment.entry.profile) &&
-    environment.entry.profile.value._tag === "SshConnectionProfile"
-      ? environment.entry.profile.value.target
-      : null;
-  const metadataBits = [
-    sshTarget ? `SSH ${formatDesktopSshTarget(sshTarget)}` : null,
-    environment.relayManaged ? "T3 Connect" : null,
-    enabled ? null : "Off",
-  ].filter((value): value is string => value !== null);
+  const status = savedBackendStatus(environment);
+  const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
+  const machineKind = resolveEnvironmentMachineKind(environment.serverConfig);
+  const subtitleText = [
+    environmentTransportLabel(environment),
+    resumingServerUpdate ? "Restarting" : status.text,
+    enabled && versionMismatch ? serverVersion : null,
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" · ");
 
-  // The WSL backend is a desktop-managed local backend (it surfaces as a bearer
-  // environment whose connection id is prefixed "local:"), not a remote
-  // environment you connect to or remove here — its lifecycle is driven by the
-  // WSL on/off + distro picker on this page.
-  const isWslEnvironment = isDesktopLocalConnectionTarget(environment.entry.target);
   // Only a connected, enabled machine can take a remote update; a switched-off
-  // one keeps the "update available" note so the icon is not a surprise later.
+  // one keeps the version note so the icon is not a surprise later.
   const showUpdateAction =
     enabled &&
     isConnected &&
@@ -1567,132 +1617,102 @@ function SavedBackendListRow({
     (serverUpdateState.status === "idle" || serverUpdateState.status === "failed");
 
   return (
-    <div className={cn(ITEM_ROW_CLASSNAME, !enabled && "opacity-60")}>
-      <div className={ITEM_ROW_INNER_CLASSNAME}>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 items-center gap-1.5">
-            <ConnectionStatusDot
-              tooltipText={statusTooltip}
-              dotClassName={stateDotClassName}
-              pingClassName={
-                enabled && (connectionState === "connecting" || connectionState === "reconnecting")
-                  ? "bg-warning/60 duration-2000"
-                  : null
-              }
-            />
-            <h3 className="text-sm font-medium text-foreground">{environment.label}</h3>
+    <EnvironmentRow
+      kind={machineKind}
+      label={environment.label}
+      dimmed={!enabled}
+      subtitle={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                className={cn(
+                  "block truncate",
+                  enabled && status.tone === "error" && !resumingServerUpdate && "text-destructive",
+                )}
+              />
+            }
+          >
+            {subtitleText}
+          </TooltipTrigger>
+          <TooltipPopup side="top" className="max-w-80 whitespace-pre-wrap leading-tight">
+            {unsupported
+              ? (environment.connection.error ?? connectionStatusText(environment.connection))
+              : enabled
+                ? connectionStatusText(environment.connection)
+                : "Switched off"}
+            {versionMismatch
+              ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
+              : ""}
+          </TooltipPopup>
+        </Tooltip>
+      }
+      below={
+        serverUpdateState.status !== "idle" ? (
+          <div className="mt-1 max-w-md">
+            <ServerUpdateProgress state={serverUpdateState} />
           </div>
-          {metadataBits.length > 0 ? (
-            <p className="text-xs text-muted-foreground">{metadataBits.join(" · ")}</p>
-          ) : null}
-          {serverUpdateState.status !== "idle" ? (
-            <div className="max-w-md">
-              <ServerUpdateProgress state={serverUpdateState} />
-            </div>
-          ) : versionMismatch ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    className="w-fit cursor-help rounded-sm text-left text-muted-foreground text-xs"
-                  >
-                    Server update available
-                  </button>
-                }
-              />
-              <TooltipPopup side="top">
-                {versionMismatch.serverVersion} <span aria-hidden="true">→</span>{" "}
-                {versionMismatch.clientVersion}
-              </TooltipPopup>
-            </Tooltip>
-          ) : null}
-          {enabled && environment.connection.error && !resumingServerUpdate ? (
-            <p className="flex min-w-0 items-center gap-2 text-destructive text-xs">
-              <span className="min-w-0 break-words">
-                {connectionStatusText(environment.connection)}
-              </span>
-              {errorTraceId ? (
-                <button
-                  type="button"
-                  className="shrink-0 underline underline-offset-2"
-                  onClick={() => copyTraceId(errorTraceId)}
-                >
-                  Copy trace ID
-                </button>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex w-full shrink-0 items-center gap-1 sm:w-auto sm:justify-end">
-          {showUpdateAction ? (
-            <ServerUpdateAction
-              environmentId={environmentId}
-              serverLabel={`${environment.label} server`}
-              selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
-              targetVersion={versionMismatch.clientVersion}
-              label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
-              appearance="icon"
+        ) : null
+      }
+    >
+      {showUpdateAction ? (
+        <ServerUpdateAction
+          environmentId={environmentId}
+          serverLabel={`${environment.label} server`}
+          selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
+          desktopAppUpdate={supportsDesktopAppUpdate(environment.serverConfig)}
+          threadContinuation={supportsServerUpdateThreadContinuation(environment.serverConfig)}
+          targetVersion={versionMismatch.clientVersion}
+          label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+          appearance="icon"
+        />
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Switch
+              size="sm"
+              checked={enabled}
+              disabled={isRemoving || unsupported}
+              aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
+              onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
             />
+          }
+        />
+        <TooltipPopup side="top">
+          {unsupported ? "Client not supported" : enabled ? "Switch off" : "Switch on"}
+        </TooltipPopup>
+      </Tooltip>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground hover:text-foreground"
+              disabled={isRemoving}
+              aria-label={`More actions for ${environment.label}`}
+            />
+          }
+        >
+          <EllipsisIcon className="size-3.5" />
+        </MenuTrigger>
+        <MenuPopup align="end" className="min-w-52">
+          <EnvironmentIconMenu
+            environmentId={environmentId}
+            serverConfig={environment.serverConfig}
+          />
+          {errorTraceId ? (
+            <MenuItem onClick={() => copyTraceId(errorTraceId)}>Copy trace ID</MenuItem>
           ) : null}
-          {isWslEnvironment ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button size="xs" variant="outline" disabled>
-                    Managed above
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top" className="max-w-80 whitespace-pre-wrap leading-tight">
-                The WSL backend is managed by the WSL setting above — turn it on or off there.
-              </TooltipPopup>
-            </Tooltip>
-          ) : (
-            <>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Switch
-                      size="sm"
-                      checked={enabled}
-                      disabled={isRemoving}
-                      aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
-                      onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
-                    />
-                  }
-                />
-                <TooltipPopup side="top">{enabled ? "Switch off" : "Switch on"}</TooltipPopup>
-              </Tooltip>
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="text-muted-foreground hover:text-foreground"
-                      disabled={isRemoving}
-                      aria-label={`More actions for ${environment.label}`}
-                    />
-                  }
-                >
-                  <EllipsisIcon className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="end" className="min-w-52">
-                  {errorTraceId ? (
-                    <MenuItem onClick={() => copyTraceId(errorTraceId)}>Copy trace ID</MenuItem>
-                  ) : null}
-                  <MenuItem variant="destructive" onClick={() => onRemove(environment)}>
-                    {isRemoving ? "Removing…" : "Remove from this device…"}
-                  </MenuItem>
-                </MenuPopup>
-              </Menu>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+          <MenuSeparator />
+          <MenuItem variant="destructive" onClick={() => onRemove(environment)}>
+            {isRemoving ? "Removing…" : "Remove from this device…"}
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+    </EnvironmentRow>
   );
 }
 
@@ -1773,12 +1793,23 @@ export function ConnectionsSettings() {
       ? (primarySessionState.data.scopes ?? null)
       : null;
   const currentAuthPolicy = desktopBridge ? null : (primarySessionState.data?.auth.policy ?? null);
+  // Catalog order is the order the machines were added; rows never jump when
+  // one is switched off.
   const savedEnvironments = useMemo(
     () =>
-      environments
-        .filter((environment) => environment.entry.target._tag !== "PrimaryConnectionTarget")
-        .toSorted((left, right) => left.label.localeCompare(right.label)),
+      environments.filter(
+        (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
+      ),
     [environments],
+  );
+  // The WSL backend is managed from the WSL row under this machine, so it has
+  // no row of its own in the list.
+  const listedEnvironments = useMemo(
+    () =>
+      savedEnvironments.filter(
+        (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
+      ),
+    [savedEnvironments],
   );
   const savedDesktopSshEnvironmentsByAlias = useMemo(
     () =>
@@ -1846,10 +1877,15 @@ export function ConnectionsSettings() {
     [savedServerUpdateStates],
   );
   // Switched-off machines never receive threads, so they stay out of the
-  // load balancing list.
+  // load balancing and GitHub sharing lists. The WSL backend has no row in
+  // the Environments list but does take threads, so it stays in here. This
+  // machine leads the list.
   const loadBalancingEnvironments = useMemo(
-    () => environments.filter((environment) => environment.entry.enabled),
-    [environments],
+    () => [
+      ...(primaryEnvironment ? [primaryEnvironment] : []),
+      ...savedEnvironments.filter((environment) => environment.entry.enabled),
+    ],
+    [primaryEnvironment, savedEnvironments],
   );
   const savedDesktopSshEnvironmentKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -1943,7 +1979,9 @@ export function ConnectionsSettings() {
   const setDefaultAdvertisedEndpointKey = useUiStateStore(
     (state) => state.setDefaultAdvertisedEndpointKey,
   );
-  const canManageLocalBackend = currentSessionScopes?.includes(AuthAccessWriteScope) ?? false;
+  const canManageLocalBackend =
+    !isLocalEnvironmentDisabled() &&
+    (currentSessionScopes?.includes(AuthAccessWriteScope) ?? false);
   const authAccessChanges = useEnvironmentQuery(
     canManageLocalBackend && primaryEnvironmentId !== null
       ? authEnvironment.accessChanges({
@@ -3167,6 +3205,7 @@ export function ConnectionsSettings() {
             {...searchableSetting("connections-environment")}
             title={primaryEnvironment?.label ?? "Primary environment"}
           >
+            <LocalEnvironmentSetting />
             {primaryVersionMismatch || primaryServerUpdateState.status !== "idle" ? (
               <SettingsRow
                 title={
@@ -3223,9 +3262,14 @@ export function ConnectionsSettings() {
           </SettingsSection>
 
           {isLocalBackendRemotelyReachable ? (
-            <SettingsSection
+            <FoldedSettingsSection
+              id="authorized-clients"
               title="Authorized clients"
-              headerAction={
+              summary={summarizeAuthorizedClients(
+                desktopClientSessions,
+                visibleDesktopPairingLinks,
+              )}
+              control={
                 <AuthorizedClientsHeaderAction
                   clientSessions={desktopClientSessions}
                   isRevokingOtherClients={isRevokingOtherDesktopClients}
@@ -3241,7 +3285,7 @@ export function ConnectionsSettings() {
               >
                 {renderAuthorizedClients("current")}
               </ScrollArea>
-            </SettingsSection>
+            </FoldedSettingsSection>
           ) : null}
           <AlertDialog
             open={isDesktopServerExposureDialogOpen}
@@ -3592,7 +3636,7 @@ export function ConnectionsSettings() {
           </div>
         }
       >
-        {savedEnvironments.map((environment) => (
+        {listedEnvironments.map((environment) => (
           <SavedBackendListRow
             key={environment.environmentId}
             environment={environment}
@@ -3601,10 +3645,10 @@ export function ConnectionsSettings() {
             onRemove={handleRemoveSavedBackend}
           />
         ))}
-        {savedEnvironments.length === 0 ? <EmptyRemoteEnvironments /> : null}
+        {listedEnvironments.length === 0 ? <EmptyRemoteEnvironments /> : null}
       </SettingsSection>
-      <GitHubRoutingSettings environments={environments} />
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
+      <GitHubRoutingSettings environments={loadBalancingEnvironments} />
     </SettingsPageContainer>
   );
 }

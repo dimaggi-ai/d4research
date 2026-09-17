@@ -10,7 +10,7 @@ import {
 } from "@d4research/contracts";
 import { createServerEnvironmentAtoms } from "@d4research/client-runtime/state/server";
 import { createEnvironmentServerConfigsAtom } from "@d4research/client-runtime/state/shell";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@d4research/shared/keybindings";
+import { mergeWithDefaultKeybindings } from "@d4research/shared/keybindings";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
@@ -90,9 +90,8 @@ export const primaryServerProvidersAtom = Atom.make(
     get(primaryServerConfigAtom)?.providers ?? EMPTY_SERVER_PROVIDERS,
 ).pipe(Atom.withLabel("web-primary-server-providers"));
 
-export const primaryServerKeybindingsAtom = Atom.make(
-  (get): ServerConfig["keybindings"] =>
-    get(primaryServerConfigAtom)?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
+export const primaryServerKeybindingsAtom = Atom.make((get): ServerConfig["keybindings"] =>
+  mergeWithDefaultKeybindings(get(primaryServerConfigAtom)?.keybindings ?? []),
 ).pipe(Atom.withLabel("web-primary-server-keybindings"));
 
 export const primaryServerAvailableEditorsAtom = Atom.make(

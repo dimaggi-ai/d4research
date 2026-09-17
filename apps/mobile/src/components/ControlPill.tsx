@@ -6,15 +6,47 @@ import {
   type ComponentProps,
   type ReactElement,
   type ReactNode,
+  useMemo,
   useRef,
 } from "react";
-import { Platform, Pressable, useColorScheme, View, type AccessibilityProps } from "react-native";
-import { useThemeColor } from "../lib/useThemeColor";
-
+import { Platform, Pressable, View, type ColorValue, type AccessibilityProps } from "react-native";
+import { withUniwind } from "uniwind";
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { cn } from "../lib/cn";
+import { withMenuActionIconColors } from "../lib/menu-action-colors";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
+import { MaterialIconButton } from "./MaterialIconButton";
+import { MaterialButton } from "./MaterialButton";
+
+const ThemedMenuView = withUniwind(
+  function NativeMenuView({
+    iconColor,
+    destructiveIconColor,
+    ...props
+  }: ComponentProps<typeof MenuView> & {
+    readonly iconColor?: ColorValue;
+    readonly destructiveIconColor?: ColorValue;
+  }) {
+    const actions = useMemo(
+      () =>
+        withMenuActionIconColors(props.actions, {
+          icon: iconColor,
+          destructiveIcon: destructiveIconColor,
+        }),
+      [props.actions, iconColor, destructiveIconColor],
+    );
+    return <MenuView {...props} actions={actions} />;
+  },
+  {
+    iconColor: { fromClassName: "iconColorClassName", styleProperty: "accentColor" },
+    destructiveIconColor: {
+      fromClassName: "destructiveIconColorClassName",
+      styleProperty: "accentColor",
+    },
+  },
+);
 
 export function ControlPill(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
@@ -48,18 +80,14 @@ export function ControlPill(props: {
     props.onPress?.();
   };
 
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const primaryFg = useThemeColor("--color-primary-foreground");
-  const dangerFg = useThemeColor("--color-danger-foreground");
-  const iconTintColor =
+  const iconTintClassName =
     variant === "primary"
       ? props.disabled
-        ? iconSubtle
-        : primaryFg
+        ? "accent-icon-subtle"
+        : "accent-primary-foreground"
       : variant === "danger"
-        ? dangerFg
-        : iconColor;
+        ? "accent-danger-foreground"
+        : "accent-icon";
 
   const isCircle =
     variant === "circle" || variant === "danger" || (variant === "primary" && !props.label);
@@ -87,6 +115,47 @@ export function ControlPill(props: {
       : "",
   );
 
+  if (
+    Platform.OS === "android" &&
+    (variant === "pill" || variant === "primary") &&
+    props.label &&
+    props.onPress &&
+    !props.icon &&
+    !props.iconNode &&
+    !props.className &&
+    !props.activateOnPressIn &&
+    (!props.accessibilityLabel || props.accessibilityLabel === props.label)
+  ) {
+    return (
+      <MaterialButton
+        label={props.label}
+        onPress={props.onPress}
+        disabled={props.disabled}
+        tone={variant === "primary" ? "primary" : "secondary"}
+      />
+    );
+  }
+
+  if (
+    Platform.OS === "android" &&
+    props.accessibilityLabel &&
+    props.icon &&
+    !props.iconNode &&
+    !props.label &&
+    !props.className &&
+    !props.activateOnPressIn
+  ) {
+    return (
+      <MaterialIconButton
+        accessibilityLabel={props.accessibilityLabel}
+        icon={props.icon}
+        onPress={props.onPress}
+        disabled={props.disabled}
+        variant={variant === "primary" ? "primary" : variant === "danger" ? "danger" : "tonal"}
+      />
+    );
+  }
+
   return (
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
@@ -100,17 +169,20 @@ export function ControlPill(props: {
       {props.iconNode ? (
         <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
       ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+        <SymbolView
+          name={props.icon}
+          size={16}
+          tintColorClassName={iconTintClassName}
+          type="monochrome"
+        />
       ) : null}
       {props.label ? <Text className={labelClassName}>{props.label}</Text> : null}
     </Pressable>
   );
 }
 
-// iOS renders the native UIMenu (standard checkmark for `state: "on"`);
-// Android renders the token-styled AndroidAnchoredMenu, since the native
-// AppCompat popup can't be themed past its stock animation, metrics, and
-// submenu chrome.
+// iOS renders UIMenu; AndroidAnchoredMenu adapts the same actions to the
+// selected Android appearance and keeps editor menus above the keyboard.
 export function ControlPillMenu(
   props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> &
     Pick<AccessibilityProps, "accessible" | "accessibilityLabel" | "accessibilityRole"> & {
@@ -118,7 +190,8 @@ export function ControlPillMenu(
       readonly className?: string;
     },
 ) {
-  const isDarkMode = useColorScheme() === "dark";
+  const { themeAppearance } = useAppearancePreferences();
+  const isDarkMode = themeAppearance === "dark";
 
   if (Platform.OS === "android") {
     // Long-press menus keep their child interactive: the child element gets
@@ -176,8 +249,13 @@ export function ControlPillMenu(
     });
   }
   return (
-    <MenuView {...menuProps} themeVariant={isDarkMode ? "dark" : "light"}>
+    <ThemedMenuView
+      {...menuProps}
+      iconColorClassName="accent-icon"
+      destructiveIconColorClassName="accent-danger-foreground"
+      themeVariant={isDarkMode ? "dark" : "light"}
+    >
       {children}
-    </MenuView>
+    </ThemedMenuView>
   );
 }

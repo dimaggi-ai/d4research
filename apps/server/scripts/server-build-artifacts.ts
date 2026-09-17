@@ -4,7 +4,6 @@ import * as NodePath from "node:path";
 
 export const REQUIRED_SERVER_BUILD_ARTIFACTS = [
   "dist/bin.mjs",
-  "dist/service-launcher.mjs",
   "dist/client/index.html",
   "dist/tool-guard/profiles/local-coding/policy.yaml",
   "dist/tool-guard/profiles/local-coding-shadow/policy.yaml",

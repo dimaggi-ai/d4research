@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { vi } from "vite-plus/test";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),

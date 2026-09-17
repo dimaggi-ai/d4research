@@ -1,13 +1,13 @@
-import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import { threadPullRequestSearchTerms } from "@d4research/shared/threadPullRequests";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
   type EnvironmentId,
   type FilesystemBrowseEntry,
   type KeybindingCommand,
   THREAD_JUMP_KEYBINDING_COMMANDS,
-} from "@t3tools/contracts";
-import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
-import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+} from "@d4research/contracts";
+import { filterFilesystemBrowseEntries } from "@d4research/client-runtime/state/filesystem";
+import type { SidebarThreadSortOrder } from "@d4research/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";

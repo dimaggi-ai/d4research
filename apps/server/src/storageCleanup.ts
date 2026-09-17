@@ -5,9 +5,9 @@ import type {
   ServerSettingsError,
   TerminalSummary,
   WorktreeCleanupRules,
-} from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+} from "@d4research/contracts";
+import { resolveWorktreeCleanup } from "@d4research/shared/projectSettings";
+import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -42,7 +42,7 @@ export class StorageCleanup extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
   }
->()("t3/storageCleanup") {}
+>()("d4research/storageCleanup") {}
 
 const DAY_MS = 86_400_000;
 

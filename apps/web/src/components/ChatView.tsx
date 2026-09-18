@@ -3209,6 +3209,11 @@ function ChatViewContent(props: ChatViewProps) {
     conversationProviderStatus.supportsConversationRollback !== false;
 
   const phase = derivePhase(activeThread?.session ?? null);
+  // Muse and Agy reject a second sendTurn while a turn runs (their adapters
+  // return "already has a turn in progress"), so they can only ever wait.
+  const steerUnsupportedByProvider =
+    activeThread?.session?.providerName === "muse" || activeThread?.session?.providerName === "agy";
+  const followUpBehavior = steerUnsupportedByProvider ? "wait" : settings.followUpBehavior;
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const latestCheckpointCompletedAt = activeThread?.checkpoints.at(-1)?.completedAt ?? null;
   const workspaceMutationId = useMemo(() => {
@@ -8359,7 +8364,8 @@ function ChatViewContent(props: ChatViewProps) {
     if (
       phase === "running" &&
       queuedRequestForSend === null &&
-      (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")
+      (followUpBehavior !== "steer") !==
+        (submissionIntent === "alternate" && !steerUnsupportedByProvider)
     ) {
       // Pasted contexts (possibly rewritten to Memo retrieval references)
       // and element contexts have no field on QueuedComposerMessage, so fold
@@ -9622,6 +9628,7 @@ function ChatViewContent(props: ChatViewProps) {
         message: nextQueuedMessage,
         phase,
         latestToolActivityId: latestQueuedToolActivityId,
+        behavior: followUpBehavior,
       })
     ) {
       return;
@@ -9634,6 +9641,7 @@ function ChatViewContent(props: ChatViewProps) {
     phase,
     queueBlockedByPendingRequest,
     queueSendGate,
+    followUpBehavior,
   ]);
 
   // The row handlers are read from refs at call-time so their identity stays
@@ -9646,6 +9654,7 @@ function ChatViewContent(props: ChatViewProps) {
     steer: (id) => {
       const message = queuedMessages.find((entry) => entry.id === id);
       if (!message || sendInFlightRef.current || queueBlockedByPendingRequest) return;
+      if (steerUnsupportedByProvider && phase === "running") return;
       void onSend(undefined, message.submissionIntent, undefined, message);
     },
     remove: (id) => {
@@ -11054,6 +11063,8 @@ function ChatViewContent(props: ChatViewProps) {
                 loadEarlier={paintOnlyDisplayedTimeline ? null : loadEarlierTurns}
                 queuedMessages={paintOnlyDisplayedTimeline ? EMPTY_QUEUED_MESSAGES : queuedMessages}
                 onSteerQueuedMessage={onSteerQueuedMessage}
+                queueWaitsForTurnEnd={followUpBehavior === "wait"}
+                canSteerQueuedMessage={!steerUnsupportedByProvider}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
                 worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
                 onCancelWorktreeSetup={onCancelWorktreeSetup}

@@ -56,7 +56,12 @@ describe("queuedMessageStore", () => {
     const [second] = useQueuedMessageStore.getState().queuesByThreadKey["thread-a"] ?? [];
     expect(second?.queuedAfterToolActivityId).toBe("tool-2");
     expect(
-      isQueuedMessageDue({ message: second!, phase: "running", latestToolActivityId: "tool-2" }),
+      isQueuedMessageDue({
+        message: second!,
+        phase: "running",
+        latestToolActivityId: "tool-2",
+        behavior: "queue",
+      }),
     ).toBe(false);
   });
 
@@ -82,7 +87,12 @@ describe("queuedMessageStore", () => {
     expect(queue.map((message) => message.prompt)).toEqual(["first", "second"]);
     expect(queue[0]?.holdUntilUserAction).toBe(true);
     expect(
-      isQueuedMessageDue({ message: queue[0]!, phase: "ready", latestToolActivityId: null }),
+      isQueuedMessageDue({
+        message: queue[0]!,
+        phase: "ready",
+        latestToolActivityId: null,
+        behavior: "queue",
+      }),
     ).toBe(false);
   });
 
@@ -97,6 +107,26 @@ describe("queuedMessageStore", () => {
     expect(drain("thread-a")).toEqual([]);
     expect(useQueuedMessageStore.getState().drainGeneration).toBe(1);
     expect(useQueuedMessageStore.getState().queuesByThreadKey["thread-b"]).toHaveLength(1);
+  });
+
+  it("with behavior wait, messages are not due while running", () => {
+    const message = { ...makeMessage("test"), queuedAfterToolActivityId: "tool-1" };
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "running",
+        latestToolActivityId: "tool-2",
+        behavior: "wait",
+      }),
+    ).toBe(false);
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "ready",
+        latestToolActivityId: "tool-2",
+        behavior: "wait",
+      }),
+    ).toBe(true);
   });
 });
 
@@ -120,24 +150,53 @@ describe("queued message dispatch timing", () => {
 
   it("waits mid-turn until a tool call finishes after the message was queued", () => {
     const message = { queuedAfterToolActivityId: "a2" };
-    expect(isQueuedMessageDue({ message, phase: "running", latestToolActivityId: "a2" })).toBe(
-      false,
-    );
-    expect(isQueuedMessageDue({ message, phase: "running", latestToolActivityId: "a4" })).toBe(
-      true,
-    );
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "running",
+        latestToolActivityId: "a2",
+        behavior: "queue",
+      }),
+    ).toBe(false);
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "running",
+        latestToolActivityId: "a4",
+        behavior: "queue",
+      }),
+    ).toBe(true);
   });
 
   it("never auto-sends a message held for user action", () => {
     const message = { queuedAfterToolActivityId: null, holdUntilUserAction: true };
-    expect(isQueuedMessageDue({ message, phase: "ready", latestToolActivityId: "a4" })).toBe(false);
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "ready",
+        latestToolActivityId: "a4",
+        behavior: "queue",
+      }),
+    ).toBe(false);
   });
 
   it("is due as soon as the turn is over, but not while a send is connecting", () => {
     const message = { queuedAfterToolActivityId: "a2" };
-    expect(isQueuedMessageDue({ message, phase: "ready", latestToolActivityId: "a2" })).toBe(true);
-    expect(isQueuedMessageDue({ message, phase: "connecting", latestToolActivityId: "a4" })).toBe(
-      false,
-    );
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "ready",
+        latestToolActivityId: "a2",
+        behavior: "queue",
+      }),
+    ).toBe(true);
+    expect(
+      isQueuedMessageDue({
+        message,
+        phase: "connecting",
+        latestToolActivityId: "a4",
+        behavior: "queue",
+      }),
+    ).toBe(false);
   });
 });

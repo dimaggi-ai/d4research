@@ -53,9 +53,9 @@ compact beginning/end preview plus exact `memory_search` tokens that let the age
 the pieces it needs. Each Memo-backed document can contain up to 2,000,000 characters.
 
 Memo must confirm the write before the draft can be cleared. Normal sends clear optimistically
-during dispatch and restore the draft if the server rejects the turn start; queued sends clear after
-the Memo-backed request enters the local queue. If local Memo is disabled, unavailable, or times
-out, the request stays in the composer and Send becomes available again for a retry. A very large
+during dispatch and restore the draft if the server rejects the turn start; queued sends clear once
+the message is waiting in the thread. If local Memo is disabled, unavailable, or times out, the
+request stays in the composer and Send becomes available again for a retry. A very large
 unsent attachment keeps only a bounded browser-storage preview across a page reload. If the app
 asks for the complete source, remove the stale attachment chip and then reattach the file before
 sending.
@@ -88,19 +88,20 @@ hint. See [Handoff](./concepts.md#handoff).
 
 ## Queued follow-ups
 
-On web and desktop, a message sent during a running turn waits at the end of the conversation as a
-dashed bubble. It goes out on its own when the agent finishes its next tool call, or when the turn
-ends. Use the arrow under the bubble to send it right away, or the X to move it back into the
-composer. Stop returns every queued message to the composer.
+On web and desktop, a message sent during a running turn waits as a dashed bubble at the end of the
+conversation. **Settings → General → Follow-up behavior** chooses when it goes out. **Wait**, the
+default, sends it when the turn ends. **Queue** sends it after the agent's next tool call. **Steer**
+sends it into the running turn right away.
 
-**Settings → General → Follow-up behavior** determines what a message sent during a running turn
-does. **Queue** keeps this behavior; **Steer** sends new messages immediately. The setting applies
-to the current client, and messages already queued keep their place.
+The arrow under the bubble sends the message now. The X returns it to the composer. Stop returns
+every queued message to the composer. The setting applies to the current client. Muse and Agy
+cannot take a message during a turn, so their queued messages always wait for the turn to end.
 
-`Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux sends the oldest queued message
-now. Change `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut. The
-current draft stays in the composer, and the send waits while the agent needs an approval or an
-answer.
+`Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux sends the oldest queued
+message now. Change `thread.steerQueuedMessage` in **Settings → Keybindings** to use another
+shortcut. The send waits while the agent needs an approval or an answer.
+
+Mobile keeps its own queue and is not affected by this setting.
 
 ## Approvals and user input
 

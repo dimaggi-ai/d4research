@@ -150,7 +150,7 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
   await page.getByRole("button", { name: "Expand composer", exact: true }).click();
   await editor.click();
   await stop.waitFor();
-  const send = page.getByRole("button", { name: "Send message", exact: true });
+  const send = page.getByRole("button", { name: "Queue message", exact: true });
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await editor.click();
@@ -199,10 +199,15 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
       false,
       "Queuing must not interrupt or start a provider turn",
     );
-    await queue.getByRole("button", { name: "Remove queued request 1", exact: true }).click();
+    await queue
+      .getByRole("button", { name: "Cancel and return to the composer", exact: true })
+      .first()
+      .click();
     await queue.waitFor({ state: "hidden" });
-    // Removing a queued item moves focus out of the editor and collapses it.
-    await page.getByRole("button", { name: "Expand composer", exact: true }).click();
+    // The returned text lands in the composer. Re-expand only if it collapsed.
+    const expand = page.getByRole("button", { name: "Expand composer", exact: true });
+    if (await expand.isVisible()) await expand.click();
+    await editor.waitFor({ state: "visible" });
     console.log(
       `PASS phone ${width}px queues and removes a follow-up while Stop remains available`,
     );

@@ -607,8 +607,8 @@ describe("ClientSettings send shortcut", () => {
 
 describe("ClientSettings follow-up behavior", () => {
   it("defaults to queue and accepts either behavior", () => {
-    expect(decodeClientSettings({}).followUpBehavior).toBe("queue");
-    for (const followUpBehavior of ["queue", "steer"]) {
+    expect(decodeClientSettings({}).followUpBehavior).toBe("wait");
+    for (const followUpBehavior of ["wait", "queue", "steer"]) {
       expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
       expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
         followUpBehavior,

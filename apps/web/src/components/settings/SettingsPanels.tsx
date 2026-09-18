@@ -2923,7 +2923,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           {...searchableSetting("follow-up-behavior")}
           description={
-            "Queue follow-ups while the agent runs or steer the current run. " +
+            "Wait sends follow-ups after the turn ends, Queue sends them after the agent's next tool call, Steer sends them immediately. " +
             (settings.sendShortcut === "mod-enter-multiline"
               ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
               : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
@@ -2944,17 +2944,22 @@ export function GeneralSettingsPanel() {
             <Select
               value={settings.followUpBehavior}
               onValueChange={(value) => {
-                if (value === "queue" || value === "steer") {
+                if (value === "wait" || value === "queue" || value === "steer") {
                   updateSettings({ followUpBehavior: value });
                 }
               }}
             >
               <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
                 <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
+                  {settings.followUpBehavior === "wait"
+                    ? "Wait"
+                    : settings.followUpBehavior === "queue"
+                      ? "Queue"
+                      : "Steer"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="wait">Wait</SelectItem>
                 <SelectItem value="queue">Queue</SelectItem>
                 <SelectItem value="steer">Steer</SelectItem>
               </SelectPopup>

@@ -83,6 +83,10 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const serverThreadStatus = useThreadStatus(serverThreadRef);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = shell.data?.snapshot._tag === "Some";
+  // A cached shell is enough to render, but not to call a thread missing:
+  // the URL may name a thread created since the cache was written. Only a
+  // shell synchronized with the server can rule a thread out.
+  const shellLive = shell.data?.status === "live";
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
   );
@@ -158,7 +162,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }, [canonicalThreadRef, draftSession, navigate, target.kind]);
 
   useEffect(() => {
-    if (target.kind !== "server" || !bootstrapComplete) {
+    if (target.kind !== "server" || !shellLive) {
       return;
     }
     // Navigation already resolved onto this path, so a drop aimed here
@@ -171,7 +175,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         void navigate({ to: "/", replace: true });
       }
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [environmentHasAnyThreads, navigate, renderState, shellLive, target]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {

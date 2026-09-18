@@ -48,6 +48,16 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  */
 export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
 const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
+/**
+ * A cached snapshot only ever grows: the server bounds a fresh window to 500
+ * activities, but every activity that lands while the thread is open is
+ * appended, re-persisted, and resumed from on the next visit. Busy threads
+ * reach tens of megabytes within days, and decoding or re-encoding that on
+ * the main thread stalls low-power devices for seconds on every open and
+ * every settled turn. Past this budget a fresh window is cheaper than the
+ * cache, so the cache is dropped instead of loaded.
+ */
+export const MAX_CACHED_ACTIVITIES = 2000;
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -187,7 +197,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const retained = resumeCache?.snapshot;
   const owner = {};
   if (resumeCache) resumeCache.owner = owner;
-  const cached =
+  const loaded =
     retained === undefined
       ? yield* cache.loadThread(environmentId, threadId).pipe(
           Effect.catch((error) =>
@@ -202,6 +212,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           ),
         )
       : Option.none<OrchestrationThreadDetailSnapshot>();
+  const cached = Option.filter(
+    loaded,
+    (snapshot) => snapshot.thread.activities.length <= MAX_CACHED_ACTIVITIES,
+  );
   const cachedThread = Option.map(cached, (snapshot) => snapshot.thread);
   const initialState: EnvironmentThreadState = retained
     ? cachedThreadState(retained.state)

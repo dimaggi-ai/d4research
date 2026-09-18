@@ -33,6 +33,7 @@ import * as RpcSession from "../rpc/session.ts";
 import type { ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
 import {
   INITIAL_THREAD_USER_TURN_LIMIT,
+  MAX_CACHED_ACTIVITIES,
   makeEnvironmentThreadState,
   requestOlderThreadTurns,
   ThreadSnapshotLoader,
@@ -64,6 +65,18 @@ function message(id: string, turnId: string, createdAt: string): OrchestrationMe
     streaming: false,
     createdAt,
     updatedAt: createdAt,
+  };
+}
+
+function activity(id: string): OrchestrationThread["activities"][number] {
+  return {
+    id: EventId.make(id),
+    tone: "info",
+    kind: "tool",
+    summary: `summary of ${id}`,
+    payload: null,
+    turnId: TurnId.make("turn-2"),
+    createdAt: "2026-04-01T01:00:00.000Z",
   };
 }
 
@@ -645,6 +658,59 @@ describe("thread pagination state", () => {
       const subscribeInput = yield* Ref.get(harness.lastSubscribeInput);
       expect(subscribeInput?.turnLimit).toBeUndefined();
       expect(subscribeInput?.afterSequence).toBe(20);
+    }),
+  );
+
+  it.effect("drops a cache that outgrew the activity budget and reloads a fresh window", () =>
+    Effect.gen(function* () {
+      // A window resumed across many visits accumulates every activity that
+      // landed since; past the budget it must not be loaded or resumed from.
+      const grownCache: OrchestrationThreadDetailSnapshot = {
+        ...WINDOWED_SNAPSHOT,
+        snapshotSequence: 500,
+        thread: {
+          ...BASE_THREAD,
+          title: "Grown cache",
+          activities: Array.from({ length: MAX_CACHED_ACTIVITIES + 1 }, (_, index) =>
+            activity(`activity-${index}`),
+          ),
+        },
+      };
+      const harness = yield* makeHarness({
+        cached: grownCache,
+        initialResponse: Option.some(WINDOWED_SNAPSHOT),
+      });
+      const state = yield* harness.awaitState((value) => Option.isSome(value.data));
+      expect(Option.getOrThrow(state.data).title).toBe("Windowed thread");
+      expect(yield* Ref.get(harness.loaderWindows)).toEqual([
+        { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT },
+      ]);
+      const subscribeInput = yield* Ref.get(harness.lastSubscribeInput).pipe(
+        Effect.repeat({ until: (input) => input !== undefined }),
+      );
+      expect(subscribeInput?.afterSequence).toBe(10);
+    }),
+  );
+
+  it.effect("keeps a cache within the activity budget", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        cached: {
+          ...WINDOWED_SNAPSHOT,
+          thread: {
+            ...BASE_THREAD,
+            activities: Array.from({ length: MAX_CACHED_ACTIVITIES }, (_, index) =>
+              activity(`activity-${index}`),
+            ),
+          },
+        },
+      });
+      yield* harness.awaitState((value) => Option.isSome(value.data));
+      const subscribeInput = yield* Ref.get(harness.lastSubscribeInput).pipe(
+        Effect.repeat({ until: (input) => input !== undefined }),
+      );
+      expect(yield* Ref.get(harness.loaderWindows)).toEqual([]);
+      expect(subscribeInput?.afterSequence).toBe(10);
     }),
   );
 

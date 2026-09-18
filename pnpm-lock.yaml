@@ -748,6 +748,9 @@ importers:
       compression:
         specifier: ^1.8.1
         version: 1.8.1
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
       react-test-renderer:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)

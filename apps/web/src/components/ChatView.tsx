@@ -9654,7 +9654,7 @@ function ChatViewContent(props: ChatViewProps) {
     steer: (id) => {
       const message = queuedMessages.find((entry) => entry.id === id);
       if (!message || sendInFlightRef.current || queueBlockedByPendingRequest) return;
-      if (steerUnsupportedByProvider && phase === "running") return;
+      if (steerUnsupportedByProvider && (phase === "running" || phase === "connecting")) return;
       void onSend(undefined, message.submissionIntent, undefined, message);
     },
     remove: (id) => {

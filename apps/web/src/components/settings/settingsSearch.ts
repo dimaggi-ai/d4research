@@ -363,7 +363,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "follow-up-behavior",
     title: "Follow-up behavior",
     to: "/settings/general",
-    searchTerms: ["queue steer running turn send default behavior composer"],
+    searchTerms: ["wait queue steer running turn send default behavior composer"],
   },
   {
     id: "provider-update-checks",

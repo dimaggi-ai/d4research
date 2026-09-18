@@ -2923,7 +2923,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           {...searchableSetting("follow-up-behavior")}
           description={
-            "Wait sends follow-ups after the turn ends, Queue sends them after the agent's next tool call, Steer sends them immediately. " +
+            "Wait sends follow-ups after the turn ends, Queue sends them after the agent's next tool call, Steer sends them immediately. Muse and Agy always wait. " +
             (settings.sendShortcut === "mod-enter-multiline"
               ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
               : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)

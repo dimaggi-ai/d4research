@@ -157,7 +157,7 @@ import {
 import { type LegendListRef } from "@legendapp/list/react";
 import {
   getAnchoredTurnMetrics,
-  readTimelinePosition,
+  timelineContentOverflowsViewport,
   type TimelineScrollMode,
 } from "./chat/timelineScrollAnchoring";
 import {
@@ -5860,7 +5860,6 @@ function ChatViewContent(props: ChatViewProps) {
   const settledTimelineAnchorRef = useRef<MessageId | null>(null);
   const activeTimelineAnchorIndexRef = useRef<number | null>(null);
   const anchorUserScrollGenerationRef = useRef(0);
-  const cancelPositionRestoreRef = useRef<(() => void) | null>(null);
   const liveFollowUserScrollGenerationRef = useRef<number | null>(0);
   const pendingAnchorScrollRestoreRef = useRef<{
     readonly messageId: MessageId;
@@ -5869,7 +5868,6 @@ function ChatViewContent(props: ChatViewProps) {
   } | null>(null);
   const anchorScrollRestoreFrameRef = useRef<number | null>(null);
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
-    cancelPositionRestoreRef.current?.();
     anchorUserScrollGenerationRef.current += 1;
     timelineScrollModeRef.current = "free-scrolling";
     liveFollowUserScrollGenerationRef.current = null;
@@ -5966,7 +5964,6 @@ function ChatViewContent(props: ChatViewProps) {
   // Live-follow stays active after send/thread-open until an actual list scroll
   // gesture opts out.
   const scrollToEnd = useCallback((animated = false) => {
-    cancelPositionRestoreRef.current?.();
     isAtEndRef.current = true;
     timelineScrollModeRef.current = "following-end";
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
@@ -5982,6 +5979,21 @@ function ChatViewContent(props: ChatViewProps) {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
   }, []);
+  const displayedTimelineKeyRef = useRef(displayedTimeline.displayThreadKey);
+  useLayoutEffect(() => {
+    const displayKey = displayedTimeline.displayThreadKey;
+    if (displayKey === null || displayKey !== activeThreadKey) {
+      displayedTimelineKeyRef.current = displayKey;
+      return;
+    }
+    if (displayedTimelineKeyRef.current === displayKey) {
+      return;
+    }
+    displayedTimelineKeyRef.current = displayKey;
+    // Keep the list mounted across jumps; pin the newly displayed thread to
+    // its end the way a remount used to via initialScrollAtEnd.
+    scrollToEnd();
+  }, [activeThreadKey, displayedTimeline.displayThreadKey, scrollToEnd]);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -6240,14 +6252,11 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     setPullRequestDialogState(null);
-    const followEnd = readTimelinePosition(routeThreadKey)?.atEnd !== false;
-    isAtEndRef.current = followEnd;
+    isAtEndRef.current = true;
     timelineScrollIntentRef.current = null;
-    timelineScrollModeRef.current = followEnd ? "following-end" : "free-scrolling";
-    liveFollowUserScrollGenerationRef.current = followEnd
-      ? anchorUserScrollGenerationRef.current
-      : null;
-    setTimelineLiveFollowEnabled(followEnd);
+    timelineScrollModeRef.current = "following-end";
+    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+    setTimelineLiveFollowEnabled(true);
     pendingTimelineAnchorRef.current = null;
     positionedTimelineAnchorRef.current = null;
     settledTimelineAnchorRef.current = null;
@@ -6260,9 +6269,9 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     planSidebarDismissedForTurnRef.current = null;
-    setShowScrollToBottom(!followEnd);
+    setShowScrollToBottom(false);
     // activeThreadRef resets transitively with the active thread.
-  }, [activeThread?.id, routeThreadKey]);
+  }, [activeThread?.id]);
 
   // Auto-open the plan sidebar when plan/todo steps arrive for the current turn.
   // Don't auto-open for plans carried over from a previous turn (the user can open manually).
@@ -11038,7 +11047,6 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                cancelPositionRestoreRef={cancelPositionRestoreRef}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 onContentOverflowChange={setTimelineOverflows}

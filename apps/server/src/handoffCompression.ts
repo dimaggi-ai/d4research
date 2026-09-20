@@ -139,8 +139,10 @@ const RECENCY_WEIGHT = 0.1;
 // hard clip below from cutting the summary mid-sentence in the common case.
 const SUMMARY_ASK_SHARE = 0.8;
 // Judging costs one prompt evaluation per unit; on very long transcripts the
-// oldest units skip the judge and go straight to the summary instead.
-const MAX_JUDGED_UNITS = 48;
+// oldest units skip the judge and go straight to the summary instead. The
+// resident bonsai2 scores about 1.1 full-size units per second across its three
+// slots, so 36 units leave headroom inside the judge stage budget below.
+const MAX_JUDGED_UNITS = 36;
 const MAX_JUDGED_UNIT_CHARACTERS = 3_000;
 const MAX_TASK_STATE_CHARACTERS = 600;
 const VERBATIM_SHARE = 0.7;

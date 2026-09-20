@@ -64,7 +64,7 @@ Another AI agent is about to take over this conversation and continue the work. 
 2  Keep verbatim: states a decision, a user instruction, a file path, identifier, command, error message, or an open task the next agent must act on exactly
 ```
 
-Only the newest 48 messages are judged; older ones go straight to the summary. Judge calls are capped at 40 s in total. Nothing about the judge is hosted: no key, no network beyond loopback.
+Only the newest 36 messages are judged (the resident bonsai2 scores about 1.1 full-size messages per second across its three slots); older ones go straight to the summary. Judge calls are capped at 40 s in total. Nothing about the judge is hosted: no key, no network beyond loopback.
 
 ### Default summary prompt
 

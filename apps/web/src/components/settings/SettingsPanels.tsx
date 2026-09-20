@@ -3453,7 +3453,7 @@ export function GeneralSettingsPanel() {
             <SettingsRow
               id="handoff-compression-backend"
               title="Compression backend"
-              description="Local Ollama model runs free on this machine with no cold start. Provider session spawns a full provider CLI session and spends cloud tokens."
+              description="Local model keeps essential messages verbatim and summarizes the rest on this machine, free and without a cold start. Provider session spawns a full provider CLI session and spends cloud tokens."
               control={
                 <Select
                   value={settings.handoff.contextCompression.backend}
@@ -3487,7 +3487,7 @@ export function GeneralSettingsPanel() {
               <SettingsRow
                 id="handoff-compression-local-model"
                 title="Local model"
-                description="Ollama model used to compress the conversation (served from the local daemon at 127.0.0.1:11434)."
+                description="Local model that judges which messages the next agent needs verbatim (bonsai2 server at 127.0.0.1:8094) and summarizes the rest (Ollama-compatible gateway at 127.0.0.1:11434)."
                 control={
                   <DraftInput
                     value={settings.handoff.contextCompression.localModel}

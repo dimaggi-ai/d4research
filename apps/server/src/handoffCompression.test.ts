@@ -12,12 +12,14 @@ import type { ProviderAdapterError } from "./provider/Errors.ts";
 import type { ProviderAdapterShape } from "./provider/Services/ProviderAdapter.ts";
 import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegistry.ts";
 import {
+  assembleHandoffCompaction,
   compressHandoffContext,
   compressHandoffContextLocal,
   compressHandoffContextWithFallback,
-  DEFAULT_OLLAMA_BASE_URL,
   HandoffCompressionError,
+  planHandoffCompaction,
   PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS,
+  splitHandoffTranscript,
   truncateHandoffTranscript,
 } from "./handoffCompression.ts";
 
@@ -333,16 +335,266 @@ function jsonFetch(payload: unknown, status = 200): typeof globalThis.fetch {
     )) as unknown as typeof globalThis.fetch;
 }
 
+/**
+ * Routes judge calls (`/v1/chat/completions`) and summary calls (`/api/chat`)
+ * to separate handlers so a test can script each stage of the compaction.
+ */
+interface StackCall {
+  readonly kind: "judge" | "summary";
+  readonly body: Record<string, unknown>;
+}
+
+function stackFetch(handlers: {
+  readonly judge?: (evidence: { message: string; position: string }) => number | Error;
+  readonly summary?: (text: string) => string | Error;
+  readonly calls?: Array<StackCall>;
+}): typeof globalThis.fetch {
+  return ((url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    const messages = body["messages"] as Array<{ role: string; content: string }>;
+    if (String(url).endsWith("/v1/chat/completions")) {
+      handlers.calls?.push({ kind: "judge", body });
+      const evidence = JSON.parse(messages[1]!.content) as {
+        evidence: { message: string; position: string };
+      };
+      const level = handlers.judge?.(evidence.evidence) ?? 2;
+      if (level instanceof Error) return Promise.reject(level);
+      const letter = String.fromCharCode(65 + level);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: letter },
+                logprobs: { content: [{ top_logprobs: [{ token: letter, logprob: 0 }] }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    }
+    handlers.calls?.push({ kind: "summary", body });
+    const text = messages[1]!.content;
+    const summary = handlers.summary?.(text) ?? "SUMMARY";
+    if (summary instanceof Error) return Promise.reject(summary);
+    return Promise.resolve(
+      new Response(JSON.stringify({ message: { content: summary } }), { status: 200 }),
+    );
+  }) as typeof globalThis.fetch;
+}
+
+const LONG_TRANSCRIPT = [
+  "USER (original task): Fix the login redirect loop in apps/web/src/auth.ts",
+  "[... earlier conversation compressed/omitted ...]",
+  "ASSISTANT: Hi! Happy to help with that.",
+  `ASSISTANT: I explored the router setup for a while. ${"Details of the exploration. ".repeat(20)}`,
+  "USER: Do not touch the session cookie name; it is shared with the mobile app.",
+  "ASSISTANT: Root cause: auth.ts line 42 redirects before the token refresh resolves. Error: TypeError: token is undefined.",
+  "USER: Ok, fix it and run the auth tests.",
+].join("\n\n");
+
+describe("splitHandoffTranscript", () => {
+  it("splits on role labels only, keeping blank lines inside a message", () => {
+    const units = splitHandoffTranscript(
+      "USER (original task): do it\n\n[... earlier conversation compressed/omitted ...]\n\nASSISTANT: first paragraph\n\nsecond paragraph\n\nUSER: thanks",
+    );
+    expect(units.map((unit) => unit.role)).toEqual(["task", "marker", "assistant", "user"]);
+    expect(units[2]!.text).toBe("ASSISTANT: first paragraph\n\nsecond paragraph");
+  });
+});
+
+describe("planHandoffCompaction", () => {
+  const units = splitHandoffTranscript(LONG_TRANSCRIPT);
+  const scores = new Map<number, number>([
+    [2, 0.1], // greeting
+    [3, 1.0], // exploration
+    [4, 1.9], // constraint from the user
+    [5, 2.0], // root cause
+  ]);
+
+  it("keeps every non-filler unit verbatim when they fit and drops filler", () => {
+    const plan = planHandoffCompaction(units, scores, 10_000);
+    expect(plan.kept.map((unit) => unit.index)).toEqual([0, 3, 4, 5, 6]);
+    expect(plan.omitted).toEqual([]);
+    expect(plan.skipped.map((unit) => unit.index)).toEqual([2]);
+    expect(plan.summaryBudget).toBe(0);
+  });
+
+  it("pins the task and newest message, ranks the rest by score, and reserves a summary budget", () => {
+    const plan = planHandoffCompaction(units, scores, 600);
+    expect(plan.kept[0]!.role).toBe("task");
+    expect(plan.kept[plan.kept.length - 1]!.index).toBe(6);
+    expect(plan.kept.map((unit) => unit.index)).toEqual([0, 4, 5, 6]);
+    expect(plan.omitted.map((unit) => unit.index)).toEqual([3]);
+    expect(plan.summaryBudget).toBeGreaterThan(100);
+    const output = assembleHandoffCompaction(plan, "S".repeat(plan.summaryBudget), 600);
+    expect(output.length).toBeLessThanOrEqual(600);
+    expect(output).toContain("1 earlier message compressed");
+    expect(output.indexOf("[... 1 earlier")).toBeLessThan(output.indexOf("USER: Do not touch"));
+  });
+
+  it("never exceeds the budget even when the newest message alone is larger", () => {
+    const plan = planHandoffCompaction(units, scores, 20);
+    expect(assembleHandoffCompaction(plan, "", 20).length).toBeLessThanOrEqual(20);
+  });
+});
+
 describe("compressHandoffContextLocal", () => {
+  it.effect("returns the transcript untouched when it already fits the budget", () =>
+    Effect.gen(function* () {
+      const calls: Array<StackCall> = [];
+      const result = yield* compressHandoffContextLocal({
+        transcript: "USER: short task",
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 500,
+        customPrompt: "",
+        fetchFn: stackFetch({ calls }),
+      });
+      expect(result).toBe("USER: short task");
+      expect(calls).toEqual([]);
+    }),
+  );
+
+  it.effect("keeps judged-essential messages verbatim and summarizes the omitted background", () =>
+    Effect.gen(function* () {
+      const calls: Array<StackCall> = [];
+      const judged: Array<string> = [];
+      const result = yield* compressHandoffContextLocal({
+        transcript: LONG_TRANSCRIPT,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 600,
+        customPrompt: "",
+        fetchFn: stackFetch({
+          calls,
+          judge: (evidence) => {
+            judged.push(evidence.message);
+            if (evidence.message.startsWith("ASSISTANT: Hi!")) return 0;
+            if (evidence.message.startsWith("ASSISTANT: I explored")) return 1;
+            return 2;
+          },
+          summary: (text) => {
+            expect(text).toContain("OMITTED TRANSCRIPT PARTS");
+            expect(text).toContain("I explored the router setup");
+            expect(text).not.toContain("Root cause");
+            return "Explored the router setup; nothing relevant found there.";
+          },
+        }),
+      });
+      // The task header and the marker are never judged; every message is, in one call each.
+      expect(judged).toHaveLength(5);
+      expect(calls.filter((call) => call.kind === "judge")).toHaveLength(5);
+      expect(calls.filter((call) => call.kind === "summary")).toHaveLength(1);
+      const summaryCall = calls.find((call) => call.kind === "summary")!;
+      expect(summaryCall.body["model"]).toBe("bonsai2-27b:latest");
+      expect(summaryCall.body["keep_alive"]).toBe("30m");
+      expect((summaryCall.body["options"] as { num_ctx: number }).num_ctx).toBeGreaterThanOrEqual(
+        2_048,
+      );
+
+      expect(result.length).toBeLessThanOrEqual(600);
+      expect(result.startsWith("USER (original task): Fix the login redirect loop")).toBe(true);
+      expect(result).toContain("Do not touch the session cookie name");
+      expect(result).toContain("TypeError: token is undefined");
+      expect(result).toContain("USER: Ok, fix it and run the auth tests.");
+      expect(result).toContain(
+        "[... 1 earlier message compressed into the summary below ...]\nExplored the router setup",
+      );
+      expect(result).not.toContain("Happy to help");
+      expect(result).not.toContain("Details of the exploration");
+    }),
+  );
+
+  it.effect("skips the summary call when the kept messages already fit", () =>
+    Effect.gen(function* () {
+      const calls: Array<StackCall> = [];
+      const result = yield* compressHandoffContextLocal({
+        transcript: LONG_TRANSCRIPT,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 700,
+        customPrompt: "",
+        fetchFn: stackFetch({
+          calls,
+          judge: (evidence) =>
+            evidence.message.startsWith("ASSISTANT: Hi!") ||
+            evidence.message.startsWith("ASSISTANT: I explored")
+              ? 0
+              : 2,
+        }),
+      });
+      expect(calls.filter((call) => call.kind === "summary")).toEqual([]);
+      expect(result).not.toContain("compressed into the summary");
+      expect(result).toContain("Root cause");
+      expect(result).not.toContain("Happy to help");
+    }),
+  );
+
+  it.effect("falls back to a whole-transcript summary when the judge is unreachable", () =>
+    Effect.gen(function* () {
+      const calls: Array<StackCall> = [];
+      const result = yield* compressHandoffContextLocal({
+        transcript: LONG_TRANSCRIPT,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 600,
+        customPrompt: "",
+        fetchFn: stackFetch({
+          calls,
+          judge: () => new Error("ECONNREFUSED"),
+          summary: (text) => {
+            expect(text.startsWith("--- TRANSCRIPT ---")).toBe(true);
+            return "whole-transcript summary";
+          },
+        }),
+      });
+      expect(result).toBe("whole-transcript summary");
+      expect(calls.filter((call) => call.kind === "summary")).toHaveLength(1);
+    }),
+  );
+
+  it.effect("summarizes whole when there are too few messages to rank", () =>
+    Effect.gen(function* () {
+      const calls: Array<StackCall> = [];
+      const result = yield* compressHandoffContextLocal({
+        transcript: `USER: do the thing ${"x".repeat(100)}\n\nASSISTANT: done`,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 30,
+        customPrompt: "",
+        fetchFn: stackFetch({ calls, summary: () => "  dense local summary  " }),
+      });
+      expect(result).toBe("dense local summary");
+      expect(calls.map((call) => call.kind)).toEqual(["summary"]);
+    }),
+  );
+
+  it.effect("clamps an over-long summary to maxOutputCharacters", () =>
+    Effect.gen(function* () {
+      const result = yield* compressHandoffContextLocal({
+        transcript: `USER: anything at all, at length\n\nASSISTANT: reply`,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 20,
+        customPrompt: "",
+        fetchFn: stackFetch({ summary: () => "S".repeat(500) }),
+      });
+      expect(result.length).toBe(20);
+    }),
+  );
+
   it.effect("aborts the daemon request on timeout and retains fallback context", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
       const request: { signal: AbortSignal | null } = { signal: null };
+      const transcript = `USER: preserve this context ${"y".repeat(60)}\n\nASSISTANT: reply`;
       const fiber = yield* compressHandoffContextLocal({
-        transcript: "USER: preserve this context",
+        transcript,
         model: "test-compressor",
-        maxInputCharacters: 6000,
-        maxOutputCharacters: 500,
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 60,
         customPrompt: "",
         timeoutMillis: 1000,
         fetchFn: ((_url, init) => {
@@ -353,57 +605,9 @@ describe("compressHandoffContextLocal", () => {
       }).pipe(Effect.forkChild);
       yield* Deferred.await(started);
       yield* TestClock.adjust("1 second");
-      expect(yield* Fiber.join(fiber)).toBe("USER: preserve this context");
+      const result = yield* Fiber.join(fiber);
+      expect(result).toBe(truncateHandoffTranscript(transcript, 60));
       expect(request.signal?.aborted).toBe(true);
-    }),
-  );
-  it.effect("returns the local model's summary on success", () =>
-    Effect.gen(function* () {
-      const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-      const fetchFn = ((url: string | URL | Request, init?: RequestInit) => {
-        requests.push({
-          url: String(url),
-          body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
-        });
-        return Promise.resolve(
-          new Response(JSON.stringify({ message: { content: "  dense local summary  " } }), {
-            status: 200,
-          }),
-        );
-      }) as typeof globalThis.fetch;
-
-      const result = yield* compressHandoffContextLocal({
-        transcript: "USER: do the thing\nASSISTANT: done",
-        model: "gemma4:e4b-it-qat",
-        maxInputCharacters: 6_000,
-        maxOutputCharacters: 2_000,
-        customPrompt: "",
-        fetchFn,
-      });
-
-      expect(result).toBe("dense local summary");
-      expect(requests).toHaveLength(1);
-      expect(requests[0]!.url).toBe(`${DEFAULT_OLLAMA_BASE_URL}/api/chat`);
-      expect(requests[0]!.body["model"]).toBe("gemma4:e4b-it-qat");
-      expect(requests[0]!.body["stream"]).toBe(false);
-      // 30m: handoffs cluster within a session but rarely within two minutes,
-      // so the short keep_alive made nearly every handoff pay the cold load.
-      expect(requests[0]!.body["keep_alive"]).toBe("30m");
-      expect((requests[0]!.body["options"] as { num_ctx: number }).num_ctx).toBeGreaterThan(1_024);
-    }),
-  );
-
-  it.effect("clamps an over-long local summary to maxOutputCharacters", () =>
-    Effect.gen(function* () {
-      const result = yield* compressHandoffContextLocal({
-        transcript: "anything",
-        model: "gemma4:e4b-it-qat",
-        maxInputCharacters: 6_000,
-        maxOutputCharacters: 20,
-        customPrompt: "",
-        fetchFn: jsonFetch({ message: { content: "S".repeat(500) } }),
-      });
-      expect(result.length).toBe(20);
     }),
   );
 
@@ -412,8 +616,8 @@ describe("compressHandoffContextLocal", () => {
       const transcript = `USER: original task statement\n${"filler ".repeat(500)}\nASSISTANT: final answer`;
       const result = yield* compressHandoffContextLocal({
         transcript,
-        model: "gemma4:e4b-it-qat",
-        maxInputCharacters: 6_000,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
         maxOutputCharacters: 500,
         customPrompt: "",
         fetchFn: (() =>
@@ -426,31 +630,27 @@ describe("compressHandoffContextLocal", () => {
     }),
   );
 
-  it.effect("falls back when the daemon answers with an error status", () =>
+  it.effect("falls back when the daemon answers with an error status or an empty message", () =>
     Effect.gen(function* () {
-      const result = yield* compressHandoffContextLocal({
-        transcript: "USER: short task",
+      const transcript = `USER: short task ${"z".repeat(40)}\n\nASSISTANT: reply`;
+      const onError = yield* compressHandoffContextLocal({
+        transcript,
         model: "missing-model",
-        maxInputCharacters: 6_000,
-        maxOutputCharacters: 500,
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 40,
         customPrompt: "",
         fetchFn: jsonFetch({ error: "model not found" }, 404),
       });
-      expect(result).toBe("USER: short task");
-    }),
-  );
-
-  it.effect("falls back when the daemon returns an empty message", () =>
-    Effect.gen(function* () {
-      const result = yield* compressHandoffContextLocal({
-        transcript: "USER: short task",
-        model: "gemma4:e4b-it-qat",
-        maxInputCharacters: 6_000,
-        maxOutputCharacters: 500,
+      expect(onError).toBe(truncateHandoffTranscript(transcript, 40));
+      const onEmpty = yield* compressHandoffContextLocal({
+        transcript,
+        model: "bonsai2-27b:latest",
+        maxInputCharacters: 24_000,
+        maxOutputCharacters: 40,
         customPrompt: "",
         fetchFn: jsonFetch({ message: { content: "   " } }),
       });
-      expect(result).toBe("USER: short task");
+      expect(onEmpty).toBe(truncateHandoffTranscript(transcript, 40));
     }),
   );
 });

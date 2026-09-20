@@ -14,16 +14,16 @@ The saved message is the context bridge between provider-native sessions. One tu
 
 The retained preparation/compression endpoints use `ServerSettings.handoff.contextCompression`, exposed under **Settings → General → Handoff → Context compression**. These settings do not delay or summarize automatic web/desktop handoffs.
 
-| Field                 | Type                    | Default             | Description                                                    |
-| --------------------- | ----------------------- | ------------------- | -------------------------------------------------------------- |
-| `enabled`             | boolean                 | `false`             | Master toggle                                                  |
-| `backend`             | `"local" \| "provider"` | `"local"`           | Local Ollama daemon vs. a full provider session                |
-| `localModel`          | string                  | `qwen38-sys:latest` | Ollama model used when `backend` is `"local"`                  |
-| `instanceId`          | `ProviderInstanceId`    | —                   | Provider instance to run the compression (`backend: provider`) |
-| `model`               | string                  | —                   | Model within that provider (`backend: provider`)               |
-| `maxInputCharacters`  | positive int            | `6 000`             | Max transcript length sent to the compressor                   |
-| `maxOutputCharacters` | positive int            | `2 000`             | Max compressed summary length                                  |
-| `customPrompt`        | string                  | `""`                | Override the default compression system prompt                 |
+| Field                 | Type                    | Default              | Description                                                                   |
+| --------------------- | ----------------------- | -------------------- | ----------------------------------------------------------------------------- |
+| `enabled`             | boolean                 | `false`              | Master toggle                                                                 |
+| `backend`             | `"local" \| "provider"` | `"local"`            | Resident local model stack vs. a full provider session                        |
+| `localModel`          | string                  | `bonsai2-27b:latest` | Model name sent to the local judge and summarizer when `backend` is `"local"` |
+| `instanceId`          | `ProviderInstanceId`    | —                    | Provider instance to run the compression (`backend: provider`)                |
+| `model`               | string                  | —                    | Model within that provider (`backend: provider`)                              |
+| `maxInputCharacters`  | positive int            | `24 000`             | Max transcript length sent to the compressor                                  |
+| `maxOutputCharacters` | positive int            | `3 000`              | Max compressed context length                                                 |
+| `customPrompt`        | string                  | `""`                 | Override the default summary system prompt (the judge question is fixed)      |
 
 With `backend: "local"` only `enabled` and `localModel` matter. With `backend: "provider"`, `instanceId` and `model` must also be set.
 
@@ -47,18 +47,36 @@ No route-owned preparation promise sits between selecting a provider and submitt
 
 Both live in `apps/server/src/handoffCompression.ts`:
 
-- `compressHandoffContextLocal` — POSTs Ollama's `/api/chat` with the compression prompt, `stream: false`, `keep_alive: "30m"`, and a `num_ctx` sized to the input budget. Total by design: daemon down, non-200, malformed JSON, empty content, or timeout (60 s) all fall back to `truncateHandoffTranscript` instead of erroring.
+- `compressHandoffContextLocal` — judgment-driven compaction on the resident bonsai2 stack. A transcript that already fits `maxOutputCharacters` is returned verbatim. Otherwise it is split into message units (`USER:` / `ASSISTANT:` sections, the `USER (original task):` header, the client's omission marker), each unit is scored by the local judge, and `planHandoffCompaction` decides what travels: the original task and the newest message are pinned; units judged as filler (score below 0.5) are dropped; the rest are ranked by score with a small recency tie-breaker and kept verbatim until 70 % of the budget is used; whatever is left over is summarized by one `/api/chat` call into the remaining budget under a `[... N earlier messages compressed into the summary below ...]` notice. The summary call is skipped when nothing was omitted. Degradation is total by design: judge unavailable or off-menu → one whole-transcript summary (the previous behaviour); summary unavailable, non-200, empty, or timed out (60 s) → `truncateHandoffTranscript`. Fewer than three judgeable messages skip the judge, since there is nothing to rank.
 - `compressHandoffContext` — resolves the provider adapter by `instanceId`, runs `startSession → sendTurn → readThread → stopSession` on an ephemeral thread; cleanup always runs via `Effect.ensuring`. Its internal operations remain bounded, and the prepare route additionally caps the complete provider attempt at 30 seconds before using deterministic truncation. Errors are wrapped in `HandoffCompressionError`.
 - `truncateHandoffTranscript` — head+tail truncation with an omission marker; never exceeds the budget, even when the budget is smaller than the marker.
 
-### Default compression prompt
+### Local judge (bonsai2 in place of hosted `jev`)
+
+`apps/server/src/localJudge.ts` is a TypeSafe-shaped System One judge backed by the resident Bonsai 2 model: `askLocalJudge({ state, questions })` takes Choice, Noul, and Score questions and returns answers in the same shape as `POST /v1/systemone` (`choice` + `probabilities` + `confidence`, `noul`, `score` + `legend` + `probabilities` + `confidence`). Each question is one single-token completion against `http://127.0.0.1:8094/v1/chat/completions` (llama.cpp behind `bonsai2.service`, the only local endpoint that returns logprobs) with the options lettered A, B, C…; the first-token `top_logprobs` over those letters, renormalised, is the distribution. Thinking is disabled so the token is the answer. When an endpoint returns no logprobs (plain Ollama, or the bonsai2 gateway on `:11434`, which rebuilds replies from the stream) the emitted letter becomes a one-hot answer. Confidence is the margin between the top two options. Off-menu replies fail rather than guess, so callers fall back instead of acting on an invented distribution. Questions run in parallel with concurrency 3, matching the server's slots.
+
+The compaction asks one Score question per message (`HANDOFF_UNIT_KEEP_QUESTION`), with state `{ original_task, position, message }`:
+
+```
+Another AI agent is about to take over this conversation and continue the work. Judge how much that agent needs `message`, given `original_task` and that `position` tells where it sits in the conversation.
+0  Skip: a greeting, acknowledgement, pleasantry, or a repeat of information already stated elsewhere; the next agent loses nothing without it
+1  Summarize: useful background such as reasoning, exploration, or partial results whose gist matters but whose exact wording does not
+2  Keep verbatim: states a decision, a user instruction, a file path, identifier, command, error message, or an open task the next agent must act on exactly
+```
+
+Only the newest 48 messages are judged; older ones go straight to the summary. Judge calls are capped at 40 s in total. Nothing about the judge is hosted: no key, no network beyond loopback.
+
+### Default summary prompt
 
 ```
 Compress this conversation transcript into a dense context summary for handoff to another AI model.
-Preserve: key decisions, agreed approaches, file paths, function names, error messages, and outstanding tasks.
+Preserve: key decisions, agreed approaches, file paths, function names, commands, error messages, and outstanding tasks.
 Omit: greetings, filler, repeated information, and verbose explanations.
+When the transcript is marked as omitted parts, summarize only those parts; the essential messages already travel verbatim.
 Output only the compressed summary, no preamble.
 ```
+
+The summary call goes to the Ollama-compatible gateway at `127.0.0.1:11434` (`/api/chat`, `stream: false`, `keep_alive: "30m"`, `num_ctx` estimated from the text and capped at 32 768). The prompt asks for 80 % of the remaining budget because local models overshoot a stated maximum; the reply is still hard-clipped at the budget.
 
 ## Client integration
 
@@ -90,18 +108,20 @@ A user who pastes a structurally valid `<handoff_context>` block at the end of t
 
 ## Files
 
-| File                                                     | Role                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------ |
-| `packages/contracts/src/settings.ts`                     | `HandoffContextCompressionSettings` schema (+ patch)               |
-| `packages/shared/src/providerHandoffPrompt.ts`           | Combined block append/extract, plus the legacy build + parse       |
-| `packages/shared/src/userMessageTransport.ts`            | Mobile peel order; surfaces the handoff target                     |
-| `apps/server/src/handoffCompression.ts`                  | Local + provider compression, truncation, error type               |
-| `apps/server/src/handoffCompression.test.ts`             | Local success/fallback, provider mock, truncation tests            |
-| `apps/server/src/http.ts`                                | `/api/handoff/prepare` and `/api/handoff/compress` routes          |
-| `apps/server/src/server.ts`                              | Route registration                                                 |
-| `apps/web/src/providerHandoff.ts`                        | Immediate transcript builder and preparation compatibility helpers |
-| `apps/web/src/providerHandoff.test.ts`                   | Client-side transcript/prepare tests                               |
-| `apps/web/src/lib/userMessageContextComposition.ts`      | Web peel order; keeps the block out of visible and copy text       |
-| `apps/web/src/components/ChatView.tsx`                   | Stage on pick, banner, attach context and dispatch on Send         |
-| `apps/web/src/components/chat/MessagesTimeline.logic.ts` | Detects legacy vs. combined handoff rows                           |
-| `apps/mobile/src/features/threads/ThreadFeed.tsx`        | Mobile fold row for both shapes                                    |
+| File                                                     | Role                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `packages/contracts/src/settings.ts`                     | `HandoffContextCompressionSettings` schema (+ patch)                |
+| `packages/shared/src/providerHandoffPrompt.ts`           | Combined block append/extract, plus the legacy build + parse        |
+| `packages/shared/src/userMessageTransport.ts`            | Mobile peel order; surfaces the handoff target                      |
+| `apps/server/src/handoffCompression.ts`                  | Judgment-driven local compaction, provider compression, truncation  |
+| `apps/server/src/handoffCompression.test.ts`             | Split/plan/assemble, local fallbacks, provider mock, truncation     |
+| `apps/server/src/localJudge.ts`                          | TypeSafe-shaped Choice/Noul/Score judge on the local bonsai2 server |
+| `apps/server/src/localJudge.test.ts`                     | Letter-logprob decoding, one-hot fallback, failure modes            |
+| `apps/server/src/http.ts`                                | `/api/handoff/prepare` and `/api/handoff/compress` routes           |
+| `apps/server/src/server.ts`                              | Route registration                                                  |
+| `apps/web/src/providerHandoff.ts`                        | Immediate transcript builder and preparation compatibility helpers  |
+| `apps/web/src/providerHandoff.test.ts`                   | Client-side transcript/prepare tests                                |
+| `apps/web/src/lib/userMessageContextComposition.ts`      | Web peel order; keeps the block out of visible and copy text        |
+| `apps/web/src/components/ChatView.tsx`                   | Stage on pick, banner, attach context and dispatch on Send          |
+| `apps/web/src/components/chat/MessagesTimeline.logic.ts` | Detects legacy vs. combined handoff rows                            |
+| `apps/mobile/src/features/threads/ThreadFeed.tsx`        | Mobile fold row for both shapes                                     |

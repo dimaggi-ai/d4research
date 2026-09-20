@@ -1091,9 +1091,11 @@ export const BackgroundActivitySettings = Schema.Struct({
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 // ── Handoff settings ────────────────────────────────────────────────────
-export const DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS = 6_000;
-export const DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS = 2_000;
-export const DEFAULT_HANDOFF_LOCAL_MODEL = "qwen38-sys:latest";
+// The local compressor is the resident bonsai2 stack (100K-token slots), so
+// the input budget is sized for whole conversations rather than a tail slice.
+export const DEFAULT_HANDOFF_MAX_INPUT_CHARACTERS = 24_000;
+export const DEFAULT_HANDOFF_MAX_OUTPUT_CHARACTERS = 3_000;
+export const DEFAULT_HANDOFF_LOCAL_MODEL = "bonsai2-27b:latest";
 
 export const HandoffCompressionBackend = Schema.Literals(["local", "provider"]);
 export type HandoffCompressionBackend = typeof HandoffCompressionBackend.Type;

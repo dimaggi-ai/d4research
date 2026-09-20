@@ -193,10 +193,11 @@ describe("custom model settings", () => {
 });
 
 describe("ServerSettings handoff compression", () => {
-  it("defaults local compression to the workstation Qwen model", () => {
-    expect(decodeServerSettings({}).handoff.contextCompression.localModel).toBe(
-      "qwen38-sys:latest",
-    );
+  it("defaults local compression to the resident bonsai2 model", () => {
+    const compression = decodeServerSettings({}).handoff.contextCompression;
+    expect(compression.localModel).toBe("bonsai2-27b:latest");
+    expect(compression.maxInputCharacters).toBe(24_000);
+    expect(compression.maxOutputCharacters).toBe(3_000);
   });
 });
 

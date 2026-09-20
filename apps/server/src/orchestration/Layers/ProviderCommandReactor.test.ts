@@ -33,6 +33,7 @@ import { serializeAssistantCitation } from "@d4research/shared/assistantCitation
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
@@ -77,6 +78,7 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import { TestClock } from "effect/testing";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
@@ -250,6 +252,31 @@ describe("ProviderCommandReactor", () => {
 
       expect(startup._tag).toBe("Failure");
       expect(send._tag).toBe("Failure");
+    }),
+  );
+
+  effectIt.effect("does not bound turn acceptance for print-mode providers", () =>
+    Effect.gen(function* () {
+      // Agy's sendTurn resolves with the finished turn, so the accept deadline
+      // must not apply; the adapter enforces its own turn ceiling.
+      const slowTurn = Effect.sleep("10 seconds").pipe(Effect.as("finished"));
+      const bounded = yield* Effect.forkChild(
+        Effect.exit(
+          withProviderTurnSendDeadline(slowTurn, { provider: "agy", timeoutMillis: 1_000 }),
+        ),
+      );
+      const unbounded = yield* Effect.forkChild(
+        Effect.exit(
+          withProviderTurnSendDeadline(slowTurn, {
+            provider: "agy",
+            timeoutMillis: 1_000,
+            turnSendResolvesAtCompletion: true,
+          }),
+        ),
+      );
+      yield* TestClock.adjust("10 seconds");
+      expect((yield* Fiber.join(bounded))._tag).toBe("Failure");
+      expect(yield* Fiber.join(unbounded)).toStrictEqual(Exit.succeed("finished"));
     }),
   );
 

@@ -52,6 +52,13 @@ export interface ProviderAdapterCapabilities {
   readonly promptlessTurnContinuation?: boolean;
   /** False when native conversation history cannot be rewound. */
   readonly supportsConversationRollback?: boolean;
+  /**
+   * True when `sendTurn` resolves only after the turn has finished, as with a
+   * print-mode CLI that runs one process per turn. The orchestrator must not
+   * treat a long-running send as an unaccepted turn; the adapter bounds the
+   * turn itself.
+   */
+  readonly turnSendResolvesAtCompletion?: boolean;
 }
 
 export interface ProviderThreadTurnSnapshot {

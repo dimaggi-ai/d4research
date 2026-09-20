@@ -147,13 +147,23 @@ export function withProviderSessionStartDeadline<A, E, R>(
   );
 }
 
+/**
+ * Bounds how long a provider may take to accept a turn. Streaming adapters
+ * resolve `sendTurn` as soon as the turn is queued, so a slow resolve means the
+ * provider is wedged. A print-mode adapter (Agy) resolves only when the turn
+ * has finished, so the same deadline would kill every turn longer than three
+ * minutes; those adapters declare `turnSendResolvesAtCompletion` and enforce
+ * their own turn ceiling instead.
+ */
 export function withProviderTurnSendDeadline<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   input: {
     readonly provider: string;
     readonly timeoutMillis?: number;
+    readonly turnSendResolvesAtCompletion?: boolean;
   },
 ): Effect.Effect<A, E | ProviderAdapterRequestError, R> {
+  if (input.turnSendResolvesAtCompletion === true) return effect;
   const timeoutMillis = input.timeoutMillis ?? PROVIDER_TURN_SEND_TIMEOUT_MILLIS;
   return effect.pipe(
     Effect.timeout(timeoutMillis),
@@ -2405,8 +2415,15 @@ const make = Effect.gen(function* () {
 
     // The send owns the replay receipt from this point, including failure and cancellation.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
+    const turnSendResolvesAtCompletion = yield* providerService
+      .getCapabilities(desiredProvider.instanceId)
+      .pipe(
+        Effect.map((capabilities) => capabilities.turnSendResolvesAtCompletion === true),
+        Effect.orElseSucceed(() => false),
+      );
     yield* withProviderTurnSendDeadline(providerService.sendTurn(sendTurnRequest.value), {
       provider: String(desiredProvider.instanceId),
+      turnSendResolvesAtCompletion,
     }).pipe(
       Effect.catchCause((cause) =>
         providerService.stopSession({ threadId: event.payload.threadId }).pipe(

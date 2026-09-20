@@ -586,7 +586,9 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session" },
+      // Print mode runs one `agy` process per turn and sendTurn resolves with
+      // its exit; the 20 minute ceiling above is the turn's only deadline.
+      capabilities: { sessionModelSwitch: "in-session", turnSendResolvesAtCompletion: true },
       startSession,
       sendTurn,
       interruptTurn,

@@ -1064,7 +1064,44 @@ describe("getStartedThreadModelChangeBlockReason", () => {
     ).toBeNull();
   });
 
-  it("blocks started-session model changes when either provider requires a new thread", () => {
+  it("blocks same-instance model changes on a started restricted provider", () => {
+    expect(
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession: true,
+        currentModelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
+        },
+        nextModelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-other",
+        },
+      }),
+    ).toEqual({
+      title: "Start a new chat to change models",
+      description:
+        "This provider does not allow switching models after a conversation has started.",
+    });
+  });
+
+  it("allows handoffs into and out of a restricted provider", () => {
+    // A different instance replaces the session, so the pinned model of the
+    // running session does not apply; the server enforces the same scope.
+    expect(
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession: true,
+        currentModelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
+        },
+        nextModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+      }),
+    ).toBeNull();
     expect(
       getStartedThreadModelChangeBlockReason({
         providers,
@@ -1078,11 +1115,27 @@ describe("getStartedThreadModelChangeBlockReason", () => {
           model: "grok-build",
         },
       }),
-    ).toEqual({
-      title: "Start a new chat to change models",
-      description:
-        "This provider does not allow switching models after a conversation has started.",
-    });
+    ).toBeNull();
+  });
+
+  it("uses the running session's instance, not the thread's stored selection", () => {
+    // After a handoff the thread still records the old selection; the session
+    // is the authority for which instance is pinned.
+    expect(
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession: true,
+        currentModelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
+        },
+        currentProviderInstanceId: ProviderInstanceId.make("codex"),
+        nextModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.5",
+        },
+      }),
+    ).toBeNull();
   });
 });
 

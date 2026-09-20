@@ -1308,6 +1308,14 @@ export function deriveLockedProvider(input: {
   return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
 }
 
+/**
+ * `requiresNewThreadForModelChange` pins the model of a running provider
+ * session. Picking a model on another instance is a handoff: it replaces the
+ * session instead of changing its model, so it is never blocked here. The
+ * server enforces the same same-instance scope in the provider command
+ * reactor; blocking cross-instance picks in the client only hid every handoff
+ * into or out of such a provider (Agy, Junie).
+ */
 export function getStartedThreadModelChangeBlockReason(input: {
   providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "requiresNewThreadForModelChange">>;
   hasStartedSession: boolean;
@@ -1318,26 +1326,18 @@ export function getStartedThreadModelChangeBlockReason(input: {
   if (!input.hasStartedSession) {
     return null;
   }
-  const currentModelSelection = {
-    ...input.currentModelSelection,
-    instanceId: input.currentProviderInstanceId ?? input.currentModelSelection.instanceId,
-  };
+  const currentInstanceId =
+    input.currentProviderInstanceId ?? input.currentModelSelection.instanceId;
   if (
-    currentModelSelection.instanceId === input.nextModelSelection.instanceId &&
-    currentModelSelection.model === input.nextModelSelection.model
+    currentInstanceId !== input.nextModelSelection.instanceId ||
+    input.currentModelSelection.model === input.nextModelSelection.model
   ) {
     return null;
   }
   const currentProvider = input.providers.find(
-    (snapshot) => snapshot.instanceId === currentModelSelection.instanceId,
+    (snapshot) => snapshot.instanceId === currentInstanceId,
   );
-  const nextProvider = input.providers.find(
-    (snapshot) => snapshot.instanceId === input.nextModelSelection.instanceId,
-  );
-  if (
-    currentProvider?.requiresNewThreadForModelChange !== true &&
-    nextProvider?.requiresNewThreadForModelChange !== true
-  ) {
+  if (currentProvider?.requiresNewThreadForModelChange !== true) {
     return null;
   }
   return {

@@ -16,9 +16,10 @@ uses an existing profile, append one object to `providers.claudeAgent.models`. D
 modify application code. Add or change a profile in the same JSON file only if the model exposes a
 capability combination that does not already exist.
 
-`currentModels.claudeAgent` is retained as a frozen compatibility field for releases that predate
-catalog discovery. New Claude models do not need to be added there. Codex still discovers models
-from its app server and uses `currentModels.codex` only as a legacy-classification overlay.
+`currentModels.claudeAgent` is the current-model classification overlay for releases that predate
+catalog discovery; it does not add models to their catalogs. Catalog-aware releases use
+`providers.claudeAgent.models[].status` instead. Codex still discovers models from its app server
+and uses `currentModels.codex` only as a legacy-classification overlay.
 
 Claude model entries support:
 

@@ -5,6 +5,7 @@ import { formatAttachmentSize } from "@d4research/client-runtime/state/attachmen
 import { videoMimeType } from "@d4research/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
 import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
+import type { EnvironmentId } from "@d4research/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
 import { composerFileNeedsReattach } from "~/composerDraftStore";
@@ -66,6 +67,7 @@ export type ComposerDraftContextRecord =
 
 /** What a chip can do beyond showing itself; the composer supplies the handlers. */
 export interface ComposerContextActions {
+  environmentId: EnvironmentId | null;
   expandImage: (imageId: string) => void;
   expandVideo: (fileId: string) => void;
   openFile: (fileId: string) => void;
@@ -74,6 +76,7 @@ export interface ComposerContextActions {
 }
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
+  environmentId: null,
   expandImage: () => {},
   expandVideo: () => {},
   openFile: () => {},
@@ -247,6 +250,7 @@ function PullRequestContextChip(props: { record: ReviewCommentContext; toneClass
   return (
     <PullRequestChip
       metadata={metadata}
+      environmentId={actions.environmentId}
       label={reviewCommentContextLabel(props.record)}
       kindLabel={pullRequestContextKindLabel(props.record)}
       className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, props.toneClassName)}

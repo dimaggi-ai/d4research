@@ -23,7 +23,11 @@ const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
 const EMPTY_PROJECT_ENTRIES_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectListEntriesResult, never>(false),
 ).pipe(Atom.withLabel("project-entries-query:empty"));
-function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativePath: string) {
+export function optimisticFileAtom(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string,
+) {
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
 

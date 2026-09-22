@@ -140,6 +140,10 @@ export function useThreadComposerState() {
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
+  const updateComposerModelSelection = useAtomCommand(
+    threadEnvironment.updateMetadata,
+    "update model selection",
+  );
   const uploadThreadFeedback = useAtomCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
@@ -247,7 +251,29 @@ export function useThreadComposerState() {
   const draftAttachments = selectedDraft?.attachments ?? [];
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
-  const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
+  const synchronizedComposerSelectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedThreadShell || selectedThreadCreation) {
+      synchronizedComposerSelectionRef.current = null;
+      return;
+    }
+    const selection =
+      selectedThreadShell.composerModelSelection ?? selectedThreadShell.modelSelection;
+    const key = JSON.stringify([selectedThreadKey, selection]);
+    if (synchronizedComposerSelectionRef.current === key) return;
+    synchronizedComposerSelectionRef.current = key;
+    updateComposerDraftSettings(
+      scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id),
+      {
+        modelSelection: selection,
+      },
+    );
+  }, [selectedThreadShell, selectedThreadCreation, selectedThreadKey]);
+  const modelSelection =
+    selectedDraft?.modelSelection ??
+    selectedThreadShell?.composerModelSelection ??
+    selectedThread?.modelSelection ??
+    null;
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   const selectedProvider = selectedEnvironmentRuntime?.serverConfig?.providers.find(
     (provider) => provider.instanceId === modelSelection?.instanceId,
@@ -757,6 +783,13 @@ export function useThreadComposerState() {
       if (!selectedThreadKey) {
         return;
       }
+      if (selectedThreadShell && !selectedThreadCreation) {
+        void updateComposerModelSelection({
+          environmentId: selectedThreadShell.environmentId,
+          input: { threadId: selectedThreadShell.id, composerModelSelection: value },
+        });
+        return;
+      }
       const provider = selectedEnvironmentRuntime?.serverConfig?.providers.find(
         (candidate) => candidate.instanceId === value.instanceId,
       );
@@ -767,7 +800,13 @@ export function useThreadComposerState() {
           : {}),
       });
     },
-    [selectedEnvironmentRuntime?.serverConfig, selectedThreadKey],
+    [
+      selectedEnvironmentRuntime?.serverConfig,
+      selectedThreadKey,
+      selectedThreadShell,
+      selectedThreadCreation,
+      updateComposerModelSelection,
+    ],
   );
 
   const onUpdateRuntimeMode = useCallback(

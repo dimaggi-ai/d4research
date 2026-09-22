@@ -1,11 +1,5 @@
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-import {
-  ActivityIcon,
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { ActivityIcon, ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback, type ReactNode } from "react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -29,6 +23,8 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -161,6 +157,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
+      <SidebarThreadUndoNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
@@ -174,7 +171,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         ) : pullRequestsSupported ? (
           <SidebarMenuItem>
             <SidebarMenuButton onClick={handlePullRequestsClick}>
-              <GitPullRequestIcon />
+              <PullRequestGlyph.pullRequest />
               <span>Pull Requests</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

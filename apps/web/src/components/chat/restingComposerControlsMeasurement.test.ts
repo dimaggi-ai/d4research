@@ -34,7 +34,13 @@ function measurePicker(input: {
       }
       return input.blockWidth === 0
         ? []
-        : [{ getBoundingClientRect: () => ({ width: input.blockWidth ?? 140 }) }];
+        : [
+            {
+              dataset: {},
+              querySelectorAll: () => [],
+              getBoundingClientRect: () => ({ width: input.blockWidth ?? 140 }),
+            },
+          ];
     },
   };
   vi.stubGlobal("getComputedStyle", (element: unknown) => {
@@ -75,6 +81,7 @@ describe("measureRestingComposerControls", () => {
     expect(resolveRestingComposerControlsNaturalWidth(measurement)).toBe(196);
     expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
       hiddenCount: 0,
+      iconOnlyCount: 0,
       visible: true,
     });
   });
@@ -85,6 +92,7 @@ describe("measureRestingComposerControls", () => {
     expect(measurement.naturalFixedWidth).toBe(192);
     expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
       hiddenCount: 1,
+      iconOnlyCount: 1,
       visible: true,
     });
   });
@@ -95,6 +103,7 @@ describe("measureRestingComposerControls", () => {
     expect(measurement.naturalFixedWidth).toBe(212);
     expect(resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200 })).toEqual({
       hiddenCount: 1,
+      iconOnlyCount: 1,
       visible: true,
     });
   });

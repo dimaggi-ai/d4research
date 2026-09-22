@@ -762,161 +762,134 @@ export const ApprovalUpdatedParams = Schema.Struct({
   viewCursor: Schema.String,
 });
 export type ApprovalUpdatedParams = typeof ApprovalUpdatedParams.Type;
-const decodeApprovalResolvedParams = Schema.decodeUnknownSync(ApprovalResolvedParams);
-const decodeApprovalUpdatedParams = Schema.decodeUnknownSync(ApprovalUpdatedParams);
-const decodeItemCompletedParams = Schema.decodeUnknownSync(ItemCompletedParams);
-const decodeItemDeltaParams = Schema.decodeUnknownSync(ItemDeltaParams);
-const decodeItemStartedParams = Schema.decodeUnknownSync(ItemStartedParams);
-const decodeItemUpdatedParams = Schema.decodeUnknownSync(ItemUpdatedParams);
-const decodeSessionApprovalModeChangedParams = Schema.decodeUnknownSync(
+const decodeApprovalResolvedParams = decodeNotificationParams(ApprovalResolvedParams);
+const decodeApprovalUpdatedParams = decodeNotificationParams(ApprovalUpdatedParams);
+const decodeItemCompletedParams = decodeNotificationParams(ItemCompletedParams);
+const decodeItemDeltaParams = decodeNotificationParams(ItemDeltaParams);
+const decodeItemStartedParams = decodeNotificationParams(ItemStartedParams);
+const decodeItemUpdatedParams = decodeNotificationParams(ItemUpdatedParams);
+const decodeSessionApprovalModeChangedParams = decodeNotificationParams(
   SessionApprovalModeChangedParams,
 );
-const decodeSessionClosedParams = Schema.decodeUnknownSync(SessionClosedParams);
-const decodeSessionContextUsageParams = Schema.decodeUnknownSync(SessionContextUsageParams);
-const decodeSessionModelChangedParams = Schema.decodeUnknownSync(SessionModelChangedParams);
-const decodeSessionModelRouteUnservedParams = Schema.decodeUnknownSync(
+const decodeSessionClosedParams = decodeNotificationParams(SessionClosedParams);
+const decodeSessionContextUsageParams = decodeNotificationParams(SessionContextUsageParams);
+const decodeSessionModelChangedParams = decodeNotificationParams(SessionModelChangedParams);
+const decodeSessionModelRouteUnservedParams = decodeNotificationParams(
   SessionModelRouteUnservedParams,
 );
-const decodeSessionReasoningEffortChangedParams = Schema.decodeUnknownSync(
+const decodeSessionReasoningEffortChangedParams = decodeNotificationParams(
   SessionReasoningEffortChangedParams,
 );
-const decodeSessionStatusChangedParams = Schema.decodeUnknownSync(SessionStatusChangedParams);
-const decodeSessionTokenUsageParams = Schema.decodeUnknownSync(SessionTokenUsageParams);
-const decodeTurnCompletedParams = Schema.decodeUnknownSync(TurnCompletedParams);
-const decodeTurnRetryScheduledParams = Schema.decodeUnknownSync(TurnRetryScheduledParams);
-const decodeTurnStartedParams = Schema.decodeUnknownSync(TurnStartedParams);
-const decodeUserInputSettledParams = Schema.decodeUnknownSync(UserInputSettledParams);
-const decodeViewGapParams = Schema.decodeUnknownSync(ViewGapParams);
+const decodeSessionStatusChangedParams = decodeNotificationParams(SessionStatusChangedParams);
+const decodeSessionTokenUsageParams = decodeNotificationParams(SessionTokenUsageParams);
+const decodeTurnCompletedParams = decodeNotificationParams(TurnCompletedParams);
+const decodeTurnRetryScheduledParams = decodeNotificationParams(TurnRetryScheduledParams);
+const decodeTurnStartedParams = decodeNotificationParams(TurnStartedParams);
+const decodeUserInputSettledParams = decodeNotificationParams(UserInputSettledParams);
+const decodeViewGapParams = decodeNotificationParams(ViewGapParams);
+function decodeNotificationParams<S extends Schema.Constraint>(schema: S) {
+  return (params: unknown): S["Type"] => {
+    Schema.asserts(schema, params);
+    return params;
+  };
+}
+
 export function decodeMspNotification(method: string, params: unknown) {
   switch (method) {
     case "turn/started":
       return {
         method,
-        params: decodeTurnStartedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeTurnStartedParams(params),
       };
     case "turn/completed":
       return {
         method,
-        params: decodeTurnCompletedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeTurnCompletedParams(params),
       };
     case "item/started":
       return {
         method,
-        params: decodeItemStartedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeItemStartedParams(params),
       };
     case "item/updated":
       return {
         method,
-        params: decodeItemUpdatedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeItemUpdatedParams(params),
       };
     case "item/completed":
       return {
         method,
-        params: decodeItemCompletedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeItemCompletedParams(params),
       };
     case "item/delta":
       return {
         method,
-        params: decodeItemDeltaParams(params, { onExcessProperty: "preserve" }),
+        params: decodeItemDeltaParams(params),
       };
     case "session/statusChanged":
       return {
         method,
-        params: decodeSessionStatusChangedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionStatusChangedParams(params),
       };
     case "session/tokenUsage":
       return {
         method,
-        params: decodeSessionTokenUsageParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionTokenUsageParams(params),
       };
     case "session/contextUsage":
       return {
         method,
-        params: decodeSessionContextUsageParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionContextUsageParams(params),
       };
     case "approval/resolved":
       return {
         method,
-        params: decodeApprovalResolvedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeApprovalResolvedParams(params),
       };
     case "approval/updated":
       return {
         method,
-        params: decodeApprovalUpdatedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeApprovalUpdatedParams(params),
       };
     case "userInput/settled":
       return {
         method,
-        params: decodeUserInputSettledParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeUserInputSettledParams(params),
       };
     case "turn/retryScheduled":
       return {
         method,
-        params: decodeTurnRetryScheduledParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeTurnRetryScheduledParams(params),
       };
     case "session/modelChanged":
       return {
         method,
-        params: decodeSessionModelChangedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionModelChangedParams(params),
       };
     case "session/reasoningEffortChanged":
       return {
         method,
-        params: decodeSessionReasoningEffortChangedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionReasoningEffortChangedParams(params),
       };
     case "session/approvalModeChanged":
       return {
         method,
-        params: decodeSessionApprovalModeChangedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionApprovalModeChangedParams(params),
       };
     case "session/modelRouteUnserved":
       return {
         method,
-        params: decodeSessionModelRouteUnservedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionModelRouteUnservedParams(params),
       };
     case "view/gap":
       return {
         method,
-        params: decodeViewGapParams(params, { onExcessProperty: "preserve" }),
+        params: decodeViewGapParams(params),
       };
     case "session/closed":
       return {
         method,
-        params: decodeSessionClosedParams(params, {
-          onExcessProperty: "preserve",
-        }),
+        params: decodeSessionClosedParams(params),
       };
     default:
       return undefined;

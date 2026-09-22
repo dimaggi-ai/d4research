@@ -11,11 +11,11 @@
     "@d4research/shared": "workspace:*",
     "@d4research/tailscale": "workspace:*",
     "@effect/platform-node": "catalog:",
-    "@electron/asar": "^3.4.1",
+    "@electron/asar": "^4.3.0",
     "@electron/osx-sign": "2.7.0",
     "effect": "catalog:",
     "pngjs": "7.0.0",
-    "sharp": "0.34.5",
+    "sharp": "0.35.4",
     "yaml": "catalog:"
   },
   "devDependencies": {

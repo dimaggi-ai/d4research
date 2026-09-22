@@ -90,6 +90,12 @@ export default mergeConfig(
           }
         : {}),
       deps: {
+        // Both halves are required. `alwaysBundle` forces the JS dependencies in
+        // (declared deps are external by default, which is what this change is
+        // undoing). `neverBundle` forces the native packages out: returning
+        // false from `alwaysBundle` only means "no opinion", so a transitive
+        // dependency would still be bundled — which silently inlined native
+        // loaders such as node-gyp-build, losing native acceleration.
         alwaysBundle: shouldBundleCliDependency,
         onlyBundle: false,
       },

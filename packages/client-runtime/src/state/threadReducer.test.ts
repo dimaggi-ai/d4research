@@ -291,6 +291,35 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.meta-updated", () => {
+    it("broadcasts a pending model selection and its cancellation without changing the session model", () => {
+      const selected = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      };
+      let thread = baseThread;
+      for (const composerModelSelection of [selected, null]) {
+        const result = applyThreadDetailEvent(thread, {
+          ...baseEventFields,
+          sequence: 5,
+          occurredAt: baseThread.updatedAt,
+          aggregateKind: "thread",
+          aggregateId: baseThread.id,
+          type: "thread.meta-updated",
+          payload: {
+            threadId: baseThread.id,
+            composerModelSelection,
+            updatedAt: baseThread.updatedAt,
+          },
+        });
+        expect(result.kind).toBe("updated");
+        if (result.kind !== "updated") throw new Error("Expected metadata update");
+        thread = result.thread;
+        expect(thread.composerModelSelection).toEqual(composerModelSelection);
+        expect(thread.modelSelection).toEqual(baseThread.modelSelection);
+        expect(thread.session).toBe(baseThread.session);
+      }
+    });
+
     it.each(["f", null] as const)(
       "updates the active key to %s without activity",
       (activeOrderKey) => {

@@ -131,6 +131,109 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("persists the shared composer selection across reconnects and cancellation without switching sessions", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d4-model-sync-"));
+    const databasePath = NodePath.join(directory, "state.sqlite");
+    let system = await createOrchestrationSystem(databasePath);
+    const threadId = ThreadId.make("model-sync-thread");
+    const projectId = ProjectId.make("model-sync-project");
+    const original = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+    const selected = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    };
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("sync-project"),
+          projectId,
+          title: "Model sync",
+          workspaceRoot: directory,
+          createdAt: now(),
+        }),
+      );
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("sync-thread"),
+          projectId,
+          threadId,
+          title: "Model sync",
+          modelSelection: original,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+        }),
+      );
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("sync-running-session"),
+          threadId,
+          createdAt: now(),
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("original-active-turn"),
+            lastError: null,
+            updatedAt: now(),
+          },
+        }),
+      );
+      const runningSession = (await system.readModel()).threads[0]?.session;
+      expect((await system.readModel()).threads[0]?.composerModelSelection).toBeNull();
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("sync-pick"),
+          threadId,
+          composerModelSelection: selected,
+        }),
+      );
+      const assertSelection = async (selection: typeof selected | null) => {
+        const snapshot = await system.readModel();
+        expect(snapshot.threads[0]?.composerModelSelection).toEqual(selection);
+        expect(snapshot.threads[0]?.modelSelection).toEqual(original);
+        expect(snapshot.threads[0]?.session).toEqual(runningSession);
+        const query = await system.run(Effect.service(ProjectionSnapshotQuery));
+        const shell = await system.run(query.getThreadShellById(threadId));
+        expect(Option.getOrThrow(shell).composerModelSelection).toEqual(selection);
+        const detail = await system.readThread(threadId);
+        expect(Option.getOrThrow(detail).composerModelSelection).toEqual(selection);
+      };
+      await assertSelection(selected);
+      await system.dispose();
+      system = await createOrchestrationSystem(databasePath);
+      await assertSelection(selected);
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("sync-title"),
+          threadId,
+          title: "Renamed",
+        }),
+      );
+      await assertSelection(selected);
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("sync-cancel"),
+          threadId,
+          composerModelSelection: null,
+        }),
+      );
+      await assertSelection(null);
+    } finally {
+      await system.dispose();
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each(["running", "stopped"] as const)(
     "sends async answers with a %s session and rejects old duplicate replies",
     async (status) => {

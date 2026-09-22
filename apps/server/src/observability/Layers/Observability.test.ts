@@ -20,7 +20,8 @@ it.effect("keeps diagnostics local even with legacy external exporter settings",
       ...config,
       otlpTracesUrl: "https://collector.example.test/v1/traces",
       otlpMetricsUrl: "https://collector.example.test/v1/metrics",
-      otlpExportIntervalMs: 1,
+      otlpTracesExport: { ...config.otlpTracesExport, exportIntervalMs: 1 },
+      otlpMetricsExport: { ...config.otlpMetricsExport, exportIntervalMs: 1 },
     });
     const observability = ObservabilityLive.pipe(
       Layer.provide(legacyConfig),

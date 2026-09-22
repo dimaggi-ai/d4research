@@ -1,3 +1,4 @@
+import { DEFAULT_SIGNAL_EXPORT } from "@d4research/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ORCHESTRATION_PROTOCOL_VERSION } from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
@@ -30,10 +31,11 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     traceMaxFiles: 10,
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
-    otlpExportIntervalMs: 10_000,
+    otlpLogsUrl: undefined,
+    otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
+    otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
+    otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otlpServiceName: "t3-server",
-    otlpHeaders: undefined,
-    otlpProtocol: "http/json",
     cwd: process.cwd(),
     baseDir,
     mode: "web",

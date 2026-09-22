@@ -211,6 +211,7 @@ describe("environment entity projections", () => {
       ...THREAD_SHELL,
       environmentId: ENVIRONMENT_ID,
       title: "Cached thread",
+      composerModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "old-model" },
       branch: "stale-branch",
       worktreePath: "/repo/stale-worktree",
       activeOrderKey: "t",
@@ -225,6 +226,10 @@ describe("environment entity projections", () => {
       ...THREAD_SHELL,
       environmentId: ENVIRONMENT_ID,
       title: "Current thread",
+      composerModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
       activeOrderKey: "f",
@@ -235,6 +240,10 @@ describe("environment entity projections", () => {
 
     expect(merged).toMatchObject({
       title: "Current thread",
+      composerModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
       activeOrderKey: "f",

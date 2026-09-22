@@ -1,6 +1,7 @@
-import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@d4research/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { type MouseEvent, useCallback } from "react";
+import { type MouseEvent, useCallback, useMemo } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@d4research/contracts";
 import { parseChangeRequestUrl, type ChangeRequestLink } from "@d4research/shared/changeRequestUrl";
@@ -15,6 +16,7 @@ import { useRightPanelStore } from "../rightPanelStore";
 import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
 
 import { useProjects, useServerConfigs } from "../state/entities";
+import { serverEnvironment } from "../state/server";
 import { usePrimaryEnvironmentId } from "../state/environments";
 
 export {
@@ -91,6 +93,51 @@ export function findProjectForChangeRequest(
         pullRequestHostOf(identity, kind) === link.authority)
     );
   });
+}
+
+export function resolvePullRequestPreviewTarget({
+  environmentId,
+  projects,
+  pullRequestsEnabled,
+  url,
+}: {
+  environmentId: EnvironmentId | null;
+  projects: ReadonlyArray<EnvironmentProject>;
+  pullRequestsEnabled: boolean;
+  url: string;
+}): { environmentId: EnvironmentId; input: PullRequestRef } | null {
+  if (!pullRequestsEnabled || environmentId === null) return null;
+  const parsed = parseChangeRequestUrl(url);
+  if (parsed === null) return null;
+  const project = findProjectForChangeRequest(
+    projects.filter((candidate) => candidate.environmentId === environmentId),
+    parsed,
+  );
+  if (project === undefined) return null;
+  return {
+    environmentId,
+    input: {
+      projectId: project.id,
+      host: parsed.authority ?? parsed.host,
+      repository: sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository,
+      number: parsed.number,
+    },
+  };
+}
+
+export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null, url: string) {
+  const projects = useProjects();
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  return useMemo(
+    () =>
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects,
+        pullRequestsEnabled: serverConfig?.environment.capabilities.pullRequests === true,
+        url,
+      }),
+    [environmentId, projects, serverConfig, url],
+  );
 }
 
 /**

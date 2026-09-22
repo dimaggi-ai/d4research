@@ -2221,6 +2221,24 @@ describe("composerDraftStore modelSelection", () => {
     resetComposerDraftStore();
   });
 
+  it("replaces a stale device model with server intent while preserving unsent content", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "Keep my unsent message");
+    store.addFiles(threadRef, [makeFile("unsent-file")]);
+    store.setModelSelection(
+      threadRef,
+      modelSelection(CODEX_DRIVER, "old-model", { fastMode: true }),
+    );
+    const before = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    const selection = modelSelection(CLAUDE_AGENT_DRIVER, "claude-sonnet-4-6");
+    store.setModelSelection(threadRef, selection, { replaceOptions: true, explicit: true });
+    const after = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(after?.activeProvider).toBe(selection.instanceId);
+    expect(after?.modelSelectionByProvider[selection.instanceId]).toEqual(selection);
+    expect(after?.prompt).toBe(before?.prompt);
+    expect(after?.files).toEqual(before?.files);
+  });
+
   it("stores a model selection in the draft", () => {
     const store = useComposerDraftStore.getState();
     store.setModelSelection(

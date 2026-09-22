@@ -226,3 +226,45 @@ describe("buildProviderInstanceUpdatePatch", () => {
     expect(patch.providers).toBeUndefined();
   });
 });
+
+describe("getChangedBrowserSettingLabels", () => {
+  it("reports nothing for the defaults", () => {
+    expect(getChangedBrowserSettingLabels(DEFAULT_UNIFIED_SETTINGS)).toEqual([]);
+  });
+
+  it("treats a structurally equal viewport as unchanged", () => {
+    // The viewport is a tagged union, so identity comparison would report a
+    // freshly decoded copy of the default as dirty and offer to "restore" it.
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { ...DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport },
+      }),
+    ).toEqual([]);
+  });
+
+  it("labels each browser default that differs", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { _tag: "freeform", width: 900, height: 600 },
+        browserDefaultZoomFactor: 1.5,
+        browserDefaultAppearance: "dark",
+        browserRecordingFrameRate: 60,
+        browserRecordingShowKeyPresses: true,
+        browserRecordingShowMousePresses: true,
+        browserLinkTarget: "app",
+        browserAutoShowFloatingPreview: !DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
+      }),
+    ).toEqual([
+      "Browser viewport",
+      "Browser zoom",
+      "Browser appearance",
+      "Recording frame rate",
+      "Recording key presses",
+      "Recording mouse presses",
+      "Open links in",
+      "Floating preview",
+    ]);
+  });
+});

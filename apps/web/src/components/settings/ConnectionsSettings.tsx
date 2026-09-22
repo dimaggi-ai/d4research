@@ -3315,27 +3315,23 @@ export function ConnectionsSettings() {
                   disabled={isUpdatingDesktopServerExposure}
                   render={<Button variant="outline" disabled={isUpdatingDesktopServerExposure} />}
                 >
-                  Cancel
+                  <span className="[text-box:trim-both_cap_alphabetic]">Cancel</span>
                 </AlertDialogClose>
                 <Button
-                  variant={
-                    pendingDesktopServerExposureMode === "local-only" ? "destructive" : "default"
-                  }
+                  variant="default"
                   onClick={handleConfirmDesktopServerExposureChange}
                   disabled={
                     pendingDesktopServerExposureMode === null || isUpdatingDesktopServerExposure
                   }
                 >
-                  {isUpdatingDesktopServerExposure ? (
-                    <>
-                      <Spinner className="size-3.5" />
-                      Restarting…
-                    </>
-                  ) : pendingDesktopServerExposureMode === "network-accessible" ? (
-                    "Restart and enable"
-                  ) : (
-                    "Restart and disable"
-                  )}
+                  {isUpdatingDesktopServerExposure && <Spinner size="sm" />}
+                  <span className="[text-box:trim-both_cap_alphabetic]">
+                    {isUpdatingDesktopServerExposure
+                      ? "Restarting…"
+                      : pendingDesktopServerExposureMode === "network-accessible"
+                        ? "Restart and enable"
+                        : "Restart and disable"}
+                  </span>
                 </Button>
               </AlertDialogFooter>
             </AlertDialogPopup>
@@ -3392,7 +3388,7 @@ export function ConnectionsSettings() {
                     >
                       {isUpdatingWslBackend ? (
                         <>
-                          <Spinner className="size-3.5" />
+                          <Spinner size="sm" />
                           Applying…
                         </>
                       ) : (
@@ -3406,7 +3402,7 @@ export function ConnectionsSettings() {
                     >
                       {isUpdatingWslBackend ? (
                         <>
-                          <Spinner className="size-3.5" />
+                          <Spinner size="sm" />
                           Applying…
                         </>
                       ) : (
@@ -3427,7 +3423,7 @@ export function ConnectionsSettings() {
                   >
                     {isUpdatingWslBackend ? (
                       <>
-                        <Spinner className="size-3.5" />
+                        <Spinner size="sm" />
                         Applying…
                       </>
                     ) : pendingWslChange?.kind === "disable" ? (
@@ -3476,7 +3472,7 @@ export function ConnectionsSettings() {
                 >
                   {isUpdatingTailscaleServe ? (
                     <>
-                      <Spinner className="size-3.5" />
+                      <Spinner size="sm" />
                       Restarting…
                     </>
                   ) : (
@@ -3542,7 +3538,7 @@ export function ConnectionsSettings() {
                 >
                   {isUpdatingTailscaleServe ? (
                     <>
-                      <Spinner className="size-3.5" />
+                      <Spinner size="sm" />
                       Restarting…
                     </>
                   ) : (

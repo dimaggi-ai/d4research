@@ -162,6 +162,7 @@ import {
 } from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
+  carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -239,6 +240,7 @@ import {
 } from "@d4research/client-runtime/state/subagentRuntime";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import { isEditableFocused } from "../lib/editableFocus";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -1597,6 +1599,10 @@ function ChatViewContent(props: ChatViewProps) {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const updateComposerModelSelection = useAtomCommand(
+    threadEnvironment.updateMetadata,
+    "update model selection",
+  );
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const setThreadRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
@@ -1927,7 +1933,6 @@ function ChatViewContent(props: ChatViewProps) {
   const composerTimelineInsetRef = useRef(0);
 
   const composerRestingRef = useRef(false);
-
   const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
 
   const isAtEndRef = useRef(true);
@@ -2086,6 +2091,29 @@ function ChatViewContent(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const synchronizedComposerSelectionRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!activeServerThread) {
+      synchronizedComposerSelectionRef.current = null;
+      return;
+    }
+    const selection =
+      activeServerThread.composerModelSelection ?? activeServerThread.modelSelection;
+    const key = JSON.stringify([
+      activeServerThread.environmentId,
+      activeServerThread.id,
+      selection,
+    ]);
+    if (synchronizedComposerSelectionRef.current === key) return;
+    synchronizedComposerSelectionRef.current = key;
+    // Server state replaces stale device-local picks without touching unsent text or attachments.
+    setComposerDraftModelSelection(
+      scopeThreadRef(activeServerThread.environmentId, activeServerThread.id),
+      selection,
+      { replaceOptions: true, explicit: activeServerThread.composerModelSelection != null },
+    );
+  }, [activeServerThread, setComposerDraftModelSelection]);
+
   const threadError = isServerThread
     ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
     : localDraftError;
@@ -6419,19 +6447,8 @@ function ChatViewContent(props: ChatViewProps) {
       ? activePlan.steps
       : null;
 
-  const publishComposerOverlayHeight = useCallback(
-    (height: number) => {
-      const nextHeight = Math.ceil(height);
-      if (nextHeight <= 0) return;
-      const nextInset = resolveComposerTimelineInset({
-        currentInset: composerTimelineInsetRef.current,
-        overlayHeight: nextHeight,
-        isResting: composerRestingRef.current,
-      });
-      if (composerTimelineInsetRef.current !== nextInset) {
-        composerTimelineInsetRef.current = nextInset;
-        setComposerTimelineInset(nextInset);
-      }
+  const publishScrollToEndClearance = useCallback(
+    (overlayHeight: number) => {
       const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
         '[data-chat-composer-main-surface="true"]',
       );
@@ -6441,7 +6458,7 @@ function ChatViewContent(props: ChatViewProps) {
       const clearance =
         composerOverlayElement && mainSurface && button
           ? resolveScrollToEndClearance({
-              overlayHeight: nextHeight,
+              overlayHeight,
               mainSurfaceTop: mainSurface.getBoundingClientRect().top,
               button: button.getBoundingClientRect(),
               attachments: Array.from(
@@ -6451,10 +6468,28 @@ function ChatViewContent(props: ChatViewProps) {
                 (element) => element.getBoundingClientRect(),
               ),
             })
-          : nextHeight;
+          : overlayHeight;
       setScrollToEndClearance(clearance);
     },
     [composerOverlayElement],
+  );
+  const publishComposerOverlayHeight = useCallback(
+    (height: number) => {
+      const nextHeight = Math.ceil(height);
+      if (nextHeight <= 0) return;
+      composerOverlayHeightRef.current = nextHeight;
+      const nextInset = resolveComposerTimelineInset({
+        currentInset: composerTimelineInsetRef.current,
+        overlayHeight: nextHeight,
+        isResting: composerRestingRef.current,
+      });
+      if (composerTimelineInsetRef.current !== nextInset) {
+        composerTimelineInsetRef.current = nextInset;
+        setComposerTimelineInset(nextInset);
+      }
+      publishScrollToEndClearance(nextHeight);
+    },
+    [publishScrollToEndClearance],
   );
   // The composer reports its resting flag from a layout effect, which runs
   // before this component's own layout effects and before any resize
@@ -6488,7 +6523,17 @@ function ChatViewContent(props: ChatViewProps) {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
+  }, [composerOverlayElement, publishComposerOverlayHeight]);
+  // The pill mounts and unmounts in the same commits that expand or rest the
+  // composer, and a fast fling lands there while the previous resting tween
+  // still pins the overlay at its old height. Measuring the overlay here would
+  // publish that stale height against the new resting flag, drop the timeline
+  // reservation, and yank the scroll position. The pill only needs its
+  // clearance, so it reuses the height the composer last published.
+  useLayoutEffect(() => {
+    if (!composerOverlayElement) return;
+    publishScrollToEndClearance(composerOverlayHeightRef.current);
+  }, [composerOverlayElement, publishScrollToEndClearance, showScrollToBottom]);
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
   const activeThreadReferenceCopyTarget = useMemo(
     () =>
@@ -6927,17 +6972,16 @@ function ChatViewContent(props: ChatViewProps) {
       currentInstanceId === activeThread.modelSelection.instanceId
         ? activeThread.modelSelection
         : createModelSelection(currentInstanceId, activeThread.modelSelection.model);
-    setComposerDraftModelSelection(
-      scopeThreadRef(activeThread.environmentId, activeThread.id),
-      currentSelection,
-      { replaceOptions: true },
-    );
+    void updateComposerModelSelection({
+      environmentId: activeThread.environmentId,
+      input: { threadId: activeThread.id, composerModelSelection: null },
+    });
     setStickyComposerModelSelection(currentSelection);
     scheduleComposerFocus();
   }, [
     activeThread,
     scheduleComposerFocus,
-    setComposerDraftModelSelection,
+    updateComposerModelSelection,
     setStickyComposerModelSelection,
   ]);
   const stagedProviderHandoffBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
@@ -7286,6 +7330,20 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  const getShortcutContext = useCallback(
+    (eventTarget: EventTarget | null = document.activeElement) => ({
+      terminalFocus: getTerminalFocusOwner() !== null,
+      terminalOpen: Boolean(terminalUiState.terminalOpen),
+      previewFocus: isPreviewFocused(),
+      previewOpen: previewPanelOpen,
+      editableFocus: isEditableFocused(eventTarget),
+      modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+      isWeb: !isElectron,
+      isDesktop: isElectron,
+    }),
+    [composerRef, previewPanelOpen, terminalUiState.terminalOpen],
+  );
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
@@ -7299,13 +7357,7 @@ function ChatViewContent(props: ChatViewProps) {
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
       }
-      const shortcutContext = {
-        terminalFocus: terminalFocusOwner !== null,
-        terminalOpen: Boolean(terminalUiState.terminalOpen),
-        previewFocus: isPreviewFocused(),
-        previewOpen: previewPanelOpen,
-        modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
-      };
+      const shortcutContext = getShortcutContext(event.target);
 
       if (
         !shortcutContext.terminalFocus &&
@@ -9814,6 +9866,16 @@ function ChatViewContent(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // The option replaces the custom answer. Anything typed there is the
+      // user's text, so it goes back to the thread draft instead of vanishing.
+      const displacedAnswer =
+        pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+      if (nextPrompt !== currentPrompt) {
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      }
       setPendingUserInputAnswersByRequestId((existing) => {
         const question =
           (activePendingProgress?.activeQuestion?.id === questionId
@@ -9843,7 +9905,10 @@ function ChatViewContent(props: ChatViewProps) {
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       activePendingRequestKey,
+      composerDraftTarget,
       composerRef,
+      pendingUserInputAnswersByRequestId,
+      setComposerDraftPrompt,
     ],
   );
 
@@ -10409,15 +10474,31 @@ function ChatViewContent(props: ChatViewProps) {
         if (options?.focusComposer !== false) scheduleComposerFocus();
         return;
       }
-      setComposerDraftModelSelection(scopeThreadRef(activeThread.environmentId, activeThread.id), {
+      const selection = createModelSelection(
         instanceId,
-        model: resolvedModel,
-      });
+        resolvedModel,
+        composerDraftModelSelectionByProvider?.[instanceId]?.options,
+      );
+      if (isServerThread) {
+        void updateComposerModelSelection({
+          environmentId: activeThread.environmentId,
+          input: { threadId: activeThread.id, composerModelSelection: selection },
+        });
+      } else {
+        setComposerDraftModelSelection(
+          scopeThreadRef(activeThread.environmentId, activeThread.id),
+          selection,
+          { explicit: true },
+        );
+      }
       setStickyComposerModelSelection({ instanceId, model: resolvedModel });
       if (options?.focusComposer !== false) scheduleComposerFocus();
     },
     [
       activeThread,
+      isServerThread,
+      composerDraftModelSelectionByProvider,
+      updateComposerModelSelection,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -10753,13 +10834,7 @@ function ChatViewContent(props: ChatViewProps) {
         key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
         environmentId={activeThread.environmentId}
         shortcutsEnabled={activeRightPanelSurface?.id === renderedRightPanelSurface.id}
-        getShortcutContext={() => ({
-          terminalFocus: getTerminalFocusOwner() !== null,
-          terminalOpen: Boolean(terminalUiState.terminalOpen),
-          previewFocus: isPreviewFocused(),
-          previewOpen: previewPanelOpen,
-          modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
-        })}
+        getShortcutContext={getShortcutContext}
         onSelectPullRequest={(reference) => {
           if (activeThreadRef)
             useRightPanelStore.getState().openPullRequest(activeThreadRef, {
@@ -11569,20 +11644,25 @@ function ChatViewContent(props: ChatViewProps) {
             <AlertDialogDescription>
               Rewind chat to before this message. Your prompt and attachments return to the
               composer.
+              {activeWorktreePath === null
+                ? " Files stay as they are because this thread shares the project directory."
+                : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
-                setPendingRevert(null);
-                void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
-              }}
-            >
-              Revert files too
-            </Button>
+            {activeWorktreePath !== null ? (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+                  setPendingRevert(null);
+                  void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
+                }}
+              >
+                Revert files too
+              </Button>
+            ) : null}
             <Button
               onClick={() => {
                 if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;

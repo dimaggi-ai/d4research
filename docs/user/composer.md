@@ -3,6 +3,13 @@
 The message composer is more than a text box. It carries file mentions, provider skills, slash
 commands, images, queued follow-ups, and the research toggle.
 
+## Model selection on multiple devices
+
+In an existing thread, the model you select is shared with your other connected devices.
+A reconnecting device loads the latest selection from the server. Your unsent message and
+attachments stay on the device where you entered them. Selecting a different provider stages
+a handoff for the next send; cancelling that handoff also updates your other devices.
+
 ## Mentions, skills, and slash commands
 
 Three characters open a completion menu at the cursor (detected by `detectComposerTrigger` in
@@ -40,6 +47,14 @@ Three characters open a completion menu at the cursor (detected by `detectCompos
   standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.
 
 ## Attachments
+
+Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
+80 MiB of images in one message. Other files, including videos, can be up to
+50 MiB each, subject to the environment's upload support and limit. The agent
+receives them on the environment's machine. Provider and model limits still
+apply, including images already in the conversation. A video attachment gives
+the agent a file path; it does not enable native video input. Antigravity does
+not accept video attachments.
 
 Paste or drag image files into the composer to attach them. Images are compressed client-side to
 the provider's attachment byte limit; files that cannot be decoded or remain too large after
@@ -207,7 +222,10 @@ into a normal draft.
 On web and desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
 leave workspace files as they are, or **Revert files too** to restore them as well.
-The selected prompt and its attachments return to the composer for editing and
+File restore is only offered for threads running in a worktree, and it is
+refused when another thread or agent session also uses that directory, since
+restoring would erase their changes. A thread that works in the project directory
+rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
 resending. Any unsent draft stays above the restored prompt.
 
 This removes the selected message and later conversation from the active thread

@@ -621,6 +621,9 @@ export function projectEvent(
               ...(payload.modelSelection !== undefined
                 ? { modelSelection: payload.modelSelection }
                 : {}),
+              ...(payload.composerModelSelection !== undefined
+                ? { composerModelSelection: payload.composerModelSelection }
+                : {}),
               ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
               ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
               ...(payload.activeOrderKey !== undefined

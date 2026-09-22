@@ -25,14 +25,7 @@ import { cn } from "~/lib/utils";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
 import { Badge } from "../ui/badge";
-import {
-  Command,
-  CommandGroup,
-  CommandGroupLabel,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 
 export type ComposerCommandItem =
@@ -184,7 +177,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           <CommandList className="max-h-72">
             {groups.map((group, groupIndex) => (
               <div key={group.id}>
-                {groupIndex > 0 ? <CommandSeparator className="my-0.5" /> : null}
+                {groupIndex > 0 ? <div role="separator" className="my-0.5 h-px bg-border" /> : null}
                 <CommandGroup>
                   {group.label ? (
                     <CommandGroupLabel className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">

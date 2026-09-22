@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { DEFAULT_PROVIDER_INTERACTION_MODE } from "@d4research/contracts";
-import * as Option from "effect/Option";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ApprovalRequestId,

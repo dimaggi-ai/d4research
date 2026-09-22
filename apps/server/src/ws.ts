@@ -75,6 +75,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@d4research/contracts";
 import { resolveServerBackgroundActivitySettings } from "@d4research/shared/backgroundActivitySettings";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -142,7 +143,7 @@ import { importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
+import { requiredScopeForRpcMethod, requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -898,6 +899,35 @@ const makeWsRpcLayer = (
           return output;
         });
 
+      // Project setting > environment setting; null when neither is set so
+      // the driver reads the freshly created checkout's own t3.json (the
+      // branch being checked out may declare something the project root does
+      // not). Settings that fail to load fall through the same way.
+      const resolveBootstrapWorktreeSubmodules = Effect.fnUntraced(function* (input: {
+        readonly threadId: ThreadId;
+        readonly projectId: ProjectId | null;
+      }) {
+        const settings = yield* serverSettings.getSettings.pipe(Effect.orElseSucceed(() => null));
+        if (!settings) return null;
+        // A worktree can also be prepared for an existing thread, whose
+        // project is only known through its shell.
+        const resolvedProjectId =
+          input.projectId ??
+          (yield* projectionSnapshotQuery.getThreadShellById(input.threadId).pipe(
+            Effect.map((thread) => Option.getOrNull(thread)?.projectId ?? null),
+            Effect.orElseSucceed(() => null),
+          ));
+        const project =
+          resolvedProjectId === null
+            ? null
+            : yield* projectionSnapshotQuery.getProjectShellById(resolvedProjectId).pipe(
+                Effect.map(Option.getOrNull),
+                Effect.orElseSucceed(() => null),
+              );
+        return resolveProjectSettings(settings, resolvedProjectId, project).settings
+          .worktreeSubmodules;
+      });
+
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
@@ -1316,6 +1346,10 @@ const makeWsRpcLayer = (
               }
               yield* worktreeSetupTracker.stageStatus(threadId, "checkout", "running");
               let checkoutTotal: number | null = null;
+              const submodules = yield* resolveBootstrapWorktreeSubmodules({
+                threadId,
+                projectId: targetProjectId ?? null,
+              });
               const worktree = yield* gitWorkflow.createWorktree(
                 {
                   cwd: prepareWorktree.projectCwd,
@@ -1325,6 +1359,7 @@ const makeWsRpcLayer = (
                   path: null,
                 },
                 {
+                  submodules,
                   progress: {
                     // Git has registered the directory at this point, so a
                     // cancel during the submodule step can still remove it.
@@ -1354,6 +1389,13 @@ const makeWsRpcLayer = (
                             worktreeSetupTracker.stageStatus(threadId, "submodules", "running"),
                           ),
                         ),
+                    onSubmodulesDisabled: ({ source }) =>
+                      worktreeSetupTracker.stageStatus(
+                        threadId,
+                        "submodules",
+                        "skipped",
+                        `disabled in ${source}`,
+                      ),
                     onSubmoduleLine: (line) => {
                       const submodulePath = /Submodule path '([^']+)'/.exec(line)?.[1];
                       return submodulePath === undefined
@@ -1700,6 +1742,7 @@ const makeWsRpcLayer = (
               localTracingEnabled: true,
               otlpTracesEnabled: false,
               otlpMetricsEnabled: false,
+              otlpLogsEnabled: false,
             },
             settings,
             shellResumeCompletionMarker: true,
@@ -2572,6 +2615,12 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "pull-requests",
             },
           ),
+        [WS_METHODS.pullRequestsPreview]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestsPreview,
+            withPullRequestViewer(input, pullRequests.preview(input)),
+            { "rpc.aggregate": "pull-requests" },
+          ),
         [WS_METHODS.pullRequestsActivity]: (input) =>
           observeRpcEffect(
             WS_METHODS.pullRequestsActivity,
@@ -3294,10 +3343,23 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.deviceTestHost, deviceService.testHost(input), {
             "rpc.aggregate": "device",
           }),
-        [WS_METHODS.deviceList]: (_input) =>
-          observeRpcEffect(WS_METHODS.deviceList, deviceService.list, {
-            "rpc.aggregate": "device",
-          }),
+        [WS_METHODS.deviceList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.deviceList,
+            input.inspectOnly && !input.updateTool
+              ? deviceService.inspect
+              : authorizeEffect(
+                  requiredScopeForDeviceList(input),
+                  input.updateTool
+                    ? deviceService.updateTool(input.updateTool)
+                    : input.retryHostId
+                      ? deviceService.retryHost(input.retryHostId)
+                      : deviceService.list,
+                ),
+            {
+              "rpc.aggregate": "device",
+            },
+          ),
         [WS_METHODS.deviceOpen]: (input) =>
           observeRpcEffect(WS_METHODS.deviceOpen, deviceService.open(input), {
             "rpc.aggregate": "device",

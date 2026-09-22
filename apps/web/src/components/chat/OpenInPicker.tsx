@@ -1,9 +1,10 @@
+import { buildRemoteOpenUrl } from "@d4research/contracts";
 import {
   EditorId,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
 } from "@d4research/contracts";
-import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
+import { ChevronDownIcon, FolderClosedIcon, SquareArrowOutUpRightIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo } from "react";
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { shellEnvironment } from "~/state/shell";
@@ -11,6 +12,27 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { editorLabelForPlatform } from "../../editorLabels";
 import { usePreferredEditor } from "../../editorPreferences";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
+import {
+  openRemoteEditorUrl,
+  useRemoteCapableEditors,
+  useRemoteOpenHint,
+  useRemoteOpenState,
+} from "../../remoteOpen";
+import { useEnvironment } from "../../state/environments";
+
+import { Button } from "../ui/button";
+import { Group, GroupSeparator } from "../ui/group";
+import {
+  Menu,
+  MenuItem,
+  MenuItemLabel,
+  MenuPopup,
+  MenuShortcut,
+  MenuSub,
+  MenuSubTrigger,
+  MenuSubPopup,
+  MenuTrigger,
+} from "../ui/menu";
 import {
   AntigravityIcon,
   CursorIcon,
@@ -38,9 +60,6 @@ import {
   RustRoverIcon,
   WebStormIcon,
 } from "../JetBrainsIcons";
-import { Button } from "../ui/button";
-import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 
 type OpenInOption = {
   label: string;
@@ -180,6 +199,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   availableEditors,
   openInCwd,
   onOpenFiles,
+  presentation = "toolbar",
   compact = false,
   enableShortcut = true,
 }: {
@@ -188,17 +208,25 @@ export const OpenInPicker = memo(function OpenInPicker({
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
   onOpenFiles?: () => void;
+  presentation?: "toolbar" | "menu";
   compact?: boolean;
   enableShortcut?: boolean;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
+  const remote = useRemoteOpenState(environmentId);
+  const remoteCapableEditors = useRemoteCapableEditors();
+  const [remoteHintSeen, markRemoteHintSeen] = useRemoteOpenHint();
+  const environmentLabel = useEnvironment(environmentId)?.label ?? "this machine";
+  // Remote mode ignores the server's PATH probe: what matters is what runs on
+  // the viewing machine, which only the desktop app can probe.
+  const effectiveEditors = remote.mode === "local-exec" ? availableEditors : remoteCapableEditors;
   const options = useMemo(
     () =>
       resolveOpenInOptions(
         navigator.platform,
-        onOpenFiles ? [...availableEditors, "file-manager"] : availableEditors,
+        onOpenFiles ? [...effectiveEditors, "file-manager"] : effectiveEditors,
       ),
-    [availableEditors, onOpenFiles],
+    [effectiveEditors, onOpenFiles],
   );
   const availableOpenTargets = useMemo(() => options.map((option) => option.value), [options]);
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);
@@ -214,6 +242,23 @@ export const OpenInPicker = memo(function OpenInPicker({
         setPreferredEditor(editor);
         return;
       }
+      if (remote.mode === "remote-unavailable") return;
+      if (remote.mode === "remote-links") {
+        const url = buildRemoteOpenUrl({
+          editor,
+          host: remote.host.host,
+          absolutePath: openInCwd,
+        });
+        if (url === undefined) return;
+        // Only record hint-seen/preferred when the shell actually accepted
+        // the URL (an older desktop build can refuse the editor scheme).
+        void openRemoteEditorUrl(url).then((opened) => {
+          if (!opened) return;
+          markRemoteHintSeen();
+          setPreferredEditor(editor);
+        });
+        return;
+      }
       const result = openInEditorMutation({
         environmentId,
         input: {
@@ -227,6 +272,8 @@ export const OpenInPicker = memo(function OpenInPicker({
     [
       environmentId,
       onOpenFiles,
+      markRemoteHintSeen,
+      remote,
       openInCwd,
       openInEditorMutation,
       preferredEditor,
@@ -271,6 +318,69 @@ export const OpenInPicker = memo(function OpenInPicker({
     preferredEditor,
   ]);
 
+  const editorItems = (
+    <>
+      {remote.mode === "remote-unavailable" ? (
+        <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
+          No SSH route to {environmentLabel}
+        </MenuItem>
+      ) : (
+        <>
+          {options.length === 0 && (
+            <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
+              No installed editors found
+            </MenuItem>
+          )}
+          {options.map(({ label, Icon, value, kind }) => (
+            <MenuItem
+              density={presentation === "menu" ? "touch" : "default"}
+              key={value}
+              onClick={() => openInEditor(value)}
+            >
+              <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
+              <MenuItemLabel>{label}</MenuItemLabel>
+              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
+                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+              )}
+            </MenuItem>
+          ))}
+          {remote.mode === "remote-links" && !remoteHintSeen && (
+            <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
+              Opens over SSH. Needs your key on {environmentLabel}
+            </MenuItem>
+          )}
+        </>
+      )}
+    </>
+  );
+  if (presentation === "menu") {
+    return (
+      <>
+        {primaryOption && (
+          <MenuItem
+            density={presentation === "menu" ? "touch" : "default"}
+
+            disabled={!openInCwd || remote.mode === "remote-unavailable"}
+            onClick={() => openInEditor(preferredEditor)}
+          >
+            <primaryOption.Icon className={cn("size-4", getOpenInIconClass(primaryOption.kind))} />
+            <MenuItemLabel className="truncate">Open in {primaryOption.label}</MenuItemLabel>
+            {openFavoriteEditorShortcutLabel && (
+              <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+            )}
+          </MenuItem>
+        )}
+        <MenuSub>
+          <MenuSubTrigger density="touch">
+            <SquareArrowOutUpRightIcon className="size-4" />
+            <MenuItemLabel>Open in…</MenuItemLabel>
+          </MenuSubTrigger>
+          <MenuSubPopup className="min-w-32 max-w-[calc(100vw-2rem)]">{editorItems}</MenuSubPopup>
+        </MenuSub>
+      </>
+    );
+  }
+
   return (
     <Group aria-label="Open in editor">
       <Button
@@ -304,18 +414,7 @@ export const OpenInPicker = memo(function OpenInPicker({
         >
           <ChevronDownIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>
-        <MenuPopup align="end">
-          {options.length === 0 && <MenuItem disabled>No installed editors found</MenuItem>}
-          {options.map(({ label, Icon, value, kind }) => (
-            <MenuItem key={value} onClick={() => openInEditor(value)}>
-              <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
-              {label}
-              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
-                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
-              )}
-            </MenuItem>
-          ))}
-        </MenuPopup>
+        <MenuPopup align="end">{editorItems}</MenuPopup>
       </Menu>
     </Group>
   );

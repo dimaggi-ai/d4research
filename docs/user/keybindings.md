@@ -83,6 +83,16 @@ Examples: `mod+j`, `mod+shift+d`, `ctrl+l`, `cmd+k`.
 
 Commands are IDs like `terminal.toggle`, `commandPalette.toggle`, `preview.refresh`, and
 `chat.new`. Project scripts use the format `script.{id}.run`, for example `script.test.run`.
+Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
+`previewOpen`, `modelPickerOpen`, `editableFocus`, `isWeb`, and `isDesktop`.
+`editableFocus` is true while a text field, the composer, or another editor has
+the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
+desktop app. Unknown keys evaluate to `false`.
+
+`mod+1` through `mod+9` jump to the first nine threads, and to models while the
+model picker is open. Those defaults use `isDesktop` so they do not steal the
+browser's tab-switch shortcuts. Remove that condition in Settings if you want
+the same jumps in a browser.
 
 `filePicker.toggle` opens file search for the active project and defaults to `mod+p`.
 `projectSearch.toggle` searches inside the active project's files and defaults to `mod+shift+f`.
@@ -127,6 +137,12 @@ always matches the build you are running. Use that rather than a copied list.
 
 `thread.stop` interrupts the running turn in the focused thread. It has no default
 shortcut; assign one in **Settings → Keybindings**.
+
+`thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
+bottom of the sidebar, such as unpin, settle, snooze, or archive. Consecutive
+actions of the same kind undo together. The notice remains available for five
+seconds after the latest action. The default shortcut skips text fields and
+terminals so native undo keeps working there.
 
 `chat.new` may ask you to choose a project when there is more than one.
 `chat.newLocal` skips that chooser. Both use your

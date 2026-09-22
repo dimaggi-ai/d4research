@@ -1,6 +1,7 @@
 import {
   T3_PROJECT_FILE_NAME,
   type EnvironmentId,
+  type T3ProjectFile,
   type ThreadEnvMode,
 } from "@d4research/contracts";
 import { parseT3ProjectFile } from "@d4research/shared/t3ProjectFile";
@@ -13,19 +14,19 @@ import {
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 /**
- * Read `defaultThreadEnvMode` from the project's checked-in `t3.json`.
+ * Read and decode the project's checked-in `t3.json`.
  *
- * Imperative counterpart to `useT3ProjectFileScripts` for the new-thread
- * path, which resolves defaults at call time rather than render time. The
- * file query atom caches per (environment, cwd), so repeat calls don't
- * re-fetch. Optimistic in-app writes overlay the query result, matching what
+ * Imperative counterpart to `useT3ProjectFileState` for the new-thread path,
+ * which resolves defaults at call time rather than render time. The file
+ * query atom caches per (environment, cwd), so repeat calls don't re-fetch.
+ * Optimistic in-app writes overlay the query result, matching what
  * `useProjectFileQuery` renders. Missing, truncated, or invalid files
  * resolve to null.
  */
-export async function readT3ProjectFileDefaultThreadEnvMode(
+export async function readT3ProjectFile(
   environmentId: EnvironmentId,
   workspaceRoot: string,
-): Promise<ThreadEnvMode | null> {
+): Promise<T3ProjectFile | null> {
   const result = await executeAtomQuery(
     appAtomRegistry,
     getProjectFileQueryAtom(environmentId, workspaceRoot, T3_PROJECT_FILE_NAME),
@@ -38,5 +39,5 @@ export async function readT3ProjectFileDefaultThreadEnvMode(
     result._tag === "Success" ? result.value : null,
   );
   if (data === null || data.truncated) return null;
-  return parseT3ProjectFile(data.contents)?.defaultThreadEnvMode ?? null;
+  return parseT3ProjectFile(data.contents);
 }

@@ -31,7 +31,7 @@ import {
   NATIVE_SOURCE_CONTENT_WIDTH,
   nativeSourceRowId,
 } from "./nativeSourceFileAdapter";
-import { MarkdownTextPrimitive } from "@t3tools/mobile-markdown-text/primitive";
+import { MarkdownTextPrimitive } from "@d4research/mobile-markdown-text/primitive";
 
 import { boundedSelectableSourceTokens, prepareSourceFileDocument } from "./source-file-document";
 import { sourceHighlightAtom } from "./sourceHighlightingState";

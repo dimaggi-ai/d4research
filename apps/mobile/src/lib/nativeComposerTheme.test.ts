@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MOBILE_THEME_IDS } from "@t3tools/shared/themePalettes";
+import { MOBILE_THEME_IDS } from "@d4research/shared/themePalettes";
 
 import { getMobileThemeVariables } from "./mobileTheme";
 import { createNativeComposerTheme } from "./nativeComposerTheme";

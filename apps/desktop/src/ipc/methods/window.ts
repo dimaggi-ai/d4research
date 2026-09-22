@@ -12,10 +12,10 @@ import {
   SystemSettingsPaneSchema,
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
-} from "@t3tools/contracts";
-import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@t3tools/shared/filePreview";
-import { resolveEditorCommand } from "@t3tools/shared/editor";
-import * as HostProcess from "@t3tools/shared/hostProcess";
+} from "@d4research/contracts";
+import { WORKSPACE_IMAGE_PREVIEW_EXTENSIONS } from "@d4research/shared/filePreview";
+import { resolveEditorCommand } from "@d4research/shared/editor";
+import * as HostProcess from "@d4research/shared/hostProcess";
 import * as NodeOS from "node:os";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

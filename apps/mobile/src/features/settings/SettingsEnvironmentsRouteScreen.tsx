@@ -3,7 +3,7 @@ import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentId } from "@d4research/contracts";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,12 +34,17 @@ export function SettingsEnvironmentsRouteScreen() {
     ? applyShowcaseLocalEnvironmentDisplayUrls(connectedEnvironments)
     : connectedEnvironments;
   const hasLocalEnvironments = localEnvironments.length > 0;
-  const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
   const headerIconColor = useUniwindTheme()["--color-icon"];
 
-  const handleToggle = useCallback((environmentId: EnvironmentId) => {
-    setExpandedId((prev) => (prev === environmentId ? null : environmentId));
-  }, []);
+  const openEnvironment = useCallback(
+    (environmentId: EnvironmentId) => {
+      navigation.navigate("SettingsSheet", {
+        screen: "SettingsContent",
+        params: { screen: "SettingsEnvironmentDetail", params: { environmentId } },
+      });
+    },
+    [navigation],
+  );
   const handleUpdateEnvironment = useCallback(
     (
       environmentId: EnvironmentId,
@@ -116,8 +121,9 @@ export function SettingsEnvironmentsRouteScreen() {
               >
                 <ConnectionEnvironmentRow
                   environment={environment}
-                  expanded={expandedId === environment.environmentId}
-                  onToggle={() => handleToggle(environment.environmentId)}
+                  expanded={false}
+                  opensDetails
+                  onToggle={() => openEnvironment(environment.environmentId)}
                   onReconnect={onReconnectEnvironment}
                   onRemove={onRemoveEnvironmentPress}
                   onSetEnabled={onSetEnvironmentEnabled}

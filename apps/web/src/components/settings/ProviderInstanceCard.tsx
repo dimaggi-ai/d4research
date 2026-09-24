@@ -459,6 +459,7 @@ interface ProviderInstanceCardProps {
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
   readonly onRunUpdate?: (() => void) | undefined;
+  readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
 }
 
@@ -539,16 +540,17 @@ export function ProviderInstanceCard({
   onFavoriteModelsChange,
   onModelOrderChange,
   onRunUpdate,
+  onInstallRecommended,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
   const isExpanded = isExpandedProp ?? mode === "editor";
   const onExpandedChange = onExpandedChangeProp ?? (() => undefined);
   const enabled = resolveProviderInstanceEnabled(instance);
-  // The server-reported status wins when present; otherwise fall back to
-  // "disabled"/"warning" based on the local `enabled` flag so the dot
-  // reflects the persisted intent even before the first probe completes.
-  const statusKey: ProviderStatusKey =
-    (liveProvider?.status as ProviderStatusKey | undefined) ?? (enabled ? "warning" : "disabled");
+  // A locally disabled provider reads "Disabled" with a muted dot even if its
+  // last server status is stale. Enabled providers use the server status.
+  const statusKey: ProviderStatusKey = enabled
+    ? ((liveProvider?.status as ProviderStatusKey | undefined) ?? "warning")
+    : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const rawSummary = getProviderSummary(liveProvider);
   const authEmail = liveProvider?.auth.email;
@@ -559,8 +561,13 @@ export function ProviderInstanceCard({
     : null;
   const summary = rawSummary;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
-  const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
+  const versionAdvisory = getProviderVersionAdvisoryPresentation(
+    liveProvider?.versionAdvisory,
+    liveProvider?.compatibilityAdvisory,
+    enabled,
+  );
   const updateCommand = versionAdvisory?.updateCommand ?? null;
+  const onRunVersionAction = versionAdvisory?.targetVersion ? onInstallRecommended : onRunUpdate;
   const FallbackIconComponent = driverOption?.icon;
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
@@ -811,7 +818,6 @@ export function ProviderInstanceCard({
                   ? "border-destructive/25 bg-destructive/8 text-destructive"
                   : "border-warning/25 bg-warning/8 text-warning",
             )}
-            title={`${label}: ${state}`}
           >
             {label} · {state}
           </span>
@@ -876,20 +882,20 @@ export function ProviderInstanceCard({
                           {versionAdvisory.detail}
                         </p>
                       </div>
-                      {onRunUpdate ? (
+                      {onRunVersionAction ? (
                         <Button
                           type="button"
                           size="xs"
                           variant="default"
                           className="w-full"
                           disabled={isUpdating}
-                          onClick={onRunUpdate}
+                          onClick={onRunVersionAction}
                         >
                           {isUpdating ? <LoaderIcon className="animate-spin" /> : <DownloadIcon />}
                           {isUpdating ? "Updating" : "Update now"}
                         </Button>
                       ) : null}
-                      {onRunUpdate && updateCommand ? (
+                      {onRunVersionAction && updateCommand ? (
                         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                           <span aria-hidden className="h-px flex-1 bg-border" />
                           or, update manually using

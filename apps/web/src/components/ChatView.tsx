@@ -7212,7 +7212,7 @@ function ChatViewContent(props: ChatViewProps) {
                   </code>
                 }
               />
-              <TooltipPopup side="top" className="max-w-80">
+              <TooltipPopup side="top">
                 This thread last ran on {localCheckoutBranchMismatch.threadBranch}. Sending will
                 continue on {localCheckoutBranchMismatch.currentBranch}.
               </TooltipPopup>
@@ -11593,7 +11593,7 @@ function ChatViewContent(props: ChatViewProps) {
       ) : null}
       {shouldUsePlanSidebarSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelSheet
-          animationDurationMs={settings.panelAnimationDurationMs}
+          animationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           open
           onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}
         >

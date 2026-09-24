@@ -12,7 +12,6 @@ import {
   resolveMarkdownFontSizes,
   resolveMobileCodeSurface,
 } from "../../../../lib/appearancePreferences";
-import { useThemeColor } from "../../../../lib/useThemeColor";
 import { getPierreTerminalTheme } from "../../../terminal/terminalTheme";
 
 const CODE_FONT_FAMILY = Platform.select({
@@ -144,15 +143,12 @@ export function CodeAppearancePreview(props: {
   readonly wordBreak: boolean;
 }) {
   const surface = resolveMobileCodeSurface(props.fontSize);
-  const lineNumberColor = useThemeColor("--color-icon-subtle");
-  const keywordColor = useThemeColor("--color-md-link");
 
   const lineNumber = (line: CodePreviewLine, index: number) => (
     <Text
-      className="text-right"
+      className="text-right text-icon-subtle"
       key={line.id}
       style={{
-        color: lineNumberColor,
         fontFamily: CODE_FONT_FAMILY,
         fontSize: surface.lineNumberFontSize,
         lineHeight: surface.rowHeight,
@@ -177,8 +173,8 @@ export function CodeAppearancePreview(props: {
       {line.tokens.map((token) => (
         <Text
           key={token.text}
+          className={token.keyword ? "text-md-link" : undefined}
           style={{
-            color: token.keyword ? keywordColor : undefined,
             fontFamily: CODE_FONT_FAMILY,
             fontSize: surface.fontSize,
             lineHeight: surface.rowHeight,

@@ -167,7 +167,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
         align="start"
         sideOffset={8}
         className="w-80 max-w-[calc(100vw-2rem)]"
-        viewportClassName="p-0!"
+        padding="none"
         data-chat-session-skills-popup="true"
       >
         <div className="border-b border-border/60 px-3 py-3">

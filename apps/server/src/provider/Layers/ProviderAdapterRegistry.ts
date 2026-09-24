@@ -15,7 +15,7 @@
  *
  * @module ProviderAdapterRegistryLive
  */
-import { ProviderInstanceId, ProviderSetupError, type ProviderSession } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderSetupError, type ProviderSession } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";

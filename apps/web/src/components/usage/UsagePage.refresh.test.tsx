@@ -1,5 +1,5 @@
-import { EnvironmentId, ProviderInstanceId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
-import { mergeUsage } from "@t3tools/shared/usageMerge";
+import { EnvironmentId, ProviderInstanceId, USAGE_CONTRACT_VERSION } from "@d4research/contracts";
+import { mergeUsage } from "@d4research/shared/usageMerge";
 import { StrictMode, act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";

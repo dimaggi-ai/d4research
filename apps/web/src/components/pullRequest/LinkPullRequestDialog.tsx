@@ -1,10 +1,10 @@
-import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
-export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
+import { changeRequestUrlFor as changeRequestWebUrl } from "@d4research/shared/changeRequestUrl";
+export { changeRequestUrlFor as changeRequestWebUrl } from "@d4research/shared/changeRequestUrl";
 import {
   pullRequestHostOf,
   type ScopedThreadRef,
   type SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

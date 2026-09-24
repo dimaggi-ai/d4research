@@ -23,7 +23,7 @@ import { describe, expect, it } from "vite-plus/test";
  *    remove one of these imports, lower the constant in the same PR.
  *
  * Runs in CI as part of the `Test` job (`vp run --filter '!t3' test` picks up
- * the `@t3tools/mobile` package test task).
+ * the `@d4research/mobile` package test task).
  */
 
 const SOURCE_ROOT = __dirname;

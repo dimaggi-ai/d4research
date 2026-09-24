@@ -251,7 +251,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - name: Check
         run: vp check
@@ -285,7 +285,7 @@ jobs:
           run-install: true
 
       - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
+        run: vp run --filter @d4research/desktop ensure:electron
 
       - uses: ./.github/actions/setup-apt-mirrors
 
@@ -295,7 +295,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config build-essential
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@d4research/monorepo' test
 
   test_server:
     name: Release server tests ${{ matrix.shard }}
@@ -326,9 +326,9 @@ jobs:
 
       # No Electron setup here: `t3` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`
-      # job, which covers @t3tools/desktop, needs the download.
+      # job, which covers @d4research/desktop, needs the download.
       - name: Test
-        run: vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: vp run --filter d4research test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   relay_public_config:
     name: Resolve T3 Connect public config
@@ -486,7 +486,7 @@ jobs:
       - name: Install bundle dependencies
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
-        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+        run: vp install --filter=d4research... --filter=@d4research/web... --filter=@d4research/desktop... --filter=@d4research/scripts...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -507,13 +507,13 @@ jobs:
 
       - uses: ./.github/actions/setup-apt-mirrors
 
-      # @t3tools/desktop#build compiles the Linux browser secret helper on a
+      # @d4research/desktop#build compiles the Linux browser secret helper on a
       # Linux host before packing, and that needs libsecret headers.
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
-      # Runs t3#build (which depends on @t3tools/web#build) and
-      # @t3tools/desktop#build, so apps/server/dist holds the server bundle
+      # Runs d4research#build (which depends on @d4research/web#build) and
+      # @d4research/desktop#build, so apps/server/dist holds the server bundle
       # plus the web client and apps/desktop/dist-electron the Electron main.
       - name: Build JS bundle
         run: vp run build:desktop
@@ -724,8 +724,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=t3...
-              - --filter=@t3tools/scripts...
+              - --filter=d4research...
+              - --filter=@d4research/scripts...
 
       - name: Download all CLI archives
         uses: actions/download-artifact@v8
@@ -785,7 +785,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
@@ -979,8 +979,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/web...
+              - --filter=@d4research/scripts...
+              - --filter=@d4research/web...
 
       - name: Download relay client tracing config
         uses: actions/download-artifact@v8
@@ -1090,7 +1090,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/marketing...
+              - --filter=@d4research/marketing...
 
       - name: Deploy marketing site to Vercel
         shell: bash
@@ -1161,8 +1161,8 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/oxlint-plugin-t3code...
+              - --filter=@d4research/scripts...
+              - --filter=@d4research/oxlint-plugin-t3code...
 
       - id: update_versions
         name: Update version strings
@@ -1226,7 +1226,7 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/scripts...
+              - --filter=@d4research/scripts...
 
       - name: Announce prerelease on Discord
         if: needs.preflight.outputs.is_prerelease == 'true'

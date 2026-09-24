@@ -14,17 +14,17 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   type ThreadId,
-} from "@t3tools/contracts";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
-import { nextPastedTextFileName, pastedTextDisposition } from "@t3tools/client-runtime/text-paste";
+} from "@d4research/contracts";
+import { safeErrorLogAttributes } from "@d4research/client-runtime/errors";
+import { clampFileAttachmentUploadBytes } from "@d4research/client-runtime/state/attachments";
+import { nextPastedTextFileName, pastedTextDisposition } from "@d4research/client-runtime/text-paste";
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
-import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+} from "@d4research/client-runtime/state/threads";
+import { deriveActiveWorkStartedAt } from "@d4research/shared/orchestrationTiming";
+import { upgradeLegacyContextMessage } from "@d4research/shared/composerContextLegacy";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
 import { uuidv4 } from "../lib/uuid";
 

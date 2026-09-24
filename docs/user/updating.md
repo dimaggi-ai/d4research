@@ -45,7 +45,7 @@ or `--tailscale-serve`.
 
 If you run the server with `npx` rather than an installed `t3`, there is
 nothing to update on the host: stop the server and relaunch it as
-`npx t3@<client-version>` with the same subcommand and options.
+`npx d4research@<client-version>` with the same subcommand and options.
 
 ## If an update fails
 

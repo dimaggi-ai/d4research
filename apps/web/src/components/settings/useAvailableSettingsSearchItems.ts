@@ -16,11 +16,13 @@ import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 
+import type { SettingsScopeSearch } from "./settingsScope";
+
 import { filterAvailableSettingsSearchItems } from "./settingsSearch";
 
 import { getThreadAutoSettlementSearchAvailability } from "./settingsSearch";
 
-export function useAvailableSettingsSearchItems() {
+export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const { environments } = useEnvironments();
   const primarySessionState = usePrimarySessionState();
   const localEnvironmentDisabled = isLocalEnvironmentDisabled();
@@ -45,6 +47,16 @@ export function useAvailableSettingsSearchItems() {
             hasServerConfig: environment.serverConfig !== null,
           }),
         ),
+        hasMacProviderSettingsEnvironment: environments.some(
+          (environment) =>
+            (scopeSearch.machine === undefined ||
+              environment.environmentId === scopeSearch.machine) &&
+            environment.serverConfig?.environment.platform.os === "darwin" &&
+            isProviderSettingsEnvironmentAvailable({
+              connectionPhase: environment.connection.phase,
+              hasServerConfig: true,
+            }),
+        ),
         canManageLocalBackend,
         isWslSettingsRowVisible: isWslSettingsRowVisible({
           state: desktopWsl.data,
@@ -53,6 +65,6 @@ export function useAvailableSettingsSearchItems() {
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
       }),
-    [canManageLocalBackend, desktopWsl.data, desktopWsl.error, environments],
+    [canManageLocalBackend, desktopWsl.data, desktopWsl.error, environments, scopeSearch.machine],
   );
 }

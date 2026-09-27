@@ -74,6 +74,7 @@ import {
   resolveDraftPromotionNavigationTarget,
   resolveProactiveTurnDiffAction,
   resolveProjectOpenInCwd,
+  resolveProviderHandoff,
   resolveSendEnvMode,
   resolveThreadMetadataUpdateForNextTurn,
   resolveThreadSwitchTimeline,
@@ -1013,6 +1014,108 @@ describe("buildExpiredTerminalContextToastCopy", () => {
     expect(buildExpiredTerminalContextToastCopy(2, "omitted")).toEqual({
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
+    });
+  });
+});
+
+describe("resolveProviderHandoff", () => {
+  const models: ServerProvider["models"] = [
+    { slug: "model-a", name: "Model A", isCustom: false, capabilities: null },
+  ];
+  function snapshot(driver: string, instanceId = driver, overrides: Partial<ServerProvider> = {}) {
+    return {
+      driver: ProviderDriverKind.make(driver),
+      instanceId: ProviderInstanceId.make(instanceId),
+      enabled: true,
+      installed: true,
+      status: "ready",
+      auth: { status: "authenticated" },
+      version: null,
+      checkedAt: now,
+      models,
+      slashCommands: [],
+      skills: [],
+      ...overrides,
+    } satisfies ServerProvider;
+  }
+  const codex = snapshot("codex");
+  const codexWork = snapshot("codex", "codex_work");
+  const claude = snapshot("claudeAgent");
+  const startedOnCodex = makeThread({ session: readySession });
+  function resolve(input: {
+    thread?: Thread | null;
+    providers?: ReadonlyArray<ServerProvider>;
+    next: { instanceId: string; model: string };
+  }) {
+    const thread = input.thread === undefined ? startedOnCodex : input.thread;
+    const providers = input.providers ?? [codex, codexWork, claude];
+    return resolveProviderHandoff({
+      thread,
+      providers,
+      entries: deriveProviderInstanceEntries(providers),
+      sessionLockedProvider: deriveLockedProvider({
+        thread,
+        selectedProvider: input.next.instanceId,
+        threadProvider: thread?.modelSelection.instanceId ?? null,
+        providers,
+      }),
+      nextModelSelection: {
+        instanceId: ProviderInstanceId.make(input.next.instanceId),
+        model: input.next.model,
+      },
+    });
+  }
+
+  it("needs no handoff to keep the running provider or before any session started", () => {
+    expect(resolve({ next: { instanceId: "codex", model: "gpt-5.4" } })).toEqual({
+      kind: "none",
+    });
+    expect(
+      resolve({ thread: makeThread(), next: { instanceId: "claudeAgent", model: "model-a" } }),
+    ).toEqual({ kind: "none" });
+    expect(
+      resolve({ thread: null, next: { instanceId: "claudeAgent", model: "model-a" } }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("is ready to hand off to a healthy provider of another driver", () => {
+    expect(resolve({ next: { instanceId: "claudeAgent", model: "model-a" } })).toMatchObject({
+      kind: "ready",
+      target: { instanceId: "claudeAgent", model: "model-a" },
+    });
+  });
+
+  it("requires a handoff to a sibling instance of the running driver", () => {
+    expect(resolve({ next: { instanceId: "codex_work", model: "model-a" } })).toMatchObject({
+      kind: "ready",
+      target: { instanceId: "codex_work" },
+    });
+  });
+
+  it.each([
+    ["disabled", { enabled: false }],
+    ["not ready", { status: "error" as const }],
+    ["without models", { models: [] }],
+  ])("refuses a required handoff to a %s target instead of sending plainly", (_, overrides) => {
+    const target = snapshot("claudeAgent", "claudeAgent", overrides);
+    expect(
+      resolve({
+        providers: [codex, target],
+        next: { instanceId: "claudeAgent", model: "model-a" },
+      }),
+    ).toMatchObject({ kind: "unavailable" });
+  });
+
+  it("refuses a handoff to a target missing from the environment", () => {
+    expect(
+      resolve({ providers: [codex], next: { instanceId: "claudeAgent", model: "model-a" } }),
+    ).toEqual({ kind: "unavailable", displayName: "claudeAgent" });
+  });
+
+  it("does not count a delegation's placeholder session as started", () => {
+    const thread = makeThread({ session: { ...readySession, providerName: null } });
+    expect(resolve({ thread, next: { instanceId: "codex_work", model: "model-a" } })).toEqual({
+      kind: "none",
     });
   });
 });

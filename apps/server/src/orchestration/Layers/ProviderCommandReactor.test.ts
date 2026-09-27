@@ -59,6 +59,7 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
+import { TerminalManager } from "../../terminal/Manager.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
@@ -505,6 +506,7 @@ describe("ProviderCommandReactor", () => {
             : "renamed-branch",
       }),
     );
+    const closeIdleTerminals = vi.fn((_: { readonly threadId: string }) => Effect.void);
     const refreshStatus = vi.fn((_: string) =>
       Effect.succeed({
         isRepo: true,
@@ -753,6 +755,7 @@ describe("ProviderCommandReactor", () => {
           }),
         ),
       ),
+      Layer.provideMerge(Layer.mock(TerminalManager)({ closeIdle: closeIdleTerminals })),
       Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -891,6 +894,7 @@ describe("ProviderCommandReactor", () => {
       respondToUserInput,
       stopSession,
       renameBranch,
+      closeIdleTerminals,
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
@@ -945,6 +949,7 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+    expect(harness.startSession.mock.calls[0]?.[1]).not.toHaveProperty("title");
   });
 
   it("expands a raw dev trigger at the provider boundary for non-web clients", async () => {
@@ -1141,8 +1146,11 @@ describe("ProviderCommandReactor", () => {
             const snapshot = (await harness.readModel()).threads.find(
               (entry) => entry.id === ThreadId.make("thread-1"),
             );
+            // The checkpoint is the settle's last write.
             return (
-              snapshot?.session?.activeTurnId === null && snapshot.session.status !== "running"
+              snapshot?.session?.activeTurnId === null &&
+              snapshot.session.status !== "running" &&
+              snapshot.checkpoints.length > 0
             );
           }),
         );
@@ -1489,6 +1497,89 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("forwards only a user-renamed title when starting a provider session", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() =>
+        createHarness({ initialTitle: "Add a progressive blur as you scroll" }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      };
+      const startTurn = (threadId: string, text: string, titleSeed: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-title-${threadId}`),
+          threadId: ThreadId.make(threadId),
+          message: {
+            messageId: asMessageId(`message-${threadId}`),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          titleSeed,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
+
+      yield* startTurn(
+        "thread-1",
+        "Add a progressive blur as you scroll",
+        "Add a progressive blur as you scroll",
+      );
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+      expect(harness.startSession.mock.calls[0]?.[1]).not.toHaveProperty("title");
+
+      yield* harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-renamed"),
+        threadId: ThreadId.make("thread-renamed"),
+        projectId: asProjectId("project-1"),
+        title: "New thread",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-rename"),
+        threadId: ThreadId.make("thread-renamed"),
+        title: "Keep this name",
+      });
+      yield* startTurn("thread-renamed", "hello there", "hello there");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 2));
+      expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({ title: "Keep this name" });
+
+      yield* harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-seeded"),
+        threadId: ThreadId.make("thread-seeded"),
+        projectId: asProjectId("project-1"),
+        title: "New thread",
+        modelSelection,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      });
+      yield* harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-thread-autotitle"),
+        threadId: ThreadId.make("thread-seeded"),
+        title: "hello there",
+      });
+      yield* startTurn("thread-seeded", "hello there", "hello there");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 3));
+      expect(harness.startSession.mock.calls[2]?.[1]).not.toHaveProperty("title");
+    }),
+  );
+
   effectIt.effect("projects inline context before sending the provider turn", () =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() => createHarness());
@@ -1597,6 +1688,9 @@ describe("ProviderCommandReactor", () => {
             ),
         ),
       ).toBe(true);
+      expect(refusedThread?.session?.activeTurnId).toBe(
+        "inline-delegate:user-message-inline-delegate-first",
+      );
 
       // The first delegation is still interruptible and still owns the turn.
       yield* Deferred.succeed(release, undefined);
@@ -4670,6 +4764,77 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.settledOverride).toBe("settled");
       expect(thread?.session?.status).toBe("stopped");
       expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
+      expect(harness.closeIdleTerminals).toHaveBeenCalledWith({
+        threadId: ThreadId.make("thread-1"),
+      });
     }),
+  );
+
+  effectIt.effect("closes idle terminals when a thread without a session settles", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const terminalsClosed = yield* Deferred.make<void>();
+      harness.closeIdleTerminals.mockImplementation(() =>
+        Deferred.succeed(terminalsClosed, undefined).pipe(Effect.asVoid),
+      );
+
+      yield* harness.engine.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("cmd-settle-without-session"),
+        threadId: ThreadId.make("thread-1"),
+      });
+      yield* Deferred.await(terminalsClosed);
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.closeIdleTerminals).toHaveBeenCalledWith({
+        threadId: ThreadId.make("thread-1"),
+      });
+      expect(harness.stopSession).not.toHaveBeenCalled();
+    }),
+  );
+
+  effectIt.effect(
+    "keeps terminals when the thread is un-settled before its settle event runs",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const threadId = ThreadId.make("thread-1");
+        const firstCloseStarted = yield* Deferred.make<void>();
+        const releaseFirstClose = yield* Deferred.make<void>();
+        harness.closeIdleTerminals.mockImplementationOnce(() =>
+          Deferred.succeed(firstCloseStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseFirstClose)),
+          ),
+        );
+
+        yield* harness.engine.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("cmd-settle-first"),
+          threadId,
+        });
+        // The reactor is busy with the first settle while the user changes their mind.
+        yield* Deferred.await(firstCloseStarted);
+        yield* harness.engine.dispatch({
+          type: "thread.unsettle",
+          commandId: CommandId.make("cmd-unsettle-first"),
+          threadId,
+          reason: "user",
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("cmd-settle-second"),
+          threadId,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.unsettle",
+          commandId: CommandId.make("cmd-unsettle-second"),
+          threadId,
+          reason: "user",
+        });
+        yield* Deferred.succeed(releaseFirstClose, undefined);
+        yield* Effect.promise(() => harness.drain());
+
+        expect(harness.closeIdleTerminals).toHaveBeenCalledTimes(1);
+      }),
   );
 });

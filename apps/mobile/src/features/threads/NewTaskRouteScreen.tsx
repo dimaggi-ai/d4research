@@ -354,6 +354,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           <ProjectFavicon
                             environmentId={scope.representative.environmentId}
                             faviconPath={scope.representative.faviconPath}
+                            projectIcon={scope.representative.projectIcon}
                             size={24}
                             projectTitle={scope.title}
                             workspaceRoot={scope.representative.workspaceRoot}
@@ -372,6 +373,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                                 <ProjectFavicon
                                   environmentId={project.environmentId}
                                   faviconPath={project.faviconPath}
+                                  projectIcon={project.projectIcon}
                                   size={24}
                                   projectTitle={project.title}
                                   workspaceRoot={project.workspaceRoot}
@@ -405,6 +407,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                         <ProjectFavicon
                           environmentId={scope.representative.environmentId}
                           faviconPath={scope.representative.faviconPath}
+                          projectIcon={scope.representative.projectIcon}
                           size={20}
                           projectTitle={scope.title}
                           workspaceRoot={scope.representative.workspaceRoot}
@@ -442,6 +445,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                             <ProjectFavicon
                               environmentId={project.environmentId}
                               faviconPath={project.faviconPath}
+                              projectIcon={project.projectIcon}
                               size={18}
                               projectTitle={project.title}
                               workspaceRoot={project.workspaceRoot}

@@ -32,6 +32,7 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "@ff-labs/",
   "@msgpackr-extract/",
   "msgpackr-extract",
+  "@napi-rs/keyring",
   "node-gyp-build",
   "node-addon-api",
   // ws's optional accelerators. Nothing in this repo declares them, so they are

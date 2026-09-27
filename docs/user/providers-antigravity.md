@@ -139,6 +139,13 @@ T3 Code keeps thread history and file diffs. Antigravity does not support conver
 so reverting a thread or editing and resubmitting an earlier turn is unavailable. Send a
 follow-up message or start a new thread instead.
 
+Native attachment limits are 1 MiB per text file, 10 MiB per image, 20 MiB per audio clip, and
+50 MiB total per message. PDFs, text, and audio that exceed their native limits or the remaining
+native budget are passed as file paths for the agent to inspect with tools. ZIP archives and
+videos also use file paths. These files do not count toward the native attachment budget or
+enable native video input. Unsupported image formats are rejected. The native limits can be
+lower than the general upload limit.
+
 ### Subagents
 
 Antigravity subagent calls appear in **Agents** on web and desktop, and in the work log on

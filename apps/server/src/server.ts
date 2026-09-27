@@ -42,6 +42,7 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
+  untracedRequestsLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { PortableSkillsInventoryLive, reconcileUserSkills } from "./skillsInventory.ts";
@@ -57,7 +58,7 @@ import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionD
 import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
-import * as CodexResetCredit from "./provider/Layers/codexResetCredit.ts";
+import * as ResetCreditCoordinator from "./provider/Layers/resetCreditCoordinator.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
 import { ProviderAuthServiceLive } from "./provider/Layers/ProviderAuthService.ts";
@@ -126,9 +127,12 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
+import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
+import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
@@ -168,7 +172,8 @@ export const HTTP_ROUTER_CONFIG = {
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
-const ApplicationObservabilityLive = ObservabilityLive.pipe(
+const ApplicationObservabilityLive = EventLoopMonitor.layer.pipe(
+  Layer.provideMerge(ObservabilityLive),
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
@@ -456,6 +461,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 );
 
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+  Layer.provideMerge(ReplayMarkers.layer),
   Layer.provideMerge(ProviderAuthServiceLive),
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
@@ -488,7 +494,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // from the repo's `model-manifest.json` on `main` and applied by the
   // Codex/Claude drivers.
   Layer.provideMerge(
-    Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, CodexResetCredit.layer),
+    Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, ResetCreditCoordinator.layer),
   ),
   // `OpenCodeDriver.create()` yields `OpenCodeRuntime`; previously the old
   // `ProviderRegistryLive` pulled `OpenCodeRuntimeLive` in for itself, but
@@ -553,6 +559,8 @@ export const makeRoutesLayer = Layer.mergeAll(
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  // Last, so no route layer can replace the server's one TracerDisabledWhen.
+  untracedRequestsLayer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
@@ -719,6 +727,7 @@ const makeServerLayer = Layer.unwrap(
       httpListeningLayer,
       runtimeStateLayer.pipe(Layer.provide(launcherLayer)),
       tailscaleServeLayer,
+      HeapSnapshot.layer,
     );
 
     return serverApplicationLayer.pipe(

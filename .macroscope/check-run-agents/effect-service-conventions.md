@@ -31,11 +31,10 @@ Review changed TypeScript and directly affected call sites for the conventions b
 
 ## Imports and module namespaces
 
-- Import Effect library modules from their subpaths as namespaces, for example `import * as Effect from "effect/Effect"` and `import * as Layer from "effect/Layer"`. Flag consolidated named imports from `"effect"` in touched Effect service code.
-- At a service boundary, import the local service module as a namespace and use its public module shape: `WorkspacePaths.WorkspacePaths`, `WorkspacePaths.make`, and `WorkspacePaths.layer`. Flag aliases such as `import { layer as workspacePathsLayer }` that erase the module namespace.
-- Namespace imports are not a blanket rule. Keep named imports for whole packages such as `@d4research/contracts`, and for modules used only for a pure helper, error, schema, config value, or standalone type. Do not request `import type * as Contracts`.
-- A package subpath that is itself a service module may use a namespace import when callers access its service/tag, `make`, or `layer` members.
-- When a barrel exposes an entire service module, prefer `export * as TokenStore from "./tokenStore.ts"` so consumers can use `TokenStore.TokenStore` and `TokenStore.layer`. Do not individually rename `make` and `layer` exports to simulate a namespace.
+- Import Effect modules from their subpaths as namespaces: `import * as Effect from "effect/Effect"`, `import * as Layer from "effect/Layer"`. Flag named imports from the bare `"effect"` package.
+- At a service boundary, import the local service module as a namespace and use its public shape: `WorkspacePaths.WorkspacePaths`, `WorkspacePaths.make`, `WorkspacePaths.layer`. Flag aliases such as `import { layer as workspacePathsLayer }` that erase the namespace.
+- Named imports stay correct for whole packages such as `@d4research/contracts` and for modules used only for a pure helper, error, schema, config value, or type. Do not request `import type * as Contracts`.
+- When a barrel exposes a whole service module, prefer `export * as TokenStore from "./tokenStore.ts"` over individually renamed `make` and `layer` exports.
 
 ## Service definition
 

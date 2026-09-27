@@ -141,7 +141,7 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0 border-border/60 px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/70">
         <span className="min-w-0 truncate">{label}</span>
         {tooltip ? (
           <Tooltip>
@@ -163,7 +163,7 @@ function StatBlock({
       <div
         className={cn(
           "mt-1 truncate font-mono text-lg font-semibold tabular-nums text-foreground",
-          tone === "warning" && "text-amber-600 dark:text-amber-400",
+          tone === "warning" && "text-warning-foreground",
           tone === "danger" && "text-destructive",
         )}
       >
@@ -230,7 +230,7 @@ function DiagnosticsTable({
             ))}
           </colgroup>
         ) : null}
-        <thead className="border-b border-border/60 text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+        <thead className="border-b border-border/60 text-2xs uppercase tracking-widest text-muted-foreground/70">
           <tr>
             {headers.map((header, index) => (
               <th
@@ -262,7 +262,7 @@ function TraceIdCell({ traceId }: { traceId: string }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+            <span className="min-w-0 flex-1 truncate font-mono text-2xs">
               {shortenTraceId(traceId)}
             </span>
           }
@@ -334,7 +334,7 @@ function ProcessNameCell({
       ) : (
         <span className="size-5 shrink-0" aria-hidden="true" />
       )}
-      <span className="size-1.5 shrink-0 rounded-full bg-emerald-500/80" />
+      <span className="size-1.5 shrink-0 rounded-full bg-success/80" />
       <Tooltip>
         <TooltipTrigger
           render={<span className="min-w-0 truncate font-medium text-foreground">{name}</span>}
@@ -409,7 +409,7 @@ function ProcessDiagnosticsTable({
             <col className="w-[11%]" />
             <col className="w-[6%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">Name</th>
               <th className="px-3 py-2 text-right font-semibold">CPU</th>
@@ -512,7 +512,7 @@ function ResourceHistoryProcessNameCell({
       <span
         className={cn(
           "size-1.5 shrink-0 rounded-full",
-          process.isServerRoot ? "bg-amber-500/90" : "bg-emerald-500/80",
+          process.isServerRoot ? "bg-warning/90" : "bg-success/80",
         )}
       />
       <Tooltip>
@@ -635,7 +635,7 @@ function ProcessResourceHistoryTable({
             <col className="w-[16%]" />
             <col className="w-[10%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">Process</th>
               <th className="px-3 py-2 text-right font-semibold">CPU Time</th>
@@ -709,15 +709,15 @@ function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null 
   const relative = getRelativeTimeState(checkedAt ? DateTime.formatIso(checkedAt) : null);
 
   if (relative.status === "missing") {
-    return <span className="text-[11px] text-muted-foreground/50">Checking</span>;
+    return <span className="text-2xs text-muted-foreground/50">Checking</span>;
   }
 
   if (relative.status === "invalid") {
-    return <span className="text-[11px] text-muted-foreground/50">Checked unavailable</span>;
+    return <span className="text-2xs text-muted-foreground/50">Checked unavailable</span>;
   }
 
   return (
-    <span className="text-[11px] text-muted-foreground/60">
+    <span className="text-2xs text-muted-foreground/60">
       {relative.suffix ? (
         <>
           Checked <span className="font-mono tabular-nums">{relative.value}</span> {relative.suffix}
@@ -1149,9 +1149,7 @@ export function DiagnosticsSettingsPanel() {
               <div
                 className={cn(
                   "flex items-start gap-2",
-                  traceDiagnosticsPartialFailure
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-destructive",
+                  traceDiagnosticsPartialFailure ? "text-warning-foreground" : "text-destructive",
                 )}
               >
                 <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
@@ -1273,7 +1271,7 @@ export function DiagnosticsSettingsPanel() {
                 <col className="w-[26%]" />
                 <col className="w-[30%]" />
               </colgroup>
-              <thead className="border-b border-border/60 text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+              <thead className="border-b border-border/60 text-2xs uppercase tracking-widest text-muted-foreground/70">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pl-5">Time</th>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Level</th>
@@ -1292,7 +1290,7 @@ export function DiagnosticsSettingsPanel() {
                       {formatRelativeNoWrap(event.seenAt)}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <span className="inline-flex rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase text-foreground/80">
+                      <span className="inline-flex rounded bg-muted px-1.5 py-0.5 font-mono text-2xs font-medium uppercase text-foreground/80">
                         {event.level}
                       </span>
                     </td>

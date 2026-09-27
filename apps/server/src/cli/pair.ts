@@ -16,6 +16,7 @@ import {
 } from "@d4research/contracts";
 import { resolveWorktreeT3Home } from "@d4research/shared/devHome";
 import { DEFAULT_SIGNAL_EXPORT } from "@d4research/shared/observability";
+import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
@@ -335,7 +336,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
     otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
-    otlpServiceName: "t3-server",
+    otelEnvironment: OtelEnvironment.none,
     mode: "web",
     port: state.port,
     host: state.host,

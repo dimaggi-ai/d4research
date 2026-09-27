@@ -291,11 +291,11 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
             ) : (
               <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
             )}
-            <span className="truncate font-mono text-[11px] text-muted-foreground/90 group-hover:text-foreground/90">
+            <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
               {node.name}
             </span>
             {hasNonZeroStat(node.stat) && (
-              <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
+              <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
                 <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
               </span>
             )}
@@ -338,7 +338,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
           <MiddleTruncate value={node.name} />
         </span>
         {node.stat && (
-          <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums">
+          <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
             <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
           </span>
         )}

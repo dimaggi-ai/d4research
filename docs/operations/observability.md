@@ -55,6 +55,21 @@ far in the future for the environment server's allowed window. It can point to
 a date or time problem on either device, but it can also result from a delayed
 request.
 
+#### Summarize the trace file
+
+`d4research trace summary` reads the trace file and its rotated backups directly, so it works while the
+server is stalled or stopped. It prints counts, rates, and latency percentiles per span name. Use
+it to measure background work or to compare two builds.
+
+```bash
+d4research trace summary --since 30m --limit 40
+```
+
+It reads `T3CODE_TRACE_FILE` if set, else `<home>/userdata/logs/server.trace.ndjson` for
+`--base-dir` or `T3CODE_HOME`, plus the `T3CODE_TRACE_MAX_FILES` rotated backups. For a dev run or
+a copied file, set `T3CODE_TRACE_FILE`. `--since 30m` keeps spans that ended in the last 30
+minutes. The rate is per minute between the first and last span end.
+
 ### Metrics
 
 Metrics are not written to a local file.
@@ -64,6 +79,38 @@ Metrics are not written to a local file.
 - current definitions: `apps/server/src/observability/Metrics.ts`
 
 Metrics exist in-process, but there is no local metrics artifact to inspect.
+
+### Event Loop Stalls
+
+`apps/server/src/observability/EventLoopMonitor.ts` samples the server's event loop every 30 s. When
+the loop stalled for more than 2 s since the previous sample, it records a root
+`server.eventLoop.stall` span with a warning. The span has trace level `Warn`, so it stays when
+`T3CODE_TRACE_MIN_LEVEL` is `Warn`. The warning shows in Settings > Diagnostics. The span time
+is when the sample ran, not when the stall happened.
+
+Some delay is not recorded:
+
+- `delayMaxMs` is the longest stall, and can undercount it by up to 1 s. The 2 s threshold applies to
+  this value, so a stall over 3 s is normally recorded, and a shorter one can be missed. A stall
+  that ends just as a sample runs can be missed too.
+- Time the computer spends asleep reads as delay on macOS and Windows. So a sample only counts when
+  the loop was busy, not waiting for events, for at least `delayMaxMs`. Busy time covers the whole
+  window, so a short sleep in an otherwise busy window can still record a false stall. The span then
+  shows CPU time far below `delayMaxMs`.
+- The first sample after launch is skipped. Startup work such as migrations and projection bootstrap
+  can block the loop for seconds on a large database.
+
+CPU times and page faults cover the whole process over the whole window since the previous sample.
+The window is nominally 30 s, but a long stall delays the sample and makes the window longer. Other
+work in the window can hide a wait, so only CPU time far below `delayMaxMs` proves the thread was
+waiting. Read CPU together with page faults:
+
+- High `cpuSystemMs` with many page faults means memory pressure. Major faults are reads from disk or swap.
+  On macOS, reads from compressed memory are minor faults plus system CPU.
+- High `cpuUserMs` with few page faults means JavaScript work or garbage collection.
+- Low CPU with few major page faults points at synchronous disk I/O, such as SQLite reads or trace
+  file writes.
+- Many `involuntaryContextSwitches` mean other processes were competing for the CPU.
 
 ### Related Artifacts
 
@@ -420,11 +467,47 @@ The current high-value span and metric boundaries are:
 - git command execution and git hook events
 - terminal session lifecycle
 - sqlite query execution
+- event loop stalls (`server.eventLoop.stall`)
 
 ### Current Constraints
 
 - logs outside spans are not persisted in the trace file; SSH-managed launch stdout/stderr is still
   captured in its launcher log
 - metrics are not snapshotted locally
-- the old `serverLogPath` still exists in config for compatibility, but the trace file is the primary
-  structured persisted artifact
+
+## Heap Snapshots
+
+To see what a long-running server holds in memory, send it `SIGUSR2`. The server writes a V8 heap
+snapshot to its logs dir and logs the path. This works for desktop, `npx d4research`, and service installs
+on macOS and Linux. Windows has no `SIGUSR2`.
+
+Send the signal to the server pid in `server-runtime.json`, which sits in the server's state dir
+next to the `logs` dir. For a dev server or a `--home-dir` launch, use that server's state dir from
+[Traces](#traces). Do not send it to the desktop app or the service launcher: a process without the
+handler exits on `SIGUSR2`. After a crash the file can keep a stale pid that now belongs to a
+different process, so check the pid first.
+
+```bash
+pid="$(jq .pid "${T3CODE_HOME:-$HOME/.t3}/userdata/server-runtime.json")"
+ps -p "$pid" -o command=
+```
+
+If `ps` shows the d4research server, send the signal:
+
+```bash
+kill -USR2 "$pid"
+```
+
+The file is `<logsDir>/server-<pid>-<timestamp>.heapsnapshot`, next to `server.trace.ndjson`. To
+open it, use the Memory tab in Chrome DevTools and select Load.
+
+Before you take one:
+
+- The server stops while it writes the file. For a large heap this can take a minute or more.
+  Connected clients can reconnect during the pause, and an event loop monitor, if the server has
+  one, records the pause as a stall. Send the signal once. A second signal sent during a write
+  takes another snapshot after the first one finishes.
+- The write needs about as much free memory as the heap uses. On a machine that is already
+  swapping, it can make the problem worse or crash the server.
+- The file contains everything in server memory, including tokens, secrets, and thread content. Do
+  not share it publicly. Delete it when you are done, because storage cleanup does not remove it.

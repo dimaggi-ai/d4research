@@ -5,6 +5,7 @@ import {
   type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerProviderUsage,
+  type ServerProviderResetCredits,
 } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -1030,6 +1031,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
   scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
+  /** Banked resets for a subscription login, given the CLI version for the user agent. */
+  resolveResetCredits?: (version: string) => Effect.Effect<ServerProviderResetCredits | undefined>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -1236,6 +1239,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       ? capabilities.usage
       : mapClaudeUsage(capabilities.usage, checkedAt)
     : makeClaudeUsageStatus("unavailable", checkedAt);
+  const resetCredits =
+    resolveResetCredits &&
+    capabilities.subscriptionType &&
+    !usageLimits.unavailable &&
+    parsedVersion
+      ? yield* resolveResetCredits(parsedVersion)
+      : undefined;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -1244,7 +1254,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     slashCommands: dedupedSlashCommands,
     skills,
     usage,
-    usageLimits,
+    usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits,
     probe: {
       installed: true,
       version: parsedVersion,

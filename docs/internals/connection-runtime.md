@@ -103,6 +103,13 @@ Finite requests, durable subscriptions, and commands are separate APIs:
   session. A healthy transport is never torn down for a domain failure.
 - Mutations resolve the current environment runtime at execution time.
 - Shell and thread snapshots are available while offline.
+- On desktop, a [keep-alive](../../apps/web/src/state/threads.ts) mounts every
+  thread whose session is starting or running, in each enabled environment, so
+  opening a running thread needs no replay. The shell and detail streams are
+  independent, so the shell can report a stop before the detail catches up. A
+  stopped thread stays mounted until its own stream is live and shows the stop,
+  then the stream closes and saves the settled state. Web and mobile do not keep
+  threads alive.
 - Sync status is explicit and independent per domain. Shell status is `empty`,
   `cached`, `synchronizing`, or `live`, with a separate `error` field; there is
   no `failed` status. Thread status adds `deleted`.

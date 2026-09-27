@@ -20,7 +20,11 @@ import {
 } from "@d4research/contracts";
 import { resolveEditorCommand } from "@d4research/shared/editor";
 import { HostProcessPlatform } from "@d4research/shared/hostProcess";
-import { isCommandAvailable, resolveSpawnCommand } from "@d4research/shared/shell";
+import {
+  isCommandAvailable,
+  resolveSpawnCommand,
+  withPathDirectoryListings,
+} from "@d4research/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -49,7 +53,6 @@ export {
 } from "@d4research/contracts";
 export type { LaunchEditorInput };
 interface EditorLaunch {
-  readonly cwd?: string;
   readonly editor: EditorId;
   readonly target: string;
   readonly command: string;
@@ -443,7 +446,7 @@ const resolveBrowserLaunch = Effect.fn("externalLauncher.resolveBrowserLaunch")(
 const resolveAvailableEditors = Effect.fn("externalLauncher.resolveAvailableEditors")(function* () {
   const platform = yield* HostProcessPlatform;
   const env = { ...(yield* readBrowserLaunchEnv), ...(yield* readCommandLookupEnv) };
-  return yield* buildAvailableEditors(platform, env);
+  return yield* buildAvailableEditors(platform, env).pipe(withPathDirectoryListings);
 });
 
 const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileManagerRevealKind")(
@@ -506,39 +509,6 @@ export class ExternalLauncher extends Context.Service<
 // Implementations
 // ==============================
 
-const LINUX_TERMINAL_COMMANDS = [
-  "konsole",
-  "gnome-terminal",
-  "kgx",
-  "xfce4-terminal",
-  "x-terminal-emulator",
-] as const;
-
-function terminalArgs(command: string, childCommand: string): ReadonlyArray<string> {
-  if (command === "gnome-terminal" || command === "kgx") return ["--", childCommand];
-  if (command === "xfce4-terminal") return ["--command", childCommand];
-  return ["-e", childCommand];
-}
-
-const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableCommand")(function* (
-  commands: ReadonlyArray<string>,
-  env: NodeJS.ProcessEnv,
-): Effect.fn.Return<Option.Option<string>, never, FileSystem.FileSystem | Path.Path> {
-  for (const command of commands) {
-    if (yield* isCommandAvailable(command, { env })) {
-      return Option.some(command);
-    }
-  }
-  return Option.none();
-});
-
-const resolveAntigravityTerminal = Effect.fn("externalLauncher.resolveAntigravityTerminal")(
-  function* (platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
-    if (platform !== "linux") return Option.none<string>();
-    return yield* resolveAvailableCommand(LINUX_TERMINAL_COMMANDS, env);
-  },
-);
-
 const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
   input: LaunchEditorInput,
 ): Effect.fn.Return<
@@ -566,19 +536,6 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
         baseArgs: "baseArgs" in editorDef ? editorDef.baseArgs : [],
       }),
     );
-    const terminal =
-      editorDef.id === "antigravity"
-        ? yield* resolveAntigravityTerminal(platform, env)
-        : Option.none<string>();
-    if (Option.isSome(terminal)) {
-      return {
-        editor: editorDef.id,
-        target: input.cwd,
-        command: terminal.value,
-        args: terminalArgs(terminal.value, command),
-        cwd: input.cwd,
-      };
-    }
     return {
       editor: editorDef.id,
       target: input.cwd,
@@ -771,7 +728,6 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
       command: spawnCommand.command,
       args: spawnCommand.args,
       options: {
-        cwd: launch.cwd,
         detached: true,
         shell: spawnCommand.shell,
         stdin: "ignore",

@@ -280,7 +280,7 @@ export const issueActiveMcpCredential = (
     ? activeMcpSessionRegistry
         .revokeThread(request.threadId)
         .pipe(Effect.andThen(activeMcpSessionRegistry.issue(request)))
-    : Effect.sync((): McpIssuedCredential | undefined => undefined);
+    : Effect.undefined;
 
 /**
  * Issue a second credential while keeping the current thread credential

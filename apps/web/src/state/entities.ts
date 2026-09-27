@@ -229,6 +229,14 @@ export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | 
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
 }
 
+/** The thread as `useThread` returns it, read outside React. */
+export function readThread(ref: ScopedThreadRef): EnvironmentThread | null {
+  return mergeEnvironmentThread(
+    appAtomRegistry.get(environmentThreadDetails.detailAtom(ref)),
+    readThreadShell(ref),
+  );
+}
+
 /** Whether the environment's server understands thread.settle/unsettle.
     False for pre-settlement servers (capability defaults false on decode),
     so clients under version skew fall back instead of erroring. */
@@ -277,6 +285,15 @@ export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId):
 
 export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
   return appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
+}
+
+/** Whether the environment's server understands thread.auto-settle.set.
+    Same version-skew contract as settlement. */
+export function readEnvironmentSupportsAutoSettleOptOut(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadAutoSettleOptOut === true
+  );
 }
 
 export function readEnvironmentSupportsActiveReorder(environmentId: EnvironmentId): boolean {

@@ -8,6 +8,7 @@ import { ActivityIndicator, Animated, Platform, Pressable, View } from "react-na
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { brandTitleOffset, CompactBrandTitle } from "../../components/CompactBrandTitle";
+import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useWorkspaceState } from "../../state/workspace";
@@ -101,6 +102,7 @@ export function WorkspaceConnectionTitle(props: {
   const iconColor = String(useThemeColor("--color-icon-muted"));
   const status = useDelayedConnectionStatus();
   const size = props.size ?? "navbar";
+  const { scale } = useAndroidControlSizing();
 
   if (status === null) {
     return props.grow ? (
@@ -122,26 +124,28 @@ export function WorkspaceConnectionTitle(props: {
         hitSlop={8}
         onPress={props.onPress}
         className="flex-row items-center gap-2"
-        style={{ marginLeft: props.statusOffset ?? 0 }}
+        style={[
+          { marginLeft: props.statusOffset ?? 0 },
+          Platform.OS === "android" && { gap: 7 * scale },
+        ]}
       >
         {status.showsProgress ? (
-          <ActivityIndicator color={iconColor} size="small" />
+          <ActivityIndicator
+            color={iconColor}
+            size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
+          />
         ) : (
           <SymbolView
             name="wifi.slash"
-            size={size === "pageTitle" ? 17 : 15}
+            size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
             tintColor={iconColor}
             type="monochrome"
           />
         )}
         <Text
-          className={
-            size === "pageTitle"
-              ? "text-[20px] font-t3-bold text-foreground-muted"
-              : "text-[16px] font-t3-bold text-foreground-muted"
-          }
+          className="font-t3-bold text-foreground-muted"
           numberOfLines={1}
-          style={{ flexShrink: 1 }}
+          style={{ flexShrink: 1, fontSize: (size === "pageTitle" ? 20 : 16) * scale }}
         >
           {status.label}
         </Text>

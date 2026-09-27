@@ -50,6 +50,11 @@ import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import {
+  buildImmediateProviderHandoffMessage,
+  isProviderHandoffCandidate,
+  shouldHandoffModelSelection,
+} from "../providerHandoff";
 import { isDeepResearchPrompt } from "../researchPipeline";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { type RightPanelSurface } from "../rightPanelStore";
@@ -1312,6 +1317,120 @@ export function getStartedThreadModelChangeBlockReason(input: {
     title: "Start a new chat to change models",
     description: "This provider does not allow switching models after a conversation has started.",
   };
+}
+
+/**
+ * Whether an outgoing model selection would hand off, and whether its target can
+ * actually receive one. `unavailable` exists so the dispatch can refuse: a
+ * required handoff whose target is unhealthy must abort, never downgrade to a
+ * plain send that switches the provider-native session behind Memo's back.
+ */
+export type ProviderHandoffResolution =
+  | { readonly kind: "none" }
+  | { readonly kind: "ready"; readonly target: ModelSelection; readonly displayName: string }
+  | { readonly kind: "unavailable"; readonly displayName: string };
+
+export const NO_PROVIDER_HANDOFF: ProviderHandoffResolution = { kind: "none" };
+
+/**
+ * The one resolver every send path shares: the composer, the staged-handoff
+ * banner, direct sends, and queued sends. `thread` is null for anything that
+ * is not a server thread. `entries` are the environment's provider instances
+ * with settings applied; `sessionLockedProvider` comes from `deriveLockedProvider`.
+ */
+export function resolveProviderHandoff(input: {
+  readonly thread: Pick<Thread, "session" | "modelSelection"> | null | undefined;
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly sessionLockedProvider: ProviderDriverKind | null;
+  readonly nextModelSelection: ModelSelection;
+}): ProviderHandoffResolution {
+  const { thread, providers, nextModelSelection, sessionLockedProvider } = input;
+  if (!thread) return NO_PROVIDER_HANDOFF;
+  const currentInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  // A session record with no provider name was never a native session:
+  // an inline delegation synthesizes one purely to say "this thread is
+  // busy". Handing off from a provider that never ran would stage a
+  // pointless Memo bridge, so it does not count as started.
+  const hasStartedSession = thread.session !== null && thread.session.providerName !== null;
+  const driverKind =
+    providers.find((snapshot) => snapshot.instanceId === nextModelSelection.instanceId)?.driver ??
+    null;
+  // Whether a handoff is REQUIRED is a fact about the thread and the
+  // outgoing selection alone. Target health must never soften it: the
+  // provider lock only constrains driver kind, so a sibling instance of the
+  // running driver would otherwise resolve to "no handoff" and be
+  // dispatched plain — switching the native session with no Memo proof.
+  const requiresHandoff = shouldHandoffModelSelection({
+    hasStartedSession,
+    currentInstanceId,
+    nextInstanceId: nextModelSelection.instanceId,
+    modelChangeRequiresNewThread:
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession,
+        currentModelSelection: thread.modelSelection,
+        currentProviderInstanceId: thread.session?.providerInstanceId ?? null,
+        nextModelSelection,
+      }) !== null,
+    providerChanged:
+      sessionLockedProvider !== null && driverKind !== null && driverKind !== sessionLockedProvider,
+  });
+  if (!requiresHandoff) return NO_PROVIDER_HANDOFF;
+
+  const entry = input.entries.find(
+    (candidate) => candidate.instanceId === nextModelSelection.instanceId,
+  );
+  const displayName = entry?.displayName ?? String(nextModelSelection.instanceId);
+  // Target health decides whether the handoff can happen, not whether one is
+  // needed. Staging hides an unhealthy target (the banner would promise a
+  // switch the composer silently declines) and the dispatch refuses it.
+  // Same-instance model changes skip this: there is no other target to vet.
+  const targetUnusable =
+    nextModelSelection.instanceId !== currentInstanceId &&
+    (!entry || !isProviderHandoffCandidate(entry, currentInstanceId));
+  return targetUnusable
+    ? { kind: "unavailable", displayName }
+    : { kind: "ready", target: nextModelSelection, displayName };
+}
+
+/**
+ * Wraps an outgoing message in the handoff its resolution requires. Returns
+ * null when no handoff applies and `error` when the send must abort: an
+ * unavailable target, or a message too long to carry the context.
+ */
+export function applyProviderHandoffToMessage(input: {
+  readonly resolution: ProviderHandoffResolution;
+  readonly composedText: string;
+  readonly thread: { readonly id: ThreadId; readonly title: string };
+  readonly messages: ReadonlyArray<{ readonly role: string; readonly text: string }>;
+  readonly projectTitle: string | undefined;
+  readonly enabledSkills: ReadonlyArray<string>;
+}): { readonly text: string } | { readonly error: string } | null {
+  const { resolution } = input;
+  if (resolution.kind === "none") return null;
+  if (resolution.kind === "unavailable") {
+    return { error: `${resolution.displayName} is not available to receive a handoff.` };
+  }
+  try {
+    const text = buildImmediateProviderHandoffMessage({
+      promptText: input.composedText,
+      messages: input.messages,
+      context: {
+        sourceThreadId: input.thread.id,
+        sourceThreadTitle: input.thread.title,
+        targetInstanceId: String(resolution.target.instanceId),
+        targetModel: resolution.target.model,
+        targetLabel: resolution.displayName,
+        project: input.projectTitle,
+        enabledSkills: input.enabledSkills,
+      },
+    });
+    const lengthError = outgoingMessageLengthError(text);
+    return lengthError !== null ? { error: lengthError } : { text };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The provider handoff failed." };
+  }
 }
 
 export async function waitForStartedServerThread(

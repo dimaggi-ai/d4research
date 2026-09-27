@@ -64,7 +64,9 @@ Each turn spawns a fresh `agy --print <text>` process; conversation continuity u
 [providers-agy.md](../user/providers-agy.md) for user-facing details.
 
 **Cursor** — discovers models via the ACP extension method `cursor/list_available_models`. Supports
-self-update via `cursor-agent update`.
+self-update via `cursor-agent update`. Cursor and Grok have no other updater: the CLI detects its
+own installer, so any resolved executable is offered `<binary> update`, unlike providers whose
+one-click update requires proof of the owning installer.
 
 **Grok** — ships with a built-in `grok-4.6` model. Additional models are discovered via ACP
 session model state. The retired `grok-build` slug is treated as "keep the CLI default" so old

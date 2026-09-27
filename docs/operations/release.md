@@ -104,7 +104,7 @@ desktop-managed guidance when those environments are available.
   - if unset, no update feed is configured. The fork does not fall back to the
     ambient `GITHUB_REPOSITORY`, so a build never inherits an upstream channel.
 - Required release assets for updater:
-  - platform installers (`.exe`, `.dmg`, `.AppImage`, plus macOS `.zip` for Squirrel.Mac update payloads)
+  - platform installers (`.exe`, `.dmg`, `.AppImage`, `.deb`, plus macOS `.zip` for Squirrel.Mac update payloads)
   - channel metadata: `latest*.yml` for stable releases, `nightly*.yml` for nightly releases
   - `*.blockmap` files (used for differential downloads)
 - macOS metadata note:

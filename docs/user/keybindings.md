@@ -84,7 +84,7 @@ Examples: `mod+j`, `mod+shift+d`, `ctrl+l`, `cmd+k`.
 Commands are IDs like `terminal.toggle`, `commandPalette.toggle`, `preview.refresh`, and
 `chat.new`. Project scripts use the format `script.{id}.run`, for example `script.test.run`.
 Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
-`previewOpen`, `modelPickerOpen`, `editableFocus`, `isWeb`, and `isDesktop`.
+`previewOpen`, `modelPickerOpen`, `usagePageOpen`, `editableFocus`, `isWeb`, and `isDesktop`.
 `editableFocus` is true while a text field, the composer, or another editor has
 the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
 desktop app. Unknown keys evaluate to `false`.

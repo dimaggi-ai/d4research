@@ -9,7 +9,7 @@ import {
   formatTokens,
   formatUsd,
 } from "@d4research/shared/usageFormat";
-import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
+import { PROVIDER_ORDER, PROVIDER_PRESENTATION } from "./usageProviders";
 
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
@@ -302,7 +302,7 @@ export function UsageProviderChart({
           {ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground tabular-nums"
+              className="absolute right-0 -translate-y-1/2 text-3xs text-muted-foreground tabular-nums"
               style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             >
               {tick === 0 ? "0" : format(tick)}
@@ -342,14 +342,19 @@ export function UsageProviderChart({
 
             {/* Fills first, then every stroke, so no series covers another's line. */}
             {paths.map(({ provider, area }) => (
-              <path key={provider} d={area} fill={PROVIDER_COLOR[provider]} fillOpacity={0.12} />
+              <path
+                key={provider}
+                d={area}
+                fill={PROVIDER_PRESENTATION[provider].color}
+                fillOpacity={0.12}
+              />
             ))}
             {paths.map(({ provider, line }) => (
               <path
                 key={provider}
                 d={line}
                 fill="none"
-                stroke={PROVIDER_COLOR[provider]}
+                stroke={PROVIDER_PRESENTATION[provider].color}
                 strokeWidth={2}
                 vectorEffect="non-scaling-stroke"
               />
@@ -379,12 +384,12 @@ export function UsageProviderChart({
             >
               <div className="mb-1 text-muted-foreground">{formatTooltipPeriod(hoveredPeriod)}</div>
               {providers.map((provider) => {
-                const Mark = PROVIDER_MARK[provider];
+                const Mark = PROVIDER_PRESENTATION[provider].mark;
                 return (
                   <div key={provider} className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <Mark className="size-3 shrink-0" aria-hidden />
-                      {PROVIDER_LABEL[provider]}
+                      {PROVIDER_PRESENTATION[provider].label}
                     </span>
                     <span className="text-foreground tabular-nums">
                       {format(
@@ -405,7 +410,7 @@ export function UsageProviderChart({
         </div>
       </div>
 
-      <div className="flex justify-between pl-16 text-[10px] text-muted-foreground uppercase">
+      <div className="flex justify-between pl-16 text-3xs text-muted-foreground uppercase">
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
           {periods[Math.floor(periods.length / 2)] === undefined
@@ -428,11 +433,11 @@ export function UsageChartLegend() {
       {PROVIDER_ORDER.map((provider) => {
         // The marks carry the same fills as the bands, so they key the chart
         // just as a colour swatch would.
-        const Mark = PROVIDER_MARK[provider];
+        const Mark = PROVIDER_PRESENTATION[provider].mark;
         return (
           <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Mark className="size-3.5 shrink-0" aria-hidden />
-            {PROVIDER_LABEL[provider]}
+            {PROVIDER_PRESENTATION[provider].label}
           </span>
         );
       })}

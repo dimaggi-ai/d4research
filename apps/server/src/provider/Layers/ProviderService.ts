@@ -438,6 +438,14 @@ function isPartiallyStoppedBinding(
   return payload.routingState === "partial-stop";
 }
 
+/** Stopped rows with no active turn are settled; shutdown leaves them untouched. */
+function isSettledBinding(binding: ProviderSessionDirectory.ProviderRuntimeBinding): boolean {
+  if (binding.status !== "stopped") return false;
+  const payload = binding.runtimePayload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return true;
+  return !("activeTurnId" in payload) || payload.activeTurnId == null;
+}
+
 const dieOnMissingBindingInstanceId = (
   operation: string,
   payload: {
@@ -2650,10 +2658,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ? `[Pasted text "${attachment.name}" is saved at: ${attachmentPath}. Inspect it as needed.]`
             : `[Attached ${attachment.type} "${attachment.name}" is saved at: ${attachmentPath}]`,
       );
-      if (isPastedText && !appended) {
+      // Most adapters see generic files only through this path line, so a file
+      // without one would be silently dropped. Images still go natively.
+      if (!appended && attachment.type === "file") {
         return yield* toValidationError(
           "ProviderService.sendTurn",
-          `Input plus pasted-text attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+          `Input plus attachment context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
         );
       }
     }
@@ -3572,8 +3582,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.catchCause((cause) => logFailure("mcp.revokeAll", cause)),
     );
 
+    // Stopped rows stay for their resume cursors, so long-lived installs hold
+    // thousands. Only rewrite the ones this shutdown actually stops.
     const bindings = yield* directory.listBindings().pipe(
       Effect.timeout(PROVIDER_SHUTDOWN_OPERATION_TIMEOUT_MILLIS),
+      Effect.map((all) => all.filter((binding) => !isSettledBinding(binding))),
       Effect.catchCause((cause) => logFailure("directory.listBindings", cause).pipe(Effect.as([]))),
     );
     yield* Effect.forEach(bindings, (binding) =>

@@ -13,6 +13,7 @@ import { TrendingDownIcon } from "lucide-react";
 import { TrendingUpIcon } from "lucide-react";
 import { Fragment } from "react";
 import { useState } from "react";
+import { type ReactNode } from "react";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -43,7 +44,6 @@ import { useMemo } from "react";
 import { formatDateTimeShort } from "@d4research/shared/usageFormat";
 
 import { primaryServerProvidersAtom } from "../../state/server";
-import { PROVIDER_COLOR, PROVIDER_MARK } from "./usageProviders";
 
 export interface ProviderLimitWindow {
   readonly key: string;
@@ -121,7 +121,7 @@ export function UsageLimitsView({ rows }: { readonly rows: readonly ProviderLimi
 function LimitWindow({ row }: { readonly row: ProviderLimitWindow }) {
   const percent = row.window.utilizationPercent;
   const filled = percent === null ? 0 : Math.min(100, Math.max(0, percent));
-  const Mark = row.providerKind === null ? null : PROVIDER_MARK[row.providerKind];
+  const Mark = row.providerKind === null ? null : PROVIDER_PRESENTATION[row.providerKind].mark;
   return (
     <div className="flex flex-col gap-1.5 bg-background px-4 py-3">
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -139,7 +139,7 @@ function LimitWindow({ row }: { readonly row: ProviderLimitWindow }) {
             backgroundColor:
               row.providerKind === null
                 ? "var(--color-foreground)"
-                : PROVIDER_COLOR[row.providerKind],
+                : PROVIDER_PRESENTATION[row.providerKind].color,
           }}
         />
       </div>
@@ -434,14 +434,16 @@ export function ResetCredits({
 export function UsageLimitsSection({
   selectedEnvironmentIds,
   now,
+  cursorPrompt,
 }: {
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly now: number;
+  readonly cursorPrompt?: ReactNode;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const selected =
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  return <UsageLimitsPooled presentations={selected} now={now} />;
+  return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
 }

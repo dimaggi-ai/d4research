@@ -18,6 +18,7 @@ import {
 import * as NetService from "@d4research/shared/Net";
 import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
 import { DEFAULT_SIGNAL_EXPORT } from "@d4research/shared/observability";
+import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -82,7 +83,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
       otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
       otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
-      otlpServiceName: "t3-server",
+      otelEnvironment: OtelEnvironment.none,
       mode: "web",
       port: 0,
       host: "127.0.0.1",

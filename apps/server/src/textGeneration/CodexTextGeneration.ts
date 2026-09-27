@@ -13,9 +13,9 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   TextGenerationError,
-} from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@d4research/contracts";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -35,7 +35,7 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
-import { codexModelFamily, getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { codexModelFamily, getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 
 const CODEX_TIMEOUT_MS = 180_000;

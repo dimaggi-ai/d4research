@@ -11,8 +11,8 @@ import * as NodeOS from "node:os";
 import type {
   ProviderConsumeResetCreditOutcome,
   ServerProviderResetCredits,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@d4research/contracts";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

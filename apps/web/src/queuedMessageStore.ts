@@ -3,7 +3,7 @@ import type {
   PreviewAnnotationPayload,
   ProviderInteractionMode,
   RuntimeMode,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { create } from "zustand";
 
 import type { LocalDispatchSnapshot } from "./components/ChatView.logic";

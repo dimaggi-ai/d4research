@@ -13,14 +13,14 @@ import {
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   legacyLinkedPullRequestOf,
   legacyThreadPullRequestKey,
   normalizeThreadPullRequestKey,
   threadPullRequestKeysEqual,
-} from "@t3tools/shared/threadPullRequests";
-import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
+} from "@d4research/shared/threadPullRequests";
+import { compareDateTimeStrings } from "@d4research/shared/dateTime";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

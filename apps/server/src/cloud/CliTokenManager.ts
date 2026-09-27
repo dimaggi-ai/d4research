@@ -25,7 +25,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { buildConnectAuthorizeRequestUrl } from "@t3tools/shared/connectAuth";
+import { buildConnectAuthorizeRequestUrl } from "@d4research/shared/connectAuth";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
@@ -257,7 +257,7 @@ export class CloudCliTokenManager extends Context.Service<
     readonly store: (token: PersistedToken) => Effect.Effect<void, CloudCliTokenManagerError>;
     readonly clear: Effect.Effect<void, CloudCliTokenManagerError>;
   }
->()("t3/cloud/CliTokenManager/CloudCliTokenManager") {}
+>()("d4research/cloud/CliTokenManager/CloudCliTokenManager") {}
 
 function stringToBytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);

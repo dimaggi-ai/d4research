@@ -33,8 +33,8 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
-} from "@t3tools/contracts";
-import { HostProcessPlatform, isHostWindows } from "@t3tools/shared/hostProcess";
+} from "@d4research/contracts";
+import { HostProcessPlatform, isHostWindows } from "@d4research/shared/hostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

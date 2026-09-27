@@ -12,7 +12,7 @@ import {
   type OrchestrationProjectShell,
   type OrchestrationThread,
   type ProviderSendTurnInput,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";

@@ -1,5 +1,5 @@
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import type { OrchestrationThreadShell } from "@d4research/contracts";
+import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";
 
 export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";

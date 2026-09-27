@@ -1,4 +1,4 @@
-import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode } from "@d4research/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
 import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 

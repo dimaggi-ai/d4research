@@ -1,5 +1,5 @@
-import { EnvironmentId, type DeviceDetail, type DeviceSummary } from "@t3tools/contracts";
-import type { DeviceHubAccess } from "@t3tools/client-runtime/device/hub-access";
+import { EnvironmentId, type DeviceDetail, type DeviceSummary } from "@d4research/contracts";
+import type { DeviceHubAccess } from "@d4research/client-runtime/device/hub-access";
 import { act, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";

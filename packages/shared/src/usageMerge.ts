@@ -14,7 +14,7 @@ import {
   type UsageSource,
   type UsageSourceFingerprint,
   type UsageSummary,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export interface EnvironmentUsage {
   readonly environmentId: EnvironmentId;

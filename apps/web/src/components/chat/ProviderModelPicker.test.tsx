@@ -3,7 +3,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 

@@ -1,4 +1,4 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
+import type { DeviceHubAccess } from "@d4research/client-runtime/state/deviceHubAccess";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";

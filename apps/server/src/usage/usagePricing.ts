@@ -7,7 +7,7 @@
  *
  * @module usagePricing
  */
-import type { UsageCostSource, UsageModelPriceOverride } from "@t3tools/contracts";
+import type { UsageCostSource, UsageModelPriceOverride } from "@d4research/contracts";
 
 import type { UsageRecord } from "./usageTranscripts.ts";
 

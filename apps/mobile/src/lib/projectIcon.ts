@@ -1,4 +1,4 @@
-import type { ProjectIconColor, ProjectIconOverride } from "@t3tools/contracts";
+import type { ProjectIconColor, ProjectIconOverride } from "@d4research/contracts";
 
 export type ProjectIconGlyph =
   | { readonly kind: "emoji"; readonly emoji: string }

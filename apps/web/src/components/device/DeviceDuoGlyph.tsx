@@ -1,4 +1,4 @@
-import type { DuoPose } from "@t3tools/client-runtime/device/duo-control";
+import type { DuoPose } from "@d4research/client-runtime/device/duo-control";
 
 // Bitrig 0.25's toolbar glyphs. The fold outlines follow the native toolbar;
 // the rounded stance contours are ported from SimulatorFoldingPoseGlyph's SwiftUI paths.

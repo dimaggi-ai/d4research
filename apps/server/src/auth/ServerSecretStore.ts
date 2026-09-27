@@ -147,7 +147,7 @@ export class ServerSecretStore extends Context.Service<
     ) => Effect.Effect<Uint8Array, SecretStoreError>;
     readonly remove: (name: string) => Effect.Effect<void, SecretStoreError>;
   }
->()("t3/auth/ServerSecretStore") {}
+>()("d4research/auth/ServerSecretStore") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

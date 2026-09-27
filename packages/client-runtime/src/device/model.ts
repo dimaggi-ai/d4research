@@ -1,4 +1,4 @@
-import type { DevicePlatform } from "@t3tools/contracts";
+import type { DevicePlatform } from "@d4research/contracts";
 
 export type DeviceModelId = "iphone-18-pro" | "iphone-18-pro-max" | "ipad-pro-13-m5" | "iphone-duo";
 

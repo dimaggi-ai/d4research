@@ -1,4 +1,4 @@
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { createLocalDispatchSnapshot } from "./components/ChatView.logic";

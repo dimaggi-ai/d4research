@@ -1,7 +1,7 @@
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
   type EnvironmentThreadState,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import {
   EnvironmentId,
   ProjectId,
@@ -10,7 +10,7 @@ import {
   type OrchestrationSessionStatus,
   type OrchestrationThread,
   type OrchestrationThreadShell,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";

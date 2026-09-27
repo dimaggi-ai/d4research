@@ -1,5 +1,5 @@
 import { pruneLocalDeviceTools } from "./deviceToolMaintenance.ts";
-import { deviceToolInstallMessage } from "@t3tools/contracts";
+import { deviceToolInstallMessage } from "@d4research/contracts";
 /**
  * The device host that is this machine.
  *
@@ -17,15 +17,15 @@ import {
   type DevicePlatform,
   type DevicePlatformAvailability,
   LOCAL_DEVICE_HOST_ID,
-} from "@t3tools/contracts";
-import { waitForHttpReady } from "@t3tools/shared/httpReadiness";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@d4research/contracts";
+import { waitForHttpReady } from "@d4research/shared/httpReadiness";
+import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
 import {
   resolveNodeExecutable,
   type NodeRuntimeUnavailableError,
-} from "@t3tools/shared/nodeRuntime";
-import * as NetService from "@t3tools/shared/Net";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+} from "@d4research/shared/nodeRuntime";
+import * as NetService from "@d4research/shared/Net";
+import { isCommandAvailable } from "@d4research/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

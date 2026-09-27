@@ -7,8 +7,8 @@ import {
   ThreadId,
   type ScopedProjectRef,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+} from "@d4research/contracts";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
 import { scopedThreadKey } from "../lib/scopedEntities";

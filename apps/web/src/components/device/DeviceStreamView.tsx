@@ -1,17 +1,17 @@
-import type { DevicePlatform, EnvironmentId } from "@t3tools/contracts";
+import type { DevicePlatform, EnvironmentId } from "@d4research/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { refreshDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
-import { createCanvasFrameSink } from "@t3tools/client-runtime/device/frame";
-import { resolveDeviceShape } from "@t3tools/client-runtime/device/shape-profile";
+import { createCanvasFrameSink } from "@d4research/client-runtime/device/frame";
+import { resolveDeviceShape } from "@d4research/client-runtime/device/shape-profile";
 import { deviceKeyboard, deviceModel } from "./deviceModels";
 import { fitDeviceFrame } from "./deviceFrameLayout";
 import { DeviceDuoViewport } from "./DeviceDuoViewport";
 import { DeviceDuoControls } from "./DeviceDuoControls";
 import { DeviceAndroidFoldControls } from "./DeviceAndroidFoldControls";
-import type { DuoControlState } from "@t3tools/client-runtime/device/duo-control";
+import type { DuoControlState } from "@d4research/client-runtime/device/duo-control";
 import { DevicePhoneViewport } from "./DevicePhoneViewport";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { type DeviceAxElement, fetchDeviceAxTree } from "./deviceHubApi";
@@ -21,7 +21,7 @@ import {
   type DeviceScreenSize,
   type DeviceStreamClient,
   type DeviceStreamStatus,
-} from "@t3tools/client-runtime/device/stream";
+} from "@d4research/client-runtime/device/stream";
 
 const AX_POLL_INTERVAL_MS = 2_000;
 const CONTROLS_RAIL_WIDTH = 56;

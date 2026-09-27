@@ -20,8 +20,8 @@ import {
   type HttpClientRequest,
 } from "effect/unstable/http";
 
-import { DESKTOP_UPDATE_RESTART_MARKER_FILE, EnvironmentId } from "@t3tools/contracts";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
+import { DESKTOP_UPDATE_RESTART_MARKER_FILE, EnvironmentId } from "@d4research/contracts";
+import { RelayClientTracer } from "@d4research/shared/relayTracing";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfigModule from "../config.ts";
@@ -39,7 +39,7 @@ import * as CliTokenManager from "./CliTokenManager.ts";
 import {
   RelayManagedEndpointRecoveryRegistrationRequest,
   type RelayLinkProofRequest,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import {
   CLOUD_ENDPOINT_CONFIRMED_ORIGIN,
   CLOUD_ENDPOINT_RUNTIME_CONFIG,

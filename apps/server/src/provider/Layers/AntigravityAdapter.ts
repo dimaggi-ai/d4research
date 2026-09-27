@@ -15,7 +15,7 @@ import {
   type RuntimeTaskStatus,
   type ThreadId,
   type TurnCompletedPayload,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";

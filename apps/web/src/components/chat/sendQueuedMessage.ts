@@ -1,12 +1,12 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import {
   runAtomCommand,
   squashAtomCommandFailure,
   type AtomCommand,
-} from "@t3tools/client-runtime/state/runtime";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
-import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
+} from "@d4research/client-runtime/state/runtime";
+import type { ScopedThreadRef } from "@d4research/contracts";
+import { serializeLegacyContextMessage } from "@d4research/shared/composerContextLegacySend";
+import { applyClaudePromptEffortPrefix } from "@d4research/shared/model";
 
 import { buildMessageContext, terminalContextReference } from "../../lib/composerContextRecords";
 import { removeInlineContextReference } from "../../lib/composerContextReferences";

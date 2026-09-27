@@ -1,8 +1,8 @@
-import { AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
+import { AuthStandardClientScopes, EnvironmentId } from "@d4research/contracts";
 import {
   RelayEnvironmentConnectScope,
   type RelayEnvironmentConnectResponse,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";

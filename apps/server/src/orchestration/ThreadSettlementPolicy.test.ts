@@ -6,7 +6,7 @@ import {
   TurnId,
   type OrchestrationThreadShell,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { type SettlementPullRequest, resolveAutoSettlementAt } from "./ThreadSettlementPolicy.ts";
 
 const NOW = "2026-08-28T12:00:00.000Z";

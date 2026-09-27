@@ -2,8 +2,8 @@ import {
   DUO_POSES,
   type DuoCommand,
   type DuoControlState,
-} from "@t3tools/client-runtime/device/duo-control";
-import type { DeviceScreenSize } from "@t3tools/client-runtime/device/stream";
+} from "@d4research/client-runtime/device/duo-control";
+import type { DeviceScreenSize } from "@d4research/client-runtime/device/stream";
 import { DeviceDuoGlyph } from "./DeviceDuoGlyph";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";

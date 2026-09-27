@@ -2,7 +2,7 @@
 import * as NodePath from "node:path";
 import * as NodeV8 from "node:v8";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

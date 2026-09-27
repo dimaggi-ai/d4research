@@ -139,7 +139,7 @@ You do not need any extra env vars. Just run the app normally and inspect `serve
 Examples:
 
 ```bash
-npx t3
+npx d4research
 ```
 
 ```bash
@@ -191,7 +191,7 @@ export T3CODE_TRACE_TIMING_ENABLED=true
 CLI:
 
 ```bash
-npx t3
+npx d4research
 ```
 
 Monorepo web/server dev:
@@ -660,7 +660,7 @@ Current high-value span and metric boundaries include:
 ## Heap Snapshots
 
 To see what a long-running server holds in memory, send it `SIGUSR2`. The server writes a V8 heap
-snapshot to its logs dir and logs the path. This works for desktop, `npx t3`, and service installs
+snapshot to its logs dir and logs the path. This works for desktop, `npx d4research`, and service installs
 on macOS and Linux. Windows has no `SIGUSR2`.
 
 Send the signal to the server pid in `server-runtime.json`, which sits in the server's state dir

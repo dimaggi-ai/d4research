@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@d4research/contracts";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";

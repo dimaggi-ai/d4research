@@ -4,7 +4,7 @@
  *
  * @module usageFormat
  */
-import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@t3tools/contracts";
+import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@d4research/contracts";
 
 import type { UsageContractMismatch } from "./usageMerge.ts";
 

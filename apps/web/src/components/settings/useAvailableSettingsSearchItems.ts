@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AuthAccessWriteScope } from "@t3tools/contracts";
+import { AuthAccessWriteScope } from "@d4research/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";

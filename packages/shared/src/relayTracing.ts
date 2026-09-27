@@ -23,7 +23,7 @@ export interface RelayClientTracingResource {
 }
 
 export class RelayClientTracer extends Context.Reference(
-  "@t3tools/shared/relayTracing/RelayClientTracer",
+  "@d4research/shared/relayTracing/RelayClientTracer",
   {
     defaultValue: () => Option.none<Tracer.Tracer>(),
   },

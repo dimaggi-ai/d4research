@@ -1,10 +1,10 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
+import type { DeviceHubAccess } from "@d4research/client-runtime/state/deviceHubAccess";
 import type {
   DeviceActionInput,
   DeviceDetail,
   DeviceSummary,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deviceEnvironment } from "~/state/device";
 import { formatEnvironmentQueryError } from "~/state/query";

@@ -11,12 +11,12 @@ import {
   TurnId,
   type OrchestrationThread,
   type WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   applyThreadDetailEvent,
   createEnvironmentThreadDetailAtoms,
   EMPTY_ENVIRONMENT_THREAD_STATE,
-} from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/threads";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import {

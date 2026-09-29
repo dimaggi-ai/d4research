@@ -1,4 +1,4 @@
-import type { BitbucketSettings, EnvironmentId } from "@t3tools/contracts";
+import type { BitbucketSettings, EnvironmentId } from "@d4research/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 

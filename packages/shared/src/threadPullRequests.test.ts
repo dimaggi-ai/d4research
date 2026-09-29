@@ -2,7 +2,7 @@ import {
   ProjectId,
   type ThreadPullRequestLink,
   type ThreadPullRequestSnapshot,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {

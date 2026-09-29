@@ -19,7 +19,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeStringDecoder from "node:string_decoder";
 
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageProviderKind } from "@d4research/contracts";
 
 import { createTranscriptJsonReader } from "../project/AgentSessionJson.ts";
 

@@ -12,6 +12,13 @@ export async function runProductionBrowserSuite(specs) {
   const baseDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d4-browser-test."));
   const artifactDir = process.env.T3_UI_ARTIFACT_DIR ?? NodePath.join(baseDir, "artifacts");
   await NodeFSP.mkdir(artifactDir, { recursive: true });
+  // The server probes the machine's real provider CLIs. An update prompt for
+  // whatever happens to be installed would cover the controls under test.
+  await NodeFSP.mkdir(NodePath.join(baseDir, "userdata"), { recursive: true });
+  await NodeFSP.writeFile(
+    NodePath.join(baseDir, "userdata", "settings.json"),
+    JSON.stringify({ enableProviderUpdateChecks: false }),
+  );
   const port = await new Promise((resolve, reject) => {
     const listener = NodeNet.createServer();
     listener.once("error", reject);

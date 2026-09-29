@@ -38,10 +38,10 @@ function expectResponsiveXsControl(markup: string | undefined) {
   expect(markup).toContain("sm:h-6");
   expect(markup).toContain("sm:text-xs");
   expect(markup).toContain("w-7");
-  expect(markup).toContain("px-0");
+  expect(markup).toContain("px-[calc(--spacing(2)-1px)]");
   expect(markup).toContain("sm:w-6");
   expect(markup).toContain("@3xl/header-actions:w-auto!");
-  expect(markup).toContain("@3xl/header-actions:px-[calc(--spacing(2)-1px)]");
+  expect(markup).not.toContain("@3xl/header-actions:px-");
 }
 
 describe("ProjectScriptsControl compact controls", () => {

@@ -1,10 +1,10 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   type ServerSelfUpdateProgressEvent,
   PreviewTabId,
   ThreadId,
   type PreviewAutomationStreamEvent,
-  type RelayClientInstallProgressEvent,
   type ServerConfigStreamEvent,
   type ServerLifecycleStreamEvent,
   WS_METHODS,

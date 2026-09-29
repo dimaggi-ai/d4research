@@ -42,7 +42,8 @@ it.layer(PreviewManager.layer)("PreviewManager", (it) => {
       const manager = yield* PreviewManager.PreviewManager;
       const collector = yield* collectEvents;
 
-      const snapshot = yield* manager.open({ threadId, url: "localhost:5173" });
+      const snapshot = yield* manager.open({ threadId, url: "localhost:5173", profileId: "work" });
+      expect(snapshot.profileId).toBe("work");
       expect(snapshot.tabId.startsWith("tab_")).toBe(true);
       expect(snapshot.navStatus._tag).toBe("Loading");
       if (snapshot.navStatus._tag === "Loading") {
@@ -54,6 +55,7 @@ it.layer(PreviewManager.layer)("PreviewManager", (it) => {
       expect(events[0]?.type).toBe("opened");
       if (events[0]?.type === "opened") {
         expect(events[0].tabId).toBe(snapshot.tabId);
+        expect(events[0].snapshot.profileId).toBe("work");
       }
     }),
   );

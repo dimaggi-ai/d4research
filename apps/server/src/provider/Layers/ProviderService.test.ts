@@ -2041,13 +2041,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
         threadId,
         runtimeMode: "full-access",
       });
+      const barrierThreadId = asThreadId("thread-background-rewind-barrier");
+      yield* provider.startSession(barrierThreadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId: barrierThreadId,
+        runtimeMode: "full-access",
+      });
       routing.claude.listSessions.mockReturnValueOnce(
         Effect.succeed([{ ...initial, resumeCursor: cursor }]),
       );
-      const staleCompleted = yield* provider.streamEvents.pipe(
-        Stream.filter((event) => event.eventId === "evt-stale-background-rewind"),
-        Stream.take(1),
-        Stream.runDrain,
+      // The adapter consumes events in order. A valid event after the stale one
+      // acknowledges that the stale event has passed through the ownership fence.
+      const drained = yield* provider.streamEvents.pipe(
+        Stream.takeUntil((event) => event.eventId === "evt-background-rewind-barrier"),
+        Stream.runCollect,
         Effect.forkChild,
       );
       yield* Effect.yieldNow;
@@ -2060,7 +2068,20 @@ routing.layer("ProviderServiceLive routing", (it) => {
         turnId: asTurnId("old-background-turn"),
         payload: { state: "completed" },
       });
-      yield* Fiber.join(staleCompleted);
+      routing.claude.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-background-rewind-barrier"),
+        provider: CLAUDE_AGENT_DRIVER,
+        createdAt: "2026-01-01T00:00:02.000Z",
+        threadId: barrierThreadId,
+        turnId: asTurnId("barrier-turn"),
+        payload: { state: "completed" },
+      });
+      const events = yield* Fiber.join(drained);
+      assert.equal(
+        events.some((event) => event.eventId === "evt-stale-background-rewind"),
+        false,
+      );
       const replacementBinding = yield* directory.getBinding(threadId);
       assert(Option.isSome(replacementBinding));
       assert.equal(replacementBinding.value.providerInstanceId, codexInstanceId);

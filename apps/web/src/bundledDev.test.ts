@@ -29,7 +29,14 @@ it("initializes React refresh before a shared UI chunk runs in bundled dev", asy
   try {
     await NodeFSP.mkdir(NodePath.join(root, "src/lib"), { recursive: true });
     await NodeFSP.writeFile(NodePath.join(root, "package.json"), '{"type":"module"}');
-    for (const file of ["index.html", "src/bootstrap.ts", "src/lib/bootError.ts"]) {
+    for (const file of [
+      "index.html",
+      "src/bootstrap.ts",
+      "src/lib/bootError.ts",
+      "src/lib/chunkReloadGuard.ts",
+      "src/serviceWorkerRegistration.ts",
+      "src/pairingUrl.ts",
+    ]) {
       await NodeFSP.copyFile(new URL(`../${file}`, import.meta.url), NodePath.join(root, file));
     }
     await NodeFSP.writeFile(
@@ -48,7 +55,12 @@ export const startup = Promise.resolve().then(() => globalThis.onStarted(Shared(
       publicDir: NodeURL.fileURLToPath(new URL("../public", import.meta.url)),
       logLevel: "silent",
       resolve: {
-        alias: { react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))) },
+        alias: {
+          react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))),
+          "@d4research/shared/remote": NodeURL.fileURLToPath(
+            import.meta.resolve("@d4research/shared/remote"),
+          ),
+        },
       },
       experimental: { bundledDev: true },
       plugins: [
@@ -133,7 +145,7 @@ assert.equal(element.props.children, "ready");
 assert.equal(typeof window.$RefreshReg$, "function");
 console.log("App started with React refresh ready.");`,
     );
-    const result = await execFile("node", [runner]);
+    const result = await execFile("node", [runner], { timeout: 10_000 });
     expect(result.stdout).toContain("App started with React refresh ready.");
   } finally {
     await server?.close();
@@ -216,7 +228,7 @@ it("hot updates Tailwind classes when a source file changes in bundled dev", asy
         // generateBundle runs before Vite stores the files for HTTP requests.
         if (message.type === "full-reload") {
           events.emit("ready");
-        } else if (message.type === "update") {
+        } else if (message.type === "bundled-dev-update") {
           events.emit("updated");
         }
       }
@@ -226,20 +238,6 @@ it("hot updates Tailwind classes when a source file changes in bundled dev", asy
     const entry = await fetch(`http://127.0.0.1:${address.port}/assets/index.js`);
     expect(entry.headers.get("content-type")).toContain("javascript");
     await entry.text();
-
-    const registered = NodeEvents.EventEmitter.once(events, "registered");
-    server.ws.on("vite:module-loaded", () => events.emit("registered"));
-    socket.send(
-      JSON.stringify({
-        type: "custom",
-        event: "vite:module-loaded",
-        data: {
-          clientId: "tailwind-test",
-          modules: [NodePath.join(root, "main.ts"), NodePath.join(root, "style.css")],
-        },
-      }),
-    );
-    await registered;
 
     const updated = NodeEvents.EventEmitter.once(events, "updated");
     await NodeFSP.writeFile(NodePath.join(root, "main.ts"), source.replace("13px", "137px"));

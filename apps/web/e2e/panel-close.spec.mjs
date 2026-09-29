@@ -1,12 +1,14 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodePath from "node:path";
+import { openProject } from "./harness.mjs";
 
-export async function panelCloseReachability({ page, webUrl, screenshotDir }) {
+export async function panelCloseReachability({ page, webUrl, workspace, screenshotDir }) {
   const originalViewport = page.viewportSize();
   try {
     for (const width of [1440, 1024, 768, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+      if (workspace) await openProject(page, workspace);
       const right = page.getByRole("button", { name: "Toggle right panel", exact: true });
       await right.click({ timeout: 20000 });
       const header = page.locator("[data-right-panel-tabbar]");

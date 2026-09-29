@@ -306,7 +306,6 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
         Ref.get(diagnosticsDemandSources).pipe(Effect.map((sources) => sources.size > 0)),
         Ref.get(hostPowerIntervals),
       ]);
-      // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - races a trigger queue against the interval; both arms are real outcomes, not a timeout
       const allowSuspendRecovery = yield* Effect.raceFirst(
         Queue.take(sampleTriggers).pipe(Effect.as(false)),
         Effect.sleep(sampleInterval(currentPower, demand, intervals)).pipe(Effect.as(true)),

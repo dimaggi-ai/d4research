@@ -3471,8 +3471,6 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
-      <LegacyFeaturesSection />
-
       <SettingsSection title="Handoff" id="handoff">
         <SettingsRow
           id="handoff-context-compression"

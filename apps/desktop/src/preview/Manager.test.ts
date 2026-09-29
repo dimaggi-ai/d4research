@@ -4403,7 +4403,6 @@ describe("PreviewManager", () => {
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
-          setBackgroundThrottling: vi.fn(),
           isCurrentlyAudible: () => false,
           on: vi.fn(),
           off: vi.fn(),

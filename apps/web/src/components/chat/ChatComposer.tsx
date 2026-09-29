@@ -180,6 +180,7 @@ import {
 } from "../../lib/attachmentUploadState";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import {
+  isTextLikeFile,
   makePastedContext,
   PASTED_CONTEXT_MAX_COUNT,
   type PastedContextDraft,
@@ -5488,6 +5489,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         title: "This question cannot accept attachments.",
       });
       return false;
+    }
+    // Text documents use the local context/Memo path; keep native question
+    // attachments on the provider's attachment path.
+    if (pendingUserInputs.length === 0) {
+      const textFiles = files.filter(isTextLikeFile);
+      if (textFiles.length > 0) {
+        const reading = addComposerTextFiles(textFiles);
+        files = files.filter((file) => !isTextLikeFile(file));
+        if (files.length === 0) {
+          await reading;
+          return true;
+        }
+      }
     }
     // Captured before the awaits below: the user may switch threads while a
     // large image is being compressed, and the attachments and errors belong

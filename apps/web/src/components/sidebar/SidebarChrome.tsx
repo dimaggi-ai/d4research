@@ -46,6 +46,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   return (
     // The titlebar row, not a padded SidebarHeader: it aligns to the window controls.
     <div
+      data-sidebar="header"
       className={cn(
         "@container/sidebar-header relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 px-3 md:px-0",
         isElectron && "drag-region",

@@ -1628,6 +1628,18 @@ function SavedBackendListRow({
     versionMismatch !== null &&
     (serverUpdateState.status === "idle" || serverUpdateState.status === "failed");
 
+  const statusTooltip = `${
+    unsupported
+      ? (environment.connection.error ?? connectionStatusText(environment.connection))
+      : enabled
+        ? connectionStatusText(environment.connection)
+        : "Switched off"
+  }${
+    versionMismatch
+      ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
+      : ""
+  }`;
+
   return (
     <EnvironmentRow
       kind={machineKind}
@@ -1635,7 +1647,10 @@ function SavedBackendListRow({
       dimmed={!enabled}
       subtitle={
         <Tooltip>
+          {/* The status can change while the tooltip is open, and base-ui only
+              re-measures the popup when the trigger's payload changes. */}
           <TooltipTrigger
+            payload={statusTooltip}
             render={
               <span
                 className={cn(
@@ -1648,14 +1663,7 @@ function SavedBackendListRow({
             {subtitleText}
           </TooltipTrigger>
           <TooltipPopup side="top" className="whitespace-pre-wrap">
-            {unsupported
-              ? (environment.connection.error ?? connectionStatusText(environment.connection))
-              : enabled
-                ? connectionStatusText(environment.connection)
-                : "Switched off"}
-            {versionMismatch
-              ? `\nUpdate available: ${versionMismatch.serverVersion} → ${versionMismatch.clientVersion}`
-              : ""}
+            {statusTooltip}
           </TooltipPopup>
         </Tooltip>
       }

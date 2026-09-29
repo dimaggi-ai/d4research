@@ -10,12 +10,10 @@ import {
 
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
-    // Empty and the retired built-in default resolve to undefined: the agent
-    // keeps its own default model instead of a set_model that the current
-    // grok CLI rejects with "unknown model id".
-    expect(resolveGrokAcpBaseModelId(undefined)).toBeUndefined();
-    expect(resolveGrokAcpBaseModelId("   ")).toBeUndefined();
-    expect(resolveGrokAcpBaseModelId("grok-build")).toBeUndefined();
+    // Normalization retains the product slug; model selection filters it at the ACP boundary.
+    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId("grok-build")).toBe("grok-build");
     expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
     expect(resolveGrokAcpBaseModelId("grok-4.6")).toBe("grok-4.6");
   });
@@ -53,6 +51,22 @@ describe("applyGrokAcpModelSelection", () => {
     };
     return { runtime, modelCalls };
   };
+
+  it.effect("keeps the session model for empty and default product selections", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      for (const model of [undefined, "   ", "grok-build"]) {
+        const result = yield* applyGrokAcpModelSelection({
+          runtime,
+          currentModelId: "grok-4.6",
+          requestedModelId: resolveGrokAcpBaseModelId(model),
+          mapError: (cause) => cause.message,
+        });
+        expect(result).toBe("grok-4.6");
+      }
+      expect(modelCalls).toEqual([]);
+    }),
+  );
 
   it.effect("calls session/set_model when the requested model differs from current", () =>
     Effect.gen(function* () {

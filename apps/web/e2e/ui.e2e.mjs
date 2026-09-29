@@ -67,7 +67,8 @@ async function stopRunningTurnForIsolation(page) {
 }
 
 spec("app shell pairs and renders d4research branding", async ({ page }) => {
-  NodeAssert.equal(await page.locator('[aria-label="d4research"]').count(), 1);
+  // The harness already required the setup wordmark before finishing onboarding.
+  NodeAssert.match(await page.title(), /d4/i);
   NodeAssert.ok((await page.getByRole("button").allTextContents()).length > 3);
 });
 
@@ -80,7 +81,8 @@ spec("manifest is requested with credentials", async ({ page }) => {
 
 spec("tool guard settings lists policy rules", async ({ page, webUrl }) => {
   await page.goto(`${webUrl}/settings/tool-guard`, { waitUntil: "domcontentloaded" });
-  await page.getByText("Policy Rules").waitFor({ timeout: 20_000 });
+  await page.getByRole("heading", { name: "Policy Rules" }).waitFor({ timeout: 20_000 });
+  await page.getByText("Loading policy rules...").waitFor({ state: "detached", timeout: 20_000 });
   const body = await page.locator("body").innerText();
   NodeAssert.ok(body.includes("Tool Guard"), "expected the Tool Guard section");
   const ruleIds = body.match(/deny-|review-/g) ?? [];
@@ -466,6 +468,8 @@ spec(
       "exact",
       "expected the shared Research/Dev target policy to persist",
     );
+    await page.keyboard.press("Escape");
+    await exactTargets.waitFor({ state: "hidden", timeout: 20_000 });
     await workflows.click();
     const labeledFallback = page.getByRole("menuitemradio", {
       name: "Use labeled fallback",
@@ -511,6 +515,18 @@ spec(
 spec(
   "compact composer exits Plan when a dev pipeline is selected",
   async ({ page, webUrl, workspace }) => {
+    // Native Plan is a legacy opt-in; the composer hides it by default.
+    await page.goto(`${webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+    await page.locator("#legacy-features").getByRole("button", { name: "Legacy features" }).click();
+    const planModeSwitch = page.getByRole("switch", { name: "Plan mode (legacy)" });
+    await planModeSwitch.waitFor({ state: "visible", timeout: 20_000 });
+    if ((await planModeSwitch.getAttribute("aria-checked")) !== "true") {
+      await planModeSwitch.click();
+    }
+    await page
+      .locator('[role="switch"][aria-label="Plan mode (legacy)"][aria-checked="true"]')
+      .waitFor({ timeout: 10_000 });
+
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
     await startNewLocalThread(page);
@@ -1054,18 +1070,20 @@ spec(
   async ({ page, webUrl, workspace }) => {
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
-    for (const obsoleteAction of [
-      "Add action",
-      "Open project with preferred app",
-      "Initialize Git",
-      "Export thread as Markdown",
-    ]) {
-      NodeAssert.equal(
-        await page.getByRole("button", { name: obsoleteAction, exact: true }).count(),
-        0,
-        `obsolete thread-header action remained visible: ${obsoleteAction}`,
-      );
+    // Upstream c14f6015bf restores responsive project actions in the header.
+    // They remain reachable alongside the fork's direct Tasks control.
+    const header = page.locator("[data-chat-header]");
+    for (const action of ["Add action", "Open project with preferred app", "Initialize Git"]) {
+      await header.getByRole("button", { name: action, exact: true }).waitFor({
+        state: "visible",
+        timeout: 20_000,
+      });
     }
+    NodeAssert.equal(
+      await header.getByRole("button", { name: "Export thread as Markdown", exact: true }).count(),
+      0,
+      "Markdown export belongs in the thread action menu",
+    );
     await page.getByRole("button", { name: "Open Tasks", exact: true }).first().click();
     await page.getByText("No active plan yet.", { exact: true }).waitFor({
       state: "visible",
@@ -1216,6 +1234,7 @@ async function main() {
     for (const { name, run } of selectedSpecs) {
       if (signalExitCode !== null) break;
       try {
+        console.log(`RUN ${name}`);
         // Specs share the expensive isolated app/browser, but never each
         // other's responsive state or open popovers. Specs navigate explicitly
         // when they need a fresh route; avoid reconnecting the config stream

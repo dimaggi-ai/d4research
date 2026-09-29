@@ -174,7 +174,9 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
         panelControls.x + panelControls.width <= width,
       `Header actions must fit before panel controls without overlap at ${width}px`,
     );
-    const initializeGit = header.getByRole("button", { name: "Initialize Git", exact: true });
+    // Narrow headers put Git actions in the overflow menu.
+    await header.getByRole("button", { name: "More header actions", exact: true }).click();
+    const initializeGit = page.getByRole("menuitem", { name: "Initialize Git", exact: true });
     await initializeGit.waitFor({ state: "visible", timeout: 5000 });
     NodeAssert.equal(
       await initializeGit.evaluate((button) => {
@@ -184,8 +186,16 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
         );
       }),
       true,
-      "The compact Git action must stay named and unobstructed",
+      "The menu Git action must stay named and unobstructed",
     );
+    await page.keyboard.press("Escape");
+    await initializeGit.waitFor({ state: "hidden" });
+    // Visiting header actions blurs and collapses the phone composer.
+    const expandAfterMenu = page.getByRole("button", { name: "Expand composer", exact: true });
+    if (await expandAfterMenu.isVisible()) await expandAfterMenu.click();
+    await editor.click();
+    await stop.waitFor();
+    await send.waitFor({ state: "visible" });
     await page.screenshot({
       path: NodePath.join(screenshotDir, `mobile-queue-actions-${width}.png`),
       timeout: 10000,

@@ -65,13 +65,13 @@ describe("measureRestingComposerControls", () => {
     expect(measurement.minimumFixedWidth).toBe(176);
     expect(resolveRestingComposerControlsNaturalWidth(measurement)).toBe(176);
     const hidden = resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 160 });
-    expect(hidden).toEqual({ hiddenCount: 0, visible: false });
+    expect(hidden).toEqual({ hiddenCount: 0, iconOnlyCount: 0, visible: false });
     expect(
       resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 160, previous: hidden }),
     ).toEqual(hidden);
     expect(
       resolveRestingComposerControlsLayout({ ...measurement, hostWidth: 200, previous: hidden }),
-    ).toEqual({ hiddenCount: 0, visible: true });
+    ).toEqual({ hiddenCount: 0, iconOnlyCount: 0, visible: true });
   });
 
   it("keeps controls inline when the model label is deliberately collapsed", () => {

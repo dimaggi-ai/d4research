@@ -24,6 +24,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as NetAddress from "effect/unstable/net/NetAddress";
 
 import * as CheckpointStore from "../src/checkpointing/CheckpointStore.ts";
 import { TextGeneration, type TextGenerationShape } from "../src/textGeneration/TextGeneration.ts";
@@ -621,7 +622,9 @@ export const makeOrchestrationIntegrationHarness = (
         McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
         { disableListenLog: true, disableLogger: true },
       ).pipe(
-        Layer.provideMerge(NodeHttpServer.layer(countingHttpServer, { port: 0 })),
+        Layer.provideMerge(
+          NodeHttpServer.layer(countingHttpServer, { host: "127.0.0.1", port: 0 }),
+        ),
         Layer.provide(
           Layer.mergeAll(
             ServerEnvironment.layer,
@@ -644,7 +647,9 @@ export const makeOrchestrationIntegrationHarness = (
       );
       const mcpContext = yield* Layer.buildWithScope(mcpLayer, ownedMcpScope);
       const address = Context.get(mcpContext, HttpServer.HttpServer).address;
-      mcpEndpoint = address._tag === "TcpAddress" ? `http://127.0.0.1:${address.port}/mcp` : null;
+      mcpEndpoint = NetAddress.isInetAddress(address)
+        ? `http://127.0.0.1:${address.port}/mcp`
+        : null;
     }
 
     const layer = Layer.empty.pipe(

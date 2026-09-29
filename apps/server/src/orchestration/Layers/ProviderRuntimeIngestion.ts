@@ -554,6 +554,8 @@ export function runtimeEventToActivities(
             ...(requestKind ? { requestKind } : {}),
             requestType: event.payload.requestType,
             ...(event.payload.detail ? { detail: event.payload.detail } : {}),
+            ...(event.payload.appName ? { appName: event.payload.appName } : {}),
+            ...(event.payload.options ? { options: event.payload.options } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

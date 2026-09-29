@@ -11,7 +11,7 @@ import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import Migration0041 from "./041_ProjectionThreadTurnUsage.ts";
 import Migration0042 from "./042_ProjectionThreadResumeSchedule.ts";
 
-const upgradeLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const upgradeLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
   it.effect("upgrades databases that used the historical d4 migration slots 37 and 38", () =>
@@ -53,6 +53,9 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           [56, "ProjectionThreadPullRequests"],
           [57, "ProjectionThreadMessageContext"],
           [58, "ProjectionThreadTitleState"],
+          [59, "PullRequestFilesViewed"],
+          [60, "ProjectionThreadComposerModelSelection"],
+          [61, "ProjectionThreadsAutoSettleDisabledAt"],
         ],
       );
 
@@ -77,7 +80,9 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
   );
 });
 
-const partialUpgradeLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const partialUpgradeLayer = it.layer(
+  Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })),
+);
 
 partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
   it.effect("finishes the partially upgraded production manifest", () =>
@@ -110,6 +115,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [56, "ProjectionThreadPullRequests"],
           [57, "ProjectionThreadMessageContext"],
           [58, "ProjectionThreadTitleState"],
+          [59, "PullRequestFilesViewed"],
+          [60, "ProjectionThreadComposerModelSelection"],
+          [61, "ProjectionThreadsAutoSettleDisabledAt"],
         ],
       );
 
@@ -141,15 +149,20 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [56, "ProjectionThreadPullRequests"],
           [57, "ProjectionThreadMessageContext"],
           [58, "ProjectionThreadTitleState"],
+          [59, "PullRequestFilesViewed"],
+          [60, "ProjectionThreadComposerModelSelection"],
+          [61, "ProjectionThreadsAutoSettleDisabledAt"],
         ],
       );
     }),
   );
 });
 
-const collisionLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const collisionLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
-const queuedHistoryLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const queuedHistoryLayer = it.layer(
+  Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })),
+);
 
 queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
   it.effect("preserves shipped queue slots and data while adding the current schema", () =>
@@ -177,7 +190,7 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
       const executed = yield* runMigrations();
       assert.deepStrictEqual(
         executed.map(([id]) => id),
-        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58],
+        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       assert.ok(columns.some((column) => column.name === "auto_pull"));

@@ -132,6 +132,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       });
       const serverConfig = yield* makeServerConfig(baseDir);
       const environmentIdPath = serverConfig.environmentIdPath;
+      const temporaryIdPath = `${serverConfig.stateDir}/.environment-id-test`;
       const methodByOperation = {
         check: "exists",
         read: "readFileString",
@@ -148,6 +149,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
           pathOrDescriptor: environmentIdPath,
         });
         const failingFileSystemLayer = FileSystem.layerNoop({
+          makeTempFileScoped: () => Effect.succeed(temporaryIdPath),
           exists: () =>
             operation === "check" ? Effect.fail(cause) : Effect.succeed(operation === "read"),
           readFileString: () => Effect.fail(cause),
@@ -179,7 +181,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         expect(error.message).toBe(
           `Server environment ID ${operation} failed at '${environmentIdPath}'.`,
         );
-        expect(writeAttempts).toEqual(operation === "write" ? [environmentIdPath] : []);
+        expect(writeAttempts).toEqual(operation === "write" ? [temporaryIdPath] : []);
       }
     }),
   );

@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -39,6 +39,7 @@ function ChatIndexRouteView() {
  * end. Falls back to an add-project hero when no project exists yet.
  */
 function IndexDraftLanding() {
+  const isIndexRoute = useLocation({ select: (location) => location.pathname === "/" });
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
@@ -55,7 +56,9 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    // The old outlet can remount while /welcome is loading. Only the index
+    // location may open a draft; otherwise it races FirstRunGate back to setup.
+    if (!isIndexRoute || mostRecentProject === null || startingRef.current) {
       return;
     }
     startingRef.current = true;
@@ -65,7 +68,7 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [handleNewThread, isIndexRoute, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
     return null;

@@ -824,7 +824,7 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
-  it.effect("keeps recorded Junie thoughts and assistant output in separate ACP items", () =>
+  it.effect("keeps recorded Junie thoughts separate from assistant ACP items", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
@@ -834,23 +834,39 @@ describe("AcpSessionRuntime", () => {
       });
       expect(promptResult).toMatchObject({ stopReason: "end_turn" });
 
-      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 11)));
+      const notes = Array.from(
+        yield* runtime.getEvents().pipe(
+          Stream.takeUntil((event) => event._tag === "AssistantItemCompleted"),
+          Stream.runCollect,
+        ),
+      );
+      expect(notes.map((note) => note._tag)).toEqual([
+        "ThoughtDelta",
+        "ThoughtDelta",
+        "ThoughtDelta",
+        "ToolCallUpdated",
+        "ToolCallUpdated",
+        "AssistantItemStarted",
+        "ContentDelta",
+        "ContentDelta",
+        "AssistantItemCompleted",
+      ]);
+      const thoughts = notes.filter((note) => note._tag === "ThoughtDelta");
       const deltas = notes.filter((note) => note._tag === "ContentDelta");
-      const starts = notes.filter((note) => note._tag === "AssistantItemStarted");
-      const completions = notes.filter((note) => note._tag === "AssistantItemCompleted");
-      const reasoningDeltas = deltas.filter((note) => note.streamKind === "reasoning_text");
-      const assistantDeltas = deltas.filter((note) => note.streamKind === "assistant_text");
-      const reasoningStart = starts.find((note) => note.streamKind === "reasoning_text");
-      const assistantStart = starts.find((note) => note.streamKind === "assistant_text");
-      const assistantCompletion = completions.find((note) => note.streamKind === "assistant_text");
+      const assistantStart = notes.find((note) => note._tag === "AssistantItemStarted");
+      const assistantCompletion = notes.find((note) => note._tag === "AssistantItemCompleted");
 
-      expect(reasoningDeltas.map((note) => note.text).join("")).toBe("Inspecting the repository.");
-      expect(assistantDeltas.map((note) => note.text).join("")).toBe("Finished the review.");
-      expect(reasoningStart?.itemId).toBe(reasoningDeltas[0]?.itemId);
-      expect(assistantStart?.itemId).toBe(assistantDeltas[0]?.itemId);
-      expect(assistantStart?.itemId).not.toBe(reasoningStart?.itemId);
+      expect(thoughts.map((note) => note.text).join("")).toBe("Inspecting the repository.");
+      expect(deltas.map((note) => note.text).join("")).toBe("Finished the review.");
+      expect(deltas.every((note) => note.streamKind === "assistant_text")).toBe(true);
+      expect(assistantStart).toMatchObject({ streamKind: "assistant_text" });
+      expect(deltas.map((note) => note.itemId)).toEqual([
+        assistantStart?.itemId,
+        assistantStart?.itemId,
+      ]);
       expect(assistantCompletion).toMatchObject({
         itemId: assistantStart?.itemId,
+        streamKind: "assistant_text",
         text: "Finished the review.",
       });
     }).pipe(
@@ -921,7 +937,7 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
-  it.effect("suppresses generic placeholder tool updates until completion", () =>
+  it.effect("preserves generic tool lifecycle updates through completion", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();
@@ -931,14 +947,34 @@ describe("AcpSessionRuntime", () => {
       });
       expect(promptResult).toMatchObject({ stopReason: "end_turn" });
 
-      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 1)));
-      expect(notes.map((note) => note._tag)).toEqual(["ToolCallUpdated"]);
-      const toolCall = notes[0];
-      expect(toolCall?._tag).toBe("ToolCallUpdated");
-      if (toolCall?._tag === "ToolCallUpdated") {
-        expect(toolCall.toolCall.status).toBe("completed");
-        expect(toolCall.toolCall.title).toBe("Read file");
-      }
+      const notes = Array.from(
+        yield* runtime.getEvents().pipe(
+          Stream.takeUntil(
+            (event) => event._tag === "ToolCallUpdated" && event.toolCall.status === "completed",
+          ),
+          Stream.runCollect,
+        ),
+      );
+      expect(notes.map((note) => note._tag)).toEqual([
+        "ToolCallUpdated",
+        "ToolCallUpdated",
+        "ToolCallUpdated",
+      ]);
+      const toolCalls = notes.filter((note) => note._tag === "ToolCallUpdated");
+      expect(toolCalls.map((note) => note.toolCall.status)).toEqual([
+        "pending",
+        "inProgress",
+        "completed",
+      ]);
+      expect(toolCalls.map((note) => note.toolCall.toolCallId)).toEqual([
+        "tool-call-generic-1",
+        "tool-call-generic-1",
+        "tool-call-generic-1",
+      ]);
+      expect(toolCalls[2]?.toolCall).toMatchObject({
+        title: "Read file",
+        data: { rawOutput: { content: "package.json\n" } },
+      });
     }).pipe(
       Effect.provide(
         AcpSessionRuntime.layer({

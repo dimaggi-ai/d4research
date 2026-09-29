@@ -130,7 +130,7 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     expect(
       detectSourceControlProviderFromRemoteUrl("https://bitbucket.example.com/workspace/repo.git")
         ?.kind,
-    ).toBe("unknown");
+    ).toBe("bitbucket");
   });
 
   it("does not match provider names embedded in unrelated DNS labels", () => {
@@ -162,7 +162,7 @@ describe("detectSourceControlProviderFromRemoteUrl", () => {
     );
     expect(
       detectSourceControlProviderFromRemoteUrl("git@bitbucket.org:workspace/repo.git")?.kind,
-    ).toBe("unknown");
+    ).toBe("bitbucket");
   });
 });
 

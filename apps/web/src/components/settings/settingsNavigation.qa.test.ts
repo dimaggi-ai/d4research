@@ -4,9 +4,9 @@ import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
 import { SETTINGS_SEARCH_ITEMS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 const EXPECTED_SETTINGS_SCREENS = [
+  "/settings/projects",
   "/settings/general",
   "/settings/appearance",
-  "/settings/projects",
   "/settings/keybindings",
   "/settings/snap-shot",
   "/settings/providers",
@@ -14,6 +14,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/research",
   "/settings/dev-pipelines",
   "/settings/integrations",
+  "/settings/storage",
   "/settings/connections",
   "/settings/tool-guard",
   "/settings/skills",

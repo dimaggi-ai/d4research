@@ -6,11 +6,13 @@ import * as Socket from "effect/unstable/socket/Socket";
 import { remoteHttpClientLayer } from "@d4research/client-runtime/rpc";
 import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClient";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
+import * as ClientTracer from "../observability/clientTracer";
 import { cryptoLayer } from "../connection/crypto";
 
 const httpClientLayer = remoteHttpClientLayer((input, init) => globalThis.fetch(input, init));
 type RuntimeLayerSource =
   | typeof httpClientLayer
+  | typeof ClientTracer.layer
   | typeof cryptoLayer
   | typeof Socket.layerWebSocketConstructorGlobal;
 
@@ -37,6 +39,7 @@ export function __setPrimaryHttpRunnerForTests(runner?: PrimaryHttpEffectRunner)
 
 const runtimeLayer = Layer.mergeAll(
   httpClientLayer,
+  ClientTracer.layer,
   cryptoLayer,
   Socket.layerWebSocketConstructorGlobal,
 );

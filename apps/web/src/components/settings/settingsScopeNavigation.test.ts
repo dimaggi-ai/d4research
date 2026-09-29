@@ -59,6 +59,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
   });
   return createRouter({
     isServer: false,
+    origin: "http://localhost",
     routeTree: root.addChildren([
       settings.addChildren([general, projects, integrations, sourceControl, providers]),
       legacyProject,

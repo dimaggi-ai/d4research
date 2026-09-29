@@ -1,5 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodePath from "node:path";
+import { openProject } from "./harness.mjs";
 
 export async function mobileSidebarReachability({ page, webUrl, screenshotDir }) {
   const originalViewport = page.viewportSize();
@@ -57,10 +58,14 @@ export async function mobileSidebarReachability({ page, webUrl, screenshotDir })
   }
 }
 
-export async function mobileStatusBarReachability({ page, webUrl, screenshotDir }) {
+export async function mobileStatusBarReachability({ page, webUrl, workspace, screenshotDir }) {
   const originalViewport = page.viewportSize();
   const cdp = await page.context().newCDPSession(page);
   try {
+    if (workspace) {
+      await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await openProject(page, workspace);
+    }
     await page.setViewportSize({ width: 390, height: 844 });
     await cdp.send("Emulation.setSafeAreaInsetsOverride", {
       insets: { top: 59, bottom: 34, left: 0, right: 0 },
@@ -97,6 +102,7 @@ export async function mobileStatusBarReachability({ page, webUrl, screenshotDir 
       );
     }
     await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+    if (workspace) await openProject(page, workspace);
     const rightToggle = page.getByRole("button", { name: "Toggle right panel", exact: true });
     await rightToggle.waitFor({ state: "visible", timeout: 20000 });
     const rightBox = await rightToggle.boundingBox();
@@ -133,6 +139,7 @@ export async function mobileStatusBarReachability({ page, webUrl, screenshotDir 
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(webUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+    if (workspace) await openProject(page, workspace);
     const desktopToggle = page.getByRole("button", { name: "Toggle main sidebar", exact: true });
     await desktopToggle.waitFor({ state: "visible" });
     const desktopBox = await desktopToggle.boundingBox();

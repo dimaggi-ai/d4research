@@ -1273,6 +1273,12 @@ const PROVIDER_REQUIREMENT: Partial<
       "Azure CLI (`az`) with the Azure DevOps extension is required. Install `az`, then run `az extension add --name azure-devops`.",
     unauthenticated: "Azure CLI is not signed in. Run `az login` and retry.",
   },
+  bitbucket: {
+    missing:
+      "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.",
+    unauthenticated:
+      "Bitbucket rejected the configured credentials. Check them in Settings → Source Control.",
+  },
 };
 
 /**

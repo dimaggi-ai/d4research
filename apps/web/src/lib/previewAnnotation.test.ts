@@ -13,9 +13,28 @@ const annotation: PreviewAnnotationPayload = {
   pageTitle: "Example",
   comment: "Make these cards feel related.",
   elements: [],
-  regions: [],
-  strokes: [],
-  styleChanges: [],
+  regions: [{ id: "region-1", rect: { x: 0, y: 0, width: 100, height: 100 } }],
+  strokes: [
+    {
+      id: "stroke-1",
+      color: "#ff0000",
+      width: 2,
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 100 },
+      ],
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+    },
+  ],
+  styleChanges: [
+    {
+      targetId: "region-1",
+      selector: null,
+      property: "border-radius",
+      previousValue: "4px",
+      value: "16px",
+    },
+  ],
   screenshot: {
     dataUrl:
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",

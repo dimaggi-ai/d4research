@@ -18,7 +18,9 @@ export async function branding({ page, webUrl, screenshotDir }) {
   const held = new Promise((resolve) => {
     release = resolve;
   });
-  await page.route("**/assets/*.js", async (route) => {
+  // Let the document entry finish so fonts.ready can resolve for screenshots.
+  // The dynamic app chunk stays pending, keeping the real boot shell mounted.
+  await page.route("**/assets/main-*.js", async (route) => {
     await held;
     await route.continue().catch(() => {});
   });

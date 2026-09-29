@@ -127,7 +127,11 @@ describe("provider installation routing", () => {
   it.effect("keeps external installs manual without hiding shared install status", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
-        settings: { providers: { antigravity: { binaryPath: "/external/agy" } } },
+        settings: {
+          providerInstances: {
+            [instanceId]: { driver, config: { binaryPath: "/external/agy" } },
+          },
+        },
       });
       const start = yield* Effect.flip(harness.router.start({ instanceId }));
       const remove = yield* Effect.flip(harness.router.remove({ instanceId }));

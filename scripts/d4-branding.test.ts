@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - This repository branding test reads source files directly.
 import { expect, it } from "vite-plus/test";
 import { readFile, readdir } from "node:fs/promises";
 import { checkD4Icons } from "./export-d4-icons.ts";

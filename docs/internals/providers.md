@@ -53,6 +53,17 @@ The eight drivers use five distinct transport protocols:
 **Codex** — two instances with different `homePath`s run fully independent Codex app-server
 processes. Model discovery queries the app-server for account info and model list.
 
+Managed ChatGPT sign-in for a remote environment can finish on a local primary. The
+[primary handoff](../../apps/server/src/provider/CodexChatGptHandoff.ts) uses an ephemeral
+credential store and the destination's environment ID. It exchanges and verifies the code before
+transferring the issued client registration and tokens. Only the destination persists and refreshes
+that session; retaining a primary refresh session would race refresh-token rotation. Without a local
+primary, the client uses the remote callback completion flow.
+
+Antigravity sign-out closes admission to new processes and stops existing processes before clearing account
+metadata. Otherwise a helper or resumed session could retain the old account. Cached model lists
+do not establish current access, and an authoritative empty catalog must clear the old list.
+
 **Claude** — the model catalog is built-in with version-gated entries (e.g., Opus 5 requires
 SDK ≥ 2.1.219). If `ANTHROPIC_BASE_URL` points to a local Ollama server, the driver runs
 `ollama list` to discover local models. It supports native updates via `claude update`.

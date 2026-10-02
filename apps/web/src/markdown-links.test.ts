@@ -349,3 +349,11 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     expect(resolveInlineCodeFileLinkMeta(".plans/worktree-management-v1.md")).toBeNull();
   });
 });
+
+it("routes the project-root code link to the workspace explorer", () => {
+  const cwd = "/Users/saphid/.t3/worktrees/ov2-standalone-20260918";
+  expect(resolveInlineCodeFileLinkMeta(cwd, cwd)).toMatchObject({
+    workspaceRelativePath: ".",
+    filePath: cwd,
+  });
+});

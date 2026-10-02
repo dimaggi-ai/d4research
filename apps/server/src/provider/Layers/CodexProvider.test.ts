@@ -200,6 +200,11 @@ it("uses standard routing when the catalog has no default service tier", () => {
         name: "Fast",
         description: "1.5x speed, increased usage",
       },
+      {
+        id: "ultrafast",
+        name: "Ultrafast",
+        description: "The fastest available responses for latency-sensitive work.",
+      },
     ],
     supportedReasoningEfforts: [],
   });
@@ -215,6 +220,11 @@ it("uses standard routing when the catalog has no default service tier", () => {
           id: "priority",
           label: "Fast",
           description: "1.5x speed, increased usage",
+        },
+        {
+          id: "ultrafast",
+          label: "Ultrafast",
+          description: "Even faster, more expensive",
         },
       ],
       currentValue: "default",

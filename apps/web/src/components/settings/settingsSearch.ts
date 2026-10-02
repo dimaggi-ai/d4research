@@ -1,10 +1,7 @@
 import { isElectron } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
-import {
-  STATIC_KEYBINDING_COMMANDS,
-  type KeybindingCommand,
-  type EnvironmentId,
-} from "@d4research/contracts";
+import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@d4research/contracts";
+import type { EnvironmentId } from "@d4research/contracts";
 import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
 import { DEFAULT_KEYBINDINGS } from "@d4research/shared/keybindings";
 import { commandLabel } from "./KeybindingsSettings.logic";
@@ -267,6 +264,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Project grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
+  },
+  {
+    id: "working-shelf",
+    title: "Working section (beta)",
+    to: "/settings/general",
+    searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
   {
     id: "auto-settle-inactive-threads",

@@ -3,12 +3,48 @@
 This guide is for people who want to use more than one Codex account in d4research. For Claude, see
 [Claude](./providers-claude.md). For first-time setup, see [Install T3 Code](./install.md).
 
+Use a ChatGPT plan or an existing Codex CLI login as your provider in d4research.
+
+## Connect with ChatGPT
+
+Connect during onboarding or in **Settings → Providers**. For a remote machine,
+select that environment first. d4research installs Codex when needed. Sign in on
+OpenAI and allow sharing of your ChatGPT plan.
+
+Manage shared usage and credits through **Manage usage** in d4research.
+If a request requires a feature not covered by ChatGPT plan sharing, use another
+provider for that request.
+
+When reconnecting, select the same Codex account you used before, in both d4research
+and on OpenAI's sign-in page. Disconnecting stops running threads but keeps their history.
+You can reconnect later.
+
+If the remote sign-in flow doesn't redirect back to d4research automatically,
+copy the full URL from the localhost page that appears after sign-in and paste it into the sign-in
+panel. If the page fails to load, copy the URL from the browser's address bar instead.
+
+## Use an existing Codex login
+
+d4research can use your installed Codex and its existing login. Run `codex login`
+on the machine where the environment is running. See [Provider setup](./install.md#providers)
+for installation and custom configuration.
+
 Common reasons:
 
 - use a work account for work projects
 - use a personal account for personal projects
 - switch to another account when one account hits limits
 - keep one shared Codex history instead of maintaining two separate Codex setups
+
+Add another ChatGPT account in **Settings → Providers**, then select it
+from the thread's model picker. Accounts that share Codex session state can continue the same thread.
+Connecting accounts through d4research leaves your CLI login unchanged.
+
+### Multiple CLI logins
+
+A shared Codex home with a shadow home lets work and personal accounts continue
+the same threads. They share Codex sessions and configuration while keeping
+their own login and model access.
 
 ## I Only Use One Codex Account
 

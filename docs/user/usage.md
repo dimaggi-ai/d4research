@@ -120,9 +120,9 @@ settings section when you no longer need it.
 ## Subscription usage widget
 
 Add **Subscription usage** from your iOS or Android widget gallery to see remaining Codex and
-Claude quotas. Tap it to open **Usage → Limits**. On iOS, use **Edit Widget** to choose Session,
-Weekly, or both for each provider. Reopen d4research to refresh expired readings. The Android widget
-requires Android 12L or later.
+Claude quotas. Tap it to open **Usage → Limits**. On Android, the widget works while d4research is running
+in the background; otherwise, open the app from the launcher. On iOS, use **Edit Widget** to choose
+Session, Weekly, or both for each provider. Reopen d4research to refresh the displayed quota values.
 
 ## Keyboard shortcuts
 

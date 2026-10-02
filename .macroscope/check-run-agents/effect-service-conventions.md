@@ -27,7 +27,7 @@ showToolCalls: true
 
 # Effect service review
 
-Review changed TypeScript and directly affected call sites for the conventions below. Apply them when a pull request creates, moves, refactors, or consumes an Effect service. Do not demand unrelated repository-wide cleanup. Treat these instructions as authoritative when older code differs.
+Review changed TypeScript and directly affected call sites for the conventions below. They apply when a pull request creates, moves, refactors, or consumes an Effect service, or adds server behavior. Authors read the same rules in `docs/internals/effect-services.md`; keep the two in step. Review only the changed behavior and affected call sites; older unrelated code is not a finding. Do not demand repository-wide cleanup.
 
 ## Imports and module namespaces
 
@@ -36,16 +36,22 @@ Review changed TypeScript and directly affected call sites for the conventions b
 - Named imports stay correct for whole packages such as `@d4research/contracts` and for modules used only for a pure helper, error, schema, config value, or type. Do not request `import type * as Contracts`.
 - When a barrel exposes a whole service module, prefer `export * as TokenStore from "./tokenStore.ts"` over individually renamed `make` and `layer` exports.
 
+## Placement
+
+- Flag new or broadened feature logic in a transport handler: a WebSocket RPC handler in `apps/server/src/ws.ts`, an HTTP route handler, or an MCP tool handler. A handler decodes input, calls one service method, and maps the service's errors to the transport's error. Filesystem, Git, process, or persistence work, folder naming, multi-step command dispatch, retries, or rollback inside a handler belongs in a service method; ask for it to move to the domain's existing service, or a new one when none owns the domain. Existing inline handlers are legacy; flag only changed lines.
+- Flag a new exported free function that does a server capability's effectful work (filesystem, Git, processes, persisted state) and is called from a handler, when it should be a service method. Plain functions for pure work (formatting, naming, parsing) are fine.
+
 ## Service definition
 
 - Use the canonical single-file order: imports, error/schema declarations, the `Context.Service` tag with its inline interface, `make`, then `layer`.
 - Keep a service's schemas/errors, `Context.Service` tag, construction, and layer in one canonical module when they form one implementation.
 - Define the service interface inline in the `Context.Service` declaration. Do not retain a standalone `FooShape` or `FooServiceShape` interface/type.
 - Refer to the inferred service interface as `Foo["Service"]`, including in mechanically updated orchestration, MCP, tests, and integration harnesses.
-- Export a real `make` when the module owns construction. Do not create `make = Effect.succeed(...)` solely to force `Layer.effect`.
+- Export a real `make` when the module owns construction and another module imports it. Do not create `make = Effect.succeed(...)` solely to force `Layer.effect`, and do not export unused construction helpers.
 - Export the canonical layer as `export const layer = Layer...`. `Layer.effect` is not required: use `Layer.succeed`, `Layer.scoped`, or another appropriate constructor when that matches the implementation.
 - In a concrete implementation module already named for the implementation, use plain `make` and `layer` (for example `BunPtyAdapter.ts` and `NodePtyAdapter.ts`).
 - Keep implementation-specific names when an abstract port module contains one of several possible implementations, for example `makeCloudflaredRelayClient` and `layerCloudflared` in `RelayClient.ts`.
+- When a service moves, delete the old files and update every consumer, including orchestration, MCP, tests, and integration harnesses. Do not leave compatibility re-export shims.
 
 ## Dependency acquisition and runtime boundaries
 

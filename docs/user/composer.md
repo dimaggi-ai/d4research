@@ -231,6 +231,51 @@ This removes the selected message and later conversation from the active thread
 and provider history. It does not undo external actions or separate provider
 memory. The action is available only when the provider supports rewind.
 
+## Prompt stash
+
+On web and desktop, press `Cmd+S` (macOS) or `Ctrl+S` (Windows, Linux) to save
+the current prompt and its attachments. Wait for uploads to finish first.
+In an empty composer, the same shortcut restores a single stash or opens the
+stash menu when there are several.
+
+Stashes with uploaded files must be restored in their original environment.
+Files are retained for 24 hours. After an upload expires, restore the prompt,
+then use **Attach again** or remove the missing file before sending.
+
+## Voice input on iPhone
+
+On supported iPhones running iOS 26 or later, tap the composer's microphone to record,
+then confirm to transcribe. Text is inserted where your selection was when
+recording started, ready for review and editing before sending.
+
+The first use may download Apple's speech model and needs a network connection.
+Later transcription works offline for that language. Recordings can be up to five
+minutes long. Canceling, leaving the screen, or an audio interruption discards the
+recording but preserves your existing draft. While recording, the screen stays
+awake; it can sleep normally once recording stops.
+
+Transcription runs on your device. d4research deletes the temporary audio after
+transcription or cancellation. Only the message text is sent when you submit.
+
+## Commands and skills
+
+Type `/` for commands or `$` to add a skill from the selected environment and
+provider. On mobile, both are also available before starting a thread on
+**New task**.
+
+The slash menu also includes skills unless you turn off **Settings → General →
+Show skills in slash menu**. Only skills enabled for the provider are listed.
+
+After adding or changing skills, plugins, or MCP servers, use **Restart agent
+session** in the command palette on web and desktop. The conversation continues;
+your next message starts the agent again with the new setup.
+
+Provider commands must start the message to run. d4research commands such as
+`/model` and `/plan`, and skill mentions, work on any line.
+
+Send `/compact` in an existing conversation to reduce context usage when the
+provider supports it. Web and desktop also offer compaction from the context meter.
+
 ## Context in your message
 
 Context you attach lands where your cursor is, as a chip inside your text: a terminal excerpt,

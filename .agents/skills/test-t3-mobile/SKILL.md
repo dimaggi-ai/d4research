@@ -34,6 +34,14 @@ node scripts/mobile-native-client.ts ensure android <emulator-serial>
 
 For a read-only decision, use `check` in place of `ensure`. Exit 0 means compatible, 2 means build required, and 1 means an operational error. An app installed outside this helper is initially unknown and gets rebuilt once. Records are local to the simulator host under `~/.cache/t3code/native-clients` and work across checkouts. Do not copy records between machines or write them manually.
 
+Start `vp run dev:client` from `apps/mobile`, or reuse a healthy Metro belonging
+to this checkout. Open the printed development-client URL with AgentDevice
+`open ai.dimaggi.d4research.dev <url>` plus all returned target arguments.
+The device must reach both Metro and the isolated backend. If developer chrome
+would obscure screenshots or taps, append `&disableAutoLaunch=1&disableFab=1`
+to the development-client URL query; the SDK 58 dev client applies these
+preferences before the app loads.
+
 A JavaScript-only diff, bundle identifier, app version, or recent install date does not prove native compatibility. Always check the whole checkout. Expo fingerprints are computed locally with `APP_VARIANT=development`; no EAS credentials or cloud build are required. Generated `ios/` and `android/` directories are excluded by `.fingerprintignore`, so edit native source modules or config plugins rather than generated output.
 
 The development identity is `T3 Code Dev`, bundle/package `ai.dimaggi.d4research.dev`, scheme `t3code-dev`. If a build fails, investigate the build error and fix the local prerequisites. Report the concrete failure if it cannot be resolved, not "no compatible client."

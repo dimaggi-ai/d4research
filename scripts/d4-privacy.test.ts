@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - This repository privacy test scans source files directly.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
 import * as NodePath from "node:path";

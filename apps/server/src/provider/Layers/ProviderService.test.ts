@@ -496,6 +496,7 @@ const hasMetricSnapshot = (
 function makeProviderServiceLayer(
   input: {
     readonly directory?: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
+    readonly settingsLayer?: typeof defaultServerSettingsLayer;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
     readonly supportsConversationRollback?: boolean;
     readonly codexRestartLifecycle?: "session.started" | "session.ready";
@@ -534,7 +535,7 @@ function makeProviderServiceLayer(
         Layer.provide(NodeServices.layer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(input.settingsLayer ?? defaultServerSettingsLayer),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(
           Layer.succeed(

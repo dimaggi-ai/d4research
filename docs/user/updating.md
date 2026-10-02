@@ -31,6 +31,13 @@ The script typechecks and builds with bounded deadlines, schedules the restart o
 agent session, and waits for HTTP readiness. It is not a clean-machine installer. Maintainer setup
 and logs are documented in [Local Deployment](../operations/local-deployment.md).
 
+## Update providers
+
+On web and desktop, **Settings → Providers** shows provider updates for the selected environment.
+**Update all** updates every outdated provider on every connected environment
+at once. Hover over **Update all** to see which providers it will update. Providers that d4research
+cannot update automatically remain available for manual updating from their provider row.
+
 ## Remote Clients
 
 Update the server machine, not only the browser or phone used to reach it. Provider CLIs, Memo,

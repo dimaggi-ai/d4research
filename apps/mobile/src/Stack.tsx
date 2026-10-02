@@ -51,6 +51,7 @@ import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewR
 import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
+import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
 import { NewTaskDraftRouteScreen } from "./features/threads/NewTaskDraftRouteScreen";
@@ -423,6 +424,10 @@ const NewTaskSheetStack = createNativeStackNavigator({
       screen: AddProjectLocalRoute,
       linking: "add-project/local",
     }),
+    AddProjectNew: createNativeStackScreen({
+      screen: AddProjectNewRoute,
+      linking: "add-project/new",
+    }),
   },
 });
 
@@ -478,7 +483,12 @@ function RootStackLayout(props: {
   const navigation = useNavigation();
   const { pendingShare } = useIncomingShare();
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
-  useAgentNotificationNavigation();
+  // Keyboard commands follow the top route; notification suppression follows
+  // the thread beneath overlay sheets.
+  const path = getPathFromState(props.state, navigationPathConfig);
+  const pathname = path.startsWith("/") ? path : `/${path}`;
+  const workspaceLocation = workspaceLocationFromState(props.state);
+  useAgentNotificationNavigation(workspaceLocation.pathname);
   // Launcher app shortcuts: routes shortcut taps and tracks opened threads.
   useAppShortcuts(props.state);
   useEffect(() => {
@@ -496,11 +506,6 @@ function RootStackLayout(props: {
       params: { incomingShareId: transition.shareIdToPresent },
     });
   }, [navigation, pendingShare, props.state]);
-  // Full pathname (sheets included) for keyboard-command scoping; the
-  // workspace layout only reacts to the underlying non-overlay route.
-  const path = getPathFromState(props.state, navigationPathConfig);
-  const pathname = path.startsWith("/") ? path : `/${path}`;
-  const workspaceLocation = workspaceLocationFromState(props.state);
 
   return (
     <HardwareKeyboardCommandProvider pathname={pathname}>

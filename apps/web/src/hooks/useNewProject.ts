@@ -1,10 +1,10 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { getNewProjectGitHubRepository } from "@t3tools/client-runtime/operations/projects";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { getNewProjectGitHubRepository } from "@d4research/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import type { EnvironmentId } from "@d4research/contracts";
 import { useCallback } from "react";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";

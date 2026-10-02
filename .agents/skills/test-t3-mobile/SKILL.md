@@ -39,7 +39,7 @@ mobile verification includes that build step unless the user prohibits it.
 
 Start `vp run dev:client` from `apps/mobile`, or reuse a healthy Metro belonging
 to this checkout. Open its printed development-client URL with AgentDevice
-`open com.t3tools.t3code.dev <url>` and all returned target arguments.
+`open ai.dimaggi.d4research.dev <url>` and all returned target arguments.
 The device must be able to reach both Metro and the isolated backend.
 Append `&disableAutoLaunch=1&disableFab=1` to the development-client URL query
 when developer chrome would obscure screenshots or taps; the SDK 58 dev client

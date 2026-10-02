@@ -15,9 +15,9 @@
     "@effect/sql-pg": "catalog:",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
-    "@t3tools/client-runtime": "workspace:*",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@d4research/client-runtime": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
     "alchemy": "2.0.0-beta.79",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:"

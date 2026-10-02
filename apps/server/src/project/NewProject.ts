@@ -13,7 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
-import { newProjectFolderName } from "@t3tools/shared/path";
+import { newProjectFolderName } from "@d4research/shared/path";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
 // Tailwind 600 shades: dark enough for white initials on every hue.

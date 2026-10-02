@@ -1,4 +1,4 @@
-import { workspaceRelativeFilePath } from "@t3tools/client-runtime/markdown-links";
+import { workspaceRelativeFilePath } from "@d4research/client-runtime/markdown-links";
 import { isAbsolutePath } from "~/terminal-links";
 
 /** Resolve workspace links before choosing between the explorer and a file preview. */

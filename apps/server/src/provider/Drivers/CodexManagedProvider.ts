@@ -1,4 +1,4 @@
-import { ProviderDriverKind, TextGenerationError, type CodexSettings } from "@t3tools/contracts";
+import { ProviderDriverKind, TextGenerationError, type CodexSettings } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";

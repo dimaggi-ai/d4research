@@ -8,7 +8,7 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -17,10 +17,10 @@ import {
   MessageId,
   T3_PROJECT_FILE_NAME,
   ThreadId,
-} from "@t3tools/contracts";
-import { sanitizeNewRefName } from "@t3tools/shared/git";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+} from "@d4research/contracts";
+import { sanitizeNewRefName } from "@d4research/shared/git";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
+import { parseT3ProjectFile } from "@d4research/shared/t3ProjectFile";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 
@@ -85,10 +85,10 @@ import {
   useRemoteConnectionStatus,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { canCreateProjectInEnvironment } from "@d4research/client-runtime/operations/projects";
+import { isScratchProject } from "@d4research/client-runtime/state/projects";
+import { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import { type VcsRef } from "@d4research/client-runtime/state/vcs";
 import {
   buildHomeProjectScopes,
   sortHomeProjectScopes,

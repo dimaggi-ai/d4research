@@ -1,5 +1,5 @@
-import type { ChatGptHandoffInput, ChatGptHandoffState } from "@t3tools/contracts";
-import { ProviderSetupError } from "@t3tools/contracts";
+import type { ChatGptHandoffInput, ChatGptHandoffState } from "@d4research/contracts";
+import { ProviderSetupError } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";

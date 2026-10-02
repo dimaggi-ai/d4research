@@ -1,4 +1,4 @@
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import { PROVIDER_DISPLAY_NAMES } from "@d4research/contracts";
 import { useMemo, useRef, useState } from "react";
 
 import { useEnvironments } from "~/state/environments";

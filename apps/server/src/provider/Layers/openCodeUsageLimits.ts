@@ -1,7 +1,7 @@
 import * as NodeOS from "node:os";
 import * as NodeCrypto from "node:crypto";
 
-import type { ServerProviderUsageWindow } from "@t3tools/contracts";
+import type { ServerProviderUsageWindow } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

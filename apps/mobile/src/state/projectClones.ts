@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { parseScopedProjectKey, scopedProjectKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectCloneSnapshot, ScopedProjectRef } from "@t3tools/contracts";
+import { parseScopedProjectKey, scopedProjectKey } from "@d4research/client-runtime/environment";
+import type { EnvironmentId, ProjectCloneSnapshot, ScopedProjectRef } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 

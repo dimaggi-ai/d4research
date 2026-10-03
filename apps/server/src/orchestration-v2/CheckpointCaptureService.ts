@@ -8,7 +8,7 @@ import {
   type OrchestrationV2TurnItem,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -43,7 +43,7 @@ export interface CheckpointCaptureServiceV2Shape {
 export class CheckpointCaptureServiceV2 extends Context.Service<
   CheckpointCaptureServiceV2,
   CheckpointCaptureServiceV2Shape
->()("t3/orchestration-v2/CheckpointCaptureService/CheckpointCaptureServiceV2") {}
+>()("d4research/orchestration-v2/CheckpointCaptureService/CheckpointCaptureServiceV2") {}
 
 export const layer: Layer.Layer<
   CheckpointCaptureServiceV2,

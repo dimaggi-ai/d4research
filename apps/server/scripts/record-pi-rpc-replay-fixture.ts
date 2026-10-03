@@ -10,7 +10,7 @@
  * user's Pi session store.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ProviderReplayEntry, ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayEntry, ProviderReplayTranscript } from "@d4research/contracts";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";

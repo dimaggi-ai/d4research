@@ -1,4 +1,4 @@
-import type { GitRunStackedActionInput, GitRunStackedActionResult } from "@t3tools/contracts";
+import type { GitRunStackedActionInput, GitRunStackedActionResult } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import * as OrchestratorV2 from "../orchestration-v2/Orchestrator.ts";

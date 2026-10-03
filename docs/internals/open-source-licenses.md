@@ -3,7 +3,7 @@
 License notices are generated independently for the client that ships them:
 
 - The web build emits `third-party-licenses.json` beside `index.html`. The Settings page loads that
-  static file, so the same artifact works in hosted web, the client bundled with `npx t3`, and
+  static file, so the same artifact works in hosted web, the client bundled with `npx d4research`, and
   desktop.
 - The mobile Metro config generates an ignored virtual module before each development, native, or
   over-the-air JavaScript bundle. Mobile loads and decodes that module only when a license screen
@@ -15,7 +15,7 @@ Neither path depends on the connected environment or an RPC.
 ## What the build collects
 
 The generator follows installed production and optional dependencies, including dependencies of
-workspace packages, and omits first-party `@t3tools/*` packages. The web manifest starts from the
+workspace packages, and omits first-party `@d4research/*` packages. The web manifest starts from the
 web, server, and desktop package manifests. The mobile manifest starts from the mobile package
 manifest. During the web bundle, the generator also checks emitted module ids to catch a bundled
 npm import missing from a package manifest.

@@ -1,7 +1,7 @@
 import type {
   OrchestrationV2ContextHandoff,
   OrchestrationV2ProviderThread,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { ProviderAdapterV2HistoricalContext } from "./ProviderAdapter.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

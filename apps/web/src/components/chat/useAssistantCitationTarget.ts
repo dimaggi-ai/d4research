@@ -1,5 +1,5 @@
 import type { LegendListRef } from "@legendapp/list/react";
-import type { RunId } from "@t3tools/contracts";
+import type { RunId } from "@d4research/contracts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { TimelineEntry } from "../../session-logic";
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";

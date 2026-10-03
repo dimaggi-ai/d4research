@@ -5,7 +5,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,7 +72,7 @@ export class ThreadLifecycleService extends Context.Service<
       readonly modelSelection: ModelSelection;
     }) => Effect.Effect<Pick<OrchestrationV2ThreadProjection, "thread">, ThreadLifecycleError>;
   }
->()("t3/orchestration-v2/ThreadLifecycleService") {}
+>()("d4research/orchestration-v2/ThreadLifecycleService") {}
 
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;

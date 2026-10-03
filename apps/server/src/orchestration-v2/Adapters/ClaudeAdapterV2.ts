@@ -1,8 +1,8 @@
 import * as NodeCrypto from "node:crypto";
 
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
-import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { formatReadToolLabel, formatSearchToolLabel } from "@d4research/shared/toolActivity";
+import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
 import {
   type CanUseTool,
@@ -28,13 +28,13 @@ import type {
   AskUserQuestionInput,
   WebSearchOutput,
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
-import { parseCliArgs } from "@t3tools/shared/cliArgs";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
+import { parseCliArgs } from "@d4research/shared/cliArgs";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import { applyClaudePromptEffortPrefix } from "@d4research/shared/model";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   formatClaudeResumeCompactionQuestion,
-} from "@t3tools/shared/claudeCompaction";
+} from "@d4research/shared/claudeCompaction";
 import {
   type ChatAttachment,
   ClaudeSettings,
@@ -64,7 +64,7 @@ import {
   type ProviderThreadId,
   type ThreadId,
   type ToolActivitySource,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -367,7 +367,7 @@ export interface ClaudeAgentSdkQueryRunnerShape {
 export class ClaudeAgentSdkQueryRunner extends Context.Service<
   ClaudeAgentSdkQueryRunner,
   ClaudeAgentSdkQueryRunnerShape
->()("t3/orchestration-v2/Adapters/ClaudeAdapterV2/ClaudeAgentSdkQueryRunner") {}
+>()("d4research/orchestration-v2/Adapters/ClaudeAdapterV2/ClaudeAgentSdkQueryRunner") {}
 
 export interface ClaudeAgentSdkSessionForkInput {
   readonly sessionId: string;

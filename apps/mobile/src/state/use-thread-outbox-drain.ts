@@ -3,17 +3,17 @@ import {
   threadRuntimeIsActive,
   type EnvironmentProject,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
+} from "@d4research/client-runtime/state/shell";
+import type { AtomCommandResult } from "@d4research/client-runtime/state/runtime";
+import { deriveThreadTitleSeed } from "@d4research/client-runtime/operations";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type MessageId,
-} from "@t3tools/contracts";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+} from "@d4research/contracts";
+import { buildTemporaryWorktreeBranchName } from "@d4research/shared/git";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";

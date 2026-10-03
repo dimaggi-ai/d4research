@@ -6,7 +6,7 @@ import {
   MessageId,
   ProviderDriverKind,
   type ProviderReplayTranscript,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import { classifyClaudeNativeTool } from "../Adapters/ClaudeAdapterV2.ts";

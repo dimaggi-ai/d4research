@@ -8,7 +8,7 @@ import {
   ProviderThreadId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -156,7 +156,7 @@ export interface CheckpointServiceV2Shape {
 export class CheckpointServiceV2 extends Context.Service<
   CheckpointServiceV2,
   CheckpointServiceV2Shape
->()("t3/orchestration-v2/CheckpointService/CheckpointServiceV2") {}
+>()("d4research/orchestration-v2/CheckpointService/CheckpointServiceV2") {}
 
 export function checkpointRefForScopeOrdinal(input: {
   readonly scopeId: CheckpointScopeId;

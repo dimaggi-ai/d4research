@@ -2,7 +2,7 @@ import type {
   OrchestrationV2Command,
   OrchestrationV2DomainEvent,
   OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 

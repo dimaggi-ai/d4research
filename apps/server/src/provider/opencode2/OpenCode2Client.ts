@@ -90,7 +90,7 @@ export class OpenCode2Client extends Context.Service<
       readonly password: string | Redacted.Redacted;
     }) => Effect.Effect<OpenCode2Api>;
   }
->()("t3/provider/opencode2/OpenCode2Client") {}
+>()("d4research/provider/opencode2/OpenCode2Client") {}
 
 /**
  * OpenCode writes a `: heartbeat` comment every 10 to 15 seconds, so this long

@@ -3,7 +3,7 @@ import {
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   ProjectId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {

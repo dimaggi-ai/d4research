@@ -27,12 +27,12 @@ import {
   isOrchestrationV2WorkActive,
   ProviderDriverKind,
   type ProviderSetupError,
-} from "@t3tools/contracts";
-import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { computerUseToolTitle } from "@t3tools/shared/toolActivity";
-import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@d4research/contracts";
+import { SKILL_MENTION_PATTERN } from "@d4research/shared/composerInlineTokens";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import { computerUseToolTitle } from "@d4research/shared/toolActivity";
+import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
 import type {
   ChatAttachment,
   OrchestrationV2AppThread,
@@ -60,7 +60,7 @@ import type {
   RuntimeMode,
   RuntimeRequestId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
@@ -1187,7 +1187,7 @@ export interface CodexAppServerClientFactoryShape {
 export class CodexAppServerClientFactory extends Context.Service<
   CodexAppServerClientFactory,
   CodexAppServerClientFactoryShape
->()("t3/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
+>()("d4research/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
 
 /**
  * Config overrides sent with every `thread/start`, `thread/resume` and `thread/fork`.

@@ -5,7 +5,7 @@ import {
   MessageId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   act,
   createRef,

@@ -4,15 +4,15 @@
  * running two copies of "merge" or "resolve in a thread" would drift apart one fix at a time;
  * these hooks are where that behavior lives, and the panels are only where it is rendered.
  */
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   PullRequestAction,
   PullRequestDetail,
   PullRequestMergeMethod,
   PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useState } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";

@@ -4,7 +4,7 @@ import {
   ProviderDriverKind,
   type ServerConfig,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { createThreadListEnvironmentsAtom } from "./thread-list-environments";

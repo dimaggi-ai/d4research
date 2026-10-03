@@ -7,9 +7,9 @@ import {
   type AcpRegistryOperationError,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { createModelCapabilities } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import { createModelCapabilities } from "@d4research/shared/model";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";

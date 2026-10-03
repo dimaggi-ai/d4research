@@ -10,7 +10,7 @@ import {
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import type * as RpcMessage from "effect/unstable/rpc/RpcMessage";

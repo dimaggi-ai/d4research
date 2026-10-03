@@ -5,7 +5,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { CheckIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type AcpRegistrySearchAgent,
@@ -13,7 +13,7 @@ import {
   ProviderDriverKind,
   type EnvironmentId,
   type ProviderInstanceConfig,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   useEnvironmentSettings,
@@ -57,7 +57,7 @@ import { AddManagedCodexAccountDialog } from "./CodexSetupSection";
  * The full id is formed by prefixing the driver slug. For example, label "Work" on
  * driver "codex" becomes `codex_work`. Output is trimmed to 48 chars so the
  * final composed id stays under the 64-char slug cap enforced by
- * `ProviderInstanceId` in `@t3tools/contracts`.
+ * `ProviderInstanceId` in `@d4research/contracts`.
  */
 function slugifyLabel(value: string): string {
   return value

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { BranchNamingMode, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { BranchNamingMode, DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
 
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";

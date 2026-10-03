@@ -3,15 +3,15 @@ import type {
   ProjectId,
   ScheduledTask,
   ScheduledTaskUpsertInput,
-} from "@t3tools/contracts";
-import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import { DateTimePicker } from "@expo/ui/community/datetime-picker";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import {
   useCallback,
   useEffect,

@@ -2,14 +2,14 @@ import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
   ThreadUserInputQuestion,
-} from "@t3tools/client-runtime/state/thread-requests";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
-import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
+} from "@d4research/client-runtime/state/thread-requests";
+import { turnItemIsWorkspacePreparation } from "@d4research/client-runtime/state/turn-item-presentation";
+import { formatSubagentDisplayTitle } from "@d4research/client-runtime/state/subagent-display";
+import { extractToolActivityPresentation } from "@d4research/client-runtime/work-log/tool-presentation";
 import {
   commandDisplayText,
   commandProgramName,
-} from "@t3tools/client-runtime/work-log/command-label";
+} from "@d4research/client-runtime/work-log/command-label";
 import {
   contextCompactionLabel,
   toolItemForDisplay,
@@ -22,13 +22,13 @@ import {
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
-} from "@t3tools/client-runtime/work-log/presentation";
+} from "@d4research/client-runtime/work-log/presentation";
 import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
   type T3McpToolLogo,
   type T3McpToolPresentation,
-} from "@t3tools/shared/t3McpToolPresentation";
+} from "@d4research/shared/t3McpToolPresentation";
 import type {
   ChatAttachment,
   MessageId,
@@ -43,17 +43,17 @@ import type {
   OrchestrationV2UserMessageInputIntent,
   RunAttemptId,
   ScheduledTaskId,
-} from "@t3tools/contracts";
-import { RunId, ThreadId } from "@t3tools/contracts";
+} from "@d4research/contracts";
+import { RunId, ThreadId } from "@d4research/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,
   computerUseToolTitle,
   formatReadToolLabel,
   formatSearchToolLabel,
-} from "@t3tools/shared/toolActivity";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
+} from "@d4research/shared/toolActivity";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
+import { compactDynamicToolOutput } from "@d4research/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
 export type PendingApproval = ThreadPendingApproval;
@@ -105,7 +105,7 @@ export interface ThreadFeedActivity {
 }
 
 export interface ThreadFeedMessage {
-  readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+  readonly context?: import("@d4research/contracts").OrchestrationMessageContext | undefined;
   readonly id: MessageId;
   readonly role: "user" | "assistant";
   readonly text: string;

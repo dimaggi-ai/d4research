@@ -1,4 +1,4 @@
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
 import { useEffect } from "react";
 
 import { useThreadShells } from "../state/entities";

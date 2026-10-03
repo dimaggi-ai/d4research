@@ -20,7 +20,7 @@ import {
 } from "effect/unstable/http";
 import { openMediaFile } from "./assets/MediaFile.ts";
 
-import { ORCHESTRATION_PROTOCOL_HEADER } from "@t3tools/contracts";
+import { ORCHESTRATION_PROTOCOL_HEADER } from "@d4research/contracts";
 
 import * as ServerConfig from "./config.ts";
 

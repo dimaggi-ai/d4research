@@ -3,7 +3,7 @@ import * as Option from "effect/Option";
 import {
   ORCHESTRATION_PROTOCOL_HEADER,
   ORCHESTRATION_PROTOCOL_VERSION_TEXT,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Result from "effect/Result";
 import { FetchHttpClient, type HttpMethod } from "effect/unstable/http";
 

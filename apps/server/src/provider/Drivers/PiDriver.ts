@@ -6,7 +6,7 @@
  * Pi state (sessions, settings, extensions, auth) lives in the user's own
  * `~/.pi/agent`, so continuation identity uses the default instance grouping.
  */
-import { PiSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import { PiSettings, ProviderDriverKind, type ServerProvider } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

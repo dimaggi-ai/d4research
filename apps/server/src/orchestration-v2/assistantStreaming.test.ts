@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId, NodeId, ProviderDriverKind, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { MessageId, NodeId, ProviderDriverKind, ThreadId, TurnItemId } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import { makeAssistantStreamingFilter, splitBufferedAssistantText } from "./assistantStreaming.ts";
 import type { ProviderAdapterV2Event } from "./ProviderAdapter.ts";

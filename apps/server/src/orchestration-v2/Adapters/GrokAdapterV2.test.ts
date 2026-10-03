@@ -6,9 +6,9 @@ import {
   ProviderSessionId,
   type RuntimeMode,
   ThreadId,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+} from "@d4research/contracts";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { resolveSelfInvocation } from "@d4research/shared/nodeRuntime";
 import * as EffectAcpErrors from "effect-acp/errors";
 import { xAiRateLimitedErrorCode } from "../../provider/acp/XAiAcpExtension.ts";
 import { assert, describe, it } from "@effect/vitest";

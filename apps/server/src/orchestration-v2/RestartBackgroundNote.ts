@@ -4,7 +4,7 @@ import type {
   OrchestrationV2RestartCancelledBackgroundWork,
   OrchestrationV2Run,
   OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
 

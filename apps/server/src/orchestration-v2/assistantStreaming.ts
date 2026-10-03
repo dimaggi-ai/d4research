@@ -1,4 +1,4 @@
-import type { ResponseStreamingMode } from "@t3tools/contracts";
+import type { ResponseStreamingMode } from "@d4research/contracts";
 import type { ProviderAdapterV2Event } from "./ProviderAdapter.ts";
 
 // An opening fence may sit at any indentation, since fences inside list

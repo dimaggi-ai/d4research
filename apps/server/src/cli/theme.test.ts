@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@d4research/shared/Net";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,8 +13,8 @@ import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
 
 import { cli } from "../binCli.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { symlinksSupported } from "@d4research/shared/testing/symlinks";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 
 // These force a failure with chmod, which Windows ignores for directories and
 // cannot use to make a file unreadable, so the failure never happens there.

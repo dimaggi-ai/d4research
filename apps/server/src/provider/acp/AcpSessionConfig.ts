@@ -1,4 +1,4 @@
-import type { ProviderOptionChoice, ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ProviderOptionChoice, ProviderOptionDescriptor } from "@d4research/contracts";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
 import type { AcpSessionModeState } from "./AcpRuntimeModel.ts";

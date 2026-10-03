@@ -1,4 +1,4 @@
-import { ThreadId, type WorktreeSetupSnapshot } from "@t3tools/contracts";
+import { ThreadId, type WorktreeSetupSnapshot } from "@d4research/contracts";
 import {
   CheckpointRef,
   NodeId,
@@ -6,7 +6,7 @@ import {
   TurnItemId,
   RuntimeRequestId,
   type OrchestrationV2ProjectedTurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import {
   deriveTimelineEntriesFromVisibleTurnItems,
@@ -17,7 +17,7 @@ import {
 import { makeStreamingTimelineFixture } from "../../test-fixtures";
 import type { TurnDiffSummary } from "../../types";
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId, RunId } from "@t3tools/contracts";
+import { MessageId, RunId } from "@d4research/contracts";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,

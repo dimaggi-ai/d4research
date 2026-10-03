@@ -1,6 +1,6 @@
 import type { ThreadMoveDestination } from "../threads/threadOrder";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { canSnooze, effectiveSnoozed } from "@d4research/client-runtime/state/thread-settled";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
 import { useCallback, useRef } from "react";
@@ -10,7 +10,7 @@ import { withThreadDismissal } from "./thread-dismissal";
 import { showConfirmDialog, showTextInputDialog } from "../../components/ConfirmDialogHost";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { refreshArchivedThreadsForEnvironment } from "../archive/useArchivedThreadSnapshots";
-import { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";
+import { pinOrderKeyBetween } from "@d4research/client-runtime/state/thread-sort";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";

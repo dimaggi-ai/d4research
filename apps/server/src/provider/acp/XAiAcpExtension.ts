@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Grok's plan file lives under the OS home dir.
 import * as NodeOS from "node:os";
 
-import type { ProviderUserInputAnswers, UserInputQuestion } from "@t3tools/contracts";
+import type { ProviderUserInputAnswers, UserInputQuestion } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

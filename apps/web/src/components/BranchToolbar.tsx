@@ -1,6 +1,6 @@
 import { ComposerContextLabel } from "./ComposerContextLabel";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
 import {
   ChevronDownIcon,
   FolderGit2Icon,

@@ -1,4 +1,4 @@
-import type { OrchestrationV2ProviderFailureClass } from "@t3tools/contracts";
+import type { OrchestrationV2ProviderFailureClass } from "@d4research/contracts";
 import { memo } from "react";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";

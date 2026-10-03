@@ -6,7 +6,7 @@ import {
   EnvironmentId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -33,7 +33,7 @@ import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
   resolveT3McpToolSummaryAction,
-} from "@t3tools/shared/t3McpToolPresentation";
+} from "@d4research/shared/t3McpToolPresentation";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 

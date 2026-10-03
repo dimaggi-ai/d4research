@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentNotRegisteredError } from "@t3tools/client-runtime/connection";
-import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
-import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import { EnvironmentNotRegisteredError } from "@d4research/client-runtime/connection";
+import { isTransportConnectionErrorMessage } from "@d4research/client-runtime/errors";
+import { EnvironmentRpcUnavailableError } from "@d4research/client-runtime/rpc";
 import {
   CommandId,
   ComposerContextId,
@@ -12,7 +12,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AtomRegistry } from "effect/unstable/reactivity";
 import * as RpcClientError from "effect/unstable/rpc/RpcClientError";
 import * as Socket from "effect/unstable/socket/Socket";

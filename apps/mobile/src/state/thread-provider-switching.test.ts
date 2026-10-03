@@ -1,4 +1,4 @@
-import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadProjection } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { threadAllowsProviderSwitch } from "./thread-provider-switching";

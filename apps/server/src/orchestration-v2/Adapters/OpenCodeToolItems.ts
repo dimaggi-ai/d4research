@@ -3,8 +3,8 @@
  * Both report a tool as a name, a JSON input, text output, and free-form
  * metadata; only how they deliver those differs.
  */
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
+import type { OrchestrationV2TurnItem } from "@d4research/contracts";
+import { formatReadToolLabel, formatSearchToolLabel } from "@d4research/shared/toolActivity";
 
 type ToolItemBase = Omit<
   Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>,

@@ -3,7 +3,7 @@ import {
   latestUnheldRun,
   threadErrorSummary,
   usageLimitRunPresentedAsLatest,
-} from "@t3tools/shared/orchestrationV2ThreadError";
+} from "@d4research/shared/orchestrationV2ThreadError";
 import {
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
@@ -14,10 +14,10 @@ import {
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ThreadProjection,
   type ThreadId,
-} from "@t3tools/contracts";
-import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { getProviderOptionCurrentLabel, getProviderOptionDescriptors } from "@t3tools/shared/model";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+} from "@d4research/contracts";
+import { derivePendingBackgroundWork } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
+import { getProviderOptionCurrentLabel, getProviderOptionDescriptors } from "@d4research/shared/model";
+import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 
 import {

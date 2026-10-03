@@ -10,7 +10,7 @@ import {
   type OrchestrationV2ProviderSession,
   ProviderDriverKind,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -77,7 +77,7 @@ export interface CursorAgentSdkRunnerShape {
 export class CursorAgentSdkRunner extends Context.Service<
   CursorAgentSdkRunner,
   CursorAgentSdkRunnerShape
->()("t3/orchestration-v2/Adapters/CursorAgentSdk/CursorAgentSdkRunner") {}
+>()("d4research/orchestration-v2/Adapters/CursorAgentSdk/CursorAgentSdkRunner") {}
 
 export interface CursorAgentSdkLoggedAgentOptions {
   readonly model?: AgentOptions["model"];

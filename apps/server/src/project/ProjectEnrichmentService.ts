@@ -1,4 +1,4 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import type { RepositoryIdentity } from "@d4research/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -62,7 +62,7 @@ export class ProjectEnrichmentService extends Context.Service<
       Scope.Scope
     >;
   }
->()("t3/project/ProjectEnrichmentService") {}
+>()("d4research/project/ProjectEnrichmentService") {}
 
 function availableValue<A, E>(cached: Option.Option<Exit.Exit<A, E>>): A | null {
   return Option.match(cached, {

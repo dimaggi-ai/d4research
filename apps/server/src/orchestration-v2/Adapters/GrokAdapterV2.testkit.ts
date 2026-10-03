@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { GrokSettings } from "@t3tools/contracts";
+import { GrokSettings } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as FileSystem from "effect/FileSystem";
@@ -7,8 +7,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { resolveSelfInvocation } from "@d4research/shared/nodeRuntime";
 
 import * as ServerConfig from "../../config.ts";
 import {

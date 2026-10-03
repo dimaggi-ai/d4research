@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Redacted from "effect/Redacted";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import type { PullRequestCheck } from "@t3tools/contracts";
+import type { PullRequestCheck } from "@d4research/contracts";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";

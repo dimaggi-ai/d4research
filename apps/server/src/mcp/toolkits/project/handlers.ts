@@ -1,4 +1,4 @@
-import { MessageId, ThreadId, OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
+import { MessageId, ThreadId, OrchestratorMcpFailure, ProjectId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";

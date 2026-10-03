@@ -9,7 +9,7 @@
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { limitTitleMessage } from "./ThreadTitleContext.ts";
-import type { BranchNamingOptions, ChatAttachment } from "@t3tools/contracts";
+import type { BranchNamingOptions, ChatAttachment } from "@d4research/contracts";
 
 import { limitSection } from "./TextGenerationUtils.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";

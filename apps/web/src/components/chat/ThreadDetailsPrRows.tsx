@@ -1,10 +1,10 @@
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
-import type { EnvironmentId, ThreadPullRequestLink } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadPullRequestLink } from "@d4research/contracts";
 import {
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 

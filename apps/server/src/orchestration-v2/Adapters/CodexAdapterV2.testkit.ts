@@ -1,7 +1,7 @@
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
-import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
+import * as OtelEnvironment from "@d4research/shared/otelEnvironment";
+import { DEFAULT_SIGNAL_EXPORT } from "@d4research/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { type ProviderReplayTranscript } from "@t3tools/contracts";
+import { type ProviderReplayTranscript } from "@d4research/contracts";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexReplay from "effect-codex-app-server/replay";
 import * as Effect from "effect/Effect";

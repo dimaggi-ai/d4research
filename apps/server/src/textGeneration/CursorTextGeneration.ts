@@ -11,11 +11,11 @@ import {
   type CursorSettings,
   type ModelSelection,
   type ProviderSetupError,
-} from "@t3tools/contracts";
-import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+} from "@d4research/contracts";
+import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@d4research/shared/git";
+import { extractJsonObject } from "@d4research/shared/schemaJson";
 
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@d4research/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildBranchNamePrompt,

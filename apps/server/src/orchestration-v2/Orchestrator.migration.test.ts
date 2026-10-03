@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
-import { ContextHandoffId, OrchestrationV2Command, ThreadId } from "@t3tools/contracts";
+import { ContextHandoffId, OrchestrationV2Command, ThreadId } from "@d4research/contracts";
 
 import {
   appendContextHandoffId,

@@ -4,8 +4,8 @@ import {
   ProviderInstanceId,
   type OrchestrationV2ProviderCapabilities,
   type ProviderSetupError,
-} from "@t3tools/contracts";
-import type { SelfInvocation } from "@t3tools/shared/nodeRuntime";
+} from "@d4research/contracts";
+import type { SelfInvocation } from "@d4research/shared/nodeRuntime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";

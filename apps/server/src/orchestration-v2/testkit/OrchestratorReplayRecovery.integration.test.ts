@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as CodexReplay from "effect-codex-app-server/replay";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@d4research/contracts";
 
 import {
   ClaudeOrchestratorReplayHarness,

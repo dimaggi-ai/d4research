@@ -1,4 +1,4 @@
-import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
+import { type OrchestrationV2Actor, ScheduledTaskId } from "@d4research/contracts";
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;

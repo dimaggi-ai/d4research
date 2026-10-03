@@ -3,7 +3,7 @@ import type {
   AcpRegistrySettings,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

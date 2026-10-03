@@ -1,8 +1,8 @@
-import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { presentThreadShell } from "@d4research/client-runtime/state/models";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import { backgroundWorkHoldsCompletion } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
 import * as Option from "effect/Option";
 import {
   CircleAlertIcon,

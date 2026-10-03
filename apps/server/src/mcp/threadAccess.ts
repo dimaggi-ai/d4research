@@ -4,7 +4,7 @@ import {
   OrchestratorMcpFailure,
   type ThreadId,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 

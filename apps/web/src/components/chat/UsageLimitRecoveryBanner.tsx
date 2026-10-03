@@ -2,7 +2,7 @@ import {
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
   type RunId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { GaugeIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "../ui/button";

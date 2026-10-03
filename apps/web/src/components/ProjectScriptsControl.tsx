@@ -3,11 +3,11 @@ import type {
   ProjectScript,
   ResolvedKeybindingsConfig,
   T3ProjectFileScript,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
 import React, { useCallback, useMemo, useState } from "react";
 

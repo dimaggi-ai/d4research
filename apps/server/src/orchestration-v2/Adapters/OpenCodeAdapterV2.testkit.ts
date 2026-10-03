@@ -1,6 +1,6 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderReplayEntry, type ProviderReplayTranscript } from "@t3tools/contracts";
+import { ProviderReplayEntry, type ProviderReplayTranscript } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";

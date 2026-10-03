@@ -7,7 +7,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2Notification,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

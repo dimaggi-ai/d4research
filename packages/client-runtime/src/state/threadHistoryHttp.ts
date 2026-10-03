@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 

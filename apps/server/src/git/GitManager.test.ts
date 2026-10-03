@@ -23,7 +23,7 @@ import type {
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
   ModelSelection,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -34,7 +34,7 @@ import {
   ProviderInstanceId,
   TextGenerationError,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import { decodeGitHubPullRequestListJson } from "../sourceControl/gitHubPullRequests.ts";

@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
 import {
   normalizeProviderAccentColor,
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
-} from "@t3tools/client-runtime/state/provider-instance-display";
-import type { EnvironmentId, ProviderDriverKind } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/provider-instance-display";
+import type { EnvironmentId, ProviderDriverKind } from "@d4research/contracts";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 /** What a thread row needs to draw the provider glyph and its account badge. */

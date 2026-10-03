@@ -23,8 +23,8 @@
  * Terminal-only decoration such as status, widget, title, and editor-text
  * updates has no matching T3 surface and is ignored.
  */
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import {
   defaultInstanceIdForDriver,
   PiSettings,
@@ -45,7 +45,7 @@ import {
   type ProviderApprovalDecision,
   type ProviderInstanceId,
   type OrchestrationV2ProviderTurnTokenUsage,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";

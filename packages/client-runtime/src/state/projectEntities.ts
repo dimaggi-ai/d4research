@@ -4,7 +4,7 @@ import type {
   OrchestrationV2ShellSnapshot,
   ProjectId,
   ScopedProjectRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentProject } from "./models.ts";

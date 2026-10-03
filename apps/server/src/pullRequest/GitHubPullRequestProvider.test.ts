@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
-import type { PullRequestReaction } from "@t3tools/contracts";
+import type { PullRequestReaction } from "@d4research/contracts";
 
 import { decodePullRequestDetailJson } from "./gitHubPullRequestJson.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";

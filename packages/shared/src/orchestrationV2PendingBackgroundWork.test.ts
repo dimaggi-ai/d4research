@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationV2PendingBackgroundTask } from "@t3tools/contracts";
+import type { OrchestrationV2PendingBackgroundTask } from "@d4research/contracts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,

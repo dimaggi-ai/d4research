@@ -6,7 +6,7 @@
  *
  * @module provider/Drivers/CursorDriver
  */
-import { CursorSettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
+import { CursorSettings, ProviderDriverKind, ProviderSetupError } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as FileSystem from "effect/FileSystem";

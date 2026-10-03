@@ -5,7 +5,7 @@ import {
   type OrchestrationSearchThreadsResult,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,7 +72,7 @@ export class ThreadSearch extends Context.Service<
       input: OrchestrationSearchThreadsInput,
     ) => Effect.Effect<OrchestrationSearchThreadsResult, ThreadSearchError>;
   }
->()("t3/orchestration-v2/ThreadSearch") {}
+>()("d4research/orchestration-v2/ThreadSearch") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

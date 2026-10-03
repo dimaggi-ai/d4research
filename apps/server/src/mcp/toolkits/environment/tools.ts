@@ -5,7 +5,7 @@ import {
   OrchestratorMcpFailure,
   ServerSettings,
   ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";

@@ -8,8 +8,8 @@ import type {
   SettingSource,
   ToolCall,
 } from "@cursor/sdk";
-import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { formatReadToolLabel, formatSearchToolLabel } from "@d4research/shared/toolActivity";
+import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
 import {
   CursorSettings,
   isOrchestrationV2WorkActive,
@@ -29,7 +29,7 @@ import {
   type OrchestrationV2TurnItem,
   type ProviderInstanceId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

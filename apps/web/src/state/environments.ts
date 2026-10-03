@@ -2,9 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import { Discovery } from "@t3tools/client-runtime/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@d4research/client-runtime/connection";
+import { Discovery } from "@d4research/client-runtime/relay";
+import type { EnvironmentId } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import { useMemo } from "react";
 

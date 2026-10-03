@@ -20,7 +20,7 @@ import {
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -186,7 +186,7 @@ export interface IdAllocatorV2Shape {
 }
 
 export class IdAllocatorV2 extends Context.Service<IdAllocatorV2, IdAllocatorV2Shape>()(
-  "t3/orchestration-v2/IdAllocator/IdAllocatorV2",
+  "d4research/orchestration-v2/IdAllocator/IdAllocatorV2",
 ) {}
 
 const encodePart = (part: string | number): string => encodeURIComponent(String(part));

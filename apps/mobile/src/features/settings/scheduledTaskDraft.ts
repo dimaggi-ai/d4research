@@ -5,13 +5,13 @@ import type {
   RuntimeMode,
   ScheduledTask,
   ScheduledTaskUpsertSchedule,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
 import {
   resolveProjectSettings,
   type LegacyProjectSettingsFields,
-} from "@t3tools/shared/projectSettings";
+} from "@d4research/shared/projectSettings";
 import {
   buildModelOptions,
   resolveDefaultableModelSelection,

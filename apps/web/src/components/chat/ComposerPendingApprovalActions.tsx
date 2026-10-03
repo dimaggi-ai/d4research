@@ -2,7 +2,7 @@ import {
   type ProviderApprovalDecision,
   type ProviderApprovalOption,
   type RuntimeRequestId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { memo } from "react";
 import { EllipsisIcon, TriangleAlertIcon } from "lucide-react";
 import { Button } from "../ui/button";

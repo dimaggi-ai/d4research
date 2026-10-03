@@ -1,12 +1,12 @@
 import {
   BearerConnectionTarget,
   PrimaryConnectionTarget,
-} from "@t3tools/client-runtime/connection";
+} from "@d4research/client-runtime/connection";
 import {
   type DesktopEnvironmentBootstrap,
   EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

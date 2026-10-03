@@ -33,7 +33,7 @@ export interface CursorSdkCatalogShape {
 }
 
 export class CursorSdkCatalog extends Context.Service<CursorSdkCatalog, CursorSdkCatalogShape>()(
-  "t3/provider/Layers/CursorSdkCatalog",
+  "d4research/provider/Layers/CursorSdkCatalog",
 ) {}
 
 function isAuthenticationFailure(cause: unknown): boolean {

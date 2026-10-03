@@ -1,4 +1,4 @@
-import { type ChatAttachment, MessageId, OrchestratorMcpFailure } from "@t3tools/contracts";
+import { type ChatAttachment, MessageId, OrchestratorMcpFailure } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Upload from "../../../assets/AttachmentUpload.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";

@@ -2,7 +2,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceEnvironment,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";

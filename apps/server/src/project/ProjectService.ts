@@ -7,7 +7,7 @@ import {
   type ProjectUpdatePayload,
   type ProjectSnapshot,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -142,7 +142,7 @@ export class ProjectService extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
   }
->()("t3/project/ProjectService") {}
+>()("d4research/project/ProjectService") {}
 
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;

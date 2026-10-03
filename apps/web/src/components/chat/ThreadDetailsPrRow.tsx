@@ -15,9 +15,9 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
  * Until the detail arrives — or where pull requests are not supported at all — the row renders
  * from the linked snapshot or branch summary, or just the link when status is unavailable.
  */
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId, PullRequestRef } from "@t3tools/contracts";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import type { EnvironmentId, ProjectId, PullRequestRef } from "@d4research/contracts";
+import { sourceControlRepositorySelector } from "@d4research/shared/sourceControl";
 import { ArrowUpRightIcon, FileDiffIcon, GitBranchIcon, TriangleAlertIcon } from "lucide-react";
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 

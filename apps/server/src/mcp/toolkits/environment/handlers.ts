@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure, type ServerSettings } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ServerSettings } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";

@@ -3,9 +3,9 @@ import type {
   OrchestrationProjectShell,
   ServerProvider,
   ProviderDriverKind,
-} from "@t3tools/contracts";
-import { fileBasename } from "@t3tools/client-runtime/markdown-links";
-import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { fileBasename } from "@d4research/client-runtime/markdown-links";
+import { formatModelSlugName, resolveSelectableModel } from "@d4research/shared/model";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 import type { ReactNode } from "react";
 import {

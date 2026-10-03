@@ -1,5 +1,5 @@
 import { assert, it, vi } from "@effect/vitest";
-import { CheckpointRef, CheckpointScopeId, RunId, ThreadId } from "@t3tools/contracts";
+import { CheckpointRef, CheckpointScopeId, RunId, ThreadId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

@@ -7,25 +7,25 @@ import {
   type ToolActivityIcon,
   type OrchestrationV2TurnItem,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   resolveT3McpToolDefinition,
   type T3McpToolDefinition,
   type T3McpToolSummaryAction,
-} from "@t3tools/shared/t3McpToolPresentation";
-import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
-import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { formatTokens } from "@t3tools/shared/usageFormat";
-import { classifyToolActivity } from "@t3tools/shared/toolActivity";
-import { toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
+} from "@d4research/shared/t3McpToolPresentation";
+import { classifyMarkdownImageSource } from "@d4research/client-runtime/markdown-images";
+import { resolveMediaSource } from "@d4research/client-runtime/media-source";
+import { parseChangeRequestUrl } from "@d4research/shared/changeRequestUrl";
+import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
+import { formatTokens } from "@d4research/shared/usageFormat";
+import { classifyToolActivity } from "@d4research/shared/toolActivity";
+import { toolOutputIndicatesFailure } from "@d4research/shared/toolOutput";
 
 import {
   summarizeT3ToolCalls,
   t3ToolResultIndicatesFailure,
   type T3ToolSummaryCall,
-} from "@t3tools/client-runtime/t3ToolSummary";
+} from "@d4research/client-runtime/t3ToolSummary";
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
@@ -60,7 +60,7 @@ export function contextCompactionLabel(
 }
 
 export interface WorkLogPresentationEntry {
-  readonly questionAnswer?: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+  readonly questionAnswer?: import("@d4research/contracts").UserInputAttachmentAnswerPayload;
   readonly id: string;
   readonly createdAt: string;
   readonly label: string;

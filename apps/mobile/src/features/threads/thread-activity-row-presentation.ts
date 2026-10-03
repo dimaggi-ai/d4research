@@ -3,7 +3,7 @@ import {
   type OrchestrationV2TurnItem,
   type ProviderDriverKind,
   type ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export function resolveThreadActivityMetadata(input: {
   readonly providerDriver: ProviderDriverKind | null;

@@ -1,4 +1,4 @@
-import { CommandId, type OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import { CommandId, type OrchestrationV2ThreadProjection } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";

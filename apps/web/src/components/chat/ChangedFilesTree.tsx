@@ -1,4 +1,4 @@
-import { type TurnId } from "@d4research/contracts";
+import { type RunId } from "@d4research/contracts";
 import { type MouseEvent, memo, useCallback, useMemo, useState } from "react";
 import { type TurnDiffFileChange } from "../../types";
 import {
@@ -32,7 +32,7 @@ const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 export type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
 
 export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
-  turnId: TurnId;
+  runId: RunId;
   files: ReadonlyArray<TurnDiffFileChange>;
   expanded: boolean;
   showCompactPreview: boolean;
@@ -40,11 +40,11 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   resolvedTheme: "light" | "dark";
   onExpandedChange: (expanded: boolean) => void;
   onToggleAllDirectories: () => void;
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
 }) {
   const {
-    turnId,
+    runId,
     files,
     expanded,
     showCompactPreview,
@@ -145,7 +145,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                   size="xs"
                   variant="outline"
                   aria-label="Open diff"
-                  onClick={() => onOpenTurnDiff(turnId, files[0]?.path)}
+                  onClick={() => onOpenTurnDiff(runId, files[0]?.path)}
                 />
               }
             >
@@ -156,81 +156,29 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           </Tooltip>
         </div>
       </div>
-      {expanded ? (
-        <ChangedFilesTree
-          key={`changed-files-tree:${turnId}`}
-          turnId={turnId}
-          files={files}
-          allDirectoriesExpanded={allDirectoriesExpanded}
-          resolvedTheme={resolvedTheme}
-          onOpenTurnDiff={onOpenTurnDiff}
-        />
-      ) : compactPreviewVisible ? (
-        <div className="px-2 pb-1.5 pt-1">
-          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-            {scopeSummary.map((scope, index) => (
-              <span key={scope.label} className="inline-flex items-center gap-1">
-                {index > 0 ? <span aria-hidden="true">·</span> : null}
-                <span className="font-mono text-foreground/75">{scope.label}</span>
-                <span>
-                  {scope.fileCount} file{scope.fileCount === 1 ? "" : "s"}
-                </span>
-              </span>
-            ))}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {previewFiles.map((file) => (
-              <Tooltip key={file.path}>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      className="inline-flex max-w-48 items-center gap-1 rounded-md border border-border/70 bg-background/45 px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => onOpenTurnDiff(turnId, file.path)}
-                    />
-                  }
-                >
-                  <PierreEntryIcon
-                    pathValue={file.path}
-                    kind="file"
-                    theme={resolvedTheme}
-                    className="size-3 shrink-0 text-muted-foreground/70"
-                  />
-                  <span className="truncate">{changedFileName(file.path)}</span>
-                </TooltipTrigger>
-                <TooltipPopup side="top">{file.path}</TooltipPopup>
-              </Tooltip>
-            ))}
-            <button
-              type="button"
-              className="rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => onExpandedChange(true)}
-            >
-              Show all {files.length} files
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ChangedFilesTree
+        key={`${runId}:${allDirectoriesExpanded}`}
+        runId={runId}
+        files={files}
+        allDirectoriesExpanded={allDirectoriesExpanded}
+        resolvedTheme={resolvedTheme}
+        onOpenTurnDiff={onOpenTurnDiff}
+        onFileContextMenu={onFileContextMenu}
+      />
     </div>
   );
 });
 
 export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
-  turnId: TurnId;
+  runId: RunId;
   files: ReadonlyArray<TurnDiffFileChange>;
   allDirectoriesExpanded: boolean;
   resolvedTheme: "light" | "dark";
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
 }) {
-  const {
-    files,
-    allDirectoriesExpanded,
-    onOpenTurnDiff,
-    resolvedTheme,
-    turnId,
-    onFileContextMenu,
-  } = props;
+  const { files, allDirectoriesExpanded, onOpenTurnDiff, resolvedTheme, runId, onFileContextMenu } =
+    props;
   const treeNodes = useMemo(() => buildTurnDiffTree(files), [files]);
   const directoryPathsKey = useMemo(
     () => collectDirectoryPaths(treeNodes).join("\u0000"),
@@ -315,7 +263,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
         type="button"
         className="group flex w-full items-center gap-1.5 rounded-xl py-1 pr-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         style={{ paddingLeft: `${leftPadding}px` }}
-        onClick={() => onOpenTurnDiff(turnId, node.path)}
+        onClick={() => onOpenTurnDiff(runId, node.path)}
         onContextMenu={
           onFileContextMenu
             ? (event) => {

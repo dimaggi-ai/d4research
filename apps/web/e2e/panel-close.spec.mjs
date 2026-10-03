@@ -13,7 +13,9 @@ export async function panelCloseReachability({ page, webUrl, workspace, screensh
       await right.click({ timeout: 20000 });
       const header = page.locator("[data-right-panel-tabbar]");
       await header.waitFor({ state: "visible" });
-      const close = header.getByRole("button", { name: "Toggle right panel", exact: true });
+      // V2 keeps the desktop controls in a fixed titlebar cluster while the
+      // sheet hosts them inside its tab bar. Both must expose one visible toggle.
+      const close = page.getByRole("button", { name: "Toggle right panel", exact: true });
       await close.waitFor({ state: "visible", timeout: 5000 });
       NodeAssert.equal(
         await right.count(),
@@ -26,12 +28,12 @@ export async function panelCloseReachability({ page, webUrl, workspace, screensh
         `Right panel close must be in the visible top bar at width ${width}`,
       );
       if (width >= 1024) {
-        await header.getByRole("button", { name: "Maximize panel", exact: true }).click();
-        await header.getByRole("button", { name: "Restore panel size", exact: true }).waitFor();
+        await page.getByRole("button", { name: "Maximize panel", exact: true }).click();
+        await page.getByRole("button", { name: "Restore panel size", exact: true }).waitFor();
         await close.click();
         await header.waitFor({ state: "hidden" });
         await right.click();
-        await header
+        await page
           .getByRole("button", { name: "Maximize panel", exact: true })
           .waitFor({ timeout: 5000 });
       }

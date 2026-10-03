@@ -12,9 +12,9 @@ import {
 } from "@d4research/shared/researchPipeline";
 
 import * as ServerConfig from "../../../config.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
-import { ProviderService } from "../../../provider/Services/ProviderService.ts";
+import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts";
+import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
+import { ProviderAdapterRegistryV2 } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 import {
@@ -109,9 +109,9 @@ export class InlineDelegationRunner extends Context.Service<
         | Crypto.Crypto
         | HttpClient.HttpClient
         | Path.Path
-        | ProjectionSnapshotQuery
-        | ProviderAdapterRegistry
-        | ProviderService
+        | ProjectionStoreV2
+        | ProjectStoreV2
+        | ProviderAdapterRegistryV2
         | ResearchDelegationBudget
         | ServerConfig.ServerConfig
         | ServerSettingsService

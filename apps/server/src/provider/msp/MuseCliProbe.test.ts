@@ -128,6 +128,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
           );
           const threadId = ThreadId.make("muse-cli-probe-mcp");
           McpProviderSession.setMcpProviderSession({
+            browserToolsAvailable: true,
             environmentId: EnvironmentId.make("probe"),
             threadId,
             providerSessionId: "probe-session",

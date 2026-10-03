@@ -1,68 +1,46 @@
 import { useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { ProviderInstanceId } from "@d4research/contracts";
-import { searchableSetting } from "./settingsSearch";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
-
 import { useState } from "react";
-
-import { type ServerSettings } from "@d4research/contracts";
-
-import { type SourceControlWritingStyleMode } from "@d4research/contracts";
-
+import type {
+  ProviderInstanceId,
+  ServerSettings,
+  SourceControlWritingStyleMode,
+} from "@d4research/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@d4research/contracts/settings";
-
 import { createModelSelection } from "@d4research/shared/model";
-
 import { resolveSourceControlWriterModelSelection } from "@d4research/shared/serverSettings";
 
-import { useScopedSettings } from "./useScopedSettings";
-
-import { useScopedSettingsMixed } from "./useScopedSettings";
-
-import { useUpdateScopedSettings } from "./useScopedSettings";
-
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
-
 import { useSettingsScope } from "./SettingsScopeContext";
-
-import { applyProviderInstanceSettings } from "../../providerInstances";
-
-import { deriveProviderInstanceEntries } from "../../providerInstances";
-
-import { sortProviderInstanceEntries } from "../../providerInstances";
-
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
-
-import { resolveAppModelSelectionState } from "../../modelSelection";
-
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  sortProviderInstanceEntries,
+} from "../../providerInstances";
+import {
+  getCustomModelOptionsByInstance,
+  resolveAppModelSelectionState,
+} from "../../modelSelection";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-
-import { Select } from "../ui/select";
-
-import { SelectItem } from "../ui/select";
-
-import { SelectPopup } from "../ui/select";
-
-import { SelectTrigger } from "../ui/select";
-
-import { SelectValue } from "../ui/select";
-
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-
 import { Textarea } from "../ui/textarea";
-
 import { toastManager } from "../ui/toast";
-
 import { Button } from "../ui/button";
-
-import { SettingResetButton } from "./settingsLayout";
-
-import { SettingsRow } from "./settingsLayout";
-
-import { SettingsSection } from "./settingsLayout";
+import {
+  SETTINGS_PICKER_TRIGGER_CLASSNAME,
+  SettingResetButton,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
+import { BranchNamingSettings } from "./BranchNamingSettings";
+import { searchableSetting } from "./settingsSearch";
 
 const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; description: string }> =
   {
@@ -148,7 +126,8 @@ export function SourceControlWritingSettingsSection() {
   );
 
   return (
-    <SettingsSection title="Text generation">
+    <SettingsSection id="source-control-text-generation" title="Text generation">
+      <BranchNamingSettings />
       <SettingsRow
         serverScoped
         settingKeys={["sourceControlWritingStyle"]}

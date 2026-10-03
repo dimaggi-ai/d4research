@@ -15,7 +15,7 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
     Layer.provide(RemoteEnvironmentAuthorization.layer),
   );
   const driverLayer = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layerWithOptions(options))),
+    Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer(options))),
   );
   const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
   const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));

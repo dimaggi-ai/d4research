@@ -20,23 +20,24 @@ export function appendPendingThreadMessages(
     ...presentedFeed,
     ...queuedMessages
       .filter((message) => !deliveredIds.has(message.messageId))
-      .map(
-        (pendingMessage): PendingThreadFeedEntry => ({
-          type: "message",
+      .map((pendingMessage): PendingThreadFeedEntry => ({
+        type: "message",
+        id: pendingMessage.messageId,
+        createdAt: pendingMessage.createdAt,
+        pendingMessage,
+        message: {
           id: pendingMessage.messageId,
+          role: "user",
+          text: pendingMessage.text,
+          attachments: [],
+          context: pendingMessage.context,
           createdAt: pendingMessage.createdAt,
-          pendingMessage,
-          message: {
-            id: pendingMessage.messageId,
-            role: "user",
-            text: pendingMessage.text,
-            context: pendingMessage.context,
-            createdAt: pendingMessage.createdAt,
-            updatedAt: pendingMessage.createdAt,
-            turnId: null,
-            streaming: false,
-          },
-        }),
-      ),
+          updatedAt: pendingMessage.createdAt,
+          runId: null,
+          streaming: false,
+          visibility: "local",
+          sourceThreadId: pendingMessage.threadId,
+        },
+      })),
   ];
 }

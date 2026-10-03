@@ -8,10 +8,10 @@ import { HttpClient } from "effect/unstable/http";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts";
+import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
+import { ProviderAdapterRegistryV2 } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
-import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 
 /**
@@ -42,10 +42,11 @@ export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateEr
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
-  ProviderAdapterRegistry,
+  ProviderAdapterRegistryV2,
   ProviderRegistry,
-  ProviderService,
-  ProjectionSnapshotQuery,
+
+  ProjectionStoreV2,
+  ProjectStoreV2,
   ServerConfig.ServerConfig,
   ResearchDelegationBudget,
   Path.Path,

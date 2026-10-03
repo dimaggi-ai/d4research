@@ -1,4 +1,4 @@
-import { TurnId } from "@d4research/contracts";
+import { RunId } from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -8,7 +8,7 @@ describe("ChangedFilesCard", () => {
   it("keeps its compact header sticky while preserving singular labels", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
-        turnId={TurnId.make("turn-1")}
+        runId={RunId.make("run-1")}
         files={[{ path: "README.md", kind: "modified", additions: 2, deletions: 1 }]}
         expanded
         showCompactPreview={false}
@@ -32,7 +32,7 @@ describe("ChangedFilesCard", () => {
   it("renders a scope and representative-file preview for a large latest change", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
-        turnId={TurnId.make("turn-1")}
+        runId={RunId.make("run-1")}
         files={[
           { path: "apps/web/src/App.tsx", kind: "modified", additions: 120, deletions: 20 },
           { path: "apps/web/src/App.test.tsx", kind: "modified", additions: 30, deletions: 2 },
@@ -70,7 +70,7 @@ describe("ChangedFilesCard", () => {
   it("keeps older collapsed changes to a one-line receipt", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
-        turnId={TurnId.make("turn-1")}
+        runId={RunId.make("run-1")}
         files={[{ path: "apps/web/src/App.tsx", kind: "modified", additions: 120, deletions: 20 }]}
         expanded={false}
         showCompactPreview={false}
@@ -139,7 +139,7 @@ describe("ChangedFilesTree", () => {
     ({ files, visibleLabels, hiddenLabels }) => {
       const markup = renderToStaticMarkup(
         <ChangedFilesTree
-          turnId={TurnId.make("turn-1")}
+          runId={RunId.make("turn-1")}
           files={files}
           allDirectoriesExpanded={false}
           resolvedTheme="light"
@@ -215,7 +215,7 @@ describe("ChangedFilesTree", () => {
     ({ files, visibleLabels }) => {
       const markup = renderToStaticMarkup(
         <ChangedFilesTree
-          turnId={TurnId.make("turn-1")}
+          runId={RunId.make("turn-1")}
           files={files}
           allDirectoriesExpanded
           resolvedTheme="light"

@@ -14,8 +14,8 @@ import * as TestClock from "effect/testing/TestClock";
 import { subscribeChatGptHandoff } from "./CodexChatGptHandoff.ts";
 import { FetchHttpClient } from "effect/unstable/http";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
-import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
-import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 import { makeCodexChatGptAuth } from "./CodexChatGptAuth.ts";
 
@@ -34,13 +34,13 @@ const makeHarnessFor = Effect.fnUntraced(function* (
 ) {
   const environmentId = environmentIds.get(bytes) ?? EnvironmentId.make(NodeCrypto.randomUUID());
   environmentIds.set(bytes, environmentId);
-  const environment = ServerEnvironmentIdentity.of({
+  const environment = ServerEnvironment.ServerEnvironmentIdentity.of({
     getEnvironmentId: Effect.succeed(environmentId),
   });
   const keys = yield* Effect.promise(() => generateKeyPair("RS256"));
   const jwk = yield* Effect.promise(() => exportJWK(keys.publicKey));
   const untrustedKeys = yield* Effect.promise(() => generateKeyPair("RS256"));
-  const secrets = ServerSecretStore.of({
+  const secrets = ServerSecretStore.ServerSecretStore.of({
     get: (name) => Effect.sync(() => Option.fromUndefinedOr(bytes.get(name))),
     set: (name, value) =>
       Effect.sync(() => {
@@ -210,8 +210,8 @@ const makeHarnessFor = Effect.fnUntraced(function* (
     discoveryUrl: `${origin}/discovery`,
     resource: `${origin}/v1`,
   }).pipe(
-    Effect.provideService(ServerSecretStore, secrets),
-    Effect.provideService(ServerEnvironmentIdentity, environment),
+    Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+    Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
   );
   const phase = (phase: string) =>
     auth.controller.subscribe("owner").pipe(
@@ -255,7 +255,7 @@ const makeHarnessFor = Effect.fnUntraced(function* (
     const stored = yield* auth.read;
     const record = Option.getOrThrow(stored);
     const store = yield* ProviderCredentialStore.make("codex-chatgpt", instanceId).pipe(
-      Effect.provideService(ServerSecretStore, secrets),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
     );
     yield* store.set(new TextEncoder().encode(JSON.stringify({ ...record, expiresAt: 0 })));
   });
@@ -280,7 +280,7 @@ const makeHarnessFor = Effect.fnUntraced(function* (
       Effect.promise(() => fetch(prepareCallback(state))),
     destination: Effect.gen(function* () {
       const destinationBytes = new Map<string, Uint8Array>();
-      const destinationStore = ServerSecretStore.of({
+      const destinationStore = ServerSecretStore.ServerSecretStore.of({
         ...secrets,
         get: (name) => Effect.sync(() => Option.fromUndefinedOr(destinationBytes.get(name))),
         set: (name, value) =>
@@ -297,8 +297,8 @@ const makeHarnessFor = Effect.fnUntraced(function* (
         discoveryUrl: `${origin}/discovery`,
         resource: `${origin}/v1`,
       }).pipe(
-        Effect.provideService(ServerSecretStore, destinationStore),
-        Effect.provideService(ServerEnvironmentIdentity, environment),
+        Effect.provideService(ServerSecretStore.ServerSecretStore, destinationStore),
+        Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
       );
       return { auth: destination, bytes: destinationBytes };
     }),
@@ -307,8 +307,8 @@ const makeHarnessFor = Effect.fnUntraced(function* (
       discoveryUrl: `${origin}/discovery`,
       resource: `${origin}/v1`,
     }).pipe(
-      Effect.provideService(ServerSecretStore, secrets),
-      Effect.provideService(ServerEnvironmentIdentity, environment),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
+      Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
     ),
     startRemote,
     signIn: signInWithMethod(),
@@ -1700,8 +1700,8 @@ it.effect("primary completes OAuth and destination imports and owns the refresh 
       assert.isFalse("refreshToken" in reconnect!);
       const store = yield* ProviderCredentialStore.make("codex-chatgpt", instanceId).pipe(
         Effect.provideService(
-          ServerSecretStore,
-          ServerSecretStore.of({
+          ServerSecretStore.ServerSecretStore,
+          ServerSecretStore.ServerSecretStore.of({
             get: (name) => Effect.sync(() => Option.fromUndefinedOr(destination.bytes.get(name))),
             set: (name, value) =>
               Effect.sync(() => {

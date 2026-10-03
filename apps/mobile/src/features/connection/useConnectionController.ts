@@ -24,7 +24,10 @@ export function useConnectionController() {
   );
 
   const connectedEnvironments = useMemo<ReadonlyArray<WorkspaceEnvironment>>(
-    () => environments.map(projectWorkspaceEnvironment),
+    () =>
+      environments.map((environment) =>
+        projectWorkspaceEnvironment(environment.environmentId, environment),
+      ),
     [environments],
   );
 

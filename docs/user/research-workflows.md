@@ -6,6 +6,11 @@ d4research is a research workspace for evidence-heavy work across models and pro
 mode structures an investigation, while provider handoff preserves one continuous chat when the
 active model changes.
 
+Research advisers require a read-only provider session. Agy, Muse, and Junie currently cannot
+enforce that requirement, so delegation to them fails before launch. They remain available for
+normal chat. Choose another provider for advisory steps; a listed model is not proof that a
+delegate ran.
+
 ## Configure the pipeline
 
 Research runs **named scenarios** you author in **Settings → Research** — each scenario is a

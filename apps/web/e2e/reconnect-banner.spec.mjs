@@ -21,7 +21,9 @@ export async function reconnectBanner({ page, context, app, screenshotDir }) {
   try {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.getByRole("button", { name: "Send message", exact: true }).waitFor();
+      const expand = page.getByRole("button", { name: "Expand composer", exact: true });
+      if (await expand.isVisible()) await expand.click();
+      await page.locator('[data-chat-composer-form="true"]').waitFor({ state: "visible" });
       await context.setOffline(true);
       await page.evaluate(() => {
         for (const socket of window.__reconnectTestSockets) socket.close();

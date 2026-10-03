@@ -15,7 +15,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { type ClaudeSettings, type ModelSelection } from "@d4research/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
+import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@d4research/shared/git";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import { TextGenerationError } from "@d4research/contracts";
@@ -372,6 +372,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
         attachments: input.attachments,
+        naming: input.naming,
       });
 
       const generated = yield* runClaudeJson({
@@ -383,7 +384,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       });
 
       return {
-        branch: sanitizeBranchFragment(generated.branch),
+        branch: formatGeneratedBranchName(generated.branch, input.naming),
       };
     });
 

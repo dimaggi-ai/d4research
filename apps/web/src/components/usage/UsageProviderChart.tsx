@@ -1,5 +1,6 @@
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import type { UsageProviderKind } from "@d4research/contracts";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@d4research/shared/usageMerge";
 import {
@@ -384,12 +385,16 @@ export function UsageProviderChart({
             >
               <div className="mb-1 text-muted-foreground">{formatTooltipPeriod(hoveredPeriod)}</div>
               {providers.map((provider) => {
-                const Mark = PROVIDER_PRESENTATION[provider].mark;
+                const { label, driverKind } = PROVIDER_PRESENTATION[provider];
                 return (
                   <div key={provider} className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Mark className="size-3 shrink-0" aria-hidden />
-                      {PROVIDER_PRESENTATION[provider].label}
+                      <ProviderInstanceIcon
+                        driverKind={driverKind}
+                        displayName={label}
+                        iconClassName="size-3"
+                      />
+                      {label}
                     </span>
                     <span className="text-foreground tabular-nums">
                       {format(
@@ -433,10 +438,14 @@ export function UsageChartLegend() {
       {PROVIDER_ORDER.map((provider) => {
         // The marks carry the same fills as the bands, so they key the chart
         // just as a colour swatch would.
-        const Mark = PROVIDER_PRESENTATION[provider].mark;
+        const presentation = PROVIDER_PRESENTATION[provider];
         return (
           <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Mark className="size-3.5 shrink-0" aria-hidden />
+            <ProviderInstanceIcon
+              driverKind={presentation.driverKind}
+              displayName={presentation.label}
+              iconClassName="size-3.5"
+            />
             {PROVIDER_PRESENTATION[provider].label}
           </span>
         );

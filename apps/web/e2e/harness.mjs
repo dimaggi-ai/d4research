@@ -185,14 +185,17 @@ export async function openAuthenticatedPage(app, label = "e2e") {
 async function completeOnboarding(page) {
   const skipImport = page.getByRole("button", { name: "Do not import projects" });
   for (let step = 0; step < 4 && !(await skipImport.isVisible()); step++) {
-    const next = page.getByRole("button", { name: "Continue" });
+    const next = page.getByRole("button", { name: "Continue", exact: true });
     await next.waitFor({ state: "visible", timeout: 30_000 });
+    const currentStep = await page.locator('[aria-current="step"]').getAttribute("aria-label");
     // Continue stays disabled until the step's own checks settle.
     await next.click({ timeout: 30_000 });
-    await Promise.race([
-      skipImport.waitFor({ state: "visible", timeout: 30_000 }),
-      next.waitFor({ state: "detached", timeout: 30_000 }),
-    ]).catch(() => {});
+    await page.waitForFunction(
+      (previous) =>
+        document.querySelector('[aria-current="step"]')?.getAttribute("aria-label") !== previous,
+      currentStep,
+      { timeout: 30_000 },
+    );
   }
   await skipImport.click({ timeout: 30_000 });
   await page.waitForURL((url) => url.pathname !== "/welcome", { timeout: 30_000 });
@@ -207,8 +210,10 @@ async function completeOnboarding(page) {
  */
 export async function openProject(page, workspacePath) {
   const composer = page.locator('[data-chat-composer-form="true"]');
+  const expandComposer = page.getByRole("button", { name: "Expand composer", exact: true });
+  const threadReady = composer.or(expandComposer).filter({ visible: true }).first();
   const noProjects = page.getByText("No projects yet", { exact: true });
-  const composerVisible = await composer
+  const composerVisible = await threadReady
     .waitFor({ state: "visible", timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
@@ -219,7 +224,7 @@ export async function openProject(page, workspacePath) {
     // either of which would swallow the palette shortcut below.
     await page.goto(new URL("/", page.url()).href, { waitUntil: "domcontentloaded" });
     await Promise.race([
-      composer.waitFor({ state: "visible", timeout: 30_000 }),
+      threadReady.waitFor({ state: "visible", timeout: 30_000 }),
       noProjects.waitFor({ state: "visible", timeout: 30_000 }),
     ]);
   }
@@ -228,7 +233,7 @@ export async function openProject(page, workspacePath) {
   // only treat it as empty if no composer mounts shortly after.
   const empty =
     (await noProjects.isVisible()) &&
-    !(await composer
+    !(await threadReady
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
       .catch(() => false));
@@ -256,13 +261,12 @@ export async function openProject(page, workspacePath) {
   }
   // The route resolves before the thread chrome mounts; wait for a control that
   // only exists inside a thread so callers can query the header immediately.
-  await page
-    .getByRole("button", { name: /send message/i })
-    .first()
-    .waitFor({
-      state: "visible",
-      timeout: 30_000,
-    });
+  await threadReady.waitFor({ state: "visible", timeout: 30_000 });
+  if (await expandComposer.isVisible()) await expandComposer.click();
+  await composer.waitFor({
+    state: "visible",
+    timeout: 30_000,
+  });
 }
 
 export async function stopIsolatedApp(app) {

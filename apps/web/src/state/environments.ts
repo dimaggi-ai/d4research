@@ -8,7 +8,11 @@ import * as Option from "effect/Option";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
-import { environmentPresentations, useEnvironmentPresentation } from "./presentation";
+import {
+  environmentPresentations,
+  environmentSummaries,
+  useEnvironmentPresentation,
+} from "./presentation";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { useEnvironmentQuery } from "./query";
 import { usePreparedConnection } from "./session";
@@ -82,4 +86,24 @@ export function useEnvironmentHttpBaseUrl(environmentId: EnvironmentId | null): 
 
 export function useEnvironmentConnectionState(environmentId: EnvironmentId) {
   return useEnvironmentQuery(environmentCatalog.stateAtom(environmentId));
+}
+
+export function useEnvironmentIds() {
+  return useAtomValue(environmentSummaries.environmentIdsAtom);
+}
+
+export function useEnvironmentIdentities() {
+  return useAtomValue(environmentSummaries.identitiesAtom);
+}
+
+export function usePullRequestsSupported() {
+  return useAtomValue(environmentSummaries.pullRequestsSupportedAtom);
+}
+
+export function useEnvironmentMachines() {
+  return useAtomValue(environmentSummaries.machineByIdAtom);
+}
+
+export function useConnectedEnvironmentIds() {
+  return useAtomValue(environmentSummaries.connectedEnvironmentIdsAtom);
 }

@@ -40,6 +40,11 @@ cannot update automatically remain available for manual updating from their prov
 
 ## Remote Clients
 
+The orchestration V2 update preserves older conversation transcripts but cannot carry every kind
+of runtime history forward. Read [Threads from older versions](./thread-migration.md) before
+continuing an important older thread. Keep client and server builds compatible; a protocol
+mismatch can prevent connection rather than merely show a version warning.
+
 Update the server machine, not only the browser or phone used to reach it. Provider CLIs, Memo,
 projects, and runtime state live in that server environment. Keep the client open during a planned
 restart; it reconnects and reloads durable thread state when the server returns.

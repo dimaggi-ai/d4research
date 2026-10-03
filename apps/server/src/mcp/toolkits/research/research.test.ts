@@ -50,15 +50,22 @@ import {
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
 import {
-  ProjectionSnapshotQuery,
-  type ProjectionThreadCheckpointContext,
-} from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
+  ProjectionStoreV2,
+  ProjectionStoreThreadNotFoundError,
+} from "../../../orchestration-v2/ProjectionStore.ts";
+import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
+import { DateTime } from "effect";
+import { EventId, OrchestrationV2AppThread } from "@d4research/contracts";
+type ProjectionThreadCheckpointContext = {
+  threadId: ThreadId;
+  projectId: ProjectId;
+  workspaceRoot: string;
+  worktreePath: string | null;
+  checkpoints: ReadonlyArray<unknown>;
+};
+import { ProviderAdapterRegistryV2 as ProviderAdapterRegistry } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
+import { makeLegacyAdapterV2 } from "../../../provider/Layers/LegacyAdapterV2.ts";
 import { makeProviderRegistryLayer } from "../../../provider/testUtils/providerRegistryMock.ts";
-import {
-  ProviderService,
-  type ProviderServiceShape,
-} from "../../../provider/Services/ProviderService.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 
@@ -331,6 +338,8 @@ describe("research delegate handler", () => {
             yield* PubSub.publish(runtimeEvents, {
               type: "request.opened",
               provider,
+              eventId: EventId.make("request"),
+              createdAt: "2026-08-08T00:00:00Z",
               threadId: input.threadId,
               requestId: "delegate-read-request",
               payload: { requestType: "file_read_approval", detail: "read the workspace" },
@@ -340,6 +349,8 @@ describe("research delegate handler", () => {
             yield* PubSub.publish(runtimeEvents, {
               type: "user-input.requested",
               provider,
+              eventId: EventId.make("request"),
+              createdAt: "2026-08-08T00:00:00Z",
               threadId: input.threadId,
               requestId: "delegate-question",
               payload: { questions: [] },
@@ -352,8 +363,24 @@ describe("research delegate handler", () => {
               { id, items: [{ text: "review verdict: PASS" }] },
             ]);
             if (input.input === "Reply with the single word: OK") {
-              yield* Ref.set(warmupBusyReads, 2);
+              yield* Ref.set(warmupBusyReads, 0);
             }
+            const eventBase = {
+              eventId: EventId.make("answer"),
+              provider,
+              threadId: input.threadId,
+              createdAt: "2026-08-08T00:00:00Z",
+            };
+            yield* PubSub.publish(runtimeEvents, {
+              ...eventBase,
+              type: "content.delta",
+              payload: { streamKind: "assistant_text", delta: "review verdict: PASS" },
+            } as never);
+            yield* PubSub.publish(runtimeEvents, {
+              ...eventBase,
+              type: "turn.completed",
+              payload: { state: "completed" },
+            } as never);
             return { threadId: input.threadId, turnId: id };
           }),
         readThread: (threadId: string) =>
@@ -400,32 +427,6 @@ describe("research delegate handler", () => {
         stopAll: () => Effect.void,
         streamEvents: Stream.fromPubSub(runtimeEvents),
       } as never;
-      const facadeMustNotRun = () =>
-        Effect.die(
-          "research delegates must bypass ProviderService's durable user-session lifecycle",
-        );
-      const providerServiceLayer = Layer.succeed(
-        ProviderService,
-        ProviderService.of({
-          startSession: facadeMustNotRun,
-          sendTurn: facadeMustNotRun,
-          compactThread: facadeMustNotRun,
-          interruptTurn: facadeMustNotRun,
-          respondToRequest: facadeMustNotRun,
-          respondToUserInput: facadeMustNotRun,
-          stopSession: facadeMustNotRun,
-          listSessions: facadeMustNotRun,
-          getCapabilities: facadeMustNotRun,
-          getInstanceInfo: facadeMustNotRun,
-          assertConversationRollbackSupported: facadeMustNotRun,
-          rollbackConversation: facadeMustNotRun,
-          uploadFeedback: facadeMustNotRun,
-          streamEvents: Stream.fromPubSub(runtimeEvents),
-          subscribeEvents: PubSub.subscribe(runtimeEvents).pipe(
-            Effect.map((subscription) => Stream.fromEffectRepeat(PubSub.take(subscription))),
-          ),
-        } as ProviderServiceShape),
-      );
       const settings = {
         ...DEFAULT_SERVER_SETTINGS,
         research: { ...DEFAULT_SERVER_SETTINGS.research, shareMemoContext: false },
@@ -448,6 +449,8 @@ describe("research delegate handler", () => {
           ready: Effect.void,
           getSettings: Ref.get(settingsRef),
           updateSettings: () => Effect.die("unused"),
+          updateProviderInstance: () => Effect.die("unused"),
+          withSettingsSnapshot: () => Effect.die("unused"),
           streamChanges: Stream.empty,
           subscribeChanges: Effect.succeed(Stream.empty),
         }),
@@ -455,12 +458,9 @@ describe("research delegate handler", () => {
       const registryLayer = Layer.succeed(
         ProviderAdapterRegistry,
         ProviderAdapterRegistry.of({
-          getByInstance: () => Effect.succeed(adapter),
-          getInstanceInfo: () => Effect.die("unused"),
-          listInstances: () => Effect.succeed([instanceId]),
-          listProviders: () => Effect.succeed([provider]),
-          streamChanges: Stream.empty,
-          subscribeChanges: Effect.die("unused"),
+          get: () => Effect.succeed(makeLegacyAdapterV2(adapter, instanceId)),
+
+          list: () => Effect.succeed([instanceId]),
         }),
       );
       const orchestratorContext: ProjectionThreadCheckpointContext = {
@@ -473,21 +473,64 @@ describe("research delegate handler", () => {
       const orchestratorContextRef = yield* Ref.make<
         Option.Option<ProjectionThreadCheckpointContext>
       >(Option.some(orchestratorContext));
-      const projectionLayer = Layer.mock(ProjectionSnapshotQuery)({
-        getThreadCheckpointContext: () => Ref.get(orchestratorContextRef),
-        getProjectShellById: (projectId) =>
-          Effect.succeed(
-            Option.some({
-              id: projectId,
-              title: "Project A",
-              workspaceRoot: "/workspace/project",
-              defaultModelSelection: null,
-              scripts: [],
-              createdAt: "2026-08-08T00:00:00.000Z",
-              updatedAt: "2026-08-08T00:00:00.000Z",
-            }),
-          ),
-      });
+      const projectionLayer = Layer.mergeAll(
+        Layer.mock(ProjectionStoreV2)({
+          getThread: () =>
+            Ref.get(orchestratorContextRef).pipe(
+              Effect.flatMap((value) =>
+                Option.isSome(value)
+                  ? Effect.succeed(
+                      OrchestrationV2AppThread.make({
+                        id: value.value.threadId,
+                        projectId: value.value.projectId,
+                        title: "Project",
+                        providerInstanceId: instanceId,
+                        modelSelection: { instanceId, model: "gpt-5.6-sol" },
+                        runtimeMode: "approval-required",
+                        interactionMode: "default",
+                        branch: null,
+                        worktreePath: value.value.worktreePath,
+                        activeProviderThreadId: null,
+                        lineage: {
+                          parentThreadId: null,
+                          relationshipToParent: null,
+                          rootThreadId: value.value.threadId,
+                        },
+                        forkedFrom: null,
+                        createdBy: "user",
+                        creationSource: "web",
+                        createdAt: DateTime.makeUnsafe("2026-08-08T00:00:00Z"),
+                        updatedAt: DateTime.makeUnsafe("2026-08-08T00:00:00Z"),
+                        archivedAt: null,
+                        settledOverride: null,
+                        settledAt: null,
+                        lastVisitedAt: null,
+                        deletedAt: null,
+                      }),
+                    )
+                  : Effect.fail(
+                      new ProjectionStoreThreadNotFoundError({
+                        threadId: ThreadId.make("missing"),
+                      }),
+                    ),
+              ),
+            ),
+        }),
+        Layer.mock(ProjectStoreV2)({
+          getShell: (projectId) =>
+            Effect.succeed(
+              Option.some({
+                id: projectId,
+                title: "Project A",
+                workspaceRoot: "/workspace/project",
+                defaultModelSelection: null,
+                scripts: [],
+                createdAt: "2026-08-08T00:00:00.000Z",
+                updatedAt: "2026-08-08T00:00:00.000Z",
+              }),
+            ),
+        }),
+      );
       const invocation = {
         environmentId: EnvironmentId.make("environment"),
         threadId: ThreadId.make("orchestrator-thread"),
@@ -507,7 +550,6 @@ describe("research delegate handler", () => {
         settingsLayer,
         registryLayer,
         makeProviderRegistryLayer([providerSnapshot]),
-        providerServiceLayer,
         projectionLayer,
         ResearchDelegationBudgetLive,
         NodeServices.layer,
@@ -725,7 +767,7 @@ describe("research delegate handler", () => {
         if (Option.isSome(failure)) {
           expect(failure.value).toMatchObject({
             _tag: "ResearchDelegateError",
-            detail: expect.stringContaining("Failed to answer an approval request"),
+            detail: expect.stringContaining("approval response transport failed"),
           });
         }
       }
@@ -754,7 +796,7 @@ describe("research delegate handler", () => {
         if (Option.isSome(failure)) {
           expect(failure.value).toMatchObject({
             _tag: "ResearchDelegateError",
-            detail: expect.stringContaining("Failed to answer a user-input request"),
+            detail: expect.stringContaining("user-input response transport failed"),
           });
         }
       }
@@ -793,12 +835,38 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
   const sentAttachments = yield* Ref.make<ReadonlyArray<unknown>>([]);
   const adapter = {
     provider,
-    startSession: () => Effect.void,
-    sendTurn: (sendInput: { readonly attachments?: ReadonlyArray<unknown> }) =>
+    capabilities: { sessionModelSwitch: "in-session" },
+    startSession: (input: { threadId: ThreadId }) => Effect.succeed({ threadId: input.threadId }),
+    streamEvents: Stream.fromPubSub(runtimeEvents),
+    sendTurn: (sendInput: {
+      readonly threadId: ThreadId;
+      readonly attachments?: ReadonlyArray<unknown>;
+    }) =>
       Ref.set(sentAttachments, sendInput.attachments ?? []).pipe(
         Effect.andThen(
           Ref.update(turns, (all) => [...all, { items: [{ text: "delegate answer" }] }]),
         ),
+        Effect.andThen(
+          PubSub.publish(runtimeEvents, {
+            eventId: EventId.make("answer"),
+            provider,
+            threadId: sendInput.threadId,
+            createdAt: "2026-08-08T00:00:00Z",
+            type: "content.delta",
+            payload: { streamKind: "assistant_text", delta: "delegate answer" },
+          } as never),
+        ),
+        Effect.andThen(
+          PubSub.publish(runtimeEvents, {
+            eventId: EventId.make("done"),
+            provider,
+            threadId: sendInput.threadId,
+            createdAt: "2026-08-08T00:00:00Z",
+            type: "turn.completed",
+            payload: { state: "completed" },
+          } as never),
+        ),
+        Effect.as({ threadId: sendInput.threadId, turnId: TurnId.make("delegate-turn") }),
       ),
     readThread: (threadId: string) =>
       Ref.get(turns).pipe(Effect.map((all) => ({ threadId, turns: all }))),
@@ -818,6 +886,8 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
           research: { ...DEFAULT_SERVER_SETTINGS.research, shareMemoContext: false },
         }),
         updateSettings: () => Effect.die("unused"),
+        updateProviderInstance: () => Effect.die("unused"),
+        withSettingsSnapshot: () => Effect.die("unused"),
         streamChanges: Stream.empty,
         subscribeChanges: Effect.succeed(Stream.empty),
       }),
@@ -825,26 +895,17 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
     Layer.succeed(
       ProviderAdapterRegistry,
       ProviderAdapterRegistry.of({
-        getByInstance: () => Effect.succeed(adapter),
-        getInstanceInfo: () => Effect.die("unused"),
-        listInstances: () => Effect.succeed([instanceId]),
-        listProviders: () => Effect.succeed([provider]),
-        streamChanges: Stream.empty,
-        subscribeChanges: Effect.die("unused"),
+        get: () => Effect.succeed(makeLegacyAdapterV2(adapter, instanceId)),
+
+        list: () => Effect.succeed([instanceId]),
       }),
     ),
     makeProviderRegistryLayer([providerSnapshot]),
-    Layer.succeed(
-      ProviderService,
-      ProviderService.of({
-        streamEvents: Stream.fromPubSub(runtimeEvents),
-        subscribeEvents: Effect.succeed(Stream.never),
-      } as unknown as ProviderServiceShape),
-    ),
-    Layer.mock(ProjectionSnapshotQuery)({
-      getThreadCheckpointContext: () =>
-        Effect.succeed(Option.none<ProjectionThreadCheckpointContext>()),
+    Layer.mock(ProjectionStoreV2)({
+      getThread: () =>
+        Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId: ThreadId.make("missing") })),
     }),
+    Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeed(Option.none()) }),
     ResearchDelegationBudgetLive,
     NodeServices.layer,
     FetchHttpClient.layer,

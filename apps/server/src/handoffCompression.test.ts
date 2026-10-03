@@ -10,7 +10,10 @@ import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@d4res
 
 import type { ProviderAdapterError } from "./provider/Errors.ts";
 import type { ProviderAdapterShape } from "./provider/Services/ProviderAdapter.ts";
-import { ProviderAdapterRegistry } from "./provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderAdapterRegistryV2 as ProviderAdapterRegistry } from "./orchestration-v2/ProviderAdapterRegistry.ts";
+import { makeLegacyAdapterV2 } from "./provider/Layers/LegacyAdapterV2.ts";
+import * as PubSub from "effect/PubSub";
+import { EventId, type ProviderRuntimeEvent } from "@d4research/contracts";
 import {
   assembleHandoffCompaction,
   compressHandoffContext,
@@ -32,6 +35,7 @@ function makeMockAdapter(
 ) {
   const sessions = new Map<string, { turns: Array<{ id: string; items: unknown[] }> }>();
   const stopCalls: string[] = [];
+  const events = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
   return {
     provider: MOCK_PROVIDER,
     capabilities: { sessionModelSwitch: "unsupported" as const },
@@ -67,7 +71,29 @@ function makeMockAdapter(
               threadId: input.threadId as ReturnType<typeof ThreadId.make>,
               turnId: TurnId.make("turn-1"),
             };
-          }),
+          }).pipe(
+            Effect.tap(() => {
+              const base = {
+                eventId: EventId.make("mock"),
+                provider: MOCK_PROVIDER,
+                threadId: input.threadId as ThreadId,
+                createdAt: "2026-01-01T00:00:00Z",
+              };
+              return PubSub.publish(events, {
+                ...base,
+                type: "content.delta",
+                payload: { streamKind: "assistant_text", delta: responseText },
+              }).pipe(
+                Effect.andThen(
+                  PubSub.publish(events, {
+                    ...base,
+                    type: "turn.completed",
+                    payload: { state: "completed" },
+                  }),
+                ),
+              );
+            }),
+          ),
     readThread: (threadId: unknown) =>
       Effect.sync(() => {
         const session = sessions.get(String(threadId));
@@ -91,7 +117,7 @@ function makeMockAdapter(
     hasSession: () => Effect.succeed(false),
     rollbackThread: () => Effect.void,
     stopAll: () => Effect.void,
-    streamEvents: Stream.empty,
+    streamEvents: Stream.fromPubSub(events),
     stopCalls,
   };
 }
@@ -99,30 +125,34 @@ function makeMockAdapter(
 function registryLayer(responseText: string) {
   const adapter = makeMockAdapter(responseText);
   return Layer.succeed(ProviderAdapterRegistry, {
-    getByInstance: (instanceId: ProviderInstanceId) =>
+    get: (instanceId: ProviderInstanceId) =>
       instanceId === MOCK_INSTANCE
-        ? Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>)
+        ? Effect.succeed(
+            makeLegacyAdapterV2(
+              adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
+              MOCK_INSTANCE,
+            ),
+          )
         : Effect.fail({
             _tag: "ProviderUnsupportedError" as const,
             message: `No instance: ${instanceId}`,
           } as never),
-    getInstanceInfo: () => Effect.die("not implemented"),
-    listInstances: () => Effect.succeed([MOCK_INSTANCE]),
-    listProviders: () => Effect.succeed([MOCK_PROVIDER]),
-    streamChanges: Stream.empty,
-    subscribeChanges: Effect.die("not implemented"),
+
+    list: () => Effect.succeed([MOCK_INSTANCE]),
   });
 }
 
 function singleAdapterRegistryLayer(adapter: ReturnType<typeof makeMockAdapter>) {
   return Layer.succeed(ProviderAdapterRegistry, {
-    getByInstance: () =>
-      Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
-    getInstanceInfo: () => Effect.die("not implemented"),
-    listInstances: () => Effect.succeed([MOCK_INSTANCE]),
-    listProviders: () => Effect.succeed([MOCK_PROVIDER]),
-    streamChanges: Stream.empty,
-    subscribeChanges: Effect.die("not implemented"),
+    get: () =>
+      Effect.succeed(
+        makeLegacyAdapterV2(
+          adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
+          MOCK_INSTANCE,
+        ),
+      ),
+
+    list: () => Effect.succeed([MOCK_INSTANCE]),
   });
 }
 
@@ -146,13 +176,15 @@ describe("compressHandoffContext", () => {
     }).pipe(
       Effect.provide(
         Layer.succeed(ProviderAdapterRegistry, {
-          getByInstance: () =>
-            Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
-          getInstanceInfo: () => Effect.die("not implemented"),
-          listInstances: () => Effect.succeed([MOCK_INSTANCE]),
-          listProviders: () => Effect.succeed([MOCK_PROVIDER]),
-          streamChanges: Stream.empty,
-          subscribeChanges: Effect.die("not implemented"),
+          get: () =>
+            Effect.succeed(
+              makeLegacyAdapterV2(
+                adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
+                MOCK_INSTANCE,
+              ),
+            ),
+
+          list: () => Effect.succeed([MOCK_INSTANCE]),
         }),
       ),
     );
@@ -179,13 +211,15 @@ describe("compressHandoffContext", () => {
     }).pipe(
       Effect.provide(
         Layer.succeed(ProviderAdapterRegistry, {
-          getByInstance: () =>
-            Effect.succeed(adapter as unknown as ProviderAdapterShape<ProviderAdapterError>),
-          getInstanceInfo: () => Effect.die("not implemented"),
-          listInstances: () => Effect.succeed([MOCK_INSTANCE]),
-          listProviders: () => Effect.succeed([MOCK_PROVIDER]),
-          streamChanges: Stream.empty,
-          subscribeChanges: Effect.die("not implemented"),
+          get: () =>
+            Effect.succeed(
+              makeLegacyAdapterV2(
+                adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
+                MOCK_INSTANCE,
+              ),
+            ),
+
+          list: () => Effect.succeed([MOCK_INSTANCE]),
         }),
       ),
     );

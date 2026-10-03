@@ -6,7 +6,7 @@ export async function darkPalette({ page, app, screenshotDir }) {
   await page.evaluate(() => localStorage.setItem("t3code:theme", "dark"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await openProject(page, app.baseDir);
-  const send = page.getByRole("button", { name: "Send message", exact: true });
+  const send = page.getByRole("button", { name: "Submit message", exact: true });
   await send.waitFor();
   const canvasColor = () =>
     send.evaluate((el) => getComputedStyle(el.closest(".bg-background")).backgroundColor);
@@ -26,7 +26,7 @@ export async function darkPalette({ page, app, screenshotDir }) {
   // Keep this as a local draft: show the enabled accent without invoking a provider.
   await page.getByTestId("composer-editor").fill("Compare compute scheduling strategies");
   await page.waitForFunction(
-    () => !document.querySelector('button[aria-label="Send message"]')?.disabled,
+    () => !document.querySelector('button[aria-label="Submit message"]')?.disabled,
   );
   for (const [width, height] of [
     [1440, 900],
@@ -39,6 +39,9 @@ export async function darkPalette({ page, app, screenshotDir }) {
       animations: "disabled",
     });
   }
+  // Compare the same expanded desktop surface after the theme switch; on
+  // phones a reload restores the collapsed composer with a different action.
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => localStorage.setItem("t3code:theme", "light"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await send.waitFor();

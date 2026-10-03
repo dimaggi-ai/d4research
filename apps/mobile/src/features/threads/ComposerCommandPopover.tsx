@@ -3,14 +3,18 @@ import {
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
 } from "@d4research/client-runtime/providerSkills";
-import type { PullRequestContextMetadata } from "@d4research/contracts";
+import type {
+  PullRequestContextMetadata,
+  ScopedThreadRef,
+  ServerProviderSkill,
+  ServerProviderSlashCommand,
+} from "@d4research/contracts";
 import type { ComposerTriggerKind } from "@d4research/shared/composerTrigger";
-import type { ServerProviderSkill, ServerProviderSlashCommand } from "@d4research/contracts";
-import { SymbolView } from "../../components/AppSymbol";
 import { memo } from "react";
 import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 export type ComposerCommandItem =
   | {
@@ -25,6 +29,13 @@ export type ComposerCommandItem =
       readonly type: "path";
       readonly path: string;
       readonly kind: "file" | "directory";
+      readonly label: string;
+      readonly description: string;
+    }
+  | {
+      readonly id: string;
+      readonly type: "thread";
+      readonly thread: ScopedThreadRef;
       readonly label: string;
       readonly description: string;
     }
@@ -120,6 +131,8 @@ function itemIcon(item: ComposerCommandItem) {
       return "cube" as const;
     case "path":
       return null;
+    case "thread":
+      return "text.bubble";
   }
 }
 

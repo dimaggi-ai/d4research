@@ -1,3 +1,4 @@
+import { type ThreadId } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentProject,
@@ -5,21 +6,13 @@ import type {
   EnvironmentThreadShell,
 } from "@d4research/client-runtime/state/shell";
 import {
+  EMPTY_THREAD_HISTORY_META,
   type EnvironmentThreadStatus,
-  mergeEnvironmentThread,
+  type ThreadHistoryMeta,
 } from "@d4research/client-runtime/state/threads";
-import type {
-  OrchestrationMessage,
-  OrchestrationProposedPlan,
-  OrchestrationSession,
-  OrchestrationThreadActivity,
-  ScopedProjectRef,
-  ScopedThreadRef,
-  ServerConfig,
-} from "@d4research/contracts";
-import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@d4research/contracts";
+import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@d4research/contracts";
 import { Atom } from "effect/unstable/reactivity";
-import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
@@ -28,12 +21,11 @@ import {
   allEnvironmentShellsBootstrappedAtom,
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
+import { waitForAtomValue } from "./waitForAtomValue";
 
 const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
-const EMPTY_MESSAGES: ReadonlyArray<OrchestrationMessage> = Object.freeze([]);
-const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = Object.freeze([]);
-const EMPTY_PROPOSED_PLANS: ReadonlyArray<OrchestrationProposedPlan> = Object.freeze([]);
+const EMPTY_VISIBLE_TURN_ITEMS: ReadonlyArray<OrchestrationV2ProjectedTurnItem> = Object.freeze([]);
 
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
@@ -47,23 +39,17 @@ const EMPTY_THREAD_REFS_ATOM = Atom.make(EMPTY_THREAD_REFS).pipe(
 const EMPTY_THREAD_SHELL_ATOM = Atom.make<EnvironmentThreadShell | null>(null).pipe(
   Atom.withLabel("web-thread-shell:empty"),
 );
-const EMPTY_THREAD_DETAIL_ATOM = Atom.make<EnvironmentThread | null>(null).pipe(
-  Atom.withLabel("web-thread-detail:empty"),
+const EMPTY_THREAD_PROJECTION_ATOM = Atom.make<EnvironmentThread | null>(null).pipe(
+  Atom.withLabel("web-thread-projection:empty"),
 );
 const EMPTY_THREAD_STATUS_ATOM = Atom.make<EnvironmentThreadStatus>("empty").pipe(
   Atom.withLabel("web-thread-status:empty"),
 );
-const EMPTY_MESSAGES_ATOM = Atom.make(EMPTY_MESSAGES).pipe(
-  Atom.withLabel("web-thread-messages:empty"),
+const EMPTY_VISIBLE_TURN_ITEMS_ATOM = Atom.make(EMPTY_VISIBLE_TURN_ITEMS).pipe(
+  Atom.withLabel("web-thread-visible-turn-items:empty"),
 );
-const EMPTY_ACTIVITIES_ATOM = Atom.make(EMPTY_ACTIVITIES).pipe(
-  Atom.withLabel("web-thread-activities:empty"),
-);
-const EMPTY_PROPOSED_PLANS_ATOM = Atom.make(EMPTY_PROPOSED_PLANS).pipe(
-  Atom.withLabel("web-thread-proposed-plans:empty"),
-);
-const EMPTY_SESSION_ATOM = Atom.make<OrchestrationSession | null>(null).pipe(
-  Atom.withLabel("web-thread-session:empty"),
+const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HISTORY_META).pipe(
+  Atom.withLabel("web-thread-history:empty"),
 );
 
 const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
@@ -147,15 +133,21 @@ export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadSh
   );
 }
 
-export function useThreadDetail(ref: ScopedThreadRef | null): EnvironmentThread | null {
+export function useThreadProjection(ref: ScopedThreadRef | null): EnvironmentThread | null {
   return useAtomValue(
-    ref === null ? EMPTY_THREAD_DETAIL_ATOM : environmentThreadDetails.detailAtom(ref),
+    ref === null ? EMPTY_THREAD_PROJECTION_ATOM : environmentThreadDetails.threadAtom(ref),
   );
 }
 
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_STATUS_ATOM : environmentThreadDetails.statusAtom(ref),
+  );
+}
+
+export function useThreadHistory(ref: ScopedThreadRef | null): ThreadHistoryMeta {
+  return useAtomValue(
+    ref === null ? EMPTY_THREAD_HISTORY_ATOM : environmentThreadDetails.historyAtom(ref),
   );
 }
 
@@ -169,55 +161,13 @@ export function resolveThreadDetailRef(
   return ref !== null && (!options.waitForShell || options.shellExists) ? ref : null;
 }
 
-/** Detail collections composed with shell-authoritative thread/workspace metadata. */
-export function useThread(
+export function useThreadVisibleTurnItems(
   ref: ScopedThreadRef | null,
-  options?: {
-    /**
-     * Client-reserved draft thread ids do not exist on the server until the
-     * first send. Waiting for the shell index avoids polling the detail
-     * endpoint for an intentionally missing thread during that window.
-     */
-    waitForShell?: boolean;
-  },
-): EnvironmentThread | null {
-  const shell = useThreadShell(ref);
-  const detail = useThreadDetail(
-    resolveThreadDetailRef(ref, {
-      shellExists: shell !== null,
-      waitForShell: options?.waitForShell === true,
-    }),
-  );
-  return useMemo(() => mergeEnvironmentThread(detail, shell), [detail, shell]);
-}
-
-export function useThreadMessages(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationMessage> {
+): ReadonlyArray<OrchestrationV2ProjectedTurnItem> {
   return useAtomValue(
-    ref === null ? EMPTY_MESSAGES_ATOM : environmentThreadDetails.messagesAtom(ref),
-  );
-}
-
-export function useThreadActivities(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationThreadActivity> {
-  return useAtomValue(
-    ref === null ? EMPTY_ACTIVITIES_ATOM : environmentThreadDetails.activitiesAtom(ref),
-  );
-}
-
-export function useThreadProposedPlans(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationProposedPlan> {
-  return useAtomValue(
-    ref === null ? EMPTY_PROPOSED_PLANS_ATOM : environmentThreadDetails.proposedPlansAtom(ref),
-  );
-}
-
-export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSession | null {
-  return useAtomValue(
-    ref === null ? EMPTY_SESSION_ATOM : environmentThreadDetails.sessionAtom(ref),
+    ref === null
+      ? EMPTY_VISIBLE_TURN_ITEMS_ATOM
+      : environmentThreadDetails.visibleTurnItemsAtom(ref),
   );
 }
 
@@ -229,11 +179,53 @@ export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | 
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
 }
 
-/** The thread as `useThread` returns it, read outside React. */
-export function readThread(ref: ScopedThreadRef): EnvironmentThread | null {
-  return mergeEnvironmentThread(
-    appAtomRegistry.get(environmentThreadDetails.detailAtom(ref)),
-    readThreadShell(ref),
+export function waitForThreadShell(ref: ScopedThreadRef, timeoutMs = 5_000): Promise<boolean> {
+  return waitForAtomValue({
+    registry: appAtomRegistry,
+    atom: environmentThreadShells.threadShellAtom(ref),
+    predicate: (thread) => thread !== null,
+    timeoutMs,
+  });
+}
+
+export function readEnvironmentSupportsTitleRegeneration(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadTitleRegeneration === true
+  );
+}
+
+/** Whether the environment's server understands thread.pin/unpin.
+    Same version-skew contract as settlement. */
+export function readEnvironmentSupportsPinning(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadPinning === true
+  );
+}
+
+/** Whether the environment's server understands thread.pin.reorder (and
+    orderKey on thread.pin). Same version-skew contract as settlement. */
+export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadPinReorder === true
+  );
+}
+
+/** Whether the environment's server understands thread.auto-settle.set.
+    Same version-skew contract as settlement. */
+export function readEnvironmentSupportsAutoSettleOptOut(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadAutoSettleOptOut === true
+  );
+}
+
+export function readEnvironmentSupportsActiveReorder(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadActiveReorder === true
   );
 }
 
@@ -256,50 +248,14 @@ export function readEnvironmentSupportsSnooze(environmentId: EnvironmentId): boo
   );
 }
 
-/** Whether the environment's server understands thread.pin/unpin.
-    Same version-skew contract as settlement. */
-export function readEnvironmentSupportsPinning(environmentId: EnvironmentId): boolean {
+/** Whether the environment's server understands thread.visit/mark-unread and
+    projects lastVisitedAt on thread shells. Same version-skew contract as
+    settlement: against older servers, clients keep the browser-local visited
+    state instead. */
+export function readEnvironmentSupportsVisitedTracking(environmentId: EnvironmentId): boolean {
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadPinning === true
-  );
-}
-
-/** Whether the environment's server understands thread title regeneration.
-    Same version-skew contract as settlement. */
-export function readEnvironmentSupportsTitleRegeneration(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadTitleRegeneration === true
-  );
-}
-
-/** Whether the environment's server understands thread.pin.reorder (and
-    orderKey on thread.pin). Same version-skew contract as settlement. */
-export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadPinReorder === true
-  );
-}
-
-export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
-  return appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
-}
-
-/** Whether the environment's server understands thread.auto-settle.set.
-    Same version-skew contract as settlement. */
-export function readEnvironmentSupportsAutoSettleOptOut(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadAutoSettleOptOut === true
-  );
-}
-
-export function readEnvironmentSupportsActiveReorder(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadActiveReorder === true
+      .threadVisitedTracking === true
   );
 }
 

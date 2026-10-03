@@ -45,6 +45,10 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   disabled?: boolean;
   pipelineTargetPolicy: PipelineTargetPolicy;
   isResearchMode: boolean;
+  runtimeModeOptions: ReadonlyArray<{
+    readonly mode: RuntimeMode;
+    readonly label: string;
+  }>;
   showInteractionModeToggle: boolean;
   canStartResearch: boolean;
   researchScenarios: ReadonlyArray<string>;
@@ -201,18 +205,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          <MenuRadioItem disabled={props.disabled} value="approval-required">
-            Supervised
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="auto-accept-edits">
-            Auto-accept edits
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="auto">
-            Auto
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="full-access">
-            Full access
-          </MenuRadioItem>
+          {props.runtimeModeOptions.map((option) => (
+            <MenuRadioItem disabled={props.disabled} key={option.mode} value={option.mode}>
+              {option.label}
+            </MenuRadioItem>
+          ))}
         </MenuRadioGroup>
       </MenuPopup>
     </Menu>

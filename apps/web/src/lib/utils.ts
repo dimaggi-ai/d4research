@@ -1,5 +1,6 @@
-import { CommandId, MessageId, ProjectId, ThreadId } from "@d4research/contracts";
-import { cx, type CxOptions } from "class-variance-authority";
+import { CommandId } from "@d4research/contracts";
+import { MessageId, ProjectId, ThreadId } from "@d4research/contracts";
+import { type CxOptions, cx } from "class-variance-authority";
 import * as Encoding from "effect/Encoding";
 import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
@@ -22,10 +23,6 @@ export function isWindowsPlatform(platform: string): boolean {
 
 export function isLinuxPlatform(platform: string): boolean {
   return /linux/i.test(platform);
-}
-
-export function randomHex(byteLength: number): string {
-  return Encoding.encodeHex(globalThis.crypto.getRandomValues(new Uint8Array(byteLength)));
 }
 
 export function randomUUID(): string {

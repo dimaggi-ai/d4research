@@ -1,3 +1,4 @@
+import { deriveProviderEntriesByEnvironment } from "./providerInstances";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -8,6 +9,7 @@ import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
+  resolveProviderCatalogAvailability,
   resolveSelectableProviderInstance,
 } from "./providerInstances";
 
@@ -17,12 +19,18 @@ function provider(input: {
   enabled?: boolean;
   availability?: ServerProvider["availability"];
   displayName?: string;
+  accentColor?: string;
   status?: ServerProvider["status"];
   models?: ServerProvider["models"];
+  supportsTextGeneration?: boolean;
 }): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
     driver: input.provider,
+    ...(input.accentColor ? { accentColor: input.accentColor } : {}),
+    ...(input.supportsTextGeneration === undefined
+      ? {}
+      : { supportsTextGeneration: input.supportsTextGeneration }),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     enabled: input.enabled ?? true,
     installed: true,
@@ -67,6 +75,46 @@ describe("isProviderInstancePickerReady", () => {
     ]);
 
     expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+  });
+});
+
+describe("resolveProviderCatalogAvailability", () => {
+  const [entry] = deriveProviderInstanceEntries([
+    provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
+  ]);
+
+  it("keeps the initial reactive config state distinct from an empty catalogue", () => {
+    expect(
+      resolveProviderCatalogAvailability({
+        catalogLoaded: false,
+        entries: [],
+        selectedEntry: undefined,
+      }),
+    ).toBe("loading");
+    expect(
+      resolveProviderCatalogAvailability({
+        catalogLoaded: true,
+        entries: [],
+        selectedEntry: undefined,
+      }),
+    ).toBe("unconfigured");
+  });
+
+  it("distinguishes a selected provider from configured but unusable providers", () => {
+    expect(
+      resolveProviderCatalogAvailability({
+        catalogLoaded: true,
+        entries: entry ? [entry] : [],
+        selectedEntry: entry,
+      }),
+    ).toBe("ready");
+    expect(
+      resolveProviderCatalogAvailability({
+        catalogLoaded: true,
+        entries: entry ? [entry] : [],
+        selectedEntry: undefined,
+      }),
+    ).toBe("unavailable");
   });
 });
 
@@ -293,6 +341,82 @@ describe("deriveProviderInstanceEntries", () => {
   });
 });
 
+describe("deriveProviderEntriesByEnvironment", () => {
+  it("resolves registry branding from each environment's settings", () => {
+    const instanceId = "custom-acp";
+    const snapshot = provider({ provider: ProviderDriverKind.make("acpRegistry"), instanceId });
+    const byEnvironment = deriveProviderEntriesByEnvironment(
+      ["devin", "other-agent"].map(
+        (agentId) =>
+          [
+            agentId,
+            [snapshot],
+            {
+              providers: {} as never,
+              providerInstances: {
+                [instanceId]: {
+                  driver: ProviderDriverKind.make("acpRegistry"),
+                  enabled: true,
+                  config: { agentId, registryIconUrl: `https://example.com/${agentId}.svg` },
+                },
+              },
+            },
+          ] as const,
+      ),
+    );
+    expect(byEnvironment.get("devin")?.get(instanceId)?.acpRegistryAgentId).toBe("devin");
+    expect(byEnvironment.get("devin")?.get(instanceId)?.acpRegistryIconUrl).toBe(
+      "https://example.com/devin.svg",
+    );
+    expect(byEnvironment.get("other-agent")?.get(instanceId)?.acpRegistryAgentId).toBe(
+      "other-agent",
+    );
+  });
+
+  it("keeps same-id default instances distinct per environment", () => {
+    const byEnvironment = deriveProviderEntriesByEnvironment([
+      [
+        "local",
+        [
+          provider({
+            provider: ProviderDriverKind.make("claude"),
+            instanceId: "claude",
+            displayName: "Claude Local",
+            accentColor: "#112233",
+          }),
+        ],
+      ],
+      [
+        "remote",
+        [
+          provider({
+            provider: ProviderDriverKind.make("claude"),
+            instanceId: "claude",
+            displayName: "Claude Remote",
+            accentColor: "#445566",
+          }),
+        ],
+      ],
+    ]);
+
+    expect(byEnvironment.get("local")?.get("claude")?.displayName).toBe("Claude Local");
+    expect(byEnvironment.get("local")?.get("claude")?.accentColor).toBe("#112233");
+    expect(byEnvironment.get("remote")?.get("claude")?.displayName).toBe("Claude Remote");
+    expect(byEnvironment.get("remote")?.get("claude")?.accentColor).toBe("#445566");
+  });
+
+  it("never falls back to another environment's instances", () => {
+    const byEnvironment = deriveProviderEntriesByEnvironment([
+      ["local", [provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" })]],
+      ["empty", []],
+    ]);
+
+    expect(byEnvironment.get("empty")?.get("codex")).toBeUndefined();
+    // Every environment gets its own bucket, so an absent lookup is a real
+    // "this environment has no such instance", not a missing key.
+    expect(byEnvironment.get("empty")?.size).toBe(0);
+  });
+});
 describe("resolveSelectableProviderInstance", () => {
   it("returns the requested instance when it is enabled and available", () => {
     const requested = ProviderInstanceId.make("claude_work");
@@ -584,5 +708,19 @@ describe("resolveDefaultProviderModelSelection", () => {
         null,
       ),
     ).toBeNull();
+  });
+});
+
+describe("provider icon metadata", () => {
+  it("retains server-published registry icons without local settings", () => {
+    const iconUrl = "https://cdn.agentclientprotocol.com/registry/icons/swe-agent.svg";
+    const [entry] = deriveProviderInstanceEntries([
+      {
+        ...provider({ provider: ProviderDriverKind.make("acpRegistry"), instanceId: "swe-remote" }),
+        iconUrl,
+      },
+    ]);
+    expect(entry?.acpRegistryIconUrl).toBe(iconUrl);
+    expect(entry?.driverKind).toBe("acpRegistry");
   });
 });

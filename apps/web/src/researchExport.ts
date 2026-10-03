@@ -1,8 +1,5 @@
-import type {
-  ModelSelection,
-  OrchestrationLatestTurn,
-  OrchestrationThreadActivity,
-} from "@d4research/contracts";
+import type { ResearchActivity } from "./researchTimeline";
+import type { ModelSelection } from "@d4research/contracts";
 import { stripUserMessageTransport } from "@d4research/shared/userMessageTransport";
 
 import type { ChatMessage } from "./types";
@@ -13,9 +10,9 @@ export interface ResearchMarkdownExportInput {
   readonly environmentId: string;
   readonly threadId: string;
   readonly modelSelection: ModelSelection;
-  readonly latestTurn: OrchestrationLatestTurn | null;
+  readonly latestTurn: { readonly state: string } | null;
   readonly messages: ReadonlyArray<ChatMessage>;
-  readonly activities: ReadonlyArray<OrchestrationThreadActivity>;
+  readonly activities: ReadonlyArray<ResearchActivity>;
   readonly exportedAt: string;
 }
 
@@ -43,9 +40,7 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function researchManifestLines(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-): ReadonlyArray<string> {
+function researchManifestLines(activities: ReadonlyArray<ResearchActivity>): ReadonlyArray<string> {
   const activity = activities.findLast((candidate) => candidate.kind === "research.run.started");
   const payload = record(activity?.payload);
   if (payload === null) return ["_No controller-owned research run manifest was recorded._"];

@@ -21,6 +21,111 @@ spec("mobile sidebar buttons remain reachable with safe-area insets", mobileSide
 spec("mobile sidebar controls clear the status bar", mobileStatusBarReachability);
 spec("both panels have reachable close controls", panelCloseReachability);
 
+function latestPersistedUserMessage(baseDir) {
+  const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/statev2.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return database
+      .prepare(
+        `SELECT json_extract(payload_json, '$.text') AS text
+         FROM orchestration_v2_projection_messages
+         WHERE role = 'user'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get();
+  } finally {
+    database.close();
+  }
+}
+
+function latestPersistedUserMessageSummary(baseDir) {
+  const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/statev2.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    return database
+      .prepare(
+        `SELECT length(json_extract(payload_json, '$.text')) AS textLength,
+                substr(json_extract(payload_json, '$.text'), 1, 2000) AS textStart,
+                substr(json_extract(payload_json, '$.text'), -2000) AS textEnd
+         FROM orchestration_v2_projection_messages
+         WHERE role = 'user'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get();
+  } finally {
+    database.close();
+  }
+}
+
+async function captureFailureDiagnostics({
+  page,
+  baseDir,
+  specName,
+  specIndex,
+  cause,
+  consoleErrors,
+}) {
+  const artifactRoot = process.env.T3_UI_ARTIFACT_DIR?.trim();
+  if (!artifactRoot) return null;
+
+  const slug = specName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")
+    .slice(0, 80);
+  const artifactDir = NodePath.join(
+    artifactRoot,
+    `${String(specIndex + 1).padStart(2, "0")}-${slug}-${process.pid}`,
+  );
+  await NodeFSP.mkdir(artifactDir, { recursive: true });
+
+  const captureErrors = [];
+  const url = await Promise.resolve()
+    .then(() => page.url())
+    .catch((error) => {
+      captureErrors.push(`URL: ${String(error)}`);
+      return "unavailable";
+    });
+  await page
+    .screenshot({ path: NodePath.join(artifactDir, "screenshot.png"), timeout: 5_000 })
+    .catch((error) => captureErrors.push(`Screenshot: ${String(error)}`));
+  const body = await page
+    .locator("body")
+    .innerText({ timeout: 5_000 })
+    .catch((error) => {
+      captureErrors.push(`Body: ${String(error)}`);
+      return "Body text unavailable.";
+    });
+  await NodeFSP.writeFile(NodePath.join(artifactDir, "body.txt"), body.slice(0, 100_000), "utf8");
+
+  let latestMessage = null;
+  try {
+    latestMessage = latestPersistedUserMessageSummary(baseDir);
+  } catch (error) {
+    captureErrors.push(`Latest persisted user message: ${String(error)}`);
+  }
+  const sourceLogPath = process.env.T3_UI_SOURCE_LOG_PATH ?? "not set (runner stdout/stderr)";
+  const failureText = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+  await NodeFSP.writeFile(
+    NodePath.join(artifactDir, "diagnostics.txt"),
+    [
+      `Spec: ${specName}`,
+      `URL: ${url}`,
+      `Source log: ${sourceLogPath}`,
+      `Failure:\n${failureText}`,
+      `Latest persisted user message summary:\n${JSON.stringify(latestMessage, null, 2)}`,
+      `Console errors:\n${consoleErrors.slice(0, 20).join("\n")}`,
+      `Capture errors:\n${captureErrors.join("\n") || "none"}`,
+    ].join("\n\n"),
+    "utf8",
+  );
+  return artifactDir;
+}
+
 async function startNewLocalThread(page) {
   const priorUrl = page.url();
   // The product deliberately reuses an already-empty draft. Callers clean up
@@ -28,7 +133,7 @@ async function startNewLocalThread(page) {
   // surface and does not need a different identity.
   if (/\/draft\//u.test(new URL(priorUrl).pathname)) {
     await page
-      .getByRole("button", { name: /send message/i })
+      .getByRole("button", { name: /submit message/i })
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
     return;
@@ -41,7 +146,7 @@ async function startNewLocalThread(page) {
     timeout: 20_000,
   });
   await page
-    .getByRole("button", { name: /send message/i })
+    .getByRole("button", { name: /submit message/i })
     .first()
     .waitFor({
       state: "visible",
@@ -92,8 +197,14 @@ spec("tool guard settings lists policy rules", async ({ page, webUrl }) => {
 spec("general settings expose handoff and auto-resume controls", async ({ page, webUrl }) => {
   await page.goto(`${webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await page.getByText("Context compression").waitFor({ timeout: 20_000 });
+  await page
+    .getByRole("switch", { name: "Auto-resume limited threads", exact: true })
+    .waitFor({ state: "visible", timeout: 20_000 });
   const body = await page.locator("body").innerText();
-  NodeAssert.ok(body.includes("Resume after usage limits"), "expected the auto-resume toggle");
+  NodeAssert.ok(
+    body.includes("Auto-resume limited threads"),
+    "expected the V2 auto-resume control",
+  );
   NodeAssert.ok(body.includes("Auto-open task panel"), "expected the task-panel toggle");
   NodeAssert.ok(body.includes("Open Tool Guard settings"), "expected the Tool Guard deep link");
 });
@@ -145,28 +256,17 @@ spec(
     await openProject(page, workspace);
     await startNewLocalThread(page);
     await page.getByTestId("composer-editor").pressSequentially("prove default skill delivery");
-    await page.getByRole("button", { name: "Send message" }).click();
+    await page.getByRole("button", { name: "Submit message" }).click();
     await page.getByText("Global: e2e-default", { exact: true }).waitFor({
       state: "visible",
       timeout: 30_000,
     });
 
-    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      const sent = database
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(typeof sent?.text, "string");
-      NodeAssert.ok(sent.text.includes('<enabled_skills version="2"'));
-      NodeAssert.ok(sent.text.includes(skillPath));
-      NodeAssert.ok(sent.text.includes("prove default skill delivery"));
-    } finally {
-      database.close();
-    }
+    const sent = latestPersistedUserMessage(baseDir);
+    NodeAssert.equal(typeof sent?.text, "string");
+    NodeAssert.ok(sent.text.includes('<enabled_skills version="2"'));
+    NodeAssert.ok(sent.text.includes(skillPath));
+    NodeAssert.ok(sent.text.includes("prove default skill delivery"));
     const userBubble = page.locator('[data-message-role="user"]').last();
     NodeAssert.ok(!(await userBubble.innerText()).includes("<enabled_skills"));
     NodeAssert.ok(!(await userBubble.innerText()).includes(skillPath));
@@ -218,7 +318,7 @@ spec(
     );
 
     await page.getByTestId("composer-editor").pressSequentially("prove chat skill delivery");
-    await page.getByRole("button", { name: "Send message" }).click();
+    await page.getByRole("button", { name: "Submit message" }).click();
     await page.getByText("Chat: e2e-default", { exact: true }).waitFor({
       state: "visible",
       timeout: 30_000,
@@ -237,46 +337,22 @@ spec(
         persistedSettings.skills?.enabledByThread ?? {},
       ).join(", ")}`,
     );
-    const disabledDatabase = new NodeSqlite.DatabaseSync(
-      NodePath.join(baseDir, "userdata/state.sqlite"),
-      { readOnly: true },
-    );
-    try {
-      const sent = disabledDatabase
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.ok(sent?.text.includes("prove chat skill delivery"));
-      NodeAssert.ok(sent.text.includes('session-names="%5B%22e2e-default%22%5D"'));
-      NodeAssert.ok(sent.text.includes(skillPath));
-    } finally {
-      disabledDatabase.close();
-    }
+    const sessionSkillMessage = latestPersistedUserMessage(baseDir);
+    NodeAssert.ok(sessionSkillMessage?.text.includes("prove chat skill delivery"));
+    NodeAssert.ok(sessionSkillMessage.text.includes('session-names="%5B%22e2e-default%22%5D"'));
+    NodeAssert.ok(sessionSkillMessage.text.includes(skillPath));
 
     // A second chat must not inherit the session selection.
     await startNewLocalThread(page);
     await page.getByTestId("composer-editor").pressSequentially("prove chat skill isolation");
-    await page.getByRole("button", { name: "Send message" }).click();
+    await page.getByRole("button", { name: "Submit message" }).click();
     await page.getByText("prove chat skill isolation", { exact: false }).first().waitFor({
       state: "visible",
       timeout: 30_000,
     });
     let isolatedMessage;
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      const isolationDatabase = new NodeSqlite.DatabaseSync(
-        NodePath.join(baseDir, "userdata/state.sqlite"),
-        { readOnly: true },
-      );
-      try {
-        isolatedMessage = isolationDatabase
-          .prepare(
-            "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-          )
-          .get()?.text;
-      } finally {
-        isolationDatabase.close();
-      }
+      isolatedMessage = latestPersistedUserMessage(baseDir)?.text;
       if (isolatedMessage === "prove chat skill isolation") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -481,33 +557,22 @@ spec(
     await labeledFallback.waitFor({ state: "hidden", timeout: 20_000 });
 
     await page.getByTestId("composer-editor").pressSequentially("fix the e2e regression");
-    await page.getByRole("button", { name: "Send message" }).click();
+    await page.getByRole("button", { name: "Submit message" }).click();
     await page.getByText("fix the e2e regression", { exact: false }).first().waitFor({
       state: "visible",
       timeout: 20_000,
     });
 
-    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      const sent = database
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(typeof sent?.text, "string");
-      // The visible event log stays authoritative and readable. Expansion is
-      // a provider-boundary concern, covered by ProviderCommandReactor tests.
-      NodeAssert.ok(sent.text.startsWith("!dev:e2e-review"));
-      NodeAssert.ok(sent.text.includes("fix the e2e regression"));
-      NodeAssert.ok(
-        !sent.text.includes("Dev pipeline protocol (non-negotiable):"),
-        "persisted history must keep the compact user trigger, not the provider-only protocol",
-      );
-    } finally {
-      database.close();
-    }
+    const sent = latestPersistedUserMessage(baseDir);
+    NodeAssert.equal(typeof sent?.text, "string");
+    // The visible event log stays authoritative and readable. Expansion is
+    // a provider-boundary concern, covered by ProviderCommandReactor tests.
+    NodeAssert.ok(sent.text.startsWith("!dev:e2e-review"));
+    NodeAssert.ok(sent.text.includes("fix the e2e regression"));
+    NodeAssert.ok(
+      !sent.text.includes("Dev pipeline protocol (non-negotiable):"),
+      "persisted history must keep the compact user trigger, not the provider-only protocol",
+    );
     await stopRunningTurnForIsolation(page);
   },
 );
@@ -668,7 +733,7 @@ spec(
     await sendButton.waitFor({ state: "visible", timeout: 20_000 });
     NodeAssert.equal(
       await sendButton.getAttribute("aria-label"),
-      "Send message",
+      "Submit message",
       "an attachment-only draft must be sendable",
     );
     NodeAssert.equal(await sendButton.isEnabled(), true, "the attachment send must enable");
@@ -682,26 +747,15 @@ spec(
       timeout: 20_000,
     });
 
-    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      const sent = database
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(typeof sent?.text, "string");
-      NodeAssert.ok(sent.text.includes('<pasted_context version="2">'));
-      NodeAssert.ok(sent.text.includes(droppedBody));
-      NodeAssert.equal(
-        sent.text.split(droppedBody).length - 1,
-        2,
-        "both identical attachment bodies must survive the production send path",
-      );
-    } finally {
-      database.close();
-    }
+    const sent = latestPersistedUserMessage(baseDir);
+    NodeAssert.equal(typeof sent?.text, "string");
+    NodeAssert.ok(sent.text.includes('<pasted_context version="2">'));
+    NodeAssert.ok(sent.text.includes(droppedBody));
+    NodeAssert.equal(
+      sent.text.split(droppedBody).length - 1,
+      2,
+      "both identical attachment bodies must survive the production send path",
+    );
     await stopRunningTurnForIsolation(page);
 
     await startNewLocalThread(page);
@@ -783,21 +837,10 @@ spec(
       timeout: 20_000,
     });
 
-    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      const sent = database
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(typeof sent?.text, "string");
-      NodeAssert.ok(sent.text.includes("summarize the delayed attachment"));
-      NodeAssert.ok(sent.text.includes(delayedBody));
-    } finally {
-      database.close();
-    }
+    const sent = latestPersistedUserMessage(baseDir);
+    NodeAssert.equal(typeof sent?.text, "string");
+    NodeAssert.ok(sent.text.includes("summarize the delayed attachment"));
+    NodeAssert.ok(sent.text.includes(delayedBody));
     await stopRunningTurnForIsolation(page);
   },
 );
@@ -845,7 +888,7 @@ spec(
     });
 
     await sendButton().click();
-    await page.getByText("Simulated Memo persistence failure.", { exact: true }).waitFor({
+    await page.getByText("Simulated Memo persistence failure.", { exact: true }).first().waitFor({
       state: "visible",
       timeout: 20_000,
     });
@@ -898,24 +941,13 @@ spec(
       timeout: 60_000,
     });
 
-    const database = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "userdata/state.sqlite"), {
-      readOnly: true,
-    });
-    try {
-      const sent = database
-        .prepare(
-          "SELECT text FROM projection_thread_messages WHERE role = 'user' ORDER BY created_at DESC LIMIT 1",
-        )
-        .get();
-      NodeAssert.equal(typeof sent?.text, "string");
-      NodeAssert.ok(sent.text.includes("<memo_document>"));
-      NodeAssert.ok(sent.text.includes("Characters: 132277"));
-      NodeAssert.ok(sent.text.includes('connector="local"'));
-      NodeAssert.ok(sent.text.length < 120_000, "the provider payload must stay below its limit");
-      NodeAssert.ok(!sent.text.includes(oversized), "the full document must not be sent inline");
-    } finally {
-      database.close();
-    }
+    const sent = latestPersistedUserMessage(baseDir);
+    NodeAssert.equal(typeof sent?.text, "string");
+    NodeAssert.ok(sent.text.includes("<memo_document>"));
+    NodeAssert.ok(sent.text.includes("Characters: 132277"));
+    NodeAssert.ok(sent.text.includes('connector="local"'));
+    NodeAssert.ok(sent.text.length < 120_000, "the provider payload must stay below its limit");
+    NodeAssert.ok(!sent.text.includes(oversized), "the full document must not be sent inline");
     await stopRunningTurnForIsolation(page);
   },
 );
@@ -1066,24 +1098,32 @@ spec(
 );
 
 spec(
-  "tasks panel opens from its direct header control for a fresh thread",
+  "thread details retain project actions and Tasks opens from its direct control",
   async ({ page, webUrl, workspace }) => {
     await page.goto(webUrl, { waitUntil: "domcontentloaded" });
     await openProject(page, workspace);
-    // Upstream c14f6015bf restores responsive project actions in the header.
-    // They remain reachable alongside the fork's direct Tasks control.
     const header = page.locator("[data-chat-header]");
-    for (const action of ["Add action", "Open project with preferred app", "Initialize Git"]) {
-      await header.getByRole("button", { name: action, exact: true }).waitFor({
-        state: "visible",
-        timeout: 20_000,
-      });
-    }
-    NodeAssert.equal(
-      await header.getByRole("button", { name: "Export thread as Markdown", exact: true }).count(),
-      0,
-      "Markdown export belongs in the thread action menu",
-    );
+    await header.getByRole("button", { name: "Toggle thread details panel", exact: true }).click();
+    const details = page.locator("[data-thread-details-panel]");
+    await details.waitFor({ state: "visible", timeout: 20_000 });
+    await details.getByRole("button", { name: "Add project script", exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await details.getByRole("group", { name: "Open in editor", exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await details.getByRole("button", { name: "Choose editor", exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await details.getByRole("button", { name: "Initialize Git", exact: true }).waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await header.getByRole("button", { name: "Toggle thread details panel", exact: true }).click();
+    await details.waitFor({ state: "hidden", timeout: 20_000 });
     await page.getByRole("button", { name: "Open Tasks", exact: true }).first().click();
     await page.getByText("No active plan yet.", { exact: true }).waitFor({
       state: "visible",
@@ -1146,7 +1186,9 @@ spec("files panel opens a workspace file", async ({ page, webUrl, workspace }) =
 spec(
   "Ollama preset lists live cloud models on a Claude instance",
   async ({ page, webUrl, baseDir }) => {
-    const liveTags = await fetch("http://127.0.0.1:11434/api/tags")
+    const liveTags = await fetch("http://127.0.0.1:11434/api/tags", {
+      signal: AbortSignal.timeout(5_000),
+    })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null);
     const cloudModels = (liveTags?.models ?? [])
@@ -1158,13 +1200,11 @@ spec(
     }
 
     await page.goto(`${webUrl}/settings/providers`, { waitUntil: "domcontentloaded" });
-    // The action lives inside the Claude instance's collapsed details. The
-    // disclosure is labelled "Show <name> details" (not "Details"), and expanding
-    // a card flips its label to "Hide ...", so never index into the match list —
-    // the indices shift underneath you. Target Claude by name.
+    // V2 provider settings select an instance in the left list, then show its
+    // editor in the details pane. Select Claude rather than expecting the V1
+    // per-card disclosure control.
     await page
-      .getByRole("button", { name: "Show Claude details" })
-      .first()
+      .getByRole("button", { name: "Select Claude", exact: true })
       .click({ timeout: 20_000 });
     const presetButton = page.getByTestId("ollama-preset-button").first();
     await presetButton.waitFor({ state: "visible", timeout: 20_000 });
@@ -1231,7 +1271,7 @@ async function main() {
   const failures = [];
   try {
     session = await openAuthenticatedPage(app);
-    for (const { name, run } of selectedSpecs) {
+    for (const [specIndex, { name, run }] of selectedSpecs.entries()) {
       if (signalExitCode !== null) break;
       try {
         console.log(`RUN ${name}`);
@@ -1253,6 +1293,18 @@ async function main() {
         if (signalExitCode !== null) break;
         failures.push(name);
         console.error(`FAIL ${name}\n  ${cause instanceof Error ? cause.message : cause}`);
+        const artifactDir = await captureFailureDiagnostics({
+          page: session.page,
+          baseDir: app.baseDir,
+          specName: name,
+          specIndex,
+          cause,
+          consoleErrors: session.consoleErrors,
+        }).catch((diagnosticError) => {
+          console.error(`FAILURE DIAGNOSTICS FAILED ${name}\n  ${String(diagnosticError)}`);
+          return null;
+        });
+        if (artifactDir) console.error(`Failure diagnostics: ${artifactDir}`);
       }
     }
     if (signalExitCode === null) {

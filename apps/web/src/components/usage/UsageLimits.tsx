@@ -1,3 +1,4 @@
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { type EnvironmentId } from "@d4research/contracts";
 import { type ProviderConsumeResetCreditOutcome } from "@d4research/contracts";
 import { ProviderConsumeResetCreditInput } from "@d4research/contracts";
@@ -121,11 +122,17 @@ export function UsageLimitsView({ rows }: { readonly rows: readonly ProviderLimi
 function LimitWindow({ row }: { readonly row: ProviderLimitWindow }) {
   const percent = row.window.utilizationPercent;
   const filled = percent === null ? 0 : Math.min(100, Math.max(0, percent));
-  const Mark = row.providerKind === null ? null : PROVIDER_PRESENTATION[row.providerKind].mark;
+  const provider = row.providerKind === null ? null : PROVIDER_PRESENTATION[row.providerKind];
   return (
     <div className="flex flex-col gap-1.5 bg-background px-4 py-3">
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        {Mark === null ? null : <Mark className="size-3.5 shrink-0" aria-hidden />}
+        {provider === null ? null : (
+          <ProviderInstanceIcon
+            driverKind={provider.driverKind}
+            displayName={provider.label}
+            iconClassName="size-3.5"
+          />
+        )}
         {row.providerLabel} · {row.window.label}
       </span>
       <span className="text-lg text-foreground tabular-nums">

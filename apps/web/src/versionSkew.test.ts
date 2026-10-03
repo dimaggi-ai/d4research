@@ -1,5 +1,10 @@
 import { EnvironmentId } from "@d4research/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+// Pinned so the direction cases below read as fixed versions instead of
+// arithmetic on whatever version this checkout happens to be at.
+const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34" }));
+vi.mock("./branding", () => branding);
 
 import { APP_VERSION } from "./branding";
 import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
@@ -124,11 +129,11 @@ describe("versionSkew", () => {
     ).toBe(false);
   });
 
-  it("appends a hint to connection errors when versions differ", () => {
-    const mismatch = resolveVersionMismatch("9.9.9");
+  it("appends a hint to connection errors when the server is behind", () => {
+    const mismatch = resolveVersionMismatch("0.0.33");
 
     expect(appendVersionMismatchHint("Socket closed.", mismatch)).toBe(
-      "Socket closed. Hint: Version mismatch. Try syncing the client and server to the same d4research version.",
+      `Socket closed. Hint: ${mismatch?.hint}`,
     );
   });
 

@@ -3,6 +3,7 @@ import type {
   ServerConfig,
   ServerSelfUpdateCapability,
 } from "@d4research/contracts";
+import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
 import * as Schema from "effect/Schema";
 import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 

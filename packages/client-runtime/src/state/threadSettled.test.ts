@@ -1,10 +1,3 @@
-import {
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-  TurnId,
-  type OrchestrationThreadShell,
-} from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -13,6 +6,7 @@ import {
   hasQueuedTurnStart,
   threadLastActivityAt,
   type ChangeRequestStateLike,
+  type ThreadSettledShell,
 } from "./threadSettled.ts";
 
 const NOW = "2026-04-10T00:00:00.000Z";
@@ -24,39 +18,25 @@ function makeShell(input: {
   readonly activityAt: string | null;
   readonly sessionStatus?: "starting" | "running";
   readonly pending?: "approval" | "user-input";
-}): OrchestrationThreadShell {
-  const threadId = ThreadId.make("thread-1");
+}): ThreadSettledShell {
   return {
-    id: threadId,
-    projectId: ProjectId.make("project-1"),
-    title: "Thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    pullRequests: [],
     latestTurn:
       input.activityAt === null
         ? null
         : {
-            turnId: TurnId.make("turn-1"),
+            turnId: "turn-1",
             state: "completed",
             requestedAt: input.activityAt,
             startedAt: null,
             completedAt: null,
             assistantMessageId: null,
           },
-    createdAt: "2026-04-01T00:00:00.000Z",
-    updatedAt: NOW,
-    archivedAt: null,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledOverride === "settled" ? NOW : null,
     session:
       input.sessionStatus === undefined
         ? null
         : {
-            threadId,
             status: input.sessionStatus,
             providerName: "Codex",
             runtimeMode: "full-access",
@@ -67,18 +47,17 @@ function makeShell(input: {
     latestUserMessageAt: null,
     hasPendingApprovals: input.pending === "approval",
     hasPendingUserInput: input.pending === "user-input",
-    hasActionableProposedPlan: false,
-  };
+  } as ThreadSettledShell;
 }
 
 describe("threadLastActivityAt", () => {
   it("returns the latest real user or turn activity and ignores thread/session updates", () => {
     const shell = makeShell({ activityAt: null, sessionStatus: "running" });
-    const withActivity: OrchestrationThreadShell = {
+    const withActivity: ThreadSettledShell = {
       ...shell,
       latestUserMessageAt: "2026-04-04T00:00:00.000Z",
       latestTurn: {
-        turnId: TurnId.make("turn-1"),
+        turnId: "turn-1",
         state: "completed",
         requestedAt: "2026-04-03T00:00:00.000Z",
         startedAt: "2026-04-05T00:00:00.000Z",
@@ -235,16 +214,15 @@ describe("effectiveSettled", () => {
       settledOverride: null,
       activityAt: STALE,
     });
-    const queued: OrchestrationThreadShell = {
+    const queued: ThreadSettledShell = {
       ...base,
       latestUserMessageAt: requestedAt,
       latestTurn: null,
       session: null,
     };
-    const starting: OrchestrationThreadShell = {
+    const starting: ThreadSettledShell = {
       ...queued,
       session: {
-        threadId: queued.id,
         status: "starting",
         providerName: "Codex",
         runtimeMode: "full-access",
@@ -253,12 +231,12 @@ describe("effectiveSettled", () => {
         updatedAt: requestedAt,
       },
     };
-    const running: OrchestrationThreadShell = {
+    const running: ThreadSettledShell = {
       ...starting,
       session: {
         ...starting.session!,
         status: "running",
-        activeTurnId: TurnId.make("turn-new"),
+        activeTurnId: "turn-new",
       },
     };
 
@@ -320,7 +298,7 @@ describe("hasQueuedTurnStart", () => {
       ...failed,
       latestUserMessageAt: QUEUED_AT,
       session: {
-        threadId: failed.id,
+        threadId: "thread-failed",
         status: "error" as const,
         providerName: "Codex",
         runtimeMode: "full-access" as const,

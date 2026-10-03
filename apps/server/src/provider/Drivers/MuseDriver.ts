@@ -140,8 +140,9 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
-        adapter,
+        orchestrationAdapter: makeLegacyAdapterV2(adapter, instanceId),
         textGeneration,
       } satisfies ProviderInstance;
     }),
 };
+import { makeLegacyAdapterV2 } from "../Layers/LegacyAdapterV2.ts";

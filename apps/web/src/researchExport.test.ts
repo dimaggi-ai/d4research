@@ -1,4 +1,4 @@
-import { EventId, MessageId, ProviderInstanceId, TurnId } from "@d4research/contracts";
+import { EventId, MessageId, ProviderInstanceId, RunId, TurnId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildResearchMarkdownExport, researchMarkdownFilename } from "./researchExport";
@@ -11,20 +11,13 @@ describe("research Markdown export", () => {
       environmentId: "env-local",
       threadId: "thread-1",
       modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6" },
-      latestTurn: {
-        turnId: TurnId.make("turn-1"),
-        state: "completed",
-        requestedAt: "2026-08-11T20:00:00.000Z",
-        startedAt: "2026-08-11T20:00:01.000Z",
-        completedAt: "2026-08-11T20:00:02.000Z",
-        assistantMessageId: MessageId.make("message-2"),
-      },
+      latestTurn: { state: "completed" },
       messages: [
         {
           id: MessageId.make("message-1"),
           role: "user",
           text: 'Research this.\n\n<pasted_context version="2">\n{"name":"corpus.md","contentLength":4}\nsoft\n</pasted_context>\n\n<enabled_skills version="2" names="%5B%22review%22%5D" session-names="%5B%22review%22%5D">\n- "review" (this chat)\n</enabled_skills>',
-          turnId: TurnId.make("turn-1"),
+          runId: RunId.make("turn-1"),
           streaming: false,
           createdAt: "2026-08-11T20:00:00.000Z",
           updatedAt: "2026-08-11T20:00:00.000Z",
@@ -33,7 +26,7 @@ describe("research Markdown export", () => {
           id: MessageId.make("message-2"),
           role: "assistant",
           text: "## Findings\n\nThe evidence is bounded.\n\n## Uncertainty\n\nSample only.",
-          turnId: TurnId.make("turn-1"),
+          runId: RunId.make("turn-1"),
           streaming: false,
           createdAt: "2026-08-11T20:00:02.000Z",
           updatedAt: "2026-08-11T20:00:02.000Z",

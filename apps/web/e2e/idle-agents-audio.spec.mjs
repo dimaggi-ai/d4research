@@ -6,11 +6,11 @@ import { createPairingUrl } from "./harness.mjs";
 
 export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) {
   // The preceding queue case creates this persisted thread without invoking a provider.
-  const db = new sqlite.DatabaseSync(path.join(app.baseDir, "userdata/state.sqlite"), {
+  const db = new sqlite.DatabaseSync(path.join(app.baseDir, "userdata/statev2.sqlite"), {
     readOnly: true,
   });
   const thread = db
-    .prepare("SELECT thread_id FROM projection_threads WHERE title = ? LIMIT 1")
+    .prepare("SELECT thread_id FROM orchestration_v2_projection_threads WHERE title = ? LIMIT 1")
     .get("Mobile queue fixture");
   db.close();
   assert.ok(thread, "The queue fixture must have created a persisted thread");
@@ -20,82 +20,149 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
   await context.addInitScript(
     ({ threadId }) => {
       const now = new Date().toISOString();
+      const runId = "artifact-run";
+      const providerThreadId = "artifact-provider-thread";
+      const taskRoster = (live) =>
+        live
+          ? ["reviewer-a", "reviewer-b"].map((taskId) => ({
+              taskId,
+              description: taskId,
+              kind: "subagent",
+            }))
+          : [];
+      const decorateProjection = (projection, live, deliveredAudio) => {
+        const text = deliveredAudio
+          ? "[Listen](apps/web/src/assets/notification-completion.mp3)"
+          : "Finished the source update.";
+        const messageId = deliveredAudio ? "artifact-audio-message" : "artifact-message";
+        const item = {
+          id: `artifact-item-${messageId}`,
+          threadId,
+          runId,
+          nodeId: null,
+          providerThreadId,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "assistant_message",
+          messageId,
+          text,
+          streaming: false,
+        };
+        const tasks = taskRoster(live);
+        projection.thread.activeProviderThreadId = providerThreadId;
+        projection.runs = [
+          {
+            id: runId,
+            threadId,
+            ordinal: 1,
+            providerInstanceId: projection.thread.providerInstanceId,
+            modelSelection: projection.thread.modelSelection,
+            providerThreadId,
+            userMessageId: "artifact-user-message",
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "completed",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: now,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        ];
+        projection.providerThreads = [
+          {
+            id: providerThreadId,
+            driver: "codex",
+            providerInstanceId: projection.thread.providerInstanceId,
+            providerSessionId: null,
+            appThreadId: threadId,
+            ownerNodeId: null,
+            nativeThreadRef: null,
+            nativeConversationHeadRef: null,
+            status: "idle",
+            firstRunOrdinal: 1,
+            lastRunOrdinal: 1,
+            handoffIds: [],
+            forkedFrom: null,
+            pendingBackgroundTasks: tasks,
+            contextUsage: null,
+            nativeMetadata: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+        projection.messages = [
+          {
+            id: messageId,
+            threadId,
+            runId,
+            nodeId: null,
+            role: "assistant",
+            text,
+            attachments: [],
+            streaming: false,
+            createdBy: "agent",
+            creationSource: "provider",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+        projection.turnItems = [item];
+        projection.visibleTurnItems = [
+          {
+            position: 0,
+            visibility: "local",
+            sourceThreadId: threadId,
+            sourceItemId: item.id,
+            item,
+          },
+        ];
+        projection.checkpoints = [
+          {
+            id: "artifact-checkpoint",
+            threadId,
+            scopeId: "artifact-checkpoint-scope",
+            runId,
+            nodeId: "artifact-node",
+            parentCheckpointId: null,
+            ordinalWithinScope: 1,
+            appRunOrdinal: 1,
+            ref: "refs/test/audio",
+            status: "ready",
+            files: ["notification-completion.mp3", "notification-input.mp3"].map((name) => ({
+              path: `apps/web/src/assets/${name}`,
+              kind: "added",
+              additions: 0,
+              deletions: 0,
+            })),
+            capturedAt: now,
+          },
+        ];
+      };
       const transform = (value) => {
         if (Array.isArray(value)) return value.map(transform);
         if (!value || typeof value !== "object") return value;
         const result = Object.fromEntries(
           Object.entries(value).map(([key, entry]) => [key, transform(entry)]),
         );
-        if (result.id !== threadId || !result.projectId) return result;
         const live = sessionStorage.getItem("fixture-live-agents") === "true";
         const deliveredAudio = sessionStorage.getItem("fixture-delivered-audio") === "true";
-        const messageId = deliveredAudio ? "artifact-audio-message" : "artifact-message";
-        result.updatedAt = now;
-        result.backgroundLiveness = live ? "working" : null;
-        result.session = {
-          threadId,
-          status: "ready",
-          providerName: "codex",
-          providerInstanceId: "codex",
-          runtimeMode: "full-access",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: now,
-        };
-        result.latestTurn = {
-          turnId: "artifact-turn",
-          state: "completed",
-          requestedAt: now,
-          startedAt: now,
-          completedAt: now,
-          assistantMessageId: messageId,
-        };
-        if (Array.isArray(result.messages)) {
-          result.messages = [
-            {
-              id: messageId,
-              role: "assistant",
-              text: deliveredAudio
-                ? "[Listen](apps/web/src/assets/notification-completion.mp3)"
-                : "Finished the source update.",
-              turnId: "artifact-turn",
-              streaming: false,
-              createdAt: now,
-              updatedAt: now,
-            },
-          ];
-          result.activities = ["reviewer-a", "reviewer-b"].map((taskId, sequence) => ({
-            id: `activity-${taskId}`,
-            kind: "task.updated",
-            tone: "info",
-            summary: "Task running",
-            payload: {
-              taskId,
-              status: "running",
-              title: taskId,
-              agentKind: "agent",
-              timelineBypass: true,
-            },
-            turnId: "artifact-turn",
-            sequence,
-            createdAt: now,
-          }));
-          result.checkpoints = [
-            {
-              turnId: "artifact-turn",
-              checkpointTurnCount: 1,
-              checkpointRef: "refs/test/audio",
-              status: "ready",
-              assistantMessageId: messageId,
-              completedAt: now,
-              files: ["notification-completion.mp3", "notification-input.mp3"].map((name) => ({
-                path: `apps/web/src/assets/${name}`,
-                kind: "added",
-                additions: 0,
-                deletions: 0,
-              })),
-            },
-          ];
+        if (
+          result.id === threadId &&
+          typeof result.projectId === "string" &&
+          "activeRunId" in result
+        ) {
+          result.pendingBackgroundTasks = taskRoster(live);
+        }
+        if (result.projection?.thread?.id === threadId) {
+          decorateProjection(result.projection, live, deliveredAudio);
         }
         return result;
       };
@@ -157,10 +224,10 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
     assert.equal(await page.getByText(/agents working in the background/).count(), 0);
     await page.screenshot({ path: path.join(screenshotDir, `idle-agents-no-audio-${width}.png`) });
   }
-  // Positive control: the same roster must stay visible when the server reports live work.
+  // Positive control: V2 pending-background work must stay visible in the composer.
   await page.evaluate(() => sessionStorage.setItem("fixture-live-agents", "true"));
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByText("2 agents working in the background", { exact: true }).waitFor();
+  await page.getByText("Waiting on 2 subagents", { exact: true }).waitFor();
   await page.evaluate(() => sessionStorage.setItem("fixture-delivered-audio", "true"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Remove audio artifact", exact: true }).waitFor();

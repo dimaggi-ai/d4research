@@ -205,6 +205,7 @@ it.layer(layer)("MuseAdapter", (it) => {
     Effect.gen(function* () {
       const f = yield* setup();
       McpProviderSession.setMcpProviderSession({
+        browserToolsAvailable: true,
         environmentId: EnvironmentId.make("environment-1"),
         threadId: f.threadId,
         providerSessionId: "provider-session-1",
@@ -246,6 +247,7 @@ it.layer(layer)("MuseAdapter", (it) => {
     Effect.gen(function* () {
       const f = yield* setup({ T3_MSP_DENY_SESSION_MCP: "1" });
       McpProviderSession.setMcpProviderSession({
+        browserToolsAvailable: true,
         environmentId: EnvironmentId.make("environment-1"),
         threadId: f.threadId,
         providerSessionId: "provider-session-1",

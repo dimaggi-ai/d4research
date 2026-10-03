@@ -20,7 +20,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { ServerConfig } from "../../config.ts";
-import { acpPromptRequestFailedMessage } from "./GrokAdapter.ts";
+import { acpPromptRequestFailedMessage } from "./LegacyAcpAdapter.ts";
 import { makeJunieAdapter, resolveJunieModelSelection } from "./JunieAdapter.ts";
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

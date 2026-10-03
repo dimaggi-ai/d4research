@@ -1,6 +1,4 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId } from "@d4research/contracts";
-import { TurnId } from "@d4research/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -13,7 +11,6 @@ import {
   threadWokeAt,
   type ThreadSnoozeShell,
 } from "./threadSettled.ts";
-import type { OrchestrationThreadShell } from "@d4research/contracts";
 
 const NOW = "2026-04-10T12:00:00.000Z";
 const SNOOZED_AT = "2026-04-10T09:00:00.000Z";
@@ -31,7 +28,6 @@ function makeShell(input: {
   readonly pending?: "approval" | "user-input";
   readonly turnCompletedAt?: string | null;
 }): ThreadSnoozeShell {
-  const threadId = ThreadId.make("thread-1");
   return {
     snoozedUntil: input.snoozedUntil ?? null,
     snoozedAt: input.snoozedAt ?? (input.snoozedUntil != null ? SNOOZED_AT : null),
@@ -41,7 +37,6 @@ function makeShell(input: {
       input.sessionStatus === undefined
         ? null
         : {
-            threadId,
             status: input.sessionStatus,
             providerName: "Codex",
             runtimeMode: "full-access",
@@ -53,7 +48,7 @@ function makeShell(input: {
       input.turnCompletedAt === undefined
         ? null
         : {
-            turnId: TurnId.make("turn-1"),
+            turnId: "turn-1",
             state: "completed",
             requestedAt: SNOOZED_AT,
             startedAt: null,
@@ -63,10 +58,7 @@ function makeShell(input: {
   };
 }
 
-type QueuedTurnShell = Pick<
-  OrchestrationThreadShell,
-  "latestUserMessageAt" | "latestTurn" | "session"
->;
+type QueuedTurnShell = Parameters<typeof hasQueuedTurnStart>[0];
 
 function makeQueuedTurnShell(overrides: Partial<QueuedTurnShell> = {}): QueuedTurnShell {
   return { latestUserMessageAt: null, latestTurn: null, session: null, ...overrides };
@@ -226,7 +218,7 @@ describe("hasQueuedTurnStart", () => {
     const adopted = makeQueuedTurnShell({
       latestUserMessageAt: messageAt,
       latestTurn: {
-        turnId: TurnId.make("turn-adopted"),
+        turnId: "turn-adopted",
         state: "running",
         requestedAt: messageAt,
         startedAt: null,
@@ -237,7 +229,7 @@ describe("hasQueuedTurnStart", () => {
     const failed = makeQueuedTurnShell({
       latestUserMessageAt: messageAt,
       session: {
-        threadId: ThreadId.make("thread-failed"),
+        threadId: "thread-failed",
         status: "error",
         providerName: "Codex",
         runtimeMode: "full-access",

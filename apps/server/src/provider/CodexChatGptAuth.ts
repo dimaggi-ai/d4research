@@ -21,8 +21,8 @@ import type { ProviderAuthFlowContext } from "./ProviderAuthFlow.ts";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 import { withChatGptSessionLock } from "./CodexChatGptSessionLock.ts";
-import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
-import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 const RESOURCE = "https://api.openai.com/v1";
 const REQUIRED_SCOPE = "chatgpt.tokens.use.direct";
@@ -54,7 +54,7 @@ const Sessions = Schema.Struct({
   sessions: Schema.Array(Record),
 });
 const sessionLocks = new WeakMap<
-  typeof ServerSecretStore.Service,
+  typeof ServerSecretStore.ServerSecretStore.Service,
   Map<string, Semaphore.Semaphore>
 >();
 const Registration = Schema.Struct({
@@ -107,14 +107,14 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
     "codex-chatgpt-registration",
     options.instanceId,
   );
-  const secrets = yield* ServerSecretStore;
+  const secrets = yield* ServerSecretStore.ServerSecretStore;
   const environmentLocks = sessionLocks.get(secrets) ?? new Map<string, Semaphore.Semaphore>();
   sessionLocks.set(secrets, environmentLocks);
   const lock = environmentLocks.get(store.binding.key) ?? (yield* Semaphore.make(1));
   environmentLocks.set(store.binding.key, lock);
   const withSessionLock = <A, E, R>(task: Effect.Effect<A, E, R>) =>
     withChatGptSessionLock(secrets.directory, store.binding.key, options.instanceId, task);
-  const environment = yield* ServerEnvironmentIdentity;
+  const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const hostId = `urn:uuid:${yield* environment.getEnvironmentId}`;
   const resource = options.resource ?? RESOURCE;
   const failure = (operation: string, detail: string) =>

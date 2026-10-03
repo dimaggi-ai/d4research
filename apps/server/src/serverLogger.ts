@@ -3,10 +3,10 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 
-import { ServerConfig } from "./config.ts";
+import * as ServerConfig from "./config.ts";
 
 export const ServerLoggerLive = Effect.gen(function* () {
-  const config = yield* ServerConfig;
+  const config = yield* ServerConfig.ServerConfig;
   const minimumLogLevelLayer = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
   // `Logger.layer` writes the whole logger set rather than adding to it, so

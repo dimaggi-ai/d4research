@@ -55,6 +55,10 @@ export interface ProviderInstanceEntry {
   readonly driverKind: ProviderDriverKind;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
+  /** Registry identity used to resolve the official icon for generic ACP instances. */
+  readonly acpRegistryAgentId?: string | undefined;
+  /** Catalog-advertised icon URL. The renderer still applies the official-CDN allowlist. */
+  readonly acpRegistryIconUrl?: string | undefined;
   readonly continuationGroupKey?: string | undefined;
   readonly enabled: boolean;
   readonly installed: boolean;
@@ -69,6 +73,24 @@ export interface ProviderInstanceEntry {
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
   readonly models: ReadonlyArray<ServerProviderModel>;
+}
+
+export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
+
+/**
+ * Keep a provider catalogue that has not arrived yet distinct from a loaded
+ * catalogue with no usable entries. Environment config streams are reactive:
+ * treating their initial `null` as a final empty list strands otherwise
+ * recoverable threads behind a misleading "no providers" state.
+ */
+export function resolveProviderCatalogAvailability(input: {
+  readonly catalogLoaded: boolean;
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly selectedEntry: ProviderInstanceEntry | undefined;
+}): ProviderCatalogAvailability {
+  if (!input.catalogLoaded) return "loading";
+  if (input.selectedEntry !== undefined) return "ready";
+  return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
 /**
@@ -106,6 +128,9 @@ export function deriveProviderInstanceEntries(
       driverKind,
       displayName: resolveProviderInstanceDisplayName(snapshot),
       accentColor: normalizeProviderAccentColor(snapshot.accentColor),
+      ...(driverKind === "acpRegistry" && snapshot.iconUrl
+        ? { acpRegistryIconUrl: snapshot.iconUrl }
+        : {}),
       continuationGroupKey: snapshot.continuation?.groupKey,
       enabled: snapshot.enabled,
       installed: snapshot.installed,
@@ -129,17 +154,21 @@ export function deriveProviderInstanceEntries(
  * the thread's own environment.
  */
 export function deriveProviderEntriesByEnvironment(
-  providersByEnvironment: Iterable<readonly [string, ReadonlyArray<ServerProvider>]>,
+  providersByEnvironment: Iterable<
+    readonly [
+      string,
+      ReadonlyArray<ServerProvider>,
+      Pick<ServerSettings, "providerInstances" | "providers">?,
+    ]
+  >,
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
-  for (const [environmentId, providers] of providersByEnvironment) {
+  for (const [environmentId, providers, settings] of providersByEnvironment) {
+    const derived = deriveProviderInstanceEntries(providers);
+    const entries = settings ? applyProviderInstanceSettings(derived, settings) : derived;
     byEnvironment.set(
       environmentId,
-      new Map(
-        deriveProviderInstanceEntries(providers).map(
-          (entry) => [entry.instanceId as string, entry] as const,
-        ),
-      ),
+      new Map(entries.map((entry) => [entry.instanceId as string, entry] as const)),
     );
   }
   return byEnvironment;
@@ -168,23 +197,36 @@ export function applyProviderInstanceSettings(
   return entries
     .filter((entry) => !redundantInstanceIds.has(entry.instanceId))
     .map((entry) => {
-      const explicitInstance =
-        settings.providerInstances && Object.hasOwn(settings.providerInstances, entry.instanceId)
-          ? settings.providerInstances[entry.instanceId]
-          : undefined;
+      const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
+        ? settings.providerInstances[entry.instanceId]
+        : undefined;
       const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
         ? legacyProviders[entry.driverKind]
         : undefined;
       const enabled = explicitInstance
         ? resolveProviderInstanceEnabled(explicitInstance)
-        : entry.isDefault
-          ? (legacyProvider?.enabled ??
-            (legacyProvider !== undefined ||
-            Object.hasOwn(DEFAULT_SERVER_SETTINGS.providers, entry.driverKind)
-              ? entry.enabled
-              : false))
+        : entry.isDefault && legacyProvider
+          ? (legacyProvider.enabled ?? entry.enabled)
           : false;
-      return enabled === entry.enabled ? entry : { ...entry, enabled };
+      if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
+        return enabled === entry.enabled ? entry : { ...entry, enabled };
+      }
+      const config =
+        explicitInstance.config !== null && typeof explicitInstance.config === "object"
+          ? (explicitInstance.config as Readonly<Record<string, unknown>>)
+          : null;
+      const agentId = config?.agentId;
+      const iconUrl = config?.registryIconUrl;
+      return {
+        ...entry,
+        enabled,
+        ...(typeof agentId === "string" && agentId.trim()
+          ? { acpRegistryAgentId: agentId.trim() }
+          : {}),
+        ...(typeof iconUrl === "string" && iconUrl.trim()
+          ? { acpRegistryIconUrl: iconUrl.trim() }
+          : {}),
+      };
     });
 }
 
@@ -224,7 +266,7 @@ export function sortProviderInstanceEntries(
  * Look up a single instance entry by exact `instanceId`. Missing snapshots
  * are not inferred from driver kind in UI routing code.
  */
-function getProviderInstanceEntry(
+export function getProviderInstanceEntry(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
 ): ProviderInstanceEntry | undefined {

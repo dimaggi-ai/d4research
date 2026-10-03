@@ -149,6 +149,8 @@ const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
+const PI_DRIVER_KIND = ProviderDriverKind.make("pi");
+const ACP_REGISTRY_DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 
@@ -184,9 +186,13 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-fable-5-1",
   [CURSOR_DRIVER_KIND]: "auto",
-  [GROK_DRIVER_KIND]: "grok-4.6",
+  // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
+  [GROK_DRIVER_KIND]: "grok-build",
   [MUSE_DRIVER_KIND]: "default",
   [JUNIE_DRIVER_KIND]: "default",
+  [ACP_REGISTRY_DRIVER_KIND]: "default",
+  // "default" defers to the user's own Pi settings.json model selection.
+  [PI_DRIVER_KIND]: "default",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
   [AGY_DRIVER_KIND]: "gemini-3.6-flash-medium",
 };
@@ -262,6 +268,8 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [GROK_DRIVER_KIND]: "Grok",
   [MUSE_DRIVER_KIND]: "Muse",
   [JUNIE_DRIVER_KIND]: "Junie",
+  [ACP_REGISTRY_DRIVER_KIND]: "ACP Registry",
+  [PI_DRIVER_KIND]: "Pi",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
   [AGY_DRIVER_KIND]: "Agy",
 };

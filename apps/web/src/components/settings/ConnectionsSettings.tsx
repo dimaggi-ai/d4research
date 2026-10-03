@@ -17,61 +17,43 @@ import { TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 
 import { Atom } from "effect/unstable/reactivity";
-
-import { type ReactNode } from "react";
-
-import { memo } from "react";
-
-import { useCallback } from "react";
-
-import { useId } from "react";
-
-import { useMemo } from "react";
-
-import { useState } from "react";
-
-import { AuthAccessReadScope } from "@d4research/contracts";
-
-import { AuthAccessWriteScope } from "@d4research/contracts";
-
-import { AuthAdministrativeScopes } from "@d4research/contracts";
-
-import { AuthOrchestrationOperateScope } from "@d4research/contracts";
-
-import { AuthOrchestrationReadScope } from "@d4research/contracts";
-
-import { AuthReviewWriteScope } from "@d4research/contracts";
-
-import { AuthStandardClientScopes } from "@d4research/contracts";
-
-import { AuthTerminalOperateScope } from "@d4research/contracts";
-
-import { type AuthClientSession } from "@d4research/contracts";
-
-import { type AuthEnvironmentScope } from "@d4research/contracts";
-
-import { type AuthPairingLink } from "@d4research/contracts";
-
-import { type AdvertisedEndpoint } from "@d4research/contracts";
-
-import { type DesktopDiscoveredSshHost } from "@d4research/contracts";
-
-import { type DesktopSshEnvironmentTarget } from "@d4research/contracts";
-
-import { type DesktopServerExposureState } from "@d4research/contracts";
-
-import { type DesktopWslState } from "@d4research/contracts";
-
-import { type EnvironmentId } from "@d4research/contracts";
-
-import { resolveEnvironmentMachineKind } from "@d4research/contracts";
-
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthAdministrativeScopes,
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthReviewWriteScope,
+  AuthStandardClientScopes,
+  AuthTerminalOperateScope,
+  type AuthClientSession,
+  type AuthEnvironmentScope,
+  type AuthPairingLink,
+  type AuthPairingCredentialResult,
+  type AdvertisedEndpoint,
+  type DesktopDiscoveredSshHost,
+  type DesktopSshEnvironmentTarget,
+  type DesktopServerExposureState,
+  type DesktopWslState,
+  type EnvironmentId,
+  resolveEnvironmentMachineKind,
+} from "@d4research/contracts";
 import { connectionStatusText } from "@d4research/client-runtime/connection";
-
-import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
-
-import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
-
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@d4research/client-runtime/state/runtime";
 import * as DateTime from "effect/DateTime";
 
 import * as Option from "effect/Option";
@@ -193,17 +175,9 @@ import { MenuSeparator } from "../ui/menu";
 import { MenuTrigger } from "../ui/menu";
 
 import { Switch } from "../ui/switch";
-
-import { stackedThreadToast } from "../ui/toast";
-
-import { toastManager } from "../ui/toast";
-
-import { Tooltip } from "../ui/tooltip";
-
-import { TooltipPopup } from "../ui/tooltip";
-
-import { TooltipTrigger } from "../ui/tooltip";
-
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 
 import { Empty } from "../ui/empty";
@@ -2643,9 +2617,9 @@ export function ConnectionsSettings() {
           </label>
         </div>
         {savedBackendError || discoveredSshHostsError ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {savedBackendError ?? discoveredSshHostsError}
-          </div>
+          <Alert variant="error">
+            <AlertDescription>{savedBackendError ?? discoveredSshHostsError}</AlertDescription>
+          </Alert>
         ) : null}
         <Button
           variant="outline"

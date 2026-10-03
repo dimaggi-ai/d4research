@@ -41,7 +41,7 @@ await runProductionBrowserSuite([
           body: `${await response.text()}\n[data-chat-composer-form] button[type=submit] { display: none !important; }`,
         });
       });
-      await NodeAssert.rejects(mobileQueueWhileRunning(fixture), /Send message/);
+      await NodeAssert.rejects(mobileQueueWhileRunning(fixture), /Queue message/);
     },
   },
   {
@@ -79,9 +79,9 @@ await runProductionBrowserSuite([
     run: (fixture) =>
       withBrokenCss(
         fixture,
-        '[data-right-panel-tabbar] [aria-label="Toggle right panel"] { display: none !important; }',
+        '[data-right-panel-tabbar] [aria-label="Toggle right panel"], [data-workspace-titlebar-controls] [aria-label="Toggle right panel"][aria-pressed="true"] { display: none !important; }',
         panelCloseReachability,
-        /data-right-panel-tabbar.*Toggle right panel/s,
+        /Toggle right panel/s,
       ),
   },
   {

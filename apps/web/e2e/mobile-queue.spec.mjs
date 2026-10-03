@@ -6,10 +6,14 @@ import { createPairingUrl } from "./harness.mjs";
 export async function mobileQueueWhileRunning({ page, context, app, screenshotDir }) {
   await context.addInitScript(() => {
     let runningThreadId = sessionStorage.getItem("queue-fixture-thread");
-    window.__queueFixtureForbiddenDispatch = false;
+    let deferredSeedDispatches = 0;
+    window.__queueFixtureForbiddenCommands = [];
+    window.__queueFixtureQueueDispatches = 0;
+    window.__queueFixtureQueueCancellations = 0;
+    const fixtureThreadId = () => runningThreadId ?? window.__queueFixtureThreadId ?? null;
     const now = new Date().toISOString();
-    // Keep the production composer and queue store real. Only the incoming
-    // provider state is simulated; no agent process should run for this test.
+    // A real deferred V2 run below exercises queue persistence without starting
+    // a provider. Present its preparing state as running only in the UI.
     const runningSnapshot = (value) => {
       if (Array.isArray(value)) return value.map(runningSnapshot);
       if (!value || typeof value !== "object") return value;
@@ -21,29 +25,29 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
       if (
         typeof result.id === "string" &&
         typeof result.projectId === "string" &&
-        "session" in result
+        "activeRunId" in result
       ) {
-        runningThreadId ??= result.id;
-        if (result.id === runningThreadId) {
-          result.session = {
-            threadId: result.id,
-            status: "running",
-            providerName: "codex",
-            providerInstanceId: "codex",
-            runtimeMode: "full-access",
-            activeTurnId: "queue-test-turn",
-            lastError: null,
-            updatedAt: now,
-          };
-          result.latestTurn = {
-            turnId: "queue-test-turn",
-            state: "running",
-            requestedAt: now,
-            startedAt: now,
-            completedAt: null,
-            assistantMessageId: null,
-          };
+        if (result.id === fixtureThreadId()) {
+          result.status = "running";
+          result.latestRunStartedAt ??= now;
+          result.activityRunStartedAt = now;
+          result.activityRunStatus = "running";
         }
+      }
+      const projection = result.projection?.thread ? result.projection : result;
+      if (projection?.thread?.id === fixtureThreadId()) {
+        projection.runs = projection.runs.map((run) =>
+          run.status === "preparing" ? { ...run, status: "running", startedAt: now } : run,
+        );
+      }
+      if (
+        result.threadId === fixtureThreadId() &&
+        result.status === "preparing" &&
+        typeof result.ordinal === "number" &&
+        typeof result.userMessageId === "string"
+      ) {
+        result.status = "running";
+        result.startedAt = now;
       }
       return result;
     };
@@ -79,8 +83,58 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
         });
       }
       send(message) {
-        if (/thread\.turn\.(start|interrupt)/u.test(String(message))) {
-          window.__queueFixtureForbiddenDispatch = true;
+        let packet;
+        try {
+          packet = JSON.parse(String(message));
+        } catch {
+          super.send(message);
+          return;
+        }
+        const command = packet.payload;
+        if (
+          packet.tag === "orchestration.dispatchCommand" &&
+          command?.threadId === fixtureThreadId()
+        ) {
+          const isDeferredFixtureStart =
+            command.type === "message.dispatch" &&
+            command.messageId === window.__queueFixtureDeferredMessageId &&
+            command.dispatchMode?.type === "defer_start" &&
+            deferredSeedDispatches === 0;
+          const isQueuedMessage =
+            command.type === "message.dispatch" &&
+            command.dispatchMode?.type === "queue_after_active";
+          if (isDeferredFixtureStart) {
+            deferredSeedDispatches += 1;
+            super.send(message);
+            return;
+          }
+          if (isQueuedMessage) {
+            window.__queueFixtureQueueDispatches += 1;
+            super.send(message);
+            return;
+          }
+          if (command.type === "queued-run.cancel") {
+            window.__queueFixtureQueueCancellations += 1;
+            super.send(message);
+            return;
+          }
+          // Opening the fixture records read state; it cannot schedule a turn.
+          if (command.type === "thread.visit") {
+            super.send(message);
+            return;
+          }
+          // Never let this fixture release the deferred run or dispatch any
+          // other operation that could start, interrupt, or steer a provider.
+          window.__queueFixtureForbiddenCommands.push(command.type);
+          this.dispatchEvent(
+            new MessageEvent("message", {
+              data: JSON.stringify({
+                _tag: "Exit",
+                requestId: packet.id,
+                exit: { _tag: "Success", value: { sequence: 0 } },
+              }),
+            }),
+          );
           return;
         }
         super.send(message);
@@ -93,57 +147,75 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
   await page.waitForURL((url) => url.pathname !== "/" && url.pathname !== "/pair", {
     timeout: 20000,
   });
-  const db = new NodeSqlite.DatabaseSync(NodePath.join(app.baseDir, "userdata/state.sqlite"), {
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(app.baseDir, "userdata/statev2.sqlite"), {
     readOnly: true,
   });
   const project = db
     .prepare("SELECT project_id FROM projection_projects WHERE deleted_at IS NULL LIMIT 1")
     .get();
-  db.close();
   NodeAssert.ok(project);
   const destination = await page.evaluate(async (projectId) => {
     const socket = window.__queueFixtureSocket;
     const threadId = crypto.randomUUID();
-    const requestId = 900000;
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        socket.removeEventListener("message", receive);
-        reject(new Error("Thread fixture creation timed out"));
-      }, 10000);
-      const receive = (event) => {
-        const packet = JSON.parse(event.data);
-        if (packet._tag !== "Exit" || Number(packet.requestId) !== requestId) return;
-        clearTimeout(timer);
-        socket.removeEventListener("message", receive);
-        if (packet.exit._tag === "Success") resolve();
-        else reject(new Error(JSON.stringify(packet.exit)));
-      };
-      socket.addEventListener("message", receive);
-      socket.send(
-        JSON.stringify({
-          _tag: "Request",
-          id: requestId,
-          tag: "orchestration.dispatchCommand",
-          payload: {
-            type: "thread.create",
-            commandId: crypto.randomUUID(),
-            threadId,
-            projectId,
-            title: "Mobile queue fixture",
-            modelSelection: { instanceId: "codex", model: "gpt-5.6-terra" },
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdAt: new Date().toISOString(),
-          },
-          headers: [],
-        }),
-      );
+    let requestId = 900000;
+    const dispatch = (payload) =>
+      new Promise((resolve, reject) => {
+        const id = requestId++;
+        const timer = setTimeout(() => {
+          socket.removeEventListener("message", receive);
+          reject(new Error(`Fixture command ${payload.type} timed out`));
+        }, 10000);
+        const receive = (event) => {
+          const packet = JSON.parse(event.data);
+          if (packet._tag !== "Exit" || Number(packet.requestId) !== id) return;
+          clearTimeout(timer);
+          socket.removeEventListener("message", receive);
+          if (packet.exit._tag === "Success") resolve(packet.exit.value);
+          else reject(new Error(JSON.stringify(packet.exit)));
+        };
+        socket.addEventListener("message", receive);
+        socket.send(
+          JSON.stringify({
+            _tag: "Request",
+            id,
+            tag: "orchestration.dispatchCommand",
+            payload,
+            headers: [],
+          }),
+        );
+      });
+    await dispatch({
+      type: "thread.create",
+      commandId: crypto.randomUUID(),
+      threadId,
+      projectId,
+      createdBy: "user",
+      creationSource: "mobile",
+      title: "Mobile queue fixture",
+      modelSelection: { instanceId: "codex", model: "gpt-5.6-terra" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
     });
+    const seedMessageId = crypto.randomUUID();
+    window.__queueFixtureThreadId = threadId;
+    window.__queueFixtureDeferredMessageId = seedMessageId;
     sessionStorage.setItem("queue-fixture-thread", threadId);
+    await dispatch({
+      type: "message.dispatch",
+      commandId: crypto.randomUUID(),
+      threadId,
+      messageId: seedMessageId,
+      text: "Deferred fixture run: no provider should start.",
+      attachments: [],
+      dispatchMode: { type: "defer_start" },
+      createdBy: "user",
+      creationSource: "mobile",
+    });
     return `/${window.__queueFixtureEnvironmentId}/${threadId}`;
   }, project.project_id);
+  const fixtureThreadId = await page.evaluate(() => window.__queueFixtureThreadId);
   await page.goto(`${app.webUrl}${destination}`, { waitUntil: "domcontentloaded" });
   const stop = page.getByRole("button", { name: "Stop generation", exact: true });
   const editor = page.getByTestId("composer-editor");
@@ -151,11 +223,60 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
   await editor.click();
   await stop.waitFor();
   const send = page.getByRole("button", { name: "Queue message", exact: true });
-  for (const width of [390, 320]) {
+  const persistedQueuedMessages = () =>
+    db
+      .prepare(
+        `SELECT message.message_id AS messageId, message.payload_json AS payload
+         FROM orchestration_v2_projection_runs AS run
+         INNER JOIN orchestration_v2_projection_messages AS message
+           ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+         WHERE run.thread_id = ? AND run.status = 'queued'
+         ORDER BY run.ordinal`,
+      )
+      .all(fixtureThreadId);
+  const runStatusForMessage = (text) =>
+    db
+      .prepare(
+        `SELECT run.status AS status
+         FROM orchestration_v2_projection_runs AS run
+         INNER JOIN orchestration_v2_projection_messages AS message
+           ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+         WHERE run.thread_id = ? AND json_extract(message.payload_json, '$.text') = ?
+         ORDER BY run.ordinal DESC LIMIT 1`,
+      )
+      .get(fixtureThreadId, text)?.status;
+  const assertNoProviderStart = () => {
+    const counts = {
+      sessions: db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM orchestration_v2_projection_provider_sessions WHERE thread_id = ?",
+        )
+        .get(fixtureThreadId).count,
+      turns: db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM orchestration_v2_projection_provider_turns WHERE thread_id = ?",
+        )
+        .get(fixtureThreadId).count,
+      startEffects: db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM orchestration_v2_effect_outbox WHERE thread_id = ? AND effect_type = 'provider-turn.start'",
+        )
+        .get(fixtureThreadId).count,
+    };
+    NodeAssert.deepEqual(counts, { sessions: 0, turns: 0, startEffects: 0 });
+  };
+  assertNoProviderStart();
+  NodeAssert.equal(
+    runStatusForMessage("Deferred fixture run: no provider should start."),
+    "preparing",
+    "The underlying V2 run must stay deferred while its UI state is presented as running",
+  );
+  for (const [index, width] of [390, 320].entries()) {
     await page.setViewportSize({ width, height: 844 });
     await editor.click();
     await editor.fill(`Follow-up from phone ${width}`);
     await send.waitFor({ state: "visible", timeout: 5000 });
+    await stop.waitFor({ state: "visible", timeout: 5000 });
     const box = await send.boundingBox();
     NodeAssert.ok(
       box && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 844,
@@ -164,19 +285,14 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
     NodeAssert.equal(await send.isEnabled(), true);
     await stop.waitFor();
     const header = page.locator("[data-chat-header]");
-    const actions = await header.locator("[data-chat-header-actions]").boundingBox();
     const panelControls = await header.locator("[data-workspace-titlebar-controls]").boundingBox();
     NodeAssert.ok(
-      actions &&
-        panelControls &&
-        actions.x >= 0 &&
-        actions.x + actions.width <= panelControls.x &&
-        panelControls.x + panelControls.width <= width,
-      `Header actions must fit before panel controls without overlap at ${width}px`,
+      panelControls && panelControls.x >= 0 && panelControls.x + panelControls.width <= width,
+      `Panel controls must fit inside the header at ${width}px`,
     );
-    // Narrow headers put Git actions in the overflow menu.
-    await header.getByRole("button", { name: "More header actions", exact: true }).click();
-    const initializeGit = page.getByRole("menuitem", { name: "Initialize Git", exact: true });
+    // V2 moved Git actions from the header overflow into thread details.
+    await header.getByRole("button", { name: "Toggle thread details panel", exact: true }).click();
+    const initializeGit = page.getByRole("button", { name: "Initialize Git", exact: true });
     await initializeGit.waitFor({ state: "visible", timeout: 5000 });
     NodeAssert.equal(
       await initializeGit.evaluate((button) => {
@@ -201,25 +317,43 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
       timeout: 10000,
     });
     await send.click();
-    const queue = page.locator('[data-chat-request-queue="true"]');
+    const queue = page.getByRole("region", { name: "1 queued message", exact: true });
+    await queue.waitFor({ state: "visible", timeout: 10_000 });
+    const queueToggle = queue.getByRole("button", { name: /queued messages/i });
+    if ((await queueToggle.getAttribute("aria-expanded")) !== "true") await queueToggle.click();
     await queue.getByText(`Follow-up from phone ${width}`, { exact: true }).waitFor();
     await stop.waitFor();
+    NodeAssert.deepEqual(
+      await page.evaluate(() => window.__queueFixtureForbiddenCommands),
+      [],
+      "The fixture must block all non-queue work that could reach a provider",
+    );
     NodeAssert.equal(
-      await page.evaluate(() => window.__queueFixtureForbiddenDispatch),
-      false,
-      "Queuing must not interrupt or start a provider turn",
+      await page.evaluate(() => window.__queueFixtureQueueDispatches),
+      index + 1,
+      "Only queue-after-active dispatches may pass the fixture guard",
     );
-    await queue
-      .getByRole("button", { name: "Cancel and return to the composer", exact: true })
-      .first()
-      .click();
-    await queue.waitFor({ state: "hidden" });
-    // The returned text lands in the composer. Re-expand only if it collapsed.
-    const expand = page.getByRole("button", { name: "Expand composer", exact: true });
-    if (await expand.isVisible()) await expand.click();
+    const queuedRows = persistedQueuedMessages();
+    NodeAssert.equal(queuedRows.length, 1);
+    NodeAssert.equal(JSON.parse(queuedRows[0].payload).text, `Follow-up from phone ${width}`);
+    assertNoProviderStart();
+    await queue.getByRole("button", { name: "Remove queued message", exact: true }).click();
+    await queue.waitFor({ state: "hidden", timeout: 10_000 });
+    NodeAssert.equal(persistedQueuedMessages().length, 0);
+    NodeAssert.equal(runStatusForMessage(`Follow-up from phone ${width}`), "cancelled");
+    NodeAssert.equal(
+      runStatusForMessage("Deferred fixture run: no provider should start."),
+      "preparing",
+    );
+    assertNoProviderStart();
+    NodeAssert.equal(
+      await page.evaluate(() => window.__queueFixtureQueueCancellations),
+      index + 1,
+      "Each removed queued message must be cancelled through the V2 command",
+    );
+    const expandAfterQueue = page.getByRole("button", { name: "Expand composer", exact: true });
+    if (await expandAfterQueue.isVisible()) await expandAfterQueue.click();
     await editor.waitFor({ state: "visible" });
-    console.log(
-      `PASS phone ${width}px queues and removes a follow-up while Stop remains available`,
-    );
   }
+  db.close();
 }

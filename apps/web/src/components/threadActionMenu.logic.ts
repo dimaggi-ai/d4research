@@ -49,8 +49,8 @@ export interface ThreadActionMenuState {
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
-  /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
-  readonly isRunning?: boolean;
+  /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
+  readonly isRunning: boolean;
   readonly canExportMarkdown?: boolean;
   readonly supports: {
     readonly settlement: boolean;

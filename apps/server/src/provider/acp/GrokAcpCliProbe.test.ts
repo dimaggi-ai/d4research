@@ -10,6 +10,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { describe, expect } from "vite-plus/test";
 
@@ -35,21 +39,16 @@ describe.runIf(process.env.T3_GROK_ACP_PROBE === "1")("Grok ACP CLI probe", () =
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("session/new advertises typed SessionModelState with at least one model", () =>
+  it.effect("completes a prompt on the agent's default model", () =>
     Effect.gen(function* () {
       const runtime = yield* makeProbeRuntime;
       const started = yield* runtime.start();
-      const result = started.sessionSetupResult;
-
       expect(typeof started.sessionId).toBe("string");
 
-      // Modern grok-shell advertises models through the typed
-      // `SessionModelState` field, not via a `configOptions` entry.
-      // If this assertion fails the upstream surface has regressed.
-      const models = result.models;
-      expect(models).toBeDefined();
-      expect(typeof models?.currentModelId).toBe("string");
-      expect(models?.availableModels.length ?? 0).toBeGreaterThan(0);
+      const result = yield* runtime
+        .prompt({ prompt: [{ type: "text", text: "Respond with exactly: grok switch ok" }] })
+        .pipe(Effect.timeout("60 seconds"));
+      expect(result.stopReason).toBe("end_turn");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
@@ -65,5 +64,60 @@ describe.runIf(process.env.T3_GROK_ACP_PROBE === "1")("Grok ACP CLI probe", () =
       // succeed against every Grok build that implements `session/set_model`.
       yield* runtime.setSessionModel(currentModelId);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+  it.effect("session/set_model accepts advertised reasoning effort metadata", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeProbeRuntime;
+      const started = yield* runtime.start();
+      const modelState = started.sessionSetupResult.models;
+      const currentModelId = modelState?.currentModelId.trim();
+      expect(currentModelId).toBeDefined();
+      if (!currentModelId) return;
+
+      const currentModel = modelState?.availableModels.find(
+        (model) => model.modelId.trim() === currentModelId,
+      );
+      const reasoningEffort = currentModel?._meta?.reasoningEffort;
+      expect(typeof reasoningEffort).toBe("string");
+      if (typeof reasoningEffort !== "string") return;
+
+      yield* runtime.setSessionModel(currentModelId, { reasoningEffort });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.skipIf(process.env.T3_GROK_LIVE_TURN !== "1")(
+    "finishes a real Grok turn and streams its answer",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped();
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const runtime = yield* makeGrokAcpRuntime({
+          grokSettings: { binaryPath: "grok" },
+          environment: process.env,
+          childProcessSpawner,
+          cwd,
+          runtimeMode: "approval-required",
+          clientInfo: { name: "t3-grok-probe", version: "0.0.0" },
+        });
+        yield* runtime.start();
+        const chunks: string[] = [];
+        const events = yield* Stream.runForEach(runtime.getEvents(), (event) => {
+          if (event._tag === "EventStreamBarrier") {
+            return Deferred.succeed(event.acknowledge, undefined);
+          }
+          if (event._tag === "ContentDelta") {
+            chunks.push(event.text);
+          }
+          return Effect.void;
+        }).pipe(Effect.forkChild);
+        const result = yield* runtime.prompt({
+          prompt: [{ type: "text", text: "Reply exactly GROK_T3_OK. Do not use any tools." }],
+        });
+        yield* runtime.drainEvents;
+        expect(result.stopReason).toBe("end_turn");
+        expect(chunks.join("")).toContain("GROK_T3_OK");
+        yield* Fiber.interrupt(events);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

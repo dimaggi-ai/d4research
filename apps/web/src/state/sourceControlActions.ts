@@ -1,22 +1,21 @@
-import {
-  type AtomCommandFailure,
-  type AtomCommandResult,
-  type AtomCommandSuccess,
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  AtomCommandFailure,
+  AtomCommandResult,
+  AtomCommandSuccess,
 } from "@d4research/client-runtime/state/runtime";
 import {
   VcsActionUnavailableError,
   type VcsActionOperation,
+  type RunVcsStackedActionInput,
 } from "@d4research/client-runtime/state/vcs";
-import {
-  type EnvironmentId,
-  type GitActionProgressEvent,
-  type GitResolvePullRequestResult,
-  type GitStackedAction,
-  type SourceControlCloneProtocol,
-  type SourceControlRepositoryVisibility,
-  type ThreadId,
+import type {
+  EnvironmentId,
+  GitResolvePullRequestResult,
+  SourceControlCloneProtocol,
+  SourceControlRepositoryVisibility,
+  ThreadId,
 } from "@d4research/contracts";
-import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -190,7 +189,7 @@ export function useVcsPullAction(scope: SourceControlActionScope) {
   }, [pull, scope]);
   return useAction({
     kind: "pull",
-    label: "Pulling latest changes",
+    label: "Pulling latest changes...",
     scope,
     action,
     onSuccess: status.refresh,
@@ -211,15 +210,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
   );
 
   const action = useCallback(
-    async (input: {
-      actionId: string;
-      action: GitStackedAction;
-      commitMessage?: string;
-      featureBranch?: boolean;
-      filePaths?: string[];
-      threadId?: ThreadId;
-      onProgress?: (event: GitActionProgressEvent) => void;
-    }) => {
+    async (input: RunVcsStackedActionInput) => {
       if (resolveScope(scope) === null) {
         return AsyncResult.failure<never, VcsActionUnavailableError>(
           Cause.fail(
@@ -231,15 +222,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
           ),
         );
       }
-      return runStackedAction({
-        actionId: input.actionId,
-        action: input.action,
-        ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
-        ...(input.featureBranch ? { featureBranch: true } : {}),
-        ...(input.filePaths?.length ? { filePaths: input.filePaths } : {}),
-        ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
-        ...(input.onProgress ? { onProgress: input.onProgress } : {}),
-      });
+      return runStackedAction(input);
     },
     [runStackedAction, scope],
   );

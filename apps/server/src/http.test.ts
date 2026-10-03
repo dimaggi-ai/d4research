@@ -1,108 +1,578 @@
-import { NodeHttpServer } from "@effect/platform-node";
-import {
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  AuthSessionId,
-} from "@d4research/contracts";
 import { expect, it } from "@effect/vitest";
+import { describe, vi } from "vite-plus/test";
+import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { HttpBody, HttpClient, HttpRouter } from "effect/unstable/http";
-import { describe } from "vite-plus/test";
-
-import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import {
-  buildHandoffMemoryText,
-  isValidHandoffMemoryText,
-  isBuildAssetPath,
-  isJsonObjectRequestBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpRouter,
+  HttpServerResponse,
+} from "effect/unstable/http";
+import { openMediaFile } from "./assets/MediaFile.ts";
+
+import { ORCHESTRATION_PROTOCOL_HEADER } from "@d4research/contracts";
+
+import * as ServerConfig from "./config.ts";
+
+import {
+  assetResponseHeaders,
+  browserApiCorsLayer,
+  assetFileResponse,
+  downloadContentDisposition,
+  httpCompressionLayer,
   isLoopbackHostname,
-  makeMemoAttachmentRouteLayer,
-  makeSkillsInstallRouteLayer,
-  MAX_HANDOFF_MEMORY_CHARACTERS,
   resolveDevRedirectUrl,
-  readHandoffEnabledSkills,
-  selectHandoffCompressionPlan,
+  staticAndDevRouteLayer,
 } from "./http.ts";
-import { MemoryConnectorError, type LocalMemoConnector } from "./mcp/toolkits/memory/connectors.ts";
-import { memoAttachmentSource } from "./memoAttachment.ts";
-import { PortableSkillsInventory, type InstallSkillResult } from "./skillsInventory.ts";
 
-const authenticatedRouteLayer = Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-  authenticateHttpRequest: () =>
-    Effect.succeed({
-      sessionId: AuthSessionId.make("skill-route-test"),
-      subject: "skill-route-test",
-      method: "bearer-access-token",
-      scopes: [AuthOrchestrationOperateScope],
-    }),
-});
-const portableSkillsLayer = Layer.mock(PortableSkillsInventory)({
-  get: Effect.succeed([]),
-  refresh: Effect.succeed([]),
-});
+describe("browser API CORS", () => {
+  it("accepts protocol negotiation with authenticated browser headers", async () => {
+    const routeLayer = Layer.effectDiscard(
+      Effect.gen(function* () {
+        const router = yield* HttpRouter.HttpRouter;
+        yield* router.add("GET", "/api/environment", HttpServerResponse.empty());
+      }),
+    );
+    const appLayer = Layer.merge(routeLayer, browserApiCorsLayer).pipe(
+      Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "http-cors-test-" })),
+      Layer.provide(NodeServices.layer),
+    );
+    const { handler, dispose } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
 
-const withSkillInstallRoute = <A, E, R>(
-  install: (input: {
-    readonly url: string;
-    readonly cwd?: string;
-    readonly installAgyPlugin?: boolean;
-  }) => Effect.Effect<InstallSkillResult>,
-  run: Effect.Effect<A, E, R | HttpClient.HttpClient>,
-) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      yield* HttpRouter.serve(makeSkillsInstallRouteLayer(install), {
-        disableListenLog: true,
-        disableLogger: true,
-      }).pipe(
-        Layer.provide(Layer.merge(authenticatedRouteLayer, portableSkillsLayer)),
-        Layer.build,
+    try {
+      const response = await handler(
+        new Request("https://backend.example/api/environment", {
+          method: "OPTIONS",
+          headers: {
+            origin: "https://app.t3.codes",
+            "access-control-request-method": "GET",
+            "access-control-request-headers": [
+              ORCHESTRATION_PROTOCOL_HEADER,
+              "authorization",
+              "dpop",
+            ].join(", "),
+          },
+        }),
       );
-      return yield* run;
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+      const allowedHeaders = new Set(
+        (response.headers.get("access-control-allow-headers") ?? "")
+          .split(",")
+          .map((header) => header.trim().toLowerCase()),
+      );
+      expect(allowedHeaders.has(ORCHESTRATION_PROTOCOL_HEADER)).toBe(true);
+      expect(allowedHeaders.has("authorization")).toBe(true);
+      expect(allowedHeaders.has("dpop")).toBe(true);
+    } finally {
+      await dispose();
+    }
+  });
+});
+
+const fileResponseLayer = Layer.mergeAll(NodeHttpPlatform.layer, NodeServices.layer);
+
+const makeStaticRequest = Effect.fn("HttpTest.makeStaticRequest")(function* (staticDir: string) {
+  const config = yield* ServerConfig.ServerConfig;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const appLayer = Layer.merge(staticAndDevRouteLayer, httpCompressionLayer).pipe(
+    Layer.provideMerge(ServerConfig.layer({ ...config, staticDir })),
+    Layer.provideMerge(NodeHttpPlatform.layer),
+    Layer.provideMerge(Layer.succeed(FileSystem.FileSystem, fileSystem)),
+    Layer.provideMerge(Layer.succeed(Path.Path, path)),
+  );
+  const services = yield* Layer.build(
+    HttpRouter.serve(appLayer, { disableListenLog: true }).pipe(
+      Layer.provideMerge(NodeHttpServer.layerTest),
+    ),
+  );
+  const client = Context.get(services, HttpClient.HttpClient);
+  return (resource: string, options?: HttpClientRequest.Options) =>
+    client.execute(HttpClientRequest.make(options?.method ?? "GET")(resource, options));
+});
+
+it.layer(
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3-static-http-test-" }).pipe(
+    Layer.provideMerge(NodeServices.layer),
+  ),
+)("static HTTP responses", (it) => {
+  it.effect("revalidates non-HTML files and returns changed contents", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-cache-" });
+      const assetPath = path.join(staticDir, "app.js");
+      yield* fs.writeFileString(assetPath, 'export const build = "first";');
+      const request = yield* makeStaticRequest(staticDir);
+
+      const initial = yield* request("/app.js");
+      expect(initial.status).toBe(200);
+      expect(yield* initial.text).toContain("first");
+      const etag = initial.headers["etag"]!;
+      const lastModified = initial.headers["last-modified"]!;
+      expect(etag).toBeTruthy();
+      expect(lastModified).toBeTruthy();
+      for (const headers of [
+        { "if-none-match": etag },
+        { "if-none-match": etag.replace(/^W\//, "") },
+        { "if-none-match": `"other", ${etag}` },
+        { "if-none-match": "*" },
+        { "if-modified-since": lastModified },
+      ]) {
+        const response = yield* request("/app.js", { headers });
+        expect(response.status).toBe(304);
+        expect(response.headers["etag"]).toBe(etag);
+        expect(response.headers["cache-control"]).toBe("no-cache");
+        expect(yield* response.text).toBe("");
+      }
+      const mismatched = yield* request("/app.js", {
+        headers: { "if-none-match": '"another-build"', "if-modified-since": lastModified },
+      });
+      expect(mismatched.status).toBe(200);
+      expect(yield* mismatched.text).toContain("first");
+
+      yield* fs.writeFileString(assetPath, 'export const build = "the next build";');
+      const changed = yield* request("/app.js", { headers: { "if-none-match": etag } });
+      expect(changed.status).toBe(200);
+      expect(changed.headers["etag"]).not.toBe(etag);
+      expect(yield* changed.text).toContain("next build");
     }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest));
+  );
 
-const postInstall = (body: string) =>
-  Effect.gen(function* () {
-    const httpClient = yield* HttpClient.HttpClient;
-    const response = yield* httpClient.post("/api/skills/install", {
-      body: HttpBody.text(body, "application/json"),
-    });
-    return {
-      status: response.status,
-      body: (yield* response.json) as Record<string, unknown>,
-    };
-  });
+  it.effect("serves changed HTML when deployments preserve its size and timestamp", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-html-" });
+      const indexPath = path.join(staticDir, "index.html");
+      const modifiedAt = DateTime.toDateUtc(DateTime.makeUnsafe("1985-10-26T08:15:00.000Z"));
+      yield* fs.writeFileString(indexPath, "<html>old build</html>");
+      yield* fs.utimes(indexPath, modifiedAt, modifiedAt);
+      const request = yield* makeStaticRequest(staticDir);
+      const initial = yield* request("/");
+      expect(yield* initial.text).toBe("<html>old build</html>");
+      const previousEtag = initial.headers["etag"] ?? '"previous-html"';
+      const nextHtml = "<html>new build</html>";
+      yield* fs.writeFileString(indexPath, nextHtml);
+      yield* fs.utimes(indexPath, modifiedAt, modifiedAt);
 
-const postInstallJson = (body: unknown) =>
-  Effect.gen(function* () {
-    const httpClient = yield* HttpClient.HttpClient;
-    const response = yield* httpClient.post("/api/skills/install", {
-      body: HttpBody.jsonUnsafe(body),
-    });
-    return {
-      status: response.status,
-      body: (yield* response.json) as Record<string, unknown>,
-    };
-  });
+      for (const [resource, headers] of [
+        ["/", { "if-none-match": previousEtag }],
+        ["/threads/example", { "if-modified-since": modifiedAt.toUTCString() }],
+        ["/", { "if-none-match": "*" }],
+      ] as const) {
+        const response = yield* request(resource, { headers });
+        expect(response.status).toBe(200);
+        expect(yield* response.text).toBe(nextHtml);
+        expect(response.headers["cache-control"]).toBe("no-cache");
+        expect(response.headers["etag"]).toBeUndefined();
+        expect(response.headers["last-modified"]).toBeUndefined();
+      }
+      const head = yield* request("/", {
+        method: "HEAD",
+        headers: { "if-none-match": previousEtag, "accept-encoding": "identity" },
+      });
+      expect(head.status).toBe(200);
+      expect(head.headers["content-length"]).toBe(String(Buffer.byteLength(nextHtml)));
+      expect(yield* head.text).toBe("");
+    }),
+  );
 
-describe("static build assets", () => {
-  it("treats bundler output as an asset, never a client route", () => {
-    // A client left on a previous build requests chunks this build renamed.
-    // These must 404 rather than fall back to index.html, which the browser
-    // rejects on MIME grounds and reports as an unopenable panel.
-    expect(isBuildAssetPath("assets/FilePreviewPanel-DhOl-_WG.js")).toBe(true);
-    expect(isBuildAssetPath("assets/index-B0FU_a-4.css")).toBe(true);
-    expect(isBuildAssetPath("service-worker.js")).toBe(true);
-    expect(isBuildAssetPath("index-abc.js.map")).toBe(true);
-  });
+  it.effect("closes static descriptors after GET, HEAD, 304, and request cancellation", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-close-" });
+      const filePath = path.join(staticDir, "app.txt");
+      const body = "file content\n".repeat(1024);
+      yield* fs.writeFileString(filePath, body);
+      const closed = yield* Queue.unbounded<FileSystem.File>();
+      const blocked = yield* Deferred.make<void>();
+      const active = new Set<FileSystem.File>();
+      let blockAfterOpen = false;
+      let bodyReads = 0;
+      const trackedFileSystem = FileSystem.FileSystem.of({
+        ...fs,
+        open: (candidate, options) =>
+          Effect.gen(function* () {
+            if (candidate !== filePath) return yield* fs.open(candidate, options);
+            let opened: FileSystem.File | undefined;
+            yield* Effect.addFinalizer(() =>
+              Effect.gen(function* () {
+                if (opened === undefined) return;
+                active.delete(opened);
+                yield* Queue.offer(closed, opened);
+              }),
+            );
+            const file = yield* fs.open(candidate, options);
+            opened = file;
+            active.add(file);
+            if (blockAfterOpen) {
+              yield* Deferred.succeed(blocked, undefined);
+              return yield* Effect.never;
+            }
+            return new Proxy(file, {
+              get(target, key) {
+                if (key === "readAlloc") {
+                  return (size: number) => {
+                    bodyReads += 1;
+                    return target.readAlloc(size);
+                  };
+                }
+                return Reflect.get(target, key, target);
+              },
+            });
+          }),
+      });
+      const request = yield* makeStaticRequest(staticDir).pipe(
+        Effect.provideService(FileSystem.FileSystem, trackedFileSystem),
+      );
 
-  it("leaves client routes to the SPA fallback", () => {
-    expect(isBuildAssetPath("settings/skills")).toBe(false);
-    expect(isBuildAssetPath("projects/meko-benchmark")).toBe(false);
-    expect(isBuildAssetPath("index.html")).toBe(false);
-  });
+      const get = yield* request("/app.txt");
+      expect(yield* get.text).toBe(body);
+      yield* Queue.take(closed);
+      expect(active.size).toBe(0);
+      expect(bodyReads).toBeGreaterThan(0);
+      const readsAfterGet = bodyReads;
+      const head = yield* request("/app.txt", {
+        method: "HEAD",
+        headers: { "accept-encoding": "gzip" },
+      });
+      expect(head.status).toBe(200);
+      expect(head.headers["content-encoding"]).toBe("gzip");
+      expect(yield* head.text).toBe("");
+      yield* Queue.take(closed);
+      expect(active.size).toBe(0);
+      expect(bodyReads).toBe(readsAfterGet);
+      const unchanged = yield* request("/app.txt", {
+        headers: { "if-none-match": get.headers["etag"]! },
+      });
+      expect(unchanged.status).toBe(304);
+      yield* Queue.take(closed);
+      expect(active.size).toBe(0);
+      expect(bodyReads).toBe(readsAfterGet);
+
+      blockAfterOpen = true;
+      const cancelled = yield* request("/app.txt").pipe(Effect.forkChild);
+      yield* Deferred.await(blocked);
+      expect(active.size).toBe(1);
+      yield* Fiber.interrupt(cancelled);
+      yield* Queue.take(closed);
+      expect(active.size).toBe(0);
+    }),
+  );
+});
+
+describe("video asset byte ranges", () => {
+  it.effect("uses current descriptor metadata after an in-place truncate or extension", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-guarded-current-stat-" });
+      const filePath = path.join(directory, "clip.mp4");
+      for (const [contents, range, method, expected, status, contentRange] of [
+        ["1234", undefined, "GET", "1234", 200, null],
+        ["0123456789abcdef", undefined, "GET", "0123456789abcdef", 200, null],
+        ["1234", "bytes=4-", "GET", "", 416, "bytes */4"],
+        ["1234", "bytes=1-20", "GET", "234", 206, "bytes 1-3/4"],
+        ["0123456789abcdef", "bytes=10-", "GET", "abcdef", 206, "bytes 10-15/16"],
+        ["0123456789abcdef", undefined, "HEAD", "", 200, null],
+        ["", undefined, "GET", "", 200, null],
+        ["", "bytes=0-1", "GET", "", 416, "bytes */0"],
+      ] as const) {
+        yield* fs.writeFileString(filePath, "0123456789");
+        const canonicalPath = yield* fs.realPath(filePath);
+        const file = yield* openMediaFile(canonicalPath);
+        if (!file) throw new Error("Expected an opened media file");
+        yield* fs.writeFileString(filePath, contents);
+        const response = HttpServerResponse.toWeb(
+          yield* assetFileResponse(
+            { path: canonicalPath, file, mimeType: "video/mp4" },
+            range,
+            undefined,
+            method,
+          ),
+        );
+        expect(response.status).toBe(status);
+        expect(response.headers.get("content-range")).toBe(contentRange);
+        if (status !== 416) {
+          expect(response.headers.get("content-length")).toBe(
+            String(method === "HEAD" ? contents.length : expected.length),
+          );
+        }
+        expect(yield* Effect.promise(() => response.text())).toBe(expected);
+      }
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect(
+    "rejects unaddressable ranges before streaming and preserves small ranges on large files",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-guarded-offset-limit-" });
+        const filePath = path.join(directory, "clip.mp4");
+        yield* fs.writeFileString(filePath, "0123456789");
+        const canonicalPath = yield* fs.realPath(filePath);
+        const unsafeOffset = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+        const size = unsafeOffset + 32n;
+        for (const [range, status] of [
+          [`bytes=${unsafeOffset}-${unsafeOffset}`, 416],
+          [`bytes=0-${unsafeOffset}`, 416],
+          ["bytes=-1", 416],
+          [undefined, 413],
+          ["bytes=0-1", 206],
+        ] as const) {
+          const file = yield* openMediaFile(canonicalPath);
+          if (!file) throw new Error("Expected an opened media file");
+          // Model a sparse file beyond the native stream's numeric addressing limit.
+          const info = yield* Effect.promise(() => file.handle.stat({ bigint: true }));
+          info.size = size;
+          const statSpy = vi.spyOn(file.handle, "stat").mockResolvedValue(info);
+          yield* Effect.addFinalizer(() => Effect.sync(() => statSpy.mockRestore()));
+          const response = HttpServerResponse.toWeb(
+            yield* assetFileResponse({ path: canonicalPath, file, mimeType: "video/mp4" }, range),
+          );
+          expect(response.status).toBe(status);
+          if (status === 416) {
+            expect(response.headers.get("content-range")).toBe(`bytes */${size}`);
+            expect(yield* Effect.promise(() => response.text())).toBe("");
+          } else if (status === 206) {
+            expect(response.headers.get("content-range")).toBe(`bytes 0-1/${size}`);
+            expect(yield* Effect.promise(() => response.text())).toBe("01");
+          } else {
+            expect(yield* Effect.promise(() => response.text())).toBe(
+              "File is too large to preview.",
+            );
+          }
+        }
+      }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect("streams guarded file ranges, including suffixes and conditional requests", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-guarded-range-" });
+      const filePath = path.join(directory, "clip.mp4");
+      yield* fs.writeFileString(filePath, "0123456789");
+      const canonicalPath = yield* fs.realPath(filePath);
+      for (const [range, ifRange, expected, status, contentRange] of [
+        [undefined, undefined, "0123456789", 200, null],
+        ["bytes=0-1", undefined, "01", 206, "bytes 0-1/10"],
+        ["bytes=4-", undefined, "456789", 206, "bytes 4-9/10"],
+        ["bytes=-3", undefined, "789", 206, "bytes 7-9/10"],
+        ["bytes=-999999999999999999999999", undefined, "0123456789", 206, "bytes 0-9/10"],
+        ["bytes=10-", undefined, "", 416, "bytes */10"],
+        ["bytes=0-1", '"old-etag"', "0123456789", 200, null],
+        ["bytes=0-1", "", "0123456789", 200, null],
+      ] as const) {
+        const file = yield* openMediaFile(canonicalPath);
+        if (!file) throw new Error("Expected an opened media file");
+        const response = HttpServerResponse.toWeb(
+          yield* assetFileResponse(
+            { path: canonicalPath, file, mimeType: "video/mp4" },
+            range,
+            ifRange,
+          ),
+        );
+        expect(response.status).toBe(status);
+        expect(response.headers.get("accept-ranges")).toBe("bytes");
+        expect(response.headers.get("content-range")).toBe(contentRange);
+        expect(response.headers.get("cache-control")).toBe("private, no-store");
+        expect(response.headers.get("etag")).toBeNull();
+        expect(response.headers.get("last-modified")).toBeNull();
+        if (status !== 416)
+          expect(response.headers.get("content-length")).toBe(String(expected.length));
+        expect(yield* Effect.promise(() => response.text())).toBe(expected);
+      }
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect("keeps attachment media out of the cache once its signed URL expires", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-attachment-media-" });
+      const filePath = path.join(directory, "audio.wav");
+      yield* fs.writeFileString(filePath, "RIFF");
+      const canonicalPath = yield* fs.realPath(filePath);
+      // An attachment is read straight from disk, so it carries no opened host file. Its URL is
+      // signed and short-lived; a cached copy would outlive the grant that served it.
+      const response = HttpServerResponse.toWeb(
+        yield* assetFileResponse({ path: canonicalPath, mimeType: "audio/wav" }),
+      );
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("accept-ranges")).toBe("bytes");
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect("closes guarded descriptors after full, HEAD, rejected, and cancelled responses", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-guarded-cleanup-" });
+      const filePath = path.join(directory, "clip.mp4");
+      const bytes = new Uint8Array(1024 * 1024).fill(42);
+      yield* fs.writeFile(filePath, bytes);
+      const canonicalPath = yield* fs.realPath(filePath);
+      for (const mode of ["full", "HEAD", "rejected", "cancelled"] as const) {
+        const file = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const file = yield* openMediaFile(canonicalPath);
+            if (!file) throw new Error("Expected an opened media file");
+            const response = HttpServerResponse.toWeb(
+              yield* assetFileResponse(
+                { path: canonicalPath, file, mimeType: "video/mp4" },
+                mode === "rejected" ? `bytes=${bytes.length}-` : "bytes=0-",
+                undefined,
+                mode === "HEAD" ? "HEAD" : "GET",
+              ),
+            );
+            if (mode === "HEAD") {
+              expect(response.status).toBe(200);
+              expect(response.headers.get("content-length")).toBe(String(bytes.length));
+              expect(response.headers.get("content-range")).toBeNull();
+              expect(yield* Effect.promise(() => response.text())).toBe("");
+            } else if (mode === "rejected") {
+              expect(response.status).toBe(416);
+              expect(yield* Effect.promise(() => response.text())).toBe("");
+            } else if (mode === "cancelled") {
+              const reader = response.body!.getReader();
+              const first = yield* Effect.promise(() => reader.read());
+              expect(first.done).toBe(false);
+              expect(first.value!.byteLength).toBeLessThan(bytes.length);
+              yield* Effect.promise(() => reader.cancel());
+            } else {
+              expect(yield* Effect.promise(() => response.arrayBuffer())).toEqual(bytes.buffer);
+            }
+            return file;
+          }),
+        );
+        expect(file.handle.fd).toBe(-1);
+      }
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect("streams exactly the requested bytes and leaves full downloads intact", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-video-range-" });
+      const file = path.join(directory, "clip.mp4");
+      yield* fs.writeFileString(file, "0123456789");
+      const asset = { path: file, mimeType: "video/mp4" };
+      for (const [header, expected, contentRange] of [
+        ["bytes=0-1", "01", "bytes 0-1/10"],
+        ["bytes=4-", "456789", "bytes 4-9/10"],
+        ["bytes=-3", "789", "bytes 7-9/10"],
+        ["bytes=-999999999999999999999999", "0123456789", "bytes 0-9/10"],
+        ["bytes=8-999999999999999999999999", "89", "bytes 8-9/10"],
+      ] as const) {
+        const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset, header));
+        expect(response.status).toBe(206);
+        expect(response.headers.get("accept-ranges")).toBe("bytes");
+        expect(response.headers.get("content-range")).toBe(contentRange);
+        expect(response.headers.get("content-length")).toBe(String(expected.length));
+        expect(yield* Effect.promise(() => response.text())).toBe(expected);
+      }
+      for (const header of [
+        undefined,
+        "items=0-1",
+        "bytes=0-1,4-5",
+        "bytes=8-2",
+        "bytes=-",
+        "bytes=bad",
+      ]) {
+        const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset, header));
+        expect(response.status).toBe(200);
+        expect(yield* Effect.promise(() => response.text())).toBe("0123456789");
+      }
+      const conditional = HttpServerResponse.toWeb(
+        yield* assetFileResponse(asset, "bytes=0-1", '"old-etag"'),
+      );
+      expect(conditional.status).toBe(200);
+      expect(yield* Effect.promise(() => conditional.text())).toBe("0123456789");
+      const uppercase = HttpServerResponse.toWeb(
+        yield* assetFileResponse({ ...asset, mimeType: "Video/MP4" }, "bytes=0-1"),
+      );
+      expect(uppercase.status).toBe(206);
+      expect(yield* Effect.promise(() => uppercase.text())).toBe("01");
+      const image = HttpServerResponse.toWeb(
+        yield* assetFileResponse({ path: file, mimeType: "image/png" }, "bytes=0-1"),
+      );
+      expect(image.status).toBe(200);
+      expect(image.headers.has("accept-ranges")).toBe(false);
+      expect(yield* Effect.promise(() => image.text())).toBe("0123456789");
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect(
+    "supports native audio header probes and seeking without changing explicit downloads",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-audio-range-" });
+        const file = path.join(directory, "recording.wav");
+        yield* fs.writeFileString(file, "0123456789");
+        const asset = { path: file, mimeType: "audio/wav" };
+        for (const [header, expected] of [
+          ["bytes=0-1", "01"],
+          ["bytes=5-", "56789"],
+        ] as const) {
+          const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset, header));
+          expect(response.status).toBe(206);
+          expect(response.headers.get("content-type")).toBe("audio/wav");
+          expect(response.headers.get("accept-ranges")).toBe("bytes");
+          expect(response.headers.get("content-length")).toBe(String(expected.length));
+          expect(yield* Effect.promise(() => response.text())).toBe(expected);
+        }
+        const download = HttpServerResponse.toWeb(
+          yield* assetFileResponse({ ...asset, download: true, fileName: "recording.wav" }),
+        );
+        expect(download.status).toBe(200);
+        expect(download.headers.get("content-disposition")).toContain("attachment;");
+        expect(yield* Effect.promise(() => download.text())).toBe("0123456789");
+      }).pipe(Effect.provide(fileResponseLayer)),
+  );
+
+  it.effect("rejects ranges outside the file, including empty files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-video-range-" });
+      const file = path.join(directory, "clip.mp4");
+      yield* fs.writeFileString(file, "0123456789");
+      for (const header of ["bytes=10-", "bytes=-0", "bytes=999999999999999999999999-"]) {
+        const response = HttpServerResponse.toWeb(
+          yield* assetFileResponse({ path: file, mimeType: "video/mp4" }, header),
+        );
+        expect(response.status).toBe(416);
+        expect(response.headers.get("content-range")).toBe("bytes */10");
+        expect(yield* Effect.promise(() => response.text())).toBe("");
+      }
+      yield* fs.writeFileString(file, "");
+      const empty = HttpServerResponse.toWeb(
+        yield* assetFileResponse({ path: file, mimeType: "video/mp4" }, "bytes=0-1"),
+      );
+      expect(empty.status).toBe(416);
+      expect(empty.headers.get("content-range")).toBe("bytes */0");
+    }).pipe(Effect.provide(fileResponseLayer)),
+  );
 });
 
 describe("http dev routing", () => {
@@ -129,471 +599,129 @@ describe("http dev routing", () => {
   });
 });
 
-describe("handoff prepare", () => {
-  it("passes the transcript through when compression is disabled", () => {
-    expect(
-      selectHandoffCompressionPlan({
-        enabled: false,
-        backend: "provider",
-        instanceId: "claude",
-        model: "sonnet",
-      }),
-    ).toBe("passthrough");
-  });
-
-  it("uses the local model by default", () => {
-    expect(selectHandoffCompressionPlan({ enabled: true, backend: "local" })).toBe("local");
-  });
-
-  it("uses a provider session only when fully configured", () => {
-    expect(
-      selectHandoffCompressionPlan({
-        enabled: true,
-        backend: "provider",
-        instanceId: "claude",
-        model: "sonnet",
-      }),
-    ).toBe("provider");
-    expect(selectHandoffCompressionPlan({ enabled: true, backend: "provider" })).toBe("local");
-    expect(
-      selectHandoffCompressionPlan({ enabled: true, backend: "provider", instanceId: "claude" }),
-    ).toBe("local");
-  });
-
-  it("stores the compressed summary with its source thread and target", () => {
-    const text = buildHandoffMemoryText({
-      summary: "Dense summary of the work.",
-      sourceThreadId: "thread-source",
-      sourceThreadTitle: "Voice integration",
-      target: { instanceId: "claude", model: "claude-sonnet" },
-      enabledSkills: ["focus-mode", "security-review"],
+describe("assetResponseHeaders", () => {
+  it("sandboxes SVG assets", () => {
+    expect(assetResponseHeaders("/attachments/user-image.svg")).toMatchObject({
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "X-Content-Type-Options": "nosniff",
     });
-    expect(text).toContain("Voice integration");
-    expect(text).toContain("thread-source");
-    expect(text).toContain("claude / claude-sonnet");
-    expect(text).toContain("Dense summary of the work.");
-    expect(text).toContain(
-      "Configured global and chat skills to preserve: focus-mode, security-review",
+    expect(assetResponseHeaders("/attachments/user-image.SVG")).toHaveProperty(
+      "Content-Security-Policy",
     );
   });
 
-  it("bounds and sanitizes enabled skill names from the untrusted request body", () => {
-    const names = readHandoffEnabledSkills([
-      "  focus-mode  ",
-      "focus-mode",
-      null,
-      "",
-      "x".repeat(129),
-      ...Array.from({ length: 20 }, (_, index) => `skill-${index}`),
-    ]);
-
-    expect(names[0]).toBe("focus-mode");
-    expect(names).toHaveLength(12);
-    expect(new Set(names).size).toBe(names.length);
-  });
-
-  it("rejects a non-object request body before reading handoff fields", () => {
-    // The prepare and memory routes guard on this: arrays and null are also
-    // typeof "object", so a bare array or null body must 400, not read every
-    // field as undefined.
-    expect(isJsonObjectRequestBody({ transcript: "x" })).toBe(true);
-    expect(isJsonObjectRequestBody(null)).toBe(false);
-    expect(isJsonObjectRequestBody([{ transcript: "x" }])).toBe(false);
-    expect(isJsonObjectRequestBody("string body")).toBe(false);
-    expect(isJsonObjectRequestBody(42)).toBe(false);
-  });
-
-  it("still builds a memory record without thread metadata", () => {
-    const text = buildHandoffMemoryText({ summary: "Just the summary." });
-    expect(text).toContain("d4research provider handoff.");
-    expect(text).toContain("Just the summary.");
-  });
-
-  it("accepts a complete bounded research handoff record", () => {
-    const text = buildHandoffMemoryText({
-      summary: "x".repeat(60_000),
-      sourceThreadId: "thread-source",
-      sourceThreadTitle: "Research thread",
-      target: { instanceId: "codex", model: "gpt-5.6" },
-      enabledSkills: Array.from({ length: 12 }, (_, index) => `skill-${index}`),
+  it("does not apply document policy to raster images", () => {
+    expect(assetResponseHeaders("/attachments/user-image.png")).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     });
+  });
 
-    expect(isValidHandoffMemoryText(text)).toBe(true);
-    expect(text.length).toBeGreaterThan(20_000);
-    expect(isValidHandoffMemoryText("x".repeat(MAX_HANDOFF_MEMORY_CHARACTERS + 1))).toBe(false);
+  it("serves inline videos with their declared mime type", () => {
+    expect(
+      assetResponseHeaders("/attachments/demo.bin", {
+        mimeType: 'video/mp4; codecs="avc1.42E01E"',
+      }),
+    ).toEqual({
+      "Cache-Control": "private, max-age=3600",
+      "Content-Type": "video/mp4",
+      "X-Content-Type-Options": "nosniff",
+    });
+  });
+  it("serves inline attachment documents with their declared mime type", () => {
+    expect(
+      assetResponseHeaders("/attachments/upload.bin", { mimeType: "application/pdf" }),
+    ).toMatchObject({
+      "Content-Type": "application/pdf",
+    });
+    expect(
+      assetResponseHeaders("/attachments/upload.bin", { mimeType: "text/html" }),
+    ).toMatchObject({
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals",
+    });
+  });
+  it("serves HTML assets as utf-8 inside a sandboxed origin", () => {
+    for (const path of ["/workspace/page.html", "/workspace/PAGE.HTM", "/tmp/report.html"]) {
+      expect(assetResponseHeaders(path)).toMatchObject({
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals",
+      });
+    }
+  });
+
+  it("downloads uploaded documents without executing their content", () => {
+    expect(assetResponseHeaders("/attachments/upload.html", { download: true })).toMatchObject({
+      "Content-Disposition": "attachment",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Content-Type": "application/octet-stream",
+    });
+  });
+
+  it("serves the real filename and mime type when the claims carry them", () => {
+    expect(
+      assetResponseHeaders("/attachments/thread-1-abc-pdf.pdf", {
+        download: true,
+        fileName: "Q3 report.pdf",
+        mimeType: "application/pdf",
+      }),
+    ).toMatchObject({
+      "Content-Disposition": 'attachment; filename="Q3 report.pdf"',
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Content-Type": "application/pdf",
+    });
+  });
+
+  it("keeps renderable mime types as octet-stream downloads", () => {
+    for (const mimeType of [
+      "text/html",
+      "text/xml",
+      "image/svg+xml",
+      "application/xhtml+xml",
+      "application/rss+xml",
+      "APPLICATION/XML",
+      "IMAGE/SVG+XML",
+      "application/xml-dtd",
+      "application/xml-external-parsed-entity",
+      "not a mime",
+    ]) {
+      expect(
+        assetResponseHeaders("/attachments/upload.bin", { download: true, mimeType }),
+      ).toHaveProperty("Content-Type", "application/octet-stream");
+    }
+  });
+
+  it("preserves official Office Open XML mime types", () => {
+    for (const mimeType of [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ]) {
+      expect(
+        assetResponseHeaders("/attachments/upload.bin", { download: true, mimeType }),
+      ).toHaveProperty("Content-Type", mimeType);
+    }
   });
 });
 
-describe("skill install HTTP boundary", () => {
-  it.effect("decodes the explicit Agy opt-in and returns every success field", () => {
-    const received: Array<{
-      readonly url: string;
-      readonly cwd?: string;
-      readonly installAgyPlugin?: boolean;
-    }> = [];
-    return withSkillInstallRoute(
-      (input) => {
-        received.push(input);
-        return Effect.succeed({
-          ok: true,
-          installed: ["review"],
-          sharedRoots: ["claude-user", "junie-user", "agy-user"],
-          agyPlugin: "installed",
-        });
-      },
-      Effect.gen(function* () {
-        const response = yield* postInstallJson({
-          url: "https://example.test/review.git",
-          cwd: "/workspace/project",
-          installAgyPlugin: true,
-        });
-        expect(response).toEqual({
-          status: 200,
-          body: {
-            ok: true,
-            installed: ["review"],
-            sharedRoots: ["claude-user", "junie-user", "agy-user"],
-            agyPlugin: "installed",
-          },
-        });
-        expect(received).toEqual([
-          {
-            url: "https://example.test/review.git",
-            cwd: "/workspace/project",
-            installAgyPlugin: true,
-          },
-        ]);
-      }),
+describe("downloadContentDisposition", () => {
+  it("quotes plain names and strips quotes and control characters", () => {
+    expect(downloadContentDisposition("report.pdf")).toBe('attachment; filename="report.pdf"');
+    expect(downloadContentDisposition('we"ird\n.pdf')).toBe('attachment; filename="we_ird_.pdf"');
+  });
+
+  it("adds an RFC 5987 encoded name for non-ASCII filenames", () => {
+    expect(downloadContentDisposition("répört.pdf")).toBe(
+      `attachment; filename="r_p_rt.pdf"; filename*=UTF-8''r%C3%A9p%C3%B6rt.pdf`,
+    );
+    expect(downloadContentDisposition("résumé'(*).pdf")).toBe(
+      `attachment; filename="r_sum_'(*).pdf"; filename*=UTF-8''r%C3%A9sum%C3%A9%27%28%2A%29.pdf`,
     );
   });
 
-  it.effect("never turns truthy JSON values into an Agy plugin capability grant", () => {
-    const optIns: boolean[] = [];
-    return withSkillInstallRoute(
-      (input) => {
-        optIns.push(input.installAgyPlugin === true);
-        return Effect.succeed({
-          ok: true,
-          installed: ["review"],
-          sharedRoots: ["claude-user", "junie-user", "agy-user"],
-          agyPlugin: "not-requested",
-        });
-      },
-      Effect.gen(function* () {
-        yield* postInstallJson({
-          url: "https://example.test/review.git",
-          installAgyPlugin: "true",
-        });
-        yield* postInstallJson({ url: "https://example.test/review.git" });
-        expect(optIns).toEqual([false, false]);
-      }),
-    );
-  });
-
-  it.effect("maps installer validation, conflict, and internal failures to HTTP statuses", () => {
-    const outcomes: InstallSkillResult[] = [
-      { ok: false, status: 400, message: "Could not clone that repository." },
-      { ok: false, status: 409, message: "Skill already exists." },
-      { ok: false, status: 500, message: "Could not prepare every agent skills root." },
-    ];
-    return withSkillInstallRoute(
-      () => Effect.succeed(outcomes.shift()!),
-      Effect.gen(function* () {
-        const body = { url: "https://example.test/review.git" };
-        expect((yield* postInstallJson(body)).status).toBe(400);
-        expect((yield* postInstallJson(body)).status).toBe(409);
-        expect((yield* postInstallJson(body)).status).toBe(500);
-      }),
-    );
-  });
-
-  it.effect("keeps a portable-skill success when optional Agy installation fails", () =>
-    withSkillInstallRoute(
-      () =>
-        Effect.succeed({
-          ok: true,
-          installed: ["review"],
-          sharedRoots: ["claude-user", "junie-user", "agy-user"],
-          agyPlugin: "failed",
-        }),
-      Effect.gen(function* () {
-        const response = yield* postInstallJson({
-          url: "https://example.test/review.git",
-          installAgyPlugin: true,
-        });
-        expect(response.status).toBe(200);
-        expect(response.body.agyPlugin).toBe("failed");
-      }),
-    ),
-  );
-
-  it.effect("rejects malformed JSON without invoking the installer", () => {
-    let calls = 0;
-    return withSkillInstallRoute(
-      () => {
-        calls += 1;
-        return Effect.succeed({ ok: false, status: 400, message: "unused" });
-      },
-      Effect.gen(function* () {
-        const response = yield* postInstall("{");
-        expect(response.status).toBe(500);
-        expect(response.body).toEqual({ ok: false, message: "Could not install the skill." });
-        expect(calls).toBe(0);
-      }),
-    );
-  });
-});
-
-const DOCUMENT_TOKEN = "memoattachment0123456789abcdef";
-
-const memoryConnector = (overrides: Partial<LocalMemoConnector> = {}): LocalMemoConnector => ({
-  search: () => Effect.succeed({ results: [] }),
-  add: () => Effect.succeed({ ok: true }),
-  stats: () => Effect.succeed({ status: "ok" }),
-  health: () => Effect.succeed({ status: "ok" }),
-  ...overrides,
-});
-
-const authLayerWithScopes = (
-  scopes: ReadonlyArray<typeof AuthOrchestrationOperateScope | typeof AuthOrchestrationReadScope>,
-) =>
-  Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-    authenticateHttpRequest: () =>
-      Effect.succeed({
-        sessionId: AuthSessionId.make("memo-route-test"),
-        subject: "memo-route-test",
-        method: "bearer-access-token",
-        scopes,
-      }),
-  });
-
-const missingCredentialLayer = Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-  authenticateHttpRequest: () =>
-    Effect.fail(new EnvironmentAuth.ServerAuthMissingCredentialError({})),
-});
-
-const withMemoAttachmentRoutes = <A, E, R>(
-  authLayer: Layer.Layer<EnvironmentAuth.EnvironmentAuth>,
-  makeConnector: () => Effect.Effect<LocalMemoConnector, MemoryConnectorError>,
-  run: Effect.Effect<A, E, R | HttpClient.HttpClient>,
-) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      yield* HttpRouter.serve(makeMemoAttachmentRouteLayer(makeConnector), {
-        disableListenLog: true,
-        disableLogger: true,
-      }).pipe(Layer.provide(authLayer), Layer.build);
-      return yield* run;
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest));
-
-const memoRequest = (method: "GET" | "POST", path: string, body?: unknown) =>
-  Effect.gen(function* () {
-    const httpClient = yield* HttpClient.HttpClient;
-    const response = yield* method === "GET"
-      ? httpClient.get(path)
-      : httpClient.post(path, {
-          body: HttpBody.jsonUnsafe(body),
-        });
-    return {
-      status: response.status,
-      cacheControl: response.headers["cache-control"],
-      body: (yield* response.json) as Record<string, unknown>,
-    };
-  });
-
-describe("Memo attachment HTTP boundary", () => {
-  it.effect("requires operate scope before constructing the connector", () => {
-    let connectorCalls = 0;
-    return withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationReadScope]),
-      () => {
-        connectorCalls += 1;
-        return Effect.succeed(memoryConnector());
-      },
-      Effect.gen(function* () {
-        const response = yield* memoRequest("POST", "/api/memory/attachment", {
-          documentToken: DOCUMENT_TOKEN,
-          name: "large.txt",
-          content: "complete text",
-          project: "d4research",
-        });
-        expect(response.status).toBe(403);
-        expect(response.body).toMatchObject({
-          code: "insufficient_scope",
-          requiredScope: AuthOrchestrationOperateScope,
-        });
-        expect(connectorCalls).toBe(0);
-      }),
-    );
-  });
-
-  it.effect("rejects an unauthenticated request before constructing the connector", () => {
-    let connectorCalls = 0;
-    return withMemoAttachmentRoutes(
-      missingCredentialLayer,
-      () => {
-        connectorCalls += 1;
-        return Effect.succeed(memoryConnector());
-      },
-      Effect.gen(function* () {
-        const response = yield* memoRequest("GET", "/api/memory/attachments");
-        expect(response.status).toBe(401);
-        expect(response.body).toMatchObject({
-          code: "auth_invalid",
-          reason: "missing_credential",
-        });
-        expect(connectorCalls).toBe(0);
-      }),
-    );
-  });
-
-  it.effect("persists an attachment and returns a no-store success response", () => {
-    const added: Array<{ text: string; source?: string; project?: string }> = [];
-    return withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationOperateScope]),
-      () =>
-        Effect.succeed(
-          memoryConnector({
-            add: (text, source, project) => {
-              added.push({
-                text,
-                ...(source === undefined ? {} : { source }),
-                ...(project === undefined ? {} : { project }),
-              });
-              return Effect.succeed({ ok: true });
-            },
-          }),
-        ),
-      Effect.gen(function* () {
-        const response = yield* memoRequest("POST", "/api/memory/attachment", {
-          documentToken: DOCUMENT_TOKEN,
-          name: "large.txt",
-          content: "complete text",
-          project: "d4research",
-        });
-        expect(response).toMatchObject({
-          status: 200,
-          cacheControl: "no-store",
-          body: {
-            ok: true,
-            documentToken: DOCUMENT_TOKEN,
-            characterCount: 13,
-            chunkCount: 1,
-          },
-        });
-        expect(added).toHaveLength(2);
-        expect(added.every((entry) => entry.source === memoAttachmentSource(DOCUMENT_TOKEN))).toBe(
-          true,
-        );
-        expect(added.every((entry) => entry.project === "d4research")).toBe(true);
-      }),
-    );
-  });
-
-  it.effect("maps malformed JSON and invalid fields to non-retryable 400 responses", () => {
-    let connectorCalls = 0;
-    return withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationOperateScope]),
-      () => {
-        connectorCalls += 1;
-        return Effect.succeed(memoryConnector());
-      },
-      Effect.gen(function* () {
-        const httpClient = yield* HttpClient.HttpClient;
-        const malformed = yield* httpClient.post("/api/memory/attachment", {
-          body: HttpBody.text("{", "application/json"),
-        });
-        expect(malformed.status).toBe(400);
-        expect(malformed.headers["cache-control"]).toBe("no-store");
-        expect(yield* malformed.json).toEqual({ ok: false, message: "Malformed request body." });
-
-        const invalid = yield* memoRequest("POST", "/api/memory/attachment", {
-          documentToken: "invalid",
-          name: "large.txt",
-          content: "complete text",
-        });
-        expect(invalid.status).toBe(400);
-        expect(invalid.cacheControl).toBe("no-store");
-        expect(connectorCalls).toBe(0);
-      }),
-    );
-  });
-
-  it.effect("maps disabled Memo configuration to 409", () =>
-    withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationOperateScope]),
-      () =>
-        Effect.fail(
-          new MemoryConnectorError({
-            connector: "local",
-            operation: "configure",
-            message: "Local memory is disabled in Settings.",
-          }),
-        ),
-      Effect.gen(function* () {
-        const response = yield* memoRequest("GET", "/api/memory/attachments");
-        expect(response).toMatchObject({
-          status: 409,
-          cacheControl: "no-store",
-          body: { ok: false, message: "Local memory is disabled in Settings." },
-        });
-      }),
-    ),
-  );
-
-  it.effect("reports unsupported external lifecycle operations honestly", () =>
-    withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationOperateScope]),
-      () => Effect.succeed(memoryConnector()),
-      Effect.gen(function* () {
-        expect(yield* memoRequest("GET", "/api/memory/attachments")).toMatchObject({
-          status: 200,
-          body: { ok: true, backend: "memo-rest", supported: false, attachments: [] },
-        });
-        expect(
-          yield* memoRequest("POST", "/api/memory/attachment/delete", {
-            documentToken: DOCUMENT_TOKEN,
-          }),
-        ).toMatchObject({
-          status: 501,
-          body: { ok: false, supported: false },
-        });
-      }),
-    ),
-  );
-
-  it.effect("deletes by derived source and treats a retry as success", () => {
-    const sources: string[] = [];
-    let remaining = 2;
-    return withMemoAttachmentRoutes(
-      authLayerWithScopes([AuthOrchestrationOperateScope]),
-      () =>
-        Effect.succeed(
-          memoryConnector({
-            deleteBySource: (source) => {
-              sources.push(source);
-              const deleted = remaining;
-              remaining = 0;
-              return Effect.succeed({ deleted });
-            },
-          }),
-        ),
-      Effect.gen(function* () {
-        const body = { documentToken: DOCUMENT_TOKEN };
-        expect(yield* memoRequest("POST", "/api/memory/attachment/delete", body)).toMatchObject({
-          status: 200,
-          body: { ok: true, supported: true, deleted: 2 },
-        });
-        expect(yield* memoRequest("POST", "/api/memory/attachment/delete", body)).toMatchObject({
-          status: 200,
-          body: { ok: true, supported: true, deleted: 0 },
-        });
-        expect(sources).toEqual([
-          memoAttachmentSource(DOCUMENT_TOKEN),
-          memoAttachmentSource(DOCUMENT_TOKEN),
-        ]);
-      }),
+  it("does not throw on unpaired surrogates in the filename", () => {
+    expect(downloadContentDisposition("bad\ud800name.pdf")).toBe(
+      `attachment; filename="bad_name.pdf"; filename*=UTF-8''bad%EF%BF%BDname.pdf`,
     );
   });
 });

@@ -23,6 +23,19 @@ Ordinary pairing links grant the four client-operation scopes:
 `orchestration:read orchestration:operate terminal:operate review:write`.
 The desktop bootstrap credential and command-line administrative bootstrap
 credentials also grant `access:read access:write`.
+Bearer and DPoP clients obtain short-lived WebSocket tickets through authenticated
+HTTP so long-lived tokens stay out of socket URLs. Browser sessions can
+authenticate the upgrade with their cookie. A successful handshake grants no
+extra authority: [every RPC declares a required
+scope](../../apps/server/src/auth/RpcAuthorization.ts), and the WebSocket RPC
+group's `RpcScopeAuthorization` middleware checks it before any handler runs.
+
+Desktop restarts forget the previous local bearer token, so its reusable
+bootstrap grant replaces earlier sessions for the same subject and method.
+Revocation and insertion share a [database
+transaction](../../apps/server/src/persistence/AuthSessions.ts); a failed
+replacement must leave the old credential usable. Pairing and browser sessions
+do not follow this replacement rule.
 
 ### Reusable dev credential
 

@@ -237,23 +237,18 @@ import { connectPairing as connectPairingAtom } from "~/connection/onboarding";
 import { connectSshEnvironment as connectSshEnvironmentAtom } from "~/connection/onboarding";
 
 import { useEnvironmentQuery } from "~/state/query";
-
-import { desktopNetworkAccessStateAtom } from "~/state/desktopNetworkAccess";
-
-import { refreshDesktopNetworkAccessState } from "~/state/desktopNetworkAccess";
-
+import {
+  desktopNetworkAccessStateAtom,
+  refreshDesktopNetworkAccessState,
+} from "~/state/desktopNetworkAccess";
 import { desktopSshHostsStateAtom } from "~/state/desktopSshHosts";
-
-import { desktopWslStateAtom } from "~/state/desktopWslState";
-
-import { refreshDesktopWslState } from "~/state/desktopWslState";
-
-import { type EnvironmentPresentation } from "~/state/environments";
-
-import { useEnvironments } from "~/state/environments";
-
-import { usePrimaryEnvironment } from "~/state/environments";
-
+import { desktopWslStateAtom, refreshDesktopWslState } from "~/state/desktopWslState";
+import {
+  type EnvironmentPresentation,
+  useEnvironments,
+  usePrimaryEnvironment,
+} from "~/state/environments";
+import { APP_VERSION } from "~/branding";
 import { requestConfirmDialog } from "~/confirmDialog";
 
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -261,19 +256,14 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
 
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
-
-import { ServerUpdateAction } from "../ServerUpdateAction";
-
-import { ServerUpdateProgress } from "../ServerUpdateAction";
-
-import { ServerUpdatesAction } from "../ServerUpdateAction";
-
-import { type ServerUpdateTarget } from "../ServerUpdateAction";
-
-import { ITEM_ROW_CLASSNAME } from "./itemRows";
-
-import { ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
-
+import {
+  OutdatedServerUpdateAction,
+  ServerUpdateAction,
+  ServerUpdateProgress,
+  ServerUpdatesAction,
+  type ServerUpdateTarget,
+} from "../ServerUpdateAction";
+import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { MemoAttachmentsPanel } from "./MemoAttachmentsPanel";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -1649,6 +1639,17 @@ function SavedBackendListRow({
         ) : null
       }
     >
+      {unsupported &&
+      environment.entry.serverUpdateRequired === true &&
+      serverUpdateState.status !== "running" ? (
+        <OutdatedServerUpdateAction
+          environmentId={environmentId}
+          serverLabel={`${environment.label} server`}
+          fromVersion={serverVersion ?? undefined}
+          targetVersion={APP_VERSION}
+          label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
+        />
+      ) : null}
       {showUpdateAction ? (
         <ServerUpdateAction
           environmentId={environmentId}

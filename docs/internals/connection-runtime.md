@@ -11,6 +11,23 @@ identically: `apps/web/src/connection/runtime.ts` and
 `apps/mobile/src/connection/runtime.ts` differ only in the platform layer they
 supply. There is no legacy connection owner or supported mixed mode.
 
+The [supervisor](../../packages/client-runtime/src/connection/supervisor.ts) owns
+transport retry policy; resolving an endpoint and opening an RPC session are single
+attempts. Transient failures retry with jittered exponential backoff, capped at
+five minutes, that resets only after a connection stays up. Without jitter, every
+client of a restarted server reconnects in the same second; with a short cap, a
+client that can never connect retries all day. Offline states and authentication
+failures wait for a wakeup instead of spending attempts on unchanged conditions.
+
+Foregrounding, an explicit retry, and an offline report probe the established
+session, and only a failed probe reconnects. Offline reports are often wrong, for
+example for a loopback server. A long mobile background suspension is the one
+exception: it replaces the session at once, because the OS can kill a socket
+without reporting closure, and a probe would hold a dead socket in "Resuming"
+until it times out. That fresh attempt runs even while the network reports
+offline. Foregrounding also wakes a pending retry immediately and
+leaves an ordinary in-flight attempt alone.
+
 ## Composition
 
 [`connection/layer.ts`][layer] assembles the runtime:
@@ -48,9 +65,9 @@ The supervisor is the only retry owner.
    waits for a signal without consuming retry attempts or running a timer.
 3. When online, it asks the driver for one prepared connection and one RPC
    session.
-4. Transient failures retry forever with exponential backoff capped at 16
-   seconds (`RETRY_DELAYS_MS`). A connection stable for 30 seconds resets
-   accumulated backoff.
+4. Transient failures retry forever with jittered exponential backoff capped at
+   five minutes (`RETRY_MAX_DELAY_MS`). A connection stable for 30 seconds
+   (`BACKOFF_RESET_AFTER_MS`) resets accumulated backoff.
 5. Authentication or configuration failures remain blocked until an external
    wakeup changes the relevant input.
 6. An involuntary session close keeps the registration and cache, then retries.

@@ -1781,10 +1781,12 @@ const program = Effect.gen(function* () {
           });
         }
 
+        // Junie speaks ACP v1 and opens the call with `tool_call`; this mock
+        // negotiates v2, where the same start is a `tool_call_update`.
         yield* agent.client.sessionUpdate({
           sessionId: requestedSessionId,
           update: {
-            sessionUpdate: "tool_call",
+            sessionUpdate: "tool_call_update",
             toolCallId,
             title: "Read file",
             kind: "read",

@@ -19,7 +19,12 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
   );
   const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
   const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-  const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer);
+  const connectionServicesLayer = Layer.mergeAll(
+    registryLayer,
+    onboardingLayer,
+    // Exposed for updating hosts too old to connect through the driver.
+    resolverLayer,
+  );
   const connectionStartupLayer = Layer.effectDiscard(
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;

@@ -26,7 +26,7 @@ await runProductionBrowserSuite([
     run: (fixture) =>
       withBrokenCss(
         fixture,
-        ".sidebar-brand { display: block !important; }",
+        ".sidebar-brand > span { display: block !important; }",
         sidebarHeaderSafeArea,
         /\[Research\] is clipped/,
       ),

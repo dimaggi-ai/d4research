@@ -412,3 +412,45 @@ describe("instance-scoped model selection", () => {
     );
   });
 });
+
+describe("resolveAppModelSelectionState with the opencode plan agent", () => {
+  const instanceId = ProviderInstanceId.make("opencode");
+  const model = "opencode/gpt-5.4";
+  const opencode: ServerProvider = {
+    ...provider({ provider: ProviderDriverKind.make("opencode"), instanceId: "opencode" }),
+    models: [
+      {
+        slug: model,
+        name: model,
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "agent",
+              label: "Agent",
+              type: "select",
+              options: [
+                { id: "build", label: "Build", isDefault: true },
+                { id: "plan", label: "Plan" },
+              ],
+              currentValue: "build",
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const settings: UnifiedSettings = {
+    ...DEFAULT_UNIFIED_SETTINGS,
+    planModeEnabled: false,
+    textGenerationModelSelection: createModelSelection(instanceId, model, [
+      { id: "agent", value: "plan" },
+    ]),
+  };
+
+  it("keeps a stored plan agent this device did not pick", () => {
+    expect(resolveAppModelSelectionState(settings, [opencode])).toEqual(
+      createModelSelection(instanceId, model, [{ id: "agent", value: "plan" }]),
+    );
+  });
+});

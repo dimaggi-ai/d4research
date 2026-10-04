@@ -1,20 +1,8 @@
-import { CheckIcon, CopyIcon } from "lucide-react";
-import { useMemo } from "react";
 import { APP_VERSION } from "../branding";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useDefaultThemeAdoption } from "../hooks/useDefaultTheme";
 import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
 import { applyAppearanceContrast } from "~/appearanceContrast";
-function CopyErrorButton({ report }: { report: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-report" });
-
-  return (
-    <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
-      {isCopied ? <CheckIcon className="text-success" /> : <CopyIcon />}
-      {isCopied ? "Copied" : "Copy error"}
-    </Button>
-  );
-}
 const MAX_ERROR_CAUSE_DEPTH = 5;
 function errorReport(error: unknown, pathname: string): string {
   const lines = [
@@ -44,7 +32,8 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Check, Copy } from "lucide";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
@@ -66,6 +55,7 @@ import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcome
 import { ProviderAuthCallbackCoordinator } from "../components/settings/ProviderAuthCallbackCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { Button } from "../components/ui/button";
+import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import {
   AnchoredToastProvider,
@@ -75,6 +65,7 @@ import {
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { isElectron } from "../env";
+import { cn } from "../lib/utils";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { useClientSettings } from "../hooks/useSettings";
 import {
@@ -427,6 +418,18 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         </pre>
       </div>
     </StandalonePage>
+  );
+}
+
+/** Copies the full error report and swaps to a check mark for a moment as confirmation. */
+function CopyErrorButton({ report }: { report: string }) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-report" });
+
+  return (
+    <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
+      <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
+      {isCopied ? "Copied" : "Copy error"}
+    </Button>
   );
 }
 

@@ -130,8 +130,10 @@ type AcpEncodedMessage = RpcMessage.FromClientEncoded | RpcMessage.FromServerEnc
 
 interface WireRequestIdState {
   readonly next: number;
+  /** Keyed by `acpRequestIdentity`, so `1` and `"1"` stay distinct. */
   readonly originalToWire: Map<string, number>;
-  readonly wireToOriginal: Map<string, string | number>;
+  /** Wire ids are always numeric; string-typed responses never match them. */
+  readonly wireToOriginal: Map<number, string | number>;
 }
 
 interface AcpOutgoingWrite {
@@ -248,21 +250,21 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       wireRequestIds,
       (state): readonly [AcpEncodedMessage, WireRequestIdState] => {
         if (message._tag === "Request") {
-          const originalKey = String(message.id);
+          const originalKey = acpRequestIdentity(message.id);
           const existing = state.originalToWire.get(originalKey);
           const wireId = existing ?? state.next;
           if (existing !== undefined) return [{ ...message, id: wireId }, state] as const;
           const originalToWire = new Map(state.originalToWire);
           const wireToOriginal = new Map(state.wireToOriginal);
           originalToWire.set(originalKey, wireId);
-          wireToOriginal.set(String(wireId), message.id);
+          wireToOriginal.set(wireId, message.id);
           return [
             { ...message, id: wireId },
             { next: wireId + 1, originalToWire, wireToOriginal },
           ] as const;
         }
         if (message._tag === "Ack") {
-          const wireId = state.originalToWire.get(String(message.requestId));
+          const wireId = state.originalToWire.get(acpRequestIdentity(message.requestId));
           return [
             wireId === undefined ? message : { ...message, requestId: wireId },
             state,
@@ -658,14 +660,15 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       if (message._tag !== "Chunk" && message._tag !== "Exit") {
         return [message, state] as const;
       }
-      const originalId = state.wireToOriginal.get(String(message.requestId));
+      if (typeof message.requestId !== "number") return [message, state] as const;
+      const originalId = state.wireToOriginal.get(message.requestId);
       if (originalId === undefined) return [message, state] as const;
       const restored = { ...message, requestId: originalId };
       if (message._tag === "Chunk") return [restored, state] as const;
       const originalToWire = new Map(state.originalToWire);
       const wireToOriginal = new Map(state.wireToOriginal);
-      originalToWire.delete(String(originalId));
-      wireToOriginal.delete(String(message.requestId));
+      originalToWire.delete(acpRequestIdentity(originalId));
+      wireToOriginal.delete(message.requestId);
       return [restored, { ...state, originalToWire, wireToOriginal }] as const;
     });
 

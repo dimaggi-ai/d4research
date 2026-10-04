@@ -2,7 +2,6 @@ import { presentThreadShell } from "@d4research/client-runtime/state/models";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
-import { backgroundWorkHoldsCompletion } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
 import * as Option from "effect/Option";
 import {
   CircleAlertIcon,
@@ -126,12 +125,11 @@ function EnvironmentNotifications({
           ? `${thread.latestRun?.runId ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-      // Waiting only on commands (a dev server) is done; subagents and monitors wake the agent.
-      const settled =
-        status === "ready" ||
-        (status === "waiting" && !backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks));
+      // Commands left running (a dev server) read as ready; subagents and monitors wait.
       const completion =
-        settled && thread.latestRun?.status === "completed" && Number.isFinite(completedAt)
+        status === "ready" &&
+        thread.latestRun?.status === "completed" &&
+        Number.isFinite(completedAt)
           ? completedAt
           : (prior?.completion ?? null);
       next.set(thread.id, { attention, completion });

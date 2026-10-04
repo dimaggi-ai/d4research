@@ -60,12 +60,11 @@ a shim directory to the provider's PATH. The CLI installs on the environment
 server even when that server cannot run simulators. Hosts start on demand.
 
 That environment is fixed when the provider subprocess spawns, so
-[`prepareMcpSession`](../../apps/server/src/provider/Layers/ProviderService.ts)
-prepares the local agent-device CLI when the session has the `device` capability
-and the Device service permits access. The server need not run a simulator
-itself: `device_open` supplies the configuration for the selected host. Preparing
-the CLI only after the provider starts would leave that agent without the shim
-on its PATH.
+[`prepareMcpSession`](../../apps/server/src/orchestration-v2/ProviderSessionManager.ts)
+starts agent-device only when device support and agent access have both been
+enabled, the session has the `device` capability, and the machine can run at
+least one platform. Starting it later from `device_open` would leave the
+already-running agent without the CLI.
 
 How to drive a device is returned from `device_open`, not kept in an
 always-loaded prompt or skill: it costs nothing in threads that never open a

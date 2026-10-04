@@ -30,7 +30,7 @@ import {
 } from "@d4research/contracts";
 import { SKILL_MENTION_PATTERN } from "@d4research/shared/composerInlineTokens";
 import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
-import { computerUseToolTitle } from "@d4research/shared/toolActivity";
+import { dynamicToolTitle } from "@d4research/shared/toolActivity";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import { toolGuardEnvironment } from "../../provider/toolGuardRuntime.ts";
@@ -490,7 +490,7 @@ export function projectCodexDynamicToolItem(
     item.type === "mcpToolCall"
       ? `${item.server}.${item.tool}`
       : [trimText(item.namespace), item.tool].filter(Boolean).join(".");
-  const title = computerUseToolTitle(toolName, item.arguments);
+  const title = dynamicToolTitle(toolName, item.arguments);
   const projection: CodexDynamicToolProjection = {
     ...(item.type === "mcpToolCall" ? mcpToolPresentation(item) : {}),
     toolName,
@@ -5433,23 +5433,39 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           resumeThread: (threadInput) =>
             Effect.gen(function* () {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
-
+              // excludeTurns is not in the generated request schema yet.
+              const resume = client.raw.request("thread/resume", {
+                threadId: nativeThreadId,
+                excludeTurns: true,
+                ...codexThreadRuntimeParams({
+                  threadId: threadInput.threadId ?? threadInput.providerThread.appThreadId,
+                  ...(threadInput.modelSelection === undefined
+                    ? {}
+                    : { modelSelection: threadInput.modelSelection }),
+                  ...(threadInput.runtimePolicy === undefined
+                    ? {}
+                    : { runtimePolicy: threadInput.runtimePolicy }),
+                }),
+              });
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
-                  // excludeTurns is not in the generated request schema yet.
-                  client.raw.request("thread/resume", {
-                    threadId: nativeThreadId,
-                    excludeTurns: true,
-                    ...codexThreadRuntimeParams({
-                      threadId: threadInput.threadId ?? threadInput.providerThread.appThreadId,
-                      ...(threadInput.modelSelection === undefined
-                        ? {}
-                        : { modelSelection: threadInput.modelSelection }),
-                      ...(threadInput.runtimePolicy === undefined
-                        ? {}
-                        : { runtimePolicy: threadInput.runtimePolicy }),
+                  resume.pipe(
+                    Effect.catchTags({
+                      CodexAppServerRequestError: (cause) => {
+                        if (
+                          !/\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(
+                            cause.errorMessage,
+                          )
+                        ) {
+                          return Effect.fail(cause);
+                        }
+                        // Keep the session's history without decoding the unarchive response.
+                        return client.raw
+                          .request("thread/unarchive", { threadId: nativeThreadId })
+                          .pipe(Effect.andThen(resume));
+                      },
                     }),
-                  }),
+                  ),
                 ),
                 Effect.flatMap(decodeCodexResumeMetadata),
               );

@@ -10,6 +10,7 @@ import {
   type ServerSettings,
 } from "@d4research/contracts";
 import { createServerEnvironmentAtoms } from "@d4research/client-runtime/state/server";
+import { createOutdatedServerUpdateCommand } from "@d4research/client-runtime/state/outdatedServerUpdate";
 import { createEnvironmentServerConfigsAtom } from "@d4research/client-runtime/state/shell";
 import { mergeWithDefaultKeybindings } from "@d4research/shared/keybindings";
 import * as Option from "effect/Option";
@@ -32,6 +33,8 @@ export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRunt
   usageLimitSources: true,
   usageLimitsCommand: true,
 });
+/** Updates a host whose protocol is too old for this client to connect to. */
+export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

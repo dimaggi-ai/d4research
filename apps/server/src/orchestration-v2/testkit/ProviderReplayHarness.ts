@@ -53,6 +53,7 @@ import * as ThreadTitleRegenerationService from "../ThreadTitleRegenerationServi
 import * as RuntimePolicy from "../RuntimePolicy.ts";
 import * as TurnItemPositionStore from "../TurnItemPositionStore.ts";
 import * as RuntimeRequestService from "../RuntimeRequestService.ts";
+import * as ThreadCommandExecutor from "../ThreadCommandExecutor.ts";
 import * as ThreadForkService from "../ThreadForkService.ts";
 import {
   runOrchestratorV2Scenario,
@@ -307,7 +308,14 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
   );
   const commandReceiptStoreProvided = CommandReceiptStore.layer.pipe(Layer.provide(databaseLayer));
   const providerEventIngestorProvided = ProviderEventIngestor.layer.pipe(
-    Layer.provide(Layer.mergeAll(storesLayer, eventSinkProvided, IdAllocator.layer)),
+    Layer.provide(
+      Layer.mergeAll(
+        storesLayer,
+        eventSinkProvided,
+        IdAllocator.layer,
+        ThreadCommandExecutor.layer,
+      ),
+    ),
   );
   const vcsDriverRegistryLayer = VcsDriverRegistry.layer.pipe(
     Layer.provide(VcsProcess.layer),
@@ -433,6 +441,8 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
         dispatch: orchestrator.dispatch,
         getThreadRecords: orchestrator.getThreadRecords,
         getThreadProjection: orchestrator.getThreadProjection,
+        recoverDelegatedTask: orchestrator.recoverDelegatedTask,
+        delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
       });
     }),
   ).pipe(Layer.provide(orchestratorProvided));
@@ -497,6 +507,8 @@ export function makeOrchestratorV2ReplayLayerWithRegistry<Error>(
     Orchestrator.OrchestratorV2,
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
+      // As in serverRuntimeStartup: after runtime recovery, before the worker.
+      yield* orchestrator.recoverDelegatedTasks;
       yield* EffectWorker.runDaemon.pipe(Effect.forkScoped);
       return orchestrator;
     }),

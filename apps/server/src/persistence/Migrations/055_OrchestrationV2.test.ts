@@ -1,10 +1,13 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Migrator from "effect/unstable/sql/Migrator";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { migrationEntries, runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
+import OrchestrationV2 from "./055_OrchestrationV2.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
@@ -126,3 +129,22 @@ layer("055_OrchestrationV2", (it) => {
     }),
   );
 });
+
+// d4research never shipped upstream's V2 preview slots (53/54). Its slot 53 is
+// ProjectionProjectIcon, so an upstream-numbered ledger must fail closed.
+it.effect("refuses an upstream V2 preview ledger without changing it", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 52 });
+    yield* Migrator.make({})({
+      loader: Migrator.fromRecord({ "53_OrchestrationV2": OrchestrationV2 }),
+    });
+    const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    assert.deepStrictEqual(
+      yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
+      history,
+    );
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);

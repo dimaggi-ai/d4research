@@ -47,9 +47,6 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type ServerProviderSkill,
-  type TurnId,
-  type ComposerContextClipboardFragment,
-  type ComposerContextRecord,
 } from "@d4research/contracts";
 import type { EnvironmentConnectionPresentation } from "@d4research/client-runtime/connection";
 import {
@@ -62,18 +59,11 @@ import { serializeComposerFileLink } from "@d4research/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { createModelSelection, normalizeModelSlug } from "@d4research/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@d4research/shared/usageLimits";
-import { encodeComposerContextFragment } from "@d4research/shared/composerContextClipboard";
-import { replaceComposerContextReferences } from "@d4research/shared/composerContextReferences";
 import { createPortal, flushSync } from "react-dom";
-import { resolveAssetUrl } from "~/assets/assetUrls";
-import { requestConfirmDialog } from "~/confirmDialog";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
-import { assetEnvironment } from "~/state/assets";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
-import { readPreparedConnection } from "~/state/session";
-import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
   memo,
@@ -223,6 +213,7 @@ import {
 } from "../../lib/terminalContext";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { replaceComposerContextReferences } from "@d4research/shared/composerContextReferences";
 import {
   getRestingComposerImagePreviewCounts,
   resolveRestingComposerControlsLayout,
@@ -273,6 +264,16 @@ import {
 import { matchComposerThreadItems } from "@d4research/client-runtime/composerThreadItems";
 import { THREAD_CONTEXT_DROP_EVENT, threadContextDropTargetProps } from "./threadContextDrag";
 import { readThreadShell, useThreadShells } from "~/state/entities";
+import { requestConfirmDialog } from "~/confirmDialog";
+import { encodeComposerContextFragment } from "@d4research/shared/composerContextClipboard";
+import type {
+  ComposerContextClipboardFragment,
+  ComposerContextRecord,
+} from "@d4research/contracts";
+import { resolveAssetUrl } from "~/assets/assetUrls";
+import { assetEnvironment } from "~/state/assets";
+import { readPreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -1641,6 +1642,7 @@ export interface ChatComposerProps {
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
+  reportedModelSelection?: ModelSelection | null;
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
@@ -1799,6 +1801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     providerCatalogKnown,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
+    reportedModelSelection,
     activeContextWindow,
     compactThreadUnavailable,
     compactDisabled,
@@ -3014,6 +3017,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     model: selectedModel,
     models: selectedProviderModels,
     modelOptions: composerModelOptions?.[selectedInstanceId],
+    reportedModelSelection,
     prompt,
     onPromptChange: setPromptFromTraits,
     planModeEnabled: settings.planModeEnabled,
@@ -3026,6 +3030,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     model: selectedModel,
     models: selectedProviderModels,
     modelOptions: composerModelOptions?.[selectedInstanceId],
+    reportedModelSelection,
     prompt,
     onPromptChange: setPromptFromTraits,
     planModeEnabled: settings.planModeEnabled,

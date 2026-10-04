@@ -46,6 +46,8 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { Tool } from "effect/unstable/ai";
 import { formatClaudeResumeCompactionQuestion } from "@d4research/shared/claudeCompaction";
+import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { SpawnExecutableResolution } from "@d4research/shared/shell";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -56,6 +58,7 @@ import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
 import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
+import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
 import type { EventNdjsonLogger } from "../../provider/Layers/EventNdjsonLogger.ts";
 import {
   ProviderAdapterV2RuntimePolicy,
@@ -945,6 +948,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1065,69 +1069,95 @@ describe("ClaudeAdapterV2 approval cancellation", () => {
   );
 });
 
+// Opens a session with the given configured binary path, runs one turn, and
+// returns the executable paths the SDK was asked to spawn.
+const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
+  binaryPath: string,
+) {
+  const executablePaths: Array<string | undefined> = [];
+  const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
+    {
+      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+      displayName: undefined,
+      environment: [],
+      enabled: true,
+      config: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath },
+    },
+    {},
+  ).pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-claude-binary-path-",
+      }),
+    ),
+    Effect.provideService(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner, {
+      allocateSessionId: Effect.succeed("native-thread-claude-binary-path"),
+      open: (input) =>
+        Effect.sync(() => {
+          executablePaths.push(input.options.pathToClaudeCodeExecutable);
+          return {
+            messages: Stream.never,
+            offer: () => Effect.void,
+            setModel: () => Effect.void,
+            setPermissionMode: () => Effect.void,
+            interrupt: Effect.void,
+            close: Effect.void,
+          };
+        }),
+      forkSession: () => Effect.die("unused"),
+      subagentLaunchToolUseId: () => Effect.succeed(null),
+      assertComplete: Effect.void,
+    }),
+  );
+  const threadId = ThreadId.make("thread-claude-binary-path");
+  const runtime = yield* adapter.openSession({
+    threadId,
+    providerSessionId: ProviderSessionId.make("provider-session-claude-binary-path"),
+    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+  });
+  const providerThread = yield* runtime.ensureThread({
+    threadId,
+    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+  });
+  yield* runtime.startTurn(
+    makeClaudeTestTurnInput({
+      threadId,
+      providerThread,
+      now: yield* DateTime.now,
+      attemptId: RunAttemptId.make("attempt-claude-binary-path"),
+      text: "hello",
+      attachments: [],
+    }),
+  );
+  return executablePaths;
+});
+
 describe("ClaudeAdapterV2 executable path", () => {
   it.effect("expands ~ in the configured binary path for the SDK", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const path = yield* Path.Path;
-        const executablePaths: Array<string | undefined> = [];
-        const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
-          {
-            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-            displayName: undefined,
-            environment: [],
-            enabled: true,
-            config: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath: "~/bin/claude" },
-          },
-          {},
-        ).pipe(
-          Effect.provide(
-            ServerConfig.layerTest(process.cwd(), {
-              prefix: "t3-claude-binary-home-",
-            }),
-          ),
-          Effect.provideService(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner, {
-            allocateSessionId: Effect.succeed("native-thread-claude-binary-home"),
-            open: (input) =>
-              Effect.sync(() => {
-                executablePaths.push(input.options.pathToClaudeCodeExecutable);
-                return {
-                  messages: Stream.never,
-                  offer: () => Effect.void,
-                  setModel: () => Effect.void,
-                  interrupt: Effect.void,
-                  close: Effect.void,
-                };
-              }),
-            forkSession: () => Effect.die("unused"),
-            subagentLaunchToolUseId: () => Effect.succeed(null),
-            assertComplete: Effect.void,
-          }),
-        );
-        const threadId = ThreadId.make("thread-claude-binary-home");
-        const runtime = yield* adapter.openSession({
-          threadId,
-          providerSessionId: ProviderSessionId.make("provider-session-claude-binary-home"),
-          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-        });
-        const providerThread = yield* runtime.ensureThread({
-          threadId,
-          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-        });
-        yield* runtime.startTurn(
-          makeClaudeTestTurnInput({
-            threadId,
-            providerThread,
-            now: yield* DateTime.now,
-            attemptId: RunAttemptId.make("attempt-claude-binary-home"),
-            text: "hello",
-            attachments: [],
-          }),
-        );
+        const executablePaths = yield* captureSdkExecutablePaths("~/bin/claude");
 
         assert.deepEqual(executablePaths, [path.join(NodeOS.homedir(), "bin", "claude")]);
+      }),
+    ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect("follows a bare claude on Windows to the npm package executable", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const npmDir = "C:\\Users\\dev\\AppData\\Roaming\\npm";
+        const packageExe = `${npmDir}\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
+        const executablePaths = yield* captureSdkExecutablePaths("claude").pipe(
+          Effect.provideService(HostProcessPlatform, "win32"),
+          Effect.provideService(SpawnExecutableResolution, () => `${npmDir}\\claude.cmd`),
+          Effect.provideService(ClaudeExecutableFileCheck, (filePath) => filePath === packageExe),
+        );
+
+        assert.deepEqual(executablePaths, [packageExe]);
       }),
     ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
   );
@@ -1160,6 +1190,7 @@ describe("ClaudeAdapterV2 resume compaction", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1379,6 +1410,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                     offeredMessages.push(message);
                   }),
                 setModel: () => Effect.void,
+                setPermissionMode: () => Effect.void,
                 interrupt: Effect.void,
                 close: Effect.void,
               }),
@@ -1517,6 +1549,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                   messages: Stream.never,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1605,6 +1638,7 @@ describe("ClaudeAdapterV2 native fork", () => {
                   messages: Stream.empty,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1776,6 +1810,7 @@ describe("ClaudeAdapterV2 native session identity", () => {
                   messages: Stream.empty,
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
                 };
@@ -1977,6 +2012,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     uuid: "00000000-0000-4000-8000-000000000107",
     text: WAKE_ASSISTANT_TEXT,
   });
+  // The CLI opens the wake turn with `init`, seconds before its first output.
+  const wakeTurnInit = claudeSdkFrame({
+    type: "system",
+    subtype: "init",
+    uuid: "00000000-0000-4000-8000-000000000110",
+    session_id: WAKE_NATIVE_SESSION,
+  });
   const wakeResult = makeResultFrame({
     uuid: "00000000-0000-4000-8000-000000000104",
     result: WAKE_RESULT_TEXT,
@@ -2024,6 +2066,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Deferred.await(processed);
       });
       const offeredMessages: Array<SDKUserMessage> = [];
+      const permissionModeChanges: Array<string> = [];
       const continuationRequests: Array<ProviderContinuationRequest> = [];
       const terminalReceipts =
         yield* Queue.unbounded<Extract<ProviderAdapterV2Event, { type: "turn.terminal" }>>();
@@ -2072,6 +2115,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     offeredMessages.push(message);
                   }),
                 setModel: () => Effect.void,
+                setPermissionMode: (mode) =>
+                  Effect.sync(() => {
+                    permissionModeChanges.push(mode);
+                  }),
                 interrupt: options?.interrupt ?? Effect.void,
                 close: options?.close?.(sdkMessages) ?? Effect.void,
               };
@@ -2124,6 +2171,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         sdkMessages,
         offerAndWait,
         offeredMessages,
+        permissionModeChanges,
         continuationRequests,
         events,
         terminalReceipts,
@@ -2347,78 +2395,78 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     );
   }
 
-  for (const terminalReason of ["aborted_tools", "aborted_streaming"] as const) {
-    for (const steered of [true, false]) {
-      it.effect(`handles ${terminalReason} with active steering=${steered}`, () =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const harness = yield* makeWakeHarness;
-            const idAllocator = yield* IdAllocator.IdAllocatorV2;
-            const attemptId = RunAttemptId.make("attempt-steering-abort");
-            const input = makeClaudeTestTurnInput({
-              threadId: harness.threadId,
-              providerThread: harness.providerThread,
-              now: yield* DateTime.now,
-              attemptId,
-              text: "Audit the settings pages.",
+  it.effect.each(
+    (["aborted_tools", "aborted_streaming"] as const).flatMap((terminalReason) =>
+      [true, false].map((steered) => ({ terminalReason, steered })),
+    ),
+  )("handles $terminalReason with active steering=$steered", ({ terminalReason, steered }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const attemptId = RunAttemptId.make("attempt-steering-abort");
+        const input = makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId,
+          text: "Audit the settings pages.",
+          attachments: [],
+        });
+        yield* harness.runtime.startTurn(input);
+        if (steered) {
+          yield* harness.runtime.steerTurn({
+            threadId: harness.threadId,
+            runId: input.runId,
+            providerThread: harness.providerThread,
+            providerTurnId: idAllocator.derive.providerTurn({
+              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+              nativeTurnId: `turn:${attemptId}`,
+            }),
+            message: {
+              createdBy: "user",
+              creationSource: "web",
+              messageId: MessageId.make("message-steering-abort"),
+              text: "Include the hierarchy mock.",
               attachments: [],
-            });
-            yield* harness.runtime.startTurn(input);
-            if (steered) {
-              yield* harness.runtime.steerTurn({
-                threadId: harness.threadId,
-                runId: input.runId,
-                providerThread: harness.providerThread,
-                providerTurnId: idAllocator.derive.providerTurn({
-                  driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-                  nativeTurnId: `turn:${attemptId}`,
-                }),
-                message: {
-                  createdBy: "user",
-                  creationSource: "web",
-                  messageId: MessageId.make("message-steering-abort"),
-                  text: "Include the hierarchy mock.",
-                  attachments: [],
-                },
-              });
-              assert.equal(harness.offeredMessages[1]?.priority, "now");
-            }
-            yield* Queue.offer(
-              harness.sdkMessages,
-              makeResultFrame({
-                uuid: "00000000-0000-4000-8000-000000000901",
-                result: "",
-                terminalReason,
-              }),
-            );
-            if (steered) {
-              yield* Queue.offer(harness.sdkMessages, wakeAssistant);
-              yield* Queue.offer(
-                harness.sdkMessages,
-                makeResultFrame({
-                  uuid: "00000000-0000-4000-8000-000000000902",
-                  result: "Audit finished after the steer.",
-                }),
-              );
-            }
-            const terminal = yield* Queue.take(harness.terminalReceipts);
-            assert.equal(terminal.status, steered ? "completed" : "interrupted");
-            if (steered) {
-              assert.isTrue(
-                harness.events.some(
-                  (event) =>
-                    event.type === "turn_item.updated" &&
-                    event.turnItem.type === "assistant_message" &&
-                    event.turnItem.text === WAKE_ASSISTANT_TEXT,
-                ),
-              );
-            }
-            assert.lengthOf(harness.terminalEvents(), 1);
-          }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
-        ),
-      );
-    }
-  }
+            },
+          });
+          assert.equal(harness.offeredMessages[1]?.priority, "now");
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000901",
+            result: "",
+            terminalReason,
+          }),
+        );
+        if (steered) {
+          yield* Queue.offer(harness.sdkMessages, wakeAssistant);
+          yield* Queue.offer(
+            harness.sdkMessages,
+            makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000000902",
+              result: "Audit finished after the steer.",
+            }),
+          );
+        }
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, steered ? "completed" : "interrupted");
+        if (steered) {
+          assert.isTrue(
+            harness.events.some(
+              (event) =>
+                event.type === "turn_item.updated" &&
+                event.turnItem.type === "assistant_message" &&
+                event.turnItem.text === WAKE_ASSISTANT_TEXT,
+            ),
+          );
+        }
+        assert.lengthOf(harness.terminalEvents(), 1);
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
 
   it.effect("announces usage-limit pauses once per window and again on a new turn", () =>
     Effect.gen(function* () {
@@ -2866,7 +2914,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, IdAllocator.layer))),
   );
 
-  it.effect("retains image preview paths on Claude Read tool completion", () =>
+  it.effect("titles Claude reads, searches, and skills on tool completion", () =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarness;
       const now = yield* DateTime.now;
@@ -2884,6 +2932,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         { id: "image", name: "Read", input: { file_path: " /workspace/reference.png " } },
         { id: "text", name: "Read", input: { file_path: "/workspace/README.md" } },
         { id: "search", name: "Grep", input: { pattern: "TODO", path: "/workspace/src" } },
+        { id: "skill", name: "Skill", input: { skill: "full-send" } },
         {
           id: "write",
           name: "Write",
@@ -2953,6 +3002,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       assert.equal(
         items.find((item) => item.nativeItemRef?.nativeId === "search")?.title,
         "Searched TODO in src",
+      );
+      assert.equal(
+        items.find((item) => item.nativeItemRef?.nativeId === "skill")?.title,
+        "Skill: full-send",
       );
       for (const item of items.filter((item) => item.nativeItemRef?.nativeId !== "image"))
         assert.notProperty(item, "viewedImagePath");
@@ -3039,6 +3092,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.offer(
           harness.sdkMessages,
           toolResults("00000000-0000-4000-8000-000000000502", ["tool-todo-1"]),
+        );
+        // Claude entered plan mode on its own (EnterPlanMode).
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "status",
+            status: null,
+            permissionMode: "plan",
+            uuid: "00000000-0000-4000-8000-000000000508",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
         );
         yield* Queue.offer(
           harness.sdkMessages,
@@ -3150,6 +3215,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         const proposedPlan = [...plans.values()].find((plan) => plan.kind === "proposed_plan");
         assert.equal(proposedPlan?.status, "active");
+        // The second prompt reuses the live process, which is still in the
+        // plan mode Claude entered, so it is put back in the thread's mode.
+        assert.deepEqual(harness.permissionModeChanges, ["bypassPermissions"]);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     ),
   );
@@ -3282,7 +3350,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
-  for (const terminalReason of [
+  it.effect.each([
     "api_error",
     "malformed_tool_use_exhausted",
     "budget_exhausted",
@@ -3295,56 +3363,54 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     "image_error",
     "model_error",
     "overloaded_status",
-  ] as const) {
-    it.effect(`fails a success-shaped Claude result with ${terminalReason}`, () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const harness = yield* makeWakeHarness;
-          const now = yield* DateTime.now;
-          yield* harness.runtime.startTurn(
-            makeClaudeTestTurnInput({
-              threadId: harness.threadId,
-              providerThread: harness.providerThread,
-              now,
-              attemptId: RunAttemptId.make("attempt-structured-terminal-failure"),
-              text: "Complete the task.",
-              attachments: [],
-            }),
-          );
-          yield* Queue.offer(
-            harness.sdkMessages,
-            makeResultFrame({
-              uuid: "00000000-0000-4000-8000-000000000205",
-              result: "Provider failure details.",
-              isError: false,
-              ...(terminalReason === "overloaded_status"
-                ? { apiErrorStatus: 529 }
-                : { terminalReason }),
-            }),
-          );
-          const terminal = yield* Queue.take(harness.terminalReceipts);
-          assert.equal(terminal.status, "failed");
-          if (terminal.status !== "failed") return;
-          assert.isNotEmpty(terminal.failure.message);
-          assert.equal(
-            terminal.failure.class,
-            terminalReason === "blocking_limit" ? "usage_limit" : "provider_error",
-          );
-          assert.isFalse(
-            harness.events.some(
-              (event) =>
-                event.type === "message.updated" &&
-                event.message.text === "Provider failure details.",
-            ),
-          );
-          assert.equal(
-            terminal.failure.code,
-            terminalReason === "overloaded_status" ? "api_error_529" : terminalReason,
-          );
-        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
-      ),
-    );
-  }
+  ] as const)("fails a success-shaped Claude result with %s", (terminalReason) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-structured-terminal-failure"),
+            text: "Complete the task.",
+            attachments: [],
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000205",
+            result: "Provider failure details.",
+            isError: false,
+            ...(terminalReason === "overloaded_status"
+              ? { apiErrorStatus: 529 }
+              : { terminalReason }),
+          }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.isNotEmpty(terminal.failure.message);
+        assert.equal(
+          terminal.failure.class,
+          terminalReason === "blocking_limit" ? "usage_limit" : "provider_error",
+        );
+        assert.isFalse(
+          harness.events.some(
+            (event) =>
+              event.type === "message.updated" &&
+              event.message.text === "Provider failure details.",
+          ),
+        );
+        assert.equal(
+          terminal.failure.code,
+          terminalReason === "overloaded_status" ? "api_error_529" : terminalReason,
+        );
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
 
   const providerThreadRosterEvents = (events: ReadonlyArray<ProviderAdapterV2Event>) =>
     events.filter(
@@ -3672,6 +3738,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   // The first CLI process keeps streaming until the test ends
                   // it, so Stop stays parked waiting for it to exit.
@@ -3921,6 +3988,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(queue),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(queue),
                   };
@@ -4701,6 +4769,63 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.lengthOf(harness.continuationRequests, 1);
         assert.lengthOf(harness.terminalEvents(), 1);
         assert.isTrue(yield* harness.hasPendingBackgroundWork);
+      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
+
+  it.effect("starts the wake run when Claude opens the wake turn, before its output", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-wake-init-1"),
+            text: "Run the build in the background.",
+            attachments: [],
+          }),
+        );
+        yield* Queue.offer(harness.sdkMessages, wakeTaskStarted);
+        yield* Queue.offer(harness.sdkMessages, turnOneResult);
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "first turn terminal");
+
+        yield* harness.offerAndWait(wakeNotification);
+        assert.lengthOf(harness.continuationRequests, 0);
+        yield* harness.offerAndWait(wakeTurnInit);
+        assert.lengthOf(harness.continuationRequests, 1);
+        assert.equal(harness.continuationRequests[0]?.detail, WAKE_SUMMARY);
+
+        // The run attaches while Claude still thinks: only the notification
+        // and `init` are buffered, so the run waits for the turn's output.
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-wake-init-2"),
+            text: "Background task completed.",
+            attachments: [],
+            providerTurnOrdinal: 2,
+            messageCreatedBy: "agent",
+            messageCreationSource: "provider",
+          }),
+        );
+        assert.lengthOf(harness.terminalEvents(), 1);
+
+        yield* harness.offerAndWait(wakeAssistant);
+        yield* harness.offerAndWait(wakeResult);
+        yield* awaitUntil(() => harness.terminalEvents().length === 2, "wake run terminal");
+        assert.equal(harness.terminalEvents()[1]?.status, "completed");
+        assert.lengthOf(harness.continuationRequests, 1);
+        assert.isTrue(
+          harness.events.some(
+            (event) => event.type === "message.updated" && event.message.text === WAKE_RESULT_TEXT,
+          ),
+        );
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
     ),
   );
@@ -6655,6 +6780,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   // End this process stream so openQuery can replace it.
                   close: Queue.shutdown(sdkMessages),
@@ -6837,6 +6963,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7071,6 +7198,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7257,6 +7385,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   messages: Stream.fromQueue(sdkMessages),
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
                   interrupt: Effect.void,
                   close: Queue.shutdown(sdkMessages),
                 };
@@ -7433,6 +7562,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };
@@ -7564,6 +7694,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     messages: Stream.fromQueue(sdkMessages),
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
+                    setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
                   };

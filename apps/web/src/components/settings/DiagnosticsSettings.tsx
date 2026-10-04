@@ -1,40 +1,17 @@
 import { ProcessSignalActions } from "./ProcessSignalActions";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-
-import { AlertTriangleIcon } from "lucide-react";
-
-import { ChevronDownIcon } from "lucide-react";
-
-import { ChevronRightIcon } from "lucide-react";
-
-import { CopyIcon } from "lucide-react";
-
-import { FolderOpenIcon } from "lucide-react";
-
-import { InfoIcon } from "lucide-react";
-
-import { isAtomCommandInterrupted } from "@d4research/client-runtime/state/runtime";
-
-import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
-
-import { useCallback } from "react";
-
-import { useEffect } from "react";
-
-import { useMemo } from "react";
-
-import { useRef } from "react";
-
-import { useState } from "react";
-
-import { type ReactNode } from "react";
-
-import { type ServerProcessDiagnosticsEntry } from "@d4research/contracts";
-
-import { type ServerProcessResourceHistorySummary } from "@d4research/contracts";
-
-import { type ServerProcessSignal } from "@d4research/contracts";
-
+import { AlertTriangleIcon, CopyIcon, FolderOpenIcon, InfoIcon } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@d4research/client-runtime/state/runtime";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type {
+  ServerProcessDiagnosticsEntry,
+  ServerProcessResourceHistorySummary,
+  ServerProcessSignal,
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 import * as Option from "effect/Option";
@@ -58,7 +35,7 @@ import { shellEnvironment } from "../../state/shell";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 
 import { Button } from "../ui/button";
-
+import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "../ui/scroll-area";
 
 import { Toggle } from "../ui/toggle-group";
@@ -315,7 +292,6 @@ function ProcessNameCell({
 }) {
   const name = formatProcessName(process.command);
   const hasChildren = process.childPids.length > 0;
-  const ChevronIcon = isExpanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
     <div
@@ -329,7 +305,7 @@ function ProcessNameCell({
           aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
           onClick={() => onToggle(process.pid)}
         >
-          <ChevronIcon className="size-3.5" />
+          <MorphIcon className="size-3.5" icon={isExpanded ? ChevronDown : ChevronRight} />
         </button>
       ) : (
         <span className="size-5 shrink-0" aria-hidden="true" />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, type ProviderOptionDescriptor } from "@d4research/contracts";
+import {
+  ProviderInstanceId,
+  ProviderDriverKind,
+  type ProviderOptionDescriptor,
+} from "@d4research/contracts";
 import { buildTraitsTriggerDisplay, buildUnavailableModelOptionDescriptors } from "./TraitsPicker";
 
 function selectDescriptor(
@@ -205,4 +209,68 @@ describe("buildTraitsTriggerDisplay", () => {
       }),
     ).toEqual({ label: "Ultrathink", speedIcon: "fast" });
   });
+});
+
+describe("buildUnavailableModelOptionDescriptors", () => {
+  it("shows only saved values without inventing alternatives", () => {
+    expect(
+      buildUnavailableModelOptionDescriptors([
+        { id: "variant", value: "max" },
+        { id: "agent", value: "build" },
+        { id: "fastMode", value: true },
+      ]),
+    ).toEqual([
+      {
+        id: "variant",
+        label: "Reasoning",
+        type: "select",
+        options: [{ id: "max", label: "max" }],
+        currentValue: "max",
+      },
+      {
+        id: "agent",
+        label: "Agent",
+        type: "select",
+        options: [{ id: "build", label: "build" }],
+        currentValue: "build",
+      },
+      {
+        id: "fastMode",
+        label: "Fast Mode",
+        type: "boolean",
+        currentValue: true,
+      },
+    ]);
+  });
+});
+
+it("shows Unknown until a matching provider report provides Default", () => {
+  const selection = {
+    instanceId: ProviderInstanceId.make("opencode"),
+    model: "ling",
+    options: [],
+  };
+  const input = {
+    provider: ProviderDriverKind.make("opencode"),
+    descriptors: [
+      selectDescriptor(
+        "variant",
+        [
+          { id: "none", label: "None" },
+          { id: "thinking", label: "Thinking" },
+        ],
+        "",
+      ),
+    ],
+    primarySelectDescriptorId: "variant",
+    ultrathinkPromptControlled: false,
+    modelSelection: selection,
+  };
+  expect(buildTraitsTriggerDisplay(input).label).toBe("Unknown");
+  expect(
+    buildTraitsTriggerDisplay({
+      ...input,
+      reportedModelSelection: { ...selection, options: [{ id: "variant", value: "default" }] },
+    }).label,
+  ).toBe("Default");
 });

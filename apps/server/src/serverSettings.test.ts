@@ -24,10 +24,12 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { writeFileStringAtomically } from "./atomicWrite.ts";
 import * as ServerSettingsModule from "./serverSettings.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
@@ -130,6 +132,114 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.equal(persisted.responseStreamingMode, "turn");
       assert.deepEqual(persisted.projectSettingsOverrides, settings.projectSettingsOverrides);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("saves through a symlinked settings file without replacing the link", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+      const linkedSettingsPath = path.join(dotfiles, "settings.json");
+      yield* fs.writeFileString(linkedSettingsPath, `{ "responseStreamingMode": "turn" }`);
+      yield* fs.remove(config.settingsPath, { force: true });
+      yield* fs.symlink(linkedSettingsPath, config.settingsPath);
+
+      yield* service.updateSettings({ responseStreamingMode: "paragraph" });
+
+      assert.equal(yield* fs.readLink(config.settingsPath), linkedSettingsPath);
+      const persisted = yield* decodeServerSettingsJson(
+        yield* fs.readFileString(linkedSettingsPath),
+      );
+      assert.equal(persisted.responseStreamingMode, "paragraph");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("reloads when the destination of a symlinked settings file changes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+        const linkedSettingsPath = path.join(dotfiles, "settings.json");
+        yield* fs.writeFileString(linkedSettingsPath, `{ "responseStreamingMode": "turn" }`);
+        yield* fs.remove(config.settingsPath, { force: true });
+        yield* fs.symlink(linkedSettingsPath, config.settingsPath);
+        yield* service.start;
+        const changes = yield* service.subscribeChanges;
+
+        yield* writeFileStringAtomically({
+          filePath: linkedSettingsPath,
+          contents: `{ "responseStreamingMode": "paragraph" }`,
+        });
+
+        const change = yield* changes.pipe(Stream.runHead, Effect.timeout("2 seconds"));
+        assert.equal(Option.getOrUndefined(change)?.responseStreamingMode, "paragraph");
+      }),
+    ).pipe(TestClock.withLive, Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("follows a settings link that is repointed to another directory", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+        const firstSettingsPath = path.join(dotfiles, "first", "settings.json");
+        const secondSettingsPath = path.join(dotfiles, "second", "settings.json");
+        yield* fs.makeDirectory(path.dirname(firstSettingsPath), { recursive: true });
+        yield* fs.makeDirectory(path.dirname(secondSettingsPath), { recursive: true });
+        yield* fs.writeFileString(firstSettingsPath, `{ "responseStreamingMode": "turn" }`);
+        yield* fs.writeFileString(secondSettingsPath, `{ "responseStreamingMode": "paragraph" }`);
+        yield* fs.remove(config.settingsPath, { force: true });
+        yield* fs.symlink(firstSettingsPath, config.settingsPath);
+        yield* service.start;
+
+        const repointChanges = yield* service.subscribeChanges;
+        yield* fs.remove(config.settingsPath);
+        yield* fs.symlink(secondSettingsPath, config.settingsPath);
+        const repointed = yield* repointChanges.pipe(Stream.runHead, Effect.timeout("2 seconds"));
+        assert.equal(Option.getOrUndefined(repointed)?.responseStreamingMode, "paragraph");
+
+        const editChanges = yield* service.subscribeChanges;
+        yield* writeFileStringAtomically({
+          filePath: secondSettingsPath,
+          contents: `{ "responseStreamingMode": "turn" }`,
+        });
+        const edited = yield* editChanges.pipe(Stream.runHead, Effect.timeout("2 seconds"));
+        assert.equal(Option.getOrUndefined(edited)?.responseStreamingMode, "turn");
+      }),
+    ).pipe(TestClock.withLive, Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("reloads when a dangling settings link gets its destination", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+        const linkedSettingsPath = path.join(dotfiles, "not-yet", "settings.json");
+        yield* fs.remove(config.settingsPath, { force: true });
+        yield* fs.symlink(linkedSettingsPath, config.settingsPath);
+        yield* service.start;
+        const changes = yield* service.subscribeChanges;
+
+        yield* writeFileStringAtomically({
+          filePath: linkedSettingsPath,
+          contents: `{ "responseStreamingMode": "paragraph" }`,
+        });
+
+        const change = yield* changes.pipe(Stream.runHead, Effect.timeout("2 seconds"));
+        assert.equal(Option.getOrUndefined(change)?.responseStreamingMode, "paragraph");
+      }),
+    ).pipe(TestClock.withLive, Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("preserves context when reading a provider environment secret fails", () => {
@@ -1291,77 +1401,78 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(settingsLayer));
   });
 
-  for (const { label, variable, expected, duplicate } of [
-    {
-      label: "preserves an inline secret on a redacted settings save",
-      variable: { name: "API_TOKEN", value: "", sensitive: true, valueRedacted: true },
-      expected: "inline-test-token",
-    },
-    {
-      label: "preserves the effective last inline secret when names are duplicated",
-      variable: { name: "API_TOKEN", value: "", sensitive: true, valueRedacted: true },
-      expected: "last-inline-test-token",
-      duplicate: true,
-    },
-    {
-      label: "replaces an inline secret with an explicit value",
-      variable: { name: "API_TOKEN", value: "replacement-test-token", sensitive: true },
-      expected: "replacement-test-token",
-    },
-    {
-      label: "clears an inline secret with an explicit empty value",
-      variable: { name: "API_TOKEN", value: "", sensitive: true },
-      expected: "",
-    },
-  ]) {
-    it.effect(label, () =>
-      Effect.gen(function* () {
-        const instanceId = ProviderInstanceId.make("codex_personal");
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        const serverConfig = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-        yield* fileSystem.writeFileString(
-          serverConfig.settingsPath,
-          duplicate
-            ? '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true},{"name":"API_TOKEN","value":"last-inline-test-token","sensitive":true}],"config":{}}}}'
-            : '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true}],"config":{}}}}',
-        );
-        const initial = yield* serverSettings.getSettings;
-        assert.equal(
-          initial.providerInstances[instanceId]?.environment?.[0]?.value,
-          "inline-test-token",
-        );
+  it.effect.each(
+    [
+      {
+        label: "preserves an inline secret on a redacted settings save",
+        variable: { name: "API_TOKEN", value: "", sensitive: true, valueRedacted: true },
+        expected: "inline-test-token",
+      },
+      {
+        label: "preserves the effective last inline secret when names are duplicated",
+        variable: { name: "API_TOKEN", value: "", sensitive: true, valueRedacted: true },
+        expected: "last-inline-test-token",
+        duplicate: true,
+      },
+      {
+        label: "replaces an inline secret with an explicit value",
+        variable: { name: "API_TOKEN", value: "replacement-test-token", sensitive: true },
+        expected: "replacement-test-token",
+      },
+      {
+        label: "clears an inline secret with an explicit empty value",
+        variable: { name: "API_TOKEN", value: "", sensitive: true },
+        expected: "",
+      },
+    ].map((testCase) => [testCase.label, testCase] as const),
+  )("%s", ([, { variable, expected, duplicate }]) =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_personal");
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        duplicate
+          ? '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true},{"name":"API_TOKEN","value":"last-inline-test-token","sensitive":true}],"config":{}}}}'
+          : '{"providerInstances":{"codex_personal":{"driver":"codex","environment":[{"name":"API_TOKEN","value":"inline-test-token","sensitive":true}],"config":{}}}}',
+      );
+      const initial = yield* serverSettings.getSettings;
+      assert.equal(
+        initial.providerInstances[instanceId]?.environment?.[0]?.value,
+        "inline-test-token",
+      );
 
-        const next = yield* serverSettings.updateSettings({
-          providerInstances: {
-            [instanceId]: {
-              driver: ProviderDriverKind.make("codex"),
-              displayName: "Renamed provider",
-              environment: duplicate ? [variable, variable] : [variable],
-              config: {},
-            },
+      const next = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            displayName: "Renamed provider",
+            environment: duplicate ? [variable, variable] : [variable],
+            config: {},
           },
-        });
-        assert.equal(next.providerInstances[instanceId]?.environment?.[0]?.value, expected);
-        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-        assert.notInclude(raw, "inline-test-token");
-        assert.notInclude(raw, "replacement-test-token");
+        },
+      });
+      assert.equal(next.providerInstances[instanceId]?.environment?.[0]?.value, expected);
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "inline-test-token");
+      assert.notInclude(raw, "replacement-test-token");
 
-        const reloaded = yield* Effect.gen(function* () {
-          const fresh = yield* ServerSettingsModule.ServerSettingsService;
-          return yield* fresh.getSettings;
-        }).pipe(
-          Effect.provide(
-            Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
-          ),
-        );
-        assert.equal(reloaded.providerInstances[instanceId]?.environment?.[0]?.value, expected);
-      }).pipe(Effect.provide(makeServerSettingsLayer())),
-    );
-  }
+      const reloaded = yield* Effect.gen(function* () {
+        const fresh = yield* ServerSettingsModule.ServerSettingsService;
+        return yield* fresh.getSettings;
+      }).pipe(
+        Effect.provide(
+          Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
+        ),
+      );
+      assert.equal(reloaded.providerInstances[instanceId]?.environment?.[0]?.value, expected);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
 
-  for (const sensitiveLast of [true, false]) {
-    it.effect(`preserves duplicate secret operation order (sensitive last: ${sensitiveLast})`, () =>
+  it.effect.each([true, false])(
+    "preserves duplicate secret operation order (sensitive last: %s)",
+    (sensitiveLast) =>
       Effect.gen(function* () {
         const service = yield* ServerSettingsModule.ServerSettingsService;
         const instanceId = ProviderInstanceId.make("codex_duplicate");
@@ -1385,8 +1496,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           sensitiveLast ? "secret-last" : "",
         );
       }).pipe(Effect.provide(makeServerSettingsLayer())),
-    );
-  }
+  );
 
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>
     Effect.gen(function* () {
@@ -1688,8 +1798,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }),
   );
 
-  for (const failure of ["response materialization", "partially committed write"] as const) {
-    it.effect(`rolls back provider secret changes after ${failure} fails`, () => {
+  it.effect.each(["response materialization", "partially committed write"] as const)(
+    "rolls back provider secret changes after %s fails",
+    (failure) => {
       const textDecoder = new TextDecoder();
       const secrets = new Map<string, Uint8Array>();
       let rejectNewSecret = false;
@@ -1792,8 +1903,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           "sk-kept",
         );
       }).pipe(Effect.provide(settingsLayer));
-    });
-  }
+    },
+  );
 
   it.effect("folds legacy project overrides into projectSettingsOverrides once", () =>
     Effect.gen(function* () {

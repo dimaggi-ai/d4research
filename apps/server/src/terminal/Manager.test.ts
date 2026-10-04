@@ -1462,8 +1462,9 @@ it.layer(
     }),
   );
 
-  for (const source of ["current", "legacy"] as const) {
-    it.effect(`reads only a Unicode-safe tail from oversized ${source} history`, () =>
+  it.effect.each(["current", "legacy"] as const)(
+    "reads only a Unicode-safe tail from oversized %s history",
+    (source) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -1514,8 +1515,7 @@ it.layer(
         yield* manager.close({ threadId: "thread-1" });
         expect((yield* manager.open(openInput())).history).toBe("\uFEFFnewest\ré");
       }),
-    );
-  }
+  );
 
   it.effect("strips replay-unsafe terminal query and reply sequences from persisted history", () =>
     Effect.gen(function* () {

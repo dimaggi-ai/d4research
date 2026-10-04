@@ -34,8 +34,10 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
           result.activityRunStatus = "running";
         }
       }
+      // Shell `thread.updated` items also carry `thread` but no `runs`; their
+      // nested shell was already rewritten above.
       const projection = result.projection?.thread ? result.projection : result;
-      if (projection?.thread?.id === fixtureThreadId()) {
+      if (projection?.thread?.id === fixtureThreadId() && Array.isArray(projection.runs)) {
         projection.runs = projection.runs.map((run) =>
           run.status === "preparing" ? { ...run, status: "running", startedAt: now } : run,
         );

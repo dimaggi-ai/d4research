@@ -6,14 +6,8 @@ import {
   summarizeTurnDiffStats,
   type TurnDiffTreeNode,
 } from "../../lib/turnDiffTree";
-import {
-  ChevronsDownUpIcon,
-  ChevronsUpDownIcon,
-  ChevronRightIcon,
-  FileDiffIcon,
-  FolderIcon,
-  FolderClosedIcon,
-} from "lucide-react";
+import { ChevronRightIcon, FileDiffIcon } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Folder, FolderClosed } from "lucide";
 import { cn } from "~/lib/utils";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -25,6 +19,7 @@ import {
   summarizeChangedFileScopes,
 } from "./changedFilesPresentation";
 import { MiddleTruncate } from "../ui/middle-truncate";
+import { MorphIcon } from "~/components/MorphIcon";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 
@@ -126,11 +121,10 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                   />
                 }
               >
-                {allDirectoriesExpanded ? (
-                  <ChevronsDownUpIcon className="size-3" />
-                ) : (
-                  <ChevronsUpDownIcon className="size-3" />
-                )}
+                <MorphIcon
+                  className="size-3"
+                  icon={allDirectoriesExpanded ? ChevronsDownUp : ChevronsUpDown}
+                />
               </TooltipTrigger>
               <TooltipPopup side="top">
                 {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
@@ -234,11 +228,10 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
                 isExpanded && "rotate-90",
               )}
             />
-            {isExpanded ? (
-              <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
-            ) : (
-              <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
-            )}
+            <MorphIcon
+              className="size-3.5 shrink-0 text-muted-foreground/75"
+              icon={isExpanded ? Folder : FolderClosed}
+            />
             <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
               {node.name}
             </span>

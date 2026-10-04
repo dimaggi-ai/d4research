@@ -74,7 +74,7 @@ import {
 import { isDeepResearchPrompt } from "../researchPipeline";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { type RightPanelSurface } from "../rightPanelStore";
-import { type TimelineEntry } from "../session-logic";
+import { derivePhase, type TimelineEntry } from "../session-logic";
 import { type ThreadShell } from "../types";
 
 /** The floating player hides only while the same source is rendered in the panel. */
@@ -1583,7 +1583,10 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   if (input.hasPendingApproval || input.hasPendingUserInput || Boolean(input.threadError)) {
     return true;
   }
-  if (input.phase === "connecting") {
+  // The thread shell can report a preparing or starting run before the detail
+  // projection behind `phase` loads, so either source still connecting holds
+  // the send.
+  if (input.phase === "connecting" || derivePhase(input.runtime ?? null) === "connecting") {
     return false;
   }
 

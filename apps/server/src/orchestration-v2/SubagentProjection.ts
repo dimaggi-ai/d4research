@@ -16,6 +16,7 @@ import type {
   ThreadId,
   TurnItemId,
 } from "@d4research/contracts";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 import { isOrchestrationV2WorkActive } from "@d4research/contracts";
 
@@ -239,7 +240,7 @@ export function delegatedTaskProgress(projection: {
     projection.providerThreads.some((thread) => (thread.pendingBackgroundTasks?.length ?? 0) > 0);
   const resultRun = workRuns
     .filter((run) => terminal(run.status) && (run.startedAt !== null || run.ordinal === 1))
-    .toSorted((a, b) => b.ordinal - a.ordinal)[0];
+    .toSorted((a, b) => (runRanAfter(a, b) ? -1 : runRanAfter(b, a) ? 1 : 0))[0];
   return {
     state:
       active || resultRun === undefined

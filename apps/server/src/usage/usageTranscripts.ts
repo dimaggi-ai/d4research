@@ -6,7 +6,7 @@
  *
  * @module usageTranscripts
  */
-import type { UsageProviderKind, UsageTokenTotals } from "@t3tools/contracts";
+import type { UsageProviderKind, UsageTokenTotals } from "@d4research/contracts";
 
 /**
  * Billing speed of a request. Faster speeds bill at a model-specific premium.

@@ -1,4 +1,4 @@
-import { formatPercent } from "@t3tools/shared/usageFormat";
+import { formatPercent } from "@d4research/shared/usageFormat";
 import type { ReactNode } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";

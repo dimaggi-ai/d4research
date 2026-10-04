@@ -1,7 +1,7 @@
 import {
   threadPullRequestsOf,
   threadPullRequestKeysEqual,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 import {
   CommandId,
   pullRequestHostOf,
@@ -10,14 +10,14 @@ import {
   type SourceControlProviderKind,
   type ThreadId,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
-import { changeRequestUrlFor, parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+} from "@d4research/contracts";
+import { changeRequestUrlFor, parseChangeRequestUrl } from "@d4research/shared/changeRequestUrl";
 import {
   normalizeThreadPullRequestKey,
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

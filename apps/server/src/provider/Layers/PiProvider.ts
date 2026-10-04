@@ -13,10 +13,10 @@ import {
   type PiSettings,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+} from "@d4research/contracts";
+import { causeErrorTag } from "@d4research/shared/observability";
+import { resolveSpawnCommand } from "@d4research/shared/shell";
+import { compareSemverVersions } from "@d4research/shared/semver";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";

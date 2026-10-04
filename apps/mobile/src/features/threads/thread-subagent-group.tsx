@@ -1,13 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { summarizeSubagentStatuses } from "@t3tools/client-runtime/state/subagent-display";
-import { isActiveSubagentStatus } from "@t3tools/client-runtime/state/subagentRuntime";
+import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import { summarizeSubagentStatuses } from "@d4research/client-runtime/state/subagent-display";
+import { isActiveSubagentStatus } from "@d4research/client-runtime/state/subagentRuntime";
 import type {
   EnvironmentId,
   OrchestrationV2Subagent,
   OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useEffect, useState } from "react";
 import { AppState, Pressable, View, type ColorValue } from "react-native";
 

@@ -1,4 +1,4 @@
-import type { DevicePlatform } from "@t3tools/contracts";
+import type { DevicePlatform } from "@d4research/contracts";
 import {
   Camera,
   ChevronLeft,

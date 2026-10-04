@@ -1,5 +1,5 @@
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
-import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
+import { usesChatGptSharing } from "@d4research/shared/usageLimits";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -7,7 +7,7 @@ import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   CircleAlertIcon,
   ChevronDownIcon,
@@ -19,7 +19,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   cursorKeychainAccessEnvironments,
   refreshUsageLimits,
-} from "@t3tools/client-runtime/state/usage";
+} from "@d4research/client-runtime/state/usage";
 
 import {
   isCompatibleUsageContractVersion,
@@ -27,7 +27,7 @@ import {
   type DailyTotals,
   type HourlyTotals,
   type MergedUsage,
-} from "@t3tools/shared/usageMerge";
+} from "@d4research/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -50,7 +50,7 @@ import {
   formatUsageContractMismatch,
   formatUsd,
   makeWindow,
-} from "@t3tools/shared/usageFormat";
+} from "@d4research/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {

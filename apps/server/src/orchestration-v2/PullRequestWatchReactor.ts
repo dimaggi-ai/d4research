@@ -4,12 +4,12 @@ import {
   type OrchestrationV2Notification,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -70,7 +70,7 @@ export class PullRequestWatchReactor extends Context.Service<
     /** One pass over every watched pull request. */
     readonly sweep: Effect.Effect<void>;
   }
->()("t3/orchestration-v2/PullRequestWatchReactor") {}
+>()("d4research/orchestration-v2/PullRequestWatchReactor") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

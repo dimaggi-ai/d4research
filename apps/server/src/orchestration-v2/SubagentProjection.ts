@@ -15,10 +15,10 @@ import type {
   ProviderTurnId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
-import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+} from "@d4research/contracts";
+import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
-import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
+import { isOrchestrationV2WorkActive } from "@d4research/contracts";
 
 function trimmed(value: string | null | undefined): string | undefined {
   const result = value?.trim();

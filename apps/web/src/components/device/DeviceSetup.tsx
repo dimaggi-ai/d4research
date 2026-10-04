@@ -1,5 +1,5 @@
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
-import type { DevicePlatform, DeviceServiceState, EnvironmentId } from "@t3tools/contracts";
+import type { DevicePlatform, DeviceServiceState, EnvironmentId } from "@d4research/contracts";
 import { Check } from "lucide-react";
 import { Check as CheckGlyph, CircleAlert } from "lucide";
 import { useState } from "react";

@@ -6,7 +6,7 @@ import {
   type ProviderOptionSelection,
   type ScopedThreadRef,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   applyClaudePromptEffortPrefix,
   buildProviderOptionSelectionsFromDescriptors,
@@ -15,7 +15,7 @@ import {
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
-} from "@t3tools/shared/model";
+} from "@d4research/shared/model";
 import { memo, useCallback } from "react";
 import { BrainIcon, ZapIcon } from "lucide-react";
 import { UltrafastIcon } from "../Icons";

@@ -2,17 +2,17 @@ import {
   scopeProjectRef,
   scopedThreadKey,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@d4research/client-runtime/environment";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 
-import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
+import { pullRequestDetailToVcsStatus } from "@d4research/client-runtime/state/pull-requests";
 import {
   resolveEnvironmentMachineKind,
   type EnvironmentId,
   type ThreadLinkedPullRequest,
   type ThreadPullRequestLink,
   type VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { FolderGit2Icon, TerminalIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
@@ -25,7 +25,7 @@ import {
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
   type ThreadPullRequestBadge,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 import { useRender } from "@base-ui/react/use-render";
 import { type ReactNode, type AnimationEvent, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
@@ -156,7 +156,7 @@ export function linkedPullRequestSnapshotStatus(
 export {
   resolveThreadPullRequestBadge,
   type ThreadPullRequestBadge,
-} from "@t3tools/shared/threadPullRequests";
+} from "@d4research/shared/threadPullRequests";
 
 export interface ThreadPullRequestBadgePresentation {
   readonly Icon: PullRequestGlyphIcon;

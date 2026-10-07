@@ -86,7 +86,7 @@ interface AppUpdateCheckOptions {
   /**
    * "background" (default) installs silently at the next backgrounding,
    * asking only if the app then stays foregrounded so long that the install
-   * never gets its chance. "immediate" restarts as soon as the download
+   * never gets its chance. "immediate" restarts as the download
    * lands — reserved for flows where the user explicitly requested the update.
    */
   readonly applyMode?: "background" | "immediate";

@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { layerRemoteHttpClient as remoteHttpClientLayer } from "../rpc/http.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const ENDPOINT = {
@@ -24,7 +24,9 @@ const DESCRIPTOR = {
   },
 };
 
-function recordedFetch(responses: ReadonlyArray<Response>) {
+type RecordedResponse = Response | ((init: RequestInit) => Response);
+
+function recordedFetch(responses: ReadonlyArray<RecordedResponse>) {
   const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
   let responseIndex = 0;
   const fetchFn = ((input, init) => {
@@ -32,7 +34,7 @@ function recordedFetch(responses: ReadonlyArray<Response>) {
     const response = responses[responseIndex++];
     return response === undefined
       ? Promise.reject(new Error(`Unexpected fetch call to ${String(input)}`))
-      : Promise.resolve(response);
+      : Promise.resolve(typeof response === "function" ? response(init ?? {}) : response);
   }) satisfies typeof fetch;
   return { calls, fetchFn };
 }

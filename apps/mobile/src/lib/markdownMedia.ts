@@ -4,7 +4,7 @@ import { normalizeNativeMarkdownUrl } from "@d4research/mobile-markdown-text/lin
 
 import type { FilePreviewSource } from "../components/FilePreviewModal";
 import type { MediaVideoPreviewSource } from "./videoPreviewSource";
-import type { MediaActionsSource } from "./mediaActions";
+import type { MediaActionsSource } from "./mediaActionsSource";
 
 /** Resolves only explicit media references. Ordinary links keep their existing navigation. */
 export function resolveMarkdownMediaPreview(

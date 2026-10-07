@@ -1,4 +1,4 @@
-import { SymbolView } from "../components/AppSymbol";
+import { SymbolView } from "./AppSymbol";
 import { memo, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, type ColorValue } from "react-native";
 

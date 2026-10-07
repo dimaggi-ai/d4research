@@ -131,7 +131,7 @@ it.layer(NodeServices.layer)("AgyAdapter", (it) => {
       const mockPath = NodePath.join(tempDir, "mock-agy.mjs");
       // Echoes back how many prompt bytes reached stdin and its tail. Agy's
       // hosted runner silently cuts oversized input, so preserving the final
-      // task is as important as avoiding argv/E2BIG.
+      // task is as avoiding argv/E2BIG.
       yield* Effect.promise(() =>
         NodeFSP.writeFile(
           mockPath,

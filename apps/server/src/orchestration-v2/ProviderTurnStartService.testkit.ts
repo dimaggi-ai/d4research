@@ -5,7 +5,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { ResearchDelegationBudgetLive } from "../mcp/toolkits/research/budget.ts";
 import { InlineDelegationRunner } from "../mcp/toolkits/research/inlineDelegation.ts";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -26,8 +26,7 @@ export const researchTurnDependenciesTestLayer = Layer.mergeAll(
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 
-export const worktreeRepairDependenciesTestLayer = Layer.mergeAll(
-  researchTurnDependenciesTestLayer,
+export const layer = Layer.merge(
   Layer.mock(GitWorkflow.GitWorkflowService)({
     pruneWorktrees: () => Effect.void,
     createWorktree: () => Effect.succeed({} as never),
@@ -36,3 +35,5 @@ export const worktreeRepairDependenciesTestLayer = Layer.mergeAll(
     getById: () => Effect.succeed(Option.none()),
   }),
 );
+
+export const worktreeRepairDependenciesTestLayer = layer;

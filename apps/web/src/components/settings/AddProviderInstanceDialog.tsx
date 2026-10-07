@@ -1,4 +1,5 @@
-"use client";
+import { getRedundantProviderInstanceIds } from "../../providerInstances";
+("use client");
 
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 
@@ -9,10 +10,12 @@ import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runti
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type AcpRegistrySearchAgent,
+  AuthProvidersManageScope,
   ProviderInstanceId,
   ProviderDriverKind,
   type EnvironmentId,
   type ProviderInstanceConfig,
+  type ProviderInstanceEnvironmentVariable,
 } from "@d4research/contracts";
 
 import {
@@ -22,10 +25,8 @@ import {
 import * as Equal from "effect/Equal";
 
 import { cn } from "../../lib/utils";
-import {
-  getRedundantProviderInstanceIds,
-  normalizeProviderAccentColor,
-} from "../../providerInstances";
+import { normalizeProviderAccentColor } from "../../providerInstances";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { Button } from "../ui/button";
 import { ChatGptConnectionButton } from "./ChatGptConnectionButton";
 import { Dialog } from "../ui/dialog";
@@ -42,6 +43,7 @@ import { WizardPanel, WizardPopup, WizardHeader, WizardFooter } from "../ui/wiza
 import {
   ADD_PROVIDER_WIZARD_STEPS,
   ACP_REGISTRY_WIZARD_STEPS,
+  LOCAL_ACP_WIZARD_STEPS,
   deriveAvailableInstanceId,
   resolveAcpRegistryWizardNavigation,
   resolveWizardNavigation,
@@ -54,6 +56,7 @@ import { AcpRegistrySearchStep } from "./AcpRegistrySearchStep";
 import { ProviderWizardAuthenticationStep } from "./ProviderWizardAuthenticationStep";
 import { resolveOfficialAcpRegistryIconUrl } from "./AcpRegistryIcon";
 import { AddManagedCodexAccountDialog } from "./CodexSetupSection";
+import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
 
 /**
  * Normalize a user-provided label into a slug suffix for the instance id.
@@ -113,6 +116,7 @@ export function AddProviderInstanceDialog({
 }: AddProviderInstanceDialogProps) {
   const settings = useEnvironmentSettings(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
+  const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
 
   const [wizardStep, setWizardStep] = useState(0);
   const [addingChatGptAccount, setAddingChatGptAccount] = useState(false);
@@ -121,6 +125,9 @@ export function AddProviderInstanceDialog({
     {},
   );
   const [selectedAcp, setSelectedAcp] = useState<AcpRegistrySearchAgent | null>(null);
+  const [localEnvironment, setLocalEnvironment] = useState<
+    ReadonlyArray<ProviderInstanceEnvironmentVariable>
+  >([]);
   const [isManualAcpConfiguration, setIsManualAcpConfiguration] = useState(false);
   const [isRegistryLoading, setIsRegistryLoading] = useState(false);
   const [isPreparingRegistryAgent, setIsPreparingRegistryAgent] = useState(false);
@@ -173,13 +180,23 @@ export function AddProviderInstanceDialog({
   const previewLabel = label.trim() || `${driverOption.label} Workspace`;
 
   const configDraft = configByDriver[driver] ?? EMPTY_CONFIG_DRAFT;
+  const isLocalAcp = isAcpRegistry && isManualAcpConfiguration && configDraft.source === "local";
+  const localCommandPath =
+    typeof configDraft.commandPath === "string" ? configDraft.commandPath.trim() : "";
   const manualAgentId = typeof configDraft.agentId === "string" ? configDraft.agentId.trim() : "";
-  const acpSelectionError =
-    selectedAcp !== null || (isManualAcpConfiguration && manualAgentId.length > 0)
+  const acpSelectionError = isLocalAcp
+    ? localCommandPath.length > 0
+      ? null
+      : "Executable is required."
+    : selectedAcp !== null || (isManualAcpConfiguration && manualAgentId.length > 0)
       ? null
       : "Select an ACP or configure one manually.";
   const wizardStepSummaries = isAcpRegistry
-    ? ([selectedAcp?.name ?? (manualAgentId || null), previewLabel, null] as const)
+    ? ([
+        isLocalAcp ? "Local ACP command" : (selectedAcp?.name ?? (manualAgentId || null)),
+        previewLabel,
+        null,
+      ] as const)
     : ([driverOption.label, previewLabel, null] as const);
   const setConfigDraft = (config: Record<string, unknown> | undefined) => {
     setConfigByDriver((existing) => {
@@ -204,7 +221,7 @@ export function AddProviderInstanceDialog({
     if (navigation.kind === "blocked") {
       setHasAttemptedSubmit(true);
     }
-    if (isAcpRegistry && navigation.kind === "navigate" && navigation.step === 2) {
+    if (isAcpRegistry && !isLocalAcp && navigation.kind === "navigate" && navigation.step === 2) {
       void handleSave();
       return;
     }
@@ -214,10 +231,15 @@ export function AddProviderInstanceDialog({
   const navigateToStep = (requestedStep: number) => {
     applyWizardNavigation(
       isAcpRegistry
-        ? resolveAcpRegistryWizardNavigation(wizardStep, requestedStep, {
-            instanceIdError,
-            selectionError: acpSelectionError,
-          })
+        ? isLocalAcp
+          ? resolveWizardNavigation(wizardStep, requestedStep, LOCAL_ACP_WIZARD_STEPS.length, {
+              instanceIdError,
+              prerequisite: { step: 0, error: acpSelectionError },
+            })
+          : resolveAcpRegistryWizardNavigation(wizardStep, requestedStep, {
+              instanceIdError,
+              selectionError: acpSelectionError,
+            })
         : resolveWizardNavigation(wizardStep, requestedStep, ADD_PROVIDER_WIZARD_STEPS.length, {
             instanceIdError,
           }),
@@ -271,7 +293,26 @@ export function AddProviderInstanceDialog({
     setHasAttemptedSubmit(false);
   };
 
+  const handleLocalAcpConfiguration = () => {
+    setDriver(ACP_REGISTRY_DRIVER_KIND);
+    setSelectedAcp(null);
+    setIsManualAcpConfiguration(true);
+    setConfigByDriver((existing) => ({
+      ...existing,
+      [ACP_REGISTRY_DRIVER_KIND]: { source: "local", commandArgs: [] },
+    }));
+    setIdentityByDriver((existing) =>
+      updateProviderIdentityDraft(existing, ACP_REGISTRY_DRIVER_KIND, {
+        label: "Local ACP",
+        instanceIdOverride: null,
+      }),
+    );
+    setLocalEnvironment([]);
+    setHasAttemptedSubmit(false);
+  };
+
   const handleSave = async () => {
+    if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     if (isSaving || createdInstanceId) return;
     setHasAttemptedSubmit(true);
     if (instanceIdError !== null || (isAcpRegistry && acpSelectionError !== null)) return;
@@ -289,6 +330,7 @@ export function AddProviderInstanceDialog({
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),
+      ...(isLocalAcp && localEnvironment.length > 0 ? { environment: localEnvironment } : {}),
     };
     // `ProviderInstanceId.make` revalidates the slug; we've already checked
     // it via `validateInstanceId`, but going through the brand constructor
@@ -326,7 +368,7 @@ export function AddProviderInstanceDialog({
       return;
     }
     onCreated?.(brandedId);
-    if (isAcpRegistry) {
+    if (isAcpRegistry && !isLocalAcp) {
       setCreatedInstanceId(brandedId);
       setIsSaving(false);
       setWizardStep(2);
@@ -361,7 +403,7 @@ export function AddProviderInstanceDialog({
               currentStep={wizardStep}
               summaries={wizardStepSummaries}
               instanceIdError={instanceIdError}
-              steps={ACP_REGISTRY_WIZARD_STEPS}
+              steps={isLocalAcp ? LOCAL_ACP_WIZARD_STEPS : ACP_REGISTRY_WIZARD_STEPS}
               disabled={isSaving || isPreparingRegistryAgent || createdInstanceId !== null}
               identityStep={1}
               prerequisite={{ step: 0, error: acpSelectionError }}
@@ -451,9 +493,13 @@ export function AddProviderInstanceDialog({
                     <div className="grid gap-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h3 className="text-sm font-medium text-foreground">Enter manually</h3>
+                          <h3 className="text-sm font-medium text-foreground">
+                            {isLocalAcp ? "Local ACP command" : "Enter manually"}
+                          </h3>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            Enter an official registry ID and any local executable or auth override.
+                            {isLocalAcp
+                              ? `Run an installed ACP executable on ${environmentLabel}.`
+                              : "Enter an official registry ID and any local executable or auth override."}
                           </p>
                         </div>
                         <Button
@@ -475,6 +521,12 @@ export function AddProviderInstanceDialog({
                           variant="settings"
                           onChange={setConfigDraft}
                         />
+                        {isLocalAcp ? (
+                          <ProviderEnvironmentSection
+                            environment={localEnvironment}
+                            onChange={setLocalEnvironment}
+                          />
+                        ) : null}
                       </SettingsGroup>
                       {isAcpRegistry && hasAttemptedSubmit && acpSelectionError ? (
                         <p className="text-2xs text-destructive">{acpSelectionError}</p>
@@ -487,6 +539,7 @@ export function AddProviderInstanceDialog({
                         providerInstances={settings.providerInstances}
                         onPrepared={handleAcpPrepared}
                         onManualConfiguration={handleManualAcpConfiguration}
+                        onLocalConfiguration={handleLocalAcpConfiguration}
                         onLoadingChange={setIsRegistryLoading}
                         onPreparingChange={setIsPreparingRegistryAgent}
                       />
@@ -660,8 +713,16 @@ export function AddProviderInstanceDialog({
                   Next
                 </Button>
               ) : (
-                <Button size="sm" disabled={isSaving} onClick={() => void handleSave()}>
-                  {isSaving ? "Adding..." : isAcpRegistry ? "Continue to sign-in" : "Add instance"}
+                <Button
+                  size="sm"
+                  disabled={isSaving || !canManageProviders}
+                  onClick={() => void handleSave()}
+                >
+                  {isSaving
+                    ? "Adding..."
+                    : isAcpRegistry && !isLocalAcp
+                      ? "Continue to sign-in"
+                      : "Add instance"}
                 </Button>
               )}
             </WizardFooter>

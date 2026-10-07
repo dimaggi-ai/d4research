@@ -11,7 +11,7 @@ import {
 } from "@d4research/shared/projectFavicon";
 import { useThemeColor } from "../lib/useThemeColor";
 import { useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { projectFaviconUrlAtom } from "../state/assets";
 import {
   countGlyphs,

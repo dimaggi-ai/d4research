@@ -10,9 +10,9 @@ import { ProviderInstanceId } from "@d4research/contracts";
 import { createModelSelection } from "@d4research/shared/model";
 
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
-import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as TextGeneration from "./TextGeneration.ts";
+import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
 
 const makeStubTextGeneration = (

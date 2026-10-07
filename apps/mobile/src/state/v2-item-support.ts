@@ -7,7 +7,7 @@ import {
   type V2ItemSupport,
 } from "@d4research/client-runtime/state/item-support";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { environmentThreadDetails } from "./threads";
 

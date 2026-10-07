@@ -25,7 +25,7 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     app("orchestration-v2/ContextHandoffService"),
     app("git/GitWorkflowService"),
     app("project/ProjectService"),
-    app("provider/Services/ProviderAuthService"),
+    app("provider/ProviderAuthService"),
   ]);
 const Settings = await app("serverSettings");
 const Registry = await app("provider/Services/ProviderRegistry");

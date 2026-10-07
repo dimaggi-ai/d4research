@@ -2,8 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlSchema from "effect/sql/SqlSchema";
 
 import { SourceControlProviderKind } from "@d4research/contracts";
 
@@ -52,7 +52,7 @@ export interface SetPullRequestFilesViewedInput extends PullRequestFilesViewedSc
 
 /**
  * How many marks one read of this store carries. Every one of them is a path held in a set and a
- * map for as long as the caller holds the read, so an unbounded read of a change request with
+ * map for as the caller holds the read, so an unbounded read of a change request with
  * thousands of marks in it is paid for again per scope the caller is holding. Matched to what the
  * GitHub reader walks in one go, past what anyone reviews in a sitting.
  */

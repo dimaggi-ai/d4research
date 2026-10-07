@@ -13,7 +13,7 @@ import {
 } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
-import type * as RpcMessage from "effect/unstable/rpc/RpcMessage";
+import type * as RpcMessage from "effect/rpc/RpcMessage";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildBoundedThreadStreamSnapshot } from "./ThreadStream.ts";

@@ -46,7 +46,7 @@ function createLocalStorageStub(): Storage {
 }
 
 function testWindow(): Window & typeof globalThis {
-  return globalThis.window ?? (globalThis as unknown as Window & typeof globalThis);
+  return globalThis.window ?? (globalThis as Window & typeof globalThis);
 }
 
 beforeEach(() => {

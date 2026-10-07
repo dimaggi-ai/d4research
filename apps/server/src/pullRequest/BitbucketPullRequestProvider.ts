@@ -49,7 +49,7 @@ const CAPABILITIES: PullRequestCapabilities = {
  * enough to say something, to approve and to ask for changes.
  *
  * Asking for a review is left open for the same reason: Bitbucket takes a reviewer set from the
- * author of a pull request as well as from whoever can write, and says nothing here about which
+ * author of a pull request as from whoever can write, and says nothing here about which
  * of the two this account is.
  */
 export function bitbucketViewerPermissions(input: {

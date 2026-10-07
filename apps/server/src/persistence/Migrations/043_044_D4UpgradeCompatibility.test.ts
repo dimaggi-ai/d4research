@@ -4,7 +4,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
@@ -58,6 +58,8 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           [61, "ProjectionThreadsAutoSettleDisabledAt"],
           [62, "OrchestrationV2"],
           [63, "RemoveRedundantProjectionIndexes"],
+          [64, "ScheduledTaskWebhooks"],
+          [65, "WebhookRelayDeliveries"],
         ],
       );
 
@@ -122,6 +124,8 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [61, "ProjectionThreadsAutoSettleDisabledAt"],
           [62, "OrchestrationV2"],
           [63, "RemoveRedundantProjectionIndexes"],
+          [64, "ScheduledTaskWebhooks"],
+          [65, "WebhookRelayDeliveries"],
         ],
       );
 
@@ -158,6 +162,8 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [61, "ProjectionThreadsAutoSettleDisabledAt"],
           [62, "OrchestrationV2"],
           [63, "RemoveRedundantProjectionIndexes"],
+          [64, "ScheduledTaskWebhooks"],
+          [65, "WebhookRelayDeliveries"],
         ],
       );
     }),
@@ -196,7 +202,7 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
       const executed = yield* runMigrations();
       assert.deepStrictEqual(
         executed.map(([id]) => id),
-        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63],
+        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       assert.ok(columns.some((column) => column.name === "auto_pull"));

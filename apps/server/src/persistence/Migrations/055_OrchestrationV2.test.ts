@@ -2,8 +2,8 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationEntries, runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
@@ -16,7 +16,7 @@ layer("055_OrchestrationV2", (it) => {
     Effect.sync(() => {
       assert.deepStrictEqual(
         migrationEntries.map(([id]) => id),
-        Array.from({ length: 63 }, (_, index) => index + 1).filter(
+        Array.from({ length: 65 }, (_, index) => index + 1).filter(
           (id) => ![37, 38, 45, 46].includes(id),
         ),
       );
@@ -32,6 +32,8 @@ layer("055_OrchestrationV2", (it) => {
       assert.deepStrictEqual(executed, [
         [62, "OrchestrationV2"],
         [63, "RemoveRedundantProjectionIndexes"],
+        [64, "ScheduledTaskWebhooks"],
+        [65, "WebhookRelayDeliveries"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
 
@@ -55,6 +57,8 @@ layer("055_OrchestrationV2", (it) => {
         { migration_id: 61, name: "ProjectionThreadsAutoSettleDisabledAt" },
         { migration_id: 62, name: "OrchestrationV2" },
         { migration_id: 63, name: "RemoveRedundantProjectionIndexes" },
+        { migration_id: 64, name: "ScheduledTaskWebhooks" },
+        { migration_id: 65, name: "WebhookRelayDeliveries" },
       ]);
 
       const tables = yield* sql<{ readonly name: string }>`

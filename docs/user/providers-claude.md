@@ -48,8 +48,13 @@ Claude can show its own resume prompt when you continue an old session.
 
 ## Where Claude Skills Are Loaded
 
-T3 Code looks for Claude skills in the Claude config directory's `skills` folder and
-`<workspace>/.claude/skills`, the two places Claude Code loads them from.
+You can also send `/compact` in an existing conversation. Web and desktop offer
+**Compact context** from the context meter. When you return to a large thread
+after more than an hour, the send button changes to **Compact and send**: Enter
+summarizes the history first, then sends your message. To keep the full history
+for that message, open the menu next to the button and choose **Send with full
+history**. See [commands and skills](./composer.md#commands-and-skills) for using
+composer commands.
 
 If the same skill name exists in more than one folder, the one in the Claude config directory
 wins, the same way Claude Code resolves it.

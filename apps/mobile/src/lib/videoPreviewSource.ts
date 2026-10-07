@@ -2,7 +2,7 @@ import type { AssetResource, ChatFileAttachment, EnvironmentId } from "@d4resear
 import { videoMimeType } from "@d4research/shared/video";
 
 import type { DraftComposerFileAttachment } from "./composerImages";
-import type { MediaActionsSource } from "./mediaActions";
+import type { MediaActionsSource } from "./mediaActionsSource";
 
 export type MediaVideoPreviewSource = {
   readonly type: "media";

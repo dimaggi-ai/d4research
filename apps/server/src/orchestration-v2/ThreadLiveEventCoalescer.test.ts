@@ -126,7 +126,7 @@ describe("ThreadLiveEventCoalescer", () => {
     expect(coalesceLiveToolUpdatedEvents(events).map((event) => event.sequence)).toEqual([2, 3, 4]);
   });
 
-  it.effect("flushes pending tool updates as soon as an unrelated event arrives", () =>
+  it.effect("flushes pending tool updates as an unrelated event arrives", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const coalescer = yield* makeThreadLiveEventCoalescer({ coalesceWindow: "500 millis" });
@@ -148,7 +148,7 @@ describe("ThreadLiveEventCoalescer", () => {
     ).pipe(Effect.provide(TestClock.layer())),
   );
 
-  it.effect("flushes pending tool updates as soon as a synchronization marker arrives", () =>
+  it.effect("flushes pending tool updates as a synchronization marker arrives", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const coalescer = yield* makeThreadLiveEventCoalescer({ coalesceWindow: "500 millis" });

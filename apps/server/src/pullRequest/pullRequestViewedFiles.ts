@@ -48,7 +48,7 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   const { runFork, refEpoch, fileRevisionsEpoch, toPullRequestError } = dependencies;
   /**
    * What the head has of the files a reader has marked, held between reads. The entry tracks what
-   * has been asked as well as what was heard, since a path missing from an answer keeps whatever
+   * has been asked as what was heard, since a path missing from an answer keeps whatever
    * version was last given for it rather than being cleared.
    */
   interface HeldFileRevisions {
@@ -121,7 +121,7 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
         const oldest = heldFileRevisions.keys().next().value;
         if (oldest !== undefined) heldFileRevisions.delete(oldest);
       }
-      // The entry is only as fresh as its oldest revision: stamping it with `now` on a partial
+      // The entry is only as its oldest revision: stamping it with `now` on a partial
       // answer would let an old revision ride past the point it should have been re-read.
       const stamped = [...revisions.keys()].every((path) => answer.revisions.has(path))
         ? at

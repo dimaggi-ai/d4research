@@ -34,7 +34,7 @@ const syncFs = <A>(method: string, path: string, run: () => A) =>
 
 /**
  * A synchronous FileSystem for startup work that runs before Electron's ready.
- * Electron emits ready as soon as startup yields to the event loop. Only the
+ * Electron emits ready as startup yields to the event loop. Only the
  * operations userData resolution needs are implemented.
  *
  * @public Service construction is part of the canonical Effect module API.

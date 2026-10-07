@@ -14,7 +14,7 @@ import { createOutdatedServerUpdateCommand } from "@d4research/client-runtime/st
 import { createEnvironmentServerConfigsAtom } from "@d4research/client-runtime/state/shell";
 import { mergeWithDefaultKeybindings } from "@d4research/shared/keybindings";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";

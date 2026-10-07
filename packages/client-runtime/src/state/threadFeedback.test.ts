@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { MessageId } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import {
   beginCodexFeedbackSubmission,

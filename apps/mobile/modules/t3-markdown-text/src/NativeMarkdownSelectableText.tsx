@@ -396,7 +396,7 @@ export function NativeMarkdownSelectableText(props: {
             }
           >
             {androidChip ? (
-              // The inline box sits on the baseline and is only as tall as the font's
+              // The inline box sits on the baseline and is only as the font's
               // ascent, so it never changes the line's height. The bitmap hangs off that
               // box (views in text are not clipped) to centre the chip on the text.
               <View

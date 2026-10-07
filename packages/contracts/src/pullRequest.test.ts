@@ -277,7 +277,7 @@ describe("naming the reader as the author to narrow by", () => {
 });
 
 describe("naming the file a tick belongs to", () => {
-  // A space on either end of a name is part of the name as far as git is concerned. The patch on
+  // A space on either end of a name is part of the name as git is concerned. The patch on
   // screen and the environment's record of what was cleared are both keyed by it, so a path
   // tidied in transit ticks a file that does not exist and leaves the one on screen unticked.
   it("keeps the spaces around a path being ticked", () => {

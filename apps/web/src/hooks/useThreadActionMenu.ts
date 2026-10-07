@@ -1,3 +1,5 @@
+import { type ChangeRequestStateLike } from "@d4research/client-runtime/state/thread-settled";
+import { effectiveSettled } from "@d4research/client-runtime/state/thread-settled";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { scopedThreadKey } from "@d4research/client-runtime/environment";
@@ -7,24 +9,25 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@d4research/client-runtime/state/runtime";
+import { canSnooze, effectiveSnoozed } from "@d4research/client-runtime/state/thread-settled";
 import {
-  canSnooze,
-  effectiveSettled,
-  effectiveSnoozed,
-  type ChangeRequestStateLike,
-} from "@d4research/client-runtime/state/thread-settled";
-import type { ScopedThreadRef, ThreadId } from "@d4research/contracts";
+  AuthOrchestrationOperateScope,
+  type ScopedThreadRef,
+  type ThreadId,
+} from "@d4research/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
   buildThreadActionMenuItems,
+  threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { threadEnvironment } from "../state/threads";
-import { useAtomCommand } from "../state/use-atom-command";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
+import { readEnvironmentScope } from "../state/session";
 import {
   readEnvironmentSupportsAutoSettleOptOut,
   readEnvironmentSupportsPinning,
@@ -103,7 +106,7 @@ export function useThreadActionMenu(input: {
     deleteThread,
     markThreadUnread,
   } = useThreadActions();
-  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   const handleNewThread = useNewThreadHandler();
@@ -152,6 +155,7 @@ export function useThreadActionMenu(input: {
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
         const items = buildThreadActionMenuItems({
+          canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
           branch: thread.branch ?? null,
           projectFilter: null,
           isPinned: thread.pinnedAt != null,
@@ -177,6 +181,16 @@ export function useThreadActionMenu(input: {
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
+        if (
+          threadActionRequiresOperate(action) &&
+          !readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
+        ) {
+          failureToast(
+            "Thread action unavailable",
+            new Error("This connection cannot change threads."),
+          );
+          return;
+        }
         if (action.startsWith("snooze:")) {
           const preset =
             action === "snooze:custom"

@@ -13,7 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 import * as Schema from "effect/Schema";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@d4research/shared/cliRelease";
@@ -818,7 +818,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
     // With start=false the service keeps running while its files change. The
     // launcher reads the state file once at startup and the unit only matters
-    // on the next start, so that is safe as long as the launcher is not in
+    // on the next start, so that is safe as the launcher is not in
     // the middle of a remote update, which is the one time it writes the
     // state file itself. That case is refused below, before anything is
     // written, from the same read the downgrade check uses; the stop that

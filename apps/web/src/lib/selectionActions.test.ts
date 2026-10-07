@@ -39,9 +39,7 @@ function createSelectionSurface({ interactiveActions = false } = {}) {
   });
   const actions = observeSelectionActions({
     element: element as unknown as HTMLElement,
-    ...(interactiveActions
-      ? { getActionElement: () => actionElement as unknown as HTMLElement }
-      : {}),
+    ...(interactiveActions ? { getActionElement: () => actionElement as HTMLElement } : {}),
     onSelection,
     onDismiss,
   });

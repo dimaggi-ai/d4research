@@ -25,7 +25,7 @@ import {
   type NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import {
   createContext,
   use,

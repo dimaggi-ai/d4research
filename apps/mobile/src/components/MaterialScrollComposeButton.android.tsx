@@ -96,7 +96,7 @@ export function MaterialScrollComposeButton(props: {
           right: 0,
           top: 0,
           bottom: 0,
-          // Release the label area as soon as collapse starts, before native measurements arrive.
+          // Release the label area as collapse starts, before native measurements arrive.
           width: props.expanded ? buttonWidth * scale : fabSize,
           borderRadius: 16 * scale,
           overflow: "hidden",

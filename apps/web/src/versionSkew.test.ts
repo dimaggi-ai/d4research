@@ -15,6 +15,7 @@ import {
   dismissServerUpdateFailure,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
+  manualServerUpdateCommand,
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,

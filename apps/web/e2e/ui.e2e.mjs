@@ -1085,7 +1085,7 @@ spec(
     await systemMonitor.waitFor({ state: "visible", timeout: 20_000 });
     await systemMonitor.evaluate((element) => element.click());
     await page.waitForURL(/\/system$/, { timeout: 20_000 });
-    // Tool Guard renders as soon as the System panel mounts. CPU depends on
+    // Tool Guard renders as the System panel mounts. CPU depends on
     // the optional Mission Control endpoint and may legitimately remain in its
     // unavailable state in an isolated test environment.
     await page
@@ -1265,7 +1265,7 @@ async function main() {
   const onInterrupt = () => stopAfterSignal(130);
   const onTerminate = () => stopAfterSignal(143);
   // Detached dev-server process groups outlive the parent unless signals are
-  // handled explicitly. Keep interrupted local/CI runs as isolated as passes.
+  // handled explicitly. Keep interrupted local/CI runs as passes.
   process.once("SIGINT", onInterrupt);
   process.once("SIGTERM", onTerminate);
   const failures = [];

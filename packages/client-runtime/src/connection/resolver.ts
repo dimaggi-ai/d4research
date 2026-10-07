@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 import { appendClientConnectionParams } from "../authorization/remote.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
@@ -43,6 +43,7 @@ import {
   appendOrchestrationProtocol,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
+import { credentialConnectionId } from "./routes.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
 export class ConnectionResolver extends Context.Service<
@@ -138,7 +139,14 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         actual: profile.environmentId,
       });
     }
-    const credential = yield* credentials.get(target.connectionId).pipe(
+    if (profile.authorization === "t3-connect") {
+      return yield* new ConnectionBlockedError({
+        reason: "unsupported",
+        detail: "Relay (T3 Connect) connections are no longer supported.",
+      });
+    }
+    // A learned route borrows the credential of the route it was learned from.
+    const credential = yield* credentials.get(credentialConnectionId(target.connectionId)).pipe(
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.fail(credentialMissingError(target.connectionId)),

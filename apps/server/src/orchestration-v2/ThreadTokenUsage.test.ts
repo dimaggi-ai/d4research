@@ -1,8 +1,8 @@
 import { ThreadId } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import { SqlitePersistenceMemory } from "../persistence/Sqlite.ts";
 import { getThreadTokenUsage } from "./ThreadTokenUsage.ts";
 
 it.layer(SqlitePersistenceMemory)("V2 token usage", (it) => {

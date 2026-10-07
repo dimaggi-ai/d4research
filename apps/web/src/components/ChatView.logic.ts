@@ -142,7 +142,10 @@ export function resolveProactiveTurnDiffAction(input: {
   isGitRepo: boolean | undefined;
   activeSurfaceKind: RightPanelSurface["kind"] | null;
 }): "defer" | "ignore" | "open" {
-  if (input.activeSurfaceKind === "pull-request") return "ignore";
+  // An open diff already shows the work; reopening it would reset the chosen scope.
+  if (input.activeSurfaceKind === "pull-request" || input.activeSurfaceKind === "diff") {
+    return "ignore";
+  }
   if (input.checkpoint === undefined || input.checkpoint.status === "missing") return "defer";
   if (input.isGitRepo === undefined) return "defer";
   if (
@@ -708,7 +711,7 @@ export function collectAudioArtifactPaths(
   workspaceRoot: string | undefined,
 ): string[] {
   // A changed sound asset is not a recording delivered to the user. Require
-  // an explicit assistant link as well as a checkpoint entry.
+  // an explicit assistant link as a checkpoint entry.
   const linkedPaths = new Set<string>();
   for (const message of messages) {
     if (message.role !== "assistant") continue;
@@ -1070,22 +1073,7 @@ export interface PullRequestDialogState {
   key: number;
 }
 
-export function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("Could not read image data."));
-    });
-    reader.addEventListener("error", () => {
-      reject(reader.error ?? new Error("Failed to read image."));
-    });
-    reader.readAsDataURL(file);
-  });
-}
+export { readFileAsDataUrl } from "../lib/imageCompression";
 
 export function resolveSendEnvMode(input: {
   requestedEnvMode: DraftThreadEnvMode;

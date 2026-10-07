@@ -44,7 +44,7 @@ export function ProviderUpdatesAction() {
       }),
     [environments],
   );
-  // Candidates leave the list as soon as their servers report them queued, so
+  // Candidates leave the list as their servers report them queued, so
   // keep the button while the run is in flight.
   if (machines.length === 0 && !isPending) {
     return null;

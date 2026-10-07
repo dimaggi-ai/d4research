@@ -1,5 +1,9 @@
 import {
   EnvironmentAuthorizationError,
+  clientRpcRequiredScopes,
+  authScopeRequiredResponse,
+  type EnvironmentId,
+  type ClientGuardedRpcTag,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
 } from "@d4research/contracts";
@@ -9,14 +13,13 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { RpcClientError } from "effect/unstable/rpc";
+import { RpcClientError } from "effect/rpc";
 
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
-import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import type { RpcSession } from "../rpc/session.ts";
+import type { WsRpcProtocolClient } from "./protocol.ts";
+import type { RpcSession } from "./session.ts";
 
 export class EnvironmentRpcUnavailableError extends Schema.TaggedError<EnvironmentRpcUnavailableError>()(
   "EnvironmentRpcUnavailableError",
@@ -73,11 +76,11 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeDeviceState
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.pullRequestsSubscribeRefreshes
-  | typeof WS_METHODS.previewAutomationConnect
   | typeof WS_METHODS.subscribeVcsStatus
   | typeof WS_METHODS.subscribeWorktreeSetup
   | typeof WS_METHODS.subscribeProjectClones
-  | typeof WS_METHODS.terminalAttach;
+  | typeof WS_METHODS.terminalAttach
+  | typeof WS_METHODS.terminalObserve;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.chatGptHandoffSubscribe
@@ -120,9 +123,10 @@ export type EnvironmentRpcSuccess<TTag extends EnvironmentUnaryRpcTag> =
     : never;
 
 export type EnvironmentRpcFailure<TTag extends EnvironmentUnaryRpcTag> =
-  RpcMethod<TTag> extends (input: any, options?: any) => Effect.Effect<any, infer E, any>
-    ? E
-    : never;
+  | EnvironmentAuthorizationError
+  | (RpcMethod<TTag> extends (input: any, options?: any) => Effect.Effect<any, infer E, any>
+      ? E
+      : never);
 
 export type EnvironmentRpcStreamValue<TTag extends EnvironmentStreamRpcTag> =
   RpcMethod<TTag> extends (input: any, options?: any) => Stream.Stream<infer A, any, any>
@@ -159,7 +163,40 @@ export const getInitialServerConfig = Effect.fn("EnvironmentRpc.getInitialServer
   },
 );
 
-export const request = Effect.fn("EnvironmentRpc.request")(function* <
+/** Installed by the shared command boundary. A missing boundary denies protected writes. */
+export class RpcPermissionGuard extends Context.Reference<{
+  readonly authorize: (
+    environmentId: EnvironmentId,
+    method: string,
+    input: unknown,
+  ) => Effect.Effect<void, EnvironmentAuthorizationError>;
+}>("@d4research/client-runtime/rpc/RpcPermissionGuard", {
+  defaultValue: () => ({
+    authorize: (_environmentId, method, input) => {
+      const scope = clientRpcRequiredScopes(method, input)[0];
+      return scope === undefined
+        ? Effect.void
+        : Effect.fail(
+            new EnvironmentAuthorizationError({
+              ...authScopeRequiredResponse(scope),
+              message: `This connection requires ${scope}.`,
+            }),
+          );
+    },
+  }),
+}) {}
+
+const authorizeRequest = Effect.fn("EnvironmentRpc.authorize")(function* (
+  method: string,
+  input: unknown,
+) {
+  if (clientRpcRequiredScopes(method, input).length === 0) return;
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  const guard = yield* RpcPermissionGuard;
+  yield* guard.authorize(supervisor.target.environmentId, method, input);
+});
+
+export const requestGuarded = Effect.fn("EnvironmentRpc.request")(function* <
   TTag extends EnvironmentUnaryRpcTag,
 >(tag: TTag, input: EnvironmentRpcInput<TTag>) {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
@@ -168,6 +205,7 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
     "rpc.method": tag,
   });
   const session = yield* currentSession();
+  yield* authorizeRequest(tag, input);
   const observer = yield* EnvironmentRpcRequestObserver;
   const method = session.client[tag] as (
     input: EnvironmentRpcInput<TTag>,
@@ -192,16 +230,19 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
   );
 });
 
-export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
+export function runStreamGuarded<TTag extends EnvironmentStreamCommandRpcTag>(
   tag: TTag,
   input: EnvironmentRpcInput<TTag>,
 ): Stream.Stream<
   EnvironmentRpcStreamValue<TTag>,
-  EnvironmentRpcStreamFailure<TTag> | EnvironmentRpcUnavailableError,
+  | EnvironmentRpcStreamFailure<TTag>
+  | EnvironmentRpcUnavailableError
+  | EnvironmentAuthorizationError,
   EnvironmentSupervisor.EnvironmentSupervisor
 > {
   return Stream.unwrap(
-    currentSession().pipe(
+    authorizeRequest(tag, input).pipe(
+      Effect.andThen(currentSession()),
       Effect.map((session) => {
         const method = session.client[tag] as (
           input: EnvironmentRpcInput<TTag>,
@@ -296,14 +337,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                           }),
                         ),
                       );
-                      // An evicted preview host completes its registration stream.
-                      // Re-register only after completion; failures still follow the
-                      // session recovery policy and browser actions are never replayed.
-                      return (
-                        tag === WS_METHODS.previewAutomationConnect
-                          ? stream.pipe(Stream.repeat(Schedule.spaced("1 second")))
-                          : stream
-                      ).pipe(Stream.ensuring(completeObservation));
+                      return stream.pipe(Stream.ensuring(completeObservation));
                     }),
                   ).pipe(
                     Stream.tapCause((cause) =>
@@ -426,3 +460,16 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
 > {
   return subscribeDynamic(tag, () => Effect.succeed(input), options);
 }
+
+/** Protected writes must go through the permission-aware command layer. */
+export const request = <TTag extends Exclude<EnvironmentUnaryRpcTag, ClientGuardedRpcTag>>(
+  tag: TTag,
+  input: EnvironmentRpcInput<TTag>,
+) => requestGuarded(tag, input);
+
+export const runStream = <
+  TTag extends Exclude<EnvironmentStreamCommandRpcTag, ClientGuardedRpcTag>,
+>(
+  tag: TTag,
+  input: EnvironmentRpcInput<TTag>,
+) => runStreamGuarded(tag, input);

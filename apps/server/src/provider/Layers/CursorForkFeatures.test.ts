@@ -4,11 +4,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type * as Crypto from "effect/Crypto";
-import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 import { HostProcessPlatform } from "@d4research/shared/hostProcess";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import { cursorUsageResponseToLimits, readCursorUsageLimits } from "./cursorUsageLimits.ts";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import { cursorUsageResponseToLimits, readCursorUsageLimits } from "../cursorUsageLimits.ts";
 import {
   discoverCursorSkills,
   hasCursorSkillMention,

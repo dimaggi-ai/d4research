@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { buildRemoteNodeEnvScript } from "@d4research/ssh/tunnel";
 import { satisfiesSemverRange } from "@d4research/shared/semver";
@@ -254,7 +254,7 @@ const runWslShell = (
         { concurrency: "unbounded" },
       );
       return {
-        exitCode: exitCode as unknown as number,
+        exitCode: exitCode as number,
         stdout: decodeUtf8(concatChunks(stdoutBytes)),
         stderr: decodeUtf8(concatChunks(stderrBytes)),
         transportFailure: null,
@@ -997,7 +997,7 @@ export const probeWslDistros: Effect.Effect<
     const handle = yield* spawner.spawn(command);
     const stdoutBytes = yield* Stream.runCollect(handle.stdout);
     const exitCode = yield* handle.exitCode;
-    if ((exitCode as unknown as number) !== 0) {
+    if ((exitCode as number) !== 0) {
       return yield* new DesktopWslDistroListError({
         reason: `wsl.exe --list --verbose exited with code ${String(exitCode)}`,
       });
@@ -1065,7 +1065,7 @@ const windowsToWslPathImpl = (
       const handle = yield* spawner.spawn(command);
       const stdoutBytes = yield* Stream.runCollect(handle.stdout);
       const exitCode = yield* handle.exitCode;
-      if ((exitCode as unknown as number) !== 0) return Option.none<string>();
+      if ((exitCode as number) !== 0) return Option.none<string>();
       const converted = decodeUtf8(concatChunks(stdoutBytes)).trim();
       return converted.length > 0 ? Option.some(converted) : Option.none<string>();
     }),
@@ -1102,7 +1102,7 @@ const getDistroIpImpl = (
       const handle = yield* spawner.spawn(command);
       const stdoutBytes = yield* Stream.runCollect(handle.stdout);
       const exitCode = yield* handle.exitCode;
-      if ((exitCode as unknown as number) !== 0) return Option.none<string>();
+      if ((exitCode as number) !== 0) return Option.none<string>();
       const raw = decodeUtf8(concatChunks(stdoutBytes)).trim();
       const candidate = raw.split(/\s+/).find((part) => IPV4_PATTERN.test(part));
       return candidate ? Option.some(candidate) : Option.none<string>();
@@ -1141,7 +1141,7 @@ const getUserHomeImpl = (
       const handle = yield* spawner.spawn(command);
       const stdoutBytes = yield* Stream.runCollect(handle.stdout);
       const exitCode = yield* handle.exitCode;
-      if ((exitCode as unknown as number) !== 0) return Option.none<string>();
+      if ((exitCode as number) !== 0) return Option.none<string>();
       const home = decodeUtf8(concatChunks(stdoutBytes)).trim();
       return home.startsWith("/") ? Option.some(home) : Option.none<string>();
     }),
@@ -1187,9 +1187,8 @@ export interface DesktopWslEnvironmentTestStub {
 }
 
 export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
-  const probeDistros = stub.distroListError
-    ? Effect.fail(stub.distroListError)
-    : Effect.succeed(stub.distros ?? []);
+  const probeDistros: Effect.Effect<readonly WslDistro[], DesktopWslDistroListError> =
+    stub.distroListError ? Effect.fail(stub.distroListError) : Effect.succeed(stub.distros ?? []);
   return Layer.succeed(
     DesktopWslEnvironment,
     DesktopWslEnvironment.of({

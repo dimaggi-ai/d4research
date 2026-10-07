@@ -1,4 +1,5 @@
-// @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off preferSchemaOverJson:off - verifies generated remote scripts using real shell and Node processes.
+// @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
+// @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - verifies generated remote scripts using real shell and Node processes.
 import * as Effect from "effect/Effect";
 import { HostProcessPlatform } from "@d4research/shared/hostProcess";
 import { describe, expect, it } from "@effect/vitest";

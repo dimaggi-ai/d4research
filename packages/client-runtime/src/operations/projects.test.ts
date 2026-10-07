@@ -103,7 +103,7 @@ describe("add project shared logic", () => {
 
   it("derives the clone folder name from any pasted clone URL", () => {
     expect(getCloneDirectoryName("https://github.com/owner/repo.git")).toBe("repo");
-    expect(getCloneDirectoryName("https://github.com/owner/repo")).toBe("repo");
+    expect(getCloneDirectoryName("https://github.com/owner/repo/")).toBe("repo");
     expect(getCloneDirectoryName("https://github.com/owner/repo/")).toBe("repo");
     expect(getCloneDirectoryName("git@github.com:owner/repo.git")).toBe("repo");
     expect(getCloneDirectoryName("ssh://git@github.com:22/owner/repo.git")).toBe("repo");

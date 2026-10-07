@@ -28,7 +28,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -50,7 +50,7 @@ import {
 import { mspNotificationToRuntimeEvents } from "../msp/museRuntimeEvents.ts";
 import { patchBodyToUnifiedDiff } from "../msp/musePatchDiff.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import type { EventNdjsonLogger } from "../EventNdjsonLogger.ts";
 
 const PROVIDER = ProviderDriverKind.make("muse");
 const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));

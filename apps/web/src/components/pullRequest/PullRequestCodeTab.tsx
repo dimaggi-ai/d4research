@@ -254,7 +254,9 @@ function PullRequestCodeTab({
     readonly slices: ReadonlyArray<DiffSlice>;
   }>({ key: "", cursor: null, slices: NO_SLICES });
   const parseCache = useRef(new Map<string, RenderablePatch>());
-  const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup> | null>(null);
+  const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup, undefined> | null>(
+    null,
+  );
 
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
@@ -409,7 +411,7 @@ function PullRequestCodeTab({
     [parsedSlices],
   );
   const filePaths = useMemo(() => files.map((file) => resolveFileDiffPath(file)), [files]);
-  // Offered under a commit scope as well as from the whole change, because reading a change one
+  // Offered under a commit scope as from the whole change, because reading a change one
   // commit at a time is what the scope is for. The tick is kept against the change request rather
   // than the scope it was made in, so clearing a file here clears it everywhere.
   const viewedFilesStore = detail.capabilities.viewedFiles;

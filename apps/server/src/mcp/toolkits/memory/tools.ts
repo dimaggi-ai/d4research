@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
-import { HttpClient } from "effect/unstable/http";
+import { Tool, Toolkit } from "effect/ai";
+import { HttpClient } from "effect/http";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Path from "effect/Path";

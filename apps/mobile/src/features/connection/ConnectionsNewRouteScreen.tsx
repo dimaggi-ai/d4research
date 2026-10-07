@@ -6,8 +6,9 @@ import {
   useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useState } from "react";
+import type { EnvironmentId } from "@d4research/contracts";
+import { AsyncResult } from "effect/reactivity";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -21,6 +22,10 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
+  readonly pairingUrl?: string;
+  readonly autoConnect?: string;
+  /** Adds a route to this saved machine instead of a new environment. */
+  readonly routeFor?: EnvironmentId;
 };
 
 export function ConnectionsNewRouteScreen({
@@ -138,7 +143,7 @@ export function ConnectionsNewRouteScreen({
       setIsSubmitting(true);
       onChangeConnectionPairingUrl(pairingUrl);
       try {
-        const result = await onConnectPress(pairingUrl);
+        const result = await onConnectPress(pairingUrl, params.routeFor);
         if (AsyncResult.isSuccess(result)) {
           if (navigation.canGoBack()) {
             navigation.goBack();
@@ -150,7 +155,7 @@ export function ConnectionsNewRouteScreen({
         setIsSubmitting(false);
       }
     },
-    [navigation, onChangeConnectionPairingUrl, onConnectPress],
+    [navigation, onChangeConnectionPairingUrl, onConnectPress, params.routeFor],
   );
 
   const handleSubmit = useCallback(async () => {

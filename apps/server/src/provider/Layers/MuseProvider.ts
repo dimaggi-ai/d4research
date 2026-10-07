@@ -9,8 +9,8 @@ import {
 import { createModelCapabilities } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import { DateTime, Effect, FileSystem, Option, Result } from "effect";
-import { HttpClient } from "effect/unstable/http";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { HttpClient } from "effect/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import {
   buildServerProvider,
   isCommandMissingCause,

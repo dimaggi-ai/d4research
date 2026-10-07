@@ -18,7 +18,7 @@ import {
 } from "@d4research/contracts";
 import { DateTime, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
 import { InlineDelegationRunner } from "../mcp/toolkits/research/inlineDelegation.ts";
-import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import {

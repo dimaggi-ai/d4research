@@ -28,8 +28,9 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
+import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
@@ -198,15 +199,11 @@ const ManifestCacheFile = Schema.Struct({
   manifest: ModelManifestSchema,
 });
 const decodeManifestCache = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(
-    ManifestCacheFile as unknown as Schema.Codec<typeof ManifestCacheFile.Type>,
-  ),
+  Schema.fromJsonString(ManifestCacheFile as Schema.Codec<typeof ManifestCacheFile.Type>),
 );
 /** Exported for tests that seed the disk cache. */
 export const encodeManifestCache = Schema.encodeEffect(
-  Schema.fromJsonString(
-    ManifestCacheFile as unknown as Schema.Codec<typeof ManifestCacheFile.Type>,
-  ),
+  Schema.fromJsonString(ManifestCacheFile as Schema.Codec<typeof ManifestCacheFile.Type>),
 );
 
 /** True when the manifest classifies `slug` as legacy for `driverKind`. */
@@ -411,7 +408,9 @@ export const make = Effect.gen(function* () {
     manifest = fetched;
     fetchedAtMs = now;
     yield* encodeManifestCache({ fetchedAtMs: now, manifest: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(cachePath, serialized)),
+      Effect.flatMap((contents) => writeFileStringAtomically({ filePath: cachePath, contents })),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
       Effect.ignoreCause,
     );
     return manifest;

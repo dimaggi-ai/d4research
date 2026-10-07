@@ -1,7 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { chooseLoadBalancedEnvironment } from "@d4research/client-runtime/load-balancing";
 import type { EnvironmentId } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useCallback, useContext, useMemo } from "react";
 
 import { serverEnvironment } from "../state/server";

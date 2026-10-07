@@ -3,12 +3,12 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
-import { ObservabilityLive } from "./Observability.ts";
+import { ObservabilityLive } from "../Observability.ts";
 
 it.effect("keeps diagnostics local even with legacy external exporter settings", () =>
   Effect.gen(function* () {

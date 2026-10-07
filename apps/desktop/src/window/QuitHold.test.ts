@@ -179,7 +179,7 @@ describe("makeQuitShortcutHandler", () => {
     await harness.send(makeInput({ type: "keyUp", key: "Meta", meta: false }));
     harness.preventDefault.mockClear();
     // Repeats without the modifier prove Q is still down, so they hold the
-    // quit back for as long as they keep arriving.
+    // quit back for as they keep arriving.
     await harness.holdFor(QUIT_HOLD_RELEASE_GRACE_MS * 2, { meta: false });
     expect(harness.preventDefault).toHaveBeenCalled();
     expect(harness.quit).not.toHaveBeenCalled();

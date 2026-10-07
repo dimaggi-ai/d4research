@@ -1,3 +1,4 @@
+import { EnvironmentId } from "@d4research/contracts";
 import type { ProjectScript, ResolvedKeybindingsConfig } from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
@@ -16,8 +17,8 @@ const PRIMARY_SCRIPT: ProjectScript = {
 function renderControl(scripts: ReadonlyArray<ProjectScript>) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
+      environmentId={EnvironmentId.make("test-env")}
       scripts={scripts}
-      keybindings={EMPTY_KEYBINDINGS}
       onRunScript={() => {}}
       onAddScript={async () => undefined as never}
       onUpdateScript={async () => undefined as never}

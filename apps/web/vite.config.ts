@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off - Vite build hooks run outside the Effect server runtime.
-import { DEV_PROXIED_PATH_PREFIXES } from "@d4research/shared/devProxy";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -10,6 +9,12 @@ import * as NodeZlib from "node:zlib";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
 import "vite-plus/test/config";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
+
+import {
+  DEV_PROXIED_ORIGIN_PRESERVING_PREFIXES,
+  DEV_PROXIED_PATH_PREFIXES,
+} from "@d4research/shared/devProxy";
+
 import { loadRepoEnv } from "../../scripts/lib/repo-env";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import pkg from "./package.json";
@@ -202,7 +207,7 @@ export default defineConfig(() => {
     optimizeDeps: {
       include: [
         "@pierre/diffs",
-        "@pierre/diffs/editor",
+        "@pierre/diffs/edit",
         "@pierre/diffs/react",
         "@pierre/diffs/worker/worker.js",
         "effect/Array",
@@ -253,7 +258,7 @@ export default defineConfig(() => {
                 prefix,
                 {
                   target: devProxyTarget,
-                  changeOrigin: true,
+                  changeOrigin: !DEV_PROXIED_ORIGIN_PRESERVING_PREFIXES.has(prefix),
                   ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
                 },
               ]),

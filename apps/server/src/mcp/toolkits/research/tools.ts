@@ -2,8 +2,8 @@ import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
-import { HttpClient } from "effect/unstable/http";
+import { Tool, Toolkit } from "effect/ai";
+import { HttpClient } from "effect/http";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
@@ -11,7 +11,7 @@ import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts";
 import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
 import { ProviderAdapterRegistryV2 } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
-import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "../../../provider/ProviderRegistry.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 
 /**

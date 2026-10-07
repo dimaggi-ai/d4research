@@ -1,4 +1,8 @@
-import type { MessageId, OrchestrationV2ThreadProjection } from "@d4research/contracts";
+import {
+  latestProviderTurnForAttempt,
+  type MessageId,
+  type OrchestrationV2ThreadProjection,
+} from "@d4research/contracts";
 
 /**
  * A persisted steer without an acceptance receipt can be retried as a continuation.
@@ -16,8 +20,7 @@ export function isUndeliveredMailboxSteer(
     run !== undefined &&
     run.userMessageId !== message.id &&
     (["completed", "failed", "interrupted", "cancelled", "rolled_back"].includes(run.status) ||
-      projection.providerTurns.some(
-        (turn) => turn.runAttemptId === run.activeAttemptId && turn.status === "completed",
-      ))
+      latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.status ===
+        "completed")
   );
 }

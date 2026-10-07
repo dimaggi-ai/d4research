@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, assert } from "@effect/vitest";
 import { Effect } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { makeMuseMspRuntime } from "./MspSessionRuntime.ts";
 import { makeMockMuse } from "./mspTestUtils.ts";
 

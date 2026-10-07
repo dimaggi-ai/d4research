@@ -6,7 +6,7 @@ import type { EnvironmentCatalogState } from "@d4research/client-runtime/state/c
 import type { EnvironmentShellState } from "@d4research/client-runtime/state/shell";
 import { EnvironmentId } from "@d4research/contracts";
 import * as Option from "effect/Option";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createAllEnvironmentProjectSnapshotsReadyAtom } from "./shell";

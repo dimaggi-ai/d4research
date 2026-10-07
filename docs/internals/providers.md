@@ -70,7 +70,7 @@ and removal must respect those leases instead of replacing executables under a r
 ## Setup must not happen as a health-check side effect
 
 Opening a provider session can start MCP servers, run hooks, or launch a login browser.
-[Grok probes](../../apps/server/src/provider/Layers/GrokProvider.ts) avoid authentication and
+[Grok probes](../../apps/server/src/provider/GrokProvider.ts) avoid authentication and
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
@@ -98,8 +98,8 @@ See [helper constraints](../../apps/server/src/textGeneration/AntigravityTextGen
 
 ## Provider updates run only through the owning installer
 
-A one-click update is offered only when the resolved executable's path proves which installer owns
-it. Homebrew and npm are proven by the real path (symlinks followed): a versioned keg or cask under
+A package manager runs only when the resolved executable's path proves it owns the install. Homebrew
+and npm are proven by the real path (symlinks followed): a versioned keg or cask under
 `brew --prefix`, or `<prefix>/lib/node_modules/<pkg>/` (Windows: the shim beside `node_modules`).
 Native installer layouts and the global bin directories of pnpm, Bun, and Vite+ may match on either
 the resolved path or its real target, since those installers place real files or their own symlinks
@@ -132,6 +132,14 @@ command returns its receipt without posting the answer twice. The normal message
 resumes a run, queues behind active work, or steers when the adapter supports it. Blocking questions
 retain the provider's live response path. Do not infer that a request has disappeared merely because
 it is outside the recent history window.
+
+Native `/goal` state belongs to the provider and is mirrored on the provider thread. Codex starts
+the next goal turn on its own milliseconds after the last one completes, so the
+[adapter](../../apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts) keeps the run open
+and adds that turn to it. One run can therefore own several native turns. `/goal` commands that
+start no Codex turn settle on a provider turn without a native ref, which native rollback must
+not count. Claude's SDK mode emits no goal events; its adapter reads goal state from the
+synthetic command output and Stop hook feedback in the transcript.
 
 Capabilities must describe what the provider can actually do. Antigravity can capture workspace
 checkpoints but cannot roll back its conversation. The [checkpoint boundary](./overview.md#turn-completion-and-checkpoints)

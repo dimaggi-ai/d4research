@@ -1,7 +1,8 @@
+// @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
@@ -228,7 +229,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         ...row,
         description: "x".repeat(10_000),
       }));
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const response = JSON.stringify(rows);
       expect(Buffer.byteLength(response)).toBeGreaterThan(1_000_000);
 
@@ -341,7 +341,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 { pullRequestId: "malformed" },
                 pullRequestRows(1, 1)[0],
@@ -434,7 +433,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
     Effect.gen(function* () {
       // `--query user` unwraps the object, so the wrapper has to put it back.
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ name: "bilal@acme.dev", type: "user" }))),
       );
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
@@ -636,7 +634,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 pullRequestId: 42,
                 title: "Add the page",
@@ -653,7 +650,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 value: [
                   {
@@ -674,7 +670,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 changeEntries: [
                   { changeType: "edit", item: { path: "/README.md", objectId: "8f80" } },
@@ -713,7 +708,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       // pull request read every time they checked whether a file had been pushed to.
       const pullRequest = Effect.succeed(
         output(
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           JSON.stringify({
             pullRequestId: 42,
             title: "Add the page",
@@ -959,7 +953,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       });
 
       // The pull request, its pushes, and five pages: the walk gives up on Azure's own offset
-      // rather than spending an `az` process a page for as long as Azure keeps paging.
+      // rather than spending an `az` process a page for as Azure keeps paging.
       assert.strictEqual(mockedExecute.mock.calls.length, 7);
       // And it read part of a change, so it says nothing about the file it never saw.
       assert.strictEqual(answer.revisions.size, 0);
@@ -1219,7 +1213,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               value: [
                 {
@@ -1374,7 +1367,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         Effect.succeed(
           output(
             // Well-formed, but with nothing to build a link from: not a decode failure.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               pullRequestId: 42,
               title: "Add the page",

@@ -142,7 +142,7 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
 
 /**
  * Any project checked out from the link's host. Thread links are host-level, so a pull request
- * from a repository nobody has checked out is still linkable as long as one project on that
+ * from a repository nobody has checked out is still linkable as one project on that
  * host can lend the server its credentials. The link's own project, when it exists, comes first.
  */
 export function findProjectOnChangeRequestHost(

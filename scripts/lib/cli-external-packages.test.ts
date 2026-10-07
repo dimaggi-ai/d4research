@@ -19,7 +19,7 @@ import {
 } from "./cli-external-packages.ts";
 
 // Only the field this test cares about; decoding ignores everything else.
-// optionalDependencies matter as much as dependencies here: every native family
+// optionalDependencies matter as dependencies here: every native family
 // in the list declares its actual platform bindings there (ffi-rs -> @yuuang/*,
 // fff-node -> @ff-labs/fff-bin-*), so reading only `dependencies` would check
 // nothing for exactly those packages.
@@ -84,7 +84,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
   it("selects every external root declared by the server", () => {
     assert.deepStrictEqual(
       Object.keys(selectCliRuntimeExternalDependencies(serverPackageJson.dependencies)).sort(),
-      ["@cursor/sdk", "@ff-labs/fff-node", "@napi-rs/keyring", "node-pty"],
+      ["@cursor/sdk", "@ff-labs/fff-node", "@napi-rs/keyring", "node-pty", "playwright-core"],
     );
   });
 });

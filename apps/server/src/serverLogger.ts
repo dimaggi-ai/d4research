@@ -5,15 +5,15 @@ import * as References from "effect/References";
 
 import * as ServerConfig from "./config.ts";
 
-export const ServerLoggerLive = Effect.gen(function* () {
+export const layer = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
-  const minimumLogLevelLayer = Layer.succeed(References.MinimumLogLevel, config.logLevel);
+  const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
-  // `Logger.layer` writes the whole logger set rather than adding to it, so
-  // every logger the server wants has to be named in this one call.
-  const loggerLayer = Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
+  // Historical exporter settings do not opt this local-first fork into network export.
+  // Logger.layer replaces the logger set, so name every local logger here.
+  const layerLogger = Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
     mergeWithExisting: false,
   });
 
-  return Layer.mergeAll(loggerLayer, minimumLogLevelLayer);
+  return Layer.mergeAll(layerLogger, layerMinimumLogLevel);
 }).pipe(Layer.unwrap);

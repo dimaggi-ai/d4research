@@ -1,4 +1,4 @@
-import { SymbolView } from "../components/AppSymbol";
+import { SymbolView } from "./AppSymbol";
 import { imageMimeType } from "@d4research/shared/image";
 import { videoMimeType } from "@d4research/shared/video";
 import { useEffect, useMemo, useState } from "react";
@@ -15,7 +15,7 @@ import {
 } from "../lib/composerImages";
 import { resolveOwnedComposerAttachmentFileUri } from "../lib/composerAttachmentFiles";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
-import { type MediaActionsSource } from "../lib/mediaActions";
+import { type MediaActionsSource } from "../lib/mediaActionsSource";
 import { PresentationSource } from "./NativePresentation";
 import { FilePreviewModal, type FilePreviewSource } from "./FilePreviewModal";
 import { VideoPreviewModal, type VideoPreviewSource } from "./VideoPreviewModal";

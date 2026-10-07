@@ -417,7 +417,7 @@ export function ThemeEditorPanel({
   // creating adds the new palette to that theme, and renaming an existing
   // theme onto it folds the edited palette in and retires the old entry —
   // light "My Theme" plus a dark "My Theme" become one theme with both modes.
-  // Labels are matched as well as derived ids: a rename keeps a theme's
+  // Labels are matched as derived ids: a rename keeps a theme's
   // original id, so its label is the only name a user can see and retype.
   const nameTargetId = themeIdFromName(name);
   const normalizedName = name.trim().toLowerCase();
@@ -558,7 +558,7 @@ export function ThemeEditorPanel({
     // A refresh snapshots computed styles for the whole tree twice, so it is
     // throttled rather than run per frame: a streaming reply or a virtualized
     // list mutates the DOM continuously and would otherwise stall the main
-    // thread for as long as the inspector is open.
+    // thread for as the inspector is open.
     const MIN_REFRESH_INTERVAL_MS = 500;
     let refreshFrame: number | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;

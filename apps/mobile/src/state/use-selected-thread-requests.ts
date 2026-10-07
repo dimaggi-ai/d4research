@@ -19,9 +19,10 @@ import {
   type PendingThreadRequests,
   type ThreadUserInputQuestion,
 } from "@d4research/client-runtime/state/thread-requests";
-import { Atom } from "effect/unstable/reactivity";
+import { AuthOrchestrationOperateScope } from "@d4research/contracts";
+import { Atom } from "effect/reactivity";
 
-import { threadEnvironment } from "../state/threads";
+import { threadEnvironment } from "./threads";
 import { scopedRequestKey } from "../lib/scopedEntities";
 import {
   buildPendingUserInputAnswers,
@@ -33,6 +34,7 @@ import { appAtomRegistry } from "./atom-registry";
 import { useSelectedThreadPendingRequests } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
 import { useAtomCommand } from "./use-atom-command";
+import { readEnvironmentScope } from "./session";
 
 const EMPTY_PENDING_REQUESTS: PendingThreadRequests = { approvals: [], userInputs: [] };
 
@@ -211,7 +213,10 @@ export function useSelectedThreadRequests() {
 
   const onRespondToApproval = useCallback(
     async (requestId: RuntimeRequestId, decision: ProviderApprovalDecision) => {
-      if (!selectedThreadShell) {
+      if (
+        !selectedThreadShell ||
+        !readEnvironmentScope(selectedThreadShell.environmentId, AuthOrchestrationOperateScope)
+      ) {
         return;
       }
       if (
@@ -241,7 +246,8 @@ export function useSelectedThreadRequests() {
       !selectedThreadShell ||
       !activePendingUserInput ||
       activePendingUserInput.responseCapability === "not_resumable" ||
-      !activePendingUserInputAnswers
+      !activePendingUserInputAnswers ||
+      !readEnvironmentScope(selectedThreadShell.environmentId, AuthOrchestrationOperateScope)
     ) {
       return;
     }
@@ -318,7 +324,11 @@ export function useSelectedThreadRequests() {
 
   // Closes an async question without messaging the agent.
   const onDismissUserInput = useCallback(async () => {
-    if (!selectedThreadShell || !activePendingUserInput) {
+    if (
+      !selectedThreadShell ||
+      !activePendingUserInput ||
+      !readEnvironmentScope(selectedThreadShell.environmentId, AuthOrchestrationOperateScope)
+    ) {
       return;
     }
 

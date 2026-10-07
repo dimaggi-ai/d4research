@@ -10,13 +10,17 @@ import { environmentThreadDetails } from "../../state/threads";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
-import { resolveHandoffEndpoints, type HandoffTimelineRun } from "@d4research/client-runtime/handoff";
+import {
+  resolveHandoffEndpoints,
+  type HandoffTimelineRun,
+} from "@d4research/client-runtime/handoff";
 import { Fragment } from "react";
 import { formatSubagentDisplayTitle } from "@d4research/client-runtime/state/subagent-display";
 import {
   ProviderDriverKind,
   type OrchestrationV2Notification,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2Subagent,
   type ProviderInstanceId,
   type ServerProvider,
   type ThreadId,
@@ -212,11 +216,14 @@ export function V2LifecycleRow(props: {
       <SubagentTimelineLink
         parentRef={scopeThreadRef(props.environmentId, item.threadId)}
         subagentId={item.subagentId}
+        providerInstanceId={item.providerInstanceId}
+        origin={item.origin}
         status={item.status}
         driver={item.driver}
         provider={props.providerStatuses.find(
           (provider) => provider.instanceId === item.providerInstanceId,
         )}
+        providers={props.providerStatuses}
         title={formatSubagentDisplayTitle(item.title ?? "Subagent")}
         result={item.result}
         progress={item.progress}
@@ -369,11 +376,14 @@ export function SubagentNotificationLink(props: {
     <SubagentTimelineLink
       parentRef={props.parentRef}
       subagentId={agent.id}
+      providerInstanceId={agent.providerInstanceId}
+      origin={agent.origin}
       status={agent.status}
       driver={agent.driver}
       provider={props.providerStatuses.find(
         (provider) => provider.instanceId === agent.providerInstanceId,
       )}
+      providers={props.providerStatuses}
       title={formatSubagentDisplayTitle(agent.title ?? "Subagent")}
       result={agent.result}
       progress={agent.progress}
@@ -393,8 +403,11 @@ export function SubagentNotificationLink(props: {
 function SubagentTimelineLink(props: {
   readonly parentRef: ScopedThreadRef;
   readonly subagentId: NodeId;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly origin: OrchestrationV2Subagent["origin"];
   readonly driver: ProviderDriverKind;
   readonly provider: ServerProvider | undefined;
+  readonly providers: ReadonlyArray<ServerProvider>;
   readonly title: string;
   readonly result: string | null;
   readonly progress: string | undefined;
@@ -468,7 +481,7 @@ function SubagentTimelineLink(props: {
           )}
         </span>
       </span>
-      <span className="shrink-0 font-mono text-3xs text-muted-foreground/80">
+      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
         {props.event ? props.event.timestamp : <SubagentElapsed agent={timing} />}
       </span>
       {threadId !== null ? (
@@ -537,7 +550,10 @@ function SubagentTimelineTooltip(
     <SubagentTooltipContent
       title={formatSubagentDisplayTitle(child?.title ?? props.title)}
       model={props.model}
+      providerInstanceId={props.providerInstanceId}
+      origin={props.origin}
       provider={props.provider}
+      providers={props.providers}
       driver={props.driver}
       elapsed={props.elapsed}
       status={props.status}

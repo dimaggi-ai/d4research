@@ -31,7 +31,7 @@ import {
   type ConnectionTarget,
 } from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import * as RpcHttp from "../rpc/http.ts";
 import {
   GitHubRoutingPermissions,
   gitHubRoutingConnectionKey,
@@ -114,8 +114,8 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     disconnect: () => Effect.void,
   });
 
-  const dependencies = Layer.mergeAll(
-    remoteHttpClientLayer((() =>
+  const layerDependencies = Layer.mergeAll(
+    RpcHttp.layerRemoteHttpClient((() =>
       Promise.resolve(
         Response.json({
           environmentId: ENVIRONMENT_ID,
@@ -145,21 +145,20 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
       ClientCapabilities.ClientPresentation,
       ClientCapabilities.ClientPresentation.of({
         metadata: { label: "Test Client", deviceType: "desktop", surface: "web" },
-        scopes: [],
       }),
     ),
     Layer.succeed(RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization, remote),
     Layer.succeed(ClientCapabilities.SshEnvironmentGateway, ssh),
   );
 
-  return Effect.succeed(ConnectionResolver.layer.pipe(Layer.provide(dependencies)));
+  return Effect.succeed(ConnectionResolver.layer.pipe(Layer.provide(layerDependencies)));
 });
 
 describe("ConnectionResolver", () => {
   it.effect("blocks an old host during discovery before opening orchestration RPC", () =>
     Effect.gen(function* () {
-      const brokerLayer = yield* makeDependencies({ descriptorProtocolVersion: null });
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const layerBroker = yield* makeDependencies({ descriptorProtocolVersion: null });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
       const target = new PrimaryConnectionTarget({
         environmentId: ENVIRONMENT_ID,
         label: "Primary",
@@ -176,10 +175,10 @@ describe("ConnectionResolver", () => {
 
   it.effect("blocks an incompatible host during discovery before opening orchestration RPC", () =>
     Effect.gen(function* () {
-      const brokerLayer = yield* makeDependencies({
+      const layerBroker = yield* makeDependencies({
         descriptorProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION + 1,
       });
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
       const target = new PrimaryConnectionTarget({
         environmentId: ENVIRONMENT_ID,
         label: "Primary",
@@ -196,8 +195,8 @@ describe("ConnectionResolver", () => {
 
   it.effect("prepares a primary environment without remote capabilities", () =>
     Effect.gen(function* () {
-      const brokerLayer = yield* makeDependencies();
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const layerBroker = yield* makeDependencies();
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
       const target = new PrimaryConnectionTarget({
         environmentId: ENVIRONMENT_ID,
         label: "Primary",
@@ -268,7 +267,7 @@ describe("ConnectionResolver", () => {
         httpBaseUrl: ENDPOINT.httpBaseUrl,
         wsBaseUrl: ENDPOINT.wsBaseUrl,
       });
-      const brokerLayer = yield* makeDependencies({
+      const layerBroker = yield* makeDependencies({
         credentials: [["saved-1", new BearerConnectionCredential({ token: "secret-bearer" })]],
         authorizeBearer: (input) =>
           Ref.update(bearerInputs, (values) => [...values, input.bearerToken]).pipe(
@@ -284,7 +283,7 @@ describe("ConnectionResolver", () => {
             }),
           ),
       });
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
 
       expect(
         (yield* broker.prepare(catalogEntry(target, Option.some(profile)))).socketUrl,
@@ -325,7 +324,7 @@ describe("ConnectionResolver", () => {
         label: "SSH",
         target: SSH_TARGET,
       });
-      const brokerLayer = yield* makeDependencies({
+      const layerBroker = yield* makeDependencies({
         prepareSsh: (input) =>
           Ref.update(preparedTargets, (values) => [...values, input.target]).pipe(
             Effect.as({
@@ -339,7 +338,7 @@ describe("ConnectionResolver", () => {
             }),
           ),
       });
-      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
 
       expect(
         (yield* broker.prepare(catalogEntry(target, Option.some(profile)))).socketUrl,
@@ -389,7 +388,7 @@ describe("ConnectionResolver", () => {
             ),
         });
         let savedProfile: ConnectionProfile = profile;
-        const brokerLayer = yield* makeDependencies({
+        const layerBroker = yield* makeDependencies({
           profileStore: {
             get: () => Effect.sync(() => Option.some(savedProfile)),
             put: (value) =>
@@ -422,7 +421,7 @@ describe("ConnectionResolver", () => {
             }),
         });
         const broker = yield* ConnectionResolver.ConnectionResolver.pipe(
-          Effect.provide(brokerLayer),
+          Effect.provide(layerBroker),
         );
         const prepare = broker
           .prepare(entry)

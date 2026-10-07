@@ -33,7 +33,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as ServerConfig from "../config.ts";
@@ -372,7 +372,7 @@ const publishThemeFile = Effect.fn(function* (input: {
       try {
         NodeFS.writeFileSync(fd, raw);
         // Rename preserves the inode, so this identifies our published file
-        // at the destination for as long as it is actually ours.
+        // at the destination for as it is actually ours.
         return NodeFS.fstatSync(fd).ino;
       } finally {
         NodeFS.closeSync(fd);

@@ -12,13 +12,14 @@ import { codexCallbackUrl } from "@d4research/shared/codexAuthHandoff";
 import * as Clock from "effect/Clock";
 import * as Exit from "effect/Exit";
 import { codexAuthCallbackPage, codexAuthReturnUrl } from "./CodexAuthCallbackPage.ts";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ProviderAuthFlow from "./ProviderAuthFlow.ts";
 import type { ProviderAuthFlowContext } from "./ProviderAuthFlow.ts";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 import { withChatGptSessionLock } from "./CodexChatGptSessionLock.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -108,6 +109,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
     options.instanceId,
   );
   const secrets = yield* ServerSecretStore.ServerSecretStore;
+  const crypto = yield* Crypto.Crypto;
   const environmentLocks = sessionLocks.get(secrets) ?? new Map<string, Semaphore.Semaphore>();
   sessionLocks.set(secrets, environmentLocks);
   const lock = environmentLocks.get(store.binding.key) ?? (yield* Semaphore.make(1));

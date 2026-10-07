@@ -286,7 +286,7 @@ describe("thread notifications", () => {
     expect(state.add).not.toHaveBeenCalled();
   });
 
-  it("compares the environment as well as the thread", async () => {
+  it("compares the environment as the thread", async () => {
     state.active = { environmentId: "env-2", threadId: "thread-1" };
     await render();
     await complete();

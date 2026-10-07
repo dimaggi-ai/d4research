@@ -20,7 +20,7 @@ class ObserverStub {
   report(target: ElementStub, isIntersecting: boolean) {
     this.callback(
       [{ target, isIntersecting } as unknown as IntersectionObserverEntry],
-      this as unknown as IntersectionObserver,
+      this as IntersectionObserver,
     );
   }
 }

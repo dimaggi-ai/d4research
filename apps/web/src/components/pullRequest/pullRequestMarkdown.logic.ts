@@ -85,7 +85,7 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
     const fenceMatch = FENCE_PATTERN.exec(line);
     if (fenceMatch !== null) {
       const fence = fenceMatch[1]!;
-      // A fence closes only on the same marker, at least as long as the one that opened it,
+      // A fence closes only on the same marker, at least as the one that opened it,
       // and with nothing after it: `~~~` cannot end a ``` block, and ```` ```ts ```` is an
       // info string opening a nested fence, not a close.
       const closes =

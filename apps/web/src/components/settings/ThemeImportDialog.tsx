@@ -27,7 +27,7 @@ import { ThemeSearchSection } from "./ThemeSearchSection";
  * A full theme export is a few KB, so anything past this is not a theme file.
  * The guard runs on the size before the bytes are ever read: a large file
  * would otherwise be pulled into memory, highlighted, and rendered, which
- * locks the UI for as long as that takes.
+ * locks the UI for as that takes.
  */
 export const MAX_THEME_FILE_BYTES = 256 * 1024;
 

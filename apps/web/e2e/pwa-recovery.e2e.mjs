@@ -4,14 +4,25 @@ import { createPairingUrl } from "./harness.mjs";
 import { runProductionBrowserSuite } from "./production-browser-harness.mjs";
 
 async function bootFailure({ page, app }, persistent) {
+  // Pairing deliberately reloads after issuing its cookie. Complete that flow
+  // before injecting a startup failure so only recovery navigations are counted.
+  await page.goto(createPairingUrl(app, persistent ? "persistent" : "transient"), {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("button", { name: "Toggle main sidebar", exact: true }).waitFor();
+
   let requests = 0;
+  let navigations = 0;
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations++;
+  });
   const retried = Promise.withResolvers();
   await page.route("**/assets/main-*.js", (route) => {
     requests++;
     if (requests === 2) retried.resolve();
     return persistent || requests === 1 ? route.abort("failed") : route.continue();
   });
-  await page.goto(createPairingUrl(app, persistent ? "persistent" : "transient"), {
+  await page.goto(app.webUrl, {
     waitUntil: "domcontentloaded",
   });
   if (persistent) {
@@ -39,6 +50,7 @@ async function bootFailure({ page, app }, persistent) {
     NodeAssert.equal(await page.locator("#boot-error").count(), 0);
   }
   NodeAssert.equal(requests, 2, "Failed imports must retry exactly once");
+  NodeAssert.equal(navigations, 2, "Startup recovery must reload the document exactly once");
 }
 
 async function retireWorker({ page, context, app }) {

@@ -40,14 +40,15 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
-import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
+import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMock.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
@@ -58,10 +59,10 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "./testkit/ProviderReplayHarness.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
-const projectId = ProjectId.make("project:launch-test");
-const otherProjectId = ProjectId.make("project:launch-other");
+const projectId = ProjectId.make("project:layerLaunch-test");
+const otherProjectId = ProjectId.make("project:layerLaunch-other");
 const encodeThreadProjection = Schema.encodeEffect(OrchestrationV2ThreadProjectionJson);
 const modelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -92,13 +93,14 @@ const adapter = {
   driver: ProviderDriverKind.make("codex"),
   getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
   planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" as const }),
-  openSession: () => Effect.die("provider execution is disabled in launch tests"),
+  openSession: () => Effect.die("provider execution is disabled in layerLaunch tests"),
 } as ProviderAdapterV2Shape;
 
 interface HarnessOptions {
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
   readonly createWorktree?: GitWorkflow.GitWorkflowService["Service"]["createWorktree"];
   readonly fetchRemote?: GitWorkflow.GitWorkflowService["Service"]["fetchRemote"];
+  readonly hasCommit?: GitWorkflow.GitWorkflowService["Service"]["hasCommit"];
   readonly renameBranch?: GitWorkflow.GitWorkflowService["Service"]["renameBranch"];
   readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   readonly generateTitle?: TextGeneration.TextGeneration["Service"]["generateThreadTitle"];
@@ -108,16 +110,16 @@ interface HarnessOptions {
 }
 
 function makeHarness(options: HarnessOptions = {}) {
-  const database = SqlitePersistenceMemory;
-  const registry = ProviderAdapterRegistry.makeLayer([adapter]);
-  const orchestrator = makeOrchestratorV2ReplayLayerWithRegistry(
-    { name: "thread-launch" },
-    registry,
-    { databaseLayer: database, runEffectWorker: false },
+  const layerDatabase = SqlitePersistence.layerMemory;
+  const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([adapter]);
+  const layerOrchestrator = ProviderReplayHarness.layerWithRegistry(
+    { name: "thread-layerLaunch" },
+    layerRegistry,
+    { layerDatabase: layerDatabase, runEffectWorker: false },
   );
-  const threadManagement = ThreadManagement.layer.pipe(Layer.provide(orchestrator));
-  const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
-  const outbox = EffectOutbox.layer.pipe(Layer.provide(database));
+  const layerThreadManagement = ThreadManagement.layer.pipe(Layer.provide(layerOrchestrator));
+  const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
+  const layerOutbox = EffectOutbox.layer.pipe(Layer.provide(layerDatabase));
   const createWorktree = vi.fn(
     options.createWorktree ??
       ((input) =>
@@ -141,7 +143,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const generateThreadTitle = vi.fn(
     options.generateTitle ?? (() => Effect.succeed({ title: "Generated title" })),
   );
-  const externalServices = Layer.mergeAll(
+  const layerExternalServices = Layer.mergeAll(
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
     Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
@@ -167,6 +169,7 @@ function makeHarness(options: HarnessOptions = {}) {
       createWorktree,
       renameBranch,
       fetchRemote: options.fetchRemote ?? (() => Effect.void),
+      hasCommit: options.hasCommit ?? (() => Effect.succeed(false)),
       remoteExists: () => Effect.succeed(true),
       remoteBranchExists: () => Effect.succeed(true),
       removeWorktree,
@@ -181,17 +184,24 @@ function makeHarness(options: HarnessOptions = {}) {
       generateBranchName,
     }),
     ServerSettings.layerTest(options.serverSettings),
-    makeProviderRegistryLayer(options.providers),
+    ProviderRegistryMock.layer(options.providers),
     options.managedFolders ??
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         folderForThread: () => Effect.succeed(Option.none()),
       }),
   );
-  const launch = ThreadLaunch.layer.pipe(
-    Layer.provide(Layer.mergeAll(externalServices, threadManagement, receipts, IdAllocator.layer)),
+  const layerLaunch = ThreadLaunch.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerExternalServices,
+        layerThreadManagement,
+        layerReceipts,
+        IdAllocator.layer,
+      ),
+    ),
   );
-  const projectedProjects = Layer.mock(ProjectStore.ProjectStoreV2)({
+  const layerProjectedProjects = Layer.mock(ProjectStore.ProjectStoreV2)({
     get: (requestedProjectId) =>
       Effect.succeed(
         requestedProjectId === projectId
@@ -212,17 +222,19 @@ function makeHarness(options: HarnessOptions = {}) {
           : Option.none(),
       ),
   });
-  const titleRegeneration = ThreadTitleRegeneration.layer.pipe(
-    Layer.provide(Layer.mergeAll(threadManagement, projectedProjects, externalServices)),
+  const layerTitleRegeneration = ThreadTitleRegeneration.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(layerThreadManagement, layerProjectedProjects, layerExternalServices),
+    ),
   );
   return {
     layer: Layer.mergeAll(
-      launch,
-      threadManagement,
-      titleRegeneration,
-      outbox,
-      database,
-      externalServices,
+      layerLaunch,
+      layerThreadManagement,
+      layerTitleRegeneration,
+      layerOutbox,
+      layerDatabase,
+      layerExternalServices,
     ),
     createWorktree,
     removeWorktree,
@@ -285,8 +297,15 @@ it.effect.each(
   "attributes $createdBy-configured automations in $target threads without changing their prompt",
   ({ target, createdBy }) => {
     const harness = makeHarness();
-    const scheduledTasks = ScheduledTasks.layer.pipe(
-      Layer.provide(Layer.mergeAll(harness.layer, NodeCrypto.layer, Scheduler.layer)),
+    const layerScheduledTasks = ScheduledTasks.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          harness.layer,
+          NodeCrypto.layer,
+          Scheduler.layer,
+          Layer.mock(SecretRequests.SecretRequests)({}),
+        ),
+      ),
     );
     return Effect.gen(function* () {
       const tasks = yield* ScheduledTasks.ScheduledTaskService;
@@ -329,10 +348,13 @@ it.effect.each(
       assert.equal(wire.messages[0]?.text, task.prompt);
       assert.equal(wire.messages[0]?.scheduledTaskId, task.id);
       assert.equal(wire.messages[0]?.createdBy, createdBy);
-      const turnItem = wire.turnItems.find((item) => item.type === "user_message");
+      const turnItem = wire.turnItems.find(
+        (item): item is Extract<typeof item, { type: "user_message" }> =>
+          item.type === "user_message",
+      );
       assert.equal(turnItem?.text, task.prompt);
       assert.equal(turnItem?.scheduledTaskId, task.id);
-    }).pipe(Effect.provide(Layer.mergeAll(harness.layer, scheduledTasks)));
+    }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerScheduledTasks)));
   },
 );
 
@@ -397,8 +419,8 @@ it.effect("returns a visible preparing message while provisioning is still block
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const input = launchInput({
-        command: "command:launch:blocked",
-        thread: "thread:launch:blocked",
+        command: "command:layerLaunch:blocked",
+        thread: "thread:layerLaunch:blocked",
         message: "Build the feature",
         workspace: { type: "worktree", baseRef: "main" },
       });
@@ -431,7 +453,7 @@ it.effect("returns a visible preparing message while provisioning is still block
         "Starting setup script",
       );
       const prematureEffects = yield* outbox.listByCommandId(
-        CommandId.make("command:launch:blocked:initial-message"),
+        CommandId.make("command:layerLaunch:blocked:initial-message"),
       );
       assert.isEmpty(prematureEffects);
       yield* Deferred.succeed(allowSetup, undefined);
@@ -460,15 +482,15 @@ it.effect("provisions independent launches concurrently instead of behind a glob
         [
           launches.launch(
             launchInput({
-              command: "command:launch:concurrent-a",
-              thread: "thread:launch:concurrent-a",
+              command: "command:layerLaunch:concurrent-a",
+              thread: "thread:layerLaunch:concurrent-a",
               message: "First",
             }),
           ),
           launches.launch(
             launchInput({
-              command: "command:launch:concurrent-b",
-              thread: "thread:launch:concurrent-b",
+              command: "command:layerLaunch:concurrent-b",
+              thread: "thread:layerLaunch:concurrent-b",
               message: "Second",
             }),
           ),
@@ -510,20 +532,20 @@ it.effect("enqueues provider work only after setup has been initiated", () =>
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const input = launchInput({
-        command: "command:launch:release",
-        thread: "thread:launch:release",
+        command: "command:layerLaunch:release",
+        thread: "thread:layerLaunch:release",
         message: "Start after setup",
         workspace: { type: "worktree", baseRef: "main" },
       });
       const launched = yield* launches.launch(input);
       yield* Deferred.await(setupEntered);
       assert.isEmpty(
-        yield* outbox.listByCommandId(CommandId.make("command:launch:release:release")),
+        yield* outbox.listByCommandId(CommandId.make("command:layerLaunch:release:release")),
       );
       yield* Deferred.succeed(allowSetup, undefined);
       yield* waitUntil(() =>
         outbox
-          .listByCommandId(CommandId.make("command:launch:release:release"))
+          .listByCommandId(CommandId.make("command:layerLaunch:release:release"))
           .pipe(Effect.map((effects) => effects.length === 1)),
       );
       const projection = yield* threads.getThreadProjection(launched.threadId);
@@ -555,8 +577,8 @@ it.effect(
         const threads = yield* ThreadManagement.ThreadManagementService;
         const launched = yield* launches.launch(
           launchInput({
-            command: "command:launch:queued-during-preparation",
-            thread: "thread:launch:queued-during-preparation",
+            command: "command:layerLaunch:queued-during-preparation",
+            thread: "thread:layerLaunch:queued-during-preparation",
             message: "Prepare the workspace",
             workspace: { type: "worktree", baseRef: "main" },
           }),
@@ -565,9 +587,9 @@ it.effect(
 
         const followUp = yield* threads.sendToThread({
           projectId,
-          commandId: CommandId.make("command:launch:queued-follow-up"),
+          commandId: CommandId.make("command:layerLaunch:queued-follow-up"),
           threadId: launched.threadId,
-          messageId: MessageId.make("message:launch:queued-follow-up"),
+          messageId: MessageId.make("message:layerLaunch:queued-follow-up"),
           text: "Run after preparation",
           attachments: [],
           mode: "auto",
@@ -709,7 +731,7 @@ it.effect("keeps native maintenance commands out of steering and restart message
       ] as const) {
         const launched = yield* launches.launch(
           launchInput({
-            command: `${scenario.name}:launch`,
+            command: `${scenario.name}:layerLaunch`,
             thread: scenario.name,
             message: scenario.first,
           }),
@@ -759,15 +781,17 @@ it.effect("arms durable title generation after accepting the first message", () 
       const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
       const input = {
         ...launchInput({
-          command: "command:launch:title-generation",
-          thread: "thread:launch:title-generation",
+          command: "command:layerLaunch:title-generation",
+          thread: "thread:layerLaunch:title-generation",
           message: "Generate my title",
         }),
         title: "Generate my title",
         generateTitle: true,
       };
       const launched = yield* launches.launch(input);
-      const generationCommandId = CommandId.make("command:launch:title-generation:initial-message");
+      const generationCommandId = CommandId.make(
+        "command:layerLaunch:title-generation:initial-message",
+      );
 
       const projection = yield* threads.getThreadProjection(launched.threadId);
       assert.equal(projection.thread.title, "Generate my title");
@@ -848,10 +872,10 @@ it.effect("does not update a reused thread title when the initial message is rej
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const outbox = yield* EffectOutbox.EffectOutboxV2;
-      const threadId = ThreadId.make("thread:launch:reused-title-failure");
+      const threadId = ThreadId.make("thread:layerLaunch:reused-title-failure");
       yield* threads.dispatch({
         type: "thread.create",
-        commandId: CommandId.make("command:launch:reused-title-failure:create"),
+        commandId: CommandId.make("command:layerLaunch:reused-title-failure:create"),
         threadId,
         projectId,
         title: "Original title",
@@ -864,7 +888,7 @@ it.effect("does not update a reused thread title when the initial message is rej
         creationSource: "web",
       });
 
-      const commandId = CommandId.make("command:launch:reused-title-failure");
+      const commandId = CommandId.make("command:layerLaunch:reused-title-failure");
       const failed = yield* launches
         .launch({
           ...launchInput({
@@ -901,8 +925,8 @@ it.effect("generates an initial title for an attachment-only message", () =>
       const messageId = MessageId.make("message:image-only");
       const input = {
         ...launchInput({
-          command: "command:launch:image-only",
-          thread: "thread:launch:image-only",
+          command: "command:layerLaunch:image-only",
+          thread: "thread:layerLaunch:image-only",
         }),
         title: "Image: screenshot.png",
         generateTitle: true,
@@ -924,7 +948,7 @@ it.effect("generates an initial title for an attachment-only message", () =>
       const launched = yield* launches.launch(input);
       yield* titleRegeneration.execute({
         threadId: launched.threadId,
-        requestId: CommandId.make("command:launch:image-only:initial-message"),
+        requestId: CommandId.make("command:layerLaunch:image-only:initial-message"),
         kind: { type: "initial", messageId },
       });
 
@@ -976,8 +1000,8 @@ it.effect("uses the available source control writer for generated worktree branc
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       yield* launches.launch(
         launchInput({
-          command: "command:launch:source-control-writer",
-          thread: "thread:launch:source-control-writer",
+          command: "command:layerLaunch:source-control-writer",
+          thread: "thread:layerLaunch:source-control-writer",
           message: "Generate a branch with the configured writer",
           workspace: { type: "worktree", baseRef: "main" },
         }),
@@ -1014,8 +1038,8 @@ it.effect("falls back when the source control writer is unavailable", () =>
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       yield* launches.launch(
         launchInput({
-          command: "command:launch:source-control-writer-fallback",
-          thread: "thread:launch:source-control-writer-fallback",
+          command: "command:layerLaunch:source-control-writer-fallback",
+          thread: "thread:layerLaunch:source-control-writer-fallback",
           message: "Generate a branch with the available writer",
           workspace: { type: "worktree", baseRef: "main" },
         }),
@@ -1048,8 +1072,8 @@ it.effect("runs a Scratch thread launched at the root in its own folder", () =>
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const input = launchInput({
-        command: "command:launch:scratch",
-        thread: "thread:launch:scratch",
+        command: "command:layerLaunch:scratch",
+        thread: "thread:layerLaunch:scratch",
         message: "Convert these PNGs",
       });
       const launched = yield* launches.launch(input);
@@ -1070,8 +1094,8 @@ it.effect("runs a Scratch thread launched at the root in its own folder", () =>
 
       const other = yield* launches.launch({
         ...launchInput({
-          command: "command:launch:scratch-other",
-          thread: "thread:launch:scratch-other",
+          command: "command:layerLaunch:scratch-other",
+          thread: "thread:layerLaunch:scratch-other",
           message: "Elsewhere",
         }),
         projectId: otherProjectId,
@@ -1090,8 +1114,8 @@ it.effect("names the worktree itself when the client provides no branch", () =>
       const threads = yield* ThreadManagement.ThreadManagementService;
       const launched = yield* launches.launch(
         launchInput({
-          command: "command:launch:server-named-branch",
-          thread: "thread:launch:server-named-branch",
+          command: "command:layerLaunch:server-named-branch",
+          thread: "thread:layerLaunch:server-named-branch",
           message: "Build the feature",
           workspace: { type: "worktree", baseRef: "main" },
         }),
@@ -1099,7 +1123,7 @@ it.effect("names the worktree itself when the client provides no branch", () =>
       yield* waitUntil(() => Effect.sync(() => harness.createWorktree.mock.calls.length === 1));
       assert.match(
         harness.createWorktree.mock.calls[0]?.[0]?.newRefName ?? "",
-        /^t3code\/[0-9a-f]{8}$/u,
+        /^t3\/[0-9a-f]{8}$/u,
       );
       yield* waitUntil(() =>
         threads
@@ -1110,7 +1134,7 @@ it.effect("names the worktree itself when the client provides no branch", () =>
   }),
 );
 
-it.effect("renames a temporary t3code/<hash> branch off the provisioning critical path", () =>
+it.effect("renames a temporary t3/<hash> branch off the provisioning critical path", () =>
   Effect.gen(function* () {
     const branchNameStarted = yield* Deferred.make<void>();
     const allowBranchName = yield* Deferred.make<void>();
@@ -1130,14 +1154,14 @@ it.effect("renames a temporary t3code/<hash> branch off the provisioning critica
       const threads = yield* ThreadManagement.ThreadManagementService;
       const launched = yield* launches.launch(
         launchInput({
-          command: "command:launch:temp-branch",
-          thread: "thread:launch:temp-branch",
+          command: "command:layerLaunch:temp-branch",
+          thread: "thread:layerLaunch:temp-branch",
           message: "Build the feature",
-          workspace: { type: "worktree", baseRef: "main", branch: "t3code/abcd1234" },
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
       yield* Deferred.await(branchNameStarted);
-      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3code/abcd1234");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
       yield* waitUntil(() =>
         threads
           .getThreadProjection(launched.threadId)
@@ -1145,7 +1169,7 @@ it.effect("renames a temporary t3code/<hash> branch off the provisioning critica
       );
       assert.equal(
         (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
-        "t3code/abcd1234",
+        "t3/abcd1234",
       );
       yield* Deferred.succeed(allowBranchName, undefined);
       yield* waitUntil(() =>
@@ -1155,9 +1179,40 @@ it.effect("renames a temporary t3code/<hash> branch off the provisioning critica
       );
       assert.deepEqual(harness.renameBranch.mock.calls[0]?.[0], {
         cwd: "/repo-worktrees/temp",
-        oldBranch: "t3code/abcd1234",
+        oldBranch: "t3/abcd1234",
         newBranch: "generated-branch",
       });
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("provisions under t3-<hash> when a plain t3 branch blocks t3/*", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      hasCommit: (input) => Effect.succeed(input.refName === "refs/heads/t3"),
+      createWorktree: (input) =>
+        Effect.succeed({
+          worktree: { path: "/repo-worktrees/temp", refName: input.newRefName, headSha: "abc" },
+        } as never),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:layerLaunch:blocked-namespace",
+          thread: "thread:layerLaunch:blocked-namespace",
+          message: "Build the feature",
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
+        }),
+      );
+      yield* waitUntil(() =>
+        threads
+          .getThreadProjection(launched.threadId)
+          .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
+      );
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3-abcd1234");
+      assert.equal(harness.renameBranch.mock.calls[0]?.[0]?.oldBranch, "t3-abcd1234");
     }).pipe(Effect.provide(harness.layer));
   }),
 );
@@ -1169,8 +1224,8 @@ it.effect("keeps an explicit branch name instead of generating one", () =>
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       yield* launches.launch(
         launchInput({
-          command: "command:launch:explicit-branch",
-          thread: "thread:launch:explicit-branch",
+          command: "command:layerLaunch:explicit-branch",
+          thread: "thread:layerLaunch:explicit-branch",
           message: "Build the feature",
           workspace: { type: "worktree", baseRef: "main", branch: "my-feature" },
         }),
@@ -1196,14 +1251,14 @@ it.effect("keeps the temporary branch when branch generation fails", () =>
       const threads = yield* ThreadManagement.ThreadManagementService;
       const launched = yield* launches.launch(
         launchInput({
-          command: "command:launch:branch-fallback",
-          thread: "thread:launch:branch-fallback",
+          command: "command:layerLaunch:branch-fallback",
+          thread: "thread:layerLaunch:branch-fallback",
           message: "Build the feature",
-          workspace: { type: "worktree", baseRef: "main", branch: "t3code/abcd1234" },
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
       yield* waitUntil(() => Effect.sync(() => harness.generateBranchName.mock.calls.length === 1));
-      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3code/abcd1234");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
       yield* waitUntil(() =>
         threads
           .getThreadProjection(launched.threadId)
@@ -1212,7 +1267,7 @@ it.effect("keeps the temporary branch when branch generation fails", () =>
       assert.equal(harness.renameBranch.mock.calls.length, 0);
       assert.equal(
         (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
-        "t3code/abcd1234",
+        "t3/abcd1234",
       );
     }).pipe(Effect.provide(harness.layer));
   }),
@@ -1226,13 +1281,13 @@ it.effect("renames a temporary branch on an existing worktree to a generated nam
       const threads = yield* ThreadManagement.ThreadManagementService;
       const launched = yield* launches.launch(
         launchInput({
-          command: "command:launch:existing-worktree-rename",
-          thread: "thread:launch:existing-worktree-rename",
+          command: "command:layerLaunch:existing-worktree-rename",
+          thread: "thread:layerLaunch:existing-worktree-rename",
           message: "Build the feature",
           workspace: {
             type: "existing_worktree",
-            worktreePath: "/repo-worktrees/t3code-abcd1234",
-            branch: "t3code/abcd1234",
+            worktreePath: "/repo-worktrees/t3-abcd1234",
+            branch: "t3/abcd1234",
           },
         }),
       );
@@ -1242,8 +1297,8 @@ it.effect("renames a temporary branch on an existing worktree to a generated nam
           .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
       );
       assert.deepEqual(harness.renameBranch.mock.calls[0]?.[0], {
-        cwd: "/repo-worktrees/t3code-abcd1234",
-        oldBranch: "t3code/abcd1234",
+        cwd: "/repo-worktrees/t3-abcd1234",
+        oldBranch: "t3/abcd1234",
         newBranch: "generated-branch",
       });
     }).pipe(Effect.provide(harness.layer));
@@ -1270,8 +1325,8 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
     const threads = yield* ThreadManagement.ThreadManagementService;
     const launched = yield* launches.launch(
       launchInput({
-        command: "command:launch:fetch-failure",
-        thread: "thread:launch:fetch-failure",
+        command: "command:layerLaunch:fetch-failure",
+        thread: "thread:layerLaunch:fetch-failure",
         message: "Start from origin",
         workspace: { type: "worktree", baseRef: "main", startFromOrigin: true },
       }),
@@ -1321,8 +1376,8 @@ it.effect("retries a failed workspace preparation on the same run", () => {
     const threads = yield* ThreadManagement.ThreadManagementService;
     const launched = yield* launches.launch(
       launchInput({
-        command: "command:launch:retry",
-        thread: "thread:launch:retry",
+        command: "command:layerLaunch:retry",
+        thread: "thread:layerLaunch:retry",
         message: "Retry me",
         workspace: { type: "worktree", baseRef: "main", startFromOrigin: true },
       }),
@@ -1340,14 +1395,14 @@ it.effect("retries a failed workspace preparation on the same run", () => {
     );
 
     const retry = {
-      commandId: CommandId.make("command:launch:retry:1"),
+      commandId: CommandId.make("command:layerLaunch:retry:1"),
       threadId: launched.threadId,
       runId,
     };
     yield* launches.retryPreparation(retry);
     yield* waitUntil(() =>
       outbox
-        .listByCommandId(CommandId.make("command:launch:retry:1:release"))
+        .listByCommandId(CommandId.make("command:layerLaunch:retry:1:release"))
         .pipe(Effect.map((effects) => effects.length === 1)),
     );
     const retried = yield* threads.getThreadProjection(launched.threadId);
@@ -1363,7 +1418,7 @@ it.effect("retries a failed workspace preparation on the same run", () => {
 
     // The run left preparation, so a second retry has nothing to do.
     const rejected = yield* launches
-      .retryPreparation({ ...retry, commandId: CommandId.make("command:launch:retry:2") })
+      .retryPreparation({ ...retry, commandId: CommandId.make("command:layerLaunch:retry:2") })
       .pipe(Effect.flip);
     assert.equal(rejected._tag, "OrchestratorDispatchError");
   }).pipe(Effect.provide(harness.layer));
@@ -1384,8 +1439,8 @@ it.effect("a retry reuses a recorded worktree without undoing its branch rename"
     const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
     const launched = yield* launches.launch(
       launchInput({
-        command: "command:launch:reuse",
-        thread: "thread:launch:reuse",
+        command: "command:layerLaunch:reuse",
+        thread: "thread:layerLaunch:reuse",
         message: "Reuse the worktree",
         workspace: { type: "worktree", baseRef: "main" },
       }),
@@ -1405,13 +1460,13 @@ it.effect("a retry reuses a recorded worktree without undoing its branch rename"
     assert.equal(failed.thread.worktreePath, "/repo-worktrees/feature");
 
     yield* launches.retryPreparation({
-      commandId: CommandId.make("command:launch:reuse:retry"),
+      commandId: CommandId.make("command:layerLaunch:reuse:retry"),
       threadId: launched.threadId,
       runId: failed.runs[0]!.id,
     });
     yield* waitUntil(() =>
       outbox
-        .listByCommandId(CommandId.make("command:launch:reuse:retry:release"))
+        .listByCommandId(CommandId.make("command:layerLaunch:reuse:retry:release"))
         .pipe(Effect.map((effects) => effects.length === 1)),
     );
     const retried = yield* threads.getThreadProjection(launched.threadId);
@@ -1444,8 +1499,8 @@ it.effect("removes a worktree that failed before the thread recorded it", () => 
     const threads = yield* ThreadManagement.ThreadManagementService;
     const launched = yield* launches.launch(
       launchInput({
-        command: "command:launch:partial-worktree",
-        thread: "thread:launch:partial-worktree",
+        command: "command:layerLaunch:partial-worktree",
+        thread: "thread:layerLaunch:partial-worktree",
         message: "Partial checkout",
         workspace: { type: "worktree", baseRef: "main" },
       }),
@@ -1479,8 +1534,8 @@ it.effect.each(["worktree", "setup"] as const)(
         const launches = yield* ThreadLaunch.ThreadLaunchService;
         const threads = yield* ThreadManagement.ThreadManagementService;
         const input = launchInput({
-          command: `command:launch:${failurePoint}-failure`,
-          thread: `thread:launch:${failurePoint}-failure`,
+          command: `command:layerLaunch:${failurePoint}-failure`,
+          thread: `thread:layerLaunch:${failurePoint}-failure`,
           message: `Fail during ${failurePoint}`,
           workspace: { type: "worktree", baseRef: "main" },
         });
@@ -1505,7 +1560,7 @@ it.effect.each(["worktree", "setup"] as const)(
     }),
 );
 
-it.effect("replays a server-allocated launch", () =>
+it.effect("replays a server-allocated layerLaunch", () =>
   Effect.gen(function* () {
     const setupEntered = yield* Deferred.make<void>();
     const allowSetup = yield* Deferred.make<void>();
@@ -1520,7 +1575,7 @@ it.effect("replays a server-allocated launch", () =>
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const { threadId: _unusedThreadId, ...rest } = launchInput({
-        command: "command:launch:allocated-retry",
+        command: "command:layerLaunch:allocated-retry",
         thread: "unused",
         message: "Only once",
       });
@@ -1554,12 +1609,12 @@ it.effect("replays a server-allocated launch", () =>
   }),
 );
 
-it.effect("rejects a server-allocated launch replay with a mismatching thread id", () => {
+it.effect("rejects a server-allocated layerLaunch replay with a mismatching thread id", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:allocated-mismatch",
+      command: "command:layerLaunch:allocated-mismatch",
       thread: "unused",
       message: "Mismatch",
     });
@@ -1567,22 +1622,22 @@ it.effect("rejects a server-allocated launch replay with a mismatching thread id
     const failed = yield* launches
       .launch({
         ...rest,
-        threadId: ThreadId.make("thread:launch:allocated-mismatch"),
+        threadId: ThreadId.make("thread:layerLaunch:allocated-mismatch"),
       })
       .pipe(Effect.flip);
-    assert.notEqual(first.threadId, ThreadId.make("thread:launch:allocated-mismatch"));
+    assert.notEqual(first.threadId, ThreadId.make("thread:layerLaunch:allocated-mismatch"));
     assert.equal(failed._tag, "ThreadLaunchError");
     assert.equal(failed.operation, "create-thread");
     assert.include(String(failed.cause), "cannot be replayed");
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect("rejects a server-allocated launch receipt from another project", () => {
+it.effect("rejects a server-allocated layerLaunch receipt from another project", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:allocated-wrong-project",
+      command: "command:layerLaunch:allocated-wrong-project",
       thread: "unused",
       message: "Wrong project",
     });
@@ -1600,20 +1655,20 @@ it.effect("rejects a server-allocated launch receipt from another project", () =
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect("rejects a server-allocated launch retry after the thread is deleted", () => {
+it.effect("rejects a server-allocated layerLaunch retry after the thread is deleted", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const threads = yield* ThreadManagement.ThreadManagementService;
     const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:allocated-deleted",
+      command: "command:layerLaunch:allocated-deleted",
       thread: "unused",
       message: "Deleted before retry",
     });
     const first = yield* launches.launch(rest);
     yield* threads.dispatch({
       type: "thread.delete",
-      commandId: CommandId.make("command:launch:allocated-deleted:delete"),
+      commandId: CommandId.make("command:layerLaunch:allocated-deleted:delete"),
       threadId: first.threadId,
     });
     const failed = yield* launches.launch(rest).pipe(Effect.flip);
@@ -1626,15 +1681,15 @@ it.effect("rejects a server-allocated launch retry after the thread is deleted",
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect("does not treat an unrelated accepted command receipt as a launch", () => {
+it.effect("does not treat an unrelated accepted command receipt as a layerLaunch", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const threads = yield* ThreadManagement.ThreadManagementService;
-    const threadId = ThreadId.make("thread:launch:unrelated-receipt");
+    const threadId = ThreadId.make("thread:layerLaunch:unrelated-receipt");
     yield* threads.dispatch({
       type: "thread.create",
-      commandId: CommandId.make("command:launch:unrelated-receipt:create"),
+      commandId: CommandId.make("command:layerLaunch:unrelated-receipt:create"),
       threadId,
       projectId,
       title: "Existing",
@@ -1648,14 +1703,14 @@ it.effect("does not treat an unrelated accepted command receipt as a launch", ()
     });
     yield* threads.dispatch({
       type: "thread.metadata.update",
-      commandId: CommandId.make("command:launch:unrelated-receipt"),
+      commandId: CommandId.make("command:layerLaunch:unrelated-receipt"),
       threadId,
       expectedEmpty: true,
     });
     const { threadId: _unusedThreadId, ...rest } = launchInput({
-      command: "command:launch:unrelated-receipt",
+      command: "command:layerLaunch:unrelated-receipt",
       thread: "unused",
-      message: "Should not become a launch",
+      message: "Should not become a layerLaunch",
     });
     const failed = yield* launches.launch(rest).pipe(Effect.flip);
     assert.equal(failed._tag, "ThreadLaunchError");
@@ -1682,7 +1737,7 @@ it.effect("bounds concurrent first launches to one thread per command", () =>
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const { threadId: _unusedThreadId, ...rest } = launchInput({
-        command: "command:launch:concurrent-allocated",
+        command: "command:layerLaunch:concurrent-allocated",
         thread: "unused",
         message: "Race me",
       });
@@ -1724,7 +1779,7 @@ it.effect("bounds concurrent first launches to one thread per command", () =>
   }),
 );
 
-it.effect("deduplicates retried launch side effects in-process", () =>
+it.effect("deduplicates retried layerLaunch side effects in-process", () =>
   Effect.gen(function* () {
     const setupEntered = yield* Deferred.make<void>();
     const allowSetup = yield* Deferred.make<void>();
@@ -1738,8 +1793,8 @@ it.effect("deduplicates retried launch side effects in-process", () =>
     yield* Effect.gen(function* () {
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const input = launchInput({
-        command: "command:launch:retry",
-        thread: "thread:launch:retry",
+        command: "command:layerLaunch:retry",
+        thread: "thread:layerLaunch:retry",
         message: "Only once",
       });
       const [first, retry] = yield* Effect.all([launches.launch(input), launches.launch(input)], {
@@ -1755,52 +1810,54 @@ it.effect("deduplicates retried launch side effects in-process", () =>
   }),
 );
 
-it.effect("does not let a failing same-command caller strand a concurrent durable launch", () =>
-  Effect.gen(function* () {
-    const setupEntered = yield* Deferred.make<void>();
-    const allowSetup = yield* Deferred.make<void>();
-    const harness = makeHarness({
-      runSetup: () =>
-        Deferred.succeed(setupEntered, undefined).pipe(
-          Effect.andThen(Deferred.await(allowSetup)),
-          Effect.as({ status: "no-script" as const }),
-        ),
-    });
-    yield* Effect.gen(function* () {
-      const launches = yield* ThreadLaunch.ThreadLaunchService;
-      const command = "command:launch:failed-owner-race";
-      const [failed, launched] = yield* Effect.all(
-        [
-          launches
-            .launch({
-              ...launchInput({
-                command,
-                thread: "thread:launch:failed-owner-race",
-                message: "This invalid reuse fails",
-              }),
-              reuseExistingThread: true,
-            })
-            .pipe(Effect.exit),
-          launches.launch(
-            launchInput({
-              command,
-              thread: "thread:launch:successful-peer",
-              message: "This peer persists",
-            }),
+it.effect(
+  "does not let a failing same-command caller strand a concurrent durable layerLaunch",
+  () =>
+    Effect.gen(function* () {
+      const setupEntered = yield* Deferred.make<void>();
+      const allowSetup = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: () =>
+          Deferred.succeed(setupEntered, undefined).pipe(
+            Effect.andThen(Deferred.await(allowSetup)),
+            Effect.as({ status: "no-script" as const }),
           ),
-        ],
-        { concurrency: "unbounded" },
-      );
-      assert.isTrue(Exit.isFailure(failed));
-      assert.equal(launched.projection.runs[0]?.status, "preparing");
-      const entered = yield* Deferred.await(setupEntered).pipe(
-        Effect.timeoutOption(Duration.seconds(2)),
-      );
-      assert.isTrue(Option.isSome(entered));
-      assert.equal(harness.runSetup.mock.calls.length, 1);
-      yield* Deferred.succeed(allowSetup, undefined);
-    }).pipe(Effect.provide(harness.layer));
-  }),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const command = "command:layerLaunch:failed-owner-race";
+        const [failed, launched] = yield* Effect.all(
+          [
+            launches
+              .launch({
+                ...launchInput({
+                  command,
+                  thread: "thread:layerLaunch:failed-owner-race",
+                  message: "This invalid reuse fails",
+                }),
+                reuseExistingThread: true,
+              })
+              .pipe(Effect.exit),
+            launches.launch(
+              launchInput({
+                command,
+                thread: "thread:layerLaunch:successful-peer",
+                message: "This peer persists",
+              }),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+        assert.isTrue(Exit.isFailure(failed));
+        assert.equal(launched.projection.runs[0]?.status, "preparing");
+        const entered = yield* Deferred.await(setupEntered).pipe(
+          Effect.timeoutOption(Duration.seconds(2)),
+        );
+        assert.isTrue(Option.isSome(entered));
+        assert.equal(harness.runSetup.mock.calls.length, 1);
+        yield* Deferred.succeed(allowSetup, undefined);
+      }).pipe(Effect.provide(harness.layer));
+    }),
 );
 
 it.effect("schedules an accepted preparing message exactly once across concurrent retries", () =>
@@ -1818,11 +1875,11 @@ it.effect("schedules an accepted preparing message exactly once across concurren
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
       const input = launchInput({
-        command: "command:launch:accepted-before-fork",
-        thread: "thread:launch:accepted-before-fork",
+        command: "command:layerLaunch:accepted-before-fork",
+        thread: "thread:layerLaunch:accepted-before-fork",
         message: "Resume preparation",
       });
-      const messageId = MessageId.make("message:launch:accepted-before-fork");
+      const messageId = MessageId.make("message:layerLaunch:accepted-before-fork");
 
       yield* threads.dispatch({
         type: "thread.create",
@@ -1871,8 +1928,8 @@ it.effect("creates a strong provider-thread mapping for an imported native sessi
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const input = {
       ...launchInput({
-        command: "command:launch:imported-native-session",
-        thread: "thread:launch:imported-native-session",
+        command: "command:layerLaunch:imported-native-session",
+        thread: "thread:layerLaunch:imported-native-session",
       }),
       importedNativeThread: {
         ref: {
@@ -1909,226 +1966,229 @@ it.effect("creates a strong provider-thread mapping for an imported native sessi
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect("shared intake preserves durable attachment bytes after a lost launch result", () => {
-  const harness = makeHarness();
-  const files = ServerConfig.layerTest(process.cwd(), { prefix: "t3-message-intake-" }).pipe(
-    Layer.provideMerge(NodeServices.layer),
-  );
-  return Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    const fs = yield* FileSystem.FileSystem;
-    const launches = yield* ThreadLaunch.ThreadLaunchService;
-    const threads = yield* ThreadManagement.ThreadManagementService;
-    const pendingId = createPendingAttachmentId();
-    assert.isNotNull(pendingId);
-    const attachment: ChatAttachment = {
-      type: "image",
-      id: ChatAttachmentId.make(pendingId),
-      name: "image.png",
-      mimeType: "image/png",
-      sizeBytes: 4,
-    };
-    const pendingPath = resolveAttachmentPath({
-      attachmentsDir: config.attachmentsDir,
-      attachment,
-    });
-    assert.isNotNull(pendingPath);
-    yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
-    yield* fs.writeFile(pendingPath, new Uint8Array([1, 2, 3, 4]));
-    const input = {
-      ...launchInput({ command: "intake-launch", thread: "intake-thread" }),
-      initialMessage: {
-        messageId: MessageId.make("intake-first"),
-        text: "First [file](t3-context://v1/file/intake-file)",
-        context: {
-          version: 1 as const,
-          records: [
-            {
-              version: 1 as const,
-              contextId: ComposerContextId.make("intake-file"),
-              kind: "file" as const,
-              label: attachment.name,
-              attachmentId: attachment.id,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-            },
-          ],
-        },
-        attachments: [attachment],
-      },
-    };
-    const failed = yield* ThreadMessageIntake.launchThread(input).pipe(
-      Effect.provideService(ThreadLaunch.ThreadLaunchService, {
-        launch: (request) =>
-          launches.launch(request).pipe(
-            Effect.andThen(
-              new ThreadLaunch.ThreadLaunchError({
-                operation: "create-thread",
-                commandId: request.commandId,
-                projectId,
-                cause: "lost result after acceptance",
-              }),
-            ),
-          ),
-        retryPreparation: launches.retryPreparation,
-      }),
-      Effect.flip,
+it.effect(
+  "shared intake preserves durable attachment bytes after a lost layerLaunch result",
+  () => {
+    const harness = makeHarness();
+    const layerFiles = ServerConfig.layerTest(process.cwd(), { prefix: "t3-message-intake-" }).pipe(
+      Layer.provideMerge(NodeServices.layer),
     );
-    assert.equal(failed._tag, "ThreadLaunchError");
-    // The observer failed, but the real V2 message and its bytes were accepted.
-    const accepted = yield* threads.getThreadProjection(input.threadId);
-    const stored = accepted.messages.find(
-      (message) => message.id === input.initialMessage.messageId,
-    );
-    assert.isDefined(stored);
-    assert.notEqual(stored.attachments[0]?.id, attachment.id);
-    assert.equal(
-      (stored.context?.records[0] as { attachmentId: string }).attachmentId,
-      stored.attachments[0]?.id,
-    );
-    const userItem = accepted.turnItems.find(
-      (item) => item.type === "user_message" && item.messageId === stored.id,
-    );
-    assert.ok(userItem?.type === "user_message");
-    assert.deepEqual(userItem.context, stored.context);
-    const storedPath = resolveAttachmentPath({
-      attachmentsDir: config.attachmentsDir,
-      attachment: stored.attachments[0]!,
-    });
-    assert.isNotNull(storedPath);
-    assert.deepEqual(yield* fs.readFile(storedPath), new Uint8Array([1, 2, 3, 4]));
-    assert.deepEqual(yield* fs.readFile(pendingPath), new Uint8Array([1, 2, 3, 4]));
-
-    const replayed = yield* ThreadMessageIntake.launchThread(input);
-    assert.equal(replayed.projection.messages[0]?.id, stored.id);
-    assert.deepEqual(replayed.projection.messages[0]?.attachments, stored.attachments);
-    const claimedFiles = Effect.map(fs.readDirectory(config.attachmentsDir), (files) =>
-      files.filter((name) => !name.startsWith("pending-")),
-    );
-    assert.equal((yield* claimedFiles).length, 1);
-
-    const missingProject = yield* ThreadMessageIntake.launchThread({
-      ...input,
-      commandId: CommandId.make("intake-no-project"),
-      projectId: ProjectId.make("missing-project"),
-    }).pipe(Effect.flip);
-    assert.equal(missingProject._tag, "ThreadLaunchError");
-    assert.equal((yield* claimedFiles).length, 1);
-    const missingThread = yield* ThreadMessageIntake.dispatchCommand({
-      type: "message.dispatch",
-      commandId: CommandId.make("intake-no-thread"),
-      threadId: ThreadId.make("missing-thread"),
-      messageId: MessageId.make("intake-missing"),
-      text: "Missing",
-      attachments: [attachment],
-      dispatchMode: { type: "start_immediately" },
-      createdBy: "user",
-      creationSource: "web",
-    }).pipe(Effect.flip);
-    assert.equal(missingThread._tag, "OrchestratorProjectionError");
-    assert.equal((yield* claimedFiles).length, 1);
-
-    // Both ordinary command intake (RPC) and send intake (MCP) use the same store.
-    const dispatch = ThreadMessageIntake.dispatchCommand({
-      type: "message.dispatch",
-      commandId: CommandId.make("intake-dispatch"),
-      threadId: input.threadId,
-      messageId: MessageId.make("intake-second"),
-      text: "Second",
-      attachments: [attachment],
-      dispatchMode: { type: "queue_after_active" },
-      createdBy: "user",
-      creationSource: "web",
-    });
-    yield* dispatch;
-    yield* dispatch;
-    const queuedProjection = yield* threads.getThreadProjection(input.threadId);
-    const queuedRun = queuedProjection.runs.find(
-      (run) => run.userMessageId === MessageId.make("intake-second"),
-    );
-    assert.isDefined(queuedRun);
-    assert.equal(queuedRun.status, "queued");
-    const queuedMessage = queuedProjection.messages.find(
-      (message) => message.id === queuedRun.userMessageId,
-    );
-    assert.isDefined(queuedMessage);
-    const file: ChatAttachment = {
-      type: "file",
-      id: ChatAttachmentId.make(createPendingAttachmentId("pdf")),
-      name: "queued.pdf",
-      mimeType: "application/pdf",
-      sizeBytes: 4,
-    };
-    const filePath = resolveAttachmentPath({
-      attachmentsDir: config.attachmentsDir,
-      attachment: file,
-    });
-    assert.isNotNull(filePath);
-    yield* fs.writeFile(filePath, new Uint8Array([5, 6, 7, 8]));
-    const edit = ThreadMessageIntake.dispatchCommand({
-      type: "queued-run.edit",
-      commandId: CommandId.make("intake-edit"),
-      threadId: input.threadId,
-      runId: queuedRun.id,
-      text: "Edited with a file",
-      attachments: [...queuedMessage.attachments, file],
-    });
-    yield* edit;
-    yield* edit;
-    const editedProjection = yield* threads.getThreadProjection(input.threadId);
-    const editedMessage = editedProjection.messages.find(
-      (message) => message.id === queuedRun.userMessageId,
-    );
-    assert.isDefined(editedMessage);
-    assert.equal(editedMessage.attachments.length, 2);
-    assert.deepEqual(editedMessage.attachments[0], queuedMessage.attachments[0]);
-    assert.notEqual(editedMessage.attachments[1]?.id, file.id);
-    const durableFilePath = resolveAttachmentPath({
-      attachmentsDir: config.attachmentsDir,
-      attachment: editedMessage.attachments[1]!,
-    });
-    assert.isNotNull(durableFilePath);
-    assert.deepEqual(yield* fs.readFile(durableFilePath), new Uint8Array([5, 6, 7, 8]));
-    assert.deepEqual(yield* fs.readFile(filePath), new Uint8Array([5, 6, 7, 8]));
-    const beforeRejectedEdit = (yield* claimedFiles).length;
-    const rejectedEdit = yield* ThreadMessageIntake.dispatchCommand({
-      type: "queued-run.edit",
-      commandId: CommandId.make("intake-edit-rejected"),
-      threadId: input.threadId,
-      runId: queuedRun.id,
-      text: "",
-      attachments: [file],
-    }).pipe(Effect.flip);
-    assert.equal(rejectedEdit._tag, "OrchestratorCommandRejectedError");
-    assert.equal((yield* claimedFiles).length, beforeRejectedEdit);
-    assert.deepEqual(yield* fs.readFile(filePath), new Uint8Array([5, 6, 7, 8]));
-    const send = ThreadMessageIntake.sendToThread({
-      commandId: CommandId.make("intake-send"),
-      projectId,
-      threadId: input.threadId,
-      messageId: MessageId.make("intake-third"),
-      text: "Third",
-      attachments: [attachment],
-      mode: "queue",
-      createdBy: "agent",
-      creationSource: "mcp",
-    });
-    yield* send;
-    yield* send;
-    assert.equal((yield* claimedFiles).length, 4);
-    const final = yield* threads.getThreadProjection(input.threadId);
-    assert.equal(final.messages.length, 3);
-    for (const message of final.messages) {
-      const path = resolveAttachmentPath({
+    return Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const pendingId = createPendingAttachmentId();
+      assert.isNotNull(pendingId);
+      const attachment: ChatAttachment = {
+        type: "image",
+        id: ChatAttachmentId.make(pendingId),
+        name: "image.png",
+        mimeType: "image/png",
+        sizeBytes: 4,
+      };
+      const pendingPath = resolveAttachmentPath({
         attachmentsDir: config.attachmentsDir,
-        attachment: message.attachments[0]!,
+        attachment,
       });
-      assert.isNotNull(path);
-      assert.deepEqual(yield* fs.readFile(path), new Uint8Array([1, 2, 3, 4]));
-    }
-  }).pipe(Effect.provide(Layer.mergeAll(harness.layer, files)));
-});
+      assert.isNotNull(pendingPath);
+      yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
+      yield* fs.writeFile(pendingPath, new Uint8Array([1, 2, 3, 4]));
+      const input = {
+        ...launchInput({ command: "intake-layerLaunch", thread: "intake-thread" }),
+        initialMessage: {
+          messageId: MessageId.make("intake-first"),
+          text: "First [file](t3-context://v1/file/intake-file)",
+          context: {
+            version: 1 as const,
+            records: [
+              {
+                version: 1 as const,
+                contextId: ComposerContextId.make("intake-file"),
+                kind: "file" as const,
+                label: attachment.name,
+                attachmentId: attachment.id,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+              },
+            ],
+          },
+          attachments: [attachment],
+        },
+      };
+      const failed = yield* ThreadMessageIntake.launchThread(input).pipe(
+        Effect.provideService(ThreadLaunch.ThreadLaunchService, {
+          launch: (request) =>
+            launches.launch(request).pipe(
+              Effect.andThen(
+                new ThreadLaunch.ThreadLaunchError({
+                  operation: "create-thread",
+                  commandId: request.commandId,
+                  projectId,
+                  cause: "lost result after acceptance",
+                }),
+              ),
+            ),
+          retryPreparation: launches.retryPreparation,
+        }),
+        Effect.flip,
+      );
+      assert.equal(failed._tag, "ThreadLaunchError");
+      // The observer failed, but the real V2 message and its bytes were accepted.
+      const accepted = yield* threads.getThreadProjection(input.threadId);
+      const stored = accepted.messages.find(
+        (message) => message.id === input.initialMessage.messageId,
+      );
+      assert.isDefined(stored);
+      assert.notEqual(stored.attachments[0]?.id, attachment.id);
+      assert.equal(
+        (stored.context?.records[0] as { attachmentId: string }).attachmentId,
+        stored.attachments[0]?.id,
+      );
+      const userItem = accepted.turnItems.find(
+        (item) => item.type === "user_message" && item.messageId === stored.id,
+      );
+      assert.ok(userItem?.type === "user_message");
+      assert.deepEqual(userItem.context, stored.context);
+      const storedPath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: stored.attachments[0]!,
+      });
+      assert.isNotNull(storedPath);
+      assert.deepEqual(yield* fs.readFile(storedPath), new Uint8Array([1, 2, 3, 4]));
+      assert.deepEqual(yield* fs.readFile(pendingPath), new Uint8Array([1, 2, 3, 4]));
+
+      const replayed = yield* ThreadMessageIntake.launchThread(input);
+      assert.equal(replayed.projection.messages[0]?.id, stored.id);
+      assert.deepEqual(replayed.projection.messages[0]?.attachments, stored.attachments);
+      const claimedFiles = Effect.map(fs.readDirectory(config.attachmentsDir), (layerFiles) =>
+        layerFiles.filter((name) => !name.startsWith("pending-")),
+      );
+      assert.equal((yield* claimedFiles).length, 1);
+
+      const missingProject = yield* ThreadMessageIntake.launchThread({
+        ...input,
+        commandId: CommandId.make("intake-no-project"),
+        projectId: ProjectId.make("missing-project"),
+      }).pipe(Effect.flip);
+      assert.equal(missingProject._tag, "ThreadLaunchError");
+      assert.equal((yield* claimedFiles).length, 1);
+      const missingThread = yield* ThreadMessageIntake.dispatchCommand({
+        type: "message.dispatch",
+        commandId: CommandId.make("intake-no-thread"),
+        threadId: ThreadId.make("missing-thread"),
+        messageId: MessageId.make("intake-missing"),
+        text: "Missing",
+        attachments: [attachment],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      }).pipe(Effect.flip);
+      assert.equal(missingThread._tag, "OrchestratorProjectionError");
+      assert.equal((yield* claimedFiles).length, 1);
+
+      // Both ordinary command intake (RPC) and send intake (MCP) use the same store.
+      const dispatch = ThreadMessageIntake.dispatchCommand({
+        type: "message.dispatch",
+        commandId: CommandId.make("intake-dispatch"),
+        threadId: input.threadId,
+        messageId: MessageId.make("intake-second"),
+        text: "Second",
+        attachments: [attachment],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* dispatch;
+      yield* dispatch;
+      const queuedProjection = yield* threads.getThreadProjection(input.threadId);
+      const queuedRun = queuedProjection.runs.find(
+        (run) => run.userMessageId === MessageId.make("intake-second"),
+      );
+      assert.isDefined(queuedRun);
+      assert.equal(queuedRun.status, "queued");
+      const queuedMessage = queuedProjection.messages.find(
+        (message) => message.id === queuedRun.userMessageId,
+      );
+      assert.isDefined(queuedMessage);
+      const file: ChatAttachment = {
+        type: "file",
+        id: ChatAttachmentId.make(createPendingAttachmentId("pdf")),
+        name: "queued.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 4,
+      };
+      const filePath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: file,
+      });
+      assert.isNotNull(filePath);
+      yield* fs.writeFile(filePath, new Uint8Array([5, 6, 7, 8]));
+      const edit = ThreadMessageIntake.dispatchCommand({
+        type: "queued-run.edit",
+        commandId: CommandId.make("intake-edit"),
+        threadId: input.threadId,
+        runId: queuedRun.id,
+        text: "Edited with a file",
+        attachments: [...queuedMessage.attachments, file],
+      });
+      yield* edit;
+      yield* edit;
+      const editedProjection = yield* threads.getThreadProjection(input.threadId);
+      const editedMessage = editedProjection.messages.find(
+        (message) => message.id === queuedRun.userMessageId,
+      );
+      assert.isDefined(editedMessage);
+      assert.equal(editedMessage.attachments.length, 2);
+      assert.deepEqual(editedMessage.attachments[0], queuedMessage.attachments[0]);
+      assert.notEqual(editedMessage.attachments[1]?.id, file.id);
+      const durableFilePath = resolveAttachmentPath({
+        attachmentsDir: config.attachmentsDir,
+        attachment: editedMessage.attachments[1]!,
+      });
+      assert.isNotNull(durableFilePath);
+      assert.deepEqual(yield* fs.readFile(durableFilePath), new Uint8Array([5, 6, 7, 8]));
+      assert.deepEqual(yield* fs.readFile(filePath), new Uint8Array([5, 6, 7, 8]));
+      const beforeRejectedEdit = (yield* claimedFiles).length;
+      const rejectedEdit = yield* ThreadMessageIntake.dispatchCommand({
+        type: "queued-run.edit",
+        commandId: CommandId.make("intake-edit-rejected"),
+        threadId: input.threadId,
+        runId: queuedRun.id,
+        text: "",
+        attachments: [file],
+      }).pipe(Effect.flip);
+      assert.equal(rejectedEdit._tag, "OrchestratorCommandRejectedError");
+      assert.equal((yield* claimedFiles).length, beforeRejectedEdit);
+      assert.deepEqual(yield* fs.readFile(filePath), new Uint8Array([5, 6, 7, 8]));
+      const send = ThreadMessageIntake.sendToThread({
+        commandId: CommandId.make("intake-send"),
+        projectId,
+        threadId: input.threadId,
+        messageId: MessageId.make("intake-third"),
+        text: "Third",
+        attachments: [attachment],
+        mode: "queue",
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+      yield* send;
+      yield* send;
+      assert.equal((yield* claimedFiles).length, 4);
+      const final = yield* threads.getThreadProjection(input.threadId);
+      assert.equal(final.messages.length, 3);
+      for (const message of final.messages) {
+        const path = resolveAttachmentPath({
+          attachmentsDir: config.attachmentsDir,
+          attachment: message.attachments[0]!,
+        });
+        assert.isNotNull(path);
+        assert.deepEqual(yield* fs.readFile(path), new Uint8Array([1, 2, 3, 4]));
+      }
+    }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerFiles)));
+  },
+);
 
 it.effect("cancels tracked setup before provider work is released", () =>
   Effect.gen(function* () {
@@ -2142,7 +2202,7 @@ it.effect("cancels tracked setup before provider work is released", () =>
       const threads = yield* ThreadManagement.ThreadManagementService;
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const input = launchInput({
-        command: "launch:cancel-tracked",
+        command: "layerLaunch:cancel-tracked",
         thread: "thread:cancel-tracked",
         message: "Start",
         workspace: { type: "worktree", baseRef: "main" },
@@ -2182,8 +2242,8 @@ it.effect.each([0, 1])("releases an async setup before its completion with exit 
       const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const launched = yield* launches.launch(
         launchInput({
-          command: `command:launch:async-${exitCode}`,
-          thread: `thread:launch:async-${exitCode}`,
+          command: `command:layerLaunch:async-${exitCode}`,
+          thread: `thread:layerLaunch:async-${exitCode}`,
           message: "Start during setup",
           workspace: { type: "worktree", baseRef: "main" },
         }),

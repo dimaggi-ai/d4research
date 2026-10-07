@@ -1,8 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@d4research/client-runtime/state/thread-requests";
 import type { EnvironmentThread } from "@d4research/client-runtime/state/shell";
-import type { EnvironmentId, OrchestrationV2ThreadProjection, ThreadId } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import type {
+  EnvironmentId,
+  OrchestrationV2ThreadProjection,
+  ThreadId,
+} from "@d4research/contracts";
+import { Atom } from "effect/reactivity";
 
 import { environmentThreadDetails, useEnvironmentThread } from "./threads";
 import { useThreadSelection } from "./use-thread-selection";

@@ -7,7 +7,7 @@ import {
   type ScopedThreadRef,
 } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import * as browserDefaults from "~/browser/browserDefaults";

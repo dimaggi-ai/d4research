@@ -676,7 +676,7 @@ export const make = Effect.gen(function* () {
   /**
    * One page of a merge request's files, as a patch that stands on its own. GitLab pages
    * `/diffs` by offset and has no cursor of its own, so the page number is the cursor; the
-   * caller carries on from it for as long as GitLab keeps handing full pages back.
+   * caller carries on from it for as GitLab keeps handing full pages back.
    *
    * A named commit is read from the commit's own diff, which answers in the same shape and pages
    * the same way.

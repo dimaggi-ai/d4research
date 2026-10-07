@@ -441,7 +441,7 @@ function recoveryFixture(platform: "ios" | "android" = "ios", preferMjpeg = true
     { getContext: () => ({ drawImage }) } as unknown as HTMLCanvasElement,
     events,
   );
-  client.setMjpegImage(image as unknown as HTMLImageElement);
+  client.setMjpegImage(image as HTMLImageElement);
   const imageReady = () => {
     image.naturalWidth = 400;
     image.naturalHeight = 800;
@@ -502,7 +502,7 @@ describe("shared device stream readiness and recovery", () => {
     client.start();
     expect(image.src).toBe("");
     await vi.advanceTimersByTimeAsync(1000);
-    client.setMjpegImage(image as unknown as HTMLImageElement);
+    client.setMjpegImage(image as HTMLImageElement);
     imageReady();
     expect(events.onStatus).toHaveBeenLastCalledWith("streaming", undefined);
     client.stop();
@@ -581,7 +581,7 @@ describe("shared device stream readiness and recovery", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(events.onStatus).not.toHaveBeenCalled();
     const replacement = new MjpegImage();
-    client.setMjpegImage(replacement as unknown as HTMLImageElement);
+    client.setMjpegImage(replacement as HTMLImageElement);
     replacement.naturalWidth = 400;
     replacement.naturalHeight = 800;
     replacement.dispatchEvent(new Event("load"));

@@ -454,7 +454,7 @@ export const make = Effect.gen(function* () {
             items: collected.slice(0, input.limit),
             // Bitbucket pages in fifties whatever was asked for, so a walk that stopped on the
             // count rather than on the last page is holding rows it is about to drop. Those are
-            // more results just as surely as another page would be.
+            // more results just as another page would be.
             truncated: next !== null || collected.length > input.limit,
           });
         }
@@ -601,7 +601,7 @@ export const make = Effect.gen(function* () {
     {
       capacity: REVISION_PATCH_CAPACITY,
       // A failure is not held: the tick after it should reach Bitbucket rather than be handed the
-      // same error for as long as a good patch would have lasted.
+      // same error for as a good patch would have lasted.
       timeToLive: (exit) => (Exit.isSuccess(exit) ? REVISION_PATCH_TTL : Duration.zero),
     },
   );

@@ -1,7 +1,7 @@
 import { ThreadId, ThreadTurnUsageRow } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 const decodeUsageRows = Schema.decodeUnknownEffect(Schema.Array(ThreadTurnUsageRow));
 

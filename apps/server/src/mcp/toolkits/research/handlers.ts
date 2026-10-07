@@ -23,7 +23,7 @@ import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts"
 import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
 import { ProviderAdapterRegistryV2 } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { runEphemeralProviderV2 } from "../../../provider/EphemeralProviderV2.ts";
-import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "../../../provider/ProviderRegistry.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 import type { MemoryEntry } from "../memory/connectors.ts";
 import { parseMemoAttachmentDocumentToken } from "../../../memoAttachment.ts";
@@ -579,7 +579,16 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
 export const makeResearchDelegateHandler =
   (options?: { readonly pollDelay?: Effect.Effect<void> }) => (input: ResearchDelegateInput) =>
     Effect.gen(function* () {
-      const invocation = yield* McpInvocationContext.McpInvocationContext;
+      const invocationScope = yield* McpInvocationContext.McpInvocationContext;
+      const invocation = yield* McpInvocationContext.requireThreadScope(
+        invocationScope,
+        "delegate_task",
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ResearchDelegateError({ detail: cause.message, failureKind: "authorization" }),
+        ),
+      );
       if (!invocation.capabilities.has("research")) {
         return yield* new ResearchDelegateError({
           detail: "This provider session is not allowed to delegate research.",
@@ -658,11 +667,12 @@ export const makeResearchDelegateHandler =
       });
 
       return yield* runBoundedDelegation({
-        orchestratorThreadId: invocation.threadId,
+        orchestratorThreadId: invocation.thread.threadId,
         // One orchestrator turn is one run. Without a turn id the provider
         // session plus its issue time is the next-best run identity.
-        runId: `${String(invocation.threadId)}:${String(
-          invocation.turnId ?? `${invocation.providerSessionId}:${invocation.issuedAt}`,
+        runId: `${String(invocation.thread.threadId)}:${String(
+          invocation.thread.turnId ??
+            `${invocation.thread.providerSessionId}:${invocation.issuedAt}`,
         )}`,
         requestedTarget: targetResolution.requestedTarget,
         resolvedTarget: targetResolution.resolvedTarget,

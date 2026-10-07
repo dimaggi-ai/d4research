@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";

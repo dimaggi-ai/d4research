@@ -10,7 +10,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
-import { ChildProcess } from "effect/unstable/process";
+import { ChildProcess } from "effect/process";
 
 import {
   buildServerProvider,
@@ -198,7 +198,7 @@ export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(functi
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner
+  import("effect/process").ChildProcessSpawner.ChildProcessSpawner
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = fallbackModelsFor(settings);

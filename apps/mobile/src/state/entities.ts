@@ -13,7 +13,7 @@ import type {
   ScopedThreadRef,
   ServerConfig,
 } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom, serverEnvironment } from "./server";

@@ -855,7 +855,7 @@ export function writePullRequestListSnapshot(
           // position in a listing the host has long since forgotten.
           errors: [],
           nextCursors: {},
-          // Where a listing stopped is as stale as the cursor that named it.
+          // Where a listing stopped is as the cursor that named it.
           truncatedEnvironments: [],
         },
         ...(snapshot.partitions === undefined
@@ -1189,18 +1189,14 @@ export function applyPullRequestOverrides<Entry extends PullRequestListEntry>(
   keyOf: (entry: Entry) => string,
   state: PullRequestListState,
 ): ReadonlyArray<Entry> {
-  if (overrides.size === 0) return entries;
+  if (overrides.size === 0 && state === "all") return entries;
   const out: Entry[] = [];
   for (const entry of entries) {
     const override = overrides.get(keyOf(entry));
-    if (override === undefined) {
-      out.push(entry);
-      continue;
-    }
-    if (state !== "all" && override.state !== state) continue;
-    out.push({ ...entry, ...override });
+    if (state !== "all" && (override?.state ?? entry.state) !== state) continue;
+    out.push(override === undefined ? entry : { ...entry, ...override });
   }
-  return out;
+  return overrides.size === 0 && out.length === entries.length ? entries : out;
 }
 
 /**

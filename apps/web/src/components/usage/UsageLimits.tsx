@@ -1,3 +1,4 @@
+import { AuthProvidersManageScope } from "@d4research/contracts";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { type EnvironmentId } from "@d4research/contracts";
 import { type ProviderConsumeResetCreditOutcome } from "@d4research/contracts";
@@ -17,6 +18,7 @@ import { useState } from "react";
 import { type ReactNode } from "react";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
+import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
@@ -325,6 +327,7 @@ export function useResetCredit(
   environmentId: EnvironmentId,
   input: ProviderConsumeResetCreditInput,
 ) {
+  const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const consume = useAtomCommand(serverEnvironment.consumeResetCredit, { reportFailure: false });
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -332,6 +335,7 @@ export function useResetCredit(
 
   const redeem = async () => {
     setConfirming(false);
+    if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
     setBusy(true);
     setStatus(null);
     const result = await consume({ environmentId, input });
@@ -347,7 +351,7 @@ export function useResetCredit(
     );
   };
 
-  return { confirming, setConfirming, busy, status, redeem };
+  return { canManageProviders, confirming, setConfirming, busy, status, redeem };
 }
 
 /**
@@ -360,10 +364,12 @@ export function ResetCreditDialog({
   open,
   onOpenChange,
   onConfirm,
+  disabled = false,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
+  readonly disabled?: boolean;
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -377,7 +383,9 @@ export function ResetCreditDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button onClick={onConfirm}>Use credit</Button>
+          <Button disabled={disabled} onClick={onConfirm}>
+            Use credit
+          </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>
@@ -413,13 +421,23 @@ export function ResetCredits({
   readonly credits: ServerProviderResetCredits;
   readonly now: number;
 }) {
-  const { confirming, setConfirming, busy, status, redeem } = useResetCredit(environmentId, input);
+  const { canManageProviders, confirming, setConfirming, busy, status, redeem } = useResetCredit(
+    environmentId,
+    input,
+  );
   if (credits.availableCount === 0 && status === null) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
       <span className="tabular-nums">{resetCreditsSummary(credits, now)}</span>
       {credits.availableCount > 0 ? (
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => setConfirming(true)}>
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={busy || !canManageProviders}
+          onClick={() => {
+            if (readEnvironmentScope(environmentId, AuthProvidersManageScope)) setConfirming(true);
+          }}
+        >
           {busy ? "Using…" : "Use reset"}
         </Button>
       ) : null}
@@ -428,6 +446,7 @@ export function ResetCredits({
         open={confirming}
         onOpenChange={setConfirming}
         onConfirm={() => void redeem()}
+        disabled={!canManageProviders}
       />
     </div>
   );

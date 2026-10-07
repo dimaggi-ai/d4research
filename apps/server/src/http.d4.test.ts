@@ -7,7 +7,7 @@ import {
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpBody, HttpClient, HttpRouter } from "effect/unstable/http";
+import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 import { describe } from "vite-plus/test";
 
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";

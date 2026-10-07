@@ -22,7 +22,7 @@ import {
   InlineDelegationRunner,
   resolveInlineDelegateTarget,
 } from "../mcp/toolkits/research/inlineDelegation.ts";
-import * as ApplicationEvents from "../persistence/Services/OrchestrationEventStore.ts";
+import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "./IdAllocator.ts";
 import { makeProviderFailure } from "./ProviderFailure.ts";

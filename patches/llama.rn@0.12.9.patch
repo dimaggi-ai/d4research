@@ -1,0 +1,89 @@
+--- a/ios/RNLlama.h
++++ b/ios/RNLlama.h
+@@ -1,5 +1,5 @@
+ #import <React/RCTBridgeModule.h>
+-#import <React/RCTBridge+Private.h>
++#import <React/RCTCallInvokerModule.h>
+ #import <ReactCommon/RCTTurboModule.h>
+ 
+ #if RNLLAMA_BUILD_FROM_SOURCE
+@@ -8,6 +8,8 @@
+ #import <rnllama/nlohmann/json.hpp>
+ #endif
+ 
+-@interface RNLlama : NSObject <RCTBridgeModule>
++@interface RNLlama : NSObject <RCTBridgeModule, RCTCallInvokerModule>
++
++@property (nonatomic, strong, nullable) RCTCallInvoker *callInvoker;
+ 
+ @end
+--- a/ios/RNLlama.mm
++++ b/ios/RNLlama.mm
+@@ -1,4 +1,5 @@
+ #import "RNLlama.h"
++#import <React/RCTCallInvoker.h>
+ #import <jsi/jsi.h>
+ 
+ #if RNLLAMA_BUILD_FROM_SOURCE
+@@ -73,51 +74,28 @@
+ }
+ } // namespace rnllama_jsi
+ 
+-@implementation RNLlama {
+-    __unsafe_unretained RCTBridge *_bridge;
+-}
++@implementation RNLlama
++
++@synthesize callInvoker = _callInvoker;
+ 
+ RCT_EXPORT_MODULE()
+-
+-- (RCTBridge *)bridge {
+-    return _bridge;
+-}
+-
+-- (void)setBridge:(RCTBridge *)bridge {
+-    _bridge = bridge;
+-}
+ 
+ RCT_EXPORT_METHOD(install:(RCTPromiseResolveBlock)resolve
+                  withRejecter:(RCTPromiseRejectBlock)reject)
+ {
+-    RCTBridge *bridge = self.bridge ?: [RCTBridge currentBridge];
+-    if (!bridge) {
++    if (!self.callInvoker) {
+         resolve(@false);
+         return;
+     }
+-
+-    RCTCxxBridge *cxxBridge = (RCTCxxBridge *)bridge.batchedBridge;
+-    if (!cxxBridge) {
+-        cxxBridge = (RCTCxxBridge *)bridge;
+-    }
+-    auto callInvoker = cxxBridge.jsCallInvoker ?: bridge.jsCallInvoker;
+-    if (!cxxBridge.runtime) {
++    auto invoker = [self.callInvoker callInvoker];
++    if (!invoker) {
+         resolve(@false);
+         return;
+     }
+-
+-    facebook::jsi::Runtime *runtime = static_cast<facebook::jsi::Runtime *>(cxxBridge.runtime);
+-
+-    if (callInvoker) {
+-        callInvoker->invokeAsync([runtime, callInvoker]() {
+-            rnllama_jsi::installJSIBindings(*runtime, callInvoker);
+-        });
+-    } else {
+-        resolve(@false);
+-        return;
+-    }
+-
+-    resolve(@true);
++    invoker->invokeAsync([invoker, resolve](facebook::jsi::Runtime &runtime) {
++        rnllama_jsi::installJSIBindings(runtime, invoker);
++        resolve(@true);
++    });
+ }
+ 
+ - (void)invalidate {

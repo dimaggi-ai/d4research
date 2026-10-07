@@ -1,5 +1,5 @@
 import { Deferred, Effect, Queue, Schema, Stream } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
 import { ErrorData, type MspMethod } from "./MspProtocol.ts";
 
 export class MspRpcError extends Schema.TaggedError<MspRpcError>()("MspRpcError", {

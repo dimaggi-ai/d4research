@@ -151,7 +151,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
           description: "permission denied",
           pathOrDescriptor: environmentIdPath,
         });
-        const failingFileSystemLayer = FileSystem.layerNoop({
+        const layerFailingFileSystem = FileSystem.layerNoop({
           makeTempFileScoped: () => Effect.succeed(temporaryIdPath),
           exists: () =>
             operation === "check" ? Effect.fail(cause) : Effect.succeed(operation === "read"),
@@ -168,7 +168,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         }).pipe(
           Effect.provide(
             ServerEnvironment.layer.pipe(
-              Layer.provide(Layer.merge(ServerConfig.layer(serverConfig), failingFileSystemLayer)),
+              Layer.provide(Layer.merge(ServerConfig.layer(serverConfig), layerFailingFileSystem)),
             ),
           ),
           Effect.flip,

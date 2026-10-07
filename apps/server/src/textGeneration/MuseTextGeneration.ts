@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 import { Crypto, Deferred, Effect, FileSystem, Schema } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { type MuseSettings, type ModelSelection, TextGenerationError } from "@d4research/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@d4research/shared/git";
 import { extractJsonObject } from "@d4research/shared/schemaJson";

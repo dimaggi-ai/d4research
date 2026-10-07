@@ -1,6 +1,6 @@
 import { it, assert } from "@effect/vitest";
 import { Cause, Deferred, Effect, Fiber, Queue, Schema, Stream } from "effect";
-import { ExitCode } from "effect/unstable/process/ChildProcessSpawner";
+import { ExitCode } from "effect/process/ChildProcessSpawner";
 import { makeMspConnection } from "./MspConnection.ts";
 
 const encodeFrame = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));

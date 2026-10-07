@@ -1,7 +1,8 @@
+// @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 import { assert, it, afterEach, expect, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError } from "@d4research/contracts";
 
@@ -39,7 +40,6 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 42,
               title: "Add MR thread creation",
@@ -94,7 +94,6 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 iid: 0,
@@ -163,7 +162,6 @@ layer("GitLabCli.layer", (it) => {
       mockedRun.mockReturnValueOnce(
         Effect.succeed(
           processOutput(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               path_with_namespace: "octocat/t3code",
               web_url: "https://gitlab.com/octocat/t3code",
@@ -230,18 +228,10 @@ layer("GitLabCli.layer", (it) => {
     Effect.gen(function* () {
       mockedRun
 
+        .mockReturnValueOnce(Effect.succeed(processOutput(JSON.stringify({ id: 1234 }))))
         .mockReturnValueOnce(
           Effect.succeed(
             processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
-              JSON.stringify({ id: 1234 }),
-            ),
-          ),
-        )
-        .mockReturnValueOnce(
-          Effect.succeed(
-            processOutput(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 path_with_namespace: "octocat/t3code",
                 web_url: "https://gitlab.com/octocat/t3code",

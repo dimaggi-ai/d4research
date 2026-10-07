@@ -2,7 +2,7 @@
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { Crypto, Effect, FileSystem, Queue, Schema, Stream } from "effect";
-import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 import type { MuseSettings, RuntimeMode } from "@d4research/contracts";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import { toolGuardEnvironment } from "../toolGuardRuntime.ts";

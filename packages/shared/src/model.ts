@@ -364,7 +364,7 @@ const decodeCustomModelCapabilities = Schema.decodeUnknownOption(ModelCapabiliti
 
 /**
  * Read a `customModels` setting into resolved definitions. Accepts the typed
- * union as well as the opaque `providerInstances[id].config` blob clients see,
+ * union as the opaque `providerInstances[id].config` blob clients see,
  * so it tolerates bare slugs, malformed rows, and unparseable capabilities
  * (dropped rather than failing the whole list). Slugs are trimmed and
  * deduplicated, first occurrence wins; `name` falls back to the slug.

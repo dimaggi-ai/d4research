@@ -3,7 +3,7 @@ import { EnvironmentId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { layerRemoteHttpClient as remoteHttpClientLayer } from "../rpc/http.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
   fetchEnvironmentSkillsInventory,

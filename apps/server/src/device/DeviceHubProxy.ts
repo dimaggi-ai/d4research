@@ -12,9 +12,9 @@
  * hub's dashboard, exec, or WebRTC surface is rejected here.
  */
 import {
+  type AuthEnvironmentScope,
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
-  type AuthEnvironmentScope,
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -24,8 +24,8 @@ import {
   HttpRouter,
   HttpServerRequest,
   HttpServerResponse,
-} from "effect/unstable/http";
-import * as Socket from "effect/unstable/socket/Socket";
+} from "effect/http";
+import * as Socket from "effect/socket/Socket";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -33,6 +33,7 @@ import {
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
   failEnvironmentScopeRequired,
+  authenticateMediaRequest,
 } from "../auth/http.ts";
 import * as DeviceService from "./DeviceService.ts";
 
@@ -205,7 +206,9 @@ const handler = Effect.gen(function* () {
   const controlsDevice =
     (upgrade && hubPath !== "/api/devices/ws") ||
     (!readOnly && /\/api\/(stream-(mode|settings)|fold)$/.test(hubPath));
-  yield* authenticate(controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope);
+  yield* authenticateMediaRequest(
+    controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
+  );
   const devices = yield* DeviceService.DeviceService;
   const ready = yield* devices.currentReadiness(url.value.searchParams.get("hostId") ?? undefined);
   if (!ready) {
@@ -229,8 +232,4 @@ const handler = Effect.gen(function* () {
   return yield* proxyHttp(request, `${ready.hub.origin}${upstreamPath}`, ready.hub.origin);
 });
 
-export const deviceHubProxyRouteLayer = HttpRouter.add(
-  "*",
-  `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`,
-  handler,
-);
+export const layer = HttpRouter.add("*", `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`, handler);

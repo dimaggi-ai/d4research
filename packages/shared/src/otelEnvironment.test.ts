@@ -2,12 +2,14 @@ import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as OtlpResource from "effect/unstable/observability/OtlpResource";
+import * as OtlpResource from "effect/observability/OtlpResource";
 
 import * as OtelEnvironment from "./otelEnvironment.ts";
 
-const load = (env: Record<string, string>) =>
-  OtelEnvironment.load.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))));
+const load = (layerEnv: Record<string, string>) =>
+  OtelEnvironment.load.pipe(
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: layerEnv }))),
+  );
 
 const SPEC_OFF =
   "OTEL_SDK_DISABLED is set, so no telemetry is exported, whatever configured it; set T3CODE_OTEL_SDK_DISABLED=false to export anyway";
@@ -74,9 +76,9 @@ describe("OtelEnvironment", () => {
       disabled: false,
       warnings: [specIgnored("yes")],
     },
-  ])("$name", ({ env, disabled, warnings }) =>
+  ])("$name", ({ env: layerEnv, disabled, warnings }) =>
     Effect.gen(function* () {
-      const resolved = yield* load(env);
+      const resolved = yield* load(layerEnv);
       assert.strictEqual(resolved.disabled, disabled);
       assert.deepStrictEqual(resolved.warnings, warnings);
     }),
@@ -98,9 +100,9 @@ describe("OtelEnvironment", () => {
         "OTEL_RESOURCE_ATTRIBUTES is not a list of percent-encoded key=value pairs and was ignored",
       ],
     },
-  ])("resource attributes: $name", ({ env, resourceAttributes, warnings }) =>
+  ])("resource attributes: $name", ({ env: layerEnv, resourceAttributes, warnings }) =>
     Effect.gen(function* () {
-      const resolved = yield* load(env);
+      const resolved = yield* load(layerEnv);
       assert.deepStrictEqual(resolved.resourceAttributes, resourceAttributes);
       assert.deepStrictEqual(resolved.warnings, warnings);
     }),
@@ -271,9 +273,9 @@ describe("OtelEnvironment", () => {
           "OTEL_LOGS_EXPORTER names console, otlpp, which T3 Code does not export to, so they were ignored",
         ],
       },
-    ])("$name", ({ env, traces, metrics, logs, warnings }) =>
+    ])("$name", ({ env: layerEnv, traces, metrics, logs, warnings }) =>
       Effect.gen(function* () {
-        const resolved = yield* load(env);
+        const resolved = yield* load(layerEnv);
         assert.strictEqual(urlOf(resolved.traces), traces);
         assert.strictEqual(urlOf(resolved.metrics), metrics);
         assert.strictEqual(urlOf(resolved.logs), logs);
@@ -379,9 +381,9 @@ describe("OtelEnvironment", () => {
         logs: "Unset",
         warnings: [],
       },
-    ])("$name", ({ env, traces, logs, warnings }) =>
+    ])("$name", ({ env: layerEnv, traces, logs, warnings }) =>
       Effect.gen(function* () {
-        const resolved = yield* load(env);
+        const resolved = yield* load(layerEnv);
         assert.deepStrictEqual(exportOf(resolved.traces), traces);
         assert.deepStrictEqual(exportOf(resolved.logs), logs);
         assert.deepStrictEqual(resolved.warnings, warnings);
@@ -488,13 +490,16 @@ describe("OtelEnvironment", () => {
       { name: "encoded separators", raw: "a%2Cb=x%3Dy", attributes: ["a,b"] },
     ])("lets the exporters' own read succeed with $name", ({ raw, attributes }) =>
       Effect.gen(function* () {
-        const env = ConfigProvider.layer(
+        const layerEnv = ConfigProvider.layer(
           ConfigProvider.fromEnv({ env: { OTEL_RESOURCE_ATTRIBUTES: raw } }),
         );
-        const otel = yield* OtelEnvironment.load.pipe(Effect.provide(env));
+        const otel = yield* OtelEnvironment.load.pipe(Effect.provide(layerEnv));
         const resource = yield* OtlpResource.fromConfig({ serviceName: "t3" }).pipe(
           Effect.provide(
-            Layer.provide(OtelEnvironment.layerResourceAttributes(otel.resourceAttributes), env),
+            Layer.provide(
+              OtelEnvironment.layerResourceAttributes(otel.resourceAttributes),
+              layerEnv,
+            ),
           ),
         );
         assert.deepStrictEqual(

@@ -43,7 +43,7 @@ export function resolveChatCanvasLayout({
 }) {
   const centeredWidth = Math.max(0, Math.min(maxChatWidth, container.width - padding * 2));
   // A workspace card that does not fit beside the centered chat first moves
-  // chat left, only as far as it needs. Chat narrows only after it reaches the
+  // chat left, only as it needs. Chat narrows only after it reaches the
   // left padding.
   const laneRight = detailsCard
     ? detailsCard.left - DETAILS_CARD_CLEARANCE

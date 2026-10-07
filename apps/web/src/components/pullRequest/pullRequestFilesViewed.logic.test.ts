@@ -93,7 +93,7 @@ describe("settleFileViewedOverlay", () => {
 
   it("drops a tick once a read has answered for it, against what the reader pressed", () => {
     // The tick landed, the file was pushed to before the read that followed it came back, and the
-    // host answers `dismissed`. Holding the tick would hide that push for as long as the tab
+    // host answers `dismissed`. Holding the tick would hide that push for as the tab
     // stayed open, and no refresh would recover it: every later answer says `dismissed` too.
     const settled = settleFileViewedOverlay(
       new Map([["c.ts", true]]),

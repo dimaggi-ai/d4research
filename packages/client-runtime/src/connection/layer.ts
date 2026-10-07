@@ -6,6 +6,7 @@ import * as ConnectionResolver from "./resolver.ts";
 import * as ConnectionDriver from "./driver.ts";
 import * as EnvironmentRegistry from "./registry.ts";
 import * as ConnectionOnboarding from "./onboarding.ts";
+import { connectionRoutes, hasRelayRoute } from "./routes.ts";
 import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
@@ -14,18 +15,18 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
   const resolverLayer = ConnectionResolver.layer.pipe(
     Layer.provide(RemoteEnvironmentAuthorization.layer),
   );
-  const driverLayer = ConnectionDriver.layer.pipe(
+  const layerDriver = ConnectionDriver.layer.pipe(
     Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer(options))),
   );
-  const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
-  const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-  const connectionServicesLayer = Layer.mergeAll(
+  const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(layerDriver));
+  const layerOnboarding = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
+  const layerConnectionServices = Layer.mergeAll(
     registryLayer,
-    onboardingLayer,
+    layerOnboarding,
     // Exposed for updating hosts too old to connect through the driver.
     resolverLayer,
   );
-  const connectionStartupLayer = Layer.effectDiscard(
+  const layerConnectionStartup = Layer.effectDiscard(
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
@@ -36,7 +37,7 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
       );
     }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
   );
-  return connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
+  return layerConnectionStartup.pipe(Layer.provideMerge(layerConnectionServices));
 }
 
 export const layer = layerWithOptions({});

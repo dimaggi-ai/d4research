@@ -12,7 +12,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestConsole from "effect/testing/TestConsole";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 import { cli } from "../binCli.ts";
 import { symlinksSupported } from "@d4research/shared/testing/symlinks";
@@ -287,7 +287,7 @@ describe("t3 theme", () => {
   );
 
   // A typo'd id written as the theme would silently never resolve anywhere;
-  // the id branch is as strict as the filename rule.
+  // the id branch is as the filename rule.
   it.effect("rejects an id no client could resolve", () =>
     Effect.gen(function* () {
       const baseDir = makeBaseDir();

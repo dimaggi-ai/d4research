@@ -5,7 +5,7 @@ import { extractJsonObject } from "@d4research/shared/schemaJson";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as TextGeneration from "./TextGeneration.ts";
 import {

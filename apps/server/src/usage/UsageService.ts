@@ -42,8 +42,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
+import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -101,14 +102,14 @@ const RatesCacheFile = Schema.Struct({
   document: Schema.Unknown,
 });
 const decodeRatesCache = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
+  Schema.fromJsonString(RatesCacheFile as Schema.Codec<typeof RatesCacheFile.Type>),
 );
 const encodeRatesCache = Schema.encodeEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
+  Schema.fromJsonString(RatesCacheFile as Schema.Codec<typeof RatesCacheFile.Type>),
 );
 
 /** The scan cache is narrowed by hand in `usageScanCache`, so JSON is enough here. */
-const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>);
+const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as Schema.Codec<unknown>);
 const decodeScanCacheFile = Schema.decodeUnknownEffect(ScanCacheJson);
 const encodeUsageRecordKey = Schema.encodeSync(ScanCacheJson);
 const CachedSource = Schema.Struct({ dir: Schema.String, volumeId: Schema.String });
@@ -201,6 +202,11 @@ export const make = Effect.gen(function* () {
   const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
   const scanCachePath = path.join(config.stateDir, SCAN_CACHE_FILE_NAME);
   const legacyScanCachePath = path.join(config.stateDir, LEGACY_SCAN_CACHE_FILE_NAME);
+  const writeCacheFile = (filePath: string, contents: string) =>
+    writeFileStringAtomically({ filePath, contents }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
   let rates: RateTable = new Map();
   let ratesFetchedAtMs: number | null = null;
   let ratesStatus: UsagePricing["status"] = "unavailable";
@@ -261,7 +267,7 @@ export const make = Effect.gen(function* () {
     ratesStatus = "fresh";
 
     yield* encodeRatesCache({ fetchedAtMs: now, document: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(ratesCachePath, serialized)),
+      Effect.flatMap((contents) => writeCacheFile(ratesCachePath, contents)),
       Effect.ignoreCause,
     );
   });
@@ -408,8 +414,8 @@ export const make = Effect.gen(function* () {
   );
 
   const writeScanCache = makeScanCacheWriter();
-  // Scans with different windows can finish together; two writes interleaved
-  // in one file would corrupt it.
+  // Scans with different windows can finish together; serializing the writes
+  // keeps an older snapshot from landing after a newer one.
   const persistLock = yield* Semaphore.make(1);
 
   const persistScanCache = Effect.fn("UsageService.persistScanCache")(function* () {
@@ -421,7 +427,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.sync(() =>
       writeScanCache(fileCache, { sources: Object.fromEntries(sourceCache) }),
     ).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(scanCachePath, serialized)),
+      Effect.flatMap((contents) => writeCacheFile(scanCachePath, contents)),
       // A cache we cannot write is a slower next start, not a failed read.
       Effect.catchCause(() =>
         Effect.sync(() => {

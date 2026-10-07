@@ -4,7 +4,7 @@ import {
 } from "@d4research/client-runtime/state/shell";
 import type { LocalThreadMessage } from "../lib/threadActivity";
 import { DEFAULT_PROVIDER_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import * as DateTime from "effect/DateTime";
 
 import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";

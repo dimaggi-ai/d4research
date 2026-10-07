@@ -8,7 +8,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -533,11 +533,15 @@ describe("research delegate handler", () => {
       );
       const invocation = {
         environmentId: EnvironmentId.make("environment"),
-        threadId: ThreadId.make("orchestrator-thread"),
-        providerSessionId: "provider-session",
-        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
         capabilities: new Set(["research"] as const),
         issuedAt: 0,
+        thread: {
+          threadId: ThreadId.make("orchestrator-thread"),
+          providerSessionId: "provider-session",
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        },
+        client: undefined,
+        requestNamespace: "provider-session",
       };
       const fileSystem = yield* FileSystem.FileSystem;
       const configBaseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -913,12 +917,16 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
   );
   const invocation = {
     environmentId: EnvironmentId.make("environment"),
-    threadId: ThreadId.make("orchestrator-thread"),
-    providerSessionId: "provider-session",
-    providerInstanceId: instanceId,
-    turnId: TurnId.make("turn-1"),
     capabilities: new Set(["research"] as const),
     issuedAt: 0,
+    thread: {
+      threadId: ThreadId.make("orchestrator-thread"),
+      providerSessionId: "provider-session",
+      providerInstanceId: instanceId,
+      turnId: TurnId.make("turn-1"),
+    },
+    client: undefined,
+    requestNamespace: "provider-session",
   };
   return { layer, invocation, sentAttachments };
 });

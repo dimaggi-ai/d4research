@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 
 import { ProjectionThreadTurnUsageRepository } from "../Services/ProjectionThreadTurnUsage.ts";
 import { ProjectionThreadTurnUsageRepositoryLive } from "./ProjectionThreadTurnUsage.ts";
-import { SqlitePersistenceMemory } from "./Sqlite.ts";
+import { SqlitePersistenceMemory } from "../Sqlite.ts";
 
 const layer = it.layer(
   ProjectionThreadTurnUsageRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),

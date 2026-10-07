@@ -6,7 +6,7 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { createThreadListEnvironmentsAtom } from "./thread-list-environments";
 
 const ID = EnvironmentId.make("one");

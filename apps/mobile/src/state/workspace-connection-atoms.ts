@@ -2,7 +2,7 @@ import type { EnvironmentPresentation, NetworkStatus } from "@d4research/client-
 import type { EnvironmentCatalogState } from "@d4research/client-runtime/state/connections";
 import type { EnvironmentId } from "@d4research/contracts";
 import { createEnvironmentSummaryAtoms } from "@d4research/client-runtime/state/presentation";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { projectWorkspaceConnectionState } from "./workspaceModel";
 

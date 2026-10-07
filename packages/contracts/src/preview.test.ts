@@ -208,7 +208,7 @@ describe("PreviewAutomationStatus", () => {
       available: true,
       visible: false,
       tabId: "preview-t",
-      url: "https://example.com",
+      url: "https://example.com/",
       title: "Example",
       loading: false,
     };

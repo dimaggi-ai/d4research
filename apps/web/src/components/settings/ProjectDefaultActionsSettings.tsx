@@ -26,6 +26,7 @@ export function ProjectDefaultActionsSettings({
       environment.connection.phase === "connected" &&
       environment.serverConfig !== null,
   );
+  const editorEnvironmentId = targets[0]?.environmentId;
   const representative = targets[0]?.serverConfig;
   const scripts = representative?.settings.defaultProjectScripts ?? [];
   const keybindings = representative?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
@@ -100,15 +101,19 @@ export function ProjectDefaultActionsSettings({
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
-      <ProjectScriptEditorDialog
-        request={request}
-        scripts={scripts}
-        onSubmit={submit}
-        onDelete={(id) =>
-          void persist((current) => current.filter((script) => script.id !== id), id, null)
-        }
-        onClose={() => setRequest(null)}
-      />
+      {editorEnvironmentId !== undefined && (
+        <ProjectScriptEditorDialog
+          environmentId={editorEnvironmentId}
+          editScope="settings:write"
+          request={request}
+          scripts={scripts}
+          onSubmit={submit}
+          onDelete={(id) =>
+            void persist((current) => current.filter((script) => script.id !== id), id, null)
+          }
+          onClose={() => setRequest(null)}
+        />
+      )}
     </SettingsSection>
   );
 }

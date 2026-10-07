@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,

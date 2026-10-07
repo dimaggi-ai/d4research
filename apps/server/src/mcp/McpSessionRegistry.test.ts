@@ -2,8 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId, TurnId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
-import { HttpServer } from "effect/unstable/http";
-import * as NetAddress from "effect/unstable/net/NetAddress";
+import { HttpServer } from "effect/http";
+import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -47,7 +47,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
-    expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.thread.threadId).toBe(threadId);
     expect(resolved?.capabilities).toEqual(
       new Set(["research", "preview", "orchestration", "worktree", "pull-requests"]),
     );
@@ -74,16 +74,16 @@ it.effect("keeps the previous credential valid while a replacement is prepared",
     const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
-    expect((yield* registry.resolve(firstToken))?.providerInstanceId).toBe(
+    expect((yield* registry.resolve(firstToken))?.thread.providerInstanceId).toBe(
       ProviderInstanceId.make("codex"),
     );
-    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+    expect((yield* registry.resolve(secondToken))?.thread.providerInstanceId).toBe(
       ProviderInstanceId.make("claudeAgent"),
     );
 
     yield* registry.revokeProviderSession(first.config.providerSessionId);
     expect(yield* registry.resolve(firstToken)).toBeUndefined();
-    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+    expect((yield* registry.resolve(secondToken))?.thread.providerInstanceId).toBe(
       ProviderInstanceId.make("claudeAgent"),
     );
   }),
@@ -109,7 +109,7 @@ it.effect("refreshes and commits only the selected provider credential", () =>
     yield* registry.touchProviderSession(second.config.providerSessionId);
     timestamp += 20;
     expect(yield* registry.resolve(firstToken)).toBeUndefined();
-    expect((yield* registry.resolve(secondToken))?.providerInstanceId).toBe(
+    expect((yield* registry.resolve(secondToken))?.thread.providerInstanceId).toBe(
       ProviderInstanceId.make("claudeAgent"),
     );
 
@@ -120,8 +120,8 @@ it.effect("refreshes and commits only the selected provider credential", () =>
     yield* registry.revokeThreadExcept(threadId, third.config.providerSessionId);
     expect(yield* registry.resolve(secondToken)).toBeUndefined();
     expect(
-      (yield* registry.resolve(third.config.authorizationHeader.replace(/^Bearer\s+/, "")))
-        ?.providerInstanceId,
+      (yield* registry.resolve(third.config.authorizationHeader.replace(/^Bearer\s+/, "")))?.thread
+        .providerInstanceId,
     ).toBe(ProviderInstanceId.make("grok"));
   }),
 );
@@ -228,7 +228,7 @@ it.effect("keeps a credential alive across turns that never touch an MCP tool", 
       yield* registry.touch(threadId);
     }
 
-    expect((yield* registry.resolve(token))?.threadId).toBe(threadId);
+    expect((yield* registry.resolve(token))?.thread.threadId).toBe(threadId);
   }),
 );
 
@@ -243,9 +243,9 @@ it.effect("updates a long-lived credential with the current orchestrator turn", 
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
     yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-a"));
-    expect((yield* registry.resolve(token))?.turnId).toBe(TurnId.make("turn-a"));
+    expect((yield* registry.resolve(token))?.thread.turnId).toBe(TurnId.make("turn-a"));
     yield* registry.setActiveTurn(issued.config.providerSessionId, TurnId.make("turn-b"));
-    expect((yield* registry.resolve(token))?.turnId).toBe(TurnId.make("turn-b"));
+    expect((yield* registry.resolve(token))?.thread.turnId).toBe(TurnId.make("turn-b"));
   }),
 );
 
@@ -269,12 +269,12 @@ it.effect("does not attach a turn to a retired provider credential", () =>
 
     expect(
       (yield* registry.resolve(oldCredential.config.authorizationHeader.replace(/^Bearer\s+/, "")))
-        ?.turnId,
+        ?.thread.turnId,
     ).toBeUndefined();
     expect(
       (yield* registry.resolve(
         currentCredential.config.authorizationHeader.replace(/^Bearer\s+/, ""),
-      ))?.turnId,
+      ))?.thread.turnId,
     ).toBe(TurnId.make("turn-current"));
   }),
 );

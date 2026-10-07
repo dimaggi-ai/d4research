@@ -1,4 +1,5 @@
 import { scopeProjectRef, scopeThreadRef } from "@d4research/client-runtime/environment";
+import { resolveProviderInstanceDisplayName } from "@d4research/client-runtime/state/provider-instance-display";
 import { resolveSubagentMetadata } from "@d4research/client-runtime/state/subagent-display";
 import type { EnvironmentId, OrchestrationV2Subagent } from "@d4research/contracts";
 import type { ReactNode } from "react";
@@ -125,7 +126,7 @@ function SubagentMetadata(props: {
         size={12}
       />
       <Text className="min-w-0 shrink text-xs text-foreground-muted" numberOfLines={1}>
-        {provider?.displayName ? `${provider.displayName} · ` : ""}
+        {provider ? `${resolveProviderInstanceDisplayName(provider)} · ` : ""}
         {modelLabel}
       </Text>
       {workspace.map(({ label, value }) => (

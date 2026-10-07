@@ -85,7 +85,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   );
   // The draft record is removed once the promoted thread has started, which
   // is after the route swap. Latch the key so the element that carried the
-  // draft keeps its identity for as long as this thread stays on screen.
+  // draft keeps its identity for as this thread stays on screen.
   const [chatViewKey, setChatViewKey] = useState<{ threadKey: string; key: string } | null>(null);
   const serverThreadKey = target.kind === "server" ? scopedThreadKey(target.threadRef) : null;
   const nextChatViewKey =

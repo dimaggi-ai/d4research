@@ -59,7 +59,7 @@ describe("chat canvas layout", () => {
     expect(result.frame!.y + result.frame!.height).toBe(888);
     expectClear(result);
   });
-  it("moves chat only as far as the preview requires", () => {
+  it("moves chat only as the preview requires", () => {
     const result = resolve(1344);
     expect(result.chat).toEqual({ left: 232, width: 768, insetStart: 0, insetEnd: 112 });
     expectClear(result);
@@ -269,7 +269,7 @@ describe("workspace card beside chat", () => {
   it("keeps chat centered while the card fits beside it", () => {
     expect(withCard(1384).chat).toEqual({ left: 324, width: 736, insetStart: 0, insetEnd: 0 });
   });
-  it("moves chat left only as far as the card requires", () => {
+  it("moves chat left only as the card requires", () => {
     expect(withCard(1383).chat).toEqual({ left: 323, width: 736, insetStart: 0, insetEnd: 1 });
     expect(withCard(1147).chat).toEqual({ left: 87, width: 736, insetStart: 0, insetEnd: 237 });
   });

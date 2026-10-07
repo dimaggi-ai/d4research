@@ -215,7 +215,7 @@ const CLAUDE_RECORDINGS = {
     enableTools: true,
     backgroundWakeCounts: [1, 0, 1, 0],
   },
-  // Each prompt is offered as soon as its turn and the wakes counted here
+  // Each prompt is offered as its turn and the wakes counted here
   // settle, so a wake queued during a turn (Agent B's "stopped" notice) is
   // still pending in the CLI when the next prompt arrives, and runs first.
   claude_background_wake_before_queued_prompt: {

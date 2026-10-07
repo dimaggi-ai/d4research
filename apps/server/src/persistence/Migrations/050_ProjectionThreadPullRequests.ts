@@ -1,6 +1,6 @@
 import { legacyThreadPullRequestKey } from "@d4research/shared/threadPullRequests";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 interface LegacyLinkedThreadRow {
   readonly threadId: string;

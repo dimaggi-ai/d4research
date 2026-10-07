@@ -1,8 +1,8 @@
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 
-import { remoteHttpClientLayer } from "@d4research/client-runtime/rpc";
+import { layerRemoteHttpClient } from "@d4research/client-runtime/rpc";
 
 import { cryptoLayer } from "../connection/crypto";
 import * as Persistence from "../persistence/layer";
@@ -10,27 +10,27 @@ import { disposeOnFoundationReplace, type FoundationHotModule } from "./foundati
 
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
-const httpClientLayer = remoteHttpClientLayer(fetch);
+const layerHttpClient = layerRemoteHttpClient(fetch);
 
 type RuntimeLayerSource =
   | typeof Socket.layerWebSocketConstructorGlobal
   | typeof cryptoLayer
-  | typeof httpClientLayer
+  | typeof layerHttpClient
   | typeof Persistence.layer;
 
-const runtimeLayer = Layer.mergeAll(
+const layerRuntime = Layer.mergeAll(
   Socket.layerWebSocketConstructorGlobal,
   cryptoLayer,
-  httpClientLayer,
+  layerHttpClient,
   Persistence.layer,
 );
 
 export const runtime: ManagedRuntime.ManagedRuntime<
   Layer.Success<RuntimeLayerSource>,
   Layer.Error<RuntimeLayerSource>
-> = ManagedRuntime.make(runtimeLayer);
+> = ManagedRuntime.make(layerRuntime);
 
-export const runtimeContextLayer: Layer.Layer<
+export const layer: Layer.Layer<
   Layer.Success<RuntimeLayerSource>,
   Layer.Error<RuntimeLayerSource>
 > = Layer.effectContext(runtime.contextEffect);

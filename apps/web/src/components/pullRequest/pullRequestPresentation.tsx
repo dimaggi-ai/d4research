@@ -41,7 +41,7 @@ import {
  * GitHub's pale yellows all clear 4.5:1 on their wash, selected row included, and
  * saturated colors sit well above.
  * A label with no usable color falls back to the muted tag. Children ride after the name,
- * for an overflow count. The height is pinned so a labeled row is as tall as one without.
+ * for an overflow count. The height is pinned so a labeled row is as one without.
  */
 export function PullRequestLabelChip({
   label,

@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ServerConfig,
+  ServerInstallation,
   ServerSelfUpdateCapability,
 } from "@d4research/contracts";
 import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
@@ -87,8 +88,17 @@ export function supportsServerUpdateThreadContinuation(
 }
 
 /** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx d4research@${targetVersion}`;
+export function manualServerUpdateCommand(
+  targetVersion: string,
+  installation?: ServerInstallation,
+): string {
+  if (installation?.kind === "npm-global") {
+    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
+    return `npm install --global --prefix ${prefix} d4research@${targetVersion}`;
+  }
+  const runner =
+    installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
+  return `${runner} d4research@${targetVersion}`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,

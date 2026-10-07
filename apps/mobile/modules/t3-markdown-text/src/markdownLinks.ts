@@ -2,6 +2,7 @@ import {
   inlineCodeFilePathCandidate,
   isConventionalFilePosition,
 } from "@d4research/client-runtime/markdown-links";
+import { parseThreadLinkHref } from "@d4research/shared/threadLinks";
 import { videoMimeType } from "@d4research/shared/video";
 
 import type { MARKDOWN_FILE_ICON_SOURCES } from "./markdownFileIcons.generated";
@@ -423,7 +424,11 @@ export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPrese
 
   return {
     kind: "link",
-    href: /^(?:mailto|tel):/i.test(normalized) ? normalized : null,
+    // A thread link keeps its href so a press reaches the feed, which opens the thread.
+    href:
+      /^(?:mailto|tel):/i.test(normalized) || parseThreadLinkHref(normalized) !== null
+        ? normalized
+        : null,
   };
 }
 

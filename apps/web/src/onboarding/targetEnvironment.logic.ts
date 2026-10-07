@@ -1,16 +1,16 @@
-import type { ConnectionTarget } from "@d4research/client-runtime/connection";
+import { type ConnectionCatalogEntry, hasRelayRoute } from "@d4research/client-runtime/connection";
 import type { EnvironmentId } from "@d4research/contracts";
 
 interface OnboardingEnvironment {
   readonly environmentId: EnvironmentId;
   readonly connection: { readonly phase: string };
-  readonly entry: { readonly target: ConnectionTarget };
+  readonly entry: Pick<ConnectionCatalogEntry, "target" | "alternateRoutes">;
 }
 
 export function isOnboardingRelayEnvironment(
   environment: Pick<OnboardingEnvironment, "entry">,
 ): boolean {
-  return environment.entry.target._tag === "RelayConnectionTarget";
+  return hasRelayRoute(environment.entry);
 }
 
 /** Keep a directly paired machine pinned while its initial connection completes. */

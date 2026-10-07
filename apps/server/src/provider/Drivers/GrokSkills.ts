@@ -17,9 +17,11 @@
  */
 import type { GrokSettings, ServerProviderSkill } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { ChildProcess } from "effect/process";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 
 import { spawnAndCollect } from "../providerSnapshot.ts";

@@ -114,6 +114,18 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         Option.none(),
       ).pipe(Effect.provide(Layer.mergeAll(configLayer, NetService.layer)));
 
+      const fixedConfigLayer = ConfigProvider.layer(
+        ConfigProvider.fromEnv({ env: { T3CODE_ACCESS_TOKEN: "test-pass!" } }),
+      );
+      const fixed = yield* resolveServerConfig(
+        { ...flags, devUrl: Option.none() },
+        Option.none(),
+      ).pipe(Effect.provide(Layer.mergeAll(fixedConfigLayer, NetService.layer)));
+      expect(fixed.devUrl).toBeUndefined();
+      expect(fixed.accessToken && Redacted.value(fixed.accessToken)).toBe("test-pass!");
+      expect(fixed.devAuthToken).toBeUndefined();
+      expect(String(fixed.accessToken)).not.toContain("test-pass!");
+
       expect(web.devAuthToken).toBeDefined();
       if (web.devAuthToken === undefined) {
         return yield* Effect.die("Expected reusable dev auth token.");

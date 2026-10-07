@@ -506,7 +506,7 @@ export const make = Effect.gen(function* () {
         scopes: AuthAdministrativeScopes,
         method: "browser-session-cookie",
         client: {
-          label: "Reusable dev token",
+          label: devAuth.label,
           ipAddress: null,
           userAgent: null,
           deviceType: "unknown",

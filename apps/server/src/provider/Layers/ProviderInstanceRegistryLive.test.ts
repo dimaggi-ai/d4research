@@ -45,6 +45,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
@@ -248,20 +249,22 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
           displayName: "Codex (personal)",
           enabled: false,
           config: makeCodexConfig({
-            binaryPath: "/opt/codex-personal/bin/codex",
-            homePath: "/home/julius/.codex_personal",
+            binaryPath: "codex",
             customModels: ["personal-preview"],
           }),
+          environment: [
+            { name: "CODEX_HOME", value: "/home/julius/.codex_personal", sensitive: false },
+          ],
         },
         [workId]: {
           driver: codexDriverKind,
           displayName: "Codex (work)",
           enabled: false,
           config: makeCodexConfig({
-            binaryPath: "/opt/codex-work/bin/codex",
-            homePath: "/home/julius/.codex",
+            binaryPath: "codex",
             customModels: ["work-preview"],
           }),
+          environment: [{ name: "CODEX_HOME", value: "/home/julius/.codex", sensitive: false }],
         },
       };
 
@@ -375,6 +378,62 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
       // The usage read fails, so the re-probe cannot confirm new limits.
       yield* codex!.snapshot.refresh;
       expect(yield* codex!.consumeResetCredit!()).toBe("alreadyRedeemed");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.live("probes separate account identities through one CLI executable", () =>
+    Effect.gen(function* () {
+      if (yield* isHostWindows) return;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const fixtures = yield* makeTildeProviderFixtures();
+      const executable = expandHomePath(fixtures.codexBinaryPath);
+      yield* fileSystem.writeFileString(
+        executable,
+        [
+          "#!/usr/bin/env bash",
+          'export T3_CODEX_COLLAB_SCRIPT="$CODEX_HOME/account.json"',
+          "shift",
+          'exec node "$(dirname "$0")/codexCollabMockPeer.mjs" "$@"',
+          "",
+        ].join("\n"),
+      );
+      const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+      const configMap: Record<ProviderInstanceId, ProviderInstanceConfigMap[ProviderInstanceId]> =
+        {};
+      for (const account of ["personal", "work"]) {
+        const home = path.join(path.dirname(executable), account);
+        yield* fileSystem.makeDirectory(home);
+        yield* fileSystem.writeFileString(
+          path.join(home, "account.json"),
+          yield* encode({
+            rootThreadId: "probe-thread",
+            notifications: [],
+            account: { type: "chatgpt", email: `${account}@example.test`, planType: "plus" },
+          }),
+        );
+        configMap[ProviderInstanceId.make(`codex_${account}`)] = {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          environment: [{ name: "CODEX_HOME", value: home, sensitive: false }],
+          config: makeCodexConfig({ enabled: true, binaryPath: fixtures.codexBinaryPath }),
+        };
+      }
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [CodexDriver],
+        configMap,
+      });
+      for (const account of ["personal", "work", "personal"]) {
+        const instanceId = ProviderInstanceId.make(`codex_${account}`);
+        const instance = yield* registry.getInstance(instanceId);
+        expect(instance).toBeDefined();
+        const snapshot = yield* instance!.snapshot.refresh;
+        expect(snapshot).toMatchObject({
+          instanceId,
+          status: "ready",
+          auth: { email: `${account}@example.test`, status: "authenticated" },
+        });
+      }
     }).pipe(Effect.provide(testLayer)),
   );
 

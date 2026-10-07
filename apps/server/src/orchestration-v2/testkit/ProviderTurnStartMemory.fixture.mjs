@@ -27,6 +27,11 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     app("project/ProjectService"),
     app("provider/Services/ProviderAuthService"),
   ]);
+const Settings = await app("serverSettings");
+const Registry = await app("provider/Services/ProviderRegistry");
+const { DEFAULT_SERVER_SETTINGS } = await import(
+  NodeURL.pathToFileURL(root + "/packages/contracts/src/settings.ts")
+);
 let current;
 let fullReads = 0;
 const liveRuns = [];
@@ -43,6 +48,10 @@ const session = {
   compactThread: () => Effect.void,
 };
 const dependencies = Layer.mergeAll(
+  Layer.mock(Registry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+  Layer.mock(Settings.ServerSettingsService)({
+    getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+  }),
   Layer.mock(Handoff.ContextHandoffServiceV2)({}),
   Id.layer,
   FileSystem.layerNoop({}),

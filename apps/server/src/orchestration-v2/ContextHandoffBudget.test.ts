@@ -2,6 +2,7 @@ import type { ProviderAdapterV2HistoricalContext } from "./ProviderAdapter.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
   ContextHandoffId,
+  MessageId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -23,6 +24,7 @@ import {
   historyResponseItems,
   selectHistory,
   historicalMessage,
+  restoreHandoffHistory,
 } from "./ContextHandoffBudget.ts";
 import { projectContextHandoffForWire } from "./WireProjection.ts";
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
@@ -688,4 +690,166 @@ describe("handoff delivery", () => {
       assert.equal(calls, 0);
     }),
   );
+});
+
+describe("handoff delivery modes", () => {
+  it.effect("direct transfers oversized individual messages intact without calling a judge", () =>
+    Effect.gen(function* () {
+      const text = "  exact technical text\n" + "x".repeat(20_000);
+      const intact = message("item:large", "user", text);
+      let judgeCalls = 0;
+      const result = yield* deliverContextHandoffs({
+        handoffs: [{ ...handoff, history: { ...handoff.history!, messages: [intact] } }],
+        providerThread,
+        budget: 64_000,
+        mode: "direct",
+        alreadyDeliveredItemIds: new Set(),
+        compact: () =>
+          Effect.sync(() => {
+            judgeCalls++;
+            return "summary";
+          }),
+        inject: (value) => {
+          assert.deepEqual(value.messages, [intact]);
+          return Effect.succeed(false);
+        },
+        persist: () => Effect.void,
+      });
+      assert.include(result.context, text);
+      assert.equal(judgeCalls, 0);
+    }),
+  );
+  it.effect("direct rejects an over-budget transfer before persisting or injecting", () =>
+    Effect.gen(function* () {
+      let writes = 0;
+      let injections = 0;
+      const result = yield* Effect.result(
+        deliverContextHandoffs({
+          handoffs: [handoff],
+          providerThread,
+          budget: 100,
+          mode: "direct",
+          alreadyDeliveredItemIds: new Set(),
+          inject: () =>
+            Effect.sync(() => {
+              injections++;
+              return true;
+            }),
+          persist: () =>
+            Effect.sync(() => {
+              writes++;
+            }),
+        }),
+      );
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") assert.equal(result.failure._tag, "ContextHandoffBudgetError");
+      assert.equal(writes, 0);
+      assert.equal(injections, 0);
+    }),
+  );
+  it.effect(
+    "smart summarizes full text and records recovery coverage after accepted inline delivery",
+    () =>
+      Effect.gen(function* () {
+        let durable = handoff;
+        let calls = 0;
+        const result = yield* deliverContextHandoffs({
+          handoffs: [handoff],
+          providerThread,
+          budget: 16_000,
+          mode: "smart",
+          alreadyDeliveredItemIds: new Set(),
+          compact: (transcript, limit) =>
+            Effect.sync(() => {
+              calls++;
+              assert.include(transcript, messages[0]!.text);
+              assert.include(transcript, messages[1]!.text);
+              assert.include(transcript, "USER (original task):");
+              assert.isAbove(limit, 0);
+              return "Keep the auth constraint; investigate the redirect error.";
+            }),
+          persist: (value) =>
+            Effect.sync(() => {
+              durable = value;
+            }),
+        });
+        assert.equal(calls, 1);
+        assert.include(result.context, "Keep the auth constraint");
+        assert.equal(durable.delivery?.status, "pending");
+        assert.deepEqual(
+          durable.history?.omittedItemIds,
+          messages.map((item) => item.itemId),
+        );
+        yield* result.delivered;
+        assert.equal(durable.delivery?.status, "inline");
+        assert.deepEqual(decodeHandoff(durable).history, durable.history);
+      }),
+  );
+  it.effect("smart leaves empty history unchanged without invoking compaction", () =>
+    Effect.gen(function* () {
+      const empty = { ...handoff, history: { ...handoff.history!, messages: [] } };
+      let durable = empty;
+      const result = yield* deliverContextHandoffs({
+        handoffs: [empty],
+        providerThread,
+        budget: 16_000,
+        mode: "smart",
+        alreadyDeliveredItemIds: new Set(),
+        compact: () => Effect.die("must not compact empty history"),
+        persist: (value) =>
+          Effect.sync(() => {
+            durable = value as typeof empty;
+          }),
+      });
+      yield* result.delivered;
+      assert.deepEqual(durable.history, empty.history);
+    }),
+  );
+});
+
+it("restores omitted historical text only inside the covered run range", () => {
+  const base = {
+    threadId,
+    nodeId: null,
+    providerThreadId: providerThread.id,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 1,
+    status: "completed" as const,
+    title: null,
+    startedAt: now,
+    completedAt: now,
+    updatedAt: now,
+    createdBy: "user" as const,
+    creationSource: "web" as const,
+    messageId: MessageId.make("restore:message"),
+    inputIntent: "turn_start" as const,
+    type: "user_message" as const,
+    role: "user" as const,
+    attachments: [],
+  };
+  const items = [1, 2, 3].map((ordinal) => ({
+    ...base,
+    id: TurnItemId.make(`item:restore:${ordinal}`),
+    runId: RunId.make(`run:${ordinal}`),
+    text: ordinal === 2 ? "Exact lost content\n" + "x".repeat(20_000) : `Run ${ordinal}`,
+  }));
+  const runs = [1, 2, 3].map((ordinal) => ({
+    id: RunId.make(`run:${ordinal}`),
+    ordinal,
+    status: "completed" as const,
+  }));
+  const restored = restoreHandoffHistory(
+    { ...handoff, coveredRunOrdinals: { from: 2, to: 2 } },
+    items,
+    runs,
+  );
+  assert.deepEqual(
+    restored.history?.messages.map((item) => item.text),
+    [items[1]!.text],
+  );
+  assert.equal(restored.history?.omittedItems, 0);
+  const fork = { ...handoff, strategy: "fork_delta_summary" as const };
+  assert.strictEqual(restoreHandoffHistory(fork, items, runs), fork);
 });

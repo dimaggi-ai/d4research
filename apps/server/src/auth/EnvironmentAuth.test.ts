@@ -79,6 +79,37 @@ const requestMetadata = {
 };
 
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
+  it.effect(
+    "exchanges an operator token repeatedly with static hosting and supports revocation",
+    () =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const token = "test-pass!";
+        const first = yield* auth.createBrowserSession(token, requestMetadata);
+        const second = yield* auth.createBrowserSession(token, requestMetadata);
+        expect(first.sessionToken).toBe(token);
+        expect(second.cookieName).toBe(first.cookieName);
+        expect((yield* sessions.verify(token)).scopes).toEqual(AuthAdministrativeScopes);
+        const verified = yield* auth.authenticateHttpRequest(
+          makeCookieRequest(first.cookieName!, token),
+        );
+        expect(verified.scopes).toEqual(AuthAdministrativeScopes);
+        yield* sessions.revoke(verified.sessionId);
+        expect((yield* Effect.flip(auth.createBrowserSession(token, requestMetadata)))._tag).toBe(
+          "ServerAuthInvalidCredentialError",
+        );
+      }).pipe(
+        Effect.provide(
+          makeEnvironmentAuthLayer({
+            mode: "web",
+            devUrl: undefined,
+            accessToken: Redacted.make("test-pass!"),
+          }),
+        ),
+      ),
+  );
+
   it.effect("uses the reusable dev cookie without overriding a normal scoped cookie", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

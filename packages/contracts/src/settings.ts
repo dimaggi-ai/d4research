@@ -1222,6 +1222,13 @@ export const HandoffCompressionBackend = Schema.Literals(["local", "provider"]);
 export type HandoffCompressionBackend = typeof HandoffCompressionBackend.Type;
 
 export const HandoffContextCompressionSettings = Schema.Struct({
+  mode: Schema.Literals(["bounded", "direct", "smart"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("bounded" as const)),
+  ),
+  judgeModel: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  judgeBaseUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  secondaryJudgeModel: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  secondaryJudgeBaseUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   backend: HandoffCompressionBackend.pipe(
     Schema.withDecodingDefault(Effect.succeed("local" as const)),
@@ -2099,6 +2106,11 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       contextCompression: Schema.optionalKey(
         Schema.Struct({
+          mode: Schema.optionalKey(Schema.Literals(["bounded", "direct", "smart"])),
+          judgeModel: Schema.optionalKey(TrimmedString),
+          judgeBaseUrl: Schema.optionalKey(TrimmedString),
+          secondaryJudgeModel: Schema.optionalKey(TrimmedString),
+          secondaryJudgeBaseUrl: Schema.optionalKey(TrimmedString),
           enabled: Schema.optionalKey(Schema.Boolean),
           backend: Schema.optionalKey(HandoffCompressionBackend),
           localModel: Schema.optionalKey(TrimmedNonEmptyString),

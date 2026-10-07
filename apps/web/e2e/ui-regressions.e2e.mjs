@@ -1,3 +1,4 @@
+import { handoffSettings } from "./handoff-settings.spec.mjs";
 import { createPairingUrl } from "./harness.mjs";
 import { branding, onboardingBranding } from "./branding.spec.mjs";
 import { darkPalette } from "./dark-palette.spec.mjs";
@@ -25,6 +26,7 @@ function authenticated(run) {
 
 await runProductionBrowserSuite([
   { name: "consistent-branding-and-loading", run: branding },
+  { name: "handoff-modes-and-local-judges", run: authenticated(handoffSettings) },
   ...pwaRecoverySpecs,
   { name: "missing-thread-redirects-to-draft", run: missingThreadRedirect },
   { name: "mobile-queue-while-running", run: mobileQueueWhileRunning },

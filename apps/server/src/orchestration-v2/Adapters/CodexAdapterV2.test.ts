@@ -855,6 +855,64 @@ describe("CodexAdapterV2 process spawning", () => {
       Effect.provideService(HostProcessPlatform, "linux"),
     ),
   );
+
+  it.effect("launches two accounts through the same executable with separate account homes", () =>
+    Effect.gen(function* () {
+      const launches: Array<{ command: string; home: unknown }> = [];
+      const hostEnvironment = { CODEX_HOME: "/accounts/host", HOST_ONLY: "preserved" };
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (ChildProcess.isStandardCommand(command)) {
+          launches.push({ command: command.command, home: command.options.env?.CODEX_HOME });
+        }
+        return Effect.fail(
+          PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }),
+        );
+      });
+      const path = yield* Path.Path;
+      for (const account of ["personal", "work"]) {
+        const instanceId = ProviderInstanceId.make(`codex_${account}`);
+        const adapter = yield* CodexAdapterV2.createCodexAdapterV2({
+          instanceId,
+          displayName: account,
+          environment: [{ name: "CODEX_HOME", value: `~/codex-${account}`, sensitive: false }],
+          enabled: true,
+          config: { ...DEFAULT_CODEX_SETTINGS, binaryPath: "/bin/account-codex" },
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              CodexAdapterV2.codexAppServerClientFactoryFromSettingsLayer,
+              ServerConfig.layerTest(process.cwd(), { prefix: "t3-codex-account-isolation-" }),
+            ),
+          ),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HostProcessEnvironment, hostEnvironment),
+          Effect.provideService(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        );
+        yield* adapter
+          .openSession({
+            threadId: ThreadId.make(`thread-account-${account}`),
+            providerSessionId: ProviderSessionId.make(`session-account-${account}`),
+            modelSelection: { ...CODEX_TEST_MODEL_SELECTION, instanceId },
+            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+          })
+          .pipe(Effect.scoped, Effect.exit);
+      }
+      assert.deepEqual(
+        launches,
+        ["personal", "work"].map((account) => ({
+          command: "/bin/account-codex",
+          home: path.join(NodeOS.homedir(), `codex-${account}`),
+        })),
+      );
+      assert.equal(hostEnvironment.CODEX_HOME, "/accounts/host");
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer)),
+      Effect.provideService(HostProcessPlatform, "linux"),
+    ),
+  );
 });
 
 describe("CodexAdapterV2 dynamic tool projection", () => {

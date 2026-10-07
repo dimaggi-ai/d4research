@@ -409,3 +409,23 @@ including filenames or folders containing `#` or `?`.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
+## Local development on iPhone and iPad
+
+Open **Settings → On this device → Local development** to work without a d4 server.
+Import text files or create files in the workspace, then save your edits before asking
+the model for changes. Review each proposal before applying it. Export the workspace
+to keep a copy of its files and conversation.
+
+Choose Apple Intelligence on a supported device with iOS 26 or later, or import a small
+GGUF model compatible with the bundled runtime. Bonsai 2 requires PrismML's custom
+runtime and is not supported in this build. Models run on the device unless you select
+**Cloud API — optional** and configure an HTTPS OpenAI-compatible endpoint. Cloud mode
+sends the task, conversation, file names, and selected file to that endpoint. API keys
+are stored in this device's Keychain; there is no automatic cloud fallback.
+
+JavaScript scratch tests run the editor's contents with `console.log` and
+`assert(condition, message)`. They have a two-second limit and no imports, dependencies,
+or network access. Shell commands, package installation, and native builds still need
+a development machine. New conversation clears the conversation and keeps the files;
+export first if you want to keep the conversation.

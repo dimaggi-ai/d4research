@@ -292,6 +292,7 @@ const config: ExpoConfig = {
     favicon: variant.assets.appIcon,
   },
   plugins: [
+    ["llama.rn", { enableEntitlements: false, enableOpenCLAndHexagon: false }],
     "expo-asset",
     [
       "expo-font",

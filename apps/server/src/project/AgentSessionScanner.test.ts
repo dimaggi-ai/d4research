@@ -632,7 +632,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("honors provider instance home directory environment variables", () =>
+    it.effect("honors account environment homes with a Codex shadow home", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const claudeHomePath = yield* makeTempDir("t3code-claude-legacy-");
@@ -674,7 +674,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             [ProviderInstanceId.make("codex")]: {
               driver: ProviderDriverKind.make("codex"),
               environment: [{ name: "CODEX_HOME", value: codexEnvironmentHome, sensitive: false }],
-              config: {},
+              config: { shadowHomePath: path.join(codexHomePath, "account-shadow") },
             },
           },
         });

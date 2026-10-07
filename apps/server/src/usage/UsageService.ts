@@ -319,14 +319,9 @@ export const make = Effect.gen(function* () {
           const decoded = decodeCodexSettings(instance.config ?? {});
           if (Option.isNone(decoded)) continue;
           const codexConfig = decoded.value;
-          const environmentHome = environment.CODEX_HOME?.trim();
           const layout = yield* resolveCodexHomeLayout(
-            codexConfig.setupMode !== "managed" &&
-              !codexConfig.homePath.trim() &&
-              !codexConfig.shadowHomePath.trim() &&
-              environmentHome
-              ? { ...codexConfig, homePath: environmentHome }
-              : codexConfig,
+            codexConfig,
+            codexConfig.setupMode === "managed" ? undefined : environment,
           );
           home = layout.sharedHomePath;
         } else if (driver === "claudeAgent") {

@@ -135,6 +135,58 @@ describe("isProviderInstancePickerVisible", () => {
 });
 
 describe("applyProviderInstanceSettings", () => {
+  it("keeps separate managed ChatGPT accounts with identical public configuration selectable", () => {
+    const driver = ProviderDriverKind.make("codex");
+    const settings = {
+      providers: { codex: { setupMode: "managed" } } as never,
+      providerInstances: Object.fromEntries(
+        ["codex_personal", "codex_work"].map((id) => [
+          id,
+          {
+            driver,
+            enabled: true,
+            config: { enabled: true, setupMode: "managed" },
+          },
+        ]),
+      ),
+    };
+    const entries = deriveProviderInstanceEntries(
+      ["codex_personal", "codex_work"].map((instanceId) =>
+        provider({ provider: driver, instanceId }),
+      ),
+    );
+    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
+    expect(
+      applyProviderInstanceSettings(entries, settings).map((entry) => entry.instanceId),
+    ).toEqual(["codex_personal", "codex_work"]);
+  });
+
+  it("keeps accounts whose distinct credentials are redacted from the client", () => {
+    const driver = ProviderDriverKind.make("claudeAgent");
+    const settings = {
+      providers: {} as never,
+      providerInstances: Object.fromEntries(
+        ["claude_personal", "claude_work"].map((id) => [
+          id,
+          {
+            driver,
+            enabled: true,
+            environment: [
+              { name: "ANTHROPIC_API_KEY", value: "", sensitive: true, valueRedacted: true },
+            ],
+          },
+        ]),
+      ),
+    };
+    const entries = deriveProviderInstanceEntries(
+      ["claude_personal", "claude_work"].map((instanceId) =>
+        provider({ provider: driver, instanceId }),
+      ),
+    );
+    expect(getRedundantProviderInstanceIds(settings)).toEqual(new Set());
+    expect(applyProviderInstanceSettings(entries, settings)).toHaveLength(2);
+  });
+
   it("collapses a presentation-only Agy duplicate into the canonical default", () => {
     const defaultId = ProviderInstanceId.make("agy");
     const duplicateId = ProviderInstanceId.make("agy_agy");

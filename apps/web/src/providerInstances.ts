@@ -389,6 +389,14 @@ export function getRedundantProviderInstanceIds(
 
     for (const [instanceId, instance] of instances) {
       if (instance.driver !== driver || instanceId === defaultId) continue;
+      // Managed credentials are keyed by instance id, and redacted values
+      // cannot establish that two CLI accounts have the same credentials.
+      if (
+        (driver === "codex" && configRecord(instance.config).setupMode === "managed") ||
+        instance.environment?.some((variable) => variable.valueRedacted)
+      ) {
+        continue;
+      }
       const signature = effectiveProviderRuntimeConfig(driver, instance);
       if (signatures.some((candidate) => Equal.equals(candidate, signature))) {
         redundant.add(instanceId);

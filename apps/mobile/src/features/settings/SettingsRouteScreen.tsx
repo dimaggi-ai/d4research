@@ -70,6 +70,11 @@ function LocalSettingsRouteScreen() {
           />
         </SettingsSection>
 
+        {Platform.OS === "ios" ? (
+          <SettingsSection title="On this device">
+            <SettingsRow icon="hammer" label="Local development" target="LocalDevelopment" />
+          </SettingsSection>
+        ) : null}
         <SettingsIndexSections />
       </ScrollView>
     </View>

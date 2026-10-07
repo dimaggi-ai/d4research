@@ -280,3 +280,42 @@ export function handoffCoverage(input: {
     `Recover omitted history using t3_thread_read({threadId:"${input.threadId}",view:"activity",limit:20,maxCharsPerItem:4000}); paginate with afterPosition=nextPosition. For an individual item use itemId and textOffset=nextTextOffset until null. Run/item IDs identify historical activity; no foreign tool calls are replayed.`,
   ].join("\n");
 }
+
+/** Restore preparation omissions only for same-thread portable handoffs. */
+export function restoreHandoffHistory(
+  handoff: OrchestrationV2ContextHandoff,
+  items: ReadonlyArray<OrchestrationV2TurnItem>,
+  runs: ReadonlyArray<
+    Pick<OrchestrationV2ThreadProjection["runs"][number], "id" | "ordinal" | "status">
+  >,
+): OrchestrationV2ContextHandoff {
+  if (
+    handoff.strategy !== "full_thread_summary" &&
+    handoff.strategy !== "delta_since_target_last_seen"
+  )
+    return handoff;
+  const sourceRuns = new Map(runs.map((run) => [run.id, run]));
+  const messages = items.flatMap((item) => {
+    const source = item.runId === null ? undefined : sourceRuns.get(item.runId);
+    if (
+      item.runId !== null &&
+      (source === undefined ||
+        source.ordinal < handoff.coveredRunOrdinals.from ||
+        source.ordinal > handoff.coveredRunOrdinals.to)
+    )
+      return [];
+    const message = historicalMessage(item);
+    return message === null
+      ? []
+      : [{ ...message, ...(source ? { runStatus: source.status } : {}) }];
+  });
+  return {
+    ...handoff,
+    history: {
+      messages,
+      coverage: handoff.history?.coverage ?? handoff.summaryText,
+      omittedItems: 0,
+      omittedItemIds: [],
+    },
+  };
+}

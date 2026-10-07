@@ -1,4 +1,5 @@
 export type SettingsSheetTarget =
+  | "LocalDevelopment"
   | "SettingsEnvironments"
   | "SettingsThreads"
   | "SettingsAbout"

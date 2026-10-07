@@ -10,6 +10,7 @@ import {
   parseResearchTrigger,
 } from "@d4research/shared/researchPipeline";
 import { ServerSettingsService } from "../serverSettings.ts";
+import { compressHandoffContextLocal } from "../handoffCompression.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { InlineDelegationRunner } from "../mcp/toolkits/research/inlineDelegation.ts";
 import { OrchestrationEventStore } from "../persistence/Services/OrchestrationEventStore.ts";
@@ -53,6 +54,7 @@ import {
   attachmentTokenAllowance,
   contextUsageForHandoff,
   historicalMessage,
+  restoreHandoffHistory,
   latestNativeContextUsage,
 } from "./ContextHandoffBudget.ts";
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
@@ -1274,13 +1276,43 @@ export const layer: Layer.Layer<
                     createdAt: yield* DateTime.now,
                   }),
                 ];
+          const compression = settings.handoff.contextCompression;
+          let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
+          if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
+            // Preparation is pure and bounded. Recover intact covered items here,
+            // in the effect worker, before choosing direct or smart delivery.
+            const history = yield* projectionStore.getTurnStartHistory(input.threadId);
+            deliveryHandoffs = deliveryHandoffs.map((handoff) =>
+              restoreHandoffHistory(handoff, history, projection.runs),
+            );
+          }
           const delivery = yield* deliverContextHandoffs({
-            handoffs: [...effectiveHandoffs, ...retryHandoff],
+            handoffs: deliveryHandoffs,
+            mode: compression.mode,
+            compact: (transcript, maxCharacters) =>
+              compressHandoffContextLocal({
+                transcript,
+                task: userText,
+                model: compression.localModel,
+                judgeModel: compression.judgeModel || compression.localModel,
+                ...(compression.judgeBaseUrl ? { judgeBaseUrl: compression.judgeBaseUrl } : {}),
+                ...(compression.secondaryJudgeModel && compression.secondaryJudgeBaseUrl
+                  ? {
+                      secondaryJudge: {
+                        model: compression.secondaryJudgeModel,
+                        baseUrl: compression.secondaryJudgeBaseUrl,
+                      },
+                    }
+                  : {}),
+                maxInputCharacters: compression.maxInputCharacters,
+                maxOutputCharacters: Math.min(maxCharacters, compression.maxOutputCharacters),
+                customPrompt: compression.customPrompt,
+              }),
             deferInline: compact,
             providerThread: runningProviderThread,
             budget: Effect.gen(function* () {
               return handoffBudget({
-                tokenCap,
+                tokenCap: compression.mode === "direct" ? Number.MAX_SAFE_INTEGER : tokenCap,
                 modelContextWindow,
                 // The note is sent with the user text, so it spends the same allowance.
                 userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,

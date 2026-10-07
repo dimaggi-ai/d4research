@@ -3,7 +3,7 @@
 T3 Code transfers conversation context when you switch providers, continue through a portable
 restart, or use a fork that the provider cannot resume itself.
 
-Short conversations transfer intact. For longer conversations, T3 Code favors recent requests and
+By default, short conversations transfer intact. For longer conversations, T3 Code favors recent requests and
 answers, the original request, and relevant activity such as command outcomes. Selected messages
 keep their full text, order, and user or assistant role, including partial work from failed or
 interrupted turns. Your new request stays separate and is never shortened to make history fit.
@@ -14,8 +14,28 @@ copy the outgoing provider's reasoning, tool-call state, or attachments.
 
 The handoff includes references to omitted history. The agent can use T3 Code's thread-reading tool
 to retrieve saved messages and activity, including the remainder of a long item. For an important
-constraint, you can still repeat it in your next message. A handoff is a budgeted selection, not an
-agent-written summary.
+constraint, you can still repeat it in your next message. The default mode transfers a budgeted selection.
+
+## Choose a handoff mode
+
+In **Settings → Handoff → Automatic handoff**, choose how provider switches transfer context:
+
+- **Bounded history** keeps the default selection described above.
+- **Direct (no compaction)** transfers the covered historical text intact. If it exceeds the
+  transfer allowance, the handoff fails instead of shortening it. Provider reasoning, native
+  tool state, and attachments still do not transfer.
+- **Smart compaction** uses local models to judge context against your current request. It keeps
+  essential messages verbatim where space allows, summarizes useful background, and drops filler.
+  Your visible thread stays unchanged, and retrieval references remain available.
+
+Smart mode uses Bonsai by default. You can configure a separate local judge model and an
+OpenAI-compatible endpoint, plus an optional second local judge. Set both the second model and
+endpoint to enable it; when the judges disagree, the higher importance score wins. These endpoints
+run on the server's machine, including when you connect from a phone or tablet.
+
+If judging fails, smart mode tries a local summary. If summarization also fails, it falls back to
+bounded text with an omission marker. Model output can miss details; repeat critical constraints
+in your current request. Short histories that fit the output limit need no model call.
 
 ## Context limits
 
@@ -25,8 +45,8 @@ instead of shortening your request. Compact the target conversation or select a 
 model before trying again.
 
 Server operators can set `T3CODE_CONTEXT_HANDOFF_TOKEN_CAP` to change the initial history allowance
-(default 16,000; clamped to 1,024–64,000). This is an upper bound, not a provider context-window
-guarantee. Text accounting conservatively charges one token per UTF-8 byte, including attribution
+(default 16,000; clamped to 1,024–64,000). Direct mode bypasses this initial allowance while retaining the transfer ceiling and model
+capacity checks. The allowance is not a provider context-window guarantee. Text accounting conservatively charges one token per UTF-8 byte, including attribution
 and JSON escaping. Imported history has a separate 64,000-byte ceiling; your current input and
 attachment payloads do not consume that ceiling.
 

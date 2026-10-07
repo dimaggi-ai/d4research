@@ -63,6 +63,7 @@ const relaySessionInput = {
 const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(function* (
   baseDir: string,
   token?: string,
+  production = false,
 ) {
   const devUrl = new URL("http://127.0.0.1:5173");
   const paths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
@@ -79,8 +80,12 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
         ...paths,
         baseDir,
         mode: "web",
-        devUrl,
-        ...(token === undefined ? {} : { devAuthToken: Redacted.make(token) }),
+        devUrl: production ? undefined : devUrl,
+        ...(token === undefined
+          ? {}
+          : production
+            ? { accessToken: Redacted.make(token) }
+            : { devAuthToken: Redacted.make(token) }),
       }),
     ),
   );
@@ -134,6 +139,37 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(moved).toBe(original);
       expect(other).not.toBe(original);
     }),
+  );
+
+  it.effect(
+    "preserves a production token across restarts and rejects it after removal or rotation",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const base = yield* fs.makeTempDirectoryScoped({ prefix: "t3-fixed-auth-" });
+        const token = "test-pass!";
+        const firstLayer = yield* makeDiskSessionStoreLayer(base, token, true);
+        const first = yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          return yield* sessions.verify(token);
+        }).pipe(Effect.provide(firstLayer), Effect.scoped);
+        const reopened = yield* makeDiskSessionStoreLayer(base, token, true);
+        yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          expect((yield* sessions.verify(token)).sessionId).toBe(first.sessionId);
+        }).pipe(Effect.provide(reopened), Effect.scoped);
+        for (const configured of [undefined, "replacement-pass!"]) {
+          const layer = yield* makeDiskSessionStoreLayer(base, configured, true);
+          yield* Effect.gen(function* () {
+            const sessions = yield* SessionStore.SessionStore;
+            expect((yield* Effect.flip(sessions.verify(token)))._tag).toBe(
+              "MalformedSessionTokenError",
+            );
+            if (configured !== undefined)
+              expect((yield* sessions.verify(configured)).sessionId).not.toBe(first.sessionId);
+          }).pipe(Effect.provide(layer), Effect.scoped);
+        }
+      }),
   );
 
   it.effect("keeps reusable dev auth local across disk-backed stores and restarts", () =>

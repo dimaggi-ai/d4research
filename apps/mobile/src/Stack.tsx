@@ -69,6 +69,7 @@ import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsCl
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
+import { LocalDevelopmentScreen } from "./features/local-development/LocalDevelopmentScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import {
@@ -193,6 +194,12 @@ const SettingsContentStack = createNativeStackNavigator({
       options: {
         title: "Settings",
       },
+    }),
+    LocalDevelopment: createNativeStackScreen({
+      if: () => Platform.OS === "ios",
+      screen: LocalDevelopmentScreen,
+      linking: "local-development",
+      options: { title: "Local development" },
     }),
     SettingsEnvironments: createNativeStackScreen({
       screen: SettingsEnvironmentsRouteScreen,

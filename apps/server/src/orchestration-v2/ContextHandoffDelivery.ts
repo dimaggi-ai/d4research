@@ -14,6 +14,8 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
     readonly providerThread: OrchestrationV2ProviderThread;
     readonly budget: number | Effect.Effect<number, BudgetError>;
     readonly deferInline?: boolean;
+    readonly mode?: "bounded" | "direct" | "smart";
+    readonly compact?: (transcript: string, maxCharacters: number) => Effect.Effect<string>;
     readonly alreadyDeliveredItemIds: ReadonlySet<string>;
     readonly inject?: (
       history: ProviderAdapterV2HistoricalContext,
@@ -61,15 +63,40 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
       .map((handoff) => handoff.summaryText)
       .join("\n\n");
     const fullCoverage =
-      oldContext && historyCost([], `${coverage}\n${oldContext}`) + 512 <= budget
+      oldContext &&
+      (input.mode === "direct" || historyCost([], `${coverage}\n${oldContext}`) + 512 <= budget)
         ? `${coverage}\n${oldContext}`
         : coverage;
-    const selected = selectHistory({
+    let selected = selectHistory({
       messages,
       coverage: fullCoverage,
       omittedItems: pending.reduce((sum, handoff) => sum + (handoff.history?.omittedItems ?? 0), 0),
-      budget,
+      budget: input.mode === "direct" ? Number.MAX_SAFE_INTEGER : budget,
     });
+    let smartCompacted = false;
+    if (input.mode === "smart" && input.compact && messages.length > 0) {
+      const maxCharacters = Math.floor((budget - historyCost([], fullCoverage) - 1_024) / 8);
+      if (maxCharacters <= 0) return yield* new ContextHandoffBudgetError();
+      const originalTaskIndex = messages.findIndex((entry) => entry.role === "user");
+      const transcript = messages
+        .map(
+          (message, index) =>
+            `${
+              message.role === "user" && index === originalTaskIndex
+                ? "USER (original task)"
+                : message.role.toUpperCase()
+            }: ${message.text}`,
+        )
+        .join("\n\n");
+      const summary = yield* input.compact(transcript, maxCharacters);
+      smartCompacted = true;
+      selected = {
+        messages: [],
+        context: `${fullCoverage}\nSmart compaction of ${messages.length} historical items:\n${summary}`,
+        omittedItems: messages.length,
+        omittedItemIds: messages.map((message) => message.itemId),
+      };
+    }
     if (historyCost(selected.messages, selected.context) > budget) {
       if (input.deferInline) return { context: "", delivered: Effect.void };
       return yield* new ContextHandoffBudgetError();
@@ -81,6 +108,17 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
         (handoff) =>
           input.persist({
             ...handoff,
+            ...(smartCompacted
+              ? {
+                  summaryText: selected.context,
+                  history: {
+                    messages: [],
+                    coverage: selected.context,
+                    omittedItems: selected.omittedItems,
+                    omittedItemIds: selected.omittedItemIds,
+                  },
+                }
+              : {}),
             ...(nativeThreadId === undefined
               ? {}
               : {

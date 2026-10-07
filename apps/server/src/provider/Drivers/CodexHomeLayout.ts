@@ -43,15 +43,23 @@ function resolveHomePath(path: Path.Path, value: string | undefined): string {
 
 export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(function* (
   config: CodexSettings,
+  environment?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<CodexHomeLayout, never, Path.Path> {
   const path = yield* Path.Path;
-  const sharedHomePath = resolveHomePath(path, config.homePath);
+  const configuredHome = config.homePath.trim();
+  const inheritedHome = environment?.CODEX_HOME?.trim() ?? "";
+  // Environment values have already been expanded at the instance boundary.
+  const sharedHomePath = configuredHome
+    ? resolveHomePath(path, configuredHome)
+    : inheritedHome
+      ? path.resolve(inheritedHome)
+      : resolveHomePath(path, undefined);
   const shadowHomePath = config.shadowHomePath.trim();
   if (shadowHomePath.length === 0) {
     return {
       mode: "direct",
       sharedHomePath,
-      effectiveHomePath: config.homePath.trim().length > 0 ? sharedHomePath : undefined,
+      effectiveHomePath: configuredHome || inheritedHome ? sharedHomePath : undefined,
       continuationKey: `codex:home:${sharedHomePath}`,
     };
   }

@@ -1453,7 +1453,8 @@ export const createCodexAdapterV2 = (
     const hostEnvironment = yield* HostProcessEnvironment;
     const idAllocator = yield* IdAllocatorV2;
     const serverConfig = yield* ServerConfig;
-    const homeLayout = yield* resolveCodexHomeLayout(config);
+    const processEnvironment = mergeProviderInstanceEnvironment(environment, hostEnvironment);
+    const homeLayout = yield* resolveCodexHomeLayout(config, processEnvironment);
 
     yield* materializeCodexShadowHome(homeLayout).pipe(
       Effect.mapError(
@@ -1477,7 +1478,7 @@ export const createCodexAdapterV2 = (
     return makeCodexAdapterV2({
       instanceId,
       settings,
-      environment: mergeProviderInstanceEnvironment(environment, hostEnvironment),
+      environment: processEnvironment,
       clientFactory,
       fileSystem,
       idAllocator,

@@ -223,6 +223,8 @@ describe("custom model settings", () => {
 describe("ServerSettings handoff compression", () => {
   it("defaults local compression to the resident bonsai2 model", () => {
     const compression = decodeServerSettings({}).handoff.contextCompression;
+    expect(compression.mode).toBe("bounded");
+    expect(compression.secondaryJudgeModel).toBe("");
     expect(compression.localModel).toBe("bonsai2-27b:latest");
     expect(compression.maxInputCharacters).toBe(24_000);
     expect(compression.maxOutputCharacters).toBe(3_000);
@@ -1306,3 +1308,17 @@ describe("branch naming settings", () => {
     },
   );
 });
+
+it.each(["bounded", "direct", "smart"])(
+  "accepts automatic handoff mode %s at the settings boundary",
+  (mode) => {
+    expect(
+      decodeServerSettingsPatch({ handoff: { contextCompression: { mode } } }).handoff
+        ?.contextCompression?.mode,
+    ).toBe(mode);
+    expect(
+      decodeServerSettings({ handoff: { contextCompression: { mode } } }).handoff.contextCompression
+        .mode,
+    ).toBe(mode);
+  },
+);

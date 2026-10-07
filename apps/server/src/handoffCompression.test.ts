@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 import { ProviderDriverKind, ProviderInstanceId, ThreadId, TurnId } from "@d4research/contracts";
 
@@ -707,4 +708,55 @@ describe("truncateHandoffTranscript", () => {
     expect(result.length).toBeLessThanOrEqual(30);
     expect(result.endsWith("TAIL")).toBe(true);
   });
+});
+
+const decodeJudgeEvidence = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      evidence: Schema.Struct({ current_task: Schema.String, original_task: Schema.String }),
+    }),
+  ),
+);
+
+describe("task-aware local handoff judges", () => {
+  it.effect(
+    "sends the current task to both judges and keeps either judge's essential context",
+    () =>
+      Effect.gen(function* () {
+        const calls: Array<StackCall> = [];
+        const fetchFn: typeof globalThis.fetch = (url, init) => {
+          const body = JSON.parse(String(init?.body));
+          return stackFetch({ calls, judge: () => (body.model === "second-local-judge" ? 2 : 0) })(
+            url,
+            init,
+          );
+        };
+        const result = yield* compressHandoffContextLocal({
+          transcript: LONG_TRANSCRIPT,
+          task: "Fix the login error while preserving the cookie name",
+          model: "bonsai2-27b:latest",
+          judgeModel: "primary-local-judge",
+          secondaryJudge: { model: "second-local-judge", baseUrl: "http://127.0.0.1:9000" },
+          maxInputCharacters: 24_000,
+          maxOutputCharacters: 600,
+          customPrompt: "",
+          fetchFn,
+        });
+        const judgeCalls = calls.filter((call) => call.kind === "judge");
+        expect(new Set(judgeCalls.map((call) => call.body.model))).toEqual(
+          new Set(["primary-local-judge", "second-local-judge"]),
+        );
+        for (const call of judgeCalls) {
+          const { evidence } = yield* decodeJudgeEvidence(
+            (call.body.messages as Array<{ content: string }>)[1]!.content,
+          );
+          expect(evidence.current_task).toBe(
+            "Fix the login error while preserving the cookie name",
+          );
+          expect(evidence.original_task).toContain("Fix the login redirect loop");
+        }
+        expect(result).toContain("Do not touch the session cookie name");
+        expect(result).toContain("TypeError: token is undefined");
+      }),
+  );
 });

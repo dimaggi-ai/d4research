@@ -164,6 +164,13 @@ const EnvServerConfig = Config.all({
   ),
 });
 
+// Explicit operator-managed credential; unlike dev tokens, this also works with static hosting.
+const AccessTokenConfig = Config.Redacted("T3CODE_ACCESS_TOKEN").pipe(
+  Config.option,
+  Config.map(Option.filter((token) => Redacted.value(token).length > 0)),
+  Config.map(Option.getOrUndefined),
+);
+
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
   Config.map((token) => Redacted.make(Redacted.value(token).trim())),
   Config.mapEffect((token) =>
@@ -311,6 +318,7 @@ export const resolveServerConfig = (
       resolveOptionPrecedence(normalizedFlags.devUrl, Option.fromUndefinedOr(env.devUrl)),
       () => undefined,
     );
+    const accessToken = mode === "web" ? yield* AccessTokenConfig : undefined;
     const devAuthToken =
       mode === "web" && devUrl !== undefined ? yield* DevAuthTokenConfig : undefined;
     const explicitBaseDir = resolveOptionPrecedence(
@@ -447,6 +455,7 @@ export const resolveServerConfig = (
       staticDir,
       devUrl,
       ...(devAuthToken === undefined ? {} : { devAuthToken }),
+      ...(accessToken === undefined ? {} : { accessToken }),
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       startupPresentation,

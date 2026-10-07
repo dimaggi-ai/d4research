@@ -41,6 +41,56 @@ const writeTextFile = Effect.fn("CodexHomeLayout.test.writeTextFile")(function* 
 
 it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
   describe("resolveCodexHomeLayout", () => {
+    it.effect("uses the account environment for runtime and continuation identity", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const config = decodeCodexSettings({ binaryPath: "codex" });
+        const personal = yield* resolveCodexHomeLayout(config, {
+          CODEX_HOME: "/accounts/personal",
+        });
+        const work = yield* resolveCodexHomeLayout(config, { CODEX_HOME: "/accounts/work" });
+        expect(personal.effectiveHomePath).toBe(path.resolve("/accounts/personal"));
+        expect(work.effectiveHomePath).toBe(path.resolve("/accounts/work"));
+        expect(personal.continuationKey).not.toBe(work.continuationKey);
+        expect(work.continuationKey).toBe(`codex:home:${work.effectiveHomePath}`);
+      }),
+    );
+
+    it.effect("prefers explicit home configuration over the inherited account", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({ homePath: "/accounts/explicit" }),
+          { CODEX_HOME: "/accounts/inherited" },
+        );
+        expect(layout.effectiveHomePath).toBe(path.resolve("/accounts/explicit"));
+      }),
+    );
+
+    it.effect(
+      "shares sessions from the environment account while keeping shadow auth private",
+      () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const layout = yield* resolveCodexHomeLayout(
+            decodeCodexSettings({ shadowHomePath: "/accounts/shadow" }),
+            { CODEX_HOME: "/accounts/shared" },
+          );
+          expect(layout.sharedHomePath).toBe(path.resolve("/accounts/shared"));
+          expect(layout.effectiveHomePath).toBe(path.resolve("/accounts/shadow"));
+          expect(layout.continuationKey).toBe(`codex:home:${layout.sharedHomePath}`);
+        }),
+    );
+
+    it.effect("ignores empty environment homes", () =>
+      Effect.gen(function* () {
+        const config = decodeCodexSettings({});
+        expect(yield* resolveCodexHomeLayout(config, { CODEX_HOME: "  " })).toEqual(
+          yield* resolveCodexHomeLayout(config),
+        );
+      }),
+    );
+
     it.effect("uses direct CODEX_HOME when no shadow home is configured", () =>
       Effect.gen(function* () {
         const homePath = yield* makeTempDir("t3code-codex-home-");
@@ -111,9 +161,9 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
 
           const layout = yield* resolveCodexHomeLayout(
             decodeCodexSettings({
-              homePath: sharedHome,
               shadowHomePath: shadowHome,
             }),
+            { CODEX_HOME: sharedHome },
           );
 
           yield* materializeCodexShadowHome(layout);

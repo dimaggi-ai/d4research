@@ -3540,9 +3540,106 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection title="Handoff" id="handoff">
         <SettingsRow
+          id="handoff-mode"
+          title="Automatic handoff"
+          description="Direct sends intact covered history without compaction and fails if it exceeds the transfer allowance. Smart selects context for your current task using local models."
+          control={
+            <Select
+              value={settings.handoff.contextCompression.mode}
+              onValueChange={(mode) => {
+                if (mode !== "bounded" && mode !== "direct" && mode !== "smart") return;
+                updateSettings({ handoff: { contextCompression: { mode } } });
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-48" aria-label="Automatic handoff">
+                <SelectValue>
+                  {settings.handoff.contextCompression.mode === "direct"
+                    ? "Direct (no compaction)"
+                    : settings.handoff.contextCompression.mode === "smart"
+                      ? "Smart compaction"
+                      : "Bounded history"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="bounded">Bounded history</SelectItem>
+                <SelectItem value="direct">Direct (no compaction)</SelectItem>
+                <SelectItem value="smart">Smart compaction</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        {settings.handoff.contextCompression.mode === "smart" ? (
+          <>
+            <SettingsRow
+              title="Judge model"
+              description="Leave blank to use the local summary model. The judge scores relevance to the receiving task."
+              control={
+                <Input
+                  aria-label="Judge model"
+                  value={settings.handoff.contextCompression.judgeModel}
+                  placeholder="bonsai2-27b:latest"
+                  onChange={(event) =>
+                    updateSettings({
+                      handoff: { contextCompression: { judgeModel: event.target.value } },
+                    })
+                  }
+                />
+              }
+            />
+            <SettingsRow
+              title="Judge endpoint"
+              description="OpenAI-compatible local endpoint. Leave blank to use Bonsai on port 8094."
+              control={
+                <Input
+                  aria-label="Judge endpoint"
+                  value={settings.handoff.contextCompression.judgeBaseUrl}
+                  placeholder="http://127.0.0.1:8094"
+                  onChange={(event) =>
+                    updateSettings({
+                      handoff: { contextCompression: { judgeBaseUrl: event.target.value } },
+                    })
+                  }
+                />
+              }
+            />
+            <SettingsRow
+              title="Second judge model"
+              description="Optional second local judge. When judges disagree, the higher importance score wins. Configure both its model and endpoint to enable it."
+              control={
+                <Input
+                  aria-label="Second judge model"
+                  value={settings.handoff.contextCompression.secondaryJudgeModel}
+                  onChange={(event) =>
+                    updateSettings({
+                      handoff: { contextCompression: { secondaryJudgeModel: event.target.value } },
+                    })
+                  }
+                />
+              }
+            />
+            <SettingsRow
+              title="Second judge endpoint"
+              control={
+                <Input
+                  aria-label="Second judge endpoint"
+                  value={settings.handoff.contextCompression.secondaryJudgeBaseUrl}
+                  placeholder="http://127.0.0.1:8094"
+                  onChange={(event) =>
+                    updateSettings({
+                      handoff: {
+                        contextCompression: { secondaryJudgeBaseUrl: event.target.value },
+                      },
+                    })
+                  }
+                />
+              }
+            />
+          </>
+        ) : null}
+        <SettingsRow
           id="handoff-context-compression"
           title="Context compression"
-          description="Controls explicit preparation requests and older clients. Automatic handoffs attach bounded context immediately, without waiting for compression."
+          description="Enable compression for explicit preparation requests and older clients. Automatic handoffs use the mode selected above."
           control={
             <Switch
               checked={settings.handoff.contextCompression.enabled}
@@ -3558,12 +3655,13 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        {settings.handoff.contextCompression.enabled ? (
+        {settings.handoff.contextCompression.enabled ||
+        settings.handoff.contextCompression.mode === "smart" ? (
           <>
             <SettingsRow
               id="handoff-compression-backend"
-              title="Compression backend"
-              description="Local model keeps essential messages verbatim and summarizes the rest on this machine, free and without a cold start. Provider session spawns a full provider CLI session and spends cloud tokens."
+              title="Explicit preparation backend"
+              description="Controls explicit preparation requests. Automatic smart handoffs always use local models. Provider session starts a provider CLI session and may spend cloud tokens."
               control={
                 <Select
                   value={settings.handoff.contextCompression.backend}
@@ -3593,11 +3691,12 @@ export function GeneralSettingsPanel() {
               }
             />
 
-            {settings.handoff.contextCompression.backend === "local" ? (
+            {settings.handoff.contextCompression.backend === "local" ||
+            settings.handoff.contextCompression.mode === "smart" ? (
               <SettingsRow
                 id="handoff-compression-local-model"
                 title="Local model"
-                description="Local model that judges which messages the next agent needs verbatim (bonsai2 server at 127.0.0.1:8094) and summarizes the rest (Ollama-compatible gateway at 127.0.0.1:11434)."
+                description="Summarizes selected context through the local Ollama-compatible gateway on port 11434. Smart handoffs use the judge settings above."
                 control={
                   <DraftInput
                     value={settings.handoff.contextCompression.localModel}

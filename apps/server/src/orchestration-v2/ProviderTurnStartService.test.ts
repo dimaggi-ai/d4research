@@ -1,3 +1,4 @@
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
@@ -29,10 +30,10 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "./IdAllocator.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { ProviderAdapterEventStreamError } from "./ProviderAdapter.ts";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
@@ -90,6 +91,7 @@ it("does not commit running state when inherited background routing cannot be re
   const pruneWorktrees = vi.fn(() => Effect.void);
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
       Layer.mergeAll(
@@ -373,7 +375,7 @@ function makeLocalCommandHarness(input: {
     }).pipe(
       Effect.andThen(
         Effect.fail(
-          new ProviderAdapterEventStreamError({
+          new ProviderAdapter.ProviderAdapterEventStreamError({
             driver: providerThread.driver,
             providerSessionId,
             cause: input.ensureThreadFailure,
@@ -386,7 +388,7 @@ function makeLocalCommandHarness(input: {
     driver: providerThread.driver,
     resumeThread: () =>
       Effect.fail(
-        new ProviderAdapterEventStreamError({
+        new ProviderAdapter.ProviderAdapterEventStreamError({
           driver: providerThread.driver,
           providerSessionId,
           cause: "native thread is gone",
@@ -485,6 +487,7 @@ function makeLocalCommandHarness(input: {
         }),
   );
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
       Layer.mergeAll(

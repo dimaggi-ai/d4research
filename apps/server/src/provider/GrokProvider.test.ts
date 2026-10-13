@@ -12,7 +12,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { GrokSettings } from "@d4research/contracts";
+import { GrokSettings } from "@d4research/provider-grok/settings";
 
 import {
   buildGrokModelCapabilities,
@@ -21,9 +21,9 @@ import {
   checkGrokProviderStatus,
   grokSlashCommandsFromInitialize,
   parseGrokModelsCliOutput,
-} from "./GrokProvider.ts";
-import { execScriptSource, writeFakeCli } from "../testUtils/fakeCli.ts";
-import { grokUsageResponseToLimits, readGrokAccount } from "./grokUsageLimits.ts";
+} from "@d4research/provider-grok/testing";
+import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
+import { grokUsageResponseToLimits, readGrokAccount } from "@d4research/provider-grok/testing";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

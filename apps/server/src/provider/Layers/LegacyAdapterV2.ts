@@ -13,7 +13,7 @@ import {
   type TurnId,
 } from "@d4research/contracts";
 import { DateTime, Effect, PubSub, Schema, Stream } from "effect";
-import * as V2 from "../../orchestration-v2/ProviderAdapter.ts";
+import * as V2 from "@d4research/provider-core/server/ProviderAdapter";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 
@@ -461,7 +461,7 @@ export function makeLegacyTurnTranslator(
 export function makeLegacyAdapterV2(
   adapter: ProviderAdapterShape<ProviderAdapterError>,
   instanceId: ProviderInstanceId,
-): V2.ProviderAdapterV2Shape {
+): V2.ProviderAdapterV2["Service"] {
   const driver = adapter.provider;
   const capabilities = legacyAdapterCapabilities(adapter);
   return {

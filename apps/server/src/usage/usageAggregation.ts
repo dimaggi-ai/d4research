@@ -20,7 +20,7 @@ import type {
   UsageTokenTotals,
 } from "@d4research/contracts";
 
-import { EMPTY_TOTALS, type UsageRecord } from "./usageTranscripts.ts";
+import { EMPTY_TOTALS, type UsageRecord } from "@d4research/provider-core/server/usage";
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
 
 /**

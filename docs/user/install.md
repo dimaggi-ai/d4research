@@ -61,7 +61,32 @@ that server does not supply provider credentials.
 
 If a CLI is outside the server process's `PATH`, set its absolute **Binary path** on the provider
 instance in Settings. A binary being present is not enough: d4research separately reports
-authentication, reachability, and model readiness before allowing a turn to start.
+authentication, reachability, and model readiness where the provider exposes them.
+Muse cannot verify login during its status check; a signed-out instance fails when sending a message.
+
+d4research warns when a provider version has known compatibility problems with your
+release. Check **Settings → Providers** on that environment for the recommended
+version or range. When its package manager supports installing a specific version,
+you can install the recommendation there. Otherwise use the provider's installer
+on the environment's machine. An unlisted version is unverified.
+
+When a provider CLI is behind its latest release, its provider card shows the
+available version. **Update now** runs the installer that owns the CLI
+(Homebrew, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or the
+CLI's own update command when d4research cannot tell. Update a CLI installed with
+mise through mise. Cursor and Antigravity update with d4research. Homebrew installs
+compare against the version Homebrew offers, which can trail the npm release by
+a few hours.
+
+Add another provider instance for a separate account or configuration. Each
+instance can have its own environment variables, such as API keys or a custom
+base URL. Mark secret values as sensitive; after saving, d4research does not display
+their original values.
+
+For provider-specific setup and accounts, see [Codex](./providers-codex.md),
+[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
+[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
+[Muse Code](./providers-muse.md).
 
 ## Target Selection Is Literal
 
@@ -78,7 +103,7 @@ Opus is unavailable, the result says Codex ran; it never claims Opus ran.
 ## Local Data
 
 The built-in Memo database lives at `memory.sqlite` inside the environment's d4research state
-directory. Normal source development uses the repository-local `.t3/dev` state unless an explicit
+directory. Linked-worktree development uses the repository-local `.t3/userdata` state unless an explicit
 home directory is provided; a production server uses the `userdata` directory under its configured
 T3 home. Choosing the external `memo-rest` backend sends Memo records to the configured REST
 service instead of the built-in database.

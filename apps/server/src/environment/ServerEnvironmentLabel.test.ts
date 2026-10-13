@@ -7,7 +7,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { HostProcessHostname, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -52,8 +52,8 @@ const withHostPlatform = <ROut, E, RIn>(
 ) =>
   Layer.mergeAll(
     layer,
-    Layer.succeed(HostProcessPlatform, platform),
-    Layer.succeed(HostProcessHostname, hostname),
+    Layer.succeed(HostProcess.Platform, platform),
+    Layer.succeed(HostProcess.Hostname, hostname),
   );
 
 afterEach(() => {

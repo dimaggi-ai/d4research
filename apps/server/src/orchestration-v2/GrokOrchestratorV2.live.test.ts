@@ -8,6 +8,8 @@ import {
   MessageId,
   type OrchestrationV2ThreadProjection,
   ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
   ThreadId,
 } from "@d4research/contracts";
 import * as Console from "effect/Console";
@@ -27,9 +29,11 @@ import * as CodexInstallation from "../provider/CodexInstallation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ModelManifest from "../provider/ModelManifest.ts";
 import * as ProviderInstanceRegistryHydration from "../provider/ProviderInstanceRegistryHydration.ts";
-import * as ProviderEventLoggers from "../provider/ProviderEventLoggers.ts";
-import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
-import * as OpenCodeServerLedger from "../provider/OpenCodeServerLedger.ts";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
+import * as OpenCodeRuntime from "@d4research/provider-opencode/server/OpenCodeRuntime";
+import * as OpenCodeServerLedger from "@d4research/provider-opencode/server/OpenCodeServerLedger";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -59,8 +63,11 @@ const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(
 const layerCheckpointStore = CheckpointStore.layer.pipe(Layer.provide(layerVcsDriverRegistry));
 
 const layerServerSettings = ServerSettings.layerTest({
-  providers: {
-    grok: { enabled: true },
+  providerInstances: {
+    [ProviderInstanceId.make("grok")]: {
+      driver: ProviderDriverKind.make("grok"),
+      enabled: true,
+    },
   },
 });
 const layerBackgroundPolicy = BackgroundPolicy.layer.pipe(
@@ -86,6 +93,7 @@ const layerProviderInstanceRegistry = ProviderInstanceRegistryHydration.layer.pi
         ProviderEventLoggers.ProviderEventLoggers,
         ProviderEventLoggers.NoOpProviderEventLoggers,
       ),
+      ProviderLatestVersions.layer,
       ModelManifest.layerTest,
       AntigravityInstallation.AntigravityInstallation.layer.pipe(
         Layer.provide(layerServerConfig.pipe(Layer.provide(layerPlatformTest))),
@@ -117,6 +125,7 @@ const layerLive = RuntimeLayer.layer.pipe(
   Layer.provide(ResetCreditCoordinator.layer),
   Layer.provide(layerBackgroundPolicy),
   Layer.provide(layerPlatformTest),
+  Layer.provide(McpProviderSessions.layer),
 );
 
 const waitForIdle = Effect.fn("GrokOrchestratorV2Live.waitForIdle")(function* (threadId: ThreadId) {

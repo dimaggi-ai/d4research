@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -13,19 +14,32 @@ import { VcsProcessSpawnError } from "@d4research/contracts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
-import * as BitbucketApi from "./BitbucketApi.ts";
-import * as GitHubApi from "./GitHubApi.ts";
-import * as GitHubCli from "./GitHubCli.ts";
-import * as GitLabCli from "./GitLabCli.ts";
-import * as ForgejoCli from "./ForgejoCli.ts";
-import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
-import * as ForgejoPullRequestProvider from "../pullRequest/ForgejoPullRequestProvider.ts";
+import * as AzureDevOpsCli from "@d4research/source-control-azure-devops/server/AzureDevOpsCli";
+import * as AzureDevOpsPullRequestCli from "@d4research/source-control-azure-devops/server/AzureDevOpsPullRequestCli";
+import * as BitbucketApi from "@d4research/source-control-bitbucket/server/BitbucketApi";
+import * as BitbucketPullRequestApi from "@d4research/source-control-bitbucket/server/BitbucketPullRequestApi";
+import * as GitHubApi from "@d4research/source-control-github/server/GitHubApi";
+import * as GitHubPullRequestApi from "@d4research/source-control-github/server/GitHubPullRequestApi";
+import * as GitLabCli from "@d4research/source-control-gitlab/server/GitLabCli";
+import * as GitLabPullRequestCli from "@d4research/source-control-gitlab/server/GitLabPullRequestCli";
+import * as ForgejoCli from "@d4research/source-control-forgejo/server/ForgejoCli";
+import * as GitCafeApi from "@d4research/source-control-gitcafe/server/GitCafeApi";
+import * as GitCafeCredentials from "@d4research/source-control-gitcafe/server/GitCafeCredentials";
+import * as ForgejoSourceControlProvider from "@d4research/source-control-forgejo/server/ForgejoSourceControlProvider";
+import * as ForgejoPullRequestProvider from "@d4research/source-control-forgejo/server/ForgejoPullRequestProvider";
 import * as SourceControlDiscovery from "./SourceControlDiscovery.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
-import { firstNonEmptyLine } from "./SourceControlProviderDiscovery.ts";
+import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
+import * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+
+const layerSourceControlHostTest = ServerSourceControlHost.layer.pipe(
+  Layer.provide(ServerSettings.layerTest()),
+  Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({})),
+);
 
 const layerSourceControlProviderRegistryTest = (input: {
   readonly bitbucket: Partial<BitbucketApi.BitbucketApi["Service"]>;
@@ -38,14 +52,32 @@ const layerSourceControlProviderRegistryTest = (input: {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+        Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)(input.bitbucket),
+        Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
         ServerSettings.ServerSettingsService.layerTest(),
-        Layer.mock(GitHubCli.GitHubCli)({}),
+        Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
         Layer.mock(GitHubApi.GitHubApi)({}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(GitLabCli.GitLabCli)({}),
+        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+        Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+          cliEnv: () => Effect.succeed({}),
+        }),
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
         Layer.mock(VcsProcess.VcsProcess)(input.process),
+        ServerSourceControlHost.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(VcsProcess.VcsProcess)(input.process),
+              ServerSettings.ServerSettingsService.layerTest(),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+              Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+            ),
+          ),
+        ),
       ),
     ),
   );
@@ -128,6 +160,7 @@ it.effect("submits a Forgejo review without sending its summary in the prelimina
     });
     assert.deepStrictEqual(methods, ["GET", "POST"]);
   }).pipe(
+    Effect.provide(layerSourceControlHostTest),
     Effect.provideService(
       FetchHttpClient.Fetch,
       Object.assign(fetchReview, { preconnect: () => undefined }),
@@ -308,29 +341,33 @@ it.effect("loads Forgejo pull request references from files and commits views", 
     assert.strictEqual(invalid._tag, "Failure");
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(
-        Layer.succeed(FileSystem.FileSystem, FileSystem.makeNoop({})),
-        Layer.mock(VcsProcess.VcsProcess)({}),
-        Layer.mock(ForgejoCli.ForgejoCli)({
-          resolveRepository: () =>
-            Effect.succeed({
-              login: "work",
-              repository: "maria/project",
-              baseUrl: "https://forgejo.test",
+      layerSourceControlHostTest.pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(FileSystem.FileSystem, FileSystem.makeNoop({})),
+            Layer.mock(VcsProcess.VcsProcess)({}),
+            Layer.mock(ForgejoCli.ForgejoCli)({
+              resolveRepository: () =>
+                Effect.succeed({
+                  login: "work",
+                  repository: "maria/project",
+                  baseUrl: "https://forgejo.test",
+                }),
+              api: (input) => {
+                assert.strictEqual(input.path, "repos/maria/project/pulls/42");
+                return encodeJsonEffect({
+                  number: 42,
+                  title: "Forgejo view reference",
+                  html_url: "https://forgejo.test/maria/project/pulls/42",
+                  state: "open",
+                  merged: false,
+                  base: { ref: "main", sha: "base", repo: null },
+                  head: { ref: "feature", sha: "head", repo: null },
+                }).pipe(Effect.orDie, Effect.map(processOutput));
+              },
             }),
-          api: (input) => {
-            assert.strictEqual(input.path, "repos/maria/project/pulls/42");
-            return encodeJsonEffect({
-              number: 42,
-              title: "Forgejo view reference",
-              html_url: "https://forgejo.test/maria/project/pulls/42",
-              state: "open",
-              merged: false,
-              base: { ref: "main", sha: "base", repo: null },
-              head: { ref: "feature", sha: "head", repo: null },
-            }).pipe(Effect.orDie, Effect.map(processOutput));
-          },
-        }),
+          ),
+        ),
       ),
     ),
   ),
@@ -583,31 +620,37 @@ it.effect("reports implemented tools separately from locally available executabl
       })),
       [
         {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           status: "available",
           auth: "authenticated",
           account: Option.some("juliusmarminge"),
         },
         {
-          kind: "gitlab",
+          kind: SourceControlProviderKind.make("gitlab"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "azure-devops",
+          kind: SourceControlProviderKind.make("azure-devops"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "bitbucket",
+          kind: SourceControlProviderKind.make("bitbucket"),
           status: "available",
           auth: "unauthenticated",
           account: Option.none(),
         },
         {
-          kind: "forgejo",
+          kind: SourceControlProviderKind.make("forgejo"),
+          status: "missing",
+          auth: "unknown",
+          account: Option.none(),
+        },
+        {
+          kind: SourceControlProviderKind.make("gitcafe"),
           status: "missing",
           auth: "unknown",
           account: Option.none(),
@@ -675,6 +718,13 @@ Logged in to gitlab.com as gitlab-user
       ) {
         return Effect.succeed(processOutput("azure-user@example.com\n"));
       }
+      if (input.command === "cafe" && input.args.slice(-3).join(" ") === "auth status --json") {
+        return Effect.succeed(
+          processOutput(
+            encodeJson({ schemaVersion: 1, data: { host: "git.cafe", username: "cafe-user" } }),
+          ),
+        );
+      }
       return Effect.fail(
         new VcsProcessSpawnError({
           operation: input.operation,
@@ -721,853 +771,45 @@ Logged in to gitlab.com as gitlab-user
       })),
       [
         {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           auth: "authenticated",
           account: Option.some("octocat"),
           detail: Option.none(),
         },
         {
-          kind: "gitlab",
+          kind: SourceControlProviderKind.make("gitlab"),
           auth: "authenticated",
           account: Option.some("gitlab-user"),
           detail: Option.none(),
         },
         {
-          kind: "azure-devops",
+          kind: SourceControlProviderKind.make("azure-devops"),
           auth: "authenticated",
           account: Option.some("azure-user@example.com"),
           detail: Option.none(),
         },
         {
-          kind: "bitbucket",
+          kind: SourceControlProviderKind.make("bitbucket"),
           auth: "authenticated",
           account: Option.some("bitbucket-user"),
           detail: Option.none(),
         },
         {
-          kind: "forgejo",
+          kind: SourceControlProviderKind.make("forgejo"),
           auth: "authenticated",
           account: Option.some("forgejo-user"),
+          detail: Option.none(),
+        },
+        {
+          kind: SourceControlProviderKind.make("gitcafe"),
+          auth: "authenticated",
+          account: Option.some("cafe-user"),
           detail: Option.none(),
         },
       ],
     );
   }).pipe(Effect.provide(layerTest));
 });
-
-it.effect("discovers Forgejo accounts and retains the server port", () =>
-  Effect.gen(function* () {
-    const auth = ForgejoSourceControlProvider.discovery.parseAuth(
-      processOutput(
-        yield* encodeJsonEffect([
-          {
-            name: "work",
-            url: "http://forgejo.local:3000",
-            ssh_host: "git.forgejo.local",
-            user: "maria",
-            default: "true",
-            valid: "true",
-          },
-        ]),
-      ),
-    );
-    assert.deepStrictEqual(
-      firstNonEmptyLine("\u001b[1mtea version 0.16.0\u001b[0m\n"),
-      Option.some("tea version 0.16.0"),
-    );
-    assert.strictEqual(auth.status, "authenticated");
-    assert.deepStrictEqual(auth.account, Option.some("maria"));
-    assert.deepStrictEqual(auth.host, Option.some("forgejo.local:3000"));
-    const revoked = ForgejoSourceControlProvider.discovery.parseAuth(
-      processOutput(
-        encodeJson([
-          {
-            name: "work",
-            url: "http://forgejo.local:3000",
-            user: "maria",
-            default: "true",
-            valid: "false",
-          },
-        ]),
-      ),
-    );
-    assert.strictEqual(revoked.status, "unauthenticated");
-    const refined = ForgejoSourceControlProvider.discovery.refineUnknownRemote({
-      cwd: "/repo",
-      context: {
-        provider: {
-          kind: "unknown",
-          name: "git.forgejo.local",
-          baseUrl: "https://git.forgejo.local",
-        },
-        remoteName: "origin",
-        remoteUrl: "git@git.forgejo.local:maria/project.git",
-      },
-      auth: processOutput(
-        yield* encodeJsonEffect([
-          {
-            name: "work",
-            url: "http://forgejo.local:3000",
-            ssh_host: "git.forgejo.local",
-            user: "maria",
-            default: "true",
-          },
-        ]),
-      ),
-    });
-    assert.deepStrictEqual(refined, {
-      kind: "forgejo",
-      name: "Forgejo / Gitea",
-      baseUrl: "http://forgejo.local:3000",
-    });
-  }),
-);
-
-it.effect("does not choose a default Forgejo login across ambiguous SSH server ports", () =>
-  Effect.gen(function* () {
-    const logins = ForgejoCli.parseForgejoLogins(
-      yield* encodeJsonEffect([
-        {
-          name: "one",
-          url: "http://forgejo.local:3000",
-          ssh_host: "forgejo.local",
-          user: "maria",
-          default: "true",
-        },
-        {
-          name: "two",
-          url: "http://forgejo.local:4000",
-          ssh_host: "forgejo.local",
-          user: "maria",
-          default: "false",
-        },
-      ]),
-    );
-    const remote = ForgejoCli.parseForgejoRemote("git@forgejo.local:maria/project.git");
-    assert.isNotNull(remote);
-    assert.deepStrictEqual(
-      ForgejoCli.parseForgejoRemote("forgejo.local:maria/project.git"),
-      remote,
-    );
-    assert.isUndefined(ForgejoCli.matchForgejoLogin(logins, remote!));
-    assert.strictEqual(
-      ForgejoCli.matchForgejoLogin(logins, remote!, "forgejo.local:4000")?.name,
-      "two",
-    );
-    assert.isUndefined(ForgejoCli.matchForgejoLogin(logins, remote!, "other.local:4000"));
-    const alias = ForgejoCli.parseForgejoRemote("git@ssh.forgejo.local:maria/project.git");
-    assert.isNotNull(alias);
-    assert.isUndefined(ForgejoCli.matchForgejoLogin(logins, alias!, "forgejo.local:4000"));
-    const refined = ForgejoSourceControlProvider.discovery.refineUnknownRemote({
-      cwd: "/repo",
-      context: {
-        provider: { kind: "unknown", name: "Forgejo", baseUrl: "https://forgejo.local" },
-        remoteName: "origin",
-        remoteUrl: "git@forgejo.local:maria/project.git",
-        requestedHost: "forgejo.local:4000",
-      },
-      auth: processOutput(yield* encodeJsonEffect(logins)),
-    });
-    assert.strictEqual(refined?.baseUrl, "http://forgejo.local:4000");
-    const https = ForgejoCli.parseForgejoRemote("http://forgejo.local:4000/maria/project.git");
-    assert.isNotNull(https);
-    assert.strictEqual(ForgejoCli.matchForgejoLogin(logins, https!)?.name, "two");
-    const hostOnly = ForgejoCli.parseForgejoRemote("http://forgejo.local:4000");
-    assert.strictEqual(
-      ForgejoCli.matchForgejoLogin(logins, hostOnly!, undefined, true)?.name,
-      "two",
-    );
-    const mounted = logins.map((login) => ({
-      ...login,
-      url: `http://forgejo.local:4000/${login.name}`,
-    }));
-    assert.isUndefined(ForgejoCli.matchForgejoLogin(mounted, hostOnly!, undefined, true));
-  }),
-);
-
-it.effect("rejects HTTP failures even when tea exits successfully", () =>
-  Effect.gen(function* () {
-    const cli = yield* ForgejoCli.make;
-    const result = yield* cli
-      .api({
-        cwd: "/repo",
-        repository: "http://forgejo.local:3000/maria/project",
-        path: "repos/maria/project/pulls/42",
-        method: "PATCH",
-        body: { state: "closed" },
-      })
-      .pipe(Effect.result);
-    assert.strictEqual(result._tag, "Failure");
-    if (result._tag === "Failure")
-      assert.strictEqual(
-        result.failure.detail,
-        "Forgejo repository or pull request was not found.",
-      );
-  }).pipe(
-    Effect.provideService(
-      FileSystem.FileSystem,
-      FileSystem.makeNoop({
-        exists: () => Effect.succeed(false),
-      }),
-    ),
-    Effect.provideService(
-      HttpClient.HttpClient,
-      HttpClient.make(() => {
-        throw new Error("tea must handle its own HTTP request");
-      }),
-    ),
-    Effect.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.args[0] === "api") {
-            assert.strictEqual(input.stdin, '{"state":"closed"}');
-            assert.include(input.args, "work");
-            assert.include(
-              input.args,
-              "http://forgejo.local:3000/api/v1/repos/maria/project/pulls/42",
-            );
-          }
-          return Effect.succeed(
-            input.args[0] === "login"
-              ? processOutput(
-                  encodeJson([
-                    {
-                      name: "work",
-                      url: "http://forgejo.local:3000",
-                      ssh_host: "forgejo.local",
-                      user: "maria",
-                      default: "true",
-                    },
-                  ]),
-                )
-              : processOutput('{"message":"not found"}', { stderr: "HTTP/1.1 404 Not Found\n" }),
-          );
-        },
-      }),
-    ),
-  ),
-);
-
-it.effect("routes mounted Forgejo repositories without repeating the mount in API paths", () =>
-  Effect.gen(function* () {
-    const cli = yield* ForgejoCli.make;
-    const viewer = yield* cli.api({ cwd: "/upstream-only", host: "code.test", path: "user" });
-    assert.strictEqual(viewer.stdout, "[]");
-    const mountedRepository = yield* cli.resolveRepository({
-      cwd: "/upstream-only",
-      host: "code.test",
-      repository: "maria/project",
-    });
-    assert.strictEqual(mountedRepository.baseUrl, "https://code.test/forgejo");
-    assert.strictEqual(mountedRepository.repository, "maria/project");
-    for (const path of [
-      "repos/forgejo/maria/project/pulls?state=open",
-      "repos/forgejo/maria/project",
-      "repos/reviewer/project/contents/file.ts",
-    ]) {
-      const result = yield* cli.api({
-        cwd: "/repo",
-        repository: "forgejo/maria/project",
-        context: {
-          provider: { kind: "forgejo", name: "Forgejo", baseUrl: "https://code.test/forgejo" },
-          remoteName: "origin",
-          remoteUrl: "https://code.test/forgejo/maria/project.git",
-        },
-        path,
-      });
-      assert.strictEqual(result.stdout, "[]");
-    }
-    const sameOwnerAsMount = yield* cli.resolveRepository({
-      cwd: "/repo",
-      repository: "forgejo/project",
-      context: {
-        provider: { kind: "forgejo", name: "Forgejo", baseUrl: "https://code.test/forgejo" },
-        remoteName: "origin",
-        remoteUrl: "ssh://git@code.test/forgejo/project.git",
-      },
-    });
-    assert.strictEqual(sameOwnerAsMount.command, "tea");
-    assert.strictEqual(sameOwnerAsMount.repository, "forgejo/project");
-  }).pipe(
-    Effect.provideService(
-      FileSystem.FileSystem,
-      FileSystem.makeNoop({
-        exists: () => Effect.succeed(true),
-        readFileString: () =>
-          Effect.succeed(
-            encodeJson({
-              hosts: { "code.test/forgejo": { type: "Application", token: "test-token" } },
-            }),
-          ),
-      }),
-    ),
-    Effect.provideService(
-      HttpClient.HttpClient,
-      HttpClient.make(() => {
-        throw new Error("tea must handle its own HTTP request");
-      }),
-    ),
-    Effect.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.command === "git")
-            return Effect.succeed(processOutput("", { exitCode: ChildProcessSpawner.ExitCode(2) }));
-          if (input.args[0] === "login")
-            return Effect.succeed(
-              processOutput(
-                encodeJson([
-                  {
-                    name: "mounted",
-                    url: "https://code.test/forgejo",
-                    ssh_host: "code.test",
-                    user: "maria",
-                    default: "true",
-                  },
-                ]),
-              ),
-            );
-          const supported = [
-            "https://code.test/forgejo/api/v1/user",
-            "https://code.test/forgejo/api/v1/repos/maria/project/pulls?state=open",
-            "https://code.test/forgejo/api/v1/repos/maria/project",
-            "https://code.test/forgejo/api/v1/repos/reviewer/project/contents/file.ts",
-          ];
-          if (input.args.at(-1)?.endsWith("/user")) assert.notInclude(input.args, "--repo");
-          assert.strictEqual(input.command, "tea");
-          return Effect.succeed(
-            supported.includes(input.args.at(-1) ?? "")
-              ? processOutput("[]", { stderr: "HTTP/1.1 200 OK\n" })
-              : processOutput("{}", { stderr: "HTTP/1.1 404 Not Found\n" }),
-          );
-        },
-      }),
-    ),
-  ),
-);
-
-it.effect("prefers fj for HTTP and ported SSH aliases on root servers", () => {
-  const commands: string[] = [];
-  const requests: string[] = [];
-  return Effect.gen(function* () {
-    const cli = yield* ForgejoCli.make;
-    for (const remoteUrl of [
-      "http://forgejo.local:3000/maria/project.git",
-      "ssh://git@ssh.forgejo.local:2222/maria/project.git",
-      "ssh://git@forgejo.local:2222/maria/project.git",
-    ]) {
-      const result = yield* cli.api({
-        cwd: "/repo",
-        repository: "maria/project",
-        context: {
-          provider: {
-            kind: "forgejo",
-            name: "Forgejo",
-            baseUrl: "http://forgejo.local:3000",
-          },
-          remoteName: "origin",
-          remoteUrl,
-          requestedHost: "forgejo.local:3000",
-        },
-        path: "repos/maria/project/issues/42/comments",
-        method: "POST",
-        body: { body: "verified through fj" },
-      });
-      assert.strictEqual(result.stdout, '{"id":99}');
-    }
-    assert.deepStrictEqual(commands, ["fj"]);
-    assert.deepStrictEqual(requests, [
-      "http://forgejo.local:3000/api/v1/repos/maria/project/issues/42/comments",
-      "http://forgejo.local:3000/api/v1/repos/maria/project/issues/42/comments",
-      "http://forgejo.local:3000/api/v1/repos/maria/project/issues/42/comments",
-    ]);
-    const viewer = yield* cli.api({
-      cwd: "/no-remotes",
-      host: "forgejo.local:3000",
-      path: "user",
-    });
-    assert.strictEqual(viewer.stdout, '{"login":"maria"}');
-    assert.strictEqual(requests.at(-1), "https://forgejo.local:3000/api/v1/user");
-    const upstreamViewer = yield* cli.api({
-      cwd: "/upstream-only",
-      host: "forgejo.local:3000",
-      path: "user",
-    });
-    assert.strictEqual(upstreamViewer.stdout, '{"login":"maria"}');
-    assert.strictEqual(requests.at(-1), "http://forgejo.local:3000/api/v1/user");
-    const upstreamRepository = yield* cli.resolveRepository({
-      cwd: "/upstream-only",
-      host: "forgejo.local:3000",
-      repository: "maria/project",
-    });
-    assert.strictEqual(upstreamRepository.baseUrl, "http://forgejo.local:3000");
-    assert.strictEqual(upstreamRepository.repository, "maria/project");
-    const httpViewer = yield* cli.api({ cwd: "/repo", host: "forgejo.local:3000", path: "user" });
-    assert.strictEqual(httpViewer.stdout, '{"login":"maria"}');
-    assert.strictEqual(requests.at(-1), "http://forgejo.local:3000/api/v1/user");
-  }).pipe(
-    Effect.provideService(
-      FileSystem.FileSystem,
-      FileSystem.makeNoop({
-        exists: () => Effect.succeed(true),
-        readFileString: () =>
-          Effect.succeed(
-            encodeJson({
-              hosts: {
-                "forgejo.local:3000": { type: "Application", token: "test-token" },
-                "forgejo.local:4000": { type: "Application", token: "other-token" },
-              },
-              aliases: { "ssh.forgejo.local:2222": "forgejo.local:3000" },
-            }),
-          ),
-      }),
-    ),
-    Effect.provideService(
-      HttpClient.HttpClient,
-      HttpClient.make((request) => {
-        requests.push(request.url);
-        if (request.url.endsWith("/user")) {
-          assert.strictEqual(request.method, "GET");
-          assert.strictEqual(request.headers.authorization, "token test-token");
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(request, new Response('{"login":"maria"}')),
-          );
-        }
-        assert.strictEqual(request.method, "POST");
-        assert.strictEqual(request.headers.authorization, "token test-token");
-        assert.strictEqual(request.body._tag, "Uint8Array");
-        if (request.body._tag === "Uint8Array")
-          assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(request.body.body)), {
-            body: "verified through fj",
-          });
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(request, new Response('{"id":99}', { status: 201 })),
-        );
-      }),
-    ),
-    Effect.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          commands.push(input.command);
-          if (input.command === "git")
-            return Effect.succeed(
-              input.cwd === "/no-remotes"
-                ? processOutput("", { exitCode: ChildProcessSpawner.ExitCode(2) })
-                : processOutput(
-                    `${input.cwd === "/upstream-only" ? "upstream" : "origin"}\thttp://forgejo.local:3000/maria/project.git (fetch)\nother\thttp://forgejo.local:3000/maria/other.git (fetch)\nunrelated\thttp://other.local:3000/maria/project.git (fetch)`,
-                  ),
-            );
-          assert.strictEqual(input.command, "fj");
-          assert.deepStrictEqual(input.args, [
-            "--host",
-            input.cwd === "/no-remotes"
-              ? "https://forgejo.local:3000"
-              : "http://forgejo.local:3000",
-            "whoami",
-          ]);
-          return Effect.succeed(processOutput(""));
-        },
-      }),
-    ),
-  );
-});
-
-it.effect("loads later fj review pages when the server caps pages below the requested size", () => {
-  const pages: number[] = [];
-  let issueCommentRequests = 0;
-  return Effect.gen(function* () {
-    const cli = yield* ForgejoCli.make;
-    const provider = yield* ForgejoPullRequestProvider.make.pipe(
-      Effect.provideService(ForgejoCli.ForgejoCli, cli),
-    );
-    const activity = yield* provider.getChangeRequestActivity({
-      cwd: "/repo",
-      repository: "maria/project",
-      host: "forgejo.test",
-      number: 42,
-    });
-    assert.strictEqual(activity.commentCount, 42);
-    assert.strictEqual(activity.comments.at(-1)?.id, "review:41");
-    assert.strictEqual(activity.commentsTruncated, false);
-    assert.deepStrictEqual(pages, [1, 2, 3]);
-    assert.strictEqual(issueCommentRequests, 1);
-  }).pipe(
-    Effect.provideService(
-      FileSystem.FileSystem,
-      FileSystem.makeNoop({
-        exists: () => Effect.succeed(true),
-        readFileString: () =>
-          Effect.succeed(
-            encodeJson({ hosts: { "forgejo.test": { type: "Application", token: "test-token" } } }),
-          ),
-      }),
-    ),
-    Effect.provideService(
-      HttpClient.HttpClient,
-      HttpClient.make((request) => {
-        const url = new URL(request.url);
-        if (url.pathname === "/api/v1/repos/maria/project/issues/42/comments") {
-          issueCommentRequests++;
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              new Response(
-                encodeJson([
-                  {
-                    id: 100,
-                    body: "Unpaginated issue comment",
-                    user: { login: "maria" },
-                    created_at: "2026-09-13T00:00:00Z",
-                  },
-                ]),
-              ),
-            ),
-          );
-        }
-        if (url.pathname.endsWith("/reviews")) {
-          const page = Number(url.searchParams.get("page"));
-          pages.push(page);
-          assert.ok(page >= 1 && page <= 3);
-          const reviews = Array.from({ length: page < 3 ? 20 : 1 }, (_, index) => ({
-            id: (page - 1) * 20 + index + 1,
-            body: "Review from a capped page",
-            user: { login: "maria" },
-            state: "COMMENT",
-            submitted_at: "2026-09-13T00:00:00Z",
-            comments_count: 0,
-          }));
-          return Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              new Response(encodeJson(reviews), {
-                headers:
-                  page === 2
-                    ? {}
-                    : {
-                        Link:
-                          page === 1
-                            ? `<${url.origin}${url.pathname}?limit=50&page=2>; rel="next"`
-                            : `<${url.origin}${url.pathname}?limit=50&page=1>; rel="prev"`,
-                      },
-              }),
-            ),
-          );
-        }
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            new Response(encodeJson(url.pathname === "/api/v1/user" ? { login: "maria" } : [])),
-          ),
-        );
-      }),
-    ),
-    Effect.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.command === "git") {
-            assert.deepStrictEqual(input.args, ["remote", "-v"]);
-            return Effect.succeed(
-              processOutput("origin\thttps://forgejo.test/maria/project.git (fetch)"),
-            );
-          }
-          assert.strictEqual(input.command, "fj");
-          assert.deepStrictEqual(input.args, ["--host", "https://forgejo.test", "whoami"]);
-          return Effect.succeed(processOutput(""));
-        },
-      }),
-    ),
-  );
-});
-
-it.effect("falls back to tea when fj is missing or has no account for this server", () =>
-  Effect.gen(function* () {
-    for (const scenario of ["missing-cli", "missing-account", "stale-invalid-storage"] as const) {
-      const commands: string[] = [];
-      yield* Effect.gen(function* () {
-        const cli = yield* ForgejoCli.make;
-        const result = yield* cli.api({
-          cwd: "/repo",
-          repository: "https://forgejo.local:3000/maria/project",
-          path: "repos/maria/project/pulls",
-        });
-        assert.strictEqual(result.stdout, "[]");
-        assert.deepStrictEqual(
-          commands,
-          scenario === "missing-account" ? ["tea", "tea"] : ["fj", "tea", "tea"],
-        );
-        const viewer = yield* cli.api({
-          cwd: "/upstream-only",
-          host: "forgejo.local:3000",
-          path: "user",
-        });
-        assert.strictEqual(viewer.stdout, "[]");
-      }).pipe(
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.makeNoop({
-            exists: () => Effect.succeed(true),
-            readFileString: () =>
-              Effect.succeed(
-                scenario === "stale-invalid-storage"
-                  ? "invalid json"
-                  : encodeJson({
-                      hosts: {
-                        [scenario === "missing-cli" ? "forgejo.local:3000" : "other.local"]: {
-                          type: "Application",
-                          token: "test-token",
-                        },
-                      },
-                    }),
-              ),
-          }),
-        ),
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make(() => {
-            throw new Error("tea must handle its own HTTP request");
-          }),
-        ),
-        Effect.provide(
-          Layer.mock(VcsProcess.VcsProcess)({
-            run: (input) => {
-              commands.push(input.command);
-              if (input.command === "git")
-                return Effect.succeed(
-                  processOutput("", { exitCode: ChildProcessSpawner.ExitCode(2) }),
-                );
-              if (input.command === "fj")
-                return Effect.fail(
-                  new VcsProcessSpawnError({
-                    operation: input.operation,
-                    command: input.command,
-                    cwd: input.cwd,
-                    cause: new Error("fj not found"),
-                  }),
-                );
-              assert.strictEqual(input.command, "tea");
-              if (input.args.at(-1)?.endsWith("/user")) assert.notInclude(input.args, "--repo");
-              return Effect.succeed(
-                input.args[0] === "login"
-                  ? processOutput(
-                      encodeJson([
-                        {
-                          name: "work",
-                          url: "https://forgejo.local:3000",
-                          user: "maria",
-                          default: "true",
-                          valid: "true",
-                        },
-                      ]),
-                    )
-                  : processOutput("[]", { stderr: "HTTP/1.1 200 OK\n" }),
-              );
-            },
-          }),
-        ),
-      );
-    }
-  }),
-);
-
-it.effect("handles fj mutation statuses without retrying failures or reading absent bodies", () =>
-  Effect.gen(function* () {
-    for (const status of [204, 205, 302, 401, 403, 404, 429, 500]) {
-      let writes = 0;
-      yield* Effect.gen(function* () {
-        const cli = yield* ForgejoCli.make;
-        const result = yield* cli
-          .api({
-            cwd: "/repo",
-            repository: "https://forgejo.local/maria/project",
-            path: "repos/maria/project/issues/42/comments",
-            method: "POST",
-            body: { body: "only once" },
-          })
-          .pipe(Effect.result);
-        assert.strictEqual(result._tag, status < 300 ? "Success" : "Failure");
-        if (result._tag === "Success") assert.strictEqual(result.success.stdout, "");
-        if (result._tag === "Failure") {
-          assert.strictEqual(result.failure.command, "fj");
-          assert.strictEqual(result.failure.httpStatus, status);
-        }
-        assert.strictEqual(writes, 1);
-      }).pipe(
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.makeNoop({
-            exists: () => Effect.succeed(true),
-            readFileString: () =>
-              Effect.succeed(
-                encodeJson({
-                  hosts: {
-                    "forgejo.local": { type: "Application", token: "test-token" },
-                  },
-                }),
-              ),
-          }),
-        ),
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make((request) => {
-            writes++;
-            assert.strictEqual(
-              request.url,
-              "https://forgejo.local/api/v1/repos/maria/project/issues/42/comments",
-            );
-            return Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response(status < 300 ? null : "", {
-                  status,
-                  headers: { location: "https://other.local/" },
-                }),
-              ),
-            );
-          }),
-        ),
-        Effect.provide(
-          Layer.mock(VcsProcess.VcsProcess)({
-            run: (input) => {
-              assert.strictEqual(
-                input.command,
-                "fj",
-                "a failed mutation must never switch accounts or CLI",
-              );
-              return Effect.succeed(processOutput(""));
-            },
-          }),
-        ),
-      );
-    }
-  }),
-);
-
-it.effect(
-  "discovers fj first and retains configured authentication failures instead of switching accounts",
-  () =>
-    Effect.gen(function* () {
-      for (const scenario of ["authenticated", "revoked", "missing", "invalid-storage"] as const) {
-        const commands: string[] = [];
-        yield* Effect.gen(function* () {
-          const spec = yield* ForgejoSourceControlProvider.makeDiscovery;
-          assert.strictEqual(spec.type, "managed-cli");
-          if (spec.type !== "managed-cli") return;
-          const result = yield* spec.probe("/repo");
-          assert.strictEqual(result.executable, scenario === "missing" ? "tea" : "fj");
-          assert.strictEqual(
-            result.auth.status,
-            scenario === "revoked"
-              ? "unauthenticated"
-              : scenario === "invalid-storage"
-                ? "unknown"
-                : "authenticated",
-          );
-          if (scenario !== "revoked" && scenario !== "invalid-storage")
-            assert.deepStrictEqual(result.auth.host, Option.some("forgejo.local:3000"));
-          assert.deepStrictEqual(
-            result.auth.account,
-            scenario === "authenticated" || scenario === "missing"
-              ? Option.some("maria")
-              : Option.none(),
-          );
-          assert.strictEqual(
-            commands.some((command) => command.startsWith("tea ")),
-            scenario === "missing",
-          );
-          assert.include(commands, "fj version");
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              Layer.mock(ForgejoCli.ForgejoCli)({
-                getAccount: (input) => {
-                  assert.strictEqual(scenario, "authenticated");
-                  assert.deepStrictEqual(input, {
-                    cwd: "/repo",
-                    baseUrl: "http://forgejo.local:3000",
-                  });
-                  return Effect.succeed("maria");
-                },
-                listLogins: (input) => {
-                  assert.strictEqual(
-                    input.remoteUrl,
-                    "http://forgejo.local:3000/maria/project.git",
-                  );
-                  if (scenario === "invalid-storage")
-                    return Effect.fail(
-                      new ForgejoCli.ForgejoCliError({
-                        command: "fj",
-                        cwd: input.cwd,
-                        reason: "authentication",
-                        detail: "fj authentication storage is invalid.",
-                      }),
-                    );
-                  return Effect.succeed([
-                    {
-                      name: "forgejo.local:3000",
-                      url: "http://forgejo.local:3000",
-                      user: "",
-                      default: "false",
-                    },
-                  ]);
-                },
-              }),
-              Layer.mock(VcsProcess.VcsProcess)({
-                run: (input) => {
-                  commands.push(`${input.command} ${input.args.join(" ")}`);
-                  if (input.command === "git")
-                    return Effect.succeed(
-                      processOutput("http://forgejo.local:3000/maria/project.git\n"),
-                    );
-                  if (input.command === "fj") {
-                    if (scenario === "missing")
-                      return Effect.fail(
-                        new VcsProcessSpawnError({
-                          operation: input.operation,
-                          command: input.command,
-                          cwd: input.cwd,
-                          cause: new Error("fj not found"),
-                        }),
-                      );
-                    if (input.args[0] === "version")
-                      return Effect.succeed(processOutput("fj 0.10.0"));
-                    if (scenario === "invalid-storage") {
-                      assert.deepStrictEqual(input.args, ["auth", "list"]);
-                      return Effect.succeed(processOutput(""));
-                    }
-                    assert.deepStrictEqual(input.args, [
-                      "--host",
-                      "http://forgejo.local:3000",
-                      "whoami",
-                    ]);
-                    return Effect.succeed(
-                      processOutput("", {
-                        exitCode: ChildProcessSpawner.ExitCode(scenario === "revoked" ? 1 : 0),
-                      }),
-                    );
-                  }
-                  assert.strictEqual(input.command, "tea");
-                  return Effect.succeed(
-                    input.args[0] === "--version"
-                      ? processOutput("tea version 0.16.0")
-                      : processOutput(
-                          encodeJson([
-                            {
-                              name: "work",
-                              url: "http://forgejo.local:3000",
-                              user: "maria",
-                              default: "true",
-                              valid: "true",
-                            },
-                          ]),
-                        ),
-                  );
-                },
-              }),
-            ),
-          ),
-        );
-      }
-    }),
-);
 
 it.effect(
   "checks out fj pull refs and preserves existing branches and dirty files until forced",
@@ -1618,22 +860,27 @@ it.effect(
         args: ["rev-parse", "HEAD"],
       })).stdout.trim();
       const fetched: string[] = [];
+      const host = yield* SourceControlHost.SourceControlHost;
       const provider = yield* ForgejoSourceControlProvider.make.pipe(
         Effect.provideService(
-          VcsProcess.VcsProcess,
-          VcsProcess.VcsProcess.of({
-            run: (input) => {
-              if (input.args[0] !== "fetch") return git.run(input);
-              const url = input.args[2];
-              assert.isDefined(url);
-              fetched.push(url!);
-              // Only SSH transport is substituted; both paths fetch the real pull ref.
-              return git.run({
-                ...input,
-                args: input.args.map((arg) =>
-                  arg === "git@forgejo.test:reviewer/project.git" ? source : arg,
-                ),
-              });
+          SourceControlHost.SourceControlHost,
+          SourceControlHost.SourceControlHost.of({
+            settings: host.settings,
+            git: host.git,
+            process: {
+              run: (input) => {
+                if (input.args[0] !== "fetch") return git.run(input);
+                const url = input.args[2];
+                assert.isDefined(url);
+                fetched.push(url!);
+                // Only SSH transport is substituted; both paths fetch the real pull ref.
+                return git.run({
+                  ...input,
+                  args: input.args.map((arg) =>
+                    arg === "git@forgejo.test:reviewer/project.git" ? source : arg,
+                  ),
+                });
+              },
             },
           }),
         ),
@@ -1725,7 +972,11 @@ it.effect(
         reference: "42",
         force: true,
         context: {
-          provider: { kind: "forgejo", name: "Forgejo", baseUrl: "https://forgejo.test" },
+          provider: {
+            kind: SourceControlProviderKind.make("forgejo"),
+            name: "Forgejo",
+            baseUrl: "https://forgejo.test",
+          },
           remoteName: "origin",
           remoteUrl: "git@forgejo.test:maria/project.git",
         },
@@ -1750,6 +1001,14 @@ it.effect(
       assert.deepStrictEqual(fetched, [source, source, "git@forgejo.test:reviewer/project.git"]);
     }).pipe(
       Effect.scoped,
-      Effect.provide(VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        ServerSourceControlHost.layer.pipe(
+          Layer.provideMerge(VcsProcess.layer),
+          Layer.provideMerge(ServerSettings.ServerSettingsService.layerTest()),
+          Layer.provideMerge(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+          Layer.provideMerge(Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({})),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
     ),
 );

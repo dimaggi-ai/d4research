@@ -4,6 +4,8 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
+// plist is CommonJS; Node cannot load its named exports from an ES module.
+import Plist from "plist";
 
 import {
   createPackageWithOptions,
@@ -14,7 +16,7 @@ import {
 } from "@electron/asar";
 
 import { fromYaml } from "@d4research/shared/schemaYaml";
-import { HostProcessArchitecture, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
@@ -32,6 +34,7 @@ import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
 } from "./lib/cli-external-packages.ts";
+import { loadRepoEnv } from "./lib/repo-env.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -53,6 +56,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "ai.dimaggi.d4research";
+const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -77,9 +81,27 @@ const StageWorkspaceConfig = Schema.Struct({
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  packageExtensions: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        peerDependenciesMeta: Schema.Record(
+          Schema.String,
+          Schema.Struct({ optional: Schema.Boolean }),
+        ),
+      }),
+    ),
+  ),
   nodeLinker: Schema.optional(Schema.Literals(["hoisted"])),
 });
 type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
+
+// electron-webauthn declares TypeScript as a peer only for its typings. pnpm
+// auto-installs missing peers, which would ship a compiler inside the app.
+const STAGE_PACKAGE_EXTENSIONS = {
+  "electron-webauthn": { peerDependenciesMeta: { typescript: { optional: true } } },
+  "@electron-webauthn/macos": { peerDependenciesMeta: { typescript: { optional: true } } },
+} as const;
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
@@ -88,7 +110,9 @@ const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
 const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
 
-const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
+// Decodes the repo's pnpm-workspace.yaml. A PR CI test calls this too, so a bad
+// entry fails the PR instead of the nightly desktop build.
+export const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
@@ -176,6 +200,36 @@ const getDefaultArch = Effect.fn("getDefaultArch")(function* (platform: typeof B
 
   return yield* getDefaultBuildArch(platform, config);
 });
+
+export class MacPasskeySigningConfigurationResolutionError extends Schema.TaggedError<MacPasskeySigningConfigurationResolutionError>()(
+  "MacPasskeySigningConfigurationResolutionError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  static fromCause(
+    cause: unknown,
+  ): MacPasskeySigningConfigurationError | MacPasskeySigningConfigurationResolutionError {
+    return isMacPasskeySigningConfigurationError(cause)
+      ? cause
+      : new MacPasskeySigningConfigurationResolutionError({ cause });
+  }
+
+  override get message(): string {
+    return "Failed to resolve macOS passkey signing configuration.";
+  }
+}
+
+export class MacProvisioningProfileNotFoundError extends Schema.TaggedError<MacProvisioningProfileNotFoundError>()(
+  "MacProvisioningProfileNotFoundError",
+  {
+    provisioningProfilePath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `macOS provisioning profile not found: ${this.provisioningProfilePath}`;
+  }
+}
 
 export class KeyringNativePackageMissingError extends Schema.TaggedError<KeyringNativePackageMissingError>()(
   "KeyringNativePackageMissingError",
@@ -800,7 +854,7 @@ const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRo
 const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   const env = yield* Config.all({
     configuredPython: Config.String("npm_config_python").pipe(
       Config.orElse(() => Config.String("PYTHON")),
@@ -877,6 +931,7 @@ interface StagePackageJson {
   readonly version: string;
   readonly buildVersion: string;
   readonly t3codeCommitHash: string;
+  readonly t3codeWebAuthn?: MacWebAuthnEntitlements;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -958,6 +1013,14 @@ export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
 // asar redirect convention). Everything else stays packed.
 export const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
   "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}";
+// The server sidecar unpacks .node files separately, keeping only Windows ones.
+export const WINDOWS_SERVER_ASAR_UNPACK_GLOBS = [
+  "**/*.dll",
+  "**/*.exe",
+  "**/*.so",
+  "**/*.so.*",
+  "**/*.dylib",
+] as const;
 // Mirrors DESKTOP_FILE_EXCLUSIONS for the hand-packed sidecar: the Claude SDK
 // platform packages are dead weight (see above), and node_modules/.bin shims
 // are never spawned at runtime (and are symlinks on POSIX build hosts, which
@@ -1052,6 +1115,241 @@ export const LINUX_CAPTURE_EXTRA_RESOURCES = [
 export const LINUX_BROWSER_SECRET_EXTRA_RESOURCES = [
   { from: "apps/desktop/prod-resources/browser-secret", to: "browser-secret" },
 ] as const;
+
+export interface MacPasskeySigningConfiguration {
+  readonly appId: string;
+  readonly teamId: string;
+  readonly rpDomains: readonly string[];
+  readonly provisioningProfilePath: string;
+}
+
+export const InvalidMacPasskeyRpDomainReason = Schema.Literals([
+  "empty",
+  "scheme-not-allowed",
+  "parse-failed",
+  "credentials-not-allowed",
+  "port-not-allowed",
+  "path-not-allowed",
+  "query-not-allowed",
+  "fragment-not-allowed",
+  "hostname-mismatch",
+]);
+export type InvalidMacPasskeyRpDomainReason = typeof InvalidMacPasskeyRpDomainReason.Type;
+
+export class InvalidMacPasskeyRpDomainError extends Schema.TaggedError<InvalidMacPasskeyRpDomainError>()(
+  "InvalidMacPasskeyRpDomainError",
+  {
+    reason: InvalidMacPasskeyRpDomainReason,
+    inputLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Invalid passkey RP domain (${this.reason}).`;
+  }
+}
+
+export class InvalidAppleTeamIdError extends Schema.TaggedError<InvalidAppleTeamIdError>()(
+  "InvalidAppleTeamIdError",
+  {
+    teamId: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `T3CODE_APPLE_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
+  }
+}
+
+export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedError<MissingMacPasskeyProvisioningProfileError>()(
+  "MissingMacPasskeyProvisioningProfileError",
+  {},
+) {
+  override get message(): string {
+    return "T3CODE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.";
+  }
+}
+
+export const MacPasskeySigningConfigurationError = Schema.Union([
+  InvalidMacPasskeyRpDomainError,
+  InvalidAppleTeamIdError,
+  MissingMacPasskeyProvisioningProfileError,
+]);
+export type MacPasskeySigningConfigurationError = typeof MacPasskeySigningConfigurationError.Type;
+export const isMacPasskeySigningConfigurationError = Schema.is(MacPasskeySigningConfigurationError);
+
+function normalizePasskeyRpDomain(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  const inputLength = value.length;
+  if (normalized.length === 0) {
+    throw new InvalidMacPasskeyRpDomainError({ reason: "empty", inputLength });
+  }
+  if (/^[a-z][a-z\d+.-]*:\/\//u.test(normalized)) {
+    throw new InvalidMacPasskeyRpDomainError({
+      reason: "scheme-not-allowed",
+      inputLength,
+    });
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(`https://${normalized}`);
+  } catch (cause) {
+    throw new InvalidMacPasskeyRpDomainError({ reason: "parse-failed", inputLength, cause });
+  }
+
+  let reason: InvalidMacPasskeyRpDomainReason | undefined;
+  if (parsed.username.length > 0 || parsed.password.length > 0) {
+    reason = "credentials-not-allowed";
+  } else if (parsed.port.length > 0) {
+    reason = "port-not-allowed";
+  } else if (parsed.pathname !== "/") {
+    reason = "path-not-allowed";
+  } else if (parsed.search.length > 0) {
+    reason = "query-not-allowed";
+  } else if (parsed.hash.length > 0) {
+    reason = "fragment-not-allowed";
+  } else if (parsed.host !== normalized) {
+    reason = "hostname-mismatch";
+  }
+  if (reason) {
+    throw new InvalidMacPasskeyRpDomainError({ reason, inputLength });
+  }
+
+  return parsed.hostname;
+}
+
+export function resolveMacPasskeySigningConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): MacPasskeySigningConfiguration {
+  const teamId = env.T3CODE_APPLE_TEAM_ID?.trim().toUpperCase() ?? "";
+  if (!APPLE_TEAM_ID_PATTERN.test(teamId)) {
+    throw new InvalidAppleTeamIdError({ teamId });
+  }
+
+  const provisioningProfilePath = env.T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
+  if (provisioningProfilePath.length === 0) {
+    throw new MissingMacPasskeyProvisioningProfileError();
+  }
+
+  const configuredRpDomains = env.T3CODE_BROWSER_PASSKEY_RP_DOMAINS?.trim();
+  const uniqueRpDomains = configuredRpDomains
+    ? [...new Set(configuredRpDomains.split(",").map(normalizePasskeyRpDomain))]
+    : [];
+
+  return {
+    appId: DESKTOP_APP_ID,
+    teamId,
+    rpDomains: uniqueRpDomains,
+    provisioningProfilePath,
+  };
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+/**
+ * Passkey entitlements for the in-app browser. Each is granted only when the
+ * provisioning profile authorizes it: macOS refuses to launch an app that
+ * claims a restricted entitlement its embedded profile does not carry.
+ */
+export interface MacWebAuthnEntitlements {
+  /** Keychain group for Electron's Touch ID passkeys. */
+  readonly touchIdKeychainAccessGroup: string | undefined;
+  /** Apple's managed browser entitlement, which allows passkeys for any site. */
+  readonly browserPasskeys: boolean;
+}
+
+const BROWSER_PASSKEYS_ENTITLEMENT = "com.apple.developer.web-browser.public-key-credential";
+
+const ProvisioningProfilePlist = Schema.Struct({
+  Entitlements: Schema.Struct({
+    "keychain-access-groups": Schema.optional(Schema.Array(Schema.String)),
+    [BROWSER_PASSKEYS_ENTITLEMENT]: Schema.optional(Schema.Boolean),
+  }),
+});
+const isProvisioningProfilePlist = Schema.is(ProvisioningProfilePlist);
+
+/**
+ * Reads the Entitlements dict of the XML plist a provisioning profile wraps in
+ * its CMS envelope. Anything unreadable grants nothing.
+ */
+const readProfileEntitlements = (provisioningProfile: string) => {
+  const start = provisioningProfile.indexOf("<?xml");
+  const end = provisioningProfile.indexOf("</plist>", start);
+  if (start === -1 || end === -1) return undefined;
+  try {
+    const profile: unknown = Plist.parse(provisioningProfile.slice(start, end + "</plist>".length));
+    return isProvisioningProfilePlist(profile) ? profile.Entitlements : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export function resolveMacWebAuthnEntitlements(
+  provisioningProfile: string,
+  configuration: Pick<MacPasskeySigningConfiguration, "appId" | "teamId">,
+): MacWebAuthnEntitlements {
+  const entitlements = readProfileEntitlements(provisioningProfile);
+  const keychainAccessGroup = `${configuration.teamId}.${configuration.appId}.webauthn`;
+  const keychainGroupAuthorized = (entitlements?.["keychain-access-groups"] ?? []).some((group) =>
+    group.endsWith("*")
+      ? keychainAccessGroup.startsWith(group.slice(0, -1))
+      : group === keychainAccessGroup,
+  );
+  return {
+    touchIdKeychainAccessGroup: keychainGroupAuthorized ? keychainAccessGroup : undefined,
+    browserPasskeys: entitlements?.[BROWSER_PASSKEYS_ENTITLEMENT] === true,
+  };
+}
+
+export function renderMacPasskeyEntitlements(
+  configuration: MacPasskeySigningConfiguration,
+  webAuthn: MacWebAuthnEntitlements,
+): string {
+  const associatedDomains = configuration.rpDomains
+    .map((domain) => `      <string>webcredentials:${escapeXml(domain)}</string>`)
+    .join("\n");
+  const keychainAccessGroups = webAuthn.touchIdKeychainAccessGroup
+    ? `
+    <key>keychain-access-groups</key>
+    <array>
+      <string>${escapeXml(webAuthn.touchIdKeychainAccessGroup)}</string>
+    </array>`
+    : "";
+  const browserPasskeys = webAuthn.browserPasskeys
+    ? `
+    <key>${BROWSER_PASSKEYS_ENTITLEMENT}</key>
+    <true/>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.application-identifier</key>
+    <string>${escapeXml(`${configuration.teamId}.${configuration.appId}`)}</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>${escapeXml(configuration.teamId)}</string>
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+${associatedDomains}
+    </array>${keychainAccessGroups}${browserPasskeys}
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
+`;
+}
 
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
@@ -1213,6 +1511,7 @@ export function createStageWorkspaceConfig(input: {
       ? { patchedDependencies }
       : {}),
     ...(overrides && Object.keys(overrides).length > 0 ? { overrides } : {}),
+    packageExtensions: STAGE_PACKAGE_EXTENSIONS,
   };
 }
 
@@ -1304,7 +1603,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
   const env = yield* BuildEnvConfig;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
 
   const platform = mergeOptions(
     input.platform,
@@ -1992,7 +2291,7 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   // silently. `universal` is a mac-only arch the option type still admits;
   // the helper script rejects it, so it maps to the concrete x64 the Linux
   // resource monitor uses for the same request.
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform !== "linux") {
     return yield* new LinuxBrowserSecretHostError({ hostPlatform });
   }
@@ -2334,6 +2633,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
+  macPasskeySigning:
+    | {
+        readonly entitlementsPath: string;
+        readonly provisioningProfilePath: string;
+      }
+    | undefined = undefined,
   // Windows only, and false when no Linux CLI archive was handed to the build:
   // staging skips the archive in that case, and listing a resource whose
   // source file was never written fails the electron-builder step.
@@ -2393,16 +2698,41 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
+        NSLocalNetworkUsageDescription:
+          "d4research connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "d4research captures the active window when you use the window capture shortcut.",
+        // macOS lists an app under Default web browser only when it opens web
+        // pages as documents as well as http and https links (see protocols).
+        CFBundleDocumentTypes: [
+          {
+            CFBundleTypeName: "Web page",
+            CFBundleTypeRole: "Viewer",
+            LSHandlerRank: "Alternate",
+            LSItemContentTypes: ["public.html", "public.xhtml"],
+          },
+        ],
       },
       protocols: [
         {
           name: "d4research",
           schemes: ["t3code", "t3code-dev"],
         },
+        // Lets people choose T3 Code as their default web browser, which opens
+        // each link in a new thread's browser panel.
+        {
+          name: "Web site URL",
+          schemes: ["http", "https"],
+          role: "Viewer",
+        },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      ...(macPasskeySigning
+        ? {
+            entitlements: macPasskeySigning.entitlementsPath,
+            provisioningProfile: macPasskeySigning.provisioningProfilePath,
+          }
+        : {}),
     };
   }
 
@@ -2496,6 +2826,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
+      // Smart App Control validates unpacked native addons independently from
+      // the signed desktop executable. Extend release signing to every native
+      // Windows library that Electron or the server sidecar loads at runtime.
+      signExts: [".node", ".dll"],
       // Resource editing applies the product metadata and icon independently
       // of code signing. Disabling it for local unsigned builds leaves the
       // packaged executable with Electron's stock icon.
@@ -2584,11 +2918,33 @@ export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function
   readonly arch: typeof BuildArch.Type;
 }) {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  // Native addons are unpacked only when they are Windows PE ("MZ") binaries.
+  // Signed builds Authenticode-sign every unpacked .node file, which fails on
+  // the darwin and linux prebuilds some packages (node-pty) ship alongside
+  // their win32 ones. The Windows primary never loads those, so they stay packed.
+  const unpackGlobs: string[] = [...WINDOWS_SERVER_ASAR_UNPACK_GLOBS];
+  for (const entry of yield* fs.readDirectory(input.sourceDir, { recursive: true })) {
+    if (!entry.endsWith(".node")) continue;
+    const addonPath = path.join(input.sourceDir, entry);
+    if ((yield* fs.stat(addonPath)).type !== "File") continue;
+    const bytes = yield* fs.readFile(addonPath);
+    if (bytes[0] !== 0x4d || bytes[1] !== 0x5a) continue;
+    const posixPath = entry.split(path.sep).join("/");
+    // Backslash escapes are path separators to minimatch on Windows.
+    if (/[\\*?[\]{}(),]/.test(posixPath)) {
+      return yield* new WindowsServerSidecarPackError({
+        asarPath: input.asarPath,
+        cause: new Error(`native addon path contains glob syntax: ${posixPath}`),
+      });
+    }
+    unpackGlobs.push(`**/${posixPath}`);
+  }
   yield* Effect.tryPromise({
     try: () =>
       createPackageWithOptions(input.sourceDir, input.asarPath, {
         dot: true,
-        unpack: WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
+        unpack: `{${unpackGlobs.join(",")}}`,
         // glob 13 (via @electron/asar 4) matches `ignore` relative to `cwd`,
         // not against the absolute paths it crawls, so anchor it at the source.
         globOptions: {
@@ -2741,8 +3097,8 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   readonly targetArch: typeof BuildArch.Type;
   readonly verbose: boolean;
 }) {
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArchitecture = yield* HostProcessArchitecture;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostArchitecture = yield* HostProcess.Architecture;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const executablePath = path.join(input.packagedAppDir, input.appExecutableName);
@@ -2759,10 +3115,7 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   const probeRoot = yield* fs.makeTempDirectoryScoped({
     prefix: "t3code-windows-primary-native-probe-",
   });
-  const fffEntryPath = path.join(
-    input.asarPath,
-    "node_modules/@ff-labs/fff-node/dist/src/index.js",
-  );
+  const fffEntryPath = path.join(input.asarPath, "node_modules/@ff-labs/fff-node/dist/index.js");
   const probeEnv = { ...process.env };
   delete probeEnv.ELECTRON_NO_ASAR;
   delete probeEnv.NODE_OPTIONS;
@@ -3061,7 +3414,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const repoRoot = yield* RepoRoot;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform === "linux" && options.platform === "linux") {
     yield* preflightLinuxDesktopBuild(options.arch);
   }
@@ -3320,6 +3673,48 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  const signingEnv = loadRepoEnv({ repoRoot });
+  const configuredMacPasskeySigning =
+    options.platform === "mac" &&
+    options.signed &&
+    signingEnv.T3CODE_MACOS_PROVISIONING_PROFILE?.trim()
+      ? yield* Effect.try({
+          try: () => resolveMacPasskeySigningConfiguration(signingEnv),
+          catch: MacPasskeySigningConfigurationResolutionError.fromCause,
+        })
+      : undefined;
+  const macPasskeySigning = configuredMacPasskeySigning
+    ? {
+        ...configuredMacPasskeySigning,
+        provisioningProfilePath: path.resolve(
+          repoRoot,
+          configuredMacPasskeySigning.provisioningProfilePath,
+        ),
+      }
+    : undefined;
+  const macEntitlementsPath = macPasskeySigning
+    ? path.join(stageAppDir, "entitlements.mac.plist")
+    : undefined;
+  let macWebAuthn: MacWebAuthnEntitlements | undefined;
+  if (macPasskeySigning && macEntitlementsPath) {
+    if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
+      return yield* new MacProvisioningProfileNotFoundError({
+        provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+      });
+    }
+    macWebAuthn = resolveMacWebAuthnEntitlements(
+      yield* fs.readFileString(macPasskeySigning.provisioningProfilePath),
+      macPasskeySigning,
+    );
+    yield* Effect.log(
+      `[desktop-artifact] In-app browser passkeys: Touch ID ${macWebAuthn.touchIdKeychainAccessGroup ? "enabled" : "disabled"}, browser passkeys ${macWebAuthn.browserPasskeys ? "enabled" : "disabled"}.`,
+    );
+    yield* fs.writeFileString(
+      macEntitlementsPath,
+      renderMacPasskeyEntitlements(macPasskeySigning, macWebAuthn),
+    );
+  }
+
   // Windows splits dependencies per process: app.asar carries only the
   // desktop main-process externals, while the server bundle's externals live
   // in the server.asar sidecar (see stageWindowsServerSidecar). macOS and
@@ -3347,6 +3742,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
+    ...(macWebAuthn ? { t3codeWebAuthn: macWebAuthn } : {}),
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: "d4research desktop build",
@@ -3362,6 +3758,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
+      macPasskeySigning && macEntitlementsPath
+        ? {
+            entitlementsPath: macEntitlementsPath,
+            provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+          }
+        : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
     ),

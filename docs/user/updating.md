@@ -8,6 +8,20 @@ version warning means those two components differ; dismissing it does not update
 `v0.2.0` does not have a fork-owned npm or automatic update channel. The upstream `npx t3` command
 installs T3 Code and must not be used as a d4research updater.
 
+## Continue threads after restarts
+
+**Settings → General → Continue threads after restarts** is on by default.
+It resumes supported active threads after an update, crash, or machine
+restart. Changes are saved to connected environments that support this setting;
+update older servers first. If a supported environment was offline or has a
+different value, use **Apply to all** in Settings after it connects.
+d4research must start again on that machine;
+the setting does not enable automatic startup. Terminal commands may still be
+interrupted, and threads without saved provider resume state need a new message.
+A thread is not resumed while it waits for your approval, answer, or secret, or
+while it is archived, snoozed, or settled. After three automatic resumes in a row,
+the thread waits for your next message.
+
 Finish or stop active agent and terminal work, then update the server checkout:
 
 ```bash

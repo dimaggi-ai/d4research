@@ -18,6 +18,7 @@ import { type ProviderApprovalDecision, type RuntimeRequestId } from "@d4researc
 import {
   type PendingThreadRequests,
   type ThreadUserInputQuestion,
+  seedUserInputDraftAnswers,
 } from "@d4research/client-runtime/state/thread-requests";
 import { AuthOrchestrationOperateScope } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
@@ -104,6 +105,19 @@ export function useSelectedThreadRequests() {
   const activePendingApproval = activePendingApprovals[0] ?? null;
   const activePendingUserInputs = pendingRequests?.userInputs ?? EMPTY_PENDING_REQUESTS.userInputs;
   const activePendingUserInput = activePendingUserInputs[0] ?? null;
+  useEffect(() => {
+    if (!activePendingUserInput || !selectedThreadShell) return;
+    const requestKey = scopedRequestKey(
+      selectedThreadShell.environmentId,
+      activePendingUserInput.requestId,
+    );
+    const existing = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
+    const drafts = existing[requestKey] ?? {};
+    const seeded = seedUserInputDraftAnswers(activePendingUserInput.questions, drafts);
+    if (seeded !== drafts) {
+      appAtomRegistry.set(userInputDraftsByRequestKeyAtom, { ...existing, [requestKey]: seeded });
+    }
+  }, [activePendingUserInput, selectedThreadShell]);
   const questionServerConfigs = useServerConfigs();
   const attachmentDrafts = useAtomValue(composerDraftsAtom);
   const preparationCounts = useAtomValue(questionAttachmentPreparationAtom);

@@ -1,10 +1,9 @@
 import {
   fileBasename,
-  formatFilePathPosition,
-  splitFilePathPosition,
   stripSlashPrefixedWindowsDrive,
-} from "@d4research/client-runtime/markdown-links";
-import { isWindowsAbsolutePath } from "@d4research/shared/path";
+  isWindowsAbsolutePath,
+} from "@d4research/shared/path";
+import { formatFilePathPosition, splitFilePathPosition } from "@d4research/shared/fileLinks";
 
 function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");

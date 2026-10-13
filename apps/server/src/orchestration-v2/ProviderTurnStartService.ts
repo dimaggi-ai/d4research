@@ -18,7 +18,7 @@ import { expandProviderDevMessage, expandProviderResearchMessage } from "./Pipel
 import { tryRunInlineResearchTurn } from "./InlineResearchTurn.ts";
 import { withPersistedSkillsContext } from "./ConfiguredSkills.ts";
 import { extractTrailingEnabledSkillsContext } from "@d4research/shared/enabledSkillsContext";
-import { readMcpProviderSession } from "../mcp/McpProviderSession.ts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { setActiveMcpTurn } from "../mcp/McpSessionRegistry.ts";
 import { projectComposerContextForProvider } from "@d4research/shared/composerContextReferences";
 import {
@@ -41,6 +41,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -57,18 +58,13 @@ import {
   historicalMessage,
   restoreHandoffHistory,
   latestNativeContextUsage,
-} from "./ContextHandoffBudget.ts";
+} from "@d4research/provider-core/server/handoffBudget";
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
-import {
-  ProviderAdapterTurnStartError,
-  type ProviderAdapterV2Error,
-  type ProviderAdapterV2HistoricalContext,
-  type ProviderAdapterV2SessionRuntime,
-} from "./ProviderAdapter.ts";
-import * as IdAllocator from "./IdAllocator.ts";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
-import { makeProviderFailure } from "./ProviderFailure.ts";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import {
@@ -86,6 +82,11 @@ export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStart
 ) {}
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
+
+/** Claude refuses to replace a process running background work before it reads the prompt. */
+const refusedBeforePrompt = (error: unknown): boolean =>
+  Predicate.isTagged(error, "ClaudeBackgroundWorkBlocksQueryReplacementError") ||
+  (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
 
 export interface ProviderTurnStartServiceV2Shape {
   /**
@@ -121,6 +122,7 @@ export const layer: Layer.Layer<
   | RuntimePolicy.RuntimePolicyV2
   | ServerSettingsService
   | ProviderRegistry
+  | McpProviderSessions.McpProviderSessions
   | InlineDelegationRunner
   | OrchestrationEventStore
 > = Layer.effect(
@@ -135,6 +137,7 @@ export const layer: Layer.Layer<
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+    const mcpProviderSessions = yield* McpProviderSessions.McpProviderSessions;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const serverSettings = yield* ServerSettingsService;
@@ -210,15 +213,15 @@ export const layer: Layer.Layer<
     };
 
     const makeDeliverySession = (
-      session: ProviderAdapterV2SessionRuntime,
+      session: ProviderAdapter.ProviderAdapterV2SessionRuntime,
       startWithHandoffs: (
-        input: Parameters<ProviderAdapterV2SessionRuntime["startTurn"]>[0],
+        input: Parameters<ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"]>[0],
         compact?: boolean,
-      ) => ReturnType<ProviderAdapterV2SessionRuntime["startTurn"]>,
+      ) => ReturnType<ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"]>,
     ) => {
       let deliver: typeof startWithHandoffs | undefined = startWithHandoffs;
       const start = (
-        input: Parameters<ProviderAdapterV2SessionRuntime["startTurn"]>[0],
+        input: Parameters<ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"]>[0],
         compact = false,
       ) =>
         Effect.suspend(() => {
@@ -749,7 +752,7 @@ export const layer: Layer.Layer<
       // Only the provider's own thread load fails the run on the last attempt;
       // store, id and handoff failures around it keep their typed errors.
       const loadFromProvider = (
-        load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapterV2Error>,
+        load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,
       ) =>
         Effect.gen(function* () {
           const loaded = yield* Effect.result(load);
@@ -810,6 +813,7 @@ export const layer: Layer.Layer<
           return yield* loadFromProvider(
             session.ensureThread({
               threadId: projection.thread.id,
+              title: projection.thread.title,
               modelSelection: run.modelSelection,
               runtimePolicy: resolvedRuntimePolicy,
               providerSessionId,
@@ -826,7 +830,7 @@ export const layer: Layer.Layer<
         const resumed = yield* Effect.result(
           uncertainDelivery
             ? Effect.fail(
-                new ProviderAdapterTurnStartError({
+                new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: session.driver,
                   threadId: projection.thread.id,
                   providerThreadId: providerThread.id,
@@ -855,6 +859,7 @@ export const layer: Layer.Layer<
         const replacement = yield* loadFromProvider(
           session.ensureThread({
             threadId: projection.thread.id,
+            title: projection.thread.title,
             modelSelection: run.modelSelection,
             runtimePolicy: resolvedRuntimePolicy,
             providerSessionId,
@@ -1329,7 +1334,7 @@ export const layer: Layer.Layer<
             ...(session.injectHistory === undefined
               ? {}
               : {
-                  inject: (history: ProviderAdapterV2HistoricalContext) =>
+                  inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
                     session.injectHistory!({
                       providerThread: runningProviderThread,
                       ...history,
@@ -1368,7 +1373,21 @@ export const layer: Layer.Layer<
               ...turnInput.message,
               text: context === "" ? userText : `${context}\n\nUser message:\n${userText}`,
             },
-          });
+          }).pipe(
+            // A pending marker would make the next turn abandon this native
+            // session, though the refused prompt never reached it.
+            Effect.tapError((error) =>
+              refusedBeforePrompt(error)
+                ? delivery.unsent.pipe(
+                    Effect.catchCause(() =>
+                      Effect.logWarning("Failed to restore unsent context handoffs", {
+                        runId: run.id,
+                      }),
+                    ),
+                  )
+                : Effect.void,
+            ),
+          );
           // The provider already accepted the turn. A stale pending marker
           // can force a fresh thread later, but must not stop live ingestion.
           yield* delivery.delivered.pipe(
@@ -1383,7 +1402,7 @@ export const layer: Layer.Layer<
           Effect.mapError((cause) =>
             cause._tag === "ProviderAdapterTurnStartError"
               ? cause
-              : new ProviderAdapterTurnStartError({
+              : new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: session.driver,
                   threadId: projection.thread.id,
                   providerThreadId: providerThread.id,
@@ -1399,7 +1418,7 @@ export const layer: Layer.Layer<
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
-      const mcpSession = readMcpProviderSession(message.threadId);
+      const mcpSession = yield* mcpProviderSessions.read(message.threadId);
       if (mcpSession !== undefined) {
         yield* setActiveMcpTurn(mcpSession.providerSessionId, TurnId.make(run.id));
       }

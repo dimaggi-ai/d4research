@@ -11,12 +11,13 @@ import {
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
-} from "./TextGenerationPrompts.ts";
+  buildReviewGuidePrompt,
+} from "@d4research/provider-core/server/textGenerationPrompts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
-} from "./TextGenerationUtils.ts";
+} from "@d4research/provider-core/server/textGenerationUtils";
 import { makeMuseMspRuntime } from "../provider/msp/MspSessionRuntime.ts";
 import { decodeMspNotification } from "../provider/msp/MspProtocol.ts";
 import { mapTurnError } from "../provider/msp/museRuntimeEvents.ts";
@@ -59,7 +60,8 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReviewGuide";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -241,6 +243,16 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     });
 
   return {
+    generateReviewGuide: (input) => {
+      const { prompt, outputSchema } = buildReviewGuidePrompt(input);
+      return runMuseJson({
+        operation: "generateReviewGuide",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+    },
     generateCommitMessage,
     generatePrContent,
     generateBranchName,

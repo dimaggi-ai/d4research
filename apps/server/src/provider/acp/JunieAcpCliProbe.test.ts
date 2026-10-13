@@ -42,11 +42,9 @@ const recordDiagnostic = (diagnostics: Array<string>, line: string): void => {
 
 const makeProbeRuntime = (cwd: string = process.cwd(), diagnostics?: Array<string>) =>
   Effect.gen(function* () {
-    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     return yield* makeJunieAcpRuntime({
       junieSettings: { binaryPath: "junie", defaultModel: "" },
       environment: process.env,
-      childProcessSpawner,
       cwd,
       clientInfo: { name: "t3-junie-probe", version: "0.0.0" },
       ...(diagnostics

@@ -1,4 +1,4 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it } from "@effect/vitest";
 import {
   CheckpointScopeId,
   MessageId,
@@ -25,7 +25,7 @@ import {
   appendEnabledSkillsContext,
   extractTrailingEnabledSkillsContext,
 } from "@d4research/shared/enabledSkillsContext";
-import * as IdAllocator from "./IdAllocator.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { tryRunInlineResearchTurn } from "./InlineResearchTurn.ts";
 
 const now = DateTime.makeUnsafe("2026-10-02T00:00:00Z");
@@ -132,10 +132,10 @@ const answer = {
   text: "Adviser result",
 };
 
-it("leaves ordinary turns untouched", async () => {
-  expect(
-    await Effect.runPromise(
-      tryRunInlineResearchTurn(input("Normal message")).pipe(
+it.effect("leaves ordinary turns untouched", () =>
+  Effect.gen(function* () {
+    expect(
+      yield* tryRunInlineResearchTurn(input("Normal message")).pipe(
         Effect.provide(
           Layer.mergeAll(
             Layer.mock(EventSinkV2)({}),
@@ -145,132 +145,126 @@ it("leaves ordinary turns untouched", async () => {
           ),
         ),
       ),
-    ),
-  ).toBe(false);
-});
+    ).toBe(false);
+  }),
+);
 
-for (const rejected of [false, true]) {
-  it(
-    rejected
-      ? "records rejected targets without invoking an adviser"
-      : "records adviser completion and its structured target",
-    async () => {
-      const events: OrchestrationV2DomainEvent[] = [];
-      const effects: PendingOrchestrationEffectV2[] = [];
-      let calls = 0;
-      const result = await Effect.runPromise(
-        tryRunInlineResearchTurn({
-          ...input(rejected ? "!missing:model Explain this" : "!codex:gpt-5.6-sol Explain this"),
-          preparePrompt: (text) =>
-            Effect.succeed(
-              appendEnabledSkillsContext(text, [
-                {
-                  name: "audit",
-                  path: "/isolated/skills/audit/SKILL.md",
-                  description: "Audit",
-                  scope: "global",
-                },
-              ]),
-            ),
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              IdAllocator.layer,
-              Layer.mock(InlineDelegationRunner)({
-                run: (request) => {
-                  calls++;
-                  expect(extractTrailingEnabledSkillsContext(request.prompt).promptText).toBe(
-                    "Explain this",
-                  );
-                  expect(extractTrailingEnabledSkillsContext(request.prompt).globalSkills).toEqual([
-                    "audit",
-                  ]);
-                  return Effect.succeed(answer);
-                },
-              }),
-              Layer.mock(OrchestrationEventStore)({ streamApplicationEvents: () => Stream.never }),
-              Layer.mock(EventSinkV2)({
-                writeIfRunCurrent: ({ events: next, effects: pending = [] }) => {
-                  effects.push(...pending);
-                  if (pending.length)
-                    expect(
-                      next.some(
-                        (event) =>
-                          event.type === "run.updated" && event.payload.status === "waiting",
-                      ),
-                    ).toBe(true);
-                  for (const event of next)
-                    expect(Schema.is(Schema.toType(OrchestrationV2DomainEvent))(event)).toBe(true);
-                  events.push(...next);
-                  return Effect.succeed({ committed: true, storedEvents: [] });
-                },
-              }),
-            ),
-          ),
+it.effect.each([
+  { rejected: false, name: "records adviser completion and its structured target" },
+  { rejected: true, name: "records rejected targets without invoking an adviser" },
+])("$name", ({ rejected }) =>
+  Effect.gen(function* () {
+    const events: OrchestrationV2DomainEvent[] = [];
+    const effects: PendingOrchestrationEffectV2[] = [];
+    let calls = 0;
+    const result = yield* tryRunInlineResearchTurn({
+      ...input(rejected ? "!missing:model Explain this" : "!codex:gpt-5.6-sol Explain this"),
+      preparePrompt: (text) =>
+        Effect.succeed(
+          appendEnabledSkillsContext(text, [
+            {
+              name: "audit",
+              path: "/isolated/skills/audit/SKILL.md",
+              description: "Audit",
+              scope: "global",
+            },
+          ]),
         ),
-      );
-      expect(result).toBe(true);
-      expect(calls).toBe(rejected ? 0 : 1);
-      expect(effects).toEqual(
-        rejected
-          ? []
-          : [
-              {
-                id: `effect:checkpoint.capture:${runId}`,
-                commandId: `command:effect:checkpoint.capture:${runId}`,
-                threadId,
-                request: { type: "checkpoint.capture", runId, scopeId: "scope" },
-              },
-            ],
-      );
-      const terminal = events.filter((event) => event.type === "run.updated").at(-1);
-      expect(terminal?.payload.status).toBe(rejected ? "failed" : "waiting");
-      const tool = events
-        .filter(
-          (event) => event.type === "turn-item.updated" && event.payload.type === "dynamic_tool",
-        )
-        .at(-1);
-      expect(tool?.payload).toMatchObject({ output: { researchDelegate: { failed: rejected } } });
-    },
-  );
-}
-
-it("cancels adviser scope on interruption and persists a terminal tool receipt", async () => {
-  await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>();
-        const stopped = yield* Deferred.make<void>();
-        const events: OrchestrationV2DomainEvent[] = [];
-        const layer = Layer.mergeAll(
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
           IdAllocator.layer,
           Layer.mock(InlineDelegationRunner)({
-            run: () =>
-              Deferred.succeed(started, undefined).pipe(
-                Effect.andThen(Effect.never),
-                Effect.ensuring(Deferred.succeed(stopped, undefined)),
-              ),
+            run: (request) => {
+              calls++;
+              expect(extractTrailingEnabledSkillsContext(request.prompt).promptText).toBe(
+                "Explain this",
+              );
+              expect(extractTrailingEnabledSkillsContext(request.prompt).globalSkills).toEqual([
+                "audit",
+              ]);
+              return Effect.succeed(answer);
+            },
           }),
           Layer.mock(OrchestrationEventStore)({ streamApplicationEvents: () => Stream.never }),
           Layer.mock(EventSinkV2)({
-            writeIfRunCurrent: ({ events: next }) => {
+            writeIfRunCurrent: ({ events: next, effects: pending = [] }) => {
+              effects.push(...pending);
+              if (pending.length)
+                expect(
+                  next.some(
+                    (event) => event.type === "run.updated" && event.payload.status === "waiting",
+                  ),
+                ).toBe(true);
+              for (const event of next)
+                expect(Schema.is(Schema.toType(OrchestrationV2DomainEvent))(event)).toBe(true);
               events.push(...next);
               return Effect.succeed({ committed: true, storedEvents: [] });
             },
           }),
-        );
-        const fiber = yield* tryRunInlineResearchTurn(
-          input("!codex:gpt-5.6-sol Explain this"),
-        ).pipe(Effect.provide(layer), Effect.forkScoped);
-        yield* Deferred.await(started);
-        yield* Fiber.interrupt(fiber);
-        yield* Deferred.await(stopped);
-        expect(events.at(-1)?.payload).toMatchObject({
-          type: "dynamic_tool",
-          status: "interrupted",
-        });
-        expect(events.some((event) => event.type === "message.updated")).toBe(false);
-      }),
-    ),
-  );
-});
+        ),
+      ),
+    );
+    expect(result).toBe(true);
+    expect(calls).toBe(rejected ? 0 : 1);
+    expect(effects).toEqual(
+      rejected
+        ? []
+        : [
+            {
+              id: `effect:checkpoint.capture:${runId}`,
+              commandId: `command:effect:checkpoint.capture:${runId}`,
+              threadId,
+              request: { type: "checkpoint.capture", runId, scopeId: "scope" },
+            },
+          ],
+    );
+    const terminal = events.filter((event) => event.type === "run.updated").at(-1);
+    expect(terminal?.payload.status).toBe(rejected ? "failed" : "waiting");
+    const tool = events
+      .filter(
+        (event) => event.type === "turn-item.updated" && event.payload.type === "dynamic_tool",
+      )
+      .at(-1);
+    expect(tool?.payload).toMatchObject({ output: { researchDelegate: { failed: rejected } } });
+  }),
+);
+
+it.effect("cancels adviser scope on interruption and persists a terminal tool receipt", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      const events: OrchestrationV2DomainEvent[] = [];
+      const layer = Layer.mergeAll(
+        IdAllocator.layer,
+        Layer.mock(InlineDelegationRunner)({
+          run: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(Deferred.succeed(stopped, undefined)),
+            ),
+        }),
+        Layer.mock(OrchestrationEventStore)({ streamApplicationEvents: () => Stream.never }),
+        Layer.mock(EventSinkV2)({
+          writeIfRunCurrent: ({ events: next }) => {
+            events.push(...next);
+            return Effect.succeed({ committed: true, storedEvents: [] });
+          },
+        }),
+      );
+      const fiber = yield* tryRunInlineResearchTurn(input("!codex:gpt-5.6-sol Explain this")).pipe(
+        Effect.provide(layer),
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(fiber);
+      yield* Deferred.await(stopped);
+      expect(events.at(-1)?.payload).toMatchObject({
+        type: "dynamic_tool",
+        status: "interrupted",
+      });
+      expect(events.some((event) => event.type === "message.updated")).toBe(false);
+    }),
+  ),
+);

@@ -16,6 +16,7 @@ import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
@@ -29,13 +30,13 @@ import * as EffectOutbox from "../EffectOutbox.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
-import * as IdAllocator from "../IdAllocator.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
 import * as ProjectStore from "../ProjectStore.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
 import * as ProviderAuthService from "../../provider/ProviderAuthService.ts";
-import * as ProviderContinuationRequests from "../ProviderContinuationRequests.ts";
+import * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
@@ -44,10 +45,8 @@ import * as ProviderSwitchService from "../ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "../ProviderTurnControlService.ts";
 import * as ProviderTurnStartServiceTestkit from "../ProviderTurnStartService.testkit.ts";
 import * as ProviderTurnStartService from "../ProviderTurnStartService.ts";
-import {
-  worktreeRepairDependenciesTestLayer,
-  researchTurnDependenciesTestLayer,
-} from "../ProviderTurnStartService.testkit.ts";
+import { researchTurnDependenciesTestLayer } from "../ProviderTurnStartService.testkit.ts";
+import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
 import * as RunExecutionService from "../RunExecutionService.ts";
 import * as RunFinalizationService from "../RunFinalizationService.ts";
 import * as ThreadTitleRegenerationService from "../ThreadTitleRegenerationService.ts";
@@ -62,7 +61,10 @@ import {
   type OrchestratorV2Scenario,
   type OrchestratorV2ScenarioResult,
 } from "./OrchestratorScenario.ts";
-import { makeProviderReplayGate, type ProviderReplayGate } from "./ProviderReplayGate.testkit.ts";
+import {
+  makeProviderReplayGate,
+  type ProviderReplayGate,
+} from "@d4research/provider-testing/replayGate";
 
 export function makeReplayServerConfig(
   scenario: string,
@@ -170,7 +172,11 @@ export interface OrchestratorV2ProviderReplayHarness<
   readonly makeProviderAdapterRegistryLayer: (
     transcript: Transcript,
     options?: { readonly replayGate?: ProviderReplayGate },
-  ) => Layer.Layer<ProviderAdapterRegistry.ProviderAdapterRegistryV2, Error>;
+  ) => Layer.Layer<
+    ProviderAdapterRegistry.ProviderAdapterRegistryV2,
+    Error,
+    McpProviderSessions.McpProviderSessions
+  >;
 }
 
 export function runOrchestratorV2ProviderReplayScenario<
@@ -237,7 +243,10 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
-  Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
+  | Orchestrator.OrchestratorV2
+  | EffectWorker.OrchestrationEffectWorkerV2
+  | EventSink.EventSinkV2
+  | ProviderSessionManager.ProviderSessionManagerV2,
   Error | MigrationError | PlatformError.PlatformError | SqlError
 > {
   const layerRegistry = harness.makeProviderAdapterRegistryLayer(
@@ -249,7 +258,11 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
 
 export function layerWithRegistry<Error>(
   scenario: Pick<OrchestratorV2ProviderReplayScenario, "name" | "runtimePolicyOverride">,
-  layerRegistry: Layer.Layer<ProviderAdapterRegistry.ProviderAdapterRegistryV2, Error>,
+  registryLayer: Layer.Layer<
+    ProviderAdapterRegistry.ProviderAdapterRegistryV2,
+    Error,
+    McpProviderSessions.McpProviderSessions
+  >,
   options: {
     readonly layerServerSettings?: Layer.Layer<ServerSettings.ServerSettingsService>;
     readonly layerDatabase?: Layer.Layer<
@@ -287,7 +300,9 @@ export function layerWithRegistry<Error>(
   // layerRuntime.ts; layer memoization keeps it a single instance.
   const layerContinuationRequests =
     options.runContinuationWorker === true ? ProviderContinuationRequests.layer : Layer.empty;
-  const layerProvidedRegistry = layerRegistry.pipe(Layer.provide(layerContinuationRequests));
+  const layerProvidedRegistry = registryLayer.pipe(
+    Layer.provide(Layer.merge(layerContinuationRequests, McpProviderSessions.layer)),
+  );
   const layerServerSettings =
     options.layerServerSettings ??
     ServerSettings.layerTest({
@@ -350,6 +365,7 @@ export function layerWithRegistry<Error>(
         layerProvidedRegistry,
         layerEventSinkProvided,
         IdAllocator.layer,
+        McpProviderSessions.layer,
         McpSessionRegistryTestkit.layer,
         layerProviderEventIngestorProvided,
         layerStores,
@@ -362,6 +378,7 @@ export function layerWithRegistry<Error>(
   const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        McpAppModelContext.layerEmpty,
         layerCheckpointServiceProvided,
         layerEventSinkProvided,
         IdAllocator.layer,
@@ -371,6 +388,7 @@ export function layerWithRegistry<Error>(
     ),
   );
   const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+    Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
       Layer.mergeAll(
@@ -401,6 +419,7 @@ export function layerWithRegistry<Error>(
         IdAllocator.layer,
         layerStores,
         layerProviderSessionManagerProvided,
+        ThreadCommandExecutor.layer,
         layerRuntime,
       ),
     ),
@@ -438,6 +457,7 @@ export function layerWithRegistry<Error>(
         layerProviderSessionManagerProvided,
         layerProviderSwitchServiceProvided,
         layerRunExecutionServiceProvided,
+        layerServerSettings,
         ThreadForkService.layer,
       ),
     ),

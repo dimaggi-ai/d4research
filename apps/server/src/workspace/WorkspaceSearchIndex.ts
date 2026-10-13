@@ -25,7 +25,7 @@ import type {
   ProjectSearchContentsResult,
   ProjectSearchEntriesResult,
 } from "@d4research/contracts";
-import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
+import { isProjectFaviconPath } from "@d4research/shared/projectFavicon";
 
 // fff-node stays external to the CLI bundle because it dlopens a native
 // library. A static `import` of an external package is a hard error inside a
@@ -169,7 +169,7 @@ function mapFileSearchResult(
 ): ProjectSearchEntriesResult {
   const entries = result.items.flatMap((item) => {
     const entry = toFileEntry(item);
-    return entry && (!imageOnly || isWorkspaceImagePreviewPath(entry.path)) ? [entry] : [];
+    return entry && (!imageOnly || isProjectFaviconPath(entry.path)) ? [entry] : [];
   });
   return {
     entries: entries.slice(0, limit),

@@ -1,6 +1,9 @@
 // @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 import { assert, it } from "@effect/vitest";
 import {
+  CheckpointId,
+  CheckpointRef,
+  CheckpointScopeId,
   MessageId,
   type ModelSelection,
   NodeId,
@@ -15,6 +18,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   PlanId,
+  type ProviderThreadId,
+  ProviderTurnId,
   RunAttemptId,
   RunId,
   RuntimeRequestId,
@@ -32,11 +37,11 @@ import { toolOutputImages } from "@d4research/shared/toolOutput";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
-import * as IdAllocator from "./IdAllocator.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
-import { makeProviderFailure } from "./ProviderFailure.ts";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 import {
   makeProviderEventRoutingState,
   type ProviderEventRouteIdentity,
@@ -316,6 +321,254 @@ layer("ProviderEventIngestorV2", (it) => {
         ["provider-thread.updated"],
       );
       assert.equal(latestThreadSequence, 2);
+    }),
+  );
+
+  it.effect("rolls back runs a provider rewound off its active branch", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const threadEvent = yield* threadCreatedEvent(now);
+      const threadId = threadEvent.threadId;
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      const rewoundThreadId = idAllocator.derive.providerThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: "rewound-thread",
+      });
+      const otherThreadId = idAllocator.derive.providerThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: "other-thread",
+      });
+      const scopeId = CheckpointScopeId.make("checkpoint-scope:rewound");
+      // A run as execution leaves it: attempt, provider turn, root node, and a
+      // checkpoint once completed. A null native turn id is a weak ref.
+      const seedRun = Effect.fnUntraced(function* (input: {
+        readonly ordinal: number;
+        readonly providerThreadId: ProviderThreadId;
+        readonly status: "completed" | "interrupted" | "running";
+        readonly nativeTurnId: string | null;
+      }) {
+        const runId = RunId.make(`run:rewound:${input.ordinal}`);
+        const attemptId = RunAttemptId.make(`attempt:rewound:${input.ordinal}`);
+        const nodeId = NodeId.make(`node:rewound:${input.ordinal}`);
+        const providerTurnId = ProviderTurnId.make(`provider-turn:rewound:${input.ordinal}`);
+        const completedAt = input.status === "running" ? null : now;
+        const eventId = () => idAllocator.allocate.event({ threadId });
+        const events: Array<OrchestrationV2DomainEvent> = [
+          {
+            id: yield* eventId(),
+            type: "run.created",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId,
+              ordinal: input.ordinal,
+              providerInstanceId: modelSelection.instanceId,
+              modelSelection,
+              providerThreadId: input.providerThreadId,
+              userMessageId: MessageId.make(`message:rewound:${input.ordinal}`),
+              rootNodeId: nodeId,
+              activeAttemptId: attemptId,
+              status: input.status,
+              requestedAt: now,
+              startedAt: now,
+              completedAt,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          },
+          {
+            id: yield* eventId(),
+            type: "run-attempt.created",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: attemptId,
+              runId,
+              attemptOrdinal: 1,
+              rootNodeId: nodeId,
+              providerInstanceId: modelSelection.instanceId,
+              providerThreadId: input.providerThreadId,
+              providerTurnId,
+              reason: "initial",
+              status: input.status,
+              startedAt: now,
+              completedAt,
+            },
+          },
+          {
+            id: yield* eventId(),
+            type: "provider-turn.updated",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: providerTurnId,
+              providerThreadId: input.providerThreadId,
+              nodeId,
+              runAttemptId: attemptId,
+              nativeTurnRef:
+                input.nativeTurnId === null
+                  ? {
+                      driver: CODEX_DRIVER,
+                      nativeId: `synthetic:${input.ordinal}`,
+                      strength: "weak",
+                    }
+                  : { driver: CODEX_DRIVER, nativeId: input.nativeTurnId, strength: "strong" },
+              ordinal: input.ordinal,
+              status: input.status,
+              startedAt: now,
+              completedAt,
+            },
+          },
+          {
+            id: yield* eventId(),
+            type: "node.updated",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: nodeId,
+              threadId,
+              runId,
+              parentNodeId: null,
+              rootNodeId: nodeId,
+              kind: "root_turn",
+              status: input.status,
+              countsForRun: true,
+              providerThreadId: input.providerThreadId,
+              providerTurnId,
+              nativeItemRef: null,
+              runtimeRequestId: null,
+              checkpointScopeId: scopeId,
+              startedAt: now,
+              completedAt,
+            },
+          },
+          ...(input.status === "completed"
+            ? [
+                {
+                  id: yield* eventId(),
+                  type: "checkpoint.captured" as const,
+                  threadId,
+                  occurredAt: now,
+                  payload: {
+                    id: CheckpointId.make(`checkpoint:rewound:${input.ordinal}`),
+                    threadId,
+                    scopeId,
+                    runId,
+                    nodeId,
+                    parentCheckpointId: null,
+                    ordinalWithinScope: input.ordinal,
+                    appRunOrdinal: input.ordinal,
+                    ref: CheckpointRef.make(`refs/t3/checkpoints/rewound/${input.ordinal}`),
+                    status: "ready" as const,
+                    files: [],
+                    capturedAt: now,
+                  },
+                },
+              ]
+            : []),
+        ];
+        yield* eventSink.write({ events });
+        return runId;
+      });
+
+      yield* eventSink.write({ events: [threadEvent] });
+      const otherProviderRun = yield* seedRun({
+        ordinal: 1,
+        providerThreadId: otherThreadId,
+        status: "completed",
+        nativeTurnId: "other-turn",
+      });
+      const keptRun = yield* seedRun({
+        ordinal: 2,
+        providerThreadId: rewoundThreadId,
+        status: "completed",
+        nativeTurnId: "kept-turn",
+      });
+      const abandonedRun = yield* seedRun({
+        ordinal: 3,
+        providerThreadId: rewoundThreadId,
+        status: "completed",
+        nativeTurnId: "abandoned-turn",
+      });
+      const unlocatedRun = yield* seedRun({
+        ordinal: 4,
+        providerThreadId: rewoundThreadId,
+        status: "interrupted",
+        nativeTurnId: null,
+      });
+      const rewindingRun = yield* seedRun({
+        ordinal: 5,
+        providerThreadId: rewoundThreadId,
+        status: "running",
+        nativeTurnId: null,
+      });
+
+      yield* ingestor.ingestNormalized({
+        providerSessionId,
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+        runId: rewindingRun,
+        event: {
+          type: "provider_thread.updated",
+          driver: CODEX_DRIVER,
+          providerThread: {
+            id: rewoundThreadId,
+            driver: CODEX_DRIVER,
+            providerInstanceId: modelSelection.instanceId,
+            providerSessionId,
+            appThreadId: threadId,
+            ownerNodeId: null,
+            nativeThreadRef: {
+              driver: CODEX_DRIVER,
+              nativeId: "rewound-thread",
+              strength: "strong",
+            },
+            nativeConversationHeadRef: {
+              driver: CODEX_DRIVER,
+              nativeId: "kept-turn-reply",
+              strength: "strong",
+            },
+            status: "idle",
+            firstRunOrdinal: 2,
+            lastRunOrdinal: 5,
+            handoffIds: [],
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+          retainedNativeTurnIds: ["turn-started-outside-t3", "kept-turn"],
+        },
+      });
+
+      const projection = yield* projectionStore.getThreadProjection(threadId);
+      const runIds = [otherProviderRun, keptRun, abandonedRun, unlocatedRun, rewindingRun];
+      assert.deepEqual(
+        runIds.map((runId) => projection.runs.find((run) => run.id === runId)?.status),
+        ["completed", "completed", "rolled_back", "rolled_back", "running"],
+      );
+      assert.deepEqual(
+        runIds.map((runId) => projection.nodes.find((node) => node.runId === runId)?.status),
+        ["completed", "completed", "rolled_back", "rolled_back", "running"],
+      );
+      assert.deepEqual(
+        [otherProviderRun, keptRun, abandonedRun].map(
+          (runId) =>
+            projection.checkpoints.find((checkpoint) => checkpoint.runId === runId)?.status,
+        ),
+        ["ready", "ready", "stale"],
+      );
+      assert.equal(
+        projection.providerThreads.find((thread) => thread.id === rewoundThreadId)?.lastRunOrdinal,
+        5,
+      );
     }),
   );
 
@@ -1337,6 +1590,90 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
+  it.effect("updates provider child metadata without recreating its saved thread", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const rootEvent = yield* threadCreatedEvent(now);
+      if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
+      const childThreadId = idAllocator.derive.threadFromProviderThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: "workflow-member-metadata",
+      });
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId: rootEvent.threadId,
+      });
+      const offered = {
+        ...rootEvent.payload,
+        id: childThreadId,
+        title: "Inspect checkout",
+        activeProviderThreadId: null,
+        lineage: {
+          parentThreadId: rootEvent.threadId,
+          relationshipToParent: "subagent" as const,
+          rootThreadId: rootEvent.threadId,
+        },
+      };
+      const ingest = (appThread: OrchestrationV2AppThread) =>
+        ingestor.ingestNormalized({
+          providerSessionId,
+          providerInstanceId: modelSelection.instanceId,
+          threadId: rootEvent.threadId,
+          event: { type: "app_thread.created", driver: CODEX_DRIVER, appThread },
+        });
+      yield* eventSink.write({ events: [rootEvent] });
+      const created = yield* Effect.all([ingest(offered), ingest(offered)], {
+        concurrency: "unbounded",
+      });
+      assert.deepEqual(
+        created.flat().map((stored) => stored.event.type),
+        ["thread.created"],
+      );
+      const saved = {
+        ...offered,
+        archivedAt: now,
+        deletedAt: now,
+        activeProviderThreadId: rootEvent.payload.activeProviderThreadId,
+        branch: "user/checkout",
+      };
+      yield* eventSink.write({
+        events: [
+          {
+            ...rootEvent,
+            id: yield* idAllocator.allocate.event({ threadId: childThreadId }),
+            threadId: childThreadId,
+            type: "thread.deleted",
+            payload: saved,
+          },
+        ],
+      });
+      for (const metadata of [
+        { title: "Review checkout", modelSelection },
+        { title: "Review checkout", modelSelection: { ...modelSelection, model: "gpt-6.1-sol" } },
+      ]) {
+        const updated = yield* ingest({ ...offered, ...metadata });
+        assert.deepEqual(
+          updated.map((stored) => stored.event.type),
+          ["thread.metadata-updated"],
+        );
+        const thread = yield* projectionStore.getThread(childThreadId);
+        assert.deepEqual(thread, { ...saved, ...metadata, updatedAt: thread.updatedAt });
+      }
+      assert.deepEqual(
+        yield* ingest({
+          ...offered,
+          title: "Review checkout",
+          modelSelection: { ...modelSelection, model: "gpt-6.1-sol" },
+        }),
+        [],
+      );
+    }),
+  );
+
   it.effect("moves a native subagent's thread to the model its provider reports later", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;
@@ -1429,6 +1766,37 @@ layer("ProviderEventIngestorV2", (it) => {
         instanceId: modelSelection.instanceId,
         model: "gpt-6.1-sol",
       });
+
+      // A selection the provider reports, effort included, replaces the thread's.
+      const reportedSelection = {
+        instanceId: modelSelection.instanceId,
+        model: "gpt-6.1-sol",
+        options: [{ id: "reasoningEffort", value: "low" }],
+      };
+      const reported = yield* ingest({
+        ...subagentUpdated,
+        subagent: { ...subagentUpdated.subagent, modelSelection: reportedSelection },
+      });
+      assert.deepEqual(
+        reported.map((stored) => stored.event.type),
+        ["subagent.updated", "thread.model-selection-updated"],
+      );
+      assert.deepEqual(
+        (yield* projectionStore.getThread(childThreadId)).modelSelection,
+        reportedSelection,
+      );
+
+      // A subagent recovered after a restart reports its model but no
+      // selection; the same model keeps the effort the thread holds.
+      const recovered = yield* ingest(subagentUpdated);
+      assert.deepEqual(
+        recovered.map((stored) => stored.event.type),
+        ["subagent.updated"],
+      );
+      assert.deepEqual(
+        (yield* projectionStore.getThread(childThreadId)).modelSelection,
+        reportedSelection,
+      );
     }),
   );
 });

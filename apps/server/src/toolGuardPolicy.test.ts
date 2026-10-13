@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { ToolGuardPolicy } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -62,7 +62,7 @@ describe("Tool Guard policy storage", () => {
             Layer.provide(NodeServices.layer),
           ),
           NodeServices.layer,
-          Layer.succeed(HostProcessPlatform, "linux"),
+          Layer.succeed(HostProcess.Platform, "linux"),
         ),
       ),
     ),
@@ -95,7 +95,7 @@ describe("Tool Guard policy storage", () => {
             Layer.provide(NodeServices.layer),
           ),
           NodeServices.layer,
-          Layer.succeed(HostProcessPlatform, "linux"),
+          Layer.succeed(HostProcess.Platform, "linux"),
         ),
       ),
     ),

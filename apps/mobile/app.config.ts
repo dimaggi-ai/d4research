@@ -246,6 +246,11 @@ const config: ExpoConfig = {
     bundleIdentifier: iosBundleIdentifier,
     ...(repoEnv.T3CODE_IOS_APPLE_TEAM_ID ? { appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID } : {}),
     infoPlist: {
+      UISupportedInterfaceOrientations: [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationLandscapeLeft",
+        "UIInterfaceOrientationLandscapeRight",
+      ],
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },

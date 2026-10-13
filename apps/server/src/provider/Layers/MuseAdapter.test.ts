@@ -9,7 +9,7 @@ import {
 } from "@d4research/contracts";
 import { Effect, Layer, Queue, Stream } from "effect";
 import { ServerConfig } from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { makeMockMuse } from "../msp/mspTestUtils.ts";
 import { makeMuseAdapter } from "./MuseAdapter.ts";
 
@@ -22,6 +22,7 @@ interface LoggedT3CodeMcpServer {
 
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "muse-adapter-test-" }).pipe(
   Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(McpProviderSessions.layer),
 );
 const setup = Effect.fn("setup")(function* (
   env: Record<string, string> = {},
@@ -88,8 +89,9 @@ it.layer(layer)("MuseAdapter", (it) => {
       yield* f.adapter.stopAll();
     }),
   );
-  for (const decision of ["accept", "decline"] as const)
-    it.effect(`round-trips ${decision} approval with required feedback`, () =>
+  it.effect.each(["accept", "decline"] as const)(
+    "round-trips %s approval with required feedback",
+    (decision) =>
       Effect.gen(function* () {
         const f = yield* setup({ T3_MSP_EMIT_APPROVAL: "1" });
         yield* f.start();
@@ -108,7 +110,7 @@ it.layer(layer)("MuseAdapter", (it) => {
           decision === "accept" ? "allow" : "deny",
         );
       }),
-    );
+  );
   it.effect("auto-decides full-access approvals", () =>
     Effect.gen(function* () {
       const f = yield* setup({ T3_MSP_EMIT_APPROVAL: "1" });
@@ -118,30 +120,32 @@ it.layer(layer)("MuseAdapter", (it) => {
       assert.isFalse(f.events.some((e) => e.type === "request.opened"));
     }),
   );
-  for (const multi of [false, true])
-    it.effect(`answers ${multi ? "multiple" : "single"} choice user input once`, () =>
-      Effect.gen(function* () {
-        const f = yield* setup({
-          T3_MSP_EMIT_USER_INPUT: "1",
-          T3_MSP_MULTISELECT: multi ? "1" : "0",
-        });
-        yield* f.start();
-        yield* f.adapter.sendTurn({ threadId: f.threadId, input: "ask" });
-        const opened = yield* f.wait("user-input.requested");
-        yield* f.adapter.respondToUserInput(f.threadId, ApprovalRequestId.make(opened.requestId!), {
-          q: multi ? ["Blue", "Green"] : "Blue",
-        });
-        yield* f.wait("turn.completed");
-        assert.equal(f.events.filter((e) => e.type === "user-input.resolved").length, 1);
-        const request = (yield* f.readRequests()).find((r) => r.method === "userInput/answer");
-        assert.deepEqual(request?.params?.answers, [
-          {
-            questionId: "q",
-            ...(multi ? { selectedLabels: ["Blue", "Green"] } : { selectedLabel: "Blue" }),
-          },
-        ]);
-      }),
-    );
+  it.effect.each([
+    { multi: false, name: "single" },
+    { multi: true, name: "multiple" },
+  ])("answers $name choice user input once", ({ multi }) =>
+    Effect.gen(function* () {
+      const f = yield* setup({
+        T3_MSP_EMIT_USER_INPUT: "1",
+        T3_MSP_MULTISELECT: multi ? "1" : "0",
+      });
+      yield* f.start();
+      yield* f.adapter.sendTurn({ threadId: f.threadId, input: "ask" });
+      const opened = yield* f.wait("user-input.requested");
+      yield* f.adapter.respondToUserInput(f.threadId, ApprovalRequestId.make(opened.requestId!), {
+        q: multi ? ["Blue", "Green"] : "Blue",
+      });
+      yield* f.wait("turn.completed");
+      assert.equal(f.events.filter((e) => e.type === "user-input.resolved").length, 1);
+      const request = (yield* f.readRequests()).find((r) => r.method === "userInput/answer");
+      assert.deepEqual(request?.params?.answers, [
+        {
+          questionId: "q",
+          ...(multi ? { selectedLabels: ["Blue", "Green"] } : { selectedLabel: "Blue" }),
+        },
+      ]);
+    }),
+  );
   it.effect("cancels unknown user answers", () =>
     Effect.gen(function* () {
       const f = yield* setup({ T3_MSP_EMIT_USER_INPUT: "1" });
@@ -204,7 +208,7 @@ it.layer(layer)("MuseAdapter", (it) => {
   it.effect("injects the per-thread t3-code MCP server on start and resume", () =>
     Effect.gen(function* () {
       const f = yield* setup();
-      McpProviderSession.setMcpProviderSession({
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
         browserToolsAvailable: true,
         environmentId: EnvironmentId.make("environment-1"),
         threadId: f.threadId,
@@ -215,7 +219,7 @@ it.layer(layer)("MuseAdapter", (it) => {
         capabilities: new Set(["preview", "research", "pull-requests"]),
       });
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => McpProviderSession.clearMcpProviderSession(f.threadId)),
+        McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(f.threadId)),
       );
       yield* f.start();
       const resumeCursor = (yield* f.adapter.listSessions())[0]!.resumeCursor;
@@ -246,7 +250,7 @@ it.layer(layer)("MuseAdapter", (it) => {
   it.effect("starts without MCP config and warns when the host denies sessionMcp", () =>
     Effect.gen(function* () {
       const f = yield* setup({ T3_MSP_DENY_SESSION_MCP: "1" });
-      McpProviderSession.setMcpProviderSession({
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
         browserToolsAvailable: true,
         environmentId: EnvironmentId.make("environment-1"),
         threadId: f.threadId,
@@ -257,7 +261,7 @@ it.layer(layer)("MuseAdapter", (it) => {
         capabilities: new Set(["preview", "research", "pull-requests"]),
       });
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => McpProviderSession.clearMcpProviderSession(f.threadId)),
+        McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(f.threadId)),
       );
       yield* f.start();
       assert.equal(

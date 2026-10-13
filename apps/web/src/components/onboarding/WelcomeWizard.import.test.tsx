@@ -47,14 +47,12 @@ vi.mock("../../rpc/atomRegistry", () => ({
     return state.registry;
   },
 }));
-vi.mock("@clerk/react", () => ({ useAuth: () => ({ isLoaded: true, isSignedIn: false }) }));
 vi.mock("../../hooks/useTheme", () => ({ mountOnboardingTheme: () => () => {} }));
 vi.mock("../../hooks/useLocalStorage", () => ({ useLocalStorage: () => [false, () => {}] }));
 vi.mock("../../hooks/useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: vi.fn(), copied: false }),
 }));
 vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
-vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({ useT3ConnectAuthPrompt: vi.fn() }));
 vi.mock("../../onboarding/firstRun", () => ({
   useCompleteOnboarding: () => state.completeOnboarding,
 }));
@@ -64,7 +62,7 @@ vi.mock("../../state/environments", () => {
     environmentId,
     label: environmentId,
     connection: { phase: "connected" },
-    entry: { target: { _tag: "DirectConnectionTarget" } },
+    entry: { enabled: true, target: { _tag: "DirectConnectionTarget" } },
   });
   const primary = environment("primary");
   return {
@@ -132,7 +130,9 @@ vi.mock("../settings/CodexSetupSection", () => ({
   CodexSetupSection: () => null,
   AddManagedCodexAccountDialog: () => null,
 }));
-vi.mock("../settings/providerDriverMeta", () => ({ getDriverOption: () => ({ label: "Agent" }) }));
+vi.mock("../settings/providerDriverMeta", () => ({
+  providerClients: { get: () => ({ label: "Agent" }) },
+}));
 vi.mock("../settings/providerStatus", () => ({
   getProviderSummary: () => ({ headline: "Checking", detail: null }),
 }));
@@ -227,7 +227,7 @@ async function mountImport(remote = false) {
   });
   await click("Continue");
   await click("Continue");
-  expect(text(renderer!.root)).toContain("Choose your projects");
+  expect(text(renderer!.root)).toContain("Import your projects");
 }
 
 beforeEach(() => {

@@ -49,8 +49,9 @@ import {
 } from "../msp/museApprovalMode.ts";
 import { mspNotificationToRuntimeEvents } from "../msp/museRuntimeEvents.ts";
 import { patchBodyToUnifiedDiff } from "../msp/musePatchDiff.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import type { EventNdjsonLogger } from "../EventNdjsonLogger.ts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@d4research/provider-core/server/mcpSession";
+import type { EventNdjsonLogger } from "@d4research/provider-core/server/ProviderEventLoggers";
 
 const PROVIDER = ProviderDriverKind.make("muse");
 const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -102,6 +103,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
     instanceId?: ProviderInstanceId;
   },
 ) {
+  const mcpProviderSessions = yield* McpProviderSessions.McpProviderSessions;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
   const fs = yield* FileSystem.FileSystem;
@@ -487,8 +489,10 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
       for (const id of ctx.pendingUserInputs.keys()) yield* resolveInput(ctx, id, {});
       yield* Scope.close(ctx.scope, Exit.void);
     });
-  const mcpConfigFor = (threadId: ThreadId): Msp.SessionConfig | undefined => {
-    const mcpSession = McpProviderSession.readMcpProviderSession(threadId);
+  const mcpConfigFor = Effect.fn(function* (
+    threadId: ThreadId,
+  ): Effect.fn.Return<Msp.SessionConfig | undefined> {
+    const mcpSession = yield* mcpProviderSessions.read(threadId);
     return mcpSession
       ? {
           mcpServers: {
@@ -501,7 +505,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           },
         }
       : undefined;
-  };
+  });
   const spawnHost = (args: {
     readonly threadId: ThreadId;
     readonly cwd: string;
@@ -516,7 +520,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
     readonly generation: number;
   }) =>
     Effect.gen(function* () {
-      const mcpSession = McpProviderSession.readMcpProviderSession(args.threadId);
+      const mcpSession = yield* mcpProviderSessions.read(args.threadId);
       return yield* makeMuseMspRuntime({
         settings,
         environment: McpProviderSession.withAgentDeviceEnvironment(
@@ -597,7 +601,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
         queue: ctx.queue,
         generation,
       }).pipe(Effect.mapError(mapError("sendTurn")));
-      const mcpConfig = mcpConfigFor(threadId);
+      const mcpConfig = yield* mcpConfigFor(threadId);
       const resumed = yield* runtime
         .resumeSession({
           sessionId: ctx.sessionId,
@@ -630,7 +634,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
       const scope = yield* Scope.make();
       const queue = yield* Queue.unbounded<Incoming>();
       const result = yield* Effect.gen(function* () {
-        const mcpConfig = mcpConfigFor(input.threadId);
+        const mcpConfig = yield* mcpConfigFor(input.threadId);
         const runtime = yield* spawnHost({
           threadId: input.threadId,
           cwd: input.cwd!,

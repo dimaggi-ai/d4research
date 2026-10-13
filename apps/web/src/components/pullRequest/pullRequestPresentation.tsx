@@ -9,6 +9,7 @@ import type {
   PullRequestReviewDecision,
   PullRequestState,
 } from "@d4research/contracts";
+import { formatDiffCount } from "@d4research/client-runtime/diff-count";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
@@ -524,8 +525,8 @@ export function PullRequestDiffStat({
   }
   return (
     <span className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}>
-      <span className="text-diff-addition-foreground">+{additions.toLocaleString()}</span>
-      <span className="text-diff-deletion">-{deletions.toLocaleString()}</span>
+      <span className="text-diff-addition-foreground">+{formatDiffCount(additions)}</span>
+      <span className="text-diff-deletion">-{formatDiffCount(deletions)}</span>
     </span>
   );
 }

@@ -45,6 +45,12 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
+    "does not expose removed telemetry settings for %s",
+    (query) => {
+      expect(searchSettings(query)).toEqual([]);
+    },
+  );
   it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
   });
@@ -140,6 +146,41 @@ describe("searchSettings", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });
 
+  it("hides desktop-only settings from browser search", () => {
+    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
+    expect(searchSettings("hold to quit")).toEqual([]);
+    expect(searchSettings("wsl")).toEqual([]);
+    expect(searchSettings("update track")).toEqual([]);
+  });
+
+  it("finds the About update rows", () => {
+    expect(searchSettings("check for updates").map((item) => item.id)).toContain("app-version");
+    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "update-track")).toMatchObject({
+      title: "Update track",
+      to: "/settings/general",
+      releaseChannelOnly: true,
+    });
+  });
+
+  it("hides macOS-only settings on other platforms", () => {
+    vi.stubGlobal("navigator", { platform: "Win32" });
+    try {
+      expect(searchSettings("font smoothing")).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("registers the WSL backend as a desktop-only setting", () => {
+    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "wsl-backend")).toMatchObject({
+      id: "wsl-backend",
+      title: "WSL backend",
+      to: "/settings/connections",
+      desktopOnly: true,
+      windowsOnly: true,
+    });
+  });
+
   it("hides settings whose controls are unavailable", () => {
     const available = filterAvailableSettingsSearchItems({
       hasCloudPublicConfig: false,
@@ -159,6 +200,8 @@ describe("searchSettings", () => {
       "provider-health-check-interval",
       "cursor-keychain-usage",
       "source-control-writer-model",
+      "review-guide-model",
+      "review-guide-instructions",
       "source-control-writing-style",
       "t3-connect",
       "hold-webhooks-while-offline",
@@ -361,6 +404,11 @@ describe("searchSettings", () => {
 });
 
 describe("settings search targets", () => {
+  it("does not register a destination for removed telemetry export settings", () => {
+    expect(SETTINGS_SEARCH_ITEMS.map((item) => item.id)).not.toContain("telemetry-export");
+    expect(getSettingsSearchTargetScope("telemetry-export")).toBeNull();
+    expect(searchSettings("OpenTelemetry export")).toEqual([]);
+  });
   it.each([
     "auto-settle-inactive-threads",
     "auto-settle-merged-threads",

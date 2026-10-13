@@ -1,4 +1,5 @@
-import type { GitHubSettings, SourceControlProviderAuth } from "@d4research/contracts";
+import type { SourceControlProviderAuth } from "@d4research/contracts";
+import type { GitHubSettings } from "@d4research/client-runtime/source-control-clients";
 
 export type GitHubDiscoveredAccount = NonNullable<SourceControlProviderAuth["accounts"]>[number];
 

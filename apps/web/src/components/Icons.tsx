@@ -756,21 +756,6 @@ export const ACPRegistryIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
-export const PiAgentIcon: Icon = ({ className, ...props }) => (
-  <svg
-    {...props}
-    viewBox="165.29 165.29 469.43 469.43"
-    fill="none"
-    className={cn("fill-[#0F0F0F] dark:fill-[#F5F5F5]", className)}
-  >
-    <path
-      fillRule="evenodd"
-      d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-    />
-    <path d="M517.36 400H634.72V634.72H517.36Z" />
-  </svg>
-);
-
 // Official two-color mark from https://forgejo.org/favicon.svg.
 export const ForgejoIcon: Icon = (props) => (
   <svg viewBox="0 0 212 212" aria-hidden="true" {...props}>
@@ -781,6 +766,14 @@ export const ForgejoIcon: Icon = (props) => (
       <circle cx="142" cy="88" r="18" stroke="#d40000" strokeWidth="15" />
       <circle cx="58" cy="180" r="18" stroke="#d40000" strokeWidth="15" />
     </g>
+  </svg>
+);
+
+// GitCafe's own mark, from https://git.cafe/favicon.svg, inset so the full-bleed square does not
+// read heavier than the round and cut-out marks beside it.
+export const GitCafeIcon: Icon = (props) => (
+  <svg viewBox="0 0 64 64" aria-hidden="true" {...props}>
+    <rect x="4.8" y="4.8" width="54.4" height="54.4" fill="#a78bfa" />
   </svg>
 );
 
@@ -838,31 +831,6 @@ export const MacAccessibilityIcon: Icon = (props) => {
         stroke="#fff"
         strokeWidth="1.6"
         strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-};
-
-// Codex's Computer Use app mark, shown on computer-use rows in the work log.
-export const ComputerUseAppIcon: Icon = (props) => {
-  const gradientId = `${useId().replaceAll(":", "")}-computer-use-app-gradient`;
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
-      <defs>
-        <linearGradient id={gradientId} x1="2" y1="2" x2="22" y2="22">
-          <stop offset="0" stopColor="#00dff0" />
-          <stop offset="0.42" stopColor="#3b9cff" />
-          <stop offset="0.72" stopColor="#b044f5" />
-          <stop offset="1" stopColor="#ff78b6" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="22" height="22" rx="5" fill={`url(#${gradientId})`} />
-      <path
-        d="m7.2 6.2 10.5 4.1-4.2 2.1-2 4.7z"
-        fill="white"
-        stroke="#315cff"
-        strokeWidth="1.1"
         strokeLinejoin="round"
       />
     </svg>

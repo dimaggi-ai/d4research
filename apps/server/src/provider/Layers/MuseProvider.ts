@@ -17,11 +17,11 @@ import {
   parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
-} from "../providerSnapshot.ts";
+} from "@d4research/provider-core/server/snapshotProbe";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
-} from "../providerMaintenance.ts";
+} from "@d4research/provider-core/server/maintenanceResolver";
 import { makeMuseMspRuntime } from "../msp/MspSessionRuntime.ts";
 
 export const MUSE_PRESENTATION = {

@@ -1,5 +1,5 @@
 import { ProjectId, type ProjectScript } from "@d4research/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
@@ -206,8 +206,8 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const completionShell = resolveCompletionShell(
-    yield* HostProcessPlatform,
-    yield* HostProcessEnvironment,
+    yield* HostProcess.Platform,
+    yield* HostProcess.Environment,
   );
 
   /**

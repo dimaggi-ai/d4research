@@ -7,6 +7,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
+  type OrchestrationV2ThreadProjection,
   type ModelSelection,
   type RuntimeMode,
   type ProviderInteractionMode,
@@ -25,12 +26,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
+import { AgentScope } from "@d4research/shared/AgentScope";
+import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@d4research/shared/model";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import * as IdAllocator from "./IdAllocator.ts";
-import { ProviderAdapterV2Event } from "./ProviderAdapter.ts";
-import { makeProviderFailureTurnItem } from "./ProviderFailure.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import { makeProviderFailureTurnItem } from "@d4research/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 
@@ -39,7 +41,7 @@ export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEven
   {
     providerSessionId: ProviderSessionId,
     threadId: ThreadId,
-    providerEvent: ProviderAdapterV2Event,
+    providerEvent: ProviderAdapter.ProviderAdapterV2Event,
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -80,7 +82,7 @@ export class ProviderTurnAnalytics extends Context.Reference<{
 }) {}
 
 function providerTurnAnalyticsProperties(input: {
-  readonly driver: ProviderAdapterV2Event["driver"];
+  readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
 }): Readonly<Record<string, unknown>> {
@@ -185,6 +187,57 @@ function withPlanStepDurations(
   };
 }
 
+/** Settled runs that carried conversation to the provider. */
+const CONVERSATION_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
+  "completed",
+  "interrupted",
+  "failed",
+]);
+
+/**
+ * Settled runs on a provider thread that a native rewind left off the active
+ * branch. A run whose provider turn has a strong native ref is judged by that
+ * ref. A run without one cannot be located, so it falls with everything after
+ * the last run still on the branch.
+ */
+function runsOffNativeBranch(input: {
+  readonly projection: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">;
+  readonly providerThreadId: ProviderThreadId;
+  readonly retainedNativeTurnIds: ReadonlySet<string>;
+  readonly reportingRunId: RunId | undefined;
+}): ReadonlyArray<OrchestrationV2Run> {
+  const { attempts, providerTurns, runs } = input.projection;
+  const nativeTurnId = (run: OrchestrationV2Run) => {
+    const attempt = attempts.find((candidate) => candidate.id === run.activeAttemptId);
+    if (attempt === undefined) return null;
+    const ref = providerTurns.find(
+      (turn) => turn.id === attempt.providerTurnId || turn.runAttemptId === attempt.id,
+    )?.nativeTurnRef;
+    return ref?.strength === "strong" ? ref.nativeId : null;
+  };
+  const settled = runs.flatMap((run) =>
+    run.providerThreadId === input.providerThreadId &&
+    run.id !== input.reportingRunId &&
+    CONVERSATION_RUN_STATUSES.has(run.status)
+      ? [{ run, nativeTurnId: nativeTurnId(run) }]
+      : [],
+  );
+  const lastRetainedOrdinal = settled.reduce(
+    (last, { run, nativeTurnId }) =>
+      nativeTurnId !== null && input.retainedNativeTurnIds.has(nativeTurnId)
+        ? Math.max(last, run.ordinal)
+        : last,
+    0,
+  );
+  return settled
+    .filter(({ run, nativeTurnId }) =>
+      nativeTurnId === null
+        ? run.ordinal > lastRetainedOrdinal
+        : !input.retainedNativeTurnIds.has(nativeTurnId),
+    )
+    .map(({ run }) => run);
+}
+
 export interface ProviderEventIngestInput {
   readonly providerSessionId: ProviderSessionId;
   readonly providerInstanceId: ProviderInstanceId;
@@ -193,7 +246,7 @@ export interface ProviderEventIngestInput {
   readonly runId?: RunId;
   readonly nodeId?: NodeId;
   readonly rawEventId?: RawEventId;
-  readonly event: ProviderAdapterV2Event;
+  readonly event: ProviderAdapter.ProviderAdapterV2Event;
   readonly analyticsContext?: ProviderTurnAnalyticsContext;
 }
 
@@ -252,6 +305,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const analytics = yield* ProviderTurnAnalytics;
+    const agentScope = yield* AgentScope;
     const completedTurnAnalytics = new Set<string>();
 
     const makeDomainEvent = (
@@ -336,18 +390,32 @@ export const layer: Layer.Layer<
     /**
      * A native subagent's thread starts on the parent's model when the
      * provider names the real one later (a Claude agent file's model arrives
-     * with the subagent's first reply). Clients read the thread's model, so
-     * move the thread to the reported one. Thread commands rewrite the whole
-     * thread row under the thread's lock, so this read and write take it too.
+     * with the subagent's first reply). Clients read the thread's model and
+     * effort, so move the thread to the reported selection, or to the reported
+     * model alone when the provider reports no selection. Thread commands
+     * rewrite the whole thread row under the thread's lock, so this read and
+     * write take it too.
      */
     const syncSubagentThreadModel = Effect.fn("ProviderEventIngestor.syncSubagentThreadModel")(
       function* (input: ProviderEventIngestInput, subagent: OrchestrationV2Subagent) {
         const { childThreadId, model } = subagent;
-        if (subagent.origin !== "provider_native" || childThreadId === null || model === null) {
+        if (
+          subagent.origin !== "provider_native" ||
+          childThreadId === null ||
+          (model === null && subagent.modelSelection === undefined)
+        ) {
           return [];
         }
+        const reportedSelection = ({ modelSelection }: { modelSelection: ModelSelection }) =>
+          subagent.modelSelection ??
+          (model === null || model === modelSelection.model
+            ? modelSelection
+            : // The parent's options belong to the parent's model.
+              { instanceId: modelSelection.instanceId, model });
         const staleThread = projections.getThread(childThreadId).pipe(
-          Effect.map((thread) => (thread.modelSelection.model === model ? null : thread)),
+          Effect.map((thread) =>
+            modelSelectionsEqual(thread.modelSelection, reportedSelection(thread)) ? null : thread,
+          ),
           Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
         );
         // Nearly every update already matches; only a mismatch takes the lock.
@@ -361,10 +429,9 @@ export const layer: Layer.Layer<
             const event = yield* makeDomainEvent(input, {
               type: "thread.model-selection-updated",
               threadId: thread.id,
-              // The parent's options belong to the parent's model.
               payload: {
                 ...thread,
-                modelSelection: { instanceId: thread.modelSelection.instanceId, model },
+                modelSelection: reportedSelection(thread),
                 updatedAt: now,
               },
               occurredAt: now,
@@ -375,17 +442,118 @@ export const layer: Layer.Layer<
       },
     );
 
+    /**
+     * The provider rewound its conversation outside T3. Retire the runs that
+     * fell off its active branch with the same run, root-node, and checkpoint
+     * updates CheckpointRollbackService writes for a T3 revert. The run
+     * reporting the rewind performed it and stays, so it keeps lastRunOrdinal.
+     */
+    const rollBackRewoundRuns = Effect.fn("ProviderEventIngestor.rollBackRewoundRuns")(function* (
+      input: ProviderEventIngestInput,
+      rewind: {
+        readonly threadId: ThreadId;
+        readonly providerThreadId: ProviderThreadId;
+        readonly retainedNativeTurnIds: ReadonlySet<string>;
+      },
+    ) {
+      const projection = yield* projections.getThreadRecords(rewind.threadId, [
+        "runs",
+        "attempts",
+        "providerTurns",
+        "nodes",
+        "checkpoints",
+      ]);
+      const runs = runsOffNativeBranch({
+        projection,
+        providerThreadId: rewind.providerThreadId,
+        retainedNativeTurnIds: rewind.retainedNativeTurnIds,
+        reportingRunId: input.runId,
+      });
+      if (runs.length === 0) return [];
+      const now = yield* DateTime.now;
+      const eventId = () =>
+        idAllocator.allocate.event({
+          threadId: rewind.threadId,
+          providerSessionId: input.providerSessionId,
+        });
+      const runIds = new Set(runs.map((run) => run.id));
+      const events: Array<OrchestrationV2DomainEvent> = [];
+      for (const checkpoint of projection.checkpoints) {
+        if (checkpoint.status !== "ready" || checkpoint.runId === null) continue;
+        if (!runIds.has(checkpoint.runId)) continue;
+        events.push({
+          id: yield* eventId(),
+          type: "checkpoint.captured",
+          threadId: rewind.threadId,
+          runId: checkpoint.runId,
+          nodeId: checkpoint.nodeId,
+          providerInstanceId: input.providerInstanceId,
+          occurredAt: now,
+          payload: { ...checkpoint, status: "stale" },
+        });
+      }
+      for (const run of runs) {
+        const rootNode = projection.nodes.find((node) => node.id === run.rootNodeId);
+        events.push({
+          id: yield* eventId(),
+          type: "run.updated",
+          threadId: rewind.threadId,
+          runId: run.id,
+          ...(rootNode === undefined ? {} : { nodeId: rootNode.id }),
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: { ...run, status: "rolled_back", completedAt: now },
+        });
+        if (rootNode !== undefined) {
+          events.push({
+            id: yield* eventId(),
+            type: "node.updated",
+            threadId: rewind.threadId,
+            runId: run.id,
+            nodeId: rootNode.id,
+            providerInstanceId: run.providerInstanceId,
+            occurredAt: now,
+            payload: { ...rootNode, status: "rolled_back", completedAt: now },
+          });
+        }
+      }
+      return events;
+    });
+
     const normalize: ProviderEventIngestorV2Shape["normalize"] = (input) =>
       Effect.gen(function* () {
         switch (input.event.type) {
-          case "app_thread.created":
+          case "app_thread.created": {
+            const offered = input.event.appThread;
+            const existing = yield* projections.getThread(offered.id).pipe(
+              Effect.catchTags({
+                ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
+              }),
+            );
+            if (
+              existing !== null &&
+              existing.title === offered.title &&
+              modelSelectionsEqual(existing.modelSelection, offered.modelSelection)
+            )
+              return [];
+            const now = yield* DateTime.now;
             return [
               yield* makeDomainEvent(input, {
-                type: "thread.created",
-                threadId: input.event.appThread.id,
-                payload: input.event.appThread,
+                type: existing === null ? "thread.created" : "thread.metadata-updated",
+                threadId: offered.id,
+                payload:
+                  existing === null
+                    ? offered
+                    : {
+                        ...existing,
+                        title: offered.title,
+                        modelSelection: offered.modelSelection,
+                        updatedAt: now,
+                      },
+                occurredAt: now,
               }),
             ];
+          }
           case "provider_session.updated":
             return [
               yield* makeDomainEvent(input, {
@@ -393,14 +561,24 @@ export const layer: Layer.Layer<
                 payload: input.event.providerSession,
               }),
             ];
-          case "provider_thread.updated":
-            return [
-              yield* makeDomainEvent(input, {
-                type: "provider-thread.updated",
-                threadId: input.event.providerThread.appThreadId ?? input.threadId,
-                payload: input.event.providerThread,
-              }),
-            ];
+          case "provider_thread.updated": {
+            const threadId = input.event.providerThread.appThreadId ?? input.threadId;
+            const updated = yield* makeDomainEvent(input, {
+              type: "provider-thread.updated",
+              threadId,
+              payload: input.event.providerThread,
+            });
+            return input.event.retainedNativeTurnIds === undefined
+              ? [updated]
+              : [
+                  updated,
+                  ...(yield* rollBackRewoundRuns(input, {
+                    threadId,
+                    providerThreadId: input.event.providerThread.id,
+                    retainedNativeTurnIds: new Set(input.event.retainedNativeTurnIds),
+                  })),
+                ];
+          }
           case "provider_turn.updated":
             return [
               ...(["completed", "interrupted", "failed", "cancelled"].includes(
@@ -500,12 +678,16 @@ export const layer: Layer.Layer<
               return dismissed;
             }
             const occurredAt = yield* DateTime.now;
+            // A turn that failed because systemd killed the agent's scope for
+            // memory would otherwise read as a plain provider crash.
+            const failure = (yield* agentScope.oomKilled(input.threadId))
+              ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
+              : input.event.failure;
             return [
               ...dismissed,
               yield* makeDomainEvent(input, {
                 type: "turn-item.updated",
                 payload: makeProviderFailureTurnItem({
-                  idAllocator,
                   driver: input.event.driver,
                   threadId: input.threadId,
                   runId: input.runId ?? null,
@@ -513,7 +695,7 @@ export const layer: Layer.Layer<
                   providerThreadId: input.event.providerThreadId,
                   providerTurnId: input.event.providerTurnId,
                   itemOrdinal: input.event.failureItemOrdinal,
-                  failure: input.event.failure,
+                  failure,
                   ...(input.event.retry === undefined ? {} : { retry: input.event.retry }),
                   ...(input.event.retryStartedAt === undefined
                     ? {}
@@ -624,6 +806,10 @@ export const layer: Layer.Layer<
               );
             }),
           ),
+          (effect) =>
+            input.event.type === "app_thread.created"
+              ? threadCommands.withLock(input.event.appThread.id, effect)
+              : effect,
         ),
     });
   }),

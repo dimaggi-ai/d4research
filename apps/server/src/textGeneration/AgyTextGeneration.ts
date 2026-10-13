@@ -13,14 +13,15 @@ import {
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
-} from "./TextGenerationPrompts.ts";
+  buildReviewGuidePrompt,
+} from "@d4research/provider-core/server/textGenerationPrompts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
   toJsonSchemaObject,
-} from "./TextGenerationUtils.ts";
-import { spawnAndCollect } from "../provider/providerSnapshot.ts";
+} from "@d4research/provider-core/server/textGenerationUtils";
+import { spawnAndCollect } from "@d4research/provider-core/server/snapshotProbe";
 
 const AgyJsonEnvelope = Schema.Struct({
   status: Schema.String,
@@ -40,7 +41,8 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReviewGuide";
     readonly cwd: string;
     readonly prompt: string;
     readonly outputSchemaJson: S;
@@ -129,6 +131,16 @@ export const makeAgyTextGeneration = Effect.fn("makeAgyTextGeneration")(function
     );
 
   return {
+    generateReviewGuide: (input) => {
+      const { prompt, outputSchema } = buildReviewGuidePrompt(input);
+      return runAgyJson({
+        operation: "generateReviewGuide",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+    },
     generateCommitMessage: (input) => {
       const { prompt, outputSchema } = buildCommitMessagePrompt(input);
       return runAgyJson({

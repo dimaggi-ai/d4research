@@ -1,14 +1,14 @@
 import * as Haptics from "expo-haptics";
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
 import { useCallback, useEffect, useRef } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
-import { useThemeColor } from "../../lib/useThemeColor";
 import type { GitActionProgress } from "../../state/use-vcs-action-state";
 
 const OVERLAY_LAYOUT_TRANSITION = LinearTransition.duration(220);
@@ -17,8 +17,10 @@ const AnimatedLiquidGlassView = Animated.createAnimatedComponent(LiquidGlassView
 export function GitActionProgressOverlay(props: {
   readonly progress: GitActionProgress;
   readonly onDismiss: () => void;
+  readonly onOpenPullRequest?: (url: string) => Promise<boolean>;
 }) {
   const { progress, onDismiss } = props;
+  const openPullRequest = props.onOpenPullRequest;
   const insets = useSafeAreaInsets();
   const prevPhaseRef = useRef(progress.phase);
 
@@ -35,13 +37,15 @@ export function GitActionProgressOverlay(props: {
 
   const handlePress = useCallback(() => {
     if (progress.prUrl) {
-      void tryOpenExternalUrl(progress.prUrl, "pull-request");
+      void (openPullRequest
+        ? openPullRequest(progress.prUrl)
+        : tryOpenExternalUrl(progress.prUrl, "pull-request"));
       return;
     }
     if (progress.phase === "success" || progress.phase === "error") {
       onDismiss();
     }
-  }, [onDismiss, progress.phase, progress.prUrl]);
+  }, [onDismiss, progress.phase, progress.prUrl, openPullRequest]);
 
   if (progress.phase === "idle") {
     return null;
@@ -64,13 +68,10 @@ export function GitActionProgressOverlay(props: {
 
 function OverlayContent(props: { readonly progress: GitActionProgress }) {
   const { progress } = props;
-  const iconColor = useThemeColor("--color-icon");
-  const glassBorder = useThemeColor("--color-header-border");
-  const glassTint = useThemeColor("--color-glass-tint");
   const isDarkMode = useColorScheme() === "dark";
   const content = (
     <>
-      <OverlayIcon phase={progress.phase} iconColor={iconColor} />
+      <OverlayIcon phase={progress.phase} />
 
       <View className="flex-1 gap-0.5">
         {progress.label ? (
@@ -86,7 +87,12 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
       </View>
 
       {progress.prUrl ? (
-        <SymbolView name="arrow.up.right" size={13} tintColor={iconColor} type="monochrome" />
+        <SymbolView
+          name="arrow.up.right"
+          size={13}
+          tintColorClassName="accent-icon"
+          type="monochrome"
+        />
       ) : null}
     </>
   );
@@ -95,9 +101,8 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
     return (
       <Animated.View
         layout={OVERLAY_LAYOUT_TRANSITION}
+        className="bg-glass-tint border-header-border"
         style={{
-          backgroundColor: glassTint,
-          borderColor: glassBorder,
           borderCurve: "continuous",
           borderRadius: 26,
           borderWidth: StyleSheet.hairlineWidth,
@@ -139,13 +144,10 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
   );
 }
 
-function OverlayIcon(props: {
-  readonly phase: GitActionProgress["phase"];
-  readonly iconColor: ReturnType<typeof useThemeColor>;
-}) {
+function OverlayIcon(props: { readonly phase: GitActionProgress["phase"] }) {
   switch (props.phase) {
     case "running":
-      return <ActivityIndicator size="small" />;
+      return <AppActivityIndicator size="small" colorClassName={"accent-icon"} />;
     case "success":
       return (
         <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500">

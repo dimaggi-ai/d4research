@@ -27,12 +27,14 @@ d4research is a private workspace for long-running research across models and co
 - [Review usage](./user/usage.md)
 - [Customize a project icon](./user/project-settings.md)
 - [SnapShots](./user/snap-shot.md)
+- [Use d4research as your default browser](./user/default-browser.md)
 - [Devices](./user/devices.md)
 - [Remote access](./user/remote-access.md)
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md) · [Muse](./user/providers-muse.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md) · [Muse](./user/providers-muse.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md)
+- [Outside agents (MCP)](./user/outside-agents.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 
@@ -55,6 +57,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Providers](./internals/providers.md)
 - [Tool Guard internals](./internals/tool-guard.md)
 - [Handoff compression](./internals/handoff-compression.md)
+- [Adding a provider](./internals/adding-a-provider.md)
 - [Pull request file revisions](./internals/pull-request-file-revisions.md)
 - [Model classification](./internals/model-manifest.md)
 - [Remote environments](./internals/remote.md)

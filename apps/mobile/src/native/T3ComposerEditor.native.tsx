@@ -16,15 +16,9 @@ import {
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import { Image, Platform, StyleSheet } from "react-native";
 
-import {
-  markdownFileIconSource,
-  markdownIconAssetUri,
-} from "@d4research/mobile-markdown-text/file-icons";
-import {
-  composerChipSizeSuffix,
-  contextChipPresentation,
-} from "@d4research/mobile-markdown-text/markdown";
-import { resolveMarkdownFileIcon } from "@d4research/mobile-markdown-text/links";
+import { markdownFileIconSource, markdownIconAssetUri } from "../lib/markdownFileIcons";
+import { composerChipSizeSuffix, contextChipPresentation } from "../lib/composerChipPresentation";
+import { resolveMarkdownFileIcon } from "../lib/markdownLinks";
 import { MOBILE_TYPOGRAPHY } from "../lib/typography";
 import { useNativePaste } from "../lib/useNativePaste";
 import { useFontFamily } from "../lib/useFontFamily";

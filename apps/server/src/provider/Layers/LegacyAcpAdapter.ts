@@ -12,7 +12,7 @@ import {
   type ThreadId,
   TurnId,
 } from "@d4research/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@d4research/shared/model";
 import { stableStringify } from "@d4research/shared/relaySigning";
 import * as Clock from "effect/Clock";
@@ -40,8 +40,9 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { buildRuntimeInstructions } from "@d4research/provider-core/server/runtimeInstructions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@d4research/provider-core/server/mcpSession";
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -49,7 +50,7 @@ import {
   ProviderAdapterValidationError,
 } from "../Errors.ts";
 import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
-import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 import {
   makeAcpAssistantItemEvent,
   makeAcpContentDeltaEvent,
@@ -57,9 +58,12 @@ import {
   makeAcpRequestOpenedEvent,
   makeAcpRequestResolvedEvent,
   makeAcpToolCallEvent,
-} from "../acp/AcpCoreRuntimeEvents.ts";
-import { parsePermissionRequest, type AcpPlanUpdate } from "../acp/AcpRuntimeModel.ts";
-import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
+} from "@d4research/provider-acp/server/coreRuntimeEvents";
+import {
+  parsePermissionRequest,
+  type AcpPlanUpdate,
+} from "@d4research/provider-acp/server/runtimeModel";
+import { makeAcpNativeLoggerFactory } from "@d4research/provider-acp/server/nativeLogging";
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
@@ -67,11 +71,11 @@ import {
   makeGrokAcpRuntime,
   normalizeGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
-} from "../acp/GrokAcpSupport.ts";
+} from "@d4research/provider-grok/server/acpSupport";
 import {
   buildGrokBackgroundTaskEvents,
   type GrokBackgroundTaskRecord,
-} from "../acp/XAiBackgroundTasks.ts";
+} from "@d4research/provider-grok/server/xaiBackgroundTasks";
 import {
   extractGrokPlanMarkdownFromToolCallData,
   extractXAiAskUserQuestions,
@@ -82,11 +86,12 @@ import {
   promptResponseHasMissingXAiStopReason,
   XAiAskUserQuestionRequest,
   XAiExitPlanModeRequest,
-} from "../acp/XAiAcpExtension.ts";
+} from "@d4research/provider-grok/server/xaiAcpExtension";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import type { ProviderAdapterError } from "../Errors.ts";
 type GrokAdapterShape = ProviderAdapterShape<ProviderAdapterError>;
-import { type EventNdjsonLogger, makeEventNdjsonLogger } from "../EventNdjsonLogger.ts";
+import type { EventNdjsonLogger } from "@d4research/provider-core/server/ProviderEventLoggers";
+import { makeEventNdjsonLogger } from "../EventNdjsonLogger.ts";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -384,6 +389,8 @@ export function grokPromptSettlementBelongsToContext(input: {
 
 export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapterLiveOptions) {
   return Effect.gen(function* () {
+    const mcpProviderSessions = yield* McpProviderSessions.McpProviderSessions;
+
     const ownerScope = yield* Effect.scope;
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("grok");
     const fileSystem = yield* FileSystem.FileSystem;
@@ -401,9 +408,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
     const managedNativeEventLogger =
       options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
-    const hostPlatform = yield* HostProcessPlatform;
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const hostPlatform = yield* HostProcess.Platform;
+    const hostEnvironment = yield* HostProcess.Environment;
     const grokPlanPathHost = {
+      homeDirectory: yield* HostProcess.HomeDirectory,
       platform: hostPlatform,
       environment: options?.environment ?? hostEnvironment,
     };
@@ -1029,7 +1037,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             threadId: input.threadId,
           });
 
-          const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const mcpSession = yield* mcpProviderSessions.read(input.threadId);
           const acp = yield* (options?.makeRuntime ?? makeGrokAcpRuntime)({
             grokSettings,
             ...(options?.environment || mcpSession?.agentDeviceEnvironment
@@ -1040,7 +1048,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   ),
                 }
               : {}),
-            childProcessSpawner,
             cwd,
             runtimeMode: input.runtimeMode,
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -1065,6 +1072,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             ...acpNativeLoggers,
           }).pipe(
             Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
             Effect.provideService(Scope.Scope, sessionScope),
             Effect.mapError(
               (cause) =>

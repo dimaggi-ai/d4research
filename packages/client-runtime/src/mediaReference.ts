@@ -1,5 +1,7 @@
 import { isWindowsAbsolutePath } from "@d4research/shared/path";
 
+import { safeDecodeURIComponent } from "@d4research/shared/markdownLinks";
+
 /** The authored media location, never the temporary URL used to load its bytes. */
 export type MediaReference =
   | {
@@ -87,9 +89,5 @@ export function mediaReferenceFileName(reference: MediaReference): string | unde
     return undefined;
   }
   if (!basename) return undefined;
-  try {
-    return decodeURIComponent(basename);
-  } catch {
-    return basename;
-  }
+  return safeDecodeURIComponent(basename);
 }

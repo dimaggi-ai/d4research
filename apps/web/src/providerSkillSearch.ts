@@ -1,7 +1,7 @@
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import type { ServerProviderSkill } from "@d4research/contracts";
 import {
   dedupeProviderSkillsByName,
-  formatProviderSkillDisplayName,
   isProviderSkillUserInvocable,
 } from "@d4research/client-runtime/providerSkills";
 import {

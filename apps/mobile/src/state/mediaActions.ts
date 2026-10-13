@@ -7,7 +7,7 @@ import {
   sessionGrantsScope,
   type SessionGrantInput,
 } from "@d4research/contracts";
-import { normalizeNativeMarkdownUrl } from "@d4research/mobile-markdown-text/links";
+import { normalizeNativeMarkdownUrl } from "../lib/markdownLinks";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";

@@ -1,11 +1,13 @@
+import { resolveMarkdownFileLinkTarget } from "@d4research/shared/markdownLinks";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   markdownFilePrimaryOpenAction,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
-  resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
+  shouldOpenMarkdownFileLinkInEditor,
+  shouldOpenMarkdownFileLinkInBrowserByDefault,
 } from "./markdown-links";
 
 describe("markdownFilePrimaryOpenAction", () => {
@@ -18,6 +20,35 @@ describe("markdownFilePrimaryOpenAction", () => {
   it("falls back to the editor without a workspace-relative thread target", () => {
     expect(markdownFilePrimaryOpenAction(null, true)).toBe("editor");
     expect(markdownFilePrimaryOpenAction("src/index.ts", false)).toBe("editor");
+  });
+});
+
+describe("shouldOpenMarkdownFileLinkInEditor", () => {
+  it("uses command-click on macOS", () => {
+    expect(shouldOpenMarkdownFileLinkInEditor({ metaKey: true, ctrlKey: false }, "MacIntel")).toBe(
+      true,
+    );
+    expect(shouldOpenMarkdownFileLinkInEditor({ metaKey: false, ctrlKey: true }, "MacIntel")).toBe(
+      false,
+    );
+  });
+
+  it("uses control-click on other platforms", () => {
+    expect(
+      shouldOpenMarkdownFileLinkInEditor({ metaKey: false, ctrlKey: true }, "Linux x86_64"),
+    ).toBe(true);
+    expect(
+      shouldOpenMarkdownFileLinkInEditor({ metaKey: true, ctrlKey: false }, "Linux x86_64"),
+    ).toBe(false);
+  });
+});
+
+describe("shouldOpenMarkdownFileLinkInBrowserByDefault", () => {
+  it("keeps PDFs browser-first while source files open in the file viewer", () => {
+    expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.pdf")).toBe(true);
+    expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.PDF?download=1")).toBe(true);
+    expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.html")).toBe(false);
+    expect(shouldOpenMarkdownFileLinkInBrowserByDefault("report.xml")).toBe(false);
   });
 });
 
@@ -120,45 +151,33 @@ describe("resolveMarkdownFileLinkTarget", () => {
     expect(resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project")).toMatchObject({
       workspaceRelativePath: null,
     });
-  });
-
-  it("does not classify a case-distinct POSIX sibling as a workspace file", () => {
-    expect(
-      resolveMarkdownFileLinkMeta(
-        "/tmp/t3code-case-test/project/probe.txt",
-        "/tmp/t3code-case-test/Project",
-      ),
-    ).toMatchObject({
-      displayPath: "/tmp/t3code-case-test/project/probe.txt",
-      workspaceRelativePath: null,
+    const inline = resolveInlineCodeFileLinkMeta("Makefile:12", "/repo", "/tmp/report");
+    expect(inline).toMatchObject({ filePath: "/tmp/report/Makefile", line: 12 });
+    expect(resolveMarkdownFileLinkMeta("src/main.ts", "/repo", "/repo/docs")).toMatchObject({
+      filePath: "/repo/docs/src/main.ts",
+      workspaceRelativePath: "docs/src/main.ts",
     });
   });
 
-  it("keeps Windows workspace comparisons case-insensitive", () => {
+  it("resolve multi-segment inline code from the workspace root in a workspace file", () => {
     expect(
-      resolveMarkdownFileLinkMeta("C:/Users/MIKE/Project/src/main.ts", "c:/users/mike/project"),
-    ).toMatchObject({
-      displayPath: "project/src/main.ts",
-      workspaceRelativePath: "src/main.ts",
-    });
+      resolveInlineCodeFileLinkMeta("docs/ai/design.md", "/repo", "/repo/docs/ai"),
+    ).toMatchObject({ filePath: "/repo/docs/ai/design.md" });
+    expect(
+      resolveInlineCodeFileLinkMeta("src/index.ts:4", "/repo", "/repo/packages/a"),
+    ).toMatchObject({ filePath: "/repo/src/index.ts", line: 4 });
   });
 
-  it("keeps drive-root workspace comparisons case-insensitive", () => {
-    expect(resolveMarkdownFileLinkMeta("C:/Users/MIKE/project.ts", "c:/")).toMatchObject({
-      displayPath: "c:/Users/MIKE/project.ts",
-      workspaceRelativePath: "Users/MIKE/project.ts",
+  it("keep sibling and explicitly relative inline code beside the file", () => {
+    expect(resolveInlineCodeFileLinkMeta("design.md:12", "/repo", "/repo/docs/ai")).toMatchObject({
+      filePath: "/repo/docs/ai/design.md",
+      line: 12,
     });
-  });
-
-  it("keeps backslash UNC workspace comparisons case-insensitive", () => {
     expect(
-      resolveMarkdownFileLinkMeta(
-        "\\\\server\\share\\PROJECT\\src\\main.ts",
-        "\\\\Server\\Share\\Project",
-      ),
-    ).toMatchObject({
-      displayPath: "Project/src/main.ts",
-      workspaceRelativePath: "src/main.ts",
+      resolveInlineCodeFileLinkMeta("./src/index.ts", "/repo", "/repo/packages/a"),
+    ).toMatchObject({ filePath: "/repo/packages/a/./src/index.ts" });
+    expect(resolveInlineCodeFileLinkMeta("../b/notes.md", "/repo", "/repo/docs/a")).toMatchObject({
+      filePath: "/repo/docs/a/../b/notes.md",
     });
   });
 
@@ -355,5 +374,50 @@ it("routes the project-root code link to the workspace explorer", () => {
   expect(resolveInlineCodeFileLinkMeta(cwd, cwd)).toMatchObject({
     workspaceRelativePath: ".",
     filePath: cwd,
+  });
+});
+
+describe("relative links inside a rendered host file", () => {
+  it("anchor to the file's directory while workspace membership follows cwd", () => {
+    const meta = resolveMarkdownFileLinkMeta("appendix.md", "/repo", "/tmp/report");
+    expect(meta).toMatchObject({
+      filePath: "/tmp/report/appendix.md",
+      workspaceRelativePath: null,
+    });
+    const inline = resolveInlineCodeFileLinkMeta("Makefile:12", "/repo", "/tmp/report");
+    expect(inline).toMatchObject({ filePath: "/tmp/report/Makefile", line: 12 });
+    expect(resolveMarkdownFileLinkMeta("src/main.ts", "/repo", "/repo/docs")).toMatchObject({
+      filePath: "/repo/docs/src/main.ts",
+      workspaceRelativePath: "docs/src/main.ts",
+    });
+  });
+
+  it("resolve multi-segment inline code from the workspace root in a workspace file", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta("docs/ai/design.md", "/repo", "/repo/docs/ai"),
+    ).toMatchObject({ filePath: "/repo/docs/ai/design.md" });
+    expect(
+      resolveInlineCodeFileLinkMeta("src/index.ts:4", "/repo", "/repo/packages/a"),
+    ).toMatchObject({ filePath: "/repo/src/index.ts", line: 4 });
+  });
+
+  it("keep sibling and explicitly relative inline code beside the file", () => {
+    expect(resolveInlineCodeFileLinkMeta("design.md:12", "/repo", "/repo/docs/ai")).toMatchObject({
+      filePath: "/repo/docs/ai/design.md",
+      line: 12,
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("./src/index.ts", "/repo", "/repo/packages/a"),
+    ).toMatchObject({ filePath: "/repo/packages/a/./src/index.ts" });
+    expect(resolveInlineCodeFileLinkMeta("../b/notes.md", "/repo", "/repo/docs/a")).toMatchObject({
+      filePath: "/repo/docs/a/../b/notes.md",
+    });
+  });
+
+  it("keep multi-segment inline code beside a file outside the workspace", () => {
+    expect(resolveInlineCodeFileLinkMeta("src/main.ts", "/repo", "/tmp/report")).toMatchObject({
+      filePath: "/tmp/report/src/main.ts",
+      workspaceRelativePath: null,
+    });
   });
 });

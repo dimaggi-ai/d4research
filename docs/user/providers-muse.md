@@ -1,32 +1,67 @@
-# Muse
+# Muse Code
 
-d4research runs Meta's Muse Code CLI as a provider through its Muse Session Protocol (`muse serve`).
+Muse Code is a beta integration and is disabled by default. Install
+[Muse Code](https://dev.meta.ai/docs/muse-code) on the machine hosting your
+environment, then run `muse login` as the account that runs d4research.
 
-## Setup
+Open **Settings → Providers** in the web or desktop app, select the environment,
+and enable **Muse Code**. Set **Binary path** if Muse is not on the host's `PATH`.
+Refresh provider status after installation or login, then select Muse in a
+thread's model picker.
 
-1. Install the Muse Code CLI from Meta and confirm `muse --version` prints a version.
-2. Sign in with `muse login` in a terminal. d4research marks the provider as not signed in until the CLI lists models.
-3. Open **Settings → Providers → Muse** in d4research and enable the provider. Muse is off by default.
-4. If `muse` is on your `PATH`, leave **Binary path** as `muse`. Otherwise, enter the absolute path to the binary.
+Provider status does not check your login. If you are signed out, messages
+fail until you run `muse login` on the host.
 
-The CLI provides the model list during the provider health check. Leave **Model** empty to use your account's default. **Reasoning effort** sets the default for new turns; you can change it per model in the picker.
+## Sign-in and API keys
 
-## Permissions
+d4research ignores a `META_API_KEY` that the d4research server inherits from its own
+environment, so Muse uses the credential saved on the host by `muse login`. To
+use an API key instead, add `META_API_KEY` to the Muse instance's environment
+variables in **Settings → Providers**. Muse gives that key priority over the
+saved login.
 
-Muse maps d4research's permission modes onto its own approval modes:
+## Remote access and instances
 
-- **Full access** lets Muse run tools without asking.
-- **Auto** and **Auto-accept edits** let Muse run trusted tools and ask you about the rest.
-- **Approval required** asks before every tool call.
+Connect from web, desktop, or mobile through [remote access](./remote-access.md).
+Muse uses the selected environment's files and login; connecting devices do not
+need Muse installed. Install and sign in separately on each host where you want
+Muse to run.
 
-The **Approval mode** setting overrides that mapping for all threads on the instance. If Muse refuses an override that exceeds the host's limit, d4research falls back to the host default and shows a warning in the thread.
+Add a provider instance for a separate configuration. Instances on the same host
+share its Muse login; give an instance its own `META_API_KEY` to bill it
+separately. Existing conversations retain their instance when its model catalog
+becomes unavailable.
 
-Muse runs tool calls in its sandbox. **Disable sandbox** and **Sandbox network** pass through to the CLI unchanged. Leave them alone unless a tool fails because of the sandbox.
+## Models
 
-## Limits
+Models and reasoning choices come from Muse on the selected host. After changing
+Muse configuration, refresh provider status in **Settings → Providers**. On
+mobile, pull down in thread settings to refresh models. If a saved model becomes
+unavailable, select an available model before sending another message.
 
-- Muse sessions support streaming chat, cancellation, approvals, agent questions, image attachments, resume, model selection, provider handoff, and plan mode.
-- Provider-side rollback is not available: MSP `session/fork` rejects cuts at earlier turns and stalls the host on text-only cuts, so there is no safe rewind yet.
-- File edits stream inline diffs into the thread as unified diffs.
-- Muse can orchestrate Dev and Research pipelines: each session receives the d4research MCP tools as the per-thread `t3-code` server.
-- Commit message and title generation run through a short Muse session whose log is removed afterwards, so they stay out of `muse` session history.
+Muse can list models that your account cannot use. If a message fails with
+"does not exist or you lack access", pick another model, or add one your account
+can use under **Custom models** in the instance settings.
+
+## Permissions and limitations
+
+Muse offers two [permission modes](./permission-modes.md): **Supervised** asks
+before commands and edits, and **Full access** runs them without asking. Muse has
+no equivalent of **Auto-accept edits** or **Auto**, so they are not offered. Muse
+does not offer a separate Plan mode in d4research.
+
+Muse can use d4research's tools, including Dev and Research pipelines through the per-thread `t3-code` MCP server. If Muse cannot reach them, the turn continues
+without them. Switching providers can pass conversation context as a handoff.
+
+Muse skills do not appear in the composer's `$` menu. Muse still loads them
+itself. Manage them with `muse skills` on the host.
+
+Forking a Muse conversation starts a new session with a copy of the conversation
+context. Conversation rewind is unavailable.
+
+Install Muse and sign in on the host; in-app installation and sign-in are not
+available. Updates can run from **Settings → Providers** when d4research recognizes
+the Muse launcher; otherwise update Muse on that host manually.
+
+To stop using Muse in an environment, disable it in **Settings → Providers**.
+This keeps the host's Muse login, thread history, and workspace files.

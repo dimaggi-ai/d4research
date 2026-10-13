@@ -1,3 +1,4 @@
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 // @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as CodexInstallation from "./CodexInstallation.ts";
@@ -32,14 +33,15 @@ import {
   EnvironmentId,
   type ClaudeSettings,
   type CodexSettings,
-  type CursorSettings,
-  type GrokSettings,
-  type OpenCodeSettings,
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
 } from "@d4research/contracts";
-import { HostProcessPlatform, isHostWindows } from "@d4research/shared/hostProcess";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import type { GrokSettings } from "@d4research/provider-grok/settings";
+import type { CursorSettings } from "@d4research/provider-cursor/settings";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -52,20 +54,21 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ServerConfig from "../config.ts";
-import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
-import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
-import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
-import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
+import { CursorDriver, type CursorDriverEnv } from "@d4research/provider-cursor/server";
+import { GrokDriver, type GrokDriverEnv } from "@d4research/provider-grok/server";
+import { OpenCodeDriver, type OpenCodeDriverEnv } from "@d4research/provider-opencode/server";
+import type { OpenCodeSettings } from "@d4research/provider-opencode/settings";
 import * as ModelManifest from "./ModelManifest.ts";
-import * as OpenCodeRuntime from "./opencodeRuntime.ts";
-import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
+import * as OpenCodeRuntime from "@d4research/provider-opencode/server/OpenCodeRuntime";
+import * as OpenCodeServerLedger from "@d4research/provider-opencode/server/OpenCodeServerLedger";
 import * as ResetCreditCoordinator from "./resetCreditCoordinator.ts";
-import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestrationAdapterInfrastructure.ts";
+import * as ProviderHostLive from "./ProviderHostLive.ts";
 
 const layerTestHttpClient = Layer.succeed(
   HttpClient.HttpClient,
@@ -73,6 +76,9 @@ const layerTestHttpClient = Layer.succeed(
     Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ version: "0.0.0" }))),
   ),
 );
+
+// The mock CLIs from makeTildeProviderFixtures are scripts Windows cannot execute.
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
@@ -153,7 +159,7 @@ const makeTildeProviderFixtures = Effect.fn(
 )(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const homePath = expandHomePath("~");
+  const homePath = yield* HostProcess.HomeDirectory;
   const fixtureDir = yield* fileSystem.makeTempDirectoryScoped({
     directory: homePath,
     prefix: ".t3-provider-path-test-",
@@ -203,7 +209,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   // `NodeServices.layer` through `Layer.provideMerge` to satisfy that
   // dependency while still surfacing NodeServices to the test body (the
   // codex driver's `create` yields `ChildProcessSpawner` directly).
-  const layerBase = ServerConfig.layerTest(process.cwd(), {
+  const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
     prefix: "provider-instance-registry-test",
   }).pipe(
     Layer.provideMerge(NodeServices.layer),
@@ -230,9 +236,12 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         ProviderEventLoggers.NoOpProviderEventLoggers,
       ),
     ),
+    Layer.provideMerge(ProviderLatestVersions.layer),
+    Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(ResetCreditCoordinator.layerTest),
   );
+  const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
     Layer.provideMerge(layerBase),
   );
@@ -345,7 +354,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
   it.live("reports Codex's answer when a redemption changed nothing", () =>
     Effect.gen(function* () {
-      if (yield* isHostWindows) return;
+      if (yield* HostProcess.isWindows) return;
       const fileSystem = yield* FileSystem.FileSystem;
       const fixtures = yield* makeTildeProviderFixtures();
       yield* fileSystem.writeFileString(
@@ -382,11 +391,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
   it.live("probes separate account identities through one CLI executable", () =>
     Effect.gen(function* () {
-      if (yield* isHostWindows) return;
+      if ((yield* HostProcess.Platform) === "win32") return;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const fixtures = yield* makeTildeProviderFixtures();
-      const executable = expandHomePath(fixtures.codexBinaryPath);
+      const executable = expandHomePath(fixtures.codexBinaryPath, yield* HostProcess.HomeDirectory);
       yield* fileSystem.writeFileString(
         executable,
         [
@@ -438,7 +447,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
   it.live("runs Codex and Claude readiness probes from configured tilde paths", () =>
     Effect.gen(function* () {
-      if (yield* isHostWindows) return;
+      if (yield* HostProcess.isWindows) return;
 
       const fixtures = yield* makeTildeProviderFixtures();
 
@@ -555,11 +564,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       return { outcome, after: yield* instance!.snapshot.getSnapshot };
     }).pipe(
       // macOS logins live in the Keychain, where resets are never read.
-      Effect.provideService(HostProcessPlatform, "linux"),
+      Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provide(layerTest),
     );
 
-  it.live("refreshes Claude usage after redeeming a reset", () =>
+  it.live.skipIf(windowsHost)("refreshes Claude usage after redeeming a reset", () =>
     Effect.gen(function* () {
       const { outcome, after } = yield* redeemClaudeReset({
         result: "reset",
@@ -570,14 +579,16 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }),
   );
 
-  it.live("reports Claude's answer when a claim changed nothing and the re-probe fails", () =>
-    Effect.gen(function* () {
-      const { outcome } = yield* redeemClaudeReset({
-        result: "already_used",
-        usageFailsAfterClaim: true,
-      });
-      expect(outcome).toMatchObject({ _tag: "Success", success: "alreadyRedeemed" });
-    }),
+  it.live.skipIf(windowsHost)(
+    "reports Claude's answer when a claim changed nothing and the re-probe fails",
+    () =>
+      Effect.gen(function* () {
+        const { outcome } = yield* redeemClaudeReset({
+          result: "already_used",
+          usageFailsAfterClaim: true,
+        });
+        expect(outcome).toMatchObject({ _tag: "Success", success: "alreadyRedeemed" });
+      }),
   );
 
   it.live(
@@ -650,7 +661,7 @@ describe("ProviderInstanceRegistry — all drivers slice", () => {
       }),
     ),
   );
-  const layerBase = AntigravityInstallation.AntigravityInstallation.layer.pipe(
+  const layerBaseDeps = AntigravityInstallation.AntigravityInstallation.layer.pipe(
     Layer.provideMerge(ServerSecretStore.layer),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), {
@@ -668,9 +679,12 @@ describe("ProviderInstanceRegistry — all drivers slice", () => {
         ProviderEventLoggers.NoOpProviderEventLoggers,
       ),
     ),
+    Layer.provideMerge(ProviderLatestVersions.layer),
+    Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(ResetCreditCoordinator.layerTest),
   );
+  const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
     Layer.provideMerge(layerBase),
   );

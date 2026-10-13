@@ -1,7 +1,9 @@
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { MuseSettings, ProviderDriverKind, type ServerProvider } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import { ServerConfig } from "../../config.ts";
-import { ProviderEventLoggers } from "../ProviderEventLoggers.ts";
+import { ProviderEventLoggers } from "@d4research/provider-core/server/ProviderEventLoggers";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -9,29 +11,29 @@ import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import { makeMuseTextGeneration } from "../../textGeneration/MuseTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeMuseAdapter } from "../Layers/MuseAdapter.ts";
 import { checkMuseProviderStatus, enrichMuseSnapshot } from "../Layers/MuseProvider.ts";
-import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { makeManagedServerProvider } from "@d4research/provider-core/server/managedProvider";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
-} from "../ProviderDriver.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+} from "@d4research/provider-core/server/driver";
+import type { ServerProviderDraft } from "@d4research/provider-core/server/snapshotProbe";
+import { mergeProviderInstanceEnvironment } from "@d4research/provider-core/server/instanceEnvironment";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   makeStaticProviderMaintenanceResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
-} from "../providerMaintenance.ts";
+} from "@d4research/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "../providerUpdateSettings.ts";
+} from "@d4research/provider-core/server/snapshotSettings";
 
 const decodeSettings = Schema.decodeSync(MuseSettings);
 const DRIVER_KIND = ProviderDriverKind.make("muse");
@@ -47,7 +49,9 @@ export type MuseDriverEnv =
   | ProviderEventLoggers
   | FileSystem.FileSystem
   | Path.Path
-  | ServerSettingsService;
+  | ProviderLatestVersions.ProviderLatestVersions
+  | ProviderHost.ProviderHost
+  | McpProviderSessions.McpProviderSessions;
 
 const withIdentity =
   (input: {
@@ -73,11 +77,12 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;
+      const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const fs = yield* FileSystem.FileSystem;
       const loggers = yield* ProviderEventLoggers;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const serverSettings = yield* ServerSettingsService;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+
+      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -105,7 +110,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(FileSystem.FileSystem, fs),
       );
-      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<MuseSettings>>({
         resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
         getSettings: snapshotSettings.getSettings,
@@ -120,7 +125,9 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
           ),
         checkProvider,
         enrichSnapshot: ({ snapshot: current, publishSnapshot }) =>
-          enrichMuseSnapshot({ snapshot: current, maintenanceCapabilities, publishSnapshot }),
+          enrichMuseSnapshot({ snapshot: current, maintenanceCapabilities, publishSnapshot }).pipe(
+            Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions),
+          ),
       }).pipe(
         Effect.mapError(
           (cause) =>

@@ -4,7 +4,7 @@ import {
   type ServerProviderModel,
 } from "@d4research/contracts";
 import { createModelCapabilities } from "@d4research/shared/model";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -19,7 +19,7 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
-} from "../providerSnapshot.ts";
+} from "@d4research/provider-core/server/snapshotProbe";
 
 const PRESENTATION = {
   displayName: "Agy",
@@ -37,7 +37,7 @@ const PROBE_TIMEOUT_MS = 20_000;
 // Matching control characters is the entire point here — the CLI emits them.
 // Backspace is deliberately excluded and handled by `applyBackspaces`.
 const ANSI_ESCAPE_REGEX =
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- Strip ANSI escapes and C0 controls emitted by the CLI.
   /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-9A-Za-z=<>]|[\x00-\x07\x0b-\x1f\x7f]/gu;
 
 // A PTY rubs characters out with backspaces rather than rewriting the line, and
@@ -123,7 +123,7 @@ const runAgy = (
   environment: NodeJS.ProcessEnv,
 ) =>
   Effect.gen(function* () {
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     const command = settings.binaryPath || "agy";
     const resolved = yield* resolveSpawnCommand(command, args, { env: environment });
     // Agy's `models` command keeps running when its stdout is an ordinary

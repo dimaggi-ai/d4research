@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { assert, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -60,6 +59,9 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           [63, "RemoveRedundantProjectionIndexes"],
           [64, "ScheduledTaskWebhooks"],
           [65, "WebhookRelayDeliveries"],
+          [66, "McpAppModelContext"],
+          [67, "ThreadSnapshotWindowIndexes"],
+          [68, "PullRequestReviewGuides"],
         ],
       );
 
@@ -126,6 +128,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [63, "RemoveRedundantProjectionIndexes"],
           [64, "ScheduledTaskWebhooks"],
           [65, "WebhookRelayDeliveries"],
+          [66, "McpAppModelContext"],
+          [67, "ThreadSnapshotWindowIndexes"],
+          [68, "PullRequestReviewGuides"],
         ],
       );
 
@@ -164,6 +169,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [63, "RemoveRedundantProjectionIndexes"],
           [64, "ScheduledTaskWebhooks"],
           [65, "WebhookRelayDeliveries"],
+          [66, "McpAppModelContext"],
+          [67, "ThreadSnapshotWindowIndexes"],
+          [68, "PullRequestReviewGuides"],
         ],
       );
     }),
@@ -202,7 +210,7 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
       const executed = yield* runMigrations();
       assert.deepStrictEqual(
         executed.map(([id]) => id),
-        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65],
+        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       assert.ok(columns.some((column) => column.name === "auto_pull"));

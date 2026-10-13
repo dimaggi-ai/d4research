@@ -1,3 +1,4 @@
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { ProviderInstanceId, ThreadId, type TurnId } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -10,7 +11,7 @@ import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
-import * as McpProviderSession from "./McpProviderSession.ts";
+import * as McpProviderSession from "@d4research/provider-core/server/mcpSession";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -269,12 +270,15 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 });
 
 let activeMcpSessionRegistry: McpSessionRegistryShape | undefined;
+let activeMcpProviderSessions: McpProviderSessions.McpProviderSessions["Service"] | undefined;
 
 const make = Effect.acquireRelease(
   makeWithOptions().pipe(
     Effect.tap((registry) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
+        const sessions = yield* McpProviderSessions.McpProviderSessions;
         activeMcpSessionRegistry = registry;
+        activeMcpProviderSessions = sessions;
       }),
     ),
   ),
@@ -282,6 +286,7 @@ const make = Effect.acquireRelease(
     Effect.sync(() => {
       if (activeMcpSessionRegistry === registry) {
         activeMcpSessionRegistry = undefined;
+        activeMcpProviderSessions = undefined;
       }
     }),
 );
@@ -338,16 +343,19 @@ export const revokeActiveMcpThreadExcept = (
  * Refreshes the liveness of a thread's MCP credential. Called on every provider
  * turn so an active session is never mistaken for an abandoned one.
  */
-export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
-  activeMcpSessionRegistry
-    ? Effect.sync(() => McpProviderSession.readMcpProviderSession(threadId)).pipe(
-        Effect.flatMap((session) =>
-          session
-            ? activeMcpSessionRegistry!.touchProviderSession(session.providerSessionId)
-            : Effect.void,
-        ),
-      )
+export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> => {
+  const registry = activeMcpSessionRegistry;
+  const sessions = activeMcpProviderSessions;
+  return registry && sessions
+    ? sessions
+        .read(threadId)
+        .pipe(
+          Effect.flatMap((session) =>
+            session ? registry.touchProviderSession(session.providerSessionId) : Effect.void,
+          ),
+        )
     : Effect.void;
+};
 
 export const setActiveMcpTurn = (providerSessionId: string, turnId: TurnId): Effect.Effect<void> =>
   activeMcpSessionRegistry

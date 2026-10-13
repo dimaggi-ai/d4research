@@ -1,10 +1,10 @@
+import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
 import type {
   EnvironmentId,
   ServerConfig,
   ServerInstallation,
   ServerSelfUpdateCapability,
 } from "@d4research/contracts";
-import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
 import * as Schema from "effect/Schema";
 import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 
@@ -41,16 +41,45 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+/** Core `major.minor.patch`, dropping any prerelease or build suffix. */
+function versionCore(version: string): string {
+  return version.replace(/[-+].*$/, "");
+}
+
+/**
+ * The skew a user can act on: the connected server runs an older d4research than
+ * this client (or than `clientVersion`, the version this client is about to
+ * update to), so the server is the side that needs updating.
+ *
+ * Two nightly builds compare their full versions, including the date and run.
+ * Other combinations compare their core `major.minor.patch` only, so a stable
+ * build and a nightly build with the same core do not cause an update warning.
+ * A server ahead of the client does not need an update. Versions that do not
+ * parse as semver fall back to plain string inequality.
+ */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
+  clientVersion: string = APP_VERSION,
 ): VersionMismatch | null {
-  const normalizedClientVersion = normalizeVersion(APP_VERSION);
+  const normalizedClientVersion = normalizeVersion(clientVersion);
   const normalizedServerVersion = normalizeVersion(serverVersion);
-  if (
-    !normalizedClientVersion ||
-    !normalizedServerVersion ||
-    normalizedClientVersion === normalizedServerVersion
-  ) {
+  if (!normalizedClientVersion || !normalizedServerVersion) {
+    return null;
+  }
+
+  const clientCore = versionCore(normalizedClientVersion);
+  const serverCore = versionCore(normalizedServerVersion);
+  const compareNightlyBuilds =
+    parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
+    parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly";
+  const serverIsBehind =
+    parseSemver(clientCore) && parseSemver(serverCore)
+      ? compareSemverVersions(
+          compareNightlyBuilds ? normalizedServerVersion : serverCore,
+          compareNightlyBuilds ? normalizedClientVersion : clientCore,
+        ) < 0
+      : normalizedServerVersion !== normalizedClientVersion;
+  if (!serverIsBehind) {
     return null;
   }
 

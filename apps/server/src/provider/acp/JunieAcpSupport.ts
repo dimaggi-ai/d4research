@@ -6,7 +6,7 @@ import * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type * as EffectAcpErrors from "effect-acp/errors";
 
-import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
+import * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 type JunieAcpSettings = Pick<JunieSettings, "binaryPath" | "defaultModel">;
 
@@ -14,7 +14,6 @@ export interface JunieAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
   "authMethodId" | "spawn"
 > {
-  readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly junieSettings: JunieAcpSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
 }
@@ -41,7 +40,7 @@ export const makeJunieAcpRuntime = (
 ): Effect.Effect<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
-  Crypto.Crypto | Scope.Scope
+  Crypto.Crypto | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
     const acpContext = yield* Layer.build(
@@ -51,11 +50,7 @@ export const makeJunieAcpRuntime = (
         spawn: buildJunieAcpSpawnInput(input.junieSettings, input.cwd, input.environment),
         // Junie advertises the active JetBrains/BYOK authentication method;
         // omitting the id lets the shared runtime select the first advertised one.
-      }).pipe(
-        Layer.provide(
-          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
-        ),
-      ),
+      }),
     );
     return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
       Effect.provide(acpContext),

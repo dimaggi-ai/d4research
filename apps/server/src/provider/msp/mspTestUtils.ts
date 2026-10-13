@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { Effect, Schema } from "effect";
 import { MuseSettings } from "@d4research/contracts";
-import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
+import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
 
 const decodeMuseSettings = Schema.decodeUnknownEffect(MuseSettings);
 export const sourceRange = {

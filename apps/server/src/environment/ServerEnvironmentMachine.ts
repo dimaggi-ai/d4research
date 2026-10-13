@@ -1,5 +1,5 @@
 import type { EnvironmentMachineKind } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
@@ -161,7 +161,7 @@ const detectLinuxMachineKind = Effect.fn("detectLinuxMachineKind")(function* () 
 
 export const detectServerEnvironmentMachineKind = Effect.fn("detectServerEnvironmentMachineKind")(
   function* () {
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     switch (platform) {
       case "darwin":
         return yield* detectDarwinMachineKind();

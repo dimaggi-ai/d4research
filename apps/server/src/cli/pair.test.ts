@@ -9,7 +9,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthStandardClientScopes } from "@d4research/contracts";
 import * as NetService from "@d4research/shared/Net";
-import { HostProcessEnvironment } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -187,7 +187,7 @@ describe("d4research pair", () => {
     )
       .pipe(
         Effect.provide(NodeServices.layer),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           ...process.env,
           [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
             protocol: SERVICE_LAUNCHER_PROTOCOL,

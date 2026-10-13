@@ -2,31 +2,31 @@
 
 Orchestration records intent and state without knowing which provider runs a thread. Provider
 protocols, account ownership, permissions, and capabilities belong at the
-[adapter boundary](../../apps/server/src/orchestration-v2/ProviderAdapter.ts). Normalize there
+[adapter boundary](../../packages/provider-core/src/server/ProviderAdapter.ts). Normalize there
 instead of spreading provider checks through orchestration and clients.
 
 A driver kind identifies an integration; an instance identifies one configuration and account
 lifecycle. Route work by instance, so two accounts using the same driver do not share mutable
-session or catalog state.
+session or catalog state. For a new driver, start with [adding a provider](./adding-a-provider.md).
 
 ## Process and account isolation
 
 ### d4research custom providers
 
-Agy, Muse, and Junie keep their native protocol adapters behind the
+Agy and Junie keep their native protocol adapters behind the
 [V2 bridge](../../apps/server/src/provider/Layers/LegacyAdapterV2.ts). Junie's ACP core is
 [LegacyAcpAdapter](../../apps/server/src/provider/Layers/LegacyAcpAdapter.ts); stock Grok uses its
 V2 adapter. Native approval IDs and resume cursors must survive this boundary. The bridge does
 not advertise conversation rollback, native forks, snapshots, or subagent control.
 
-These three adapters do not enforce the read-only sandbox required by research advisers and
+These legacy adapters do not enforce the read-only sandbox required by research advisers and
 handoff compression. Advisory sessions reject them before native launch. Normal chat remains
 available; approval prompts alone must not be presented as a read-only sandbox.
 
-Muse plan mode uses a separate read-only host posture, but it is not a general advisory-session
-sandbox. Its host requires UUIDv7 command IDs, a temporary directory outside the workspace, and
-session logging to deliver completion events. See the
-[adapter](../../apps/server/src/provider/Layers/MuseAdapter.ts) before changing host lifecycle.
+Muse's extracted [adapter](../../packages/provider-muse/src/server/adapter.ts) uses the
+[SDK host](../../packages/provider-muse/src/server/sdk.ts). The fork's older
+[Muse adapter](../../apps/server/src/provider/Layers/MuseAdapter.ts) contains additional plan-mode
+and approval configuration that must be ported before that legacy path is retired.
 
 The `opencode` driver probes the installed version and runs the 1.x or 2.x runtime. OpenCode's MCP
 registrations are directory-scoped, while T3's MCP connection is thread-scoped, so threads in one
@@ -34,12 +34,12 @@ directory must not share one T3 MCP entry.
 
 - **1.x** uses one T3-managed chat server per thread, so threads cannot replace each other's
   connection. Catalog and text-generation work can share the
-  [instance-owned helper](../../apps/server/src/provider/OpenCodeServerOwner.ts), which closes
-  after an idle period. See the [1.x adapter](../../apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts).
+  [instance-owned helper](../../packages/provider-opencode/src/server/OpenCodeServerOwner.ts), which closes
+  after an idle period. See the [1.x adapter](../../packages/provider-opencode/src/server/adapter.ts).
 - **2.x** serves every directory from one
-  [server per instance](../../apps/server/src/provider/opencode2/OpenCode2Server.ts). Each thread
+  [server per instance](../../packages/provider-opencode/src/server/v2/OpenCode2Server.ts). Each thread
   registers its own `t3-code-<thread>` MCP entry, and session permission rules deny every other
-  thread's entry. See the [2.x adapter](../../apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts).
+  thread's entry. See the [2.x adapter](../../packages/provider-opencode/src/server/v2/adapter.ts).
 
 External OpenCode servers remain externally owned and can require an external restart to pick up
 configuration changes. OpenCode stores "always" approval grants for the whole project. Automatic
@@ -52,7 +52,7 @@ the Pi TUI. Pi session files back native resume, rollback, and same-instance thr
 Forks use Pi's CLI in the destination directory because RPC session switching retains the source
 session's cwd. Provider switches use the portable history selection described in
 [Context handoffs](./context-handoffs.md).
-See the [adapter](../../apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts).
+See the [adapter](../../packages/provider-pi/src/server/adapter.ts).
 
 Antigravity separates account profiles per instance while sharing installed executables across the
 environment. It forces file-based credential storage because the native macOS keychain entry would
@@ -70,7 +70,7 @@ and removal must respect those leases instead of replacing executables under a r
 ## Setup must not happen as a health-check side effect
 
 Opening a provider session can start MCP servers, run hooks, or launch a login browser.
-[Grok probes](../../apps/server/src/provider/GrokProvider.ts) avoid authentication and
+[Grok probes](../../packages/provider-grok/src/server/status.ts) avoid authentication and
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
@@ -110,7 +110,7 @@ manual-only but still reports the version gap. npm updates pin
 provider. Homebrew
 compares against `brew info` because cask versions can differ from npm; native installs share npm's version
 train, so the registry stays authoritative for them.
-See the [resolver](../../apps/server/src/provider/providerMaintenance.ts).
+See the [resolver](../../packages/provider-core/src/server/maintenanceResolver.ts).
 
 Ownership is cached per instance and re-read immediately before an update runs. The
 [runner](../../apps/server/src/provider/providerMaintenanceRunner.ts) refuses when the lock key

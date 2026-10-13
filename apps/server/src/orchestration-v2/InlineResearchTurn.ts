@@ -24,8 +24,8 @@ import {
 } from "../mcp/toolkits/research/inlineDelegation.ts";
 import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "./IdAllocator.ts";
-import { makeProviderFailure } from "./ProviderFailure.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import { makeProviderFailure } from "@d4research/provider-core/server/failure";
 
 class InlineResearchRejected extends Data.TaggedError("InlineResearchRejected")<{
   readonly message: string;

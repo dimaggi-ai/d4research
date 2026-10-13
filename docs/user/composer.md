@@ -1,52 +1,35 @@
-# The Composer
+# Messages and context
 
-The message composer is more than a text box. It carries file mentions, provider skills, slash
-commands, images, queued follow-ups, and the research toggle.
+Give the agent a task in the composer. Add files, quote a previous response, or
+include a skill when the task needs more context.
 
-## Model selection on multiple devices
+Messages can contain up to 120,000 characters. Longer drafts stay in the composer
+so you can shorten them or split them into several messages.
 
-In an existing thread, the model you select is shared with your other connected devices.
-A reconnecting device loads the latest selection from the server. Your unsent message and
-attachments stay on the device where you entered them. Selecting a different provider stages
-a handoff for the next send; cancelling that handoff also updates your other devices.
+Pasting 32 KiB or more of text adds that fragment as a text-file attachment so
+the agent can inspect it without filling the model context. A smaller paste also
+becomes an attachment when inserting it would exceed the message limit. On a
+hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewhere
+to keep a large paste editable in the composer instead.
 
-## Mentions, skills, and slash commands
+## Formatting
 
-Three characters open a completion menu at the cursor (detected by `detectComposerTrigger` in
-`packages/shared/src/composerTrigger.ts`):
+The composer writes Markdown and shows it styled as you type. Markers such as
+`**` stay in the text and show beside the styled words when your cursor is on
+them. Lines starting with `- `, `1. `, `- [ ] `, `> `, `# ` or `---` become lists,
+task lists, quotes, headings and rules; ` ``` ` followed by Enter opens a code
+block. What you typed is what the agent receives, markers and numbering
+included, and `#1234` without a space still looks up a pull request.
 
-| Trigger | Menu                               | What gets inserted                                                                      |
-| ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `@`     | Files and folders in the workspace | A path mention. Paths with spaces are quoted automatically.                             |
-| `$`     | Skills                             | `$<skill-name>` — the provider's own skills, or your installed ones                     |
-| `/`     | Commands                           | Built-in `/model`, `/plan`, `/default`, plus the selected provider's own slash commands |
-| `!`     | Delegation targets                 | `!provider:model` — only at the very start of a message                                 |
+Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
+on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
+starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
+the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
+at the end, leave the block. **Backspace** at the start of a code block turns it
+back into plain lines. Choose the language in a code block's corner to change
+it. Very large code blocks are shown without syntax highlighting.
 
-- **File mentions** search the project's entries as you type. Dragging a file from the workspace
-  file tree into the composer inserts a markdown-style file link (`[name](path)`) — mentions and
-  links both resolve inside the workspace for the agent.
-- **Skills** come from the provider when it has its own (Claude and Codex do), so the `$` menu
-  changes when you switch models. Providers without built-in skill support offer your installed
-  skills instead — the ones listed under **Settings → Skills**, from your agent directories and the
-  current project. Attaching one of those adds a short reference to your message: the skill's name,
-  what it is for, and where its instructions live, with a note to read them. The agent reads the
-  file itself, so a long skill costs you a few lines rather than its whole text, and attaching a
-  skill never runs it — it hands the agent instructions to follow. If nothing matches you are
-  pointed at `/` to browse provider commands instead.
-- **Global** skills are selected in **Settings → Skills** with the **All chats** switch. They apply
-  to every turn in every chat. **Chat** skills are added from the **Skills** control in that chat's
-  composer and remain active only there, across reloads and provider handoffs. Global and chat
-  selections share a 12-skill ceiling; duplicates are charged once and global wins. Message bubbles
-  show `Global: name` and `Chat: name` badges. The agent reads each selected `SKILL.md`, so either
-  scope consumes context on every affected turn. A project skill overrides a same-named user skill.
-  Missing configured skills are removable and are never falsely reported as active.
-- Installing a skill from **Settings → Skills** shares its portable instructions with compatible
-  coding CLIs automatically. **Also install the Agy plugin package** is a separate opt-in because a
-  plugin can include executable hooks and MCP servers in addition to the skill.
-- `/model` jumps into the model picker; `/plan` and `/default` switch the interaction mode. A
-  standalone `/plan` or `/default` message is treated as the mode switch, not as a prompt.
-
-## Attachments
+## Attach files
 
 Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
 80 MiB of images in one message. Other files, including videos, can be up to
@@ -150,8 +133,22 @@ the next message.
 
 ## Stash
 
-Press `⌘S` (Ctrl+S) with a prompt in the composer to stash it. The stash badge opens a popover of
-stashed prompts to restore or delete; stashed entries keep their attached images.
+To rename a built-in model on every client, edit the server's `settings.json` in its `userdata`
+directory. Add a custom model entry with the built-in model ID and a new name under that provider
+instance:
+
+```json
+{
+  "providerInstances": {
+    "codex": {
+      "driver": "codex",
+      "config": { "customModels": [{ "slug": "gpt-5.5", "name": "Team GPT" }] }
+    }
+  }
+}
+```
+
+## Model defaults
 
 ## Ask another model one question
 
@@ -278,8 +275,15 @@ minutes long. Canceling, leaving the screen, or an audio interruption discards t
 recording but preserves your existing draft. While recording, the screen stays
 awake; it can sleep normally once recording stops.
 
+Voice input records from the first connected microphone in **Settings → Microphone**.
+The list mixes kinds (built-in, other wired, other Bluetooth, CarPlay) with wired and
+Bluetooth devices you have dictated with, listed by name. Drag to rank them together:
+for example, put **Other Bluetooth** above your AirPods so a new headset is preferred
+while the AirPods microphone stays low. By default, CarPlay comes after the built-in
+microphone.
+
 Transcription runs on your device. d4research deletes the temporary audio after
-transcription or cancellation. Only the message text is sent when you submit.
+transcription or cancellation; only the message text is sent when you submit.
 
 ## Queued messages
 

@@ -39,6 +39,10 @@
       "types": "./src/userMessage.ts",
       "default": "./src/userMessage.ts"
     },
+    "./prompt-links": {
+      "types": "./src/promptLinks.ts",
+      "default": "./src/promptLinks.ts"
+    },
     "./secret-request": {
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"
@@ -63,10 +67,6 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
-    "./markdown-links": {
-      "types": "./src/markdownLinks.ts",
-      "default": "./src/markdownLinks.ts"
-    },
     "./media-reference": {
       "types": "./src/mediaReference.ts",
       "default": "./src/mediaReference.ts"
@@ -78,18 +78,6 @@
     "./media-actions": {
       "types": "./src/mediaActions.ts",
       "default": "./src/mediaActions.ts"
-    },
-    "./codex-file-citations": {
-      "types": "./src/codexFileCitations.ts",
-      "default": "./src/codexFileCitations.ts"
-    },
-    "./codex-artifact-templates": {
-      "types": "./src/codexArtifactTemplates.ts",
-      "default": "./src/codexArtifactTemplates.ts"
-    },
-    "./codex-markdown-directives": {
-      "types": "./src/codexMarkdownDirectives.ts",
-      "default": "./src/codexMarkdownDirectives.ts"
     },
     "./errors": {
       "types": "./src/errors/index.ts",
@@ -114,6 +102,10 @@
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"
+    },
+    "./providerUpdateRequiredModels": {
+      "types": "./src/providerUpdateRequiredModels.ts",
+      "default": "./src/providerUpdateRequiredModels.ts"
     },
     "./voice-input": {
       "types": "./src/voice-input/index.ts",
@@ -226,6 +218,10 @@
     "./state/usage": {
       "types": "./src/state/usage.ts",
       "default": "./src/state/usage.ts"
+    },
+    "./state/usage-progress": {
+      "types": "./src/state/usageProgress.ts",
+      "default": "./src/state/usageProgress.ts"
     },
     "./state/server": {
       "types": "./src/state/server.ts",
@@ -390,27 +386,57 @@
     "./device/duo-control": {
       "types": "./src/device/duoControl.ts",
       "default": "./src/device/duoControl.ts"
+    },
+    "./diff-count": {
+      "types": "./src/diffCount.ts",
+      "default": "./src/diffCount.ts"
+    },
+    "./mcp-apps": {
+      "types": "./src/mcpApps/host.ts",
+      "default": "./src/mcpApps/host.ts"
+    },
+    "./state/mcp-apps": {
+      "types": "./src/state/mcpApps.ts",
+      "default": "./src/state/mcpApps.ts"
+    },
+    "./source-control-clients": {
+      "types": "./src/sourceControlClients.ts",
+      "default": "./src/sourceControlClients.ts"
+    },
+    "./review-guide-tour": {
+      "types": "./src/reviewGuideTour.ts",
+      "default": "./src/reviewGuideTour.ts"
+    },
+    "./state/query-persistence": {
+      "types": "./src/state/queryPersistence.ts",
+      "default": "./src/state/queryPersistence.ts"
+    },
+    "./pull-request-markdown": {
+      "types": "./src/pullRequestMarkdown.ts",
+      "default": "./src/pullRequestMarkdown.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {
     "@d4research/contracts": "workspace:*",
     "@d4research/shared": "workspace:*",
+    "@d4research/source-control-azure-devops": "workspace:*",
+    "@d4research/source-control-bitbucket": "workspace:*",
+    "@d4research/source-control-core": "workspace:*",
+    "@d4research/source-control-forgejo": "workspace:*",
+    "@d4research/source-control-gitcafe": "workspace:*",
+    "@d4research/source-control-github": "workspace:*",
+    "@d4research/source-control-gitlab": "workspace:*",
+    "@pierre/diffs": "catalog:",
     "effect": "catalog:",
-    "mdast-util-directive": "^3.1.0",
-    "micromark-extension-directive": "^4.0.0",
-    "micromark-util-character": "^2.1.1",
-    "remark-parse": "^11.0.0",
-    "three": "0.180.0",
-    "unified": "^11.0.5"
+    "three": "0.180.0"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/three": "0.180.0",
-    "micromark-util-types": "^2.0.2",
     "vite-plus": "catalog:"
   }
 }

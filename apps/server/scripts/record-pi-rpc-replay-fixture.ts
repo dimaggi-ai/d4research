@@ -29,8 +29,8 @@ import {
   PiOrchestratorReplayHarness,
 } from "../src/orchestration-v2/Adapters/PiAdapterV2.testkit.ts";
 import * as PiAdapterV2Testkit from "../src/orchestration-v2/Adapters/PiAdapterV2.testkit.ts";
-import { PI_PROVIDER } from "../src/orchestration-v2/Adapters/PiAdapterV2.ts";
-import * as IdAllocator from "../src/orchestration-v2/IdAllocator.ts";
+import { PI_PROVIDER } from "@d4research/provider-pi/server";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { provideDeterministicTestRuntime } from "../src/orchestration-v2/testkit/DeterministicRuntime.ts";
 import { ORCHESTRATOR_REPLAY_FIXTURES } from "../src/orchestration-v2/testkit/fixtures/index.ts";
 import { materializeFixtureInput } from "../src/orchestration-v2/testkit/fixtures/shared.ts";
@@ -38,7 +38,7 @@ import { runOrchestratorV2ProviderReplayScenario } from "../src/orchestration-v2
 import {
   checkpointWorkspace,
   makeCheckpointWorkspace,
-} from "../src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
+} from "@d4research/provider-testing/replayWorkspace";
 
 /**
  * Keeps the user's skills, templates and context files out of the recording.
@@ -244,13 +244,13 @@ const record = Effect.gen(function* () {
   );
 
   const entries: Array<ProviderReplayEntry> = [];
-  const placeholder = {
+  const placeholder: ProviderReplayTranscript = {
     provider: PI_PROVIDER,
     protocol: PI_RPC_REPLAY_PROTOCOL,
     version: piVersion,
     scenario: fixture.name,
     entries: [],
-  } satisfies ProviderReplayTranscript;
+  };
   const layerRecordingSpawner = Layer.effect(
     ChildProcessSpawner.ChildProcessSpawner,
     Effect.map(Effect.service(ChildProcessSpawner.ChildProcessSpawner), (live) =>

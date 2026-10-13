@@ -34,7 +34,7 @@ import {
  * Both constructors demand this. Their private constructors only stop the type
  * checker; this also stops `Reflect.construct` and friends at runtime.
  */
-const builtHere: unique symbol = Symbol("t3/mcp/McpToolAccess/builtHere");
+const builtHere: unique symbol = Symbol("d4research/mcp/McpToolAccess/builtHere");
 
 const refuseOutsideConstruction = (token: symbol) => {
   if (token !== builtHere) {
@@ -156,6 +156,14 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
 /** Changes something that belongs to no thread, such as a pending upload or a scheduled task. */
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));
+
+/**
+ * Changes something that belongs to no thread under a capability of the tool's own, such as
+ * writing a pull request's review guide. Unlike `writes` it does not need thread control; the
+ * handler checks its capability, as the capability toolkits do.
+ */
+export const writesWithCapability = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
+  declare((params: P) => writingCaller.pipe(Effect.flatMap(() => handle(params))));
 
 /**
  * Changes the threads `threads` names. An omitted id is the caller's own

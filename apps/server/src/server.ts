@@ -1,3 +1,4 @@
+import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
@@ -45,29 +46,32 @@ import {
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { PortableSkillsInventoryLive, reconcileUserSkills } from "./skillsInventory.ts";
-import { layer as websocketRpcRouteLayer } from "./ws.ts";
+import * as Ws from "./ws.ts";
+import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { layer as pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
+import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
+import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
-import * as ProviderEventLoggers from "./provider/ProviderEventLoggers.ts";
-import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
-import * as OpenCodeServerLedger from "./provider/OpenCodeServerLedger.ts";
-import * as AcpRegistryCatalog from "./provider/AcpRegistryCatalog.ts";
+import * as EventNdjsonLogger from "./provider/EventNdjsonLogger.ts";
+import * as ProviderLatestVersions from "@d4research/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
+import * as OpenCodeRuntime from "@d4research/provider-opencode/server/OpenCodeRuntime";
+import * as OpenCodeServerLedger from "@d4research/provider-opencode/server/OpenCodeServerLedger";
+import * as ProviderHostLive from "./provider/ProviderHostLive.ts";
+import * as AcpRegistrySupport from "@d4research/provider-acp-registry/server/AcpRegistrySupport";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
-import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
-import * as GitHubCli from "./sourceControl/GitHubCli.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
-import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
-import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
+import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
+import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
@@ -116,7 +120,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
-import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
@@ -146,6 +150,10 @@ import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClien
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
+import * as AntigravityUsage from "./provider/Drivers/AntigravityUsage.ts";
+import * as CursorAccountReader from "@d4research/provider-cursor/server/CursorAccountReader";
+import * as CursorKeychain from "@d4research/provider-cursor/server/CursorKeychain";
+import * as CursorUsageAccounts from "@d4research/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -155,7 +163,7 @@ import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementSer
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
-import * as IdAllocatorV2 from "./orchestration-v2/IdAllocator.ts";
+import * as IdAllocatorV2 from "@d4research/provider-core/server/IdAllocator";
 import { OrchestrationV2EventSinkLayerLive } from "./orchestration-v2/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -183,6 +191,30 @@ const layerResourceAttribution = ResourceAttribution.layer;
 const layerApplicationObservability = EventLoopMonitor.layer.pipe(
   Layer.provideMerge(Observability.layer),
   Layer.provideMerge(layerResourceAttribution),
+);
+
+// One rotating store behind both logger views, so driver instances never race
+// its rotation. Diagnostics must not block startup: a store that cannot open
+// degrades to the no-op loggers.
+const layerProviderEventLoggers = Layer.effect(
+  ProviderEventLoggers.ProviderEventLoggers,
+  Effect.gen(function* () {
+    const { providerEventLogPath } = yield* ServerConfig.ServerConfig;
+    const attribution = yield* ResourceAttribution.ResourceAttribution;
+    const store = yield* EventNdjsonLogger.makeEventNdjsonLogStore(providerEventLogPath, {
+      attribution,
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning(error.message, { error }).pipe(
+          Effect.annotateLogs({ scope: "provider-observability" }),
+          Effect.as(undefined),
+        ),
+      ),
+    );
+    if (!store) return ProviderEventLoggers.NoOpProviderEventLoggers;
+    yield* Effect.addFinalizer(() => store.close());
+    return { native: store.logger("native"), canonical: store.logger("canonical") };
+  }),
 );
 
 const layerPtyAdapter = NodePtyAdapter.layer;
@@ -219,7 +251,17 @@ const layerBackground = BackgroundPolicy.layer.pipe(
   Layer.provideMerge(layerServerSettings),
 );
 
-const layerUsage = UsageService.layer.pipe(Layer.provide(layerServerSettings));
+const layerUsage = UsageService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      AntigravityUsage.layer,
+      CursorUsageAccounts.layer.pipe(
+        Layer.provide(CursorAccountReader.layer.pipe(Layer.provide(CursorKeychain.layer))),
+      ),
+    ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
+  ),
+  Layer.provide(layerServerSettings),
+);
 
 const layerResourceDiagnostics = Layer.mergeAll(
   HostResources.layer,
@@ -260,15 +302,7 @@ const layerPersistence = Layer.empty.pipe(Layer.provideMerge(SqlitePersistence.l
 const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer));
 
 const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      AzureDevOpsCli.layer,
-      BitbucketApi.layer,
-      GitHubCli.layer,
-      GitLabCli.layer,
-      ForgejoCli.layer,
-    ),
-  ),
+  Layer.provideMerge(SourceControlBuiltInDrivers.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerVcsDriverRegistry),
 );
@@ -278,32 +312,21 @@ const layerRepositoryIdentityResolver = Layer.effect(
   Effect.gen(function* () {
     const registry = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
     return yield* RepositoryIdentityResolver.make({
+      // Each host that can refine an identity gets a turn; the first one that changes it wins.
       refine: Effect.fn(function* (identity: RepositoryIdentity) {
-        const remote = ForgejoCli.parseForgejoRemote(identity.locator.remoteUrl);
-        if (
-          !remote ||
-          !identity.rootPath ||
-          (identity.provider !== undefined &&
-            identity.provider !== "unknown" &&
-            identity.provider !== "forgejo")
-        )
-          return identity;
-        const handle = yield* registry.resolveHandle({
-          cwd: identity.rootPath,
-          context: {
-            provider: { kind: "unknown", name: "Unknown", baseUrl: "" },
-            remoteName: identity.locator.remoteName,
-            remoteUrl: identity.locator.remoteUrl,
-          },
-        });
-        if (handle.context?.provider.kind !== "forgejo") return identity;
-        const baseUrl = handle.context.provider.baseUrl.replace(/\/+$/, "");
-        const basePath = new URL(baseUrl).pathname.replace(/^\/+|\/+$/g, "");
-        const path =
-          !remote.ssh && basePath && remote.path.startsWith(`${basePath}/`)
-            ? remote.path.slice(basePath.length + 1)
-            : remote.path;
-        return { ...identity, provider: "forgejo", webUrl: `${baseUrl}/${path}` };
+        for (const kind of SourceControlBuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS.map(
+          (driver) => driver.kind,
+        )) {
+          const provider = yield* registry.get(kind);
+          if (provider.refineRepositoryIdentity === undefined) continue;
+          const refined = yield* provider.refineRepositoryIdentity({
+            identity,
+            resolveContext: (input) =>
+              registry.resolveHandle(input).pipe(Effect.map((handle) => handle.context)),
+          });
+          if (refined !== identity) return refined;
+        }
+        return identity;
       }),
     });
   }),
@@ -328,9 +351,7 @@ const layerGitManager = GitManager.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   // `GitHubCli` is the registry's own instance, exposed because the asset route fetches
   // GitHub-hosted pull request media with the repository's credential.
-  Layer.provideMerge(
-    Layer.mergeAll(layerSourceControlProviderRegistry, layerPullRequestService, GitHubCli.layer),
-  ),
+  Layer.provideMerge(Layer.mergeAll(layerSourceControlProviderRegistry, layerPullRequestService)),
   Layer.provideMerge(TextGeneration.layer.pipe(Layer.provide(layerSourceControlProviderRegistry))),
 );
 
@@ -344,11 +365,6 @@ const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerGit),
 );
 
-const layerReview = ReviewService.layer.pipe(
-  Layer.provideMerge(GitVcsDriver.layer),
-  Layer.provideMerge(layerVcsDriverRegistry),
-);
-
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
@@ -356,6 +372,12 @@ const layerSourceControlRepositoryService = SourceControlRepositoryService.layer
 
 const layerProjectCloneTracker = ProjectCloneTracker.layer.pipe(
   Layer.provide(layerSourceControlRepositoryService),
+);
+
+const layerReview = ReviewService.layer.pipe(
+  Layer.provide(ProjectStore.layer),
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(layerVcsDriverRegistry),
 );
 
 const layerVcs = Layer.empty.pipe(
@@ -499,9 +521,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
   ),
   layerThreadSettlementWorker,
-  Layer.effectDiscard(StorageCleanup.make.pipe(Effect.flatMap((service) => service.start()))).pipe(
-    Layer.provide(ProjectionStoreV2.layer),
-  ),
+  StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   layerThreadPullRequestWorker,
   Layer.effectDiscard(
     Effect.gen(function* () {
@@ -528,6 +548,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ReplayMarkers.layer,
+  // Catches overrides left behind by a project deleted before this cleanup
+  // existed, or by a cleanup write that failed. See ProjectService.delete
+  // for the normal (on-delete) path.
+  Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   // Core Services
   Layer.provideMerge(layerOrchestrationApplication),
@@ -537,10 +561,13 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
   Layer.provideMerge(ResearchDelegationBudgetLive),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(ProjectStore.layer, ProjectionStoreV2.layer, ThreadSearch.layer),
+  ),
   Layer.provideMerge(layerServerSettings),
-  // The asset route uses the registry's GitHub credential for private PR media.
-  Layer.provideMerge(Layer.mergeAll(layerSourceControlProviderRegistry, GitHubCli.layer)),
+  // The asset route uses the registry's GitHub credential for private PR media, which the
+  // built-in drivers' layer provides alongside the registry.
+  Layer.provideMerge(layerSourceControlProviderRegistry),
   Layer.provideMerge(layerGit),
   Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(layerVcs),
@@ -553,8 +580,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
-  // `providerInstances` hydration merges `settings.providers.<kind>`
-  // with explicit `providerInstances` entries on boot.
+  // hydration adds their default instances to `providerInstances` on boot.
   Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
   Layer.provideMerge(
     Layer.mergeAll(
@@ -568,24 +594,38 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerPtyAdapter),
   // Search, prepare, status inspection, and turn launch share one registry
   // cache so every client and provider instance sees the same prepared agents.
-  Layer.provideMerge(AcpRegistryCatalog.layer.pipe(Layer.provide(layerServerSettings))),
-  // Shared native/canonical NDJSON writers used by both the per-instance
-  // V2 drivers and the orchestration runtime. Provide resource attribution so
-  // the rewritten telemetry pipeline can account for logical NDJSON writes.
-  // Provided once at the runtime level so every consumer sees the same
-  // logger instances.
-  // `ModelManifest.layer` is the legacy-model classification data, refreshed
-  // from the repo's `model-manifest.json` on `main` and applied by the
-  // Codex/Claude drivers.
+  Layer.provideMerge(AcpRegistrySupport.layerFromHost.pipe(Layer.provide(ProviderHostLive.layer))),
+  // Provider event loggers are shared by every driver instance and the
+  // orchestration runtime, so they are provided once here.
+  // `ModelManifest.layer` is the model manifest, refreshed from the repo's
+  // `model-manifest.json` on `main`. Drivers read their entry through the
+  // `ModelCatalog` port it provides.
   Layer.provideMerge(
-    Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, ResetCreditCoordinator.layer),
+    Layer.mergeAll(
+      layerProviderEventLoggers,
+      ModelManifest.layerModelCatalog.pipe(Layer.provideMerge(ModelManifest.layer)),
+      ResetCreditCoordinator.layer,
+      ProviderLatestVersions.layer,
+      McpProviderSessions.layer,
+    ),
   ),
   // `OpenCodeDriver.create()` yields `OpenCodeRuntime`; previously the old
   // `ProviderRegistry.layer` pulled `OpenCodeRuntimeLive` in for itself, but
   // the rewritten registry reads snapshots off the instance registry and
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
-  Layer.provideMerge(OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layer))),
+  Layer.provideMerge(
+    OpenCodeRuntime.layer.pipe(
+      Layer.provide(
+        Layer.unwrap(
+          Effect.gen(function* () {
+            const config = yield* ServerConfig.ServerConfig;
+            return OpenCodeServerLedger.layer({ stateDir: config.stateDir });
+          }),
+        ),
+      ),
+    ),
+  ),
   Layer.provideMerge(layerWorkspace),
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, layerProjectFaviconResolver)),
@@ -597,9 +637,11 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   // Misc.
+  // Usage reads provider history through the ProviderHost, which needs the
+  // background policy below it.
+  Layer.provideMerge(layerUsage),
   Layer.provideMerge(layerBackground),
   Layer.provideMerge(layerResourceDiagnostics),
-  Layer.provideMerge(layerUsage),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
@@ -645,7 +687,7 @@ const layerMakeRoutes = Layer.mergeAll(
     attachmentUploadRouteLayer,
     DeviceHubProxy.layer,
     staticAndDevRouteLayer,
-    websocketRpcRouteLayer,
+    Ws.layer,
   ),
   // The MCP session registry is provided globally (shared with V2 provider
   // sessions) rather than inline here. The orchestrator toolkit resolves
@@ -659,8 +701,13 @@ const layerMakeRoutes = Layer.mergeAll(
 ).pipe(
   Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+  // Guides read through the same pull request service as every other surface.
+  Layer.provide(
+    PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
+  ),
   // Both transports consume the same service instance, so caches single-flight across clients
-  // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
+  // and mutations observed on WebSocket invalidate patches subsequently read over HTTP. Provided
+  // after the guide service so it reaches that too.
   Layer.provide(layerPullRequestService),
   // The stream route and the WebSocket RPCs share one browser.
   Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
@@ -685,7 +732,7 @@ const layerMakeServer = Layer.unwrap(
     const layerLauncher = ServiceLauncherClient.layer;
 
     yield* initializeToolGuardRuntime();
-    yield* fixPath();
+    yield* fixPath({ shellEnvironmentPrepared: config.shellEnvironmentPrepared });
 
     // Reconcile before any provider runtime or route can start. Running this
     // as a sibling Layer races provider session creation: a CLI can snapshot
@@ -839,11 +886,15 @@ const layerMakeServer = Layer.unwrap(
           Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
         ),
       ),
+      Layer.provide(McpProviderSessions.layer),
       Layer.provide(layerActivation),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),
       Layer.provideMerge(FetchHttpClient.layer),
-      Layer.provideMerge(VcsProcess.layer),
+      // PR reads, Git operations, and WebSocket discovery share one process limiter.
+      Layer.provide(VcsProcess.layer),
+      // Every agent and terminal spawn reads this, so it sits below everything.
+      Layer.provideMerge(AgentScopeLive.layer),
       Layer.provideMerge(layerPlatformServices),
     );
   }),

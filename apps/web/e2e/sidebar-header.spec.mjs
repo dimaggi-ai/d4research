@@ -33,36 +33,45 @@ export async function sidebarHeaderSafeArea({ page, webUrl, screenshotDir }) {
         );
         const header = sidebar.locator('[data-sidebar="header"]');
         const brand = header.getByRole("link", { name: "Go to threads", exact: true });
+        // The phone drawer shows only its close control; the brand lives in the desktop sidebar.
         const control = mobile
-          ? header.getByRole("button", { name: "Toggle Sidebar", exact: true })
+          ? header.getByRole("button", { name: "Toggle main sidebar", exact: true })
           : toggle;
-        await brand.waitFor();
-        const research = brand.getByText("[Research]", { exact: true });
-        await research.waitFor({ state: "visible" });
-        NodeAssert.equal(await brand.locator("img").getAttribute("src"), "/d4-mark.svg");
-        const labelBox = await research.boundingBox();
-        const logoBox = await brand.boundingBox();
-        NodeAssert.ok(labelBox && logoBox);
-        NodeAssert.ok(
-          labelBox.y >= logoBox.y &&
-            labelBox.y + labelBox.height <= logoBox.y + logoBox.height + 1 &&
-            labelBox.x + labelBox.width <= logoBox.x + logoBox.width + 1,
-          `[Research] is clipped in the sidebar at ${width}px`,
-        );
         const controlBox = await control.boundingBox();
         const headerBox = await header.boundingBox();
-        NodeAssert.ok(logoBox && controlBox && headerBox);
-        NodeAssert.ok(
-          logoBox.y >= top,
-          `Sidebar logo overlaps status bar: ${width}px ${route}, y=${logoBox.y}`,
-        );
+        NodeAssert.ok(controlBox && headerBox);
+        if (mobile) {
+          NodeAssert.ok(
+            controlBox.y >= top,
+            `Drawer control overlaps status bar: ${width}px ${route}, y=${controlBox.y}`,
+          );
+          NodeAssert.equal(await brand.isVisible(), false);
+        } else {
+          await brand.waitFor();
+          const research = brand.getByText("[Research]", { exact: true });
+          await research.waitFor({ state: "visible" });
+          NodeAssert.equal(await brand.locator("img").getAttribute("src"), "/d4-mark.svg");
+          const labelBox = await research.boundingBox();
+          const logoBox = await brand.boundingBox();
+          NodeAssert.ok(labelBox && logoBox);
+          NodeAssert.ok(
+            labelBox.y >= logoBox.y &&
+              labelBox.y + labelBox.height <= logoBox.y + logoBox.height + 1 &&
+              labelBox.x + labelBox.width <= logoBox.x + logoBox.width + 1,
+            `[Research] is clipped in the sidebar at ${width}px`,
+          );
+          NodeAssert.ok(
+            logoBox.y >= top,
+            `Sidebar logo overlaps status bar: ${width}px ${route}, y=${logoBox.y}`,
+          );
+          NodeAssert.ok(
+            Math.abs(logoBox.y + logoBox.height / 2 - controlBox.y - controlBox.height / 2) <= 1,
+            `Sidebar logo and toggle must share a header row: ${width}px ${route}`,
+          );
+        }
         NodeAssert.ok(
           Math.abs(headerBox.y - top) <= 1,
           `Sidebar safe-area padding must apply exactly once: ${width}px ${route}`,
-        );
-        NodeAssert.ok(
-          Math.abs(logoBox.y + logoBox.height / 2 - controlBox.y - controlBox.height / 2) <= 1,
-          `Sidebar logo and toggle must share a header row: ${width}px ${route}`,
         );
         if (route === "/") {
           const search = sidebar.getByRole("combobox", { name: "Search threads", exact: true });

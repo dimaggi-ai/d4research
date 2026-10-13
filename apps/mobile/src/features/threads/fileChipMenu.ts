@@ -1,7 +1,7 @@
-import { fileBasename } from "@d4research/client-runtime/markdown-links";
+import { fileBasename } from "@d4research/shared/path";
 import type { ThreadId } from "@d4research/contracts";
-import { resolveMarkdownLinkPresentation } from "@d4research/mobile-markdown-text/links";
-import type { MarkdownFileContextMenu } from "@d4research/mobile-markdown-text/types";
+import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
+import type { MarkdownFileContextMenu } from "../../native/SelectableMarkdownText.types";
 import { hostPreviewMimeTypeFromExtension } from "@d4research/shared/filePreview";
 
 import {

@@ -38,7 +38,7 @@ import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
-} from "@d4research/client-runtime/codex-artifact-templates";
+} from "@d4research/shared/codexArtifactTemplates";
 import { presentThreadShell } from "@d4research/client-runtime/state/shell";
 import {
   type ChatMessage,
@@ -58,7 +58,8 @@ import type { DraftThreadEnvMode } from "../composerDraftStore";
 import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@d4research/contracts";
 import { collapseExpandedComposerCursor, type ComposerSubmissionIntent } from "../composer-logic";
 import { isDevPipelinePrompt } from "../devPipeline";
-import { extractMarkdownLinkHrefs, resolveMarkdownFileLinkMeta } from "../markdown-links";
+import { extractMarkdownLinkHrefs } from "@d4research/shared/markdownLinks";
+import { resolveMarkdownFileLinkMeta } from "../markdown-links";
 import { type PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import { type DesktopPreviewOverlay } from "../previewStateStore";
 import {

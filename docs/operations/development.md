@@ -72,6 +72,107 @@ vp test run <files>
 vp run --filter <package> typecheck
 ```
 
-CI owns repository-wide checks. The [Windows workflow](../../.github/workflows/windows-tests.yml)
-can be started manually for focused Windows testing. For release builds, use the
+TypeScript workspaces typecheck with tsc-rs, which has Effect diagnostics built in.
+Keep `typescript`, `@effect/tsgo`, and the `effect-tsgo patch` prepare step: editors
+still use them for Effect quick fixes and refactors. Keep `@effect/tsgo` on the
+effect-tsgo version that tsc-rs ports (see the tsc-rs README), or the two disagree
+on rule names.
+Marketing keeps `astro check` for Astro files.
+
+Use `vp run lint:mobile` for native mobile changes. CI owns the full suite; see
+[ci.yml](../../.github/workflows/ci.yml) for its current jobs.
+The [manual Windows lane](../../.github/workflows/windows-tests.yml) is available for focused
+Windows investigation while that suite is not a required gate.
+
+### Unused code
+
+`vp run knip:check` checks unused files and dependencies across the repo, then
+unused runtime exports in `apps/server`, `apps/desktop`, `apps/web`, and every internal package under
+`packages/`. CI enforces both checks.
+Exported types and Effect schemas are allowed without consumers. The schema preprocessor
+recognizes schema types, including aliases and schema classes; functions that create or decode
+schemas remain checked. Canonical Effect service construction APIs stay exported with an explicit
+`@public` annotation, which Knip recognizes. Completely unused files remain checked too.
+Named exports in web UI component modules are kept as complete component sets. Knip ignores
+unused exports in `apps/web/src/components/ui/*.tsx`, while still reporting an entire unused file.
+Use `vp run knip --workspace apps/web` to audit one workspace, including exports,
+or `vp run knip:production --workspace apps/web` to find code kept alive only by tests.
+The full export audit still has findings and is not a repo-wide CI gate. Extend the
+export check's workspace selectors as more workspaces become clean. Review callers before
+deleting code; production mode can also report development scripts and test fixtures.
+Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](../../knip.jsonc).
+
+## Desktop artifacts
+
+Local artifact builds are unsigned by default and write to `release/`:
+
+```sh
+vp run dist:desktop:dmg
+vp run dist:desktop:linux
+vp run dist:desktop:win
+```
+
+DMGs default to the host architecture. Use `--arch` to choose another target and `--keep-stage`
+to retain packaging files for inspection. Run `vp run dist:desktop:artifact --help` for other
+options.
+
+### Linux AppImage prerequisites
+
+Build on Linux because the browser-secret helper links against the host's libsecret. Install
+Rust, C/C++ build tools, libsecret development headers, pkg-config, and ImageMagick.
+
+Ubuntu and Debian:
+
+```sh
+sudo apt-get update
+sudo apt-get install cargo rustc build-essential libsecret-1-dev pkg-config imagemagick
+```
+
+Fedora:
+
+```sh
+sudo dnf install rust cargo gcc gcc-c++ make libsecret-devel pkgconf-pkg-config ImageMagick
+```
+
+Arch Linux:
+
+```sh
+sudo pacman -S rust base-devel libsecret pkgconf imagemagick
+```
+
+The C toolchain, pkg-config, and libsecret headers are also needed for Linux desktop development.
+
+### macOS DMG prerequisites
+
+Install the Xcode Command Line Tools with `xcode-select --install` and install Rust.
+For a cross-architecture or universal build, add the requested Rust targets:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+```
+
+### Windows installer prerequisites
+
+Install Rust, Python 3, and Visual Studio Build Tools with **Desktop development with C++**.
+Include the Windows SDK and the MSVC build tools and Spectre-mitigated libraries for the target
+architecture. Add its Rust target:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+# For an ARM64 installer:
+rustup target add aarch64-pc-windows-msvc
+```
+
+NSIS is downloaded by electron-builder. WSL support additionally needs the Linux CLI archive
+passed as `--wsl-runtime`; see the
+[release runbook](./release.md#windows-payload-topology-and-update-validation).
+
+### Signing
+
+Add `--signed` after configuring the platform credentials in the
 [release runbook](./release.md).
+
+For optional macOS browser passkeys, set `T3CODE_APPLE_TEAM_ID` and
+`T3CODE_MACOS_PROVISIONING_PROFILE` to a profile that grants the browser entitlements.
+`T3CODE_BROWSER_PASSKEY_RP_DOMAINS` optionally adds comma-separated associated domains.
+Signed builds without a profile keep ordinary signing and do not enable these entitlements.

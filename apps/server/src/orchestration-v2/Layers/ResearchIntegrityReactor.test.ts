@@ -12,7 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import * as EventSink from "../EventSink.ts";
-import * as IdAllocator from "../IdAllocator.ts";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
 import { ResearchIntegrityReactor } from "../Services/ResearchIntegrityReactor.ts";

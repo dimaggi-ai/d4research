@@ -4,7 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -52,7 +52,7 @@ const layerDmiFileSystem = (files: Readonly<Record<string, string>>) =>
   });
 
 const withPlatform = (platform: NodeJS.Platform, fileSystem = FileSystem.layerNoop({})) =>
-  Layer.mergeAll(layerProcessRunnerTest, fileSystem, Layer.succeed(HostProcessPlatform, platform));
+  Layer.mergeAll(layerProcessRunnerTest, fileSystem, Layer.succeed(HostProcess.Platform, platform));
 
 afterEach(() => {
   runMock.mockReset();

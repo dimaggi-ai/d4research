@@ -3,7 +3,7 @@ import * as NodeNet from "node:net";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { HostProcessArchitecture, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -14,7 +14,7 @@ import * as Scheduler from "effect/Scheduler";
 import { expect, vi } from "vite-plus/test";
 
 import * as NodePtyAdapter from "./NodePtyAdapter.ts";
-import * as PtyAdapter from "./PtyAdapter.ts";
+import * as PtyAdapter from "@d4research/shared/PtyAdapter";
 
 function makeNativeProcess(pid = 42) {
   const events = new NodeEvents.EventEmitter();
@@ -66,8 +66,8 @@ const layerTestFor = (platform: NodeJS.Platform = "win32") =>
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
-        Layer.succeed(HostProcessPlatform, platform),
-        Layer.succeed(HostProcessArchitecture, "x64"),
+        Layer.succeed(HostProcess.Platform, platform),
+        Layer.succeed(HostProcess.Architecture, "x64"),
         Layer.succeed(NodePtyAdapter.NodePtyModuleLoaderRef, () => Promise.resolve(fakeNodePty)),
       ),
     ),
@@ -272,8 +272,8 @@ it.effect("reports native module load failures as structured startup defects", (
     Effect.provide(
       Layer.mergeAll(
         NodeServices.layer,
-        Layer.succeed(HostProcessPlatform, "win32"),
-        Layer.succeed(HostProcessArchitecture, "x64"),
+        Layer.succeed(HostProcess.Platform, "win32"),
+        Layer.succeed(HostProcess.Architecture, "x64"),
       ),
     ),
   ),

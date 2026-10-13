@@ -23,7 +23,7 @@ import {
 import { Effect, FileSystem, Layer, Queue, Stream } from "effect";
 import { describe } from "vite-plus/test";
 import { ServerConfig } from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { makeMuseTextGeneration } from "../../textGeneration/MuseTextGeneration.ts";
 import { makeMuseAdapter } from "../Layers/MuseAdapter.ts";
 import { checkMuseProviderStatus } from "../Layers/MuseProvider.ts";
@@ -39,6 +39,7 @@ const settings = {
 
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "muse-cli-probe-" }).pipe(
   Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(McpProviderSessions.layer),
 );
 
 const museSessionsRoot = NodePath.join(NodeOS.homedir(), ".local", "share", "muse", "sessions");
@@ -127,7 +128,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
             Effect.forkScoped({ startImmediately: true }),
           );
           const threadId = ThreadId.make("muse-cli-probe-mcp");
-          McpProviderSession.setMcpProviderSession({
+          yield* (yield* McpProviderSessions.McpProviderSessions).set({
             browserToolsAvailable: true,
             environmentId: EnvironmentId.make("probe"),
             threadId,
@@ -138,7 +139,7 @@ describe.runIf(process.env.T3_MUSE_MSP_PROBE === "1")("Muse CLI probe", () => {
             capabilities: new Set(["preview"]),
           });
           yield* Effect.addFinalizer(() =>
-            Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+            McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(threadId)),
           );
           const started = yield* adapter.startSession({
             threadId,

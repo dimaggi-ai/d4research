@@ -12,7 +12,7 @@ import {
   type DesktopAppActivationResponse,
 } from "@d4research/contracts";
 import { resolveDesktopAppControlAddress } from "@d4research/shared/desktopAppControl";
-import { HostProcessUserId } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -318,7 +318,7 @@ export const make = Effect.gen(function* () {
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const path = yield* Path.Path;
-  const userId = yield* HostProcessUserId;
+  const userId = yield* HostProcess.UserId;
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const address = resolveDesktopAppControlAddress({
     stateDir: path.resolve(desktopEnvironment.stateDir),

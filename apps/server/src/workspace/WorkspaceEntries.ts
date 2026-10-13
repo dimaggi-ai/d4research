@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -20,11 +19,11 @@ import type {
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
 } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@d4research/shared/path";
 import { normalizeSearchQuery } from "@d4research/shared/searchRanking";
 
-import { expandHomePathWith } from "../pathExpansion.ts";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -107,21 +106,11 @@ export class WorkspaceEntries extends Context.Service<
   }
 >()("d4research/workspace/WorkspaceEntries") {}
 
-function expandHomePath(input: string, path: Path.Path): string {
-  if (input === "~") {
-    return NodeOS.homedir();
-  }
-  if (input.startsWith("~/") || input.startsWith("~\\")) {
-    return path.join(NodeOS.homedir(), input.slice(2));
-  }
-  return input;
-}
-
 const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
   input: FilesystemBrowseInput,
   path: Path.Path,
 ): Effect.fn.Return<string, WorkspaceEntriesBrowseError> {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   if (platform !== "win32" && isWindowsAbsolutePath(input.partialPath)) {
     return yield* new WorkspaceEntriesWindowsPathUnsupportedError({
       cwd: input.cwd,
@@ -131,7 +120,7 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   }
 
   if (!isExplicitRelativePath(input.partialPath)) {
-    return path.resolve(expandHomePath(input.partialPath, path));
+    return path.resolve(expandHomePath(input.partialPath, yield* HostProcess.HomeDirectory));
   }
 
   if (!input.cwd) {
@@ -139,7 +128,10 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
       partialPath: input.partialPath,
     });
   }
-  return path.resolve(expandHomePath(input.cwd, path), input.partialPath);
+  return path.resolve(
+    expandHomePath(input.cwd, yield* HostProcess.HomeDirectory),
+    input.partialPath,
+  );
 });
 
 /** @public Service construction is part of the canonical Effect module API. */

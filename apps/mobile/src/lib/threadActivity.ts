@@ -5,8 +5,10 @@ import type {
 } from "@d4research/client-runtime/state/thread-requests";
 import { turnItemIsWorkspacePreparation } from "@d4research/client-runtime/state/turn-item-presentation";
 import { formatSubagentDisplayTitle } from "@d4research/client-runtime/state/subagent-display";
+import { isLiveSubagentTurnItem } from "@d4research/client-runtime/state/subagentRuntime";
 import { extractToolActivityPresentation } from "@d4research/client-runtime/work-log/tool-presentation";
 import {
+  turnItemDetailRevision,
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
 } from "@d4research/client-runtime/work-log/item-detail";
@@ -16,6 +18,7 @@ import {
 } from "@d4research/client-runtime/work-log/command-label";
 import {
   contextCompactionLabel,
+  liveThoughtLine,
   toolItemForDisplay,
   workEntryDisplayIndicatesToolFailure,
   liveActivityToolStatus,
@@ -47,18 +50,25 @@ import type {
   OrchestrationV2UserMessageInputIntent,
   RunAttemptId,
   ScheduledTaskId,
+  TurnItemId,
 } from "@d4research/contracts";
 import { RunId, ThreadId } from "@d4research/contracts";
 import {
   classifyToolActivity,
   collectToolFilePaths,
   dynamicToolTitle,
+  isJavaScriptReplTool,
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@d4research/shared/toolActivity";
 import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import type { HtmlRenderReference } from "@d4research/shared/htmlRender";
-import { compactDynamicToolOutput, htmlRenderFromToolItem } from "@d4research/shared/toolOutput";
+import type { McpAppReference } from "@d4research/shared/mcpApp";
+import {
+  compactDynamicToolOutput,
+  htmlRenderFromToolItem,
+  mcpAppFromToolItem,
+} from "@d4research/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
 export type PendingApproval = ThreadPendingApproval;
@@ -88,6 +98,7 @@ export interface ThreadFeedActivity {
     | "alert"
     | "browser"
     | "computer"
+    | "code"
     | "check"
     | "command"
     | "edit"
@@ -165,12 +176,24 @@ type RawThreadFeedEntry =
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly render: HtmlRenderReference;
+    }
+  | {
+      /** An MCP App a completed tool call captured, hosted in place of its work row. */
+      readonly type: "mcp-app";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      /** The thread and item that own the app; a fork's inherited app is its source's. */
+      readonly sourceThreadId: ThreadId;
+      readonly itemId: TurnItemId;
+      readonly revision: string;
+      readonly app: McpAppReference;
     };
 
 export type ThreadFeedEntry = ThreadFeedEntryContent & { readonly continuesWorkLog?: boolean };
 
 type ThreadFeedEntryContent =
-  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" }>
+  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
   | {
       readonly type: "activity-group";
       readonly id: string;
@@ -194,6 +217,8 @@ type ThreadFeedEntryContent =
       readonly hasFailure: boolean;
       readonly live: boolean;
       readonly shimmer: boolean;
+      /** First sentence of the latest thought, shown above the live status line. */
+      readonly thought?: string;
     }
   | {
       readonly type: "run-fold";
@@ -377,8 +402,12 @@ function resolvePendingUserInputAnswer(
 ): string | ReadonlyArray<string> | null {
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
-    question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer) {
+    question.allowCustomAnswer === false
+      ? null
+      : question.initialAnswer !== undefined
+        ? (draft?.customAnswer ?? null)
+        : normalizeDraftAnswer(draft?.customAnswer);
+  if (customAnswer !== null && customAnswer.length > 0) {
     return customAnswer;
   }
 
@@ -386,12 +415,12 @@ function resolvePendingUserInputAnswer(
   if (question.multiSelect) {
     return selectedOptionValues.length > 0
       ? selectedOptionValues
-      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
-        ? ""
-        : null;
+      : (customAnswer ??
+          (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null));
   }
   return (
     selectedOptionValues[0] ??
+    customAnswer ??
     (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
   );
 }
@@ -495,6 +524,7 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
       case "monitor":
         return "eye";
       case "background_task":
+      case "system":
         return "zap";
       default:
         source satisfies never;
@@ -529,7 +559,7 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
     case "assistant_message":
       return "message";
     case "dynamic_tool":
-      return "wrench";
+      return isJavaScriptReplTool(item.toolName) ? "code" : "wrench";
     case "subagent":
       return "hammer";
     case "run_interrupt_request":
@@ -571,8 +601,9 @@ function itemSummary(
   if (item.type === "system_notice") return item.message;
   if (item.type === "compaction") return contextCompactionLabel(item);
   const title =
-    (item.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input) : undefined) ??
-    item.title?.trim();
+    (item.type === "dynamic_tool"
+      ? dynamicToolTitle(item.toolName, item.input, item.title)
+      : undefined) ?? item.title?.trim();
   if (item.type === "subagent") return formatSubagentDisplayTitle(title || "Subagent");
   if (title) return toolPresentation?.displayName ?? capitalizePhrase(title);
   switch (item.type) {
@@ -788,7 +819,11 @@ function toFeedActivity(
       ? collectToolFilePaths(item)
       : null;
   const getFullDetail = memoizeValue(() =>
-    readPaths ? readPaths.join("\n") || null : formatItemFullDetail(row, item),
+    readPaths
+      ? readPaths.join("\n") || null
+      : item.type === "notification"
+        ? item.detail?.trim() || null
+        : formatItemFullDetail(row, item),
   );
   const getCopyText = memoizeValue(() =>
     [summary, detail, getFullDetail()]
@@ -1064,7 +1099,9 @@ function deriveThreadFeedRunFolds(
     const runId =
       entry.type === "message" && entry.message.role === "assistant"
         ? (entry.message.runId ?? runlessKey)
-        : entry.type === "activity-group" || entry.type === "html-render"
+        : entry.type === "activity-group" ||
+            entry.type === "html-render" ||
+            entry.type === "mcp-app"
           ? (entry.runId ?? runlessKey)
           : null;
     if (!runId) continue;
@@ -1117,13 +1154,17 @@ function deriveThreadFeedRunFolds(
             entry.id !== firstAssistantId &&
             entry.id !== terminalAssistantId &&
             entry.type !== "html-render" &&
+            entry.type !== "mcp-app" &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
                 (activity) =>
                   activity.prominent ||
                   activity.projectedItem.item.type === "notification" ||
-                  activity.projectedItem.item.type === "handoff",
+                  activity.projectedItem.item.type === "handoff" ||
+                  // A child still working outlives its settled launching run;
+                  // its group stays visible while any member is live.
+                  isLiveSubagentTurnItem(activity.projectedItem.item),
               )
             ),
         )
@@ -1486,8 +1527,17 @@ function appendToolGroupRows(
   const shimmer = activeTail && (active || latestActivity.status === "success");
   const singleActivity = activities.length === 1 ? latestActivity : null;
   const groupSummary = summarizeToolGroup(activities.map((activity) => activity.workEntry));
+  const latestThought =
+    live && !expanded
+      ? activities.findLast(
+          (activity) =>
+            activity.workEntry.itemType === "reasoning" &&
+            (activity.workEntry.detail?.trim() ?? "") !== "",
+        )?.workEntry.detail
+      : undefined;
+  const thought = latestThought ? liveThoughtLine(latestThought) : "";
   const summary = live
-    ? expanded && latestActivity.workEntry.itemType === "reasoning"
+    ? (expanded || thought) && latestActivity.workEntry.itemType === "reasoning"
       ? latestActivity.lifecycleStatus === "inProgress"
         ? "Thinking"
         : "Thought"
@@ -1542,6 +1592,7 @@ function appendToolGroupRows(
     ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
     ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
     ...(summaryToolIcon ? { summaryToolIcon } : {}),
+    ...(thought ? { thought } : {}),
     hasFailure: (() => {
       const lastToolLike = activities.findLast((activity) => activity.toolLike);
       return (
@@ -1610,7 +1661,7 @@ export function setPendingUserInputCustomAnswer(
   }
 
   const selectedOptionValues =
-    customAnswer.trim().length > 0
+    question.initialAnswer !== undefined || customAnswer.trim().length > 0
       ? undefined
       : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   return {
@@ -1757,6 +1808,25 @@ export function buildThreadFeed(
         createdAt,
         runId: item.runId,
         render,
+      };
+      projectedEntriesCache.set(row, { attemptId, entry });
+      entries.push(entry);
+      continue;
+    }
+    const app =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? mcpAppFromToolItem(item)
+        : undefined;
+    if (app) {
+      const entry: RawThreadFeedEntry = {
+        type: "mcp-app",
+        id: `mcp-app:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
+        createdAt,
+        runId: item.runId,
+        sourceThreadId: row.sourceThreadId,
+        itemId: row.sourceItemId,
+        revision: turnItemDetailRevision(item),
+        app,
       };
       projectedEntriesCache.set(row, { attemptId, entry });
       entries.push(entry);

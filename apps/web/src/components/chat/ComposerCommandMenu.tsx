@@ -1,5 +1,5 @@
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import {
-  formatProviderSkillDisplayName,
   resolveProviderSkillSourceKind,
   type ProviderSkillSourceKind,
 } from "@d4research/client-runtime/providerSkills";
@@ -181,7 +181,8 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
     >
       <div
         ref={listRef}
-        className="dropdown-glass relative w-full overflow-hidden rounded-[20px] **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
+        className="flex min-h-0 w-full flex-col overflow-hidden pb-(--chat-composer-attachment-overlap) **:data-[slot=command-item]:rounded-lg **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
+        data-composer-command-drawer="true"
       >
         {props.items.length > 0 ? (
           <CommandList

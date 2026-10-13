@@ -3,13 +3,13 @@ import type {
   NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Animated, Platform, Pressable, View } from "react-native";
+import { Animated, Platform, Pressable, View } from "react-native";
 
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { brandTitleOffset, CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useWorkspaceState } from "../../state/workspace";
 import {
@@ -53,7 +53,11 @@ function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | n
  * native-driver animated nodes blank the re-hosted view entirely. The JS driver
  * updates opacity through the ordinary style path, which those subviews handle.
  */
-function StatusFadeIn(props: { readonly children: ReactNode; readonly grow?: boolean }) {
+function StatusFadeIn(props: {
+  readonly children: ReactNode;
+  readonly grow?: boolean;
+  readonly maxWidth?: number;
+}) {
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -69,7 +73,7 @@ function StatusFadeIn(props: { readonly children: ReactNode; readonly grow?: boo
   return (
     <Animated.View
       style={[
-        { alignItems: "center", flexDirection: "row", opacity },
+        { alignItems: "center", flexDirection: "row", opacity, maxWidth: props.maxWidth },
         props.grow ? { flex: 1, minWidth: 0 } : null,
       ]}
     >
@@ -98,8 +102,8 @@ export function WorkspaceConnectionTitle(props: {
   readonly size?: "navbar" | "pageTitle";
   /** Horizontal correction so the status aligns with the brand in native title slots. */
   readonly statusOffset?: number;
+  readonly maxWidth?: number;
 }) {
-  const iconColor = String(useThemeColor("--color-icon-muted"));
   const status = useDelayedConnectionStatus();
   const size = props.size ?? "navbar";
   const { scale } = useAndroidControlSizing();
@@ -115,7 +119,7 @@ export function WorkspaceConnectionTitle(props: {
   }
 
   return (
-    <StatusFadeIn grow={props.grow}>
+    <StatusFadeIn grow={props.grow} maxWidth={props.maxWidth}>
       <Pressable
         accessibilityHint="Opens environment settings"
         accessibilityLabel={status.label}
@@ -125,20 +129,20 @@ export function WorkspaceConnectionTitle(props: {
         onPress={props.onPress}
         className="flex-row items-center gap-2"
         style={[
-          { marginLeft: props.statusOffset ?? 0 },
+          { flexShrink: 1, marginLeft: props.statusOffset ?? 0 },
           Platform.OS === "android" && { gap: 7 * scale },
         ]}
       >
         {status.showsProgress ? (
-          <ActivityIndicator
-            color={iconColor}
+          <AppActivityIndicator
+            colorClassName={"accent-icon-muted"}
             size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
           />
         ) : (
           <SymbolView
             name="wifi.slash"
             size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
-            tintColor={iconColor}
+            tintColorClassName="accent-icon-muted"
             type="monochrome"
           />
         )}
@@ -160,9 +164,13 @@ export function WorkspaceConnectionTitle(props: {
  * this over the static brand options at mount.
  */
 export function getConnectionAwareBrandHeaderOptions(opts: {
+  readonly headerWidth: number;
+  readonly trailingItemCount?: number;
   readonly onOpenEnvironments: () => void;
   readonly fallbackTitleStyle?: NativeStackNavigationOptions["headerTitleStyle"];
 }): NativeStackNavigationOptions {
+  // Reserve space for native actions so long status labels cannot displace them.
+  const maxWidth = Math.max(0, opts.headerWidth - 64 - 44 * (opts.trailingItemCount ?? 1));
   if (Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED) {
     return {
       headerTitle: "Threads",
@@ -173,6 +181,7 @@ export function getConnectionAwareBrandHeaderOptions(opts: {
           element: (
             <WorkspaceConnectionTitle
               brand={<CompactBrandTitle nativeLeadingItem />}
+              maxWidth={maxWidth}
               onPress={opts.onOpenEnvironments}
               statusOffset={brandTitleOffset(true)}
             />
@@ -188,6 +197,7 @@ export function getConnectionAwareBrandHeaderOptions(opts: {
     headerTitle: () => (
       <WorkspaceConnectionTitle
         brand={<CompactBrandTitle />}
+        maxWidth={maxWidth}
         onPress={opts.onOpenEnvironments}
         statusOffset={brandTitleOffset(false)}
       />

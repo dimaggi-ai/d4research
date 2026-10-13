@@ -85,7 +85,7 @@ export async function mobileStatusBarReachability({ page, webUrl, workspace, scr
       await drawer.evaluate((element) =>
         Promise.all(element.getAnimations().map((animation) => animation.finished)),
       );
-      const close = drawer.getByRole("button", { name: "Toggle Sidebar", exact: true });
+      const close = drawer.getByRole("button", { name: "Toggle main sidebar", exact: true });
       await close.waitFor({ state: "visible" });
       const closeBox = await close.boundingBox();
       NodeAssert.ok(closeBox && closeBox.y >= 59, `Drawer close overlaps status bar on ${route}`);

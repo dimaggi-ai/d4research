@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { assert, it } from "@effect/vitest";
 import { ProjectId } from "@d4research/contracts";
 import * as ProviderTurnStartServiceTestkit from "./ProviderTurnStartService.testkit.ts";
@@ -154,6 +155,7 @@ const layerRuntime = (dbPath: string) => {
     ),
     Layer.provide(McpSessionRegistryTestkit.layer),
     Layer.provide(ProviderTurnStartServiceTestkit.researchTurnDependenciesTestLayer),
+    Layer.provide(McpProviderSessions.layer),
     Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
     Layer.provide(layerCheckpointStore),
     Layer.provide(layerServerConfig),

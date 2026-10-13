@@ -1,5 +1,3 @@
-import * as NodeOS from "node:os";
-
 import { ProviderDriverKind, type CodexSettings } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -7,7 +5,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as PlatformError from "effect/PlatformError";
 
-import { expandHomePath } from "../../pathExpansion.ts";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 export interface CodexHomeLayout {
   readonly mode: "direct" | "authOverlay";
@@ -31,13 +30,13 @@ const KNOWN_SHARED_DIRECTORIES = [
 
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
 const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp"]);
-const REPLACEABLE_SHARED_RUNTIME_DIRECTORIES = new Set(["mcp-oauth-locks"]);
+// Codex creates these runtime locks itself when it starts in a shadow home before the shared
+// home has one. They guard shared state, so a local copy is replaced with the shared link.
+const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set(["mcp-oauth-locks", ".sqlite-maintenance.lock"]);
 
-function resolveHomePath(path: Path.Path, value: string | undefined): string {
+function resolveHomePath(path: Path.Path, home: string, value: string | undefined): string {
   const expanded =
-    value && value.trim().length > 0
-      ? expandHomePath(value)
-      : path.join(NodeOS.homedir(), ".codex");
+    value && value.trim().length > 0 ? expandHomePath(value, home) : path.join(home, ".codex");
   return path.resolve(expanded);
 }
 
@@ -46,14 +45,15 @@ export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(functi
   environment?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<CodexHomeLayout, never, Path.Path> {
   const path = yield* Path.Path;
+  const home = yield* HostProcess.HomeDirectory;
   const configuredHome = config.homePath.trim();
   const inheritedHome = environment?.CODEX_HOME?.trim() ?? "";
   // Environment values have already been expanded at the instance boundary.
   const sharedHomePath = configuredHome
-    ? resolveHomePath(path, configuredHome)
+    ? resolveHomePath(path, home, configuredHome)
     : inheritedHome
       ? path.resolve(inheritedHome)
-      : resolveHomePath(path, undefined);
+      : resolveHomePath(path, home, undefined);
   const shadowHomePath = config.shadowHomePath.trim();
   if (shadowHomePath.length === 0) {
     return {
@@ -64,7 +64,7 @@ export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(functi
     };
   }
 
-  const effectiveHomePath = path.resolve(expandHomePath(shadowHomePath));
+  const effectiveHomePath = path.resolve(expandHomePath(shadowHomePath, home));
   return {
     mode: "authOverlay",
     sharedHomePath,
@@ -251,7 +251,7 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   );
 
   if (state._tag === "NotSymlink") {
-    if (!REPLACEABLE_SHARED_RUNTIME_DIRECTORIES.has(input.entryName)) {
+    if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
         sharedHomePath: input.sharedHomePath,
         effectiveHomePath: input.effectiveHomePath,

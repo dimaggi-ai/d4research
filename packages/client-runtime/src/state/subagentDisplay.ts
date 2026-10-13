@@ -5,7 +5,7 @@ import type {
   ServerProvider,
 } from "@d4research/contracts";
 import { formatModelSlugName, resolveSelectableModel } from "@d4research/shared/model";
-import { fileBasename } from "../markdownLinks.ts";
+import { fileBasename } from "@d4research/shared/path";
 import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
 
 /** Summarizes one adjacent group, without changing its member identities or order. */

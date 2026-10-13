@@ -10,6 +10,23 @@ import { makeMockMuse } from "../provider/msp/mspTestUtils.ts";
 import { makeMuseTextGeneration } from "./MuseTextGeneration.ts";
 const modelSelection = { instanceId: ProviderInstanceId.make("muse"), model: "default" };
 it.layer(NodeServices.layer)("Muse text generation", (it) => {
+  it.effect("decodes review guides through the legacy MSP transport", () =>
+    Effect.gen(function* () {
+      const mock = yield* makeMockMuse({ T3_MSP_RESPONSE_TEXT: '{"stops":[]}' });
+      const service = yield* makeMuseTextGeneration(mock.settings);
+      const result = yield* service.generateReviewGuide({
+        cwd: mock.directory,
+        modelSelection,
+        number: 1,
+        title: "Fix transport",
+        description: "",
+        baseBranch: "main",
+        baseCommit: "abc123",
+        settledReview: "",
+      });
+      assert.deepEqual(result, { stops: [] });
+    }),
+  );
   it.effect("collects MSP deltas and decodes structured output", () =>
     Effect.gen(function* () {
       const mock = yield* makeMockMuse({ T3_MSP_RESPONSE_TEXT: '{"title":"Fix Muse transport"}' });
@@ -97,21 +114,19 @@ it.layer(NodeServices.layer)("Muse text generation", (it) => {
       );
     }),
   );
-  for (const [name, env] of [
+  it.effect.each([
     ["invalid output", { T3_MSP_RESPONSE_TEXT: "not json" }],
     ["empty output", { T3_MSP_RESPONSE_TEXT: "" }],
     ["authentication failure", { T3_MSP_FAIL_AUTH: "1" }],
     ["process exit", { T3_MSP_EXIT_ON_TURN: "1" }],
-  ] as const) {
-    it.effect(`reports ${name}`, () =>
-      Effect.gen(function* () {
-        const mock = yield* makeMockMuse(env);
-        const service = yield* makeMuseTextGeneration(mock.settings);
-        const error = yield* service
-          .generateThreadTitle({ cwd: mock.directory, modelSelection, message: "Title" })
-          .pipe(Effect.flip);
-        assert.equal(error._tag, "TextGenerationError");
-      }),
-    );
-  }
+  ] as const)("reports %s", ([_name, env]) =>
+    Effect.gen(function* () {
+      const mock = yield* makeMockMuse(env);
+      const service = yield* makeMuseTextGeneration(mock.settings);
+      const error = yield* service
+        .generateThreadTitle({ cwd: mock.directory, modelSelection, message: "Title" })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "TextGenerationError");
+    }),
+  );
 });

@@ -1,3 +1,4 @@
+import { NATIVE_WORKSPACE_COLUMNS_SUPPORTED } from "../native/NativeWorkspaceColumns";
 import Constants from "expo-constants";
 import type {
   NativeStackHeaderItem,
@@ -9,7 +10,6 @@ import { AppText as Text } from "./AppText";
 import { T3Wordmark } from "./T3Wordmark";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
-import { useThemeColor } from "../lib/useThemeColor";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 
@@ -21,12 +21,12 @@ const IPAD_NATIVE_LEADING_TITLE_OFFSET = 7;
  * Horizontal correction applied to content rendered in the brand title slot,
  * shared with the connection-status swap so both align identically.
  */
-export function brandTitleOffset(nativeLeadingItem: boolean): number {
+export function brandTitleOffset(nativeLeadingItem = false): number {
   if (Platform.OS !== "ios") return 0;
   if (nativeLeadingItem) {
     return Platform.isPad ? IPAD_NATIVE_LEADING_TITLE_OFFSET : IOS_NATIVE_LEADING_TITLE_OFFSET;
   }
-  return Platform.isPad ? IPAD_HOME_TITLE_OFFSET : 0;
+  return Platform.isPad && !NATIVE_WORKSPACE_COLUMNS_SUPPORTED ? IPAD_HOME_TITLE_OFFSET : 0;
 }
 
 /**
@@ -35,11 +35,10 @@ export function brandTitleOffset(nativeLeadingItem: boolean): number {
 export function CompactBrandTitle(
   props: {
     readonly nativeLeadingItem?: boolean;
+    readonly allowFontScaling?: boolean;
+    readonly accessibilityLabel?: string;
   } = {},
 ) {
-  const iconColor = useThemeColor("--color-icon");
-  const mutedColor = useThemeColor("--color-foreground-muted");
-  const subtleColor = useThemeColor("--color-subtle");
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
   const titleOffset = brandTitleOffset(props.nativeLeadingItem === true);
   const { scale } = useAndroidControlSizing();
@@ -47,7 +46,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code, Threads"
+      accessibilityLabel={props.accessibilityLabel ?? "d4research, Threads"}
       accessible
       role="heading"
       style={[
@@ -60,10 +59,11 @@ export function CompactBrandTitle(
         Platform.OS === "android" && { gap: 5.25 * scale },
       ]}
     >
-      <T3Wordmark color={iconColor} height={Math.round(15 * scale)} />
+      <T3Wordmark colorClassName="accent-icon" height={Math.round(15 * scale)} />
       <Text
+        className="text-foreground-muted"
+        allowFontScaling={props.allowFontScaling}
         style={{
-          color: mutedColor,
           fontFamily: "DMSans-Medium",
           fontSize: 21 * scale,
           letterSpacing: -0.5 * scale,
@@ -72,9 +72,9 @@ export function CompactBrandTitle(
         Code
       </Text>
       <View
+        className="bg-subtle"
         style={[
           {
-            backgroundColor: subtleColor,
             borderRadius: 999,
             paddingHorizontal: 6,
             paddingVertical: 2,
@@ -86,8 +86,9 @@ export function CompactBrandTitle(
         ]}
       >
         <Text
+          className="text-foreground-muted"
+          allowFontScaling={props.allowFontScaling}
           style={{
-            color: mutedColor,
             fontFamily: "DMSans-Bold",
             fontSize: 9 * scale,
             letterSpacing: 0.9 * scale,

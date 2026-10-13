@@ -14,7 +14,7 @@ import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import { findSessionConfigOption } from "../acp/AcpRuntimeModel.ts";
+import { findSessionConfigOption } from "@d4research/provider-acp/server/runtimeModel";
 import { makeJunieAcpRuntime } from "../acp/JunieAcpSupport.ts";
 import {
   buildServerProvider,
@@ -23,7 +23,7 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
-} from "../providerSnapshot.ts";
+} from "@d4research/provider-core/server/snapshotProbe";
 
 const PRESENTATION = {
   displayName: "Junie",
@@ -131,11 +131,9 @@ const runVersion = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
 
 const discoverModels = (settings: JunieSettings, environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
-    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const runtime = yield* makeJunieAcpRuntime({
       junieSettings: settings,
       environment,
-      childProcessSpawner,
       cwd: process.cwd(),
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
     });

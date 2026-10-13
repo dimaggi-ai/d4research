@@ -1,0 +1,59 @@
+{
+  "name": "@d4research/source-control-gitlab",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client/definition": {
+      "types": "./src/client/definition.ts",
+      "import": "./src/client/definition.ts"
+    },
+    "./server/driver": {
+      "types": "./src/server/driver.ts",
+      "import": "./src/server/driver.ts"
+    },
+    "./server/gitLabAuthStatus": {
+      "types": "./src/server/gitLabAuthStatus.ts",
+      "import": "./src/server/gitLabAuthStatus.ts"
+    },
+    "./server/GitLabCli": {
+      "types": "./src/server/GitLabCli.ts",
+      "import": "./src/server/GitLabCli.ts"
+    },
+    "./server/gitLabMergeRequestJson": {
+      "types": "./src/server/gitLabMergeRequestJson.ts",
+      "import": "./src/server/gitLabMergeRequestJson.ts"
+    },
+    "./server/gitLabMergeRequests": {
+      "types": "./src/server/gitLabMergeRequests.ts",
+      "import": "./src/server/gitLabMergeRequests.ts"
+    },
+    "./server/GitLabPullRequestCli": {
+      "types": "./src/server/GitLabPullRequestCli.ts",
+      "import": "./src/server/GitLabPullRequestCli.ts"
+    },
+    "./server/GitLabPullRequestProvider": {
+      "types": "./src/server/GitLabPullRequestProvider.ts",
+      "import": "./src/server/GitLabPullRequestProvider.ts"
+    },
+    "./server/GitLabSourceControlProvider": {
+      "types": "./src/server/GitLabSourceControlProvider.ts",
+      "import": "./src/server/GitLabSourceControlProvider.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc-rs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/source-control-core": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@d4research/source-control-testing": "workspace:*",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

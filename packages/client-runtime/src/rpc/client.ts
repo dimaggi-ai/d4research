@@ -65,10 +65,12 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.providerInstallSubscribe
   | typeof ORCHESTRATION_V2_WS_METHODS.subscribeShell
   | typeof ORCHESTRATION_V2_WS_METHODS.subscribeThread
+  | typeof ORCHESTRATION_V2_WS_METHODS.searchThreadStream
   | typeof WS_METHODS.subscribeAuthAccess
   | typeof WS_METHODS.subscribeServerConfig
   | typeof WS_METHODS.subscribeServerLifecycle
   | typeof WS_METHODS.scheduledTasksSubscribe
+  | typeof WS_METHODS.serverGetStorageCleanupReport
   | typeof WS_METHODS.subscribeTerminalEvents
   | typeof WS_METHODS.subscribeTerminalMetadata
   | typeof WS_METHODS.subscribePreviewEvents
@@ -215,17 +217,18 @@ export const requestGuarded = Effect.fn("EnvironmentRpc.request")(function* <
     method: tag,
   });
   return yield* method(input).pipe(
-    Effect.timeout(ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS),
-    Effect.catchTag("TimeoutError", () =>
-      Effect.fail(
-        new EnvironmentRpcTimeoutError({
-          environmentId: supervisor.target.environmentId,
-          method: tag,
-          timeoutMillis: ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS,
-          message: `${supervisor.target.label} did not answer ${tag} within ${ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS / 1_000} seconds. Reconnect and retry; the original request was not retried with a new command id.`,
-        }),
-      ),
-    ),
+    Effect.timeoutOrElse({
+      duration: ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS,
+      orElse: () =>
+        Effect.fail(
+          new EnvironmentRpcTimeoutError({
+            environmentId: supervisor.target.environmentId,
+            method: tag,
+            timeoutMillis: ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS,
+            message: `${supervisor.target.label} did not answer ${tag} within ${ENVIRONMENT_RPC_UNARY_TIMEOUT_MILLIS / 1_000} seconds. Reconnect and retry; the original request was not retried with a new command id.`,
+          }),
+        ),
+    }),
     Effect.ensuring(completeObservation),
   );
 });

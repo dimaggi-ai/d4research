@@ -12,7 +12,7 @@ import {
   mcpToolPresentation as integrationToolPresentation,
   normalizeMcpHttpUrl as normalizedHttpUrl,
   normalizeMcpText as normalizedDisplayName,
-} from "./McpToolPresentation.ts";
+} from "@d4research/provider-core/server/mcpToolPresentation";
 
 type CodexLifecycleItem = EffectCodexSchema.V2ItemCompletedNotification["item"];
 

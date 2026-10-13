@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AgySettings } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -133,7 +133,7 @@ describe("quotePosixShellArgument", () => {
 describe("PTY wrapping round-trip", () => {
   it.effect("quotePosixShellArgument produces shell-safe arguments for script -c", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) !== "linux") return;
+      if ((yield* HostProcess.Platform) !== "linux") return;
       const args = ["/usr/bin/echo", "hello world", "it's a test", 'say "hi"'];
       const command = args.map(quotePosixShellArgument).join(" ");
       const output = NodeChildProcess.execFileSync(
@@ -153,7 +153,7 @@ describe("PTY wrapping round-trip", () => {
 it.layer(NodeServices.layer)("Agy provider health", (it) => {
   it.effect("uses a PTY for model discovery when Agy requires one", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) !== "linux") return;
+      if ((yield* HostProcess.Platform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-agy-health-")),
       );
@@ -177,7 +177,7 @@ it.layer(NodeServices.layer)("Agy provider health", (it) => {
 
   it.effect("PTY wrapping handles binary paths with spaces", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) !== "linux") return;
+      if ((yield* HostProcess.Platform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2 agy health ")),
       );
@@ -201,7 +201,7 @@ it.layer(NodeServices.layer)("Agy provider health", (it) => {
 
   it.effect("PTY wrapping handles realistic spinner + ANSI output", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) !== "linux") return;
+      if ((yield* HostProcess.Platform) !== "linux") return;
       const directory = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-agy-health-")),
       );

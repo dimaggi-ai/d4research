@@ -1,6 +1,5 @@
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -9,11 +8,12 @@ import { describe, expect } from "vite-plus/test";
 import { ProviderInstanceId } from "@d4research/contracts";
 import { createModelSelection } from "@d4research/shared/model";
 
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@d4research/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import { buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
+import * as Layer from "effect/Layer";
+import { buildThreadTitlePrompt } from "@d4research/provider-core/server/textGenerationPrompts";
 
 const makeStubTextGeneration = (
   overrides: Partial<TextGeneration.TextGeneration["Service"]>,
@@ -24,6 +24,7 @@ const makeStubTextGeneration = (
     generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
+    generateReviewGuide: () => Effect.die("generateReviewGuide stub not configured for this test"),
     ...overrides,
   });
 

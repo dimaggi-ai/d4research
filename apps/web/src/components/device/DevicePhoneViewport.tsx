@@ -11,6 +11,7 @@ import type {
   DeviceStreamClient,
 } from "@d4research/client-runtime/device/stream";
 import { bindPhoneTrackpad } from "./phoneTrackpad";
+import { observeResize } from "../../lib/observeResize";
 
 const loadPhoneViewer = () => import("@d4research/client-runtime/device/phone-viewer");
 
@@ -67,8 +68,7 @@ export function DevicePhoneViewport(props: {
       const { width, height } = host.getBoundingClientRect();
       viewerRef.current?.resize(width, height, window.devicePixelRatio);
     };
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
+    const stopObserving = observeResize(host, resize);
     const blur = () => {
       interactionRef.current?.end();
       trackpad?.cancel();
@@ -116,7 +116,7 @@ export function DevicePhoneViewport(props: {
       onInputCancel(null);
       onResetReady(null);
       onFrameListener(null);
-      observer.disconnect();
+      stopObserving();
       window.removeEventListener("blur", blur);
       viewerRef.current?.dispose();
       viewerRef.current = null;

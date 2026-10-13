@@ -1,4 +1,3 @@
-// @ts-nocheck
 // @effect-diagnostics anyUnknownInErrorContext:off
 // @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises the filesystem boundary.
 import * as NodeFS from "node:fs";
@@ -16,11 +15,11 @@ import { Command } from "effect/cli";
 
 import { cli } from "../binCli.ts";
 import { symlinksSupported } from "@d4research/shared/testing/symlinks";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 // These force a failure with chmod, which Windows ignores for directories and
 // cannot use to make a file unreadable, so the failure never happens there.
-const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 const runCli = (args: ReadonlyArray<string>) =>
   Command.runWith(cli, { version: "0.0.0" })(args).pipe(

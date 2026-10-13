@@ -55,7 +55,7 @@ export async function panelCloseReachability({ page, webUrl, workspace, screensh
       } else {
         await left.click();
         const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
-        await drawer.getByRole("button", { name: "Toggle Sidebar", exact: true }).click();
+        await drawer.getByRole("button", { name: "Toggle main sidebar", exact: true }).click();
         await drawer.waitFor({ state: "hidden" });
       }
       console.log(`PASS left/right panel close, width ${width}`);

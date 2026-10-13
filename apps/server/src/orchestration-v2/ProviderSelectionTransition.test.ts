@@ -6,8 +6,8 @@ import {
   ProviderInstanceId,
 } from "@d4research/contracts";
 
-import { AcpProviderCapabilitiesV2 } from "./Adapters/AcpAdapterV2.ts";
-import { acpSelectionTransition } from "./ProviderSelectionTransition.ts";
+import { AcpProviderCapabilitiesV2 } from "@d4research/provider-acp/server/adapter";
+import { acpSelectionTransition } from "@d4research/provider-core/server/selectionTransition";
 
 const selection = (model: string, effort = "medium"): ModelSelection => ({
   instanceId: ProviderInstanceId.make("acp_test"),

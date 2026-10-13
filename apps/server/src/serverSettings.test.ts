@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -10,6 +9,7 @@ import {
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  UsageLimitSourceId,
 } from "@d4research/contracts";
 import { createModelSelection } from "@d4research/shared/model";
 import { assert, it } from "@effect/vitest";
@@ -27,11 +27,18 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { sourceControlHostSecretName } from "./sourceControl/sourceControlHostSecrets.ts";
 import * as ServerConfig from "./config.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
-import { writeFileStringAtomically } from "./atomicWrite.ts";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
 import * as ServerSettingsModule from "./serverSettings.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJsonRecord = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
@@ -98,6 +105,88 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const provider = ProviderInstanceId.make("codex_work");
+      yield* Effect.all(
+        [
+          service.updateSettings({
+            setModelFavorites: [{ provider, model: "sol", favorite: true }],
+          }),
+          service.updateSettings({
+            setModelFavorites: [{ provider, model: "sol", favorite: true }],
+          }),
+          service.updateSettings({
+            setModelFavorites: [{ provider, model: "luna", favorite: true }],
+          }),
+          service.updateSettings({ setModelsHidden: [{ provider, model: "astra", hidden: true }] }),
+          service.updateSettings({ setModelsHidden: [{ provider, model: "luna", hidden: true }] }),
+          service.updateSettings({
+            setProviderModelOrder: { provider, modelOrder: ["luna", "sol"] },
+          }),
+        ],
+        { concurrency: "unbounded" },
+      );
+      const settings = yield* service.getSettings;
+      assert.deepEqual(settings.favorites?.map((entry) => entry.model).sort(), ["luna", "sol"]);
+      assert.deepEqual(settings.providerModelPreferences?.[provider]?.hiddenModels.toSorted(), [
+        "astra",
+        "luna",
+      ]);
+      assert.deepEqual(settings.providerModelPreferences?.[provider]?.modelOrder, ["luna", "sol"]);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+  it.effect("persists and broadcasts model preferences to other connected clients", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const provider = ProviderInstanceId.make("codex_work");
+        const patch = {
+          favorites: [{ provider, model: "sol" }],
+          providerModelPreferences: {
+            [provider]: { hiddenModels: ["astra"], modelOrder: ["sol"] },
+          },
+        };
+        const changes = yield* service.subscribeChanges;
+        yield* service.updateSettings(patch);
+        const received = Option.getOrThrow(yield* Stream.runHead(changes));
+        assert.deepEqual(received.favorites, patch.favorites);
+        assert.deepEqual(received.providerModelPreferences, patch.providerModelPreferences);
+        const saved = yield* decodeServerSettingsJson(
+          yield* fs.readFileString(config.settingsPath),
+        );
+        assert.deepEqual(saved.favorites, patch.favorites);
+        assert.deepEqual(saved.providerModelPreferences, patch.providerModelPreferences);
+        const hidden = yield* service.updateSettings({
+          setModelsHidden: [{ provider, model: "sol", hidden: true }],
+        });
+        assert.deepEqual(hidden.providerModelPreferences?.[provider], {
+          hiddenModels: ["astra", "sol"],
+          modelOrder: ["sol"],
+        });
+        const shown = yield* service.updateSettings({
+          setModelsHidden: [{ provider, model: "astra", hidden: false }],
+        });
+        assert.deepEqual(shown.providerModelPreferences?.[provider], {
+          hiddenModels: ["sol"],
+          modelOrder: ["sol"],
+        });
+        assert.deepEqual(
+          (yield* decodeServerSettingsJson(yield* fs.readFileString(config.settingsPath)))
+            .providerModelPreferences,
+          shown.providerModelPreferences,
+        );
+        yield* service.updateSettings({ favorites: [], providerModelPreferences: {} });
+        // An older device's delayed seed cannot undo a clear, even after persistence.
+        const migrated = yield* service.updateSettings({ migrateModelPreferences: patch });
+        assert.deepEqual(migrated.favorites, []);
+        assert.deepEqual(migrated.providerModelPreferences, {});
+      }),
+    ).pipe(Effect.provide(layerServerSettings())),
+  );
   it.effect("migrates saved token delivery to paragraph buffering without resetting settings", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
@@ -329,13 +418,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("decodes nested settings patches", () =>
     Effect.gen(function* () {
       assert.deepEqual(
-        yield* decodeSettingsPatch({ providers: { codex: { binaryPath: "/tmp/codex" } } }),
-        {
-          providers: { codex: { binaryPath: "/tmp/codex" } },
-        },
-      );
-
-      assert.deepEqual(
         yield* decodeSettingsPatch({
           textGenerationModelSelection: {
             options: [{ id: "fastMode", value: false }],
@@ -375,16 +457,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
 
       yield* serverSettings.updateSettings({
-        providers: {
-          codex: {
-            binaryPath: "/usr/local/bin/codex",
-            homePath: "/Users/julius/.codex",
-          },
-          claudeAgent: {
-            binaryPath: "/usr/local/bin/claude",
-            customModels: ["claude-custom"],
-          },
-        },
+        observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
         textGenerationModelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
           model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
@@ -400,33 +473,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       const next = yield* serverSettings.updateSettings({
-        providers: {
-          codex: {
-            binaryPath: "/opt/homebrew/bin/codex",
-          },
-        },
+        observability: { otlpMetricsUrl: "http://localhost:4318/v1/metrics" },
         textGenerationModelSelection: {
           options: [{ id: "fastMode", value: false }],
         },
       });
 
-      assert.deepEqual(next.providers.codex, {
-        enabled: true,
-        webSearch: true,
-        binaryPath: "/opt/homebrew/bin/codex",
-        homePath: "/Users/julius/.codex",
-        shadowHomePath: "",
-        launchArgs: "",
-        customModels: [],
-      });
-      assert.deepEqual(next.providers.claudeAgent, {
-        enabled: true,
-        binaryPath: "/usr/local/bin/claude",
-        homePath: "",
-        customModels: ["claude-custom"],
-        launchArgs: "",
-        autoCompactWindow: "",
-      });
+      assert.equal(next.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
+      assert.equal(next.observability.otlpMetricsUrl, "http://localhost:4318/v1/metrics");
       assert.deepEqual(
         next.textGenerationModelSelection,
         createModelSelection(
@@ -438,27 +492,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           ],
         ),
       );
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("persists dev pipelines and their scoped prompt files across service reads", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const dev = {
-        activeScenario: "repair",
-        scenarios: [
-          {
-            name: "repair",
-            pipelinePrompt: "Review with !codex:gpt-5.6-sol:rules.md",
-            promptFiles: [{ name: "rules.md", content: "Keep the public API stable." }],
-          },
-        ],
-      };
-
-      yield* serverSettings.updateSettings({ dev });
-      const reread = yield* serverSettings.getSettings;
-
-      assert.deepEqual(reread.dev, dev);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -544,18 +577,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const changes = yield* serverSettings.subscribeChanges;
 
         yield* serverSettings.updateSettings({
-          providers: {
-            codex: {
-              binaryPath: "/usr/local/bin/codex-next",
-            },
-          },
+          addProjectBaseDirectory: "~/next",
         });
 
         const firstChange = yield* changes.pipe(Stream.runHead, Effect.timeout("1 second"));
-        assert.equal(
-          Option.getOrUndefined(firstChange)?.providers.codex.binaryPath,
-          "/usr/local/bin/codex-next",
-        );
+        assert.equal(Option.getOrUndefined(firstChange)?.addProjectBaseDirectory, "~/next");
       }),
     ).pipe(Effect.provide(layerServerSettings())),
   );
@@ -601,7 +627,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const change = Option.getOrUndefined(yield* Stream.runHead(changes));
         const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
         // Inspect raw persisted JSON before schema decoding can apply defaults.
-        const persisted = JSON.parse(raw) as Record<string, unknown>;
+        const persisted = (yield* decodeJsonRecord(raw)) as Record<string, unknown>;
 
         assert.strictEqual(next.sidebarAutoSettleAfterDays, null);
         assert.isFalse(next.sidebarAutoSettleOnMerge);
@@ -677,19 +703,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   );
 
   it.effect(
-    "uses explicit provider instance enabled state over legacy provider enabled state",
+    "keeps a custom instance's selection when the driver's default instance is disabled",
     () =>
       Effect.gen(function* () {
         const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
         const instanceId = ProviderInstanceId.make("claude_openrouter");
 
         const next = yield* serverSettings.updateSettings({
-          providers: {
-            claudeAgent: {
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
               enabled: false,
             },
-          },
-          providerInstances: {
             [instanceId]: {
               driver: ProviderDriverKind.make("claudeAgent"),
               enabled: true,
@@ -723,6 +748,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           const fallbackInstanceId = ProviderInstanceId.make(fallbackId);
           const selection = { instanceId: writerId, model: "claude-sonnet-4-6" };
           const providerInstances = {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: false,
+            },
             [fallbackInstanceId]: {
               driver: ProviderDriverKind.make("codex"),
               enabled: true,
@@ -736,11 +765,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           };
 
           yield* serverSettings.updateSettings({
-            providers: Object.fromEntries(
-              Object.keys(DEFAULT_SERVER_SETTINGS.providers).map(
-                (provider) => [provider, { enabled: false }] as const,
-              ),
-            ),
             providerInstances,
             textGenerationModelSelection: selection,
           });
@@ -777,7 +801,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       ).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("skips explicitly disabled instances when choosing a legacy fallback", () =>
+  it.effect("skips explicitly disabled default instances when choosing a fallback", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const next = yield* serverSettings.updateSettings({
@@ -856,7 +880,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
         assert.deepEqual(next.sourceControlWriterModelSelection, sourceControlWriterModelSelection);
         assert.deepEqual(
-          ServerSettingsModule.resolveSourceControlWriterModelSelection(next),
+          ServerSettingsModule.resolveSourceControlWriterModelSelection(next, undefined, null),
           next.textGenerationModelSelection,
         );
         assert.deepEqual(
@@ -866,7 +890,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
         const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
         assert.deepEqual(
-          JSON.parse(raw).sourceControlWriterModelSelection,
+          (yield* decodeJsonRecord(raw)).sourceControlWriterModelSelection,
           sourceControlWriterModelSelection,
         );
 
@@ -880,7 +904,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           },
         });
         assert.deepEqual(
-          ServerSettingsModule.resolveSourceControlWriterModelSelection(restored),
+          ServerSettingsModule.resolveSourceControlWriterModelSelection(restored, undefined, null),
           sourceControlWriterModelSelection,
         );
       }).pipe(Effect.provide(layerServerSettings())),
@@ -956,72 +980,176 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("enables previously used providers from sparse settings files", () =>
+  it.effect("moves customized legacy provider settings into default instances on load", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
-        '{"providers":{"opencode":{"serverUrl":"http://127.0.0.1:4096"}}}',
+        yield* encodeJson({
+          addProjectBaseDirectory: "~/Development",
+          providers: {
+            codex: { binaryPath: "/opt/guard/bin/codex" },
+            claudeAgent: { enabled: false },
+            cursor: { enabled: false },
+            grok: { enabled: false },
+            opencode: { enabled: false },
+          },
+        }),
       );
-      yield* recordProviderUsage("opencode");
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.isFalse(settings.providers.grok.enabled);
-      assert.isTrue(settings.providers.opencode.enabled);
-      assert.isFalse(settings.providers.cursor.enabled);
-      assert.equal(settings.providers.opencode.serverUrl, "http://127.0.0.1:4096");
+      assert.deepEqual(settings.providerInstances, {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          config: { binaryPath: "/opt/guard/bin/codex" },
+        },
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: false,
+          config: {},
+        },
+      });
+      // Legacy adapters still read the provider map; the new instances coexist with it.
+      const persisted = yield* decodeJsonRecord(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+      );
+      assert.deepEqual(persisted.providers, {
+        codex: { binaryPath: "/opt/guard/bin/codex" },
+        claudeAgent: { enabled: false },
+      });
+      assert.equal(persisted.addProjectBaseDirectory, "~/Development");
+      assert.deepNestedPropertyVal(persisted, "providerInstances.codex", {
+        driver: "codex",
+        config: { binaryPath: "/opt/guard/bin/codex" },
+      });
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("preserves existing provider instances without explicit enabled flags", () =>
+  it.effect("keeps an explicit default instance over the legacy blob for its driver", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
-        '{"providerInstances":{"cursor_work":{"driver":"cursor","config":{}},"grok":{"driver":"grok","config":{}},"opencode_work":{"driver":"opencode","config":{"serverUrl":"http://127.0.0.1:4096"}},"opencode_unused":{"driver":"opencode","config":{}}}}',
+        yield* encodeJson({
+          providers: { codex: { binaryPath: "/legacy/codex" } },
+          providerInstances: {
+            codex: { driver: "codex", enabled: true, config: { binaryPath: "/explicit/codex" } },
+          },
+        }),
       );
-      yield* recordProviderUsage("cursor", "cursor_work");
-      yield* recordProviderUsage("grok", null);
-      yield* recordProviderUsage("opencode", "opencode_work");
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.isTrue(settings.providers.cursor.enabled);
-      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor_work")]?.enabled);
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("codex")], {
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        config: { binaryPath: "/explicit/codex" },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("enables previously used optional providers while migrating legacy settings", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        yield* encodeJson({
+          providers: { opencode: { serverUrl: "http://127.0.0.1:4096" }, cursor: {} },
+          providerInstances: {
+            cursor_work: { driver: "cursor", config: {} },
+            opencode_unused: { driver: "opencode", config: {} },
+          },
+        }),
+      );
+      yield* recordProviderUsage("opencode");
+      yield* recordProviderUsage("grok", null);
+      yield* recordProviderUsage("cursor", "cursor_work");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("opencode")], {
+        driver: ProviderDriverKind.make("opencode"),
+        enabled: true,
+        config: { serverUrl: "http://127.0.0.1:4096" },
+      });
+      // Used without any legacy blob or instance: the slot is created enabled.
       assert.isTrue(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
-      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("opencode_work")]?.enabled);
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor_work")]?.enabled);
+      // Using any cursor instance counts as opting into the driver.
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("cursor")]?.enabled);
       const unused = settings.providerInstances[ProviderInstanceId.make("opencode_unused")];
       assert.isDefined(unused);
       assert.isFalse(resolveProviderInstanceEnabled(unused));
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("preserves explicit provider disables in existing settings files", () =>
+  it.effect("keeps explicit legacy disables even when provider history shows use", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
-        '{"providers":{"grok":{"enabled":false},"opencode":{"enabled":false},"cursor":{"enabled":false}},"providerInstances":{"grok":{"driver":"grok","enabled":false,"config":{}},"opencode":{"driver":"opencode","config":{"enabled":false}},"cursor":{"driver":"cursor","enabled":false,"config":{}}}}',
+        yield* encodeJson({ providers: { grok: { enabled: false, binaryPath: "/opt/grok" } } }),
       );
       yield* recordProviderUsage("grok");
-      yield* recordProviderUsage("opencode");
-      yield* recordProviderUsage("cursor");
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.isFalse(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
-      assert.isFalse(settings.providers.cursor.enabled);
-      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("grok")]?.enabled);
-      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("opencode")]?.enabled);
-      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("cursor")]?.enabled);
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("grok")], {
+        driver: ProviderDriverKind.make("grok"),
+        enabled: false,
+        config: { binaryPath: "/opt/grok" },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("restores used providers when no legacy map was persisted", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+      yield* recordProviderUsage("grok");
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.deepEqual(settings.providerInstances, {
+        [ProviderInstanceId.make("grok")]: {
+          driver: ProviderDriverKind.make("grok"),
+          enabled: true,
+          config: {},
+        },
+      });
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("migrates legacy providers from an invalid file without rewriting it", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const raw =
+        '{"addProjectBaseDirectory":42,"continueThreadsAfterServerUpdate":"false","providers":{"codex":{"binaryPath":"/x"}}}';
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, raw);
+
+      const settings = yield* serverSettings.getSettings;
+
+      // The readable provider settings still apply, but the file stays for the user to repair.
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("codex")], {
+        driver: ProviderDriverKind.make("codex"),
+        config: { binaryPath: "/x" },
+      });
+      // An unreadable file may hold an opt-out, so threads are not resumed on a guess.
+      assert.isFalse(settings.continueThreadsAfterServerUpdate);
+      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), raw);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -1030,8 +1158,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      // The Providers UI writes providerInstances only, so the legacy providers
-      // map decodes to defaults where codex is enabled and listed first.
       yield* fileSystem.writeFileString(
         serverConfig.settingsPath,
         '{"providerInstances":{"codex":{"driver":"codex","enabled":false,"config":{}}}}',
@@ -1043,175 +1169,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("keeps unused providers disabled in existing sparse settings files", () =>
+  it.effect("keeps a default-off provider's new instance disabled and sparse on disk", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
-
-      const settings = yield* serverSettings.getSettings;
-
-      assert.isFalse(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
-      assert.isFalse(settings.providers.cursor.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("preserves provider history when no settings file exists", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* recordProviderUsage("grok");
-
-      const settings = yield* serverSettings.getSettings;
-
-      assert.isTrue(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
-      assert.isFalse(settings.providers.cursor.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("preserves provider history when the settings file is invalid", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{invalid json");
-      yield* recordProviderUsage("cursor");
-
-      const settings = yield* serverSettings.getSettings;
-
-      assert.isTrue(settings.providers.cursor.enabled);
-      assert.isFalse(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("preserves valid provider flags when another settings field is invalid", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(
-        serverConfig.settingsPath,
-        '{"addProjectBaseDirectory":42,"providers":{"cursor":{"enabled":false},"grok":{"enabled":true}}}',
-      );
-      yield* recordProviderUsage("cursor");
-
-      const settings = yield* serverSettings.getSettings;
-
-      assert.isFalse(settings.providers.cursor.enabled);
-      assert.isTrue(settings.providers.grok.enabled);
-      assert.isFalse(settings.providers.opencode.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("restores providers from persisted runtime sessions", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const sql = yield* SqlClient.SqlClient;
-      yield* sql`
-        INSERT INTO provider_session_runtime (
-          thread_id,
-          provider_name,
-          provider_instance_id,
-          adapter_key,
-          status,
-          last_seen_at
-        )
-        VALUES (
-          ${"thread-opencode-runtime"},
-          ${"opencode"},
-          ${"opencode"},
-          ${"opencode"},
-          ${"ready"},
-          ${"2026-08-25T00:00:00.000Z"}
-        )
-      `;
-
-      const settings = yield* serverSettings.getSettings;
-
-      assert.isFalse(settings.providers.grok.enabled);
-      assert.isTrue(settings.providers.opencode.enabled);
-      assert.isFalse(settings.providers.cursor.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("persists explicit disables after a provider has been used", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* recordProviderUsage("grok");
-
-      assert.isTrue((yield* serverSettings.getSettings).providers.grok.enabled);
-
-      const settings = yield* serverSettings.updateSettings({
-        providers: { grok: { enabled: false } },
-      });
-      assert.isFalse(settings.providers.grok.enabled);
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      assert.isFalse(JSON.parse(raw).providers.grok.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("restores Muse from history and preserves its explicit disable", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* recordProviderUsage("muse");
-
-      assert.isTrue((yield* serverSettings.getSettings).providers.muse.enabled);
-
-      const settings = yield* serverSettings.updateSettings({
-        providers: { muse: { enabled: false } },
-      });
-      assert.isFalse(settings.providers.muse.enabled);
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
-      assert.isFalse(JSON.parse(raw).providers.muse.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("persists explicit provider enables before their first use", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-
-      yield* serverSettings.updateSettings({
-        providers: {
-          cursor: { enabled: true },
-          grok: { enabled: true },
-          opencode: { enabled: true },
-        },
-      });
-      yield* serverSettings.updateSettings({ addProjectBaseDirectory: "~/Development" });
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      const persisted = JSON.parse(raw);
-      assert.isTrue(persisted.providers.cursor.enabled);
-      assert.isTrue(persisted.providers.grok.enabled);
-      assert.isTrue(persisted.providers.opencode.enabled);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("keeps optional providers disabled after a new installation writes settings", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-
-      const initial = yield* serverSettings.getSettings;
-      assert.isFalse(initial.providers.grok.enabled);
-      assert.isFalse(initial.providers.opencode.enabled);
-      assert.isFalse(initial.providers.cursor.enabled);
 
       const next = yield* serverSettings.updateSettings({
-        addProjectBaseDirectory: "~/Development",
         providerInstances: {
           [ProviderInstanceId.make("grok")]: {
             driver: ProviderDriverKind.make("grok"),
@@ -1220,19 +1184,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
 
-      assert.isFalse(next.providers.grok.enabled);
-      assert.isFalse(next.providers.opencode.enabled);
-      assert.isFalse(next.providers.cursor.enabled);
       const grok = next.providerInstances[ProviderInstanceId.make("grok")];
       assert.isDefined(grok);
       assert.isFalse(resolveProviderInstanceEnabled(grok));
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      const persisted = JSON.parse(raw);
-      assert.isFalse(persisted.providers.cursor.enabled);
-      assert.isFalse(persisted.providers.grok.enabled);
-      assert.isFalse(persisted.providers.opencode.enabled);
-      assert.isUndefined(persisted.providerInstances.grok.enabled);
+      const persisted = yield* decodeJsonRecord(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+      );
+      assert.isUndefined(persisted.providers);
+      assert.notNestedProperty(persisted, "providerInstances.grok.enabled");
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -1295,55 +1254,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("trims provider path settings when updates are applied", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-
-      const next = yield* serverSettings.updateSettings({
-        providers: {
-          codex: {
-            binaryPath: "  /opt/homebrew/bin/codex  ",
-            homePath: "   ",
-          },
-          claudeAgent: {
-            binaryPath: "  /opt/homebrew/bin/claude  ",
-          },
-          opencode: {
-            binaryPath: "  /opt/homebrew/bin/opencode  ",
-            serverUrl: "  http://127.0.0.1:4096  ",
-            serverPassword: "  secret-password  ",
-          },
-        },
-      });
-
-      assert.deepEqual(next.providers.codex, {
-        enabled: true,
-        webSearch: true,
-        binaryPath: "/opt/homebrew/bin/codex",
-        homePath: "",
-        shadowHomePath: "",
-        launchArgs: "",
-        customModels: [],
-      });
-      assert.deepEqual(next.providers.claudeAgent, {
-        enabled: true,
-        binaryPath: "/opt/homebrew/bin/claude",
-        homePath: "",
-        customModels: [],
-        launchArgs: "",
-        autoCompactWindow: "",
-      });
-      assert.deepEqual(next.providers.opencode, {
-        // OpenCode is disabled by default; this update only touches paths.
-        enabled: false,
-        binaryPath: "/opt/homebrew/bin/opencode",
-        serverUrl: "http://127.0.0.1:4096",
-        serverPassword: "secret-password",
-        customModels: [],
-      });
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
   it.effect("trims observability settings when updates are applied", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -1366,75 +1276,27 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("defaults blank binary paths to provider executables", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-
-      const next = yield* serverSettings.updateSettings({
-        providers: {
-          codex: {
-            binaryPath: "   ",
-          },
-          claudeAgent: {
-            binaryPath: "",
-          },
-        },
-      });
-
-      assert.equal(next.providers.codex.binaryPath, "codex");
-      assert.equal(next.providers.claudeAgent.binaryPath, "claude");
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("writes non-default settings and explicit optional provider defaults to disk", () =>
+  it.effect("writes only non-default settings to disk", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
-      const next = yield* serverSettings.updateSettings({
+      yield* serverSettings.updateSettings({
         addProjectBaseDirectory: "~/Development",
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",
-        },
-        providers: {
-          codex: {
-            binaryPath: "/opt/homebrew/bin/codex",
-          },
-          opencode: {
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
-          },
         },
         automaticGitFetchInterval: Duration.seconds(10),
       });
 
-      assert.equal(next.providers.codex.binaryPath, "/opt/homebrew/bin/codex");
-
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      assert.deepEqual(JSON.parse(raw), {
-        addProjectBaseDirectory: "~/Development",
+      assert.deepEqual(yield* decodeJsonRecord(raw), {
         autoResumeLimitedThreads: false,
+        addProjectBaseDirectory: "~/Development",
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",
-        },
-        providers: {
-          codex: {
-            binaryPath: "/opt/homebrew/bin/codex",
-          },
-          cursor: {
-            enabled: false,
-          },
-          grok: {
-            enabled: false,
-          },
-          muse: { enabled: false },
-          opencode: {
-            enabled: false,
-            serverUrl: "http://127.0.0.1:4096",
-            serverPassword: "secret-password",
-          },
         },
         backgroundActivity: {
           schemaVersion: 1,
@@ -1599,6 +1461,156 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "uses the same secret lifecycle for provider config, environment, host tokens, and quota keys",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const store = yield* ServerSecretStore.ServerSecretStore;
+        const instanceId = ProviderInstanceId.make("antigravity_secrets");
+        const saved = yield* service.updateSettings({
+          providerInstances: {
+            [instanceId]: {
+              driver: ProviderDriverKind.make("antigravity"),
+              config: { apiKey: "config-secret" },
+              environment: [
+                { name: "API_TOKEN", value: "env-secret", sensitive: true },
+                { name: "BASE_URL", value: "https://example.test", sensitive: false },
+              ],
+            },
+          },
+          sourceControlHosts: {
+            github: { tokens: { "github.com": "github-secret" } },
+            bitbucket: { email: "me@example.test", accessToken: "bitbucket-secret" },
+            gitcafe: { token: "gitcafe-secret" },
+          },
+          usageLimitSources: {
+            [UsageLimitSourceId.make("hub")]: {
+              kind: "cliproxy",
+              url: "https://hub.example.test",
+              managementKey: "quota-secret",
+              enabled: true,
+            },
+          },
+        });
+        const values = [
+          "config-secret",
+          "env-secret",
+          "github-secret",
+          "bitbucket-secret",
+          "gitcafe-secret",
+          "quota-secret",
+        ];
+        const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+        const disk = yield* fs.readFileString(config.settingsPath);
+        for (const value of values) {
+          assert.include(yield* encodeJson(saved), value);
+          assert.notInclude(yield* encodeJson(client), value);
+          assert.notInclude(disk, value);
+        }
+        assert.include(yield* encodeJson(client), "https://example.test");
+        assert.include(yield* encodeJson(client), "me@example.test");
+        const echoed = yield* service.updateSettings({
+          providerInstances: client.providerInstances,
+          sourceControlHosts: client.sourceControlHosts,
+          usageLimitSources: client.usageLimitSources,
+        });
+        for (const value of values) assert.include(yield* encodeJson(echoed), value);
+        const renamed = yield* service.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: { ...client.providerInstances[instanceId]!, displayName: "Renamed" },
+        });
+        assert.propertyVal(
+          renamed.providerInstances[instanceId]?.config,
+          "apiKey",
+          "config-secret",
+        );
+
+        for (const apiKey of ["replacement-secret", ""]) {
+          const changed = yield* service.updateProviderInstance({
+            operation: "upsert",
+            instanceId,
+            instance: { ...client.providerInstances[instanceId]!, config: { apiKey } },
+          });
+          assert.propertyVal(changed.providerInstances[instanceId]?.config, "apiKey", apiKey);
+          const redacted = ServerSettingsModule.redactServerSettingsForClient(changed);
+          assert.propertyVal(
+            redacted.providerInstances[instanceId]?.config,
+            "apiKey",
+            apiKey ? "••••••" : "",
+          );
+        }
+        // Restore the value so removing the instance below exercises deletion of both secrets.
+        yield* service.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: saved.providerInstances[instanceId]!,
+        });
+
+        const secretNames = [
+          "provider-config-YW50aWdyYXZpdHlfc2VjcmV0cw-YW50aWdyYXZpdHk-YXBpS2V5",
+          "provider-env-YW50aWdyYXZpdHlfc2VjcmV0cw-QVBJX1RPS0VO",
+          sourceControlHostSecretName({
+            kind: "github",
+            field: "tokens",
+            serverHost: "github.com",
+          }),
+          sourceControlHostSecretName({
+            kind: "bitbucket",
+            field: "accessToken",
+            serverHost: null,
+          }),
+          sourceControlHostSecretName({ kind: "gitcafe", field: "token", serverHost: null }),
+          "usage-limit-source-aHVi",
+        ];
+        for (const name of secretNames) {
+          assert.isTrue(Option.isSome(yield* store.get(name)), name);
+        }
+        yield* service.updateSettings({
+          providerInstances: {},
+          sourceControlHosts: {
+            github: { tokens: {} },
+            bitbucket: { accessToken: "" },
+            gitcafe: { token: "" },
+          },
+          usageLimitSources: { [UsageLimitSourceId.make("hub")]: null },
+        });
+        for (const name of secretNames) {
+          assert.isTrue(Option.isNone(yield* store.get(name)));
+        }
+      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
+  it.effect("moves a saved Antigravity key to the secret store when settings load", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.writeFileString(
+        config.settingsPath,
+        yield* encodeJson({
+          providerInstances: {
+            antigravity: { driver: "antigravity", config: { apiKey: "legacy-api-key" } },
+          },
+        }),
+      );
+      const saved = yield* service.getSettings;
+      assert.propertyVal(
+        saved.providerInstances[ProviderInstanceId.make("antigravity")]?.config,
+        "apiKey",
+        "legacy-api-key",
+      );
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), "legacy-api-key");
+      assert.notInclude(
+        yield* encodeJson(ServerSettingsModule.redactServerSettingsForClient(saved)),
+        "legacy-api-key",
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("stores sensitive provider instance environment values outside settings.json", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -1631,15 +1643,19 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
       assert.notInclude(raw, "sk-or-secret");
-      assert.deepEqual(JSON.parse(raw).providerInstances.codex_personal.environment, [
-        {
-          name: "OPENROUTER_API_KEY",
-          value: "",
-          sensitive: true,
-          valueRedacted: true,
-        },
-        { name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api", sensitive: false },
-      ]);
+      assert.deepNestedPropertyVal(
+        yield* decodeJson(raw),
+        "providerInstances.codex_personal.environment",
+        [
+          {
+            name: "OPENROUTER_API_KEY",
+            value: "",
+            sensitive: true,
+            valueRedacted: true,
+          },
+          { name: "ANTHROPIC_BASE_URL", value: "https://openrouter.ai/api", sensitive: false },
+        ],
+      );
 
       const roundTripped = yield* serverSettings.updateSettings({
         providerInstances: {
@@ -1663,7 +1679,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   );
 
   it.effect(
-    "keeps Bitbucket tokens in the secret store and tells clients only that one is set",
+    "keeps source control host secrets in the secret store and tells clients only that one is set",
     () =>
       Effect.gen(function* () {
         const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -1672,151 +1688,134 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const fileSystem = yield* FileSystem.FileSystem;
 
         const saved = yield* serverSettings.updateSettings({
-          bitbucket: { email: "me@example.com", accessToken: "bb-access", apiToken: "bb-api" },
+          sourceControlHosts: {
+            bitbucket: { email: "me@example.com", accessToken: "bb-access" },
+            github: { tokens: { "github.com": "ghp_dotcom", "ghe.acme.test": "ghp_ghe" } },
+          },
         });
-        assert.deepEqual(saved.bitbucket, {
+        assert.deepEqual(saved.sourceControlHosts.bitbucket, {
           email: "me@example.com",
           accessToken: "bb-access",
-          apiToken: "bb-api",
         });
-
         const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-        assert.notInclude(raw, "bb-access");
-        assert.notInclude(raw, "bb-api");
+        for (const secret of ["bb-access", "ghp_dotcom", "ghp_ghe"]) assert.notInclude(raw, secret);
         assert.include(raw, "me@example.com");
 
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).bitbucket;
-        assert.equal(forClient.email, "me@example.com");
-        assert.notInclude(forClient.accessToken, "bb-access");
-        assert.notInclude(forClient.apiToken, "bb-api");
-        assert.isAbove(forClient.accessToken.length, 0);
-        assert.isAbove(forClient.apiToken.length, 0);
+        const forClient =
+          ServerSettingsModule.redactServerSettingsForClient(saved).sourceControlHosts;
+        assert.equal(forClient.bitbucket?.email, "me@example.com");
+        assert.notInclude(String(forClient.bitbucket?.accessToken), "bb-access");
+        assert.isAbove(String(forClient.bitbucket?.accessToken).length, 0);
 
-        // A client echoing the redacted values back, or omitting them, keeps the saved tokens.
-        yield* serverSettings.updateSettings({ bitbucket: forClient });
-        yield* serverSettings.updateSettings({ bitbucket: { email: "other@example.com" } });
-        assert.deepEqual((yield* serverSettings.getSettings).bitbucket, {
-          email: "other@example.com",
-          accessToken: "bb-access",
-          apiToken: "bb-api",
-        });
-
-        const cleared = yield* serverSettings.updateSettings({ bitbucket: { accessToken: "" } });
-        assert.equal(cleared.bitbucket.accessToken, "");
-        assert.equal(cleared.bitbucket.apiToken, "bb-api");
-        assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
-        assert.equal(
-          ServerSettingsModule.redactServerSettingsForClient(cleared).bitbucket.accessToken,
-          "",
-        );
-      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
-  it.effect(
-    "keeps GitHub tokens per host in the secret store and tells clients only that one is set",
-    () =>
-      Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        const secrets = yield* ServerSecretStore.ServerSecretStore;
-        const serverConfig = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-
-        const saved = yield* serverSettings.updateSettings({
-          github: { tokens: { "GitHub.com": "ghp_dotcom", "ghe.acme.test": "ghp_ghe" } },
-        });
-        assert.deepEqual(saved.github.tokens, {
-          "github.com": "ghp_dotcom",
-          "ghe.acme.test": "ghp_ghe",
-        });
-        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-        assert.notInclude(raw, "ghp_dotcom");
-        assert.notInclude(raw, "ghp_ghe");
-
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).github;
-        assert.notInclude(forClient.tokens["github.com"]!, "ghp_dotcom");
-        assert.isAbove(forClient.tokens["github.com"]!.length, 0);
-
-        // Echoing the redacted values back keeps them; host and account changes leave tokens alone.
-        yield* serverSettings.updateSettings({ github: { tokens: forClient.tokens } });
+        // Echoing the redacted values back keeps them; other fields change on their own.
+        yield* serverSettings.updateSettings({ sourceControlHosts: forClient });
         yield* serverSettings.updateSettings({
-          github: { hosts: { "github.com": { enabled: true, account: "work" } } },
+          sourceControlHosts: { bitbucket: { email: "other@example.com" } },
         });
-        assert.deepEqual((yield* serverSettings.getSettings).github.tokens, {
+        const kept = (yield* serverSettings.getSettings).sourceControlHosts;
+        assert.deepEqual(kept.bitbucket, { email: "other@example.com", accessToken: "bb-access" });
+        assert.deepEqual(kept.github?.tokens, {
           "github.com": "ghp_dotcom",
           "ghe.acme.test": "ghp_ghe",
         });
 
-        // An empty token removes that host's token and nothing else.
+        // An empty value removes that secret, and one per server host leaves the others.
         const cleared = yield* serverSettings.updateSettings({
-          github: { tokens: { "github.com": "" } },
+          sourceControlHosts: {
+            bitbucket: { accessToken: "" },
+            github: {
+              tokens: {
+                "github.com": "",
+                "ghe.acme.test": (forClient.github!.tokens as Record<string, string>)[
+                  "ghe.acme.test"
+                ],
+              },
+            },
+          },
         });
-        assert.equal(cleared.github.tokens["github.com"] ?? "", "");
-        assert.equal(cleared.github.tokens["ghe.acme.test"], "ghp_ghe");
-        const remaining = yield* Effect.forEach(["github.com", "ghe.acme.test"], (host) =>
-          secrets.get(`github-token-${Buffer.from(host, "utf8").toString("base64url")}`),
-        );
-        assert.isTrue(Option.isNone(remaining[0]!));
-        assert.isTrue(Option.isSome(remaining[1]!));
+        assert.equal(cleared.sourceControlHosts.bitbucket?.accessToken, "");
+        const stored = (kind: string, field: string, serverHost: string | null) =>
+          secrets.get(sourceControlHostSecretName({ kind, field, serverHost }));
+        assert.isTrue(Option.isNone(yield* stored("bitbucket", "accessToken", null)));
+        assert.isTrue(Option.isNone(yield* stored("github", "tokens", "github.com")));
+        assert.isTrue(Option.isSome(yield* stored("github", "tokens", "ghe.acme.test")));
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
-  it.effect("removes a Bitbucket secret once its token is cleared by hand in settings.json", () =>
+  it.effect("keeps the retired keys for another load when a token cannot be copied", () => {
+    const cause = new ServerSecretStore.SecretStoreReadError({
+      resource: "bitbucket-access-token",
+      cause: PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "readFile",
+        pathOrDescriptor: "bitbucket-access-token",
+        description: "Secret backend unavailable.",
+      }),
+    });
+    const layerSettings = ServerSettingsModule.layer.pipe(
+      Layer.provide(layerFailingSecretStore(cause)),
+      Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
+      Layer.provideMerge(
+        Layer.fresh(
+          ServerConfig.layerTest(process.cwd(), {
+            prefix: "t3code-server-settings-legacy-failure-test-",
+          }),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const legacy = yield* encodeJson({
+        bitbucket: { email: "me@example.com", accessToken: "\u2022\u2022\u2022\u2022\u2022\u2022" },
+      });
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, legacy);
+
+      yield* Effect.exit(serverSettings.getSettings);
+
+      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), legacy);
+    }).pipe(Effect.provide(layerSettings));
+  });
+
+  it.effect("moves the retired bitbucket and github keys and their secrets on load", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const secrets = yield* ServerSecretStore.ServerSecretStore;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      // A token was saved, then the user deleted it from settings.json directly.
-      yield* secrets.set("bitbucket-access-token", new TextEncoder().encode("stale-token"));
-      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+      const marker = "\u2022\u2022\u2022\u2022\u2022\u2022";
+      yield* secrets.set("bitbucket-access-token", new TextEncoder().encode("bb-saved"));
+      yield* secrets.set(
+        `github-token-${Buffer.from("github.com", "utf8").toString("base64url")}`,
+        new TextEncoder().encode("ghp_saved"),
+      );
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        yield* encodeJson({
+          bitbucket: { email: "me@example.com", accessToken: marker },
+          github: {
+            hosts: { "github.com": { account: "work" } },
+            tokens: { "github.com": marker },
+          },
+        }),
+      );
 
-      yield* serverSettings.updateSettings({ cursorKeychainUsageEnabled: true });
+      const loaded = (yield* serverSettings.getSettings).sourceControlHosts;
 
+      assert.deepEqual(loaded.bitbucket, { email: "me@example.com", accessToken: "bb-saved" });
+      assert.deepEqual(loaded.github?.tokens, { "github.com": "ghp_saved" });
+      assert.deepEqual(loaded.github?.hosts, { "github.com": { account: "work" } });
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, '"bitbucket":{"email"');
+      assert.include(raw, "sourceControlHosts");
       assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
     }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
-  it.effect("migrates the legacy auto-resume preference to the V2 worker", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fs = yield* FileSystem.FileSystem;
-      const settings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fs.writeFileString(config.settingsPath, '{"autoResumeAfterUsageLimit":true}');
-      assert.isTrue((yield* settings.getSettings).autoResumeLimitedThreads);
-      yield* settings.updateSettings({ autoResumeLimitedThreads: false });
-      assert.isFalse((yield* settings.getSettings).autoResumeLimitedThreads);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("moves a hand-edited Bitbucket token into the secret store when settings load", () =>
-    Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const secrets = yield* ServerSecretStore.ServerSecretStore;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(
-        serverConfig.settingsPath,
-        '{"bitbucket":{"accessToken":"hand-edited-token"}}',
-      );
-
-      // Loading alone moves it: no settings update is needed.
-      const loaded = yield* serverSettings.getSettings;
-
-      assert.equal(loaded.bitbucket.accessToken, "hand-edited-token");
-      assert.notInclude(
-        yield* fileSystem.readFileString(serverConfig.settingsPath),
-        "hand-edited-token",
-      );
-      const stored = yield* secrets.get("bitbucket-access-token");
-      assert.equal(
-        Option.isSome(stored) ? new TextDecoder().decode(stored.value) : null,
-        "hand-edited-token",
-      );
-    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
-  );
-
   it.effect(
-    "moves a hand-edited Bitbucket token into the secret store when a client echoes the marker",
+    "moves a hand-edited source control token into the secret store when settings load",
     () =>
       Effect.gen(function* () {
         const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1824,24 +1823,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
         yield* fileSystem.writeFileString(
           serverConfig.settingsPath,
-          '{"bitbucket":{"email":"me@example.com","apiToken":"hand-edited-token"}}',
+          '{"sourceControlHosts":{"bitbucket":{"accessToken":"hand-edited-token"}}}',
         );
 
-        // The form resends the redacted token when only the email changes.
-        const forClient = ServerSettingsModule.redactServerSettingsForClient(
-          yield* serverSettings.getSettings,
-        ).bitbucket;
-        const updated = yield* serverSettings.updateSettings({
-          bitbucket: { email: "new@example.com", apiToken: forClient.apiToken },
-        });
+        // Loading alone moves it: no settings update is needed.
+        const loaded = yield* serverSettings.getSettings;
 
-        assert.equal(updated.bitbucket.apiToken, "hand-edited-token");
-        assert.equal((yield* serverSettings.getSettings).bitbucket.apiToken, "hand-edited-token");
+        assert.equal(loaded.sourceControlHosts.bitbucket?.accessToken, "hand-edited-token");
         assert.notInclude(
           yield* fileSystem.readFileString(serverConfig.settingsPath),
           "hand-edited-token",
         );
-      }).pipe(Effect.provide(layerServerSettings())),
+      }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
   it.effect("materializes provider secrets for terminal environment resolution", () =>
@@ -1896,7 +1889,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             ? Effect.fail(writeFailure)
             : fileSystem.rename(fromPath, toPath),
       });
-      const instanceId = ProviderInstanceId.make("codex_write_failure");
+      const instanceId = ProviderInstanceId.make("antigravity_write_failure");
       const layerSettings = layerServerSettings().pipe(
         Layer.provideMerge(Layer.succeed(FileSystem.FileSystem, failingFileSystem)),
       );
@@ -1908,9 +1901,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           operation: "upsert",
           instanceId,
           instance: {
-            driver: ProviderDriverKind.make("codex"),
+            driver: ProviderDriverKind.make("antigravity"),
             environment: [{ name: "OPENROUTER_API_KEY", value: "sk-kept", sensitive: true }],
-            config: {},
+            config: { apiKey: "config-kept" },
           },
         });
 
@@ -1920,9 +1913,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             operation: "upsert",
             instanceId,
             instance: {
-              driver: ProviderDriverKind.make("codex"),
+              driver: ProviderDriverKind.make("antigravity"),
               environment: [{ name: "OPENROUTER_API_KEY", value: "sk-new", sensitive: true }],
-              config: {},
+              config: { apiKey: "config-new" },
             },
           })
           .pipe(Effect.result);
@@ -1931,6 +1924,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           (yield* serverSettings.getSettings).providerInstances[instanceId]?.environment?.[0]
             ?.value,
           "sk-kept",
+        );
+        assert.propertyVal(
+          (yield* serverSettings.getSettings).providerInstances[instanceId]?.config,
+          "apiKey",
+          "config-kept",
         );
 
         const failed = yield* serverSettings
@@ -1941,6 +1939,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           (yield* serverSettings.getSettings).providerInstances[instanceId]?.environment?.[0]
             ?.value,
           "sk-kept",
+        );
+        assert.propertyVal(
+          (yield* serverSettings.getSettings).providerInstances[instanceId]?.config,
+          "apiKey",
+          "config-kept",
         );
       }).pipe(Effect.provide(layerSettings));
     }),
@@ -2023,9 +2026,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         yield* serverSettings.updateSettings({
           providerInstances: {
             [instanceId]: {
-              driver: ProviderDriverKind.make("codex"),
+              driver: ProviderDriverKind.make("antigravity"),
               environment: [{ name: "OPENROUTER_API_KEY", value: "sk-kept", sensitive: true }],
-              config: {},
+              config: { apiKey: "config-kept" },
             },
           },
         });
@@ -2035,9 +2038,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           .updateSettings({
             providerInstances: {
               [instanceId]: {
-                driver: ProviderDriverKind.make("codex"),
+                driver: ProviderDriverKind.make("antigravity"),
                 environment: [{ name: "OPENROUTER_API_KEY", value: "sk-new", sensitive: true }],
-                config: {},
+                config: { apiKey: "config-new" },
               },
             },
           })
@@ -2049,6 +2052,11 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           (yield* serverSettings.getSettings).providerInstances[instanceId]?.environment?.[0]
             ?.value,
           "sk-kept",
+        );
+        assert.propertyVal(
+          (yield* serverSettings.getSettings).providerInstances[instanceId]?.config,
+          "apiKey",
+          "config-kept",
         );
       }).pipe(Effect.provide(layerSettings));
     },
@@ -2128,7 +2136,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         projectSettingsOverrides: { [legacyProject]: null },
       });
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      const persisted = yield* decodeServerSettings(JSON.parse(raw));
+      const persisted = yield* decodeServerSettings(yield* decodeJsonRecord(raw));
       assert.isTrue(persisted.projectSettingsFolded);
       assert.isUndefined(persisted.projectSettingsOverrides[legacyProject]);
     }).pipe(Effect.provide(layerServerSettings())),
@@ -2154,9 +2162,67 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const settings = yield* serverSettings.getSettings;
       assert.isFalse(settings.projectSettingsFolded);
+      assert.isFalse(settings.continueThreadsAfterServerUpdate);
       assert.deepEqual(settings.projectSettingsOverrides, {});
       // The user's file is still there to repair; nothing was written over it.
       assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), broken);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+  it.effect("persists dev pipelines and their scoped prompt files across service reads", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const dev = {
+        activeScenario: "repair",
+        scenarios: [
+          {
+            name: "repair",
+            pipelinePrompt: "Review with !codex:gpt-5.6-sol:rules.md",
+            promptFiles: [{ name: "rules.md", content: "Keep the public API stable." }],
+          },
+        ],
+      };
+
+      yield* serverSettings.updateSettings({ dev });
+      const reread = yield* serverSettings.getSettings;
+
+      assert.deepEqual(reread.dev, dev);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+  it.effect("restores Muse from history and preserves its explicit disable", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* recordProviderUsage("muse");
+
+      assert.isTrue(
+        (yield* serverSettings.getSettings).providerInstances[ProviderInstanceId.make("muse")]!
+          .enabled,
+      );
+
+      const settings = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [ProviderInstanceId.make("muse")]: {
+            driver: ProviderDriverKind.make("muse"),
+            enabled: false,
+          },
+        },
+      });
+      assert.isFalse(settings.providerInstances[ProviderInstanceId.make("muse")]!.enabled);
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.nestedPropertyVal(yield* decodeJson(raw), "providerInstances.muse.enabled", false);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+  it.effect("migrates the legacy auto-resume preference to the V2 worker", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const settings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(config.settingsPath, '{"autoResumeAfterUsageLimit":true}');
+      assert.isTrue((yield* settings.getSettings).autoResumeLimitedThreads);
+      yield* settings.updateSettings({ autoResumeLimitedThreads: false });
+      assert.isFalse((yield* settings.getSettings).autoResumeLimitedThreads);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 });

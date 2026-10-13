@@ -1,3 +1,4 @@
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -44,7 +45,7 @@ exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} "$@"
 
 const junieAdapterTestLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3code-junie-adapter-test-",
-}).pipe(Layer.provideMerge(NodeServices.layer));
+}).pipe(Layer.provideMerge(NodeServices.layer), Layer.provideMerge(McpProviderSessions.layer));
 
 describe("resolveJunieModelSelection", () => {
   it("does not send the synthetic default model to Junie", () => {

@@ -2,9 +2,11 @@
 
 import * as NodePath from "node:path";
 
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import type * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -127,7 +129,7 @@ export class ElectronWindow extends Context.Service<
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   // The focus worker loads a native accessibility module. Start it on the first
   // capture reveal so users who never capture pay nothing at launch.
   let windowsForegroundFocus: ReturnType<typeof startWindowsForegroundFocusThread> | undefined;
@@ -345,27 +347,28 @@ export const make = Effect.gen(function* () {
         }
       }),
     destroyAll: Effect.gen(function* () {
-      let firstError: ElectronWindowOperationError | undefined;
+      let firstFailure: Cause.Cause<never> | undefined;
       for (const window of yield* listWindows) {
-        yield* Effect.try({
-          try: () => window.destroy(),
-          catch: (cause) =>
-            new ElectronWindowOperationError({
-              operation: "destroy-window",
-              platform,
-              windowId: window.id,
-              channel: null,
-              cause,
-            }),
-        }).pipe(
-          Effect.catch((error) =>
-            Effect.sync(() => {
-              firstError ??= error;
-            }),
-          ),
+        const exit = yield* Effect.exit(
+          Effect.try({
+            try: () => window.destroy(),
+            catch: (cause) =>
+              new ElectronWindowOperationError({
+                operation: "destroy-window",
+                platform,
+                windowId: window.id,
+                channel: null,
+                cause,
+              }),
+          }).pipe(Effect.orDie),
         );
+        if (Exit.isFailure(exit)) {
+          firstFailure ??= exit.cause;
+        }
       }
-      if (firstError) return yield* Effect.die(firstError);
+      if (firstFailure !== undefined) {
+        return yield* Effect.failCause(firstFailure);
+      }
     }),
     syncAllAppearance: Effect.fn("desktop.electron.window.syncAllAppearance")(function* <E, R>(
       sync: (window: Electron.BrowserWindow) => Effect.Effect<void, E, R>,

@@ -9,7 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
 
 // Bump to invalidate every previously written snapshot — e.g. after a model
 // discovery/parsing fix, so caches poisoned by the old code are ignored

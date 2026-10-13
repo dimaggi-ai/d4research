@@ -1,5 +1,5 @@
 import type { ContextMenuItem } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -114,7 +114,7 @@ const normalizePosition = (
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   let destructiveMenuIconCache: Option.Option<Electron.NativeImage> | undefined;
 
   const getDestructiveMenuIcon = (): Option.Option<Electron.NativeImage> => {

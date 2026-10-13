@@ -1,3 +1,4 @@
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@d4research/shared/proposedPlanText";
 import { memo, useState, useCallback } from "react";
 import {
   isAtomCommandInterrupted,
@@ -21,11 +22,9 @@ import type { ActivePlanState } from "../session-logic";
 import type { LatestProposedPlanState } from "../session-logic";
 import { formatTimestamp } from "../timestampFormat";
 import {
-  proposedPlanTitle,
   buildProposedPlanMarkdownFilename,
   normalizePlanMarkdownForExport,
   downloadPlanAsTextFile,
-  stripDisplayedPlanMarkdown,
 } from "../proposedPlan";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { projectEnvironment } from "~/state/projects";

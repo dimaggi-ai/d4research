@@ -4,11 +4,11 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@d4research/contracts";
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   dedupeProviderSkillsByName,
-  formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,

@@ -25,7 +25,7 @@ import {
   clampPercent,
   makeUnavailableUsageLimits,
   makeUsageLimits,
-} from "./providerUsageLimits.ts";
+} from "@d4research/provider-core/server/usageLimits";
 
 const SESSION_MINS = 5 * 60;
 const WEEK_MINS = 7 * 24 * 60;

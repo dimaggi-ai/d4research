@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "./config.ts";
 import {
@@ -52,8 +52,8 @@ export const readToolGuardStatus = Effect.fn("readToolGuardStatus")(function* ()
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const manifest = yield* readToolGuardManifest(managed.manifest);
   const binaryPath = yield* findToolGuardBinary(managed.binary);

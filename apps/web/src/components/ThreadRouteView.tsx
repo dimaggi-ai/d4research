@@ -19,6 +19,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 import {
   buildThreadRouteParams,
+  isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
   type ThreadRouteTarget,
 } from "../threadRoutes";
@@ -72,11 +73,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   );
   const serverThreadShell = serverThread;
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
-  const bootstrapComplete = shell.data?.snapshot._tag === "Some";
-  // A cached shell is enough to render, but not to call a thread missing:
-  // the URL may name a thread created since the cache was written. Only a
-  // shell synchronized with the server can rule a thread out.
-  const shellLive = shell.data?.status === "live";
+  const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shell.data?.status);
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
   );
@@ -146,7 +143,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }, [canonicalThreadRef, draftSession, navigate, target.kind]);
 
   useEffect(() => {
-    if (target.kind !== "server" || !shellLive) {
+    if (target.kind !== "server" || !bootstrapComplete) {
       return;
     }
     // Navigation already resolved onto this path, so a drop aimed here
@@ -159,7 +156,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         void navigate({ to: "/", replace: true });
       }
     }
-  }, [environmentHasAnyThreads, navigate, renderState, shellLive, target]);
+  }, [environmentHasAnyThreads, navigate, renderState, bootstrapComplete, target]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {

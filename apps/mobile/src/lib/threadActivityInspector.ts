@@ -1,5 +1,6 @@
 import type { V2ItemSupport } from "@d4research/client-runtime/state/item-support";
 import { toolItemForDisplay } from "@d4research/client-runtime/work-log/presentation";
+import { formatDiffCount } from "@d4research/client-runtime/diff-count";
 import type { ThreadId } from "@d4research/contracts";
 import { formatDuration } from "@d4research/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
@@ -160,7 +161,7 @@ export function buildThreadActivityInspector(
       if (item.additions !== undefined || item.deletions !== undefined) {
         fields.push({
           label: "Changes",
-          value: `+${item.additions ?? 0} −${item.deletions ?? 0}`,
+          value: `+${formatDiffCount(item.additions ?? 0)} −${formatDiffCount(item.deletions ?? 0)}`,
         });
       }
       break;
@@ -206,7 +207,10 @@ export function buildThreadActivityInspector(
         blocks,
         "Files",
         item.files
-          .map((file) => `${file.path}  +${file.additions} −${file.deletions}  ${file.kind}`)
+          .map(
+            (file) =>
+              `${file.path}  +${formatDiffCount(file.additions)} −${formatDiffCount(file.deletions)}  ${file.kind}`,
+          )
           .join("\n"),
       );
       break;

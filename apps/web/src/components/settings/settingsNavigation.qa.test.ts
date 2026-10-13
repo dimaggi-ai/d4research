@@ -10,10 +10,11 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/keybindings",
   "/settings/snap-shot",
   "/settings/providers",
+  "/settings/integrations",
+  "/settings/scheduled-tasks",
   "/settings/source-control",
   "/settings/research",
   "/settings/dev-pipelines",
-  "/settings/integrations",
   "/settings/storage",
   "/settings/connections",
   "/settings/tool-guard",
@@ -32,7 +33,8 @@ describe("settings navigation QA", () => {
 
   it("keeps screen labels and navigation buttons in sync", () => {
     expect(SETTINGS_NAV_ITEMS.map(({ to, label }) => [to, label])).toEqual(
-      Object.entries(SETTINGS_SECTION_LABELS),
+      // Diagnostics is a General settings detail page, not a sidebar section.
+      Object.entries(SETTINGS_SECTION_LABELS).filter(([to]) => to !== "/settings/diagnostics"),
     );
   });
 

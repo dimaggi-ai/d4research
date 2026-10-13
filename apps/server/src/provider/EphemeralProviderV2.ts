@@ -12,9 +12,9 @@ import {
 } from "@d4research/contracts";
 import { Data, DateTime, Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect";
 import type {
-  ProviderAdapterV2Shape,
+  ProviderAdapterV2,
   ProviderAdapterV2Event,
-} from "../orchestration-v2/ProviderAdapter.ts";
+} from "@d4research/provider-core/server/ProviderAdapter";
 
 export class EphemeralProviderError extends Data.TaggedError("EphemeralProviderError")<{
   readonly detail: string;
@@ -22,7 +22,7 @@ export class EphemeralProviderError extends Data.TaggedError("EphemeralProviderE
 
 /** Advisory sessions never register a durable thread or mint an MCP credential. */
 export const runEphemeralProviderV2 = Effect.fn("runEphemeralProviderV2")(function* (input: {
-  readonly adapter: ProviderAdapterV2Shape;
+  readonly adapter: ProviderAdapterV2["Service"];
   readonly threadId: ThreadId;
   readonly modelSelection: ModelSelection;
   readonly cwd: string;

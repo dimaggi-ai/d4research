@@ -17,8 +17,9 @@ import * as Equal from "effect/Equal";
  */
 import {
   defaultInstanceIdForDriver,
-  resolveProviderInstanceEnabled,
+  resolveProjectProviderInstanceEnabled,
   type ModelSelection,
+  type ProjectId,
   type ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -158,14 +159,16 @@ export function deriveProviderEntriesByEnvironment(
     readonly [
       string,
       ReadonlyArray<ServerProvider>,
-      Pick<ServerSettings, "providerInstances" | "providers">?,
+      Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">?,
     ]
   >,
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
   for (const [environmentId, providers, settings] of providersByEnvironment) {
     const derived = deriveProviderInstanceEntries(providers);
-    const entries = settings ? applyProviderInstanceSettings(derived, settings) : derived;
+    // One map per environment serves every project with a thread there, so
+    // there is no single project to scope `enabled` to; it stays machine-wide.
+    const entries = settings ? applyProviderInstanceSettings(derived, settings, null) : derived;
     byEnvironment.set(
       environmentId,
       new Map(entries.map((entry) => [entry.instanceId as string, entry] as const)),
@@ -180,19 +183,26 @@ export function deriveProviderEntriesByEnvironment(
  * settings write, so picker visibility must follow settings rather than waiting
  * for probe reconciliation.
  *
- * Only built-in default instances have a legacy `providers` entry. Every
- * other instance exists through `providerInstances`; if it is absent there,
- * its streamed snapshot is stale (for example immediately after deletion)
- * and is treated as disabled.
+ * A built-in default instance without a `providerInstances` entry keeps its
+ * streamed state, since the server runs it with default config. Any other
+ * instance missing from `providerInstances` is stale (for example
+ * immediately after deletion) and is treated as disabled.
+ *
+ * `projectId` folds in that project's `providerInstances[id].enabled` override
+ * (enable or disable in either direction over the machine value); `null`
+ * resolves the machine value only. It has no default: a caller that renders
+ * for a single project but forgets to pass it would silently show the
+ * machine's enablement instead of that project's, so passing `null` for a
+ * surface that isn't project-aware must be a deliberate choice, not an
+ * omission.
  */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> & {
+    readonly providers?: Readonly<Record<string, unknown>>;
+  },
+  projectId: ProjectId | null,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  const legacyProviders = settings.providers as Readonly<
-    Record<string, { readonly enabled?: boolean } | undefined>
-  >;
-
   const redundantInstanceIds = getRedundantProviderInstanceIds(settings);
   return entries
     .filter((entry) => !redundantInstanceIds.has(entry.instanceId))
@@ -200,14 +210,22 @@ export function applyProviderInstanceSettings(
       const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
         ? settings.providerInstances[entry.instanceId]
         : undefined;
-      const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
-        ? legacyProviders[entry.driverKind]
-        : undefined;
-      const enabled = explicitInstance
-        ? resolveProviderInstanceEnabled(explicitInstance)
-        : entry.isDefault && legacyProvider
-          ? (legacyProvider.enabled ?? entry.enabled)
-          : false;
+      const legacyProvider =
+        settings.providers && Object.hasOwn(settings.providers, entry.driverKind)
+          ? settings.providers[entry.driverKind]
+          : undefined;
+      const projectOverride =
+        projectId === null
+          ? undefined
+          : settings.projectSettingsOverrides[projectId]?.providerInstances?.[entry.instanceId]
+              ?.enabled;
+      const enabled =
+        projectOverride === undefined &&
+        explicitInstance === undefined &&
+        entry.isDefault &&
+        legacyProvider
+          ? ((configRecord(legacyProvider).enabled as boolean | undefined) ?? entry.enabled)
+          : resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
       if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
         return enabled === entry.enabled ? entry : { ...entry, enabled };
       }
@@ -368,21 +386,23 @@ export function resolveProviderDriverKindForInstanceSelection(
 
 /** Find custom instances that add only presentation metadata to an existing runtime. */
 export function getRedundantProviderInstanceIds(
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  settings: Pick<ServerSettings, "providerInstances"> & {
+    readonly providers?: Readonly<Record<string, unknown>>;
+  },
 ): ReadonlySet<ProviderInstanceId> {
   const redundant = new Set<ProviderInstanceId>();
   const instances = Object.entries(settings.providerInstances ?? {}).map(
     ([id, instance]) => [ProviderInstanceId.make(id), instance] as const,
   );
   const drivers = new Set<ProviderDriverKind>([
-    ...(Object.keys(settings.providers) as ProviderDriverKind[]),
+    ...(Object.keys(settings.providers ?? {}) as ProviderDriverKind[]),
     ...instances.map(([, instance]) => instance.driver),
   ]);
 
   for (const driver of drivers) {
     const defaultId = defaultInstanceIdForDriver(driver);
     const explicitDefault = settings.providerInstances?.[defaultId];
-    const legacyDefault = (settings.providers as Readonly<Record<string, unknown>>)[driver];
+    const legacyDefault = settings.providers?.[driver];
     const defaultInstance = explicitDefault ?? {
       driver,
       enabled: (configRecord(legacyDefault).enabled as boolean | undefined) ?? true,

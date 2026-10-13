@@ -76,12 +76,76 @@ Depending on your Tailscale setup, this may include:
 The Tailscale HTTPS endpoint uses the clean MagicDNS URL, such as
 `https://machine.tailnet.ts.net/`, and is off until you opt in. Turn on **Enable Tailscale HTTPS**
 on the **Tailscale HTTPS** row in **Settings** → **Connections**. The desktop app restarts the
-backend with the same server-side behavior as `t3 serve --tailscale-serve`, then the server asks
+backend with the same server-side behavior as `d4research serve --tailscale-serve`, then the server asks
 Tailscale Serve to proxy HTTPS traffic to the local backend. Turn the same switch off to stop it.
 
 The Tailscale support is an endpoint provider add-on. The core remote model still works without Tailscale: LAN HTTP endpoints, custom HTTPS endpoints, future tunnels, and SSH-launched environments all use the same saved environment and pairing flow.
 
 For `https://app.t3.codes`, prefer an HTTPS Tailnet or other HTTPS endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser mixed-content rules.
+
+Scan the QR code on your phone or paste the pairing URL into **Add environment**
+in the receiving app. Connection settings are under **Settings → Connections**
+on web and desktop and **Settings → Environments** on mobile. A loopback address
+such as `127.0.0.1` reaches only the device opening the link.
+
+Pairing authorizes that device for future connections. Use a fresh one-time link
+for each new device; you do not need the original token to reconnect. Links
+created in Settings can only be copied from the client that created them while
+its Connections page stays open. If you leave or reload that page, create
+another link to share.
+
+### Reach one machine several ways
+
+A machine can have more than one route: LAN, Tailscale, another VPN, a public
+URL, or SSH. An address in the `100.64.0.0/10` range shows as VPN unless the machine
+confirms it is on Tailscale. To add a route, choose **Add
+route** in the machine's route list.
+Pairing the same machine again over another address also adds a route instead
+of a second machine. A new route is placed by speed, in that order, and you can
+reorder routes at any time.
+
+While connected through a paired address, d4research also learns the
+machine's current LAN and Tailscale addresses and adds them as routes. When the
+machine's LAN address changes, for example after it joins another Wi-Fi network,
+the learned route follows it. The machine must allow network access for its LAN
+address to be learned. You can reorder a learned route, but not remove it; it
+goes away with the route it was learned through, or when the machine stops
+reporting that address.
+
+d4research connects over the first route that answers. Away from home, a LAN
+address that does not answer is checked briefly and skipped. It is only tried
+again, after the other routes, if none of them connect. While connected over a
+later route, d4research checks the earlier ones when your network changes, when you
+return to the app, and every minute, and moves back as soon as one works.
+
+On web and desktop, select the route count under the machine's name in
+**Settings → Connections** to see its routes. Drag a route to change the order,
+or remove it. On mobile, open the machine under **Settings → Environments** and
+choose **Edit**.
+
+Open **Permissions** next to **Routes** in web or desktop, or **Your permissions**
+in the mobile route details, to see what your current connection can do on that
+environment. For a remote environment, this is in its route details. Permissions
+shown there apply only to the route marked **In use**; other routes are not
+checked. Different routes may grant different permissions.
+
+### Balance new threads across machines
+
+Auto balance is off by default. On web and desktop, enable it in
+**Settings → Connections → Load balancing** to automatically choose a machine for
+new threads in projects grouped across connected environments. The section
+appears once two or more machines are switched on.
+Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
+memory available, **Less often** to reduce its share, or **Manual only** to exclude
+it from automatic selection. These are preferences, not fixed traffic percentages.
+Preferences are saved separately in each client.
+
+The composer checks eligible machines when choosing a draft's environment, then keeps
+that choice stable. Choose **Auto balance** again to check current resources, or choose
+a specific machine to override it. Choosing a branch or worktree also keeps the draft
+on that machine. Existing threads stay where they started. If resource checks are
+unavailable or all eligible machines are full, choose a machine manually to continue.
+Mobile keeps its manual environment selection.
 
 ### Option 2: Headless Server (CLI)
 
@@ -93,7 +157,7 @@ Run the source CLI from the checkout.
 node apps/server/src/bin.ts serve --host "$(tailscale ip -4)"
 ```
 
-`t3 serve` starts the server without opening a browser and prints:
+`d4research serve` starts the server without opening a browser and prints:
 
 - a connection string
 - a pairing token
@@ -190,7 +254,7 @@ The remote device does not need a long-lived secret up front.
 
 Instead:
 
-1. `t3 serve` issues a one-time owner pairing token.
+1. `d4research serve` issues a one-time owner pairing token.
 2. The remote device exchanges that token with the server.
 3. The server creates an authenticated session for that device.
 
@@ -210,9 +274,31 @@ Do not use hosted pairing for plain HTTP LAN URLs such as `http://192.168.x.y:37
 
 Hosted pairing does not proxy traffic through d4research; the browser connects directly to the backend URL in the pairing link.
 
+### Browser host setup
+
+macOS, Windows, and Linux desktops run the browser as is. Some Linux hosts need
+one-time setup: Ubuntu 23.10 and later block the sandbox the browser runs in,
+and minimal images and containers lack libraries it loads. When that happens,
+the server says so at startup, and browser tabs and HTML previews show the
+command to run on the host:
+
+```sh
+sudo node apps/server/src/bin.ts browser setup
+```
+
+The server shows the exact line for how you started it, such as
+`sudo node apps/server/src/bin.ts browser setup`, and keeps your `PATH` when Node is installed only
+for your user. Where `d4research` is not on your `PATH`, such as with only the
+desktop app installed, it names the full path of the app's own `d4research` instead. It allows Chrome's sandbox with an AppArmor profile and installs
+any missing libraries with apt. It is safe to run again. Without `sudo`, it
+only reports what it would change.
+
+The browser always runs in Chrome's sandbox. Where you cannot change the host,
+set `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
+
 ## Managing Access Later
 
-Use `t3 auth` to manage access after the initial pairing flow.
+Use `d4research auth` to manage access after the initial pairing flow.
 
 Typical uses:
 
@@ -220,7 +306,7 @@ Typical uses:
 - inspect active sessions
 - revoke old pairing links or sessions
 
-Use `t3 auth --help` and the nested subcommand help pages for the full reference.
+Use `d4research auth --help` and the nested subcommand help pages for the full reference.
 
 ## Security Notes
 
@@ -228,4 +314,4 @@ Use `t3 auth --help` and the nested subcommand help pages for the full reference
 - Prefer binding `--host` to a trusted private address, such as a Tailnet IP, instead of exposing the server broadly.
 - Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
 - Hosted pairing links keep the credential in the URL hash so it is not sent to the hosted app server, but it can still be exposed through browser history, screenshots, logs, or copy/paste.
-- Use `t3 auth` to revoke credentials or sessions you no longer trust.
+- Use `d4research auth` to revoke credentials or sessions you no longer trust.

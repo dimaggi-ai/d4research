@@ -1,5 +1,5 @@
 // @effect-diagnostics anyUnknownInErrorContext:off
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -33,7 +33,7 @@ export const runDefaultServerCommand = (flags: CliServerFlags) =>
     if (Option.isSome(flags.cwd)) {
       const cwd = flags.cwd.value.trim();
       const fs = yield* FileSystem.FileSystem;
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const explicitPath =
         cwd === "." ||
         cwd === ".." ||

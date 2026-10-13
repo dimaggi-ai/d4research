@@ -1,7 +1,7 @@
 // @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - verifies generated remote scripts using real shell and Node processes.
 import * as Effect from "effect/Effect";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -15,7 +15,7 @@ const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
 it.effect("finds Android Studio Java for a non-interactive SSH session", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcessPlatform) === "win32") return;
+    if ((yield* HostProcess.Platform) === "win32") return;
     yield* Effect.promise(async () => {
       const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-java-"));
       try {
@@ -39,7 +39,7 @@ it.effect("finds Android Studio Java for a non-interactive SSH session", () =>
 
 it.effect("preserves shell metacharacters and newlines in remote arguments", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcessPlatform) === "win32") return;
+    if ((yield* HostProcess.Platform) === "win32") return;
     yield* Effect.promise(async () => {
       const value = "quotes ' \" ; $(echo expanded) $HOME\nnext line";
       const result = await exec("sh", ["-c", `printf %s ${quoteRemoteArg(value)}`]);
@@ -51,7 +51,7 @@ it.effect("preserves shell metacharacters and newlines in remote arguments", () 
 describe("remote helper lifecycle", () => {
   it.effect("reuses its own healthy helpers and stops only its own runtime", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) === "win32") return;
+      if ((yield* HostProcess.Platform) === "win32") return;
       yield* Effect.promise(async () => {
         const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-remote-script-"));
         const bin = NodePath.join(home, "bin");

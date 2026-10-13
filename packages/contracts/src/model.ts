@@ -182,13 +182,16 @@ export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
 export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
+/** Let Muse pick the account's default model. Never send this ID to Muse. */
+export const MUSE_DEFAULT_MODEL = "default";
+
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-fable-5-1",
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",
-  [MUSE_DRIVER_KIND]: "default",
+  [MUSE_DRIVER_KIND]: MUSE_DEFAULT_MODEL,
   [JUNIE_DRIVER_KIND]: "default",
   [ACP_REGISTRY_DRIVER_KIND]: "default",
   // "default" defers to the user's own Pi settings.json model selection.
@@ -266,7 +269,7 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
-  [MUSE_DRIVER_KIND]: "Muse",
+  [MUSE_DRIVER_KIND]: "Muse Code",
   [JUNIE_DRIVER_KIND]: "Junie",
   [ACP_REGISTRY_DRIVER_KIND]: "ACP Registry",
   [PI_DRIVER_KIND]: "Pi",

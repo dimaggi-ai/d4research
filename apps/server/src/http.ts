@@ -7,6 +7,7 @@ import {
   EnvironmentHttpApi,
 } from "@d4research/contracts";
 import { isDevProxiedPath } from "@d4research/shared/devProxy";
+import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@d4research/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@d4research/shared/observability";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -27,10 +28,10 @@ import {
   HttpServerRespondable,
 } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
-import { OtlpTracer, OtlpSerialization } from "effect/observability";
+import { OtlpTracer } from "effect/observability";
 
 import * as ServerConfig from "./config.ts";
-import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import { ASSET_ROUTE_PREFIX, readMcpAppHtml, resolveAsset } from "./assets/AssetAccess.ts";
 import { githubMediaResponse } from "./assets/GitHubMediaFetch.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
@@ -50,7 +51,11 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
-import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import {
+  browserApiCorsAllowedHeaders,
+  browserApiCorsAllowedMethods,
+  DESKTOP_RENDERER_ORIGINS,
+} from "./httpCors.ts";
 import { readToolGuardStatus } from "./toolGuardStatus.ts";
 import {
   manageToolGuard,
@@ -113,14 +118,14 @@ const MAX_HANDOFF_TRANSCRIPT_CHARACTERS = 60_000;
 export const isValidHandoffMemoryText = (text: string): boolean =>
   text.length > 0 && text.length <= MAX_HANDOFF_MEMORY_CHARACTERS;
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
-const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
 // out of reach. Relative sibling assets still load through their signed URLs.
 // No modals: agent HTML can open without a click (inline renders, and mobile
 // loads it as the top document), and must not raise blocking dialogs.
-const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
+const HTML_CONTENT_SECURITY_POLICY =
+  "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads";
 
 // Types a browser may render as a document if a proxy strips the disposition
 // header. Downloads of these fall back to octet-stream.
@@ -227,12 +232,30 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     readonly fileName?: string;
     readonly mimeType?: string;
     readonly file?: OpenMediaFile;
+    readonly renderIntent?: "mcp-app";
   },
   rangeHeader?: string,
   ifRangeHeader?: string,
   method: "GET" | "HEAD" = "GET",
 ) {
   const headers = assetResponseHeaders(asset.path, asset);
+  if (
+    asset.renderIntent === "mcp-app" &&
+    !asset.download &&
+    headers["Content-Type"] === "text/html; charset=utf-8"
+  ) {
+    const bytes = yield* readMcpAppHtml(asset.path);
+    if (bytes === null) {
+      return HttpServerResponse.text("MCP app is too large to preview.", { status: 413 });
+    }
+    const body = new TextEncoder().encode(
+      injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(new TextDecoder().decode(bytes))),
+    );
+    headers["Content-Length"] = String(body.byteLength);
+    return method === "HEAD"
+      ? HttpServerResponse.empty({ status: 200, headers })
+      : HttpServerResponse.uint8Array(body, { headers });
+  }
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
   const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
@@ -848,7 +871,7 @@ export const makeMemoAttachmentRouteLayer = <R>(
           ...listed,
         });
       }).pipe(
-        Effect.catchTag("MemoryConnectorError", memoConnectorErrorResponse),
+        Effect.catchTags({ MemoryConnectorError: memoConnectorErrorResponse }),
         Effect.orElseSucceed(() =>
           memoAttachmentJson(
             { ok: false, message: "Local Memo could not list stored attachments." },
@@ -903,7 +926,7 @@ export const makeMemoAttachmentRouteLayer = <R>(
         }
         return memoAttachmentJson({ ok: true, ...deleted });
       }).pipe(
-        Effect.catchTag("MemoryConnectorError", memoConnectorErrorResponse),
+        Effect.catchTags({ MemoryConnectorError: memoConnectorErrorResponse }),
         Effect.orElseSucceed(() =>
           memoAttachmentJson(
             { ok: false, message: "Local Memo could not delete the attachment." },
@@ -979,14 +1002,15 @@ export const handoffCompressRouteLayer = HttpRouter.add(
         { headers: { "cache-control": "no-store" } },
       );
     }).pipe(
-      Effect.catchTag("HandoffCompressionError", (error) =>
-        Effect.succeed(
-          HttpServerResponse.jsonUnsafe(
-            { ok: false, message: error.detail },
-            { status: 502, headers: { "cache-control": "no-store" } },
+      Effect.catchTags({
+        HandoffCompressionError: (error) =>
+          Effect.succeed(
+            HttpServerResponse.jsonUnsafe(
+              { ok: false, message: error.detail },
+              { status: 502, headers: { "cache-control": "no-store" } },
+            ),
           ),
-        ),
-      ),
+      }),
       Effect.orElseSucceed(() =>
         HttpServerResponse.jsonUnsafe(
           { ok: false, message: "Context compression failed." },

@@ -1,3 +1,4 @@
+import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { JunieSettings, ProviderDriverKind, type ServerProvider } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -8,8 +9,8 @@ import { ChildProcessSpawner } from "effect/process";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
-import { makeGrokTextGeneration } from "../../textGeneration/GrokTextGeneration.ts";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
+import { makeGrokTextGeneration } from "@d4research/provider-grok/testing";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeJunieAcpRuntime } from "../acp/JunieAcpSupport.ts";
 import { makeJunieAdapter } from "../Layers/JunieAdapter.ts";
@@ -17,25 +18,25 @@ import {
   buildInitialJunieProviderSnapshot,
   checkJunieProviderStatus,
 } from "../Layers/JunieProvider.ts";
-import { ProviderEventLoggers } from "../ProviderEventLoggers.ts";
-import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { ProviderEventLoggers } from "@d4research/provider-core/server/ProviderEventLoggers";
+import { makeManagedServerProvider } from "@d4research/provider-core/server/managedProvider";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
-} from "../ProviderDriver.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+} from "@d4research/provider-core/server/driver";
+import type { ServerProviderDraft } from "@d4research/provider-core/server/snapshotProbe";
+import { mergeProviderInstanceEnvironment } from "@d4research/provider-core/server/instanceEnvironment";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   makeStaticProviderMaintenanceResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
-} from "../providerMaintenance.ts";
+} from "@d4research/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "../providerUpdateSettings.ts";
+} from "@d4research/provider-core/server/snapshotSettings";
 
 const decodeSettings = Schema.decodeSync(JunieSettings);
 const DRIVER_KIND = ProviderDriverKind.make("junie");
@@ -51,7 +52,8 @@ export type JunieDriverEnv =
   | Path.Path
   | ProviderEventLoggers
   | ServerConfig
-  | ServerSettingsService;
+  | ProviderHost.ProviderHost
+  | McpProviderSessions.McpProviderSessions;
 
 const withIdentity =
   (input: {
@@ -78,9 +80,9 @@ export const JunieDriver: ProviderDriver<JunieSettings, JunieDriverEnv> = {
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const serverSettings = yield* ServerSettingsService;
+
       const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -114,7 +116,7 @@ export const JunieDriver: ProviderDriver<JunieSettings, JunieDriverEnv> = {
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
       );
-      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<JunieSettings>>({
         resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
         getSettings: snapshotSettings.getSettings,

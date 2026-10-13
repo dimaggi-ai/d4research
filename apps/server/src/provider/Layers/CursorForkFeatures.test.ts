@@ -1,3 +1,4 @@
+import * as CursorKeychain from "@d4research/provider-cursor/server/CursorKeychain";
 import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -5,27 +6,40 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type * as Crypto from "effect/Crypto";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { describe, expect, it } from "vite-plus/test";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { describe, expect, it } from "@effect/vitest";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { cursorUsageResponseToLimits, readCursorUsageLimits } from "../cursorUsageLimits.ts";
+import {
+  cursorUsageResponseToLimits,
+  readCursorUsageLimits,
+} from "@d4research/provider-cursor/server/usageLimits";
 import {
   discoverCursorSkills,
   hasCursorSkillMention,
   probeCursorSkills,
   rewriteCursorSkillMentions,
-} from "../Drivers/CursorSkills.ts";
-const runNode = <A, E>(
+} from "@d4research/provider-cursor/server/skills";
+const withNodeServices = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
+    | ChildProcessSpawner.ChildProcessSpawner
+    | Crypto.Crypto
+    | FileSystem.FileSystem
+    | Path.Path
+    | CursorKeychain.CursorKeychain
   >,
-): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)));
+) =>
+  effect.pipe(
+    Effect.provideService(CursorKeychain.CursorKeychain, {
+      accessToken: Effect.die("must not read Keychain before opt-in"),
+    }),
+    Effect.provide(NodeServices.layer),
+  );
 
 describe("Cursor skills", () => {
-  it("discovers recursive project skills with project precedence", async () =>
-    await runNode(
+  it.effect("discovers recursive project skills with project precedence", () =>
+    withNodeServices(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -101,10 +115,11 @@ describe("Cursor skills", () => {
           (yield* probeCursorSkills(workspace, { HOME: userHome }).pipe(Effect.result))._tag,
         ).toBe("Failure");
       }),
-    ));
+    ),
+  );
 
-  it("treats a symlinked skill outside the root as a package boundary", async () =>
-    await runNode(
+  it.effect("treats a symlinked skill outside the root as a package boundary", () =>
+    withNodeServices(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -151,7 +166,8 @@ describe("Cursor skills", () => {
           (yield* probeCursorSkills(workspace, { HOME: userHome }).pipe(Effect.result))._tag,
         ).toBe("Success");
       }),
-    ));
+    ),
+  );
 
   it("rewrites only discovered skill mentions into Cursor slash invocations", () => {
     expect(hasCursorSkillMention("use $Review_Pr:V2 here")).toBe(true);
@@ -249,8 +265,8 @@ describe("Cursor usage limits", () => {
     ).toEqual([{ id: "totalPercentUsed", kind: "monthly", label: "Overall", usedPercent: 100 }]);
   });
 
-  it("reads the instance's credentials and endpoint even when usage enabled is false", async () => {
-    await runNode(
+  it.effect("reads the instance's credentials and endpoint even when usage enabled is false", () =>
+    withNodeServices(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -284,154 +300,174 @@ describe("Cursor usage limits", () => {
             { apiEndpoint: "https://cursor.example/" },
             { XDG_CONFIG_HOME: directory, HOME: directory, AGENT_CLI_CREDENTIAL_STORE: "file" },
           ).pipe(
-            Effect.provideService(HostProcessPlatform, platform),
+            Effect.provideService(HostProcess.Platform, platform),
             Effect.provideService(HttpClient.HttpClient, client),
           );
           expect(limits.windows[0]?.usedPercent).toBe(42);
         }
       }).pipe(Effect.scoped),
-    );
-  });
+    ),
+  );
 
-  it("never reads stale files for keychain or memory logins, but accepts an explicit auth token", async () => {
-    for (const platform of ["linux", "darwin"] as const) {
-      for (const token of [undefined, "explicit-token"]) {
-        const limits = await runNode(
-          readCursorUsageLimits(
-            { apiEndpoint: "" },
-            {
-              AGENT_CLI_CREDENTIAL_STORE: platform === "linux" ? "memory" : "default",
-              ...(token ? { CURSOR_AUTH_TOKEN: token } : {}),
-            },
-            false,
-            async () => {
-              throw new Error("must not read Keychain before opt-in");
-            },
-          ).pipe(
-            Effect.provideService(HostProcessPlatform, platform),
-            Effect.provideService(
-              FileSystem.FileSystem,
-              FileSystem.makeNoop({
-                readFileString: () => Effect.die("must not read an unrelated credential file"),
+  it.effect(
+    "never reads stale files for keychain or memory logins, but accepts an explicit auth token",
+    () =>
+      Effect.gen(function* () {
+        for (const platform of ["linux", "darwin"] as const) {
+          for (const token of [undefined, "explicit-token"]) {
+            const limits = yield* withNodeServices(
+              readCursorUsageLimits(
+                { apiEndpoint: "" },
+                {
+                  AGENT_CLI_CREDENTIAL_STORE: platform === "linux" ? "memory" : "default",
+                  ...(token ? { CURSOR_AUTH_TOKEN: token } : {}),
+                },
+                false,
+              ).pipe(
+                Effect.provideService(HostProcess.Platform, platform),
+                Effect.provideService(
+                  FileSystem.FileSystem,
+                  FileSystem.makeNoop({
+                    readFileString: () => Effect.die("must not read an unrelated credential file"),
+                  }),
+                ),
+                Effect.provideService(
+                  HttpClient.HttpClient,
+                  HttpClient.make((request) => {
+                    expect(token).toBe("explicit-token");
+                    expect(request.headers.authorization).toBe("Bearer explicit-token");
+                    return Effect.succeed(
+                      HttpClientResponse.fromWeb(
+                        request,
+                        Response.json({ planUsage: { totalPercentUsed: 10 } }),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            );
+            if (token) expect(limits.windows[0]?.usedPercent).toBe(10);
+            else expect(limits.unavailable?.reason).toBe("unsupported");
+          }
+        }
+      }),
+  );
+
+  it.effect("reads the default macOS Cursor login from Keychain for limits", () =>
+    Effect.gen(function* () {
+      const limits = yield* withNodeServices(
+        readCursorUsageLimits({ apiEndpoint: "" }, {}, true).pipe(
+          Effect.provideService(CursorKeychain.CursorKeychain, {
+            accessToken: Effect.succeed("keychain-token"),
+          }),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.makeNoop({
+              readFileString: () => Effect.die("must not read a stale credential file"),
+            }),
+          ),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) => {
+              expect(request.headers.authorization).toBe("Bearer keychain-token");
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  Response.json({ planUsage: { totalPercentUsed: 42 } }),
+                ),
+              );
+            }),
+          ),
+        ),
+      );
+      expect(limits.windows[0]?.usedPercent).toBe(42);
+    }),
+  );
+
+  it.effect("reports a Keychain initialization failure without failing the provider refresh", () =>
+    Effect.gen(function* () {
+      const limits = yield* withNodeServices(
+        readCursorUsageLimits({ apiEndpoint: "" }, {}, true).pipe(
+          Effect.provideService(CursorKeychain.CursorKeychain, {
+            accessToken: Effect.fail(
+              new CursorKeychain.CursorKeychainReadError({
+                cause: new Error("Keychain initialization failed"),
               }),
             ),
+          }),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("must not request limits without a login")),
+          ),
+        ),
+      );
+      expect(limits.unavailable?.reason).toBe("probeFailed");
+    }),
+  );
+
+  it.effect("does not read Keychain or send its token to a custom endpoint", () =>
+    Effect.gen(function* () {
+      for (const [apiEndpoint, environment] of [
+        ["http://localhost:3000", {}],
+        ["", { CURSOR_API_ENDPOINT: "http://localhost:3000" }],
+        ["https://cursor-proxy.example", {}],
+        ["", { CURSOR_API_ENDPOINT: "https://cursor-proxy.example" }],
+      ] as const) {
+        const limits = yield* withNodeServices(
+          readCursorUsageLimits({ apiEndpoint }, environment, true).pipe(
+            Effect.provideService(CursorKeychain.CursorKeychain, {
+              accessToken: Effect.die("must not read Keychain for a custom endpoint"),
+            }),
+            Effect.provideService(HostProcess.Platform, "darwin"),
             Effect.provideService(
               HttpClient.HttpClient,
-              HttpClient.make((request) => {
-                expect(token).toBe("explicit-token");
-                expect(request.headers.authorization).toBe("Bearer explicit-token");
-                return Effect.succeed(
-                  HttpClientResponse.fromWeb(
-                    request,
-                    Response.json({ planUsage: { totalPercentUsed: 10 } }),
-                  ),
-                );
-              }),
+              HttpClient.make(() => Effect.die("must not send a Keychain credential to a proxy")),
             ),
           ),
         );
-        if (token) expect(limits.windows[0]?.usedPercent).toBe(10);
-        else expect(limits.unavailable?.reason).toBe("unsupported");
+        expect(limits.unavailable?.reason).toBe("unsupported");
+        expect(limits.unavailable?.message).toContain("default Cursor endpoint");
       }
-    }
-  });
+    }),
+  );
 
-  it("reads the default macOS Cursor login from Keychain for limits", async () => {
-    const limits = await runNode(
-      readCursorUsageLimits({ apiEndpoint: "" }, {}, true, async () => "keychain-token").pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.makeNoop({
-            readFileString: () => Effect.die("must not read a stale credential file"),
-          }),
-        ),
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make((request) => {
-            expect(request.headers.authorization).toBe("Bearer keychain-token");
-            return Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                Response.json({ planUsage: { totalPercentUsed: 42 } }),
-              ),
-            );
-          }),
-        ),
-      ),
-    );
-    expect(limits.windows[0]?.usedPercent).toBe(42);
-  });
-
-  it("reports a Keychain initialization failure without failing the provider refresh", async () => {
-    const limits = await runNode(
-      readCursorUsageLimits({ apiEndpoint: "" }, {}, true, async () => {
-        throw new Error("Keychain initialization failed");
-      }).pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make(() => Effect.die("must not request limits without a login")),
-        ),
-      ),
-    );
-    expect(limits.unavailable?.reason).toBe("probeFailed");
-  });
-
-  it("does not read Keychain or send its token to a custom endpoint", async () => {
-    for (const [apiEndpoint, environment] of [
-      ["http://localhost:3000", {}],
-      ["", { CURSOR_API_ENDPOINT: "http://localhost:3000" }],
-      ["https://cursor-proxy.example", {}],
-      ["", { CURSOR_API_ENDPOINT: "https://cursor-proxy.example" }],
-    ] as const) {
-      const limits = await runNode(
-        readCursorUsageLimits({ apiEndpoint }, environment, true, async () => {
-          throw new Error("must not read Keychain for a custom endpoint");
-        }).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+  it.effect("reports failed requests without exposing credentials or response bodies", () =>
+    Effect.gen(function* () {
+      const limits = yield* withNodeServices(
+        readCursorUsageLimits({ apiEndpoint: "" }, { CURSOR_AUTH_TOKEN: "private-token" }).pipe(
           Effect.provideService(
             HttpClient.HttpClient,
-            HttpClient.make(() => Effect.die("must not send a Keychain credential to a proxy")),
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response("private response", { status: 401 }),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(limits.unavailable).toEqual({
+        reason: "probeFailed",
+        message: "Cursor could not read usage limits.",
+      });
+    }),
+  );
+
+  it.effect("does not use a stored login for an explicit API key", () =>
+    Effect.gen(function* () {
+      const limits = yield* withNodeServices(
+        readCursorUsageLimits({ apiEndpoint: "" }, { CURSOR_API_KEY: "different-account" }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("must not request usage")),
           ),
         ),
       );
       expect(limits.unavailable?.reason).toBe("unsupported");
-      expect(limits.unavailable?.message).toContain("default Cursor endpoint");
-    }
-  });
-
-  it("reports failed requests without exposing credentials or response bodies", async () => {
-    const limits = await runNode(
-      readCursorUsageLimits({ apiEndpoint: "" }, { CURSOR_AUTH_TOKEN: "private-token" }).pipe(
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make((request) =>
-            Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response("private response", { status: 401 }),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    expect(limits.unavailable).toEqual({
-      reason: "probeFailed",
-      message: "Cursor could not read usage limits.",
-    });
-  });
-
-  it("does not use a stored login for an explicit API key", async () => {
-    const limits = await runNode(
-      readCursorUsageLimits({ apiEndpoint: "" }, { CURSOR_API_KEY: "different-account" }).pipe(
-        Effect.provideService(
-          HttpClient.HttpClient,
-          HttpClient.make(() => Effect.die("must not request usage")),
-        ),
-      ),
-    );
-    expect(limits.unavailable?.reason).toBe("unsupported");
-  });
+    }),
+  );
 });

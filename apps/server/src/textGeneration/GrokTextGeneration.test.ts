@@ -11,12 +11,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { createModelSelection } from "@d4research/shared/model";
 import { expect } from "vite-plus/test";
-import { GrokSettings, ProviderInstanceId } from "@d4research/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
+import { GrokSettings } from "@d4research/provider-grok/settings";
 
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { makeGrokTextGeneration } from "./GrokTextGeneration.ts";
-import { execScriptSource, writeFakeCli } from "../testUtils/fakeCli.ts";
+import { makeGrokTextGeneration } from "@d4research/provider-grok/testing";
+import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

@@ -10,41 +10,39 @@
  *   node scripts/record-grok-acp-replay-fixture.ts --scenario simple
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { GrokSettings, type ProviderReplayEntry } from "@d4research/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import { type ProviderReplayEntry } from "@d4research/contracts";
+import { GrokSettings } from "@d4research/provider-grok/settings";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSelfInvocation } from "@d4research/shared/nodeRuntime";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { ChildProcessSpawner } from "effect/process";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 
-import * as ServerConfig from "../src/config.ts";
+import * as TestProviderHost from "@d4research/provider-testing/TestProviderHost";
 import {
   GROK_DEFAULT_INSTANCE_ID,
   GROK_PROVIDER,
   grokLaunchRuntimeMode,
   makeGrokAdapterV2,
-} from "../src/orchestration-v2/Adapters/GrokAdapterV2.ts";
-import { ACP_PROTOCOL } from "../src/orchestration-v2/Adapters/AcpAdapterV2.ts";
-import * as IdAllocator from "../src/orchestration-v2/IdAllocator.ts";
-import type { ProviderAdapterV2SessionRuntime } from "../src/orchestration-v2/ProviderAdapter.ts";
-import * as ProviderContinuationRequests from "../src/orchestration-v2/ProviderContinuationRequests.ts";
+} from "@d4research/provider-grok/testing";
+import { ACP_PROTOCOL } from "@d4research/provider-acp/server/adapter";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
+import * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
 import * as ProviderAdapterRegistry from "../src/orchestration-v2/ProviderAdapterRegistry.ts";
 import { provideDeterministicTestRuntime } from "../src/orchestration-v2/testkit/DeterministicRuntime.ts";
 import { ORCHESTRATOR_REPLAY_FIXTURES } from "../src/orchestration-v2/testkit/fixtures/index.ts";
 import { materializeFixtureInput } from "../src/orchestration-v2/testkit/fixtures/shared.ts";
 import { runOrchestratorV2Scenario } from "../src/orchestration-v2/testkit/OrchestratorScenario.ts";
-import { makeReplayServerConfig } from "../src/orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as ProviderReplayHarness from "../src/orchestration-v2/testkit/ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "../src/orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
-import { makeGrokAcpRuntime } from "../src/provider/acp/GrokAcpSupport.ts";
-import { buildRuntimeInstructions } from "../src/provider/RuntimeInstructions.ts";
+import { checkpointWorkspace } from "@d4research/provider-testing/replayWorkspace";
+import { makeGrokAcpRuntime } from "@d4research/provider-grok/testing";
+import { buildRuntimeInstructions } from "@d4research/provider-core/server/runtimeInstructions";
 
 const wallClock = Clock.Clock.defaultValue();
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -444,18 +442,12 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
   const settings = { ...DEFAULT_GROK_SETTINGS, binaryPath: process.env.T3_GROK_BIN ?? "grok" };
   const layerRegistry = ProviderAdapterRegistry.layerFromAdaptersEffect(
     Effect.gen(function* () {
-      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const environment = yield* HostProcessEnvironment;
-      const adapter = makeGrokAdapterV2({
+      const environment = yield* HostProcess.Environment;
+      const adapter = yield* makeGrokAdapterV2({
         instanceId: GROK_DEFAULT_INSTANCE_ID,
         settings,
         environment,
-        hostPlatform: yield* HostProcessPlatform,
-        childProcessSpawner,
-        crypto: yield* Crypto.Crypto,
-        fileSystem: yield* FileSystem.FileSystem,
-        idAllocator: yield* IdAllocator.IdAllocatorV2,
-        serverConfig: yield* ServerConfig.ServerConfig,
+        hostPlatform: yield* HostProcess.Platform,
         selfInvocation: yield* resolveSelfInvocation(),
         continuationRequests: yield* ProviderContinuationRequests.ProviderContinuationRequests,
         // Production's runtime factory, with the protocol logger teeing raw lines.
@@ -466,7 +458,6 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
             interruptPromptOnCancel: input.interruptPromptOnCancel ?? false,
             grokSettings: settings,
             environment,
-            childProcessSpawner,
             runtimeMode: grokLaunchRuntimeMode(runtimePolicy),
           }),
       });
@@ -480,7 +471,7 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
           ...adapter,
           openSession: (input) =>
             adapter.openSession(input).pipe(
-              Effect.map((session): ProviderAdapterV2SessionRuntime => ({
+              Effect.map((session): ProviderAdapter.ProviderAdapterV2SessionRuntime => ({
                 ...session,
                 startTurn: (turnInput) => onWallClock(session.startTurn(turnInput)),
                 steerTurn: (turnInput) => onWallClock(session.steerTurn(turnInput)),
@@ -496,10 +487,7 @@ const recordScenario = Effect.fn("recordGrokScenario")(function* (fixtureName: s
   ).pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.effect(
-          ServerConfig.ServerConfig,
-          makeReplayServerConfig(`grok-record-${fixtureName}`),
-        ).pipe(Layer.provide(NodeServices.layer)),
+        TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
         NodeServices.layer,
         IdAllocator.layer,
       ),

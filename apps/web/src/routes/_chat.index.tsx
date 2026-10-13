@@ -1,8 +1,8 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
@@ -44,6 +44,10 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const router = useRouter();
+  // Read at effect time: this page stays mounted while a navigation away from
+  // "/" is still loading, but the router already points at the new location.
+  const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -56,9 +60,8 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    // The old outlet can remount while /welcome is loading. Only the index
-    // location may open a draft; otherwise it races FirstRunGate back to setup.
-    if (!isIndexRoute || mostRecentProject === null || startingRef.current) {
+    // Starting a draft after the user has left would replace the page they picked.
+    if (!isIndexRoute || mostRecentProject === null || startingRef.current || !isStillOnIndex()) {
       return;
     }
     startingRef.current = true;

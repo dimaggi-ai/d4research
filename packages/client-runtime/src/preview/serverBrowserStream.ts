@@ -4,7 +4,7 @@ import {
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
   type PreviewStreamHostSetup,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export const PREVIEW_STREAM_BASE_PATH = "/api/preview-stream";
 
@@ -472,7 +472,7 @@ const decodeHostSetup = (reason: string): PreviewStreamHostSetup => {
       return { need: value.need, command: value.command };
     }
   } catch {}
-  return { need: "sandbox", command: "sudo npx t3 browser setup" };
+  return { need: "sandbox", command: "sudo npx d4research browser setup" };
 };
 
 /** What a viewer tells the person; `command` is shown beside it, ready to copy. */

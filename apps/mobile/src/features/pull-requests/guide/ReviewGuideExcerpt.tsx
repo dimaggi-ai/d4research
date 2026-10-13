@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { PullRequestReviewGuideExcerpt } from "@t3tools/contracts";
-import { excerptRows, fileDiffRows, rowsToPatch } from "@t3tools/client-runtime/review-guide-tour";
+import type { PullRequestReviewGuideExcerpt } from "@d4research/contracts";
+import { excerptRows, fileDiffRows, rowsToPatch } from "@d4research/client-runtime/review-guide-tour";
 import { AppText as Text } from "../../../components/AppText";
 import { SymbolView } from "../../../components/AppSymbol";
 import { resolveNativeReviewDiffView } from "../../diffs/nativeReviewDiffSurface";

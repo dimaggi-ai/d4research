@@ -1,4 +1,4 @@
-import type { ToolActivityNativeAppReference } from "@t3tools/contracts";
+import type { ToolActivityNativeAppReference } from "@d4research/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -15,7 +15,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Semaphore from "effect/Semaphore";
 import * as Hex from "effect/encoding/Hex";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 
@@ -31,7 +31,7 @@ export class NativeAppIconResolver extends Context.Service<
     /** Returns a cached PNG path for the application, or `null` when no icon is available. */
     readonly resolve: (app: ToolActivityNativeAppReference) => Effect.Effect<string | null>;
   }
->()("t3/assets/NativeAppIconResolver") {}
+>()("d4research/assets/NativeAppIconResolver") {}
 
 function appCacheKey(app: ToolActivityNativeAppReference): string {
   return JSON.stringify(app);

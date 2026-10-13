@@ -1,4 +1,4 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 
 const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
 

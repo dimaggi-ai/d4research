@@ -1,4 +1,4 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
 
 /**
  * What the floating pill says. Connection, syncing, and working share one

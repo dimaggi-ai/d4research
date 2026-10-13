@@ -1,5 +1,5 @@
-import type { ToolActivityIcon, ToolActivitySource } from "@t3tools/contracts";
-import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
+import type { ToolActivityIcon, ToolActivitySource } from "@d4research/contracts";
+import { resolveT3McpToolDefinition } from "@d4research/shared/t3McpToolPresentation";
 
 export function normalizeMcpText(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;

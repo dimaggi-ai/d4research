@@ -1,7 +1,7 @@
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
 import { Alert, View } from "react-native";
-import type { PullRequestReviewPosition } from "@t3tools/contracts";
+import type { PullRequestReviewPosition } from "@d4research/contracts";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { MaterialButton } from "../../components/MaterialButton";
 import { uuidv4 } from "../../lib/uuid";

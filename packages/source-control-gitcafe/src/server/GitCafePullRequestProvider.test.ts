@@ -2,7 +2,7 @@
  * Pins the requests `./GitCafePullRequestProvider.ts` sends for each operation this layer
  * supports. Pass 2 creates:
  *
- * - `./GitCafeApi.ts`: service `GitCafeApi` (key `"@t3tools/source-control-gitcafe/server/GitCafeApi"`)
+ * - `./GitCafeApi.ts`: service `GitCafeApi` (key `"@d4research/source-control-gitcafe/server/GitCafeApi"`)
  *   with `request({ host, operation, method?, path, body? }) => Effect<string, GitCafeApiError>`
  *   (the response body), sending `https://<host>/api<path>` with the `GitCafeCredentials` bearer
  *   token through `HttpClient`; `make` / `layer`. Refuses any host outside `GITCAFE_HOSTS`.
@@ -25,8 +25,8 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";
 
 import * as GitCafeApi from "./GitCafeApi.ts";
 import * as GitCafeCredentials from "./GitCafeCredentials.ts";

@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { PullRequestReviewGuideExcerpt, PullRequestReviewGuideStop } from "@t3tools/contracts";
+import type { PullRequestReviewGuideExcerpt, PullRequestReviewGuideStop } from "@d4research/contracts";
 
 /** One step forward or back, held to the tour's first and last stops. */
 export function stepTourPosition(current: number, delta: 1 | -1, stopCount: number): number {

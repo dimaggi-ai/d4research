@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+import { VcsRepositoryDetectionError } from "@d4research/contracts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -242,7 +242,7 @@ describe("GitWorkflowService", () => {
         yield* driver.execute({ operation: "test.setupRepo", cwd, args });
       }
       const found = yield* Effect.forEach(
-        ["main", "feature/topic", "alias", "mirrored", "t3/renamed", "feature/*"],
+        ["main", "feature/topic", "alias", "mirrored", "d4research/renamed", "feature/*"],
         (refName) => workflow.hasRefNamed({ cwd, refName }),
       );
       assert.deepEqual(found, [true, true, true, true, false, false]);

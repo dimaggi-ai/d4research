@@ -1,4 +1,4 @@
-import { type EnvironmentId, UsageLimitSourceId } from "@t3tools/contracts";
+import { type EnvironmentId, UsageLimitSourceId } from "@d4research/contracts";
 import { useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";

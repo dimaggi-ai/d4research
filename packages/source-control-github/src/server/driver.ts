@@ -1,11 +1,11 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 /**
  * The GitHub driver: repository operations and discovery through `gh` and git, and pull requests
  * through the GitHub REST and GraphQL APIs.
  *
  * @module source-control-github/server/driver
  */
-import { defineSourceControlDriver } from "@t3tools/source-control-core/server/driver";
+import { defineSourceControlDriver } from "@d4research/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
 
 import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";

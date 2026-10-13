@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
-import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
+import { T3_MCP_TOOL_NAMES } from "@d4research/shared/t3McpToolPresentation";
 
 import {
   commandDetailRepeatsCommand,
@@ -296,7 +296,7 @@ describe("summarizeToolGroup", () => {
         entry("inspect-app", {
           label: "Inspect app",
           toolSource: {
-            key: "native-app:com.t3tools.t3code",
+            key: "native-app:ai.dimaggi.d4research",
             name: "Computer Use",
             kind: "computer",
           },

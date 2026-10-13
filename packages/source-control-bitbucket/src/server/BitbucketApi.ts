@@ -12,13 +12,13 @@ import {
   type SourceControlProviderAuth,
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryVisibility,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import { sanitizeBranchFragment } from "@d4research/shared/git";
 import {
   detectSourceControlProviderFromRemoteUrl,
   isSshRemoteUrl,
-} from "@t3tools/shared/sourceControl";
+} from "@d4research/shared/sourceControl";
 
 import {
   BitbucketPullRequestListSchema,
@@ -26,13 +26,13 @@ import {
   normalizeBitbucketPullRequestRecord,
   type NormalizedBitbucketPullRequestRecord,
 } from "./bitbucketPullRequests.ts";
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
-import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
+import { collectUint8StreamText } from "@d4research/provider-core/server/collectStreamText";
+import * as SourceControlProvider from "@d4research/source-control-core/server/SourceControlProvider";
+import * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@d4research/source-control-core/client/definition";
 
 import * as BitbucketClient from "../client/definition.ts";
-import { retryAtFromHeader } from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import { retryAtFromHeader } from "@d4research/source-control-core/server/SourceControlRateLimit";
 
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
 /** A response body past this is cut short, so one huge diff cannot exhaust the server. */
@@ -389,7 +389,7 @@ export class BitbucketApi extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, BitbucketApiError>;
   }
->()("@t3tools/source-control-bitbucket/server/BitbucketApi") {}
+>()("@d4research/source-control-bitbucket/server/BitbucketApi") {}
 
 function nonEmpty(value: string | undefined): Option.Option<string> {
   const trimmed = value?.trim();

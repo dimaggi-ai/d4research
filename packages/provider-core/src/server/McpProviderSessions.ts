@@ -5,7 +5,7 @@
  *
  * @module provider-core/server/McpProviderSessions
  */
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,7 +20,7 @@ export class McpProviderSessions extends Context.Service<
     readonly read: (threadId: ThreadId) => Effect.Effect<McpProviderSessionConfig | undefined>;
     readonly clear: (threadId: ThreadId) => Effect.Effect<void>;
   }
->()("@t3tools/provider-core/server/McpProviderSessions") {}
+>()("@d4research/provider-core/server/McpProviderSessions") {}
 
 const make = Effect.gen(function* () {
   const sessions = yield* Ref.make(new Map<ThreadId, McpProviderSessionConfig>());

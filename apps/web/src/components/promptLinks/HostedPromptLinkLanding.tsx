@@ -4,7 +4,7 @@ import {
   parseThreadLinkPrompt,
   promptLinkAppPath,
   promptLinkDeepLink,
-} from "@t3tools/shared/promptLinks";
+} from "@d4research/shared/promptLinks";
 import { useLocation } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";

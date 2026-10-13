@@ -5,8 +5,8 @@
  * types `agent-device …` and gets the version the injected instructions were
  * written for, regardless of what is or is not globally installed.
  */
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { resolveNodeExecutable } from "@d4research/shared/nodeRuntime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

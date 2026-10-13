@@ -1,9 +1,9 @@
-import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import { isTransportConnectionErrorMessage } from "@d4research/client-runtime/errors";
 import {
   clampFileAttachmentUploadBytes,
   fileAttachmentTooLargeMessage,
-} from "@t3tools/client-runtime/state/attachments";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+} from "@d4research/client-runtime/state/attachments";
+import type { EnvironmentShellStatus } from "@d4research/client-runtime/state/shell";
 import {
   CommandId,
   EnvironmentId,
@@ -20,11 +20,11 @@ import {
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
-import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
+import type { ComposerDispatchMode } from "@d4research/client-runtime/state/composer-dispatch";
 import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { resolveProviderInteractionMode } from "./legacy-plan-mode";

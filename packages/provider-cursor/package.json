@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-cursor",
+  "name": "@d4research/provider-cursor",
   "private": true,
   "type": "module",
   "exports": {
@@ -51,16 +51,16 @@
   "dependencies": {
     "@cursor/sdk": "1.0.35",
     "@napi-rs/keyring": "^1.3.0",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/provider-core": "workspace:*",
+    "@d4research/shared": "workspace:*",
     "effect": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/provider-testing": "workspace:*",
+    "@d4research/provider-testing": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

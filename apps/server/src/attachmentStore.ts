@@ -3,8 +3,8 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import type { ChatAttachment } from "@t3tools/contracts";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import type { ChatAttachment } from "@d4research/contracts";
+import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@d4research/shared/toolOutput";
 
 import {
   normalizeAttachmentRelativePath,

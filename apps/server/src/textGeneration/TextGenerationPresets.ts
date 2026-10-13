@@ -1,4 +1,4 @@
-import type { TextGenerationPolicy } from "@t3tools/provider-core/server/textGenerationPolicy";
+import type { TextGenerationPolicy } from "@d4research/provider-core/server/textGenerationPolicy";
 
 export const conventionalCommitsTextGenerationPolicy: TextGenerationPolicy = {
   kind: "conventional_commits",

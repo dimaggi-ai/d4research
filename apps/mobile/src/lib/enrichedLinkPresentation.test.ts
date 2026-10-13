@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ComposerContextId, ReviewCommentContextRecord } from "@t3tools/contracts";
+import type { ComposerContextId, ReviewCommentContextRecord } from "@d4research/contracts";
 import {
   enrichedContextLinkPresentation,
   enrichedLinkVariantPattern,

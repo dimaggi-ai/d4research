@@ -1,4 +1,4 @@
-import type { PreviewStreamControl } from "@t3tools/client-runtime/preview/server-browser-stream";
+import type { PreviewStreamControl } from "@d4research/client-runtime/preview/server-browser-stream";
 
 type Dialog = PreviewStreamControl["dialog"];
 

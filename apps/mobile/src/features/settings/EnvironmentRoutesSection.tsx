@@ -8,9 +8,9 @@ import {
   connectionRouteLabel,
   connectionRoutes,
   isLearned,
-} from "@t3tools/client-runtime/connection";
-import { type EnvironmentId, sessionGrantsScope } from "@t3tools/contracts";
-import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+} from "@d4research/client-runtime/connection";
+import { type EnvironmentId, sessionGrantsScope } from "@d4research/contracts";
+import { AUTH_SCOPE_OPTIONS } from "@d4research/shared/authScopeOptions";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { useState } from "react";

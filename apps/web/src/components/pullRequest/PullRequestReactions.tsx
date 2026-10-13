@@ -4,7 +4,7 @@ import type {
   PullRequestReaction,
   PullRequestReactionContent,
   PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { SmilePlusIcon } from "lucide-react";
 import { useState } from "react";
 

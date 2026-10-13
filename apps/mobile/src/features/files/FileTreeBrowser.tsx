@@ -1,5 +1,5 @@
 import { LegendList } from "@legendapp/list/react-native";
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@d4research/contracts";
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";

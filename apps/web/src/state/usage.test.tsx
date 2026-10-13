@@ -3,7 +3,7 @@ import {
   UsageDay,
   USAGE_CONTRACT_VERSION,
   type UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

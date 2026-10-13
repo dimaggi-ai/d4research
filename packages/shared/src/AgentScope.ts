@@ -45,7 +45,7 @@ export interface AgentScopeCommand {
   readonly args: ReadonlyArray<string>;
 }
 
-export const AgentScope = Context.Reference<AgentScopeShape>("@t3tools/shared/AgentScope", {
+export const AgentScope = Context.Reference<AgentScopeShape>("@d4research/shared/AgentScope", {
   defaultValue: () => ({
     wrap: ({ command, args }) => Effect.succeed({ command, args }),
     oomKilled: () => Effect.succeed(false),
@@ -58,7 +58,7 @@ export const AgentScope = Context.Reference<AgentScopeShape>("@t3tools/shared/Ag
  * provider flavors and do not take a thread id, so the ACP adapter provides it.
  */
 export const AgentScopeThreadId = Context.Reference<string | undefined>(
-  "@t3tools/shared/AgentScope/ThreadId",
+  "@d4research/shared/AgentScope/ThreadId",
   { defaultValue: () => undefined },
 );
 

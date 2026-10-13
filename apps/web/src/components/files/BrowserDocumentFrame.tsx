@@ -4,7 +4,7 @@ import {
   htmlRenderResult,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
-} from "@t3tools/shared/htmlRender";
+} from "@d4research/shared/htmlRender";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";

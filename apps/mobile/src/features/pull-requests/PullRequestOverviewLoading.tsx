@@ -1,5 +1,5 @@
 import { PullRequestSectionHeading } from "./PullRequestSectionHeading";
-import type { PullRequestListEntry } from "@t3tools/contracts";
+import type { PullRequestListEntry } from "@d4research/contracts";
 import { View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { PullRequestCardGroup, PullRequestCardRow } from "./PullRequestControls";

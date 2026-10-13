@@ -1,4 +1,4 @@
-import { CHAT_MARKDOWN_REHYPE_PLUGINS } from "@t3tools/shared/markdownPipeline";
+import { CHAT_MARKDOWN_REHYPE_PLUGINS } from "@d4research/shared/markdownPipeline";
 import type { Root } from "mdast";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
@@ -6,10 +6,10 @@ import remarkGfm from "remark-gfm";
 import type { Plugin } from "unified";
 import { describe, expect, it } from "vite-plus/test";
 
-import { remarkCodexDirectives } from "@t3tools/shared/codexMarkdownDirectives";
-import { remarkGithubAlerts } from "@t3tools/shared/markdownGithubAlerts";
+import { remarkCodexDirectives } from "@d4research/shared/codexMarkdownDirectives";
+import { remarkGithubAlerts } from "@d4research/shared/markdownGithubAlerts";
 import { createIncrementalMarkdownPlugin } from "./markdown-incremental";
-import { remarkNormalizeListItemIndentation } from "@t3tools/shared/markdownListIndentation";
+import { remarkNormalizeListItemIndentation } from "@d4research/shared/markdownListIndentation";
 
 function render(source: string, incremental?: Plugin<[], Root>, parsedSources?: string[]) {
   let tree: Root | undefined;

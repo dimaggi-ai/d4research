@@ -1,5 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
-import { parseThreadLinkPrompt } from "@t3tools/shared/promptLinks";
+import { parseThreadLinkPrompt } from "@d4research/shared/promptLinks";
 import { useEffect, useRef } from "react";
 import { Alert } from "react-native";
 

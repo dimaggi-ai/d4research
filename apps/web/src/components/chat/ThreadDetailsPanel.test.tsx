@@ -1,4 +1,4 @@
-import type { EnvironmentId, T3ProjectFileScript, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, T3ProjectFileScript, ThreadId } from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PopoverCreateHandle } from "../ui/popover";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";

@@ -1,4 +1,4 @@
-import type { ProviderInstanceId, UnifiedSettings } from "@t3tools/contracts";
+import type { ProviderInstanceId, UnifiedSettings } from "@d4research/contracts";
 import { useCallback } from "react";
 
 import { mergeEnvironmentSettings } from "../../hooks/useSettings";

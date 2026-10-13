@@ -9,15 +9,15 @@ import {
   type AcpRegistrySearchInput,
   type AcpRegistrySearchResult,
   type AcpRegistryDistribution as AcpRegistryDistributionKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { AcpRegistryDistributionPreference } from "../settings.ts";
 import type { AcpRegistrySettings } from "../settings.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import {
   mergePathEntries,
   resolveSpawnCommand,
   SpawnExecutableResolution,
-} from "@t3tools/shared/shell";
+} from "@d4research/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -41,9 +41,9 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { collectUint8StreamText } from "@d4research/provider-core/server/collectStreamText";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
+import type * as AcpSessionRuntime from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 
@@ -504,7 +504,7 @@ export class AcpRegistryCatalog extends Context.Service<
       input: AcpRegistryManagedBinaryUninstallInput,
     ) => Effect.Effect<AcpRegistryManagedBinaryUninstallResult, AcpRegistryError>;
   }
->()("@t3tools/provider-acp-registry/server/AcpRegistrySupport/AcpRegistryCatalog") {}
+>()("@d4research/provider-acp-registry/server/AcpRegistrySupport/AcpRegistryCatalog") {}
 
 const layer = (options: AcpRegistryCatalogOptions) =>
   Layer.effect(AcpRegistryCatalog, makeAcpRegistryCatalog(options));

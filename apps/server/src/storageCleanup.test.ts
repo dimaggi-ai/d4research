@@ -14,7 +14,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   StorageCleanupReport,
   type WorktreeKeepWhen,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -34,7 +34,7 @@ import {
   RuntimeRequestId,
   ThreadId,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import {
   storageCleanupActivityAt,
@@ -243,7 +243,7 @@ const cleanupFixture = Effect.gen(function* () {
   yield* fs.makeDirectory(config.worktreesDir, { recursive: true });
   const worktree = `${config.worktreesDir}/feature`;
   yield* command(repo, ["worktree", "add", "-b", "feature", worktree]);
-  let settings: import("@t3tools/contracts").ServerSettings = {
+  let settings: import("@d4research/contracts").ServerSettings = {
     ...DEFAULT_SERVER_SETTINGS,
     storageCleanup: { ...DEFAULT_SERVER_SETTINGS.storageCleanup, worktreeAfterDays: 8 },
   };

@@ -1,7 +1,7 @@
 import { useAtomRefresh } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { PullRequestThreadComment } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import type { PullRequestThreadComment } from "@d4research/contracts";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";

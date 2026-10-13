@@ -1,5 +1,5 @@
-import type { AssetResource, OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { readToolOutputImage, toolOutputImages } from "@t3tools/shared/toolOutput";
+import type { AssetResource, OrchestrationV2TurnItem } from "@d4research/contracts";
+import { readToolOutputImage, toolOutputImages } from "@d4research/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
 const MAX_TEXT_BLOCK_DEPTH = 4;

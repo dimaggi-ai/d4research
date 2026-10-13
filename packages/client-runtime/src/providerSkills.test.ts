@@ -3,8 +3,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+} from "@d4research/contracts";
+import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

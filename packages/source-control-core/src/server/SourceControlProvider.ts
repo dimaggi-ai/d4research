@@ -10,7 +10,7 @@ import type {
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 export interface SourceControlLinkSubject {
   readonly title: string;
@@ -194,4 +194,4 @@ export class SourceControlProvider extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
   }
->()("@t3tools/source-control-core/server/SourceControlProvider") {}
+>()("@d4research/source-control-core/server/SourceControlProvider") {}

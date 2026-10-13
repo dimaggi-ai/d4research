@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { EnvironmentId, type AuthEnvironmentScope } from "@t3tools/contracts";
+import { EnvironmentId, type AuthEnvironmentScope } from "@d4research/contracts";
 import { createRoot } from "react-dom/client";
 import { useThreadFindHighlights } from "./chat/threadFindHighlights";
-import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
-import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
+import { searchableMessageSegments } from "@d4research/shared/threadFindText";
+import { countThreadSearchOccurrences } from "@d4research/shared/threadSearch";
 
 import { MarkdownFindContext } from "./chat/markdownFindContext";
 import { act, type ComponentProps, type ReactNode } from "react";
@@ -51,7 +51,7 @@ vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/session")>();
-  const { AuthStandardClientScopes } = await import("@t3tools/contracts");
+  const { AuthStandardClientScopes } = await import("@d4research/contracts");
   const grantedScopes = new Set<AuthEnvironmentScope>(AuthStandardClientScopes);
   const hasScope = (environmentId: EnvironmentId | null, scope: AuthEnvironmentScope) =>
     environmentId !== null && grantedScopes.has(scope);

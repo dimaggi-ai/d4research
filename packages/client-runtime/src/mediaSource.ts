@@ -1,14 +1,14 @@
-import type { AssetResource, ThreadId } from "@t3tools/contracts";
-import { mediaMimeType, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
+import type { AssetResource, ThreadId } from "@d4research/contracts";
+import { mediaMimeType, mediaMimeTypeFromExtension } from "@d4research/shared/filePreview";
 
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
   type MarkdownImageSource,
 } from "./markdownImages.ts";
-import { fileBasename } from "@t3tools/shared/path";
-import { splitFilePathPosition } from "@t3tools/shared/fileLinks";
-import { splitMarkdownLinkSearchAndHash } from "@t3tools/shared/markdownLinks";
+import { fileBasename } from "@d4research/shared/path";
+import { splitFilePathPosition } from "@d4research/shared/fileLinks";
+import { splitMarkdownLinkSearchAndHash } from "@d4research/shared/markdownLinks";
 import {
   mediaFileReference,
   mediaReferenceFileName,

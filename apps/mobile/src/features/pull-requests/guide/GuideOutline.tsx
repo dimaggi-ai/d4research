@@ -1,5 +1,5 @@
-import type { PullRequestReviewGuide } from "@t3tools/contracts";
-import { stopFilePaths } from "@t3tools/client-runtime/review-guide-tour";
+import type { PullRequestReviewGuide } from "@d4research/contracts";
+import { stopFilePaths } from "@d4research/client-runtime/review-guide-tour";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { SymbolView } from "../../../components/AppSymbol";

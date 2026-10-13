@@ -5,8 +5,8 @@
  *
  * @module provider-testing/TestProviderHost
  */
-import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@d4research/contracts";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,7 +29,7 @@ export interface TestProviderHostOptions {
 export class TestProviderHostSettings extends Context.Service<
   TestProviderHostSettings,
   { readonly set: (settings: ServerSettings) => Effect.Effect<void> }
->()("@t3tools/provider-testing/TestProviderHost/TestProviderHostSettings") {}
+>()("@d4research/provider-testing/TestProviderHost/TestProviderHostSettings") {}
 
 export const layer = (
   options: TestProviderHostOptions = {},

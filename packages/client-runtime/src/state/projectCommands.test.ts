@@ -7,7 +7,7 @@ import {
   type AuthSessionState,
   type ScopedProjectRef,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { vi } from "vite-plus/test";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

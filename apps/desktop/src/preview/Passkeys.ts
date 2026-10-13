@@ -64,7 +64,7 @@ export class PreviewPasskeys extends Context.Service<
     /** Serves a preview guest's passkey ceremonies. Returns the detach function. */
     readonly attachGuest: (guest: WebContents) => () => void;
   }
->()("@t3tools/desktop/preview/Passkeys/PreviewPasskeys") {}
+>()("@d4research/desktop/preview/Passkeys/PreviewPasskeys") {}
 
 const notAllowed: PasskeyCeremonyResult = { success: false, error: "NotAllowedError" };
 

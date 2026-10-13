@@ -3,7 +3,7 @@ import {
   ProjectId,
   type PullRequestDiffResult,
   type PullRequestListEntry,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomRefresh } from "@effect/atom-react";
 import { useCallback, useMemo, useState } from "react";
 

@@ -41,10 +41,10 @@ import {
   ThreadId,
   SERVER_BROWSER_AUTOMATION_CLIENT_ID,
   type PreviewAppearancePreference,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { normalizePreviewUrl } from "@t3tools/shared/preview";
-import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { normalizePreviewUrl } from "@d4research/shared/preview";
+import { resolvePreviewViewport } from "@d4research/shared/previewViewport";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -251,7 +251,7 @@ export class ServerBrowser extends Context.Service<
      */
     readonly reportProfiles: (input: PreviewReportProfilesInput) => Effect.Effect<void>;
   }
->()("t3/preview/ServerBrowser") {}
+>()("d4research/preview/ServerBrowser") {}
 
 interface ViewerState {
   readonly id: string;

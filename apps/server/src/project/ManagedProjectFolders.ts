@@ -15,8 +15,8 @@ import {
   ProjectId,
   type ThreadId,
   VcsProcessSpawnError,
-} from "@t3tools/contracts";
-import { newProjectFolderName } from "@t3tools/shared/path";
+} from "@d4research/contracts";
+import { newProjectFolderName } from "@d4research/shared/path";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -132,7 +132,7 @@ export class ManagedProjectFolders extends Context.Service<
       NamedProjectError
     >;
   }
->()("t3/project/ManagedProjectFolders") {}
+>()("d4research/project/ManagedProjectFolders") {}
 
 // Only [a-z0-9] reaches a folder name, so it stays one path segment, and the
 // words are capped so a pasted blob cannot outgrow a file name.

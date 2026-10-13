@@ -5,7 +5,7 @@ import {
   pullRequestAgentPrompt,
   pullRequestAgentThread,
 } from "./pullRequestAgentTasks";
-import { IsoDateTime, ProjectId, ThreadId, type PullRequestDetail } from "@t3tools/contracts";
+import { IsoDateTime, ProjectId, ThreadId, type PullRequestDetail } from "@d4research/contracts";
 
 const pr = { state: "open", mergeability: "conflicting" } as PullRequestDetail;
 

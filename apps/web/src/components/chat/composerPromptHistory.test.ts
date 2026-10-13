@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@d4research/shared/composerContextReferences";
 import { buildPlanImplementationPrompt } from "../../proposedPlan";
 import {
   buildComposerPromptHistoryEntries,

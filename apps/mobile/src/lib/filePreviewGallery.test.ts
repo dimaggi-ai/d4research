@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@d4research/contracts";
 import type { FilePreviewItem } from "../components/FilePreviewModal.types";
 import { filePreviewGallery, filePreviewKey, filePreviewName } from "./filePreviewGallery";
 

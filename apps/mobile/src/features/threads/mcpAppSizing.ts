@@ -1,4 +1,4 @@
-import { clampMcpAppHeight } from "@t3tools/shared/mcpApp";
+import { clampMcpAppHeight } from "@d4research/shared/mcpApp";
 
 /** Taller apps scroll inside the inline view; full screen fills its own screen. */
 export const MCP_APP_INLINE_MAX_HEIGHT = 420;

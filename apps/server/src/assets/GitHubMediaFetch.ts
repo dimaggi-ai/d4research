@@ -1,5 +1,5 @@
 import * as Mime from "effect/http/Mime";
-import { githubMediaFileName } from "@t3tools/shared/githubMedia";
+import { githubMediaFileName } from "@d4research/shared/githubMedia";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -12,7 +12,7 @@ import {
   type HttpClientResponse,
 } from "effect/http";
 
-import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
+import * as GitHubCredentials from "@d4research/source-control-github/server/GitHubCredentials";
 
 /**
  * Exactly the hosts the credential is for. Everything a redirect leads to — the presigned

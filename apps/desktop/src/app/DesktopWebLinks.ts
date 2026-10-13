@@ -31,7 +31,7 @@ export class DesktopWebLinks extends Context.Service<
     /** The renderer started or stopped listening; listening flushes queued links. */
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
   }
->()("@t3tools/desktop/app/DesktopWebLinks") {}
+>()("@d4research/desktop/app/DesktopWebLinks") {}
 
 const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;

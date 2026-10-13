@@ -7,7 +7,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
-import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
+import { discardResponseBody, responsePayloads } from "@d4research/shared/mcpResponsePayloads";
 
 /**
  * Stdio-to-HTTP bridge for T3's MCP endpoint.

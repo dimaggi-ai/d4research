@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { PullRequestAction } from "@t3tools/contracts";
+import type { PullRequestAction } from "@d4research/contracts";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useUiStateStore } from "~/uiStateStore";
 import { Button } from "../ui/button";

@@ -13,7 +13,7 @@
  * @module provider-cursor/server/accountCache
  */
 import { cursorRateModel } from "./accountUsage.ts";
-import type { UsageRecord } from "@t3tools/provider-core/server/usage";
+import type { UsageRecord } from "@d4research/provider-core/server/usage";
 
 export type CursorCredentialSource = string | { readonly kind: "keychain" };
 

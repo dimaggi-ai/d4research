@@ -5,8 +5,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
  * running two copies of "merge" or "resolve in a thread" would drift apart one fix at a time;
  * these hooks are where that behavior lives, and the panels are only where it is rendered.
  */
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ProjectId,
@@ -14,9 +14,9 @@ import type {
   PullRequestDetail,
   PullRequestMergeMethod,
   PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useCallback, useRef, useState } from "react";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,

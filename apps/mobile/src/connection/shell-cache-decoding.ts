@@ -1,5 +1,5 @@
-import { StoredOrchestrationShellSnapshot } from "@t3tools/client-runtime/platform";
-import { deferPullRequests, detachPullRequests } from "@t3tools/client-runtime/state/shell";
+import { StoredOrchestrationShellSnapshot } from "@d4research/client-runtime/platform";
+import { deferPullRequests, detachPullRequests } from "@d4research/client-runtime/state/shell";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";

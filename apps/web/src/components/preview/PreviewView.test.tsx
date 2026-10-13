@@ -6,7 +6,7 @@ import {
   EnvironmentId,
   FILL_PREVIEW_VIEWPORT,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { act, createElement, Profiler } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -71,7 +71,7 @@ vi.mock("~/state/session", async (importOriginal) => ({
 // File-preview errors share a module with asset hooks. Keep the pure URL resolver
 // without importing those hooks and their environment runtime into chrome tests.
 vi.mock("~/assets/assetUrls", async () => {
-  const { resolveAssetUrl } = await import("@t3tools/client-runtime/state/assets");
+  const { resolveAssetUrl } = await import("@d4research/client-runtime/state/assets");
   return { resolveAssetUrl };
 });
 

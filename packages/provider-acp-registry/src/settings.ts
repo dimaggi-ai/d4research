@@ -4,7 +4,7 @@
  *
  * @module provider-acp-registry/settings
  */
-import { TrimmedString, makeProviderSettingsSchema } from "@t3tools/contracts";
+import { TrimmedString, makeProviderSettingsSchema } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

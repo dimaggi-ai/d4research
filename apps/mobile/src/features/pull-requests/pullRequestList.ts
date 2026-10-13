@@ -3,7 +3,7 @@ import type {
   PullRequestListEntry,
   PullRequestListInput,
   PullRequestListResult,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { PullRequestListControls } from "../../persistence/mobile-preferences";
 
 export const PR_LIST_PAGE_SIZE = 30;

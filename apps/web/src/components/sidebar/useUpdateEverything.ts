@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import { PROVIDER_DISPLAY_NAMES } from "@d4research/contracts";
 import { Atom } from "effect/reactivity";
 import { useMemo } from "react";
 

@@ -1,5 +1,5 @@
-import { pullRequestHostOf, type ScopedThreadRef } from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { pullRequestHostOf, type ScopedThreadRef } from "@d4research/contracts";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 

@@ -1,4 +1,4 @@
-import type { LinkedPrompt } from "@t3tools/shared/promptLinks";
+import type { LinkedPrompt } from "@d4research/shared/promptLinks";
 
 import { type ComposerThreadTarget, useComposerDraftStore } from "~/composerDraftStore";
 

@@ -3,7 +3,7 @@
  * the local server trace file and its rotated backups. It reads the files
  * directly, so it works while the server is stalled or stopped.
  */
-import { PositiveInt } from "@t3tools/contracts";
+import { PositiveInt } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";

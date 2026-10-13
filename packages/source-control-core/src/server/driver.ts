@@ -11,7 +11,7 @@
  *
  * @module source-control-core/server/driver
  */
-import type { SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderKind } from "@d4research/contracts";
 import type * as Effect from "effect/Effect";
 
 import type { SourceControlProviderDiscoverySpec } from "./discovery.ts";

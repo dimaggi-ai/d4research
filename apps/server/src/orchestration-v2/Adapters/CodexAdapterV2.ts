@@ -1950,11 +1950,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         // Call only for new model-output activity. A local item/completed can
         // arrive while the upstream response stream is still retrying.
-        const completeProviderRetry = Effect.fn("CodexAdapterV2.completeProviderRetry")(function* (
-          context: ActiveCodexTurnContext,
-          updatedAt: DateTime.Utc,
-        ) {
-          const providerRetry = yield* Ref.modify(providerRetries, (current) => {
+        // Runs on every streamed delta, so the untraced fast path only checks the Ref.
+        const completeProviderRetry = (context: ActiveCodexTurnContext, updatedAt: DateTime.Utc) =>
+          Ref.modify(providerRetries, (current) => {
             const retry = current.get(context.providerTurnId);
             if (retry === undefined) {
               return [undefined, current] as const;
@@ -1962,29 +1960,40 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const updated = new Map(current);
             updated.delete(context.providerTurnId);
             return [retry, updated] as const;
-          });
-          if (providerRetry === undefined) {
-            return;
-          }
-          yield* emitProviderEvent({
-            type: "turn_item.updated",
-            driver: CODEX_PROVIDER,
-            turnItem: makeProviderRetryTurnItem({
+          }).pipe(
+            Effect.flatMap((providerRetry) =>
+              providerRetry === undefined
+                ? Effect.void
+                : emitProviderRetryCompleted(context, providerRetry, updatedAt),
+            ),
+          );
+
+        const emitProviderRetryCompleted = Effect.fn("CodexAdapterV2.completeProviderRetry")(
+          function* (
+            context: ActiveCodexTurnContext,
+            providerRetry: ActiveCodexProviderRetry,
+            updatedAt: DateTime.Utc,
+          ) {
+            yield* emitProviderEvent({
+              type: "turn_item.updated",
               driver: CODEX_PROVIDER,
-              threadId: context.projectionThreadId,
-              runId: context.projectionRunId,
-              nodeId: context.providerNodeId,
-              providerThreadId: context.providerThread.id,
-              providerTurnId: context.providerTurnId,
-              itemOrdinal: providerRetry.itemOrdinal,
-              failure: providerRetry.failure,
-              retry: providerRetry.retry,
-              status: "completed",
-              startedAt: providerRetry.startedAt,
-              updatedAt,
-            }),
-          });
-        });
+              turnItem: makeProviderRetryTurnItem({
+                driver: CODEX_PROVIDER,
+                threadId: context.projectionThreadId,
+                runId: context.projectionRunId,
+                nodeId: context.providerNodeId,
+                providerThreadId: context.providerThread.id,
+                providerTurnId: context.providerTurnId,
+                itemOrdinal: providerRetry.itemOrdinal,
+                failure: providerRetry.failure,
+                retry: providerRetry.retry,
+                status: "completed",
+                startedAt: providerRetry.startedAt,
+                updatedAt,
+              }),
+            });
+          },
+        );
 
         const registerRootTurn = (input: {
           readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;

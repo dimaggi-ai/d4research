@@ -982,6 +982,30 @@ describe("PullRequestSyncReactor", () => {
     ),
   );
 
+  it.effect("waits fifteen minutes before rereading an open link the host failed to read", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("gone", { pullRequests: [makeLink(7, { state: "open" })] }),
+          ]),
+          summary: () =>
+            Effect.fail(
+              new PullRequestOperationError({ operation: "summary", detail: "not found" }),
+            ),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          for (let index = 0; index < 14; index += 1) yield* sweepAgain(fixture, reactor);
+          assert.strictEqual((yield* Ref.get(fixture.summaryCalls)).length, 1);
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual((yield* Ref.get(fixture.summaryCalls)).length, 2);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
   it.effect("leaves a rate limited host unread until its pause ends", () => {
     const skips: Array<ReadonlyArray<unknown>> = [];
     const logger = Logger.make(({ logLevel, message }) => {

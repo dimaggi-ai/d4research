@@ -170,9 +170,15 @@ export const make = Effect.gen(function* () {
   // A paused host refuses every read without asking it, so the sweep leaves its pull requests
   // due until the pause ends rather than failing each of them every minute.
   const pausedUntil = new Map<string, number>();
+  // A pull request the host failed to read (deleted repository, lost access) waits the slow
+  // interval before the next try instead of failing every sweep.
+  const failedAt = new Map<string, number>();
 
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
-    if (requested.has(key) || retryStacks.has(key)) return true;
+    if (requested.has(key)) return true;
+    const failed = failedAt.get(key);
+    if (failed !== undefined && nowMs - failed < SLOW_SYNC_INTERVAL_MS) return false;
+    if (retryStacks.has(key)) return true;
     if (entries.some((entry) => entry.link.snapshot === null)) return true;
     // Settled threads stop watching their pull requests. Unsettling one makes its links due on
     // the next sweep, since the cadence clock below kept running while it was settled.
@@ -207,6 +213,7 @@ export const make = Effect.gen(function* () {
     }
 
     for (const key of lastSyncedAt.keys()) if (!groups.has(key)) lastSyncedAt.delete(key);
+    for (const key of failedAt.keys()) if (!groups.has(key)) failedAt.delete(key);
     for (const key of retryStacks) if (!groups.has(key)) retryStacks.delete(key);
     for (const key of requested.keys()) if (!groups.has(key)) requested.delete(key);
 
@@ -332,6 +339,7 @@ export const make = Effect.gen(function* () {
       }
       // The host answered, so the cadence clock ticks even if a dispatch below is rejected.
       lastSyncedAt.set(key, nowMs);
+      failedAt.delete(key);
       // A refresh requested while the host read was in flight belongs to the next sweep.
       if (requested.get(key) === generation) requested.delete(key);
       yield* Effect.forEach(
@@ -359,6 +367,8 @@ export const make = Effect.gen(function* () {
           const retryAt = rateLimitRetryAt(cause);
           if (retryAt !== undefined) {
             pausedUntil.set(pauseKey, Math.max(retryAt, pausedUntil.get(pauseKey) ?? 0));
+          } else {
+            failedAt.set(key, nowMs);
           }
           const reason = skipReason(cause);
           const skip = skips.get(reason);

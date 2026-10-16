@@ -19,6 +19,8 @@ jobs:
       T3CODE_IOS_PERSONAL_TEAM: "1"
       T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: ai.dimaggi.d4research.ipad
       EXPO_NO_GIT_STATUS: "1"
+      # @callstack/liquid-glass imports RCTConversions.h, which the prebuilt React.xcframework omits.
+      RCT_USE_PREBUILT_RNCORE: "0"
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v6

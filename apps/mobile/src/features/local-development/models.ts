@@ -1,23 +1,24 @@
-import {
-  TurboModuleRegistry,
-  type TurboModule,
-  type EventSubscription,
-  Platform,
-} from "react-native";
+import { requireOptionalNativeModule } from "expo";
+import { Platform } from "react-native";
 import { cloudEndpoint, type LocalWorkspace, modelMessages } from "./workspace";
 
 type Messages = ReturnType<typeof modelMessages>;
-interface AppleModel extends TurboModule {
+interface AppleModelEvents {
+  onStreamUpdate: (event: { streamId: string; content: string }) => void;
+  onStreamComplete: (event: { streamId: string }) => void;
+  onStreamError: (event: { streamId: string; error: string }) => void;
+}
+// Implemented by modules/t3-apple-llm on iOS 26+.
+interface AppleModel {
   isAvailable(): boolean;
   generateStream(messages: Messages, options: { maxTokens: number; temperature: number }): string;
   cancelStream(id: string): void;
-  onStreamUpdate(
-    listener: (event: { streamId: string; content: string }) => void,
-  ): EventSubscription;
-  onStreamComplete(listener: (event: { streamId: string }) => void): EventSubscription;
-  onStreamError(listener: (event: { streamId: string; error: string }) => void): EventSubscription;
+  addListener<E extends keyof AppleModelEvents>(
+    event: E,
+    listener: AppleModelEvents[E],
+  ): { remove(): void };
 }
-const getAppleModel = () => TurboModuleRegistry.get<AppleModel>("NativeAppleLLM");
+const getAppleModel = () => requireOptionalNativeModule<AppleModel>("T3AppleLLM");
 export async function appleModelAvailable() {
   if (Platform.OS !== "ios") return false;
   try {
@@ -51,12 +52,12 @@ async function appleGenerate(messages: Messages, signal: AbortSignal) {
       return;
     }
     listeners.push(
-      native.onStreamUpdate((event) => {
+      native.addListener("onStreamUpdate", (event) => {
         if (event.streamId === streamId) text = event.content;
       }),
     );
     listeners.push(
-      native.onStreamComplete((event) => {
+      native.addListener("onStreamComplete", (event) => {
         if (event.streamId === streamId) {
           cleanup();
           resolve(text);
@@ -64,7 +65,7 @@ async function appleGenerate(messages: Messages, signal: AbortSignal) {
       }),
     );
     listeners.push(
-      native.onStreamError((event) => {
+      native.addListener("onStreamError", (event) => {
         if (event.streamId === streamId) {
           cleanup();
           reject(

@@ -1,8 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
-vi.mock("react-native", () => ({
-  Platform: { OS: "ios" },
-  TurboModuleRegistry: { get: () => null },
-}));
+const native = vi.hoisted(() => ({ module: null as unknown }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => native.module }));
 import { appleModelAvailable, cloudGenerate, generateLocalTask } from "./models";
 import { emptyWorkspace } from "./workspace";
 it("never falls back from an unavailable on-device model to a cloud API", async () => {
@@ -75,26 +74,21 @@ it("consumes Apple's cumulative stream snapshots and stops generation on abort",
     complete: new Set<(event: { streamId: string }) => void>(),
     error: new Set<(event: { streamId: string; error: string }) => void>(),
   };
-  const native = {
-    getConstants: () => ({}),
+  const sets = {
+    onStreamUpdate: listeners.update,
+    onStreamComplete: listeners.complete,
+    onStreamError: listeners.error,
+  } as Record<string, Set<(event: never) => void>>;
+  const apple = {
     isAvailable: () => true,
     generateStream: () => "stream-1",
     cancelStream: vi.fn(),
-    onStreamUpdate: (callback: (event: { streamId: string; content: string }) => void) => {
-      listeners.update.add(callback);
-      return { remove: () => listeners.update.delete(callback) };
-    },
-    onStreamComplete: (callback: (event: { streamId: string }) => void) => {
-      listeners.complete.add(callback);
-      return { remove: () => listeners.complete.delete(callback) };
-    },
-    onStreamError: (callback: (event: { streamId: string; error: string }) => void) => {
-      listeners.error.add(callback);
-      return { remove: () => listeners.error.delete(callback) };
+    addListener: (event: string, callback: (event: never) => void) => {
+      sets[event]!.add(callback);
+      return { remove: () => sets[event]!.delete(callback) };
     },
   };
-  const { TurboModuleRegistry } = await import("react-native");
-  const mock = vi.spyOn(TurboModuleRegistry, "get").mockReturnValue(native);
+  native.module = apple;
   const complete = generateLocalTask(
     emptyWorkspace(),
     "",
@@ -112,7 +106,7 @@ it("consumes Apple's cumulative stream snapshots and stops generation on abort",
   const stopped = generateLocalTask(emptyWorkspace(), "", "help", "", abort.signal);
   abort.abort();
   await expect(stopped).rejects.toThrow("stopped");
-  expect(native.cancelStream).toHaveBeenCalledWith("stream-1");
+  expect(apple.cancelStream).toHaveBeenCalledWith("stream-1");
   expect(listeners.complete.size).toBe(0);
-  mock.mockRestore();
+  native.module = null;
 });

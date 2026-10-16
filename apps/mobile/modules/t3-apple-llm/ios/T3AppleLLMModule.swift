@@ -37,7 +37,8 @@ public final class T3AppleLLMModule: Module {
       if #available(iOS 26.0, *) {
         let id = UUID().uuidString
         let task = Task { [weak self] in
-          await self?.stream(id: id, messages: messages, options: options)
+          guard let self else { return }
+          await self.stream(id: id, messages: messages, options: options)
         }
         self.lock.withLock { self.streams[id] = task }
         return id

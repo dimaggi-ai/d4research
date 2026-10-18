@@ -1,3 +1,4 @@
+import { it as effectIt } from "@effect/vitest";
 import { describe, expect, it } from "vite-plus/test";
 import { DateTime, Effect, Stream } from "effect";
 import {
@@ -47,8 +48,9 @@ const context = {
 const base = { eventId: EventId.make("event"), provider: driver, threadId, createdAt: at };
 
 describe("custom-provider V2 event bridge", () => {
-  for (const kind of ["agy", "muse", "junie"]) {
-    it(`rejects unsupported read-only ${kind} sessions before native launch`, async () => {
+  effectIt.effect.each(["agy", "muse", "junie"])(
+    "rejects unsupported read-only %s sessions before native launch",
+    (kind) => {
       let starts = 0;
       const unsupported = () => Effect.die("Unexpected native operation");
       const adapter = makeLegacyAdapterV2(
@@ -73,32 +75,30 @@ describe("custom-provider V2 event bridge", () => {
         },
         ProviderInstanceId.make(kind),
       );
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const modelSelection = { instanceId: ProviderInstanceId.make(kind), model: "model" };
-            const runtimePolicy = {
-              cwd: null,
-              runtimeMode: "approval-required" as const,
-              interactionMode: "default" as const,
-              sandboxPolicy: { type: "readOnly" },
-            };
-            const runtime = yield* adapter.openSession({
-              threadId,
-              providerSessionId: ProviderSessionId.make("session"),
-              modelSelection,
-              runtimePolicy,
-            });
-            const error = yield* runtime
-              .ensureThread({ threadId, modelSelection, runtimePolicy })
-              .pipe(Effect.flip);
-            expect(error._tag).toBe("ProviderAdapterEnsureThreadError");
-            expect(starts).toBe(0);
-          }),
-        ),
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const modelSelection = { instanceId: ProviderInstanceId.make(kind), model: "model" };
+          const runtimePolicy = {
+            cwd: null,
+            runtimeMode: "approval-required" as const,
+            interactionMode: "default" as const,
+            sandboxPolicy: { type: "readOnly" },
+          };
+          const runtime = yield* adapter.openSession({
+            threadId,
+            providerSessionId: ProviderSessionId.make("session"),
+            modelSelection,
+            runtimePolicy,
+          });
+          const error = yield* runtime
+            .ensureThread({ threadId, modelSelection, runtimePolicy })
+            .pipe(Effect.flip);
+          expect(error._tag).toBe("ProviderAdapterEnsureThreadError");
+          expect(starts).toBe(0);
+        }),
       );
-    });
-  }
+    },
+  );
 
   it("persists streamed assistant text and closes it before the terminal receipt", () => {
     const translator = makeLegacyTurnTranslator(context, driver);

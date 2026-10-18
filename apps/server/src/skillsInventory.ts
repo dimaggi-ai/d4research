@@ -943,10 +943,6 @@ export const reconcileUserSkills = Effect.fn("reconcileUserSkills")(function* (
   return { shared, conflicts, failures };
 });
 
-// ---------------------------------------------------------------------------
-// Install from a git repository
-// ---------------------------------------------------------------------------
-
 /**
  * Agy also accepts whole plugins through `agy plugin install`. This is
  * separate from its portable skills registry because plugins may include

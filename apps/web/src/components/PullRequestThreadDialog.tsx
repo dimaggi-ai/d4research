@@ -2,11 +2,11 @@ import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useEffect, useRef, useState } from "react";
 
@@ -16,7 +16,7 @@ import {
   usePullRequestResolution,
 } from "~/lib/sourceControlActions";
 import { cn } from "~/lib/utils";
-import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
+import { parsePullRequestReference } from "@d4research/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";

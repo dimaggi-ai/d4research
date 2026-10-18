@@ -1,4 +1,4 @@
-import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
+import type { EnvironmentId, UsageLimitsReport } from "@d4research/contracts";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";

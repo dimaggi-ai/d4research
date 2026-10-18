@@ -3,9 +3,9 @@ import {
   PREVIEW_URL_MAX_LENGTH,
   ThreadId,
   type DiscoveredLocalServer,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isLoopbackHost, LSOF_LOCAL_HOST_TOKENS } from "@t3tools/shared/preview";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { isLoopbackHost, LSOF_LOCAL_HOST_TOKENS } from "@d4research/shared/preview";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -47,7 +47,7 @@ export class PortDiscovery extends Context.Service<
       readonly terminalId: string;
     }) => Effect.Effect<void>;
   }
->()("t3/preview/PortScanner/PortDiscovery") {}
+>()("d4research/preview/PortScanner/PortDiscovery") {}
 
 const POLL_INTERVAL = Duration.seconds(3);
 const LSOF_TIMEOUT_MS = 5_000;

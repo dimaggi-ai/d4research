@@ -5,7 +5,7 @@ import {
   type ServerSelfUpdateInput,
   type ServerSelfUpdateResult,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

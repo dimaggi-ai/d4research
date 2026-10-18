@@ -7,11 +7,11 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { collectUint8StreamText } from "@d4research/provider-core/server/collectStreamText";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const { gitHubApiUrls, normalizeHost } = GitHubRequestPolicy;
@@ -56,7 +56,7 @@ export class GitHubRest extends Context.Service<
       GitHubApiError
     >;
   }
->()("@t3tools/source-control-github/server/GitHubRest") {}
+>()("@d4research/source-control-github/server/GitHubRest") {}
 
 /** A REST failure body: `{ message, errors: [{ message } | { resource, field, code }] }`. */
 const decodeRestErrors = Schema.decodeUnknownOption(

@@ -1,8 +1,8 @@
-import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
+import type { RepositoryIdentity, SourceControlProviderError } from "@d4research/contracts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   normalizeGitRemoteUrl,
-} from "@t3tools/shared/git";
+} from "@d4research/shared/git";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -12,7 +12,7 @@ import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Background sweeps resolve every project each minute. A long TTL keeps them
@@ -38,7 +38,7 @@ export class RepositoryIdentityResolver extends Context.Service<
       options?: { readonly refresh?: boolean },
     ) => Effect.Effect<RepositoryIdentity | null>;
   }
->()("t3/project/RepositoryIdentityResolver") {}
+>()("d4research/project/RepositoryIdentityResolver") {}
 
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();

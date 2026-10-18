@@ -13,7 +13,7 @@ import {
   ProviderInstanceId,
   ProviderThreadId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
@@ -24,7 +24,7 @@ import {
   makeSubagentConversationArtifacts,
   endOrphanedNativeSubagent,
   endRunlessRootTurns,
-} from "@t3tools/provider-core/server/subagentProjection";
+} from "@d4research/provider-core/server/subagentProjection";
 
 import { emptyProjection } from "./ProjectionStore.ts";
 

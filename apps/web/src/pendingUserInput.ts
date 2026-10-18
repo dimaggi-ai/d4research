@@ -1,6 +1,6 @@
-import type { ThreadContextRecord, UserInputQuestion } from "@t3tools/contracts";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
-import { formatThreadLink } from "@t3tools/shared/threadLinks";
+import type { ThreadContextRecord, UserInputQuestion } from "@d4research/contracts";
+import { replaceComposerContextReferences } from "@d4research/shared/composerContextReferences";
+import { formatThreadLink } from "@d4research/shared/threadLinks";
 
 export function projectPendingUserInputAnswer(
   answer: unknown,

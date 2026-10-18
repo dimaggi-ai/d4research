@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { makeProviderSettingsSchema, ProviderDriverKind, TrimmedString } from "@t3tools/contracts";
+import { makeProviderSettingsSchema, ProviderDriverKind, TrimmedString } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 import { providerClients } from "./providerDriverMeta";

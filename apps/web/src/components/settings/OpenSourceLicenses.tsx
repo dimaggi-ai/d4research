@@ -8,7 +8,7 @@ import {
   thirdPartyLicenseEntryKey,
   type ThirdPartyLicenseEntry,
   type ThirdPartyLicenseManifest,
-} from "@t3tools/shared/thirdPartyLicenses";
+} from "@d4research/shared/thirdPartyLicenses";
 
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";

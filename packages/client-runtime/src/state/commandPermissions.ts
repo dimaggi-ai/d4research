@@ -6,7 +6,7 @@ import {
   type EnvironmentId,
   type AuthSessionState,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";

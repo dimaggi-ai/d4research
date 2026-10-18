@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/client-runtime",
+  "name": "@d4research/client-runtime",
   "private": true,
   "type": "module",
   "exports": {
@@ -438,15 +438,15 @@
   },
   "dependencies": {
     "@pierre/diffs": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/source-control-azure-devops": "workspace:*",
-    "@t3tools/source-control-bitbucket": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
-    "@t3tools/source-control-forgejo": "workspace:*",
-    "@t3tools/source-control-gitcafe": "workspace:*",
-    "@t3tools/source-control-github": "workspace:*",
-    "@t3tools/source-control-gitlab": "workspace:*",
+    "@d4research/contracts": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@d4research/source-control-azure-devops": "workspace:*",
+    "@d4research/source-control-bitbucket": "workspace:*",
+    "@d4research/source-control-core": "workspace:*",
+    "@d4research/source-control-forgejo": "workspace:*",
+    "@d4research/source-control-gitcafe": "workspace:*",
+    "@d4research/source-control-github": "workspace:*",
+    "@d4research/source-control-gitlab": "workspace:*",
     "effect": "catalog:",
     "three": "0.180.0"
   },

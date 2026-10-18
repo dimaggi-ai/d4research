@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -15,25 +15,25 @@ import {
 
 it("formats package runner commands from their cache entry paths", () => {
   for (const [entryPath, expected] of [
-    ["/home/theo/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs", "npx t3 serve"],
+    ["/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs", "npx d4research serve"],
     [
-      "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\t3\\dist\\bin.mjs",
-      "npx t3 serve",
+      "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
+      "npx d4research serve",
     ],
-    ["/home/theo/.cache/pnpm/dlx/abc/node_modules/t3/dist/bin.mjs", "pnpm dlx t3 serve"],
+    ["/home/theo/.cache/pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs", "pnpm dlx t3 serve"],
     [
-      "/home/theo/.local/share/pnpm/.pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
+      "/home/theo/.local/share/pnpm/.pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs",
       "pnpm dlx t3 serve",
     ],
     [
-      "C:\\Users\\theo\\AppData\\Local\\pnpm-cache\\dlx\\abc\\node_modules\\t3\\dist\\bin.mjs",
+      "C:\\Users\\theo\\AppData\\Local\\pnpm-cache\\dlx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
       "pnpm dlx t3 serve",
     ],
-    ["/home/theo/.bun/install/cache/t3@0.0.31/dist/bin.mjs", "bunx t3 serve"],
-    ["/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs", "bunx t3 serve"],
+    ["/home/theo/.bun/install/cache/t3@0.0.31/dist/bin.mjs", "bunx d4research serve"],
+    ["/tmp/bunx-1000-t3@latest/node_modules/d4research/dist/bin.mjs", "bunx d4research serve"],
     [
-      "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-t3@latest\\node_modules\\t3\\dist\\bin.mjs",
-      "bunx t3 serve",
+      "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-t3@latest\\node_modules\\d4research\\dist\\bin.mjs",
+      "bunx d4research serve",
     ],
   ] as const) {
     assert.equal(formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }), expected);
@@ -42,9 +42,9 @@ it("formats package runner commands from their cache entry paths", () => {
 
 it("treats stable installs as direct invocations", () => {
   for (const entryPath of [
-    "/usr/local/lib/node_modules/t3/dist/bin.mjs",
+    "/usr/local/lib/node_modules/d4research/dist/bin.mjs",
     "/home/theo/Code/work/t3code/apps/server/dist/bin.mjs",
-    "/home/theo/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs",
+    "/home/theo/.t3/runtime/0.0.31/node_modules/d4research/dist/bin.mjs",
     "",
   ]) {
     assert.equal(
@@ -56,15 +56,15 @@ it("treats stable installs as direct invocations", () => {
 
 it("re-suggests the prerelease channel only for prerelease builds", () => {
   for (const [version, expected] of [
-    ["0.0.31-nightly.20260729", "npx t3@nightly serve"],
-    ["0.0.31-preview.20260729.1", "npx t3@preview serve"],
-    ["0.0.31-foo-preview.20260729.1", "npx t3 serve"],
-    ["0.0.31", "npx t3 serve"],
+    ["0.0.31-nightly.20260729", "npx d4research@nightly serve"],
+    ["0.0.31-preview.20260729.1", "npx d4research@preview serve"],
+    ["0.0.31-foo-preview.20260729.1", "npx d4research serve"],
+    ["0.0.31", "npx d4research serve"],
   ] as const) {
     assert.equal(
       formatCliCommand({
         subcommand: "serve",
-        entryPath: "/home/theo/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs",
+        entryPath: "/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs",
         version,
       }),
       expected,
@@ -76,23 +76,23 @@ it("formats serve suggestions to match the launching command", () => {
   assert.equal(
     formatCliCommand({
       subcommand: "serve",
-      entryPath: "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      entryPath: "/home/theo/.npm/_npx/abc/node_modules/d4research/dist/bin.mjs",
       version: "0.0.31-nightly.20260729",
     }),
-    "npx t3@nightly serve",
+    "npx d4research@nightly serve",
   );
   assert.equal(
     formatCliCommand({
       subcommand: "serve",
-      entryPath: "/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs",
+      entryPath: "/tmp/bunx-1000-t3@latest/node_modules/d4research/dist/bin.mjs",
       version: "0.0.31",
     }),
-    "bunx t3 serve",
+    "bunx d4research serve",
   );
   assert.equal(
     formatCliCommand({
       subcommand: "serve",
-      entryPath: "/usr/local/lib/node_modules/t3/dist/bin.mjs",
+      entryPath: "/usr/local/lib/node_modules/d4research/dist/bin.mjs",
       version: "0.0.31-nightly.20260729",
     }),
     "t3 serve",
@@ -125,19 +125,19 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
   it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
     Effect.gen(function* () {
-      const npx = "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs";
+      const npx = "/home/theo/.npm/_npx/abc/node_modules/d4research/dist/bin.mjs";
       // sudo's secure_path already has a system Node.
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx t3 browser setup",
+        "sudo npx d4research browser setup",
       );
       // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx t3 browser setup');
+      ).toBe('sudo env "PATH=$PATH" npx d4research browser setup');
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/t3/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/d4research/dist/bin.mjs",
           path: yield* pathWithT3,
         }),
       ).toBe('sudo env "PATH=$PATH" t3 browser setup');
@@ -236,9 +236,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
-        ["npm/_npx/hash/node_modules/t3/dist/bin.mjs", "npx"],
+        ["npm/_npx/hash/node_modules/d4research/dist/bin.mjs", "npx"],
         ["npm/_npx/hash/node_modules/t3/bin/t3.mjs", "npx"],
-        ["pnpm/dlx/hash/node_modules/t3/dist/bin.mjs", "pnpm-dlx"],
+        ["pnpm/dlx/hash/node_modules/d4research/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/t3/dist/bin.mjs", "bunx"],
       ] as const) {
         const entry = path.join(root, relative);
@@ -337,7 +337,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       for (const relative of [
-        "project/node_modules/t3/dist/bin.mjs",
+        "project/node_modules/d4research/dist/bin.mjs",
         "project/apps/server/dist/bin.mjs",
         ".t3/runtime/0.0.45/t3",
         "missing/dist/bin.mjs",

@@ -1,4 +1,4 @@
-import type { PullRequestReaction, PullRequestReactionContent } from "@t3tools/contracts";
+import type { PullRequestReaction, PullRequestReactionContent } from "@d4research/contracts";
 
 export const PULL_REQUEST_REACTION_ORDER: ReadonlyArray<PullRequestReactionContent> = [
   "thumbs-up",

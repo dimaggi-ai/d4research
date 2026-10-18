@@ -1,4 +1,4 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   htmlRenderFileName,
@@ -6,7 +6,7 @@ import {
   htmlRenderOutlineBoxes,
   type HtmlRenderOutlineBox,
   type HtmlRenderReference,
-} from "@t3tools/shared/htmlRender";
+} from "@d4research/shared/htmlRender";
 import { Maximize2Icon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 

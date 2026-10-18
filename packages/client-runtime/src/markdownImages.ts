@@ -1,11 +1,11 @@
-import { isWindowsAbsolutePath, stripSlashPrefixedWindowsDrive } from "@t3tools/shared/path";
+import { isWindowsAbsolutePath, stripSlashPrefixedWindowsDrive } from "@d4research/shared/path";
 
 import {
   normalizeMarkdownLinkDestination,
   safeDecodeURIComponent,
   splitMarkdownLinkSearchAndHash,
-} from "@t3tools/shared/markdownLinks";
-import { parseFileUrlHref } from "@t3tools/shared/fileLinks";
+} from "@d4research/shared/markdownLinks";
+import { parseFileUrlHref } from "@d4research/shared/fileLinks";
 
 const DIRECT_IMAGE_SOURCE_PATTERN = /^(?:https?:|data:|blob:|\/\/)/i;
 const URI_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/;

@@ -1,4 +1,4 @@
-import { AuthPreviewOperateScope, type BrowserProfile } from "@t3tools/contracts";
+import { AuthPreviewOperateScope, type BrowserProfile } from "@d4research/contracts";
 import { useEffect } from "react";
 
 import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";

@@ -3,7 +3,7 @@ import {
   secretSetting,
   SourceControlProviderKind,
   TrimmedString,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -11,7 +11,7 @@ import {
   isChangeRequestInProjectRepository,
   isChangeRequestOnProjectHost,
   isChangeRequestPath,
-} from "@t3tools/source-control-core/client/definition";
+} from "@d4research/source-control-core/client/definition";
 
 /** GitCafe has no self-hosted installs: production and staging are its only hosts. */
 const GITCAFE_HOSTS = new Set(["git.cafe", "staging.git.cafe"]);

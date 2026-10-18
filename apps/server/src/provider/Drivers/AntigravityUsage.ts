@@ -1,12 +1,12 @@
-import { type AntigravitySettings, UsageReadError } from "@t3tools/contracts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { type AntigravitySettings, UsageReadError } from "@d4research/contracts";
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
+import * as ProviderHost from "@d4research/provider-core/server/ProviderHost";
 import type {
   ProviderUsageInstance,
   ProviderUsageReader,
   ProviderUsageScan,
-} from "@t3tools/provider-core/server/usage";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/provider-core/server/usage";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -25,7 +25,7 @@ export class AntigravityUsage extends Context.Service<
       readonly windowStartMs: number;
     }) => Effect.Effect<ReadonlyArray<ProviderUsageScan>, UsageReadError>;
   }
->()("t3/provider/Drivers/AntigravityUsage") {}
+>()("d4research/provider/Drivers/AntigravityUsage") {}
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;

@@ -3,7 +3,7 @@ import {
   ProjectId,
   type PullRequestFilesViewedResult,
   type PullRequestRef,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { act, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";

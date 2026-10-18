@@ -2,7 +2,7 @@
 // OSCrypt primitives Chromium uses; Effect has no equivalent.
 import * as NodeCrypto from "node:crypto";
 
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

@@ -1,11 +1,11 @@
 import {
   type PendingSubagentRequest,
   presentThreadShell,
-} from "@t3tools/client-runtime/state/models";
-import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/threads";
+} from "@d4research/client-runtime/state/models";
+import { pendingSubagentRequestsByThread } from "@d4research/client-runtime/state/threads";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import {
   CircleAlertIcon,

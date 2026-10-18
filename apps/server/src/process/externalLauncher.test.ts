@@ -18,8 +18,8 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { SpawnExecutableResolution } from "@d4research/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
 // Tests below write `#!/bin/sh` stubs into a real temp dir and hand that

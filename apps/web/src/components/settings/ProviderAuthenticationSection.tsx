@@ -2,14 +2,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ProviderAuthRespondInput,
   ProviderAuthResponse,
   ProviderInstanceId,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { lazy, Suspense, useRef, useState } from "react";
 import { CopyIcon } from "lucide-react";
 

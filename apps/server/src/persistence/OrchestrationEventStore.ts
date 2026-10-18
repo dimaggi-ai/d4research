@@ -13,7 +13,7 @@ import {
   StoredProjectIcon,
   ThreadId,
   type OrchestrationV2DomainEvent,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
@@ -120,7 +120,7 @@ export class OrchestrationEventStore extends Context.Service<
       readonly project: (event: ApplicationStoredEvent) => A;
     }) => Stream.Stream<A, OrchestrationEventStoreError>;
   }
->()("t3/persistence/OrchestrationEventStore") {}
+>()("d4research/persistence/OrchestrationEventStore") {}
 
 const encodeProjectIcon = Schema.encodeSync(StoredProjectIcon);
 const decodeProjectEvent = Schema.decodeUnknownEffect(ApplicationProjectEvent);

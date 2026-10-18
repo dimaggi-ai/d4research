@@ -12,7 +12,7 @@ export class ProviderInstanceNotFoundError extends Schema.TaggedError<ProviderIn
   }
 }
 
-export { ProviderDriverError } from "@t3tools/provider-core/server/errors";
+export { ProviderDriverError } from "@d4research/provider-core/server/errors";
 
 export class ProviderWorkspaceMissingError extends Schema.TaggedError<ProviderWorkspaceMissingError>()(
   "ProviderWorkspaceMissingError",

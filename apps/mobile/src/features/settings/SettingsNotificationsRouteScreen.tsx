@@ -1,5 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { AuthRelayWriteScope } from "@t3tools/contracts";
+import { AuthRelayWriteScope } from "@d4research/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAuth } from "@clerk/expo";
@@ -19,7 +19,7 @@ import {
   settleAsyncResult,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import {
   openAndroidLiveUpdateSettings,

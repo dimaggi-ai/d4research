@@ -4,7 +4,7 @@ import type {
   MessageId,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useEffect } from "react";

@@ -1,4 +1,4 @@
-import type { ProviderOptionSelection } from "@t3tools/contracts";
+import type { ProviderOptionSelection } from "@d4research/contracts";
 import { appAtomRegistry } from "./atom-registry";
 import {
   modelOptionMemoryAtom,

@@ -1,4 +1,4 @@
-import type { AuthSessionState, EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import type { AuthSessionState, EnvironmentId, ServerConfig } from "@d4research/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

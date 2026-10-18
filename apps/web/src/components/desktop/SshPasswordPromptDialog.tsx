@@ -1,5 +1,5 @@
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import type { DesktopSshPasswordPromptRequest } from "@t3tools/contracts";
+import { settlePromise } from "@d4research/client-runtime/state/runtime";
+import type { DesktopSshPasswordPromptRequest } from "@d4research/contracts";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { useEffect, useId, useRef, useState } from "react";

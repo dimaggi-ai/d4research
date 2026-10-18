@@ -8,12 +8,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Redacted from "effect/Redacted";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
 import * as GitHubRest from "./GitHubRest.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as TestSourceControlHost from "@d4research/source-control-testing/TestSourceControlHost";
 import { runGitHubStackAction as runStackAction } from "./githubStackActions.ts";
 
 /**

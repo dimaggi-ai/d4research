@@ -1,11 +1,11 @@
-import type { ServerProviderUpdateRequiredModel } from "@t3tools/contracts";
-import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
-import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
-import { codexModelFamily } from "@t3tools/shared/model";
-import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+import type { ServerProviderUpdateRequiredModel } from "@d4research/contracts";
+import * as ModelCatalog from "@d4research/provider-core/server/ModelCatalog";
+import type { ServerProviderDraft } from "@d4research/provider-core/server/snapshotProbe";
+import { codexModelFamily } from "@d4research/shared/model";
+import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "@t3tools/contracts";
+import { TrimmedNonEmptyString } from "@d4research/contracts";
 
 const CODEX_MATCHING: ModelCatalog.CatalogMatching = { family: codexModelFamily };
 

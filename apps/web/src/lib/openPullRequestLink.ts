@@ -1,17 +1,17 @@
-import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { parseChangeRequestUrl, type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "@d4research/client-runtime/source-control-clients";
+import { parseChangeRequestUrl, type ChangeRequestLink } from "@d4research/shared/changeRequestUrl";
+import { sourceControlRepositorySelector } from "@d4research/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useRightPanelStore } from "../rightPanelStore";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useProjects } from "../state/entities";
@@ -25,7 +25,7 @@ export {
   pullRequestCandidateUrlFromReferenceAutolink,
   matchesLinkedPullRequestUrl,
   changeRequestRepositoryUrl,
-} from "@t3tools/shared/changeRequestUrl";
+} from "@d4research/shared/changeRequestUrl";
 
 export function findProjectForChangeRequest(
   projects: ReadonlyArray<EnvironmentProject>,

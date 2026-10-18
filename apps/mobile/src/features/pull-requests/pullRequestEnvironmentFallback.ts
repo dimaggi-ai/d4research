@@ -1,4 +1,4 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/models";
 
 export type PullRequestEnvironmentTarget = {
   readonly environmentId: string;

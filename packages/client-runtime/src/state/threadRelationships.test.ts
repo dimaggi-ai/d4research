@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
 import {

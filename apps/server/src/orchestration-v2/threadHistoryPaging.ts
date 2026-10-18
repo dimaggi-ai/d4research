@@ -4,7 +4,7 @@ import type {
   OrchestrationV2TurnItem,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 /**
  * Item/byte budgets only apply to histories without turn starts; tool activity

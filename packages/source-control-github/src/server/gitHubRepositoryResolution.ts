@@ -1,8 +1,8 @@
-import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { normalizeGitRemoteUrl } from "@d4research/shared/git";
 import {
   detectSourceControlProviderFromRemoteUrl,
   isSshRemoteUrl,
-} from "@t3tools/shared/sourceControl";
+} from "@d4research/shared/sourceControl";
 
 export interface GitHubRepositoryLocator {
   readonly host: string;

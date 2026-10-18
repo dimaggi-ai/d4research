@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import type { EnvironmentId, PreviewSessionSnapshot, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, PreviewSessionSnapshot, ThreadId } from "@d4research/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";

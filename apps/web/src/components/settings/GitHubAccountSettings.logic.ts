@@ -1,5 +1,5 @@
-import type { SourceControlProviderAuth } from "@t3tools/contracts";
-import type { GitHubSettings } from "@t3tools/client-runtime/source-control-clients";
+import type { SourceControlProviderAuth } from "@d4research/contracts";
+import type { GitHubSettings } from "@d4research/client-runtime/source-control-clients";
 
 export type GitHubDiscoveredAccount = NonNullable<SourceControlProviderAuth["accounts"]>[number];
 

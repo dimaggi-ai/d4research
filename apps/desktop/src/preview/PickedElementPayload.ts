@@ -1,4 +1,4 @@
-import type { PickedElementPayload, PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { PickedElementPayload, PreviewAnnotationPayload } from "@d4research/contracts";
 
 function isStringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === "string";

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@d4research/contracts";
 
 const COMPOSER_THREAD_RESULT_LIMIT = 5;
 

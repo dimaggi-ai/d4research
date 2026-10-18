@@ -1,7 +1,7 @@
 import {
   applyPullRequestDraftFilterChange,
   parsePullRequestQuery,
-} from "@t3tools/client-runtime/pull-request-query";
+} from "@d4research/client-runtime/pull-request-query";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { useShortcutModifierState } from "~/shortcutModifierState";
@@ -9,8 +9,8 @@ import type { PullRequestSpeedActionResult } from "~/components/pullRequest/Pull
 import { usePullRequestCloseBatch } from "~/components/pullRequest/usePullRequestActions";
 import { SidebarPointerSensor } from "~/components/Sidebar.pointer";
 import { resolveSidebarSweepKeys } from "~/components/Sidebar.logic";
-import { sortProjectsByGroupOrder } from "@t3tools/client-runtime/state/project-grouping";
-import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { sortProjectsByGroupOrder } from "@d4research/client-runtime/state/project-grouping";
+import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@d4research/contracts";
 import type {
   EnvironmentId,
   ProjectId,
@@ -22,7 +22,7 @@ import type {
   PullRequestListResult,
   PullRequestListState,
   SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {

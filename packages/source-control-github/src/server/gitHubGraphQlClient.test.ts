@@ -6,7 +6,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http";
 import { GraphQLClient, GraphQLResolver } from "effect/graphql";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
 
 import * as GitHubRest from "./GitHubRest.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";

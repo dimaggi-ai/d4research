@@ -2,7 +2,7 @@ import type {
   RelayAgentActivityAggregateRow,
   RelayAgentActivityAggregateState,
   RelayAgentAwarenessPreferences,
-} from "@t3tools/contracts/relay";
+} from "@d4research/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 

@@ -4,7 +4,7 @@
  * through this route, which requires an environment session with read scope (operate scope for
  * input and tuning).
  */
-import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import {

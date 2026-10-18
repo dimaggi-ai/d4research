@@ -1,6 +1,6 @@
-import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { presentThreadShell } from "@d4research/client-runtime/state/models";
 import * as DateTime from "effect/DateTime";
-import { planPinnedMove } from "@t3tools/client-runtime/state/thread-sort";
+import { planPinnedMove } from "@d4research/client-runtime/state/thread-sort";
 import {
   createPendingThreadOrder,
   createThreadMovePlanner,
@@ -10,9 +10,9 @@ import {
   type PendingThreadOrder,
   type ThreadMoveAvailability,
 } from "./threadOrder";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import { resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { threadSearchMatchKey } from "@d4research/client-runtime/state/thread-search";
+import { resolveSnoozePresets } from "@d4research/client-runtime/state/thread-settled";
 import {
   CommandId,
   EnvironmentId,
@@ -21,7 +21,7 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";

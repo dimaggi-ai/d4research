@@ -15,7 +15,7 @@ const stores = [
   {
     label: "Android",
     store: "Google Play",
-    url: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
+    url: "https://play.google.com/store/apps/details?id=ai.dimaggi.d4research",
     Icon: AndroidIcon,
   },
 ];

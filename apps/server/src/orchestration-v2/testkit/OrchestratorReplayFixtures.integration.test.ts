@@ -4,7 +4,7 @@ import type {
   OrchestrationV2DomainEvent,
   ProviderReplayEntry,
   ProviderReplayTranscript,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -24,7 +24,7 @@ import {
   MuseOrchestratorReplayHarness,
 } from "../Adapters/MuseAdapterV2.testkit.ts";
 import { PiOrchestratorReplayHarness } from "../Adapters/PiAdapterV2.testkit.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
 import { ORCHESTRATOR_REPLAY_FIXTURES } from "./fixtures/index.ts";
 import { messageRestartInput } from "./fixtures/message_steering/input.ts";
@@ -39,12 +39,12 @@ import {
   runOrchestratorV2ProviderReplayScenario,
   type OrchestratorV2ProviderReplayHarness,
 } from "./ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { checkpointWorkspace } from "@d4research/provider-testing/replayWorkspace";
 import { materializeReplayTranscriptRuntimeInstructions } from "./ReplayRuntimeInstructions.ts";
 import {
   materializeReplayTranscriptWorkspace,
   readProviderReplayTranscript,
-} from "@t3tools/provider-testing/replayTranscript";
+} from "@d4research/provider-testing/replayTranscript";
 
 const readTranscript = Effect.fn("readOrchestratorReplayTranscript")(function* (file: URL) {
   return yield* readProviderReplayTranscript(file);

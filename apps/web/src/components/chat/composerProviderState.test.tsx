@@ -5,8 +5,8 @@ import {
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { getProviderOptionDescriptors } from "@t3tools/shared/model";
+} from "@d4research/contracts";
+import { getProviderOptionDescriptors } from "@d4research/shared/model";
 import { getProviderModelCapabilities } from "../../providerModels";
 import {
   getComposerPromptInjectionState,

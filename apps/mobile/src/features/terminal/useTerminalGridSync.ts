@@ -1,10 +1,10 @@
-import type { TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
+import type { TerminalSessionState } from "@d4research/client-runtime/state/terminal";
 import {
   AuthTerminalOperateScope,
   type EnvironmentId,
   type TerminalResizeInput,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { useEffect } from "react";
 
 import type { TerminalGridSize } from "./terminalUiState";

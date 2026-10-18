@@ -2,7 +2,7 @@ import {
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 
 const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
 

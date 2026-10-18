@@ -1,5 +1,5 @@
-import type { DeviceServiceState, ScopedThreadRef } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { DeviceServiceState, ScopedThreadRef } from "@d4research/contracts";
+import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import { useEffect, useRef } from "react";
 import { useClientSettings } from "../../hooks/useSettings";
 import {

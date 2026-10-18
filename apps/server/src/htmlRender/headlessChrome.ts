@@ -13,7 +13,7 @@ import {
   encodeHtmlRenderOutline,
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_OUTLINE_MAX_BOXES,
-} from "@t3tools/shared/htmlRender";
+} from "@d4research/shared/htmlRender";
 
 import { publicProxy } from "./publicProxy.ts";
 

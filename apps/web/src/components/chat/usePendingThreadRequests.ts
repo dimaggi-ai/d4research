@@ -7,15 +7,15 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   type UserInputAttachments,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   derivePendingThreadRequests,
   seedUserInputDraftAnswers,
-} from "@t3tools/client-runtime/state/thread-requests";
+} from "@d4research/client-runtime/state/thread-requests";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@d4research/client-runtime/state/runtime";
 import { useEffect, useRef, useState, type RefObject, type SetStateAction } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";

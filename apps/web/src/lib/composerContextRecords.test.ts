@@ -5,9 +5,9 @@ import {
   OrchestrationMessageContext,
   ThreadId,
   type PreviewAnnotationPayload,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Schema from "effect/Schema";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+import { upgradeLegacyContextMessage } from "@d4research/shared/composerContextLegacy";
 
 import {
   formatInlineContextReference,

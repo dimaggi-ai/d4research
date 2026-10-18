@@ -1,4 +1,4 @@
-import type { DesktopUpdateRemoteOutcome, DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateRemoteOutcome, DesktopUpdateState } from "@d4research/contracts";
 
 export type RemoteDesktopUpdateStep =
   | { readonly action: "check" }

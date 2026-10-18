@@ -1,4 +1,4 @@
-import type { PromptLinkRepository } from "@t3tools/shared/promptLinks";
+import type { PromptLinkRepository } from "@d4research/shared/promptLinks";
 
 export const PROMPT_LINK_PARAM_KEYS = ["prompt", "repo", "pr", "provider", "model"] as const;
 

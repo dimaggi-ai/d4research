@@ -307,10 +307,10 @@ const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
 // Not part of MCP Apps: a focused frame keeps its keys from the app, so the
 // client tells the page which chords are app shortcuts and the page passes
 // those on.
-const SHORTCUTS_METHOD = "t3/notifications/shortcuts";
-const KEY_DOWN_METHOD = "t3/notifications/keydown";
+const SHORTCUTS_METHOD = "d4research/notifications/shortcuts";
+const KEY_DOWN_METHOD = "d4research/notifications/keydown";
 // Not part of MCP Apps: a click on a page image opens it in the app's image viewer.
-const OPEN_IMAGE_METHOD = "t3/notifications/open-image";
+const OPEN_IMAGE_METHOD = "d4research/notifications/open-image";
 
 export function readHtmlRenderContentHeight(data: unknown): number | undefined {
   if (typeof data !== "object" || data === null) return undefined;

@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@d4research/shared/Net";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
@@ -27,7 +27,7 @@ export class DesktopWslBackend extends Context.Service<
     readonly reconcile: Effect.Effect<void>;
     readonly lastPreflightError: Effect.Effect<Option.Option<string>>;
   }
->()("@t3tools/desktop/wsl/DesktopWslBackend") {}
+>()("@d4research/desktop/wsl/DesktopWslBackend") {}
 
 const { logInfo: logWslBackendInfo, logWarning: logWslBackendWarning } =
   DesktopObservability.makeComponentLogger("desktop-wsl-backend");

@@ -1,4 +1,4 @@
-import type { DatabaseStorageStatus } from "@t3tools/contracts";
+import type { DatabaseStorageStatus } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -25,7 +25,7 @@ export class DatabaseStorage extends Context.Service<
     /** Current file accounting, re-published after each maintenance pass. Null until first read. */
     readonly status: Stream.Stream<DatabaseStorageStatus | null>;
   }
->()("t3/persistence/DatabaseStorage") {}
+>()("d4research/persistence/DatabaseStorage") {}
 
 /**
  * Deletes superseded history every few hours and hands freed pages back to

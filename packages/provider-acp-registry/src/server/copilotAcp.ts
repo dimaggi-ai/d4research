@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as AcpSchema from "effect-acp/compat";
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
+import type { AcpToolCallState } from "@d4research/provider-acp/server/runtimeModel";
 import type {
   AcpAdapterV2ExtensionContext,
   AcpAdapterV2SubagentUpdate,
-} from "@t3tools/provider-acp/server/adapter";
+} from "@d4research/provider-acp/server/adapter";
 
 // Only its opt-in raw event feed says who wrote a chunk: each chunk is preceded
 // by an `assistant.*_delta` carrying the spawning `task` tool call id. Both

@@ -1,4 +1,4 @@
-import type { TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
+import type { TerminalSessionState } from "@d4research/client-runtime/state/terminal";
 import { useEffect, useEffectEvent, useRef } from "react";
 
 export function useTerminalLifecycle({

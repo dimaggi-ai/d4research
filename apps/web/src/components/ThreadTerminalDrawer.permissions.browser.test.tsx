@@ -3,9 +3,9 @@ import {
   EnvironmentId,
   ThreadId,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
-import { nextTerminalAttachSeedState } from "@t3tools/client-runtime/state/terminal";
+} from "@d4research/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts/settings";
+import { nextTerminalAttachSeedState } from "@d4research/client-runtime/state/terminal";
 import { AsyncResult } from "effect/reactivity";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

@@ -1,4 +1,4 @@
-import { RelayApi } from "@t3tools/contracts/relay";
+import { RelayApi } from "@d4research/contracts/relay";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";

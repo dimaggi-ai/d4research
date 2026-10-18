@@ -1,4 +1,4 @@
-import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode } from "@d4research/contracts";
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
 

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { sessionHasLegacyPermissions, type EnvironmentId } from "@t3tools/contracts";
+import { sessionHasLegacyPermissions, type EnvironmentId } from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";

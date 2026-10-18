@@ -11,13 +11,13 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { Command, Flag } from "effect/cli";
-import * as CursorSdk from "@t3tools/provider-cursor/server/CursorSdk";
+import * as CursorSdk from "@d4research/provider-cursor/server/CursorSdk";
 
 import {
   recordCursorAgentSdkReplayTranscript,
   type CursorAgentSdkReplayTranscript,
 } from "../src/orchestration-v2/Adapters/CursorAdapterV2.testkit.ts";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { checkpointWorkspace } from "@d4research/provider-testing/replayWorkspace";
 import {
   CURSOR_MODEL_SELECTION,
   MESSAGE_STEERING_INITIAL_PROMPT,

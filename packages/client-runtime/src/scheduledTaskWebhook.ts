@@ -1,4 +1,4 @@
-import { MAX_WEBHOOK_DELIVERY_AGE_MINUTES } from "@t3tools/contracts";
+import { MAX_WEBHOOK_DELIVERY_AGE_MINUTES } from "@d4research/contracts";
 
 export const DEFAULT_WEBHOOK_PROMPT = "Handle this webhook:\n{{body}}";
 

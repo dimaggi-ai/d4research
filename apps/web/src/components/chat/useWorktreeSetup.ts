@@ -5,8 +5,8 @@ import type {
   ScopedThreadRef,
   ThreadId,
   WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
-import { workspacePreparationRetryRunIds } from "@t3tools/client-runtime/state/turn-item-presentation";
+} from "@d4research/contracts";
+import { workspacePreparationRetryRunIds } from "@d4research/client-runtime/state/turn-item-presentation";
 import { useState } from "react";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useEnvironmentQuery } from "../../state/query";

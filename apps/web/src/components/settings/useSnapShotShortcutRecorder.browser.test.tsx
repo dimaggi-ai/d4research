@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@d4research/contracts";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { userEvent } from "vite-plus/test/browser";

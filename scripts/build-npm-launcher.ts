@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds the `t3` npm package behind `npx t3` / `npm i -g t3`: a launcher
+ * Builds the `t3` npm package behind `npx d4research` / `npm i -g t3`: a launcher
  * with no dependencies that downloads this exact version's CLI archive from
  * the GitHub Release on first run (scripts/npm-launcher/t3.mjs).
  * The executables are not published to npm. npm's publish-time scanning held
@@ -22,8 +22,8 @@ import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import { fromJsonStringPretty } from "@d4research/shared/schemaJson";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { windowsSystemTar } from "./build-cli-archive.ts";

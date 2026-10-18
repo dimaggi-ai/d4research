@@ -1,10 +1,10 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
+import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import type { VcsRef } from "@d4research/client-runtime/state/vcs";
 import {
   type AtomCommandResult,
   mapAtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import type { VcsSwitchRefInput, VcsSwitchRefResult } from "@t3tools/contracts";
+} from "@d4research/client-runtime/state/runtime";
+import type { VcsSwitchRefInput, VcsSwitchRefResult } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 

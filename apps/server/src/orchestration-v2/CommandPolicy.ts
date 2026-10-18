@@ -10,7 +10,7 @@ import {
   ProviderTurnId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -120,7 +120,7 @@ type MessageDispatchMode = Extract<
 export function isNativeMaintenanceCommand(message: {
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
-  readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+  readonly context?: import("@d4research/contracts").OrchestrationMessageContext | undefined;
 }): boolean {
   return (
     message.attachments.length === 0 &&
@@ -245,7 +245,7 @@ export interface CommandPolicyV2Shape {
 }
 
 export class CommandPolicyV2 extends Context.Service<CommandPolicyV2, CommandPolicyV2Shape>()(
-  "t3/orchestration-v2/CommandPolicy/CommandPolicyV2",
+  "d4research/orchestration-v2/CommandPolicy/CommandPolicyV2",
 ) {}
 
 function unsupported(

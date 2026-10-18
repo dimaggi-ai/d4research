@@ -2,7 +2,7 @@ import type {
   PullRequestCheck,
   PullRequestComment,
   ThreadPullRequestWatch,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { assert, describe, it } from "@effect/vitest";
 
 import {

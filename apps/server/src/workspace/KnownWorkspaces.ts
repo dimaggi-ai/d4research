@@ -7,7 +7,7 @@
  *
  * @module KnownWorkspaces
  */
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -51,7 +51,7 @@ export class KnownWorkspaces extends Context.Service<
     /** Fails unless `cwd` exists and resolves inside a known workspace. */
     readonly assertContains: (cwd: string) => Effect.Effect<void, UnknownWorkspaceError>;
   }
->()("t3/workspace/KnownWorkspaces") {}
+>()("d4research/workspace/KnownWorkspaces") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

@@ -1,16 +1,16 @@
-import type { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
-import { causeErrorTag, errorTag } from "@t3tools/shared/observability";
+import type { ProviderDriverKind, ThreadId } from "@d4research/contracts";
+import { causeErrorTag, errorTag } from "@d4research/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 
-import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import type * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
   summarizeNativeProtocolPayload,
-} from "@t3tools/provider-core/server/nativeProtocolLogging";
+} from "@d4research/provider-core/server/nativeProtocolLogging";
 import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
 const transientProtocolUpdates = new Set(["agent_message_chunk", "agent_thought_chunk"]);

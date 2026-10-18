@@ -6,7 +6,7 @@ import {
   type AuthEnvironmentScope,
   type EditorId,
   type ThreadLinkedPullRequest,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

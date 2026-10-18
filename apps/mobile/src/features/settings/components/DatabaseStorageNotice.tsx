@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { shouldRecommendDatabaseCompaction } from "@t3tools/contracts";
+import { shouldRecommendDatabaseCompaction } from "@d4research/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { View } from "react-native";
 

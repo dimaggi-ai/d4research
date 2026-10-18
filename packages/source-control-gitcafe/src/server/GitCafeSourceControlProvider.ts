@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -9,15 +9,15 @@ import {
   SourceControlProviderError,
   TrimmedNonEmptyString,
   type ChangeRequest,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import {
   probeSourceControlProvider,
   providerAuth,
   type SourceControlCliDiscoverySpec,
   type SourceControlManagedCliDiscoverySpec,
-} from "@t3tools/source-control-core/server/discovery";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+} from "@d4research/source-control-core/server/discovery";
+import * as SourceControlHost from "@d4research/source-control-core/server/SourceControlHost";
+import * as SourceControlProvider from "@d4research/source-control-core/server/SourceControlProvider";
 
 import * as GitCafeApi from "./GitCafeApi.ts";
 import * as GitCafeCredentials from "./GitCafeCredentials.ts";

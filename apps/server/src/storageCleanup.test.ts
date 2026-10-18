@@ -17,8 +17,8 @@ import {
   StorageCleanupReport,
   type WorktreeKeepWhen,
   type StorageCleanupSettings,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@d4research/contracts";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
@@ -44,7 +44,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 import {
   storageCleanupActivityAt,
@@ -260,7 +260,7 @@ const cleanupFixture = (
     yield* fs.makeDirectory(config.worktreesDir, { recursive: true });
     const worktree = `${config.worktreesDir}/feature`;
     yield* command(repo, ["worktree", "add", "-b", "feature", worktree]);
-    let settings: import("@t3tools/contracts").ServerSettings = {
+    let settings: import("@d4research/contracts").ServerSettings = {
       ...DEFAULT_SERVER_SETTINGS,
       storageCleanup,
     };
@@ -534,7 +534,7 @@ describe("subagent worktree ownership", () => {
           scenario === "null-branch"
             ? null
             : scenario === "stale-branch"
-              ? "t3/15a6e5ae"
+              ? "d4research/15a6e5ae"
               : "feature",
         worktreePath: fixture.worktree,
         lineage: {
@@ -651,7 +651,7 @@ describe("subagent worktree ownership", () => {
               change === "null-branch"
                 ? null
                 : change === "stale-branch"
-                  ? "t3/15a6e5ae"
+                  ? "d4research/15a6e5ae"
                   : child.branch,
             settledAt: change === "settled" ? at(-20 * DAY_MS) : child.settledAt,
             updatedAt: change === "settled" || change === "resettled" ? at(0) : child.updatedAt,

@@ -105,7 +105,7 @@ export function FirstRunGate({
   // A workspace still counts as fresh when its only content is the server's own
   // cwd auto-bootstrap: web mode creates a project + thread from cwd at startup
   // (`autoBootstrapProjectFromCwd` defaults on there), so "no projects at all"
-  // would mean `npx t3` users never see the wizard.
+  // would mean `npx d4research` users never see the wizard.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
   const workspaceFresh =

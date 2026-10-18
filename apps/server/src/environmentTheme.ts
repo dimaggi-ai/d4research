@@ -7,8 +7,8 @@ import {
   EnvironmentThemeFile,
   EnvironmentThemeId,
   environmentThemeFileHasColors,
-} from "@t3tools/contracts";
-import { UNPUBLISHABLE_THEME_IDS } from "@t3tools/shared/themePalettes";
+} from "@d4research/contracts";
+import { UNPUBLISHABLE_THEME_IDS } from "@d4research/shared/themePalettes";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -54,7 +54,7 @@ export class EnvironmentThemeService extends Context.Service<
      */
     readonly streamChanges: Stream.Stream<ReadonlyArray<EnvironmentTheme>>;
   }
->()("t3/environmentTheme/EnvironmentThemeService") {}
+>()("d4research/environmentTheme/EnvironmentThemeService") {}
 
 /**
  * Reads a theme file through one opened handle, so every check binds to the

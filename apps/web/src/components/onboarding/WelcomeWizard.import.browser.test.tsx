@@ -7,7 +7,7 @@ import {
   type AgentSessionProjectCandidate,
   type AuthEnvironmentScope,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -41,7 +41,7 @@ const state = vi.hoisted(() => ({
 // Session grants come from per-test atoms so a test can revoke or regrant mid-flow; the
 // real scope checks in ~/state/session read them through the app registry, which the
 // wizard is also rendered with.
-vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
+vi.mock(import("@d4research/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {
     ...actual,

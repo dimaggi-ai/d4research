@@ -5,7 +5,7 @@ import type {
   PullRequestDetail,
   PullRequestListEntry,
   PullRequestMergeability,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { PullRequestGlyph } from "./pullRequestGlyphs";
 

@@ -47,7 +47,7 @@ export interface SqliteClientConfig {
   readonly checkpointWorker?: boolean | undefined;
 }
 
-const ReadOnly = Context.Reference<boolean>("@t3tools/shared/nodeSqliteClient/ReadOnly", {
+const ReadOnly = Context.Reference<boolean>("@d4research/shared/nodeSqliteClient/ReadOnly", {
   defaultValue: () => false,
 });
 
@@ -73,7 +73,7 @@ const annotateAcquired = (fiber: Fiber.Fiber<unknown, unknown>, acquired: Acquir
 };
 
 const TransactionAcquire = Context.Reference<{ acquired?: Acquired } | undefined>(
-  "@t3tools/shared/nodeSqliteClient/TransactionAcquire",
+  "@d4research/shared/nodeSqliteClient/TransactionAcquire",
   { defaultValue: () => undefined },
 );
 

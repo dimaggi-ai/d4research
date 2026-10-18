@@ -42,7 +42,7 @@ If `t3` or `t3 start` reports an already running server, connect to that server
 instead. Stop it before starting a replacement, or use a different `--base-dir`
 for an independent server.
 
-To try T3 Code once without installing it, run `npx t3@latest` instead (needs
+To try T3 Code once without installing it, run `npx d4research@latest` instead (needs
 Node.js for `npx`).
 
 ### Intel Macs
@@ -110,7 +110,7 @@ command cannot reach the app, start or update the desktop app and try again.
 
 Install T3 Code from the
 [App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or
-[Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code).
+[Google Play](https://play.google.com/store/apps/details?id=ai.dimaggi.d4research).
 The phone connects to a server on another machine. Follow
 [remote access](./remote-access.md) to link it through T3 Connect or a pairing URL.
 

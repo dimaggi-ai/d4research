@@ -10,7 +10,7 @@ import {
   letterStopNotes,
   stepTourPosition,
   stopFilePaths,
-} from "@t3tools/client-runtime/review-guide-tour";
+} from "@d4research/client-runtime/review-guide-tour";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { GuideOutline } from "./GuideOutline";
 import { AppText as Text } from "../../../components/ui/AppText";

@@ -44,7 +44,7 @@ it("context file carries every path the playbook depends on", () => {
     cliVersion: "0.0.33",
     os: "linux x64 (7.0.0)",
     nodeVersion: "v24.0.0",
-    launchedAs: "npx t3 triage",
+    launchedAs: "npx d4research triage",
     server: "running (pid 42, http://127.0.0.1:4501)",
     paths: {
       stateDir: "/home/u/.t3/userdata",
@@ -68,18 +68,18 @@ it("context file carries every path the playbook depends on", () => {
   assert.include(context, "/home/u/.t3/userdata/logs/provider/events.log");
   assert.include(context, "/home/u/.t3/userdata/secrets");
   assert.include(context, "/home/u/.t3/source");
-  assert.include(context, "npx t3 triage");
+  assert.include(context, "npx d4research triage");
 });
 
 it("context file labels the CLI version as the CLI's, not the user's build", () => {
-  // `npx t3 triage` can resolve a different `t3` than the app the bug
+  // `npx d4research triage` can resolve a different `t3` than the app the bug
   // happened on (#13337), so the agent must not read it as the user's version.
   const context = buildTriageContext({
     generatedAt: "2026-09-24T00:00:00.000Z",
     cliVersion: "0.0.42",
     os: "linux x64 (7.2.0)",
     nodeVersion: "v26.8.2",
-    launchedAs: "npx t3 triage",
+    launchedAs: "npx d4research triage",
     server: "running (pid 42, http://127.0.0.1:3773, version 0.0.43-nightly.20260923.2173)",
     paths: {
       stateDir: "/home/u/.t3/userdata",

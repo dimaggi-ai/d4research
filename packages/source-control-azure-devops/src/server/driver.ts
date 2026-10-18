@@ -1,5 +1,5 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
-import { defineSourceControlDriver } from "@t3tools/source-control-core/server/driver";
+import { SourceControlProviderKind } from "@d4research/contracts";
+import { defineSourceControlDriver } from "@d4research/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
 
 import * as AzureDevOpsPullRequestProvider from "./AzureDevOpsPullRequestProvider.ts";

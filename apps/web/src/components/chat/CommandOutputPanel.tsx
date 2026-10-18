@@ -1,5 +1,5 @@
-import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
-import { TERMINAL_PALETTES, terminalOutputSpans } from "@t3tools/shared/terminalOutput";
+import type { EnvironmentId, ThreadId, TurnItemId } from "@d4research/contracts";
+import { TERMINAL_PALETTES, terminalOutputSpans } from "@d4research/shared/terminalOutput";
 import { useLayoutEffect, useRef } from "react";
 
 import { useTheme } from "../../hooks/useTheme";

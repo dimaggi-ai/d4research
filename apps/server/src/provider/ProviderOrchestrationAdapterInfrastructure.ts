@@ -2,11 +2,11 @@ import * as Layer from "effect/Layer";
 
 import * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import * as CursorAgentSdk from "@t3tools/provider-cursor/server/CursorAgentSdk";
-import * as CursorSdk from "@t3tools/provider-cursor/server/CursorSdk";
-import * as CursorKeychain from "@t3tools/provider-cursor/server/CursorKeychain";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as CursorAgentSdk from "@d4research/provider-cursor/server/CursorAgentSdk";
+import * as CursorSdk from "@d4research/provider-cursor/server/CursorSdk";
+import * as CursorKeychain from "@d4research/provider-cursor/server/CursorKeychain";
+import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
+import * as ProviderContinuationRequests from "@d4research/provider-core/server/ProviderContinuationRequests";
 
 export type ProviderOrchestrationAdapterInfrastructure =
   | ClaudeAdapterV2.ClaudeAgentSdkQueryRunner

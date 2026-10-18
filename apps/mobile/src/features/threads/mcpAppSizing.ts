@@ -1,4 +1,4 @@
-import { clampMcpAppHeight } from "@t3tools/shared/mcpApp";
+import { clampMcpAppHeight } from "@d4research/shared/mcpApp";
 
 export const MCP_APP_INLINE_MAX_HEIGHT = 420;
 

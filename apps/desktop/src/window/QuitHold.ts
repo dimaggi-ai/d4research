@@ -1,6 +1,6 @@
 // @effect-diagnostics globalDate:off globalTimers:off -- Synchronous before-input-event handler; key events must be timed and the watchdog scheduled outside any Effect runtime.
 
-import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@t3tools/contracts";
+import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@d4research/contracts";
 
 export const QUIT_HOLD_DURATION_MS = 1200;
 export const QUIT_DOUBLE_PRESS_MS = 500;

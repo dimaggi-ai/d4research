@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

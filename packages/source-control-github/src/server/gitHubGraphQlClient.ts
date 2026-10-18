@@ -7,8 +7,8 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import * as Headers from "effect/http/Headers";
 import { GraphQLClientError, GraphQLMiddleware, GraphQLProtocol } from "effect/graphql";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as SourceControlRateLimit from "@d4research/source-control-core/server/SourceControlRateLimit";
+import { collectUint8StreamText } from "@d4research/provider-core/server/collectStreamText";
 
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 
@@ -28,7 +28,7 @@ export class GitHubGraphQlTarget extends Context.Service<
     /** A longer answer fails as a `GitHubApiResponseError`. Defaults to 8 MB. */
     readonly maxResponseBytes?: number | undefined;
   }
->()("@t3tools/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlTarget") {}
+>()("@d4research/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlTarget") {}
 
 /** A stable short id for a GraphQL document, so traces group by query without its text. */
 function queryHash(query: string): string {
@@ -58,7 +58,7 @@ export const isNotFoundOnly = (error: unknown): boolean =>
 export class GitHubGraphQlAuth extends GraphQLMiddleware.Service<
   GitHubGraphQlAuth,
   { requires: GitHubGraphQlTarget; error: GitHubRequestPolicy.GitHubApiError }
->()("@t3tools/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlAuth") {
+>()("@d4research/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlAuth") {
   static readonly layer = Layer.effect(
     GitHubGraphQlAuth,
     Effect.gen(function* () {

@@ -13,7 +13,7 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderDriverKind,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import type { RightPanelSurface } from "../rightPanelStore";
 import {
@@ -29,8 +29,8 @@ import {
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
   type WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
-import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
+} from "@d4research/contracts";
+import type { CodexArtifactTemplate } from "@d4research/shared/codexArtifactTemplates";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";

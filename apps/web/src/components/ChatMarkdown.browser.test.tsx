@@ -1,6 +1,6 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
-import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
+import { EnvironmentId } from "@d4research/contracts";
+import { searchableMessageSegments } from "@d4research/shared/threadFindText";
+import { countThreadSearchOccurrences } from "@d4research/shared/threadSearch";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -22,7 +22,7 @@ vi.mock(import("../state/server"), async (original) => {
 });
 // A standard client session, so environment-owned file links can open.
 vi.mock(import("../state/session"), async (original) => {
-  const { AuthStandardClientScopes } = await import("@t3tools/contracts");
+  const { AuthStandardClientScopes } = await import("@d4research/contracts");
   const granted = new Set<string>(AuthStandardClientScopes);
   const hasScope = (environmentId: unknown, scope: string) =>
     environmentId !== null && granted.has(scope);

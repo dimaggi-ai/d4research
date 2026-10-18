@@ -1,5 +1,5 @@
 name: Triage report
-description: Filed with `npx t3 triage`, where a coding agent investigated the machine. For hand-written reports use the bug report template instead.
+description: Filed with `npx d4research triage`, where a coding agent investigated the machine. For hand-written reports use the bug report template instead.
 labels:
   - via-triage
 body:

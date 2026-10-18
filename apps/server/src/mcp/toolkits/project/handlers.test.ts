@@ -6,7 +6,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadShell,
   type Project as ProjectRecord,
-} from "@t3tools/contracts";
+} from "@d4research/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -468,7 +468,7 @@ it.effect("a launch into a new worktree creates nothing when its base ref has no
       runtimeModeCeiling: "auto",
       launched,
       checkWorktreeBase: ({ projectId, workspaceStrategy }) =>
-        workspaceStrategy.type === "worktree" && workspaceStrategy.baseRef === "t3/renamed"
+        workspaceStrategy.type === "worktree" && workspaceStrategy.baseRef === "d4research/renamed"
           ? Effect.fail(
               new ThreadLaunch.ThreadLaunchBaseRefError({
                 projectId,
@@ -493,10 +493,10 @@ it.effect("a launch into a new worktree creates nothing when its base ref has no
         })
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
-    const refused = (yield* launchFrom("t3/renamed")).at(-1)?.result;
+    const refused = (yield* launchFrom("d4research/renamed")).at(-1)?.result;
     expect(refused).toMatchObject({ code: "invalid_request" });
     expect((refused as { message: string }).message).toContain(
-      'Base ref "t3/renamed" does not resolve to a commit in project "Client target" (/projects/client-target). No thread was created.',
+      'Base ref "d4research/renamed" does not resolve to a commit in project "Client target" (/projects/client-target). No thread was created.',
     );
     expect(launched).toHaveLength(0);
 

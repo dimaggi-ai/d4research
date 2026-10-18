@@ -1,4 +1,4 @@
-import type { ProviderOptionDescriptor, RuntimeMode } from "@t3tools/contracts";
+import type { ProviderOptionDescriptor, RuntimeMode } from "@d4research/contracts";
 
 /**
  * Prompt-injected values (ultrathink and friends) are filtered from the

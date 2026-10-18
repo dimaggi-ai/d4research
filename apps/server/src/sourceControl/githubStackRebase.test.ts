@@ -5,8 +5,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
-import { cascadeRebaseStack } from "@t3tools/source-control-github/server/githubStackRebase";
+import * as GitHubRest from "@d4research/source-control-github/server/GitHubRest";
+import { cascadeRebaseStack } from "@d4research/source-control-github/server/githubStackRebase";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";

@@ -180,7 +180,6 @@ it.layer(NodeServices.layer)("AgyAdapter", (it) => {
       for (let attempt = 0; attempt < 40; attempt += 1) yield* Effect.yieldNow;
 
       const thread = yield* adapter.readThread(threadId);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       const serialized = JSON.stringify(thread);
       assert.include(
         serialized,

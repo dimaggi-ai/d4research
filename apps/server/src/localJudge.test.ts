@@ -75,7 +75,6 @@ describe("askLocalJudge", () => {
       expect(captured[0]!.body["chat_template_kwargs"]).toEqual({ enable_thinking: false });
       const messages = captured[0]!.body["messages"] as Array<{ role: string; content: string }>;
       // The judge's user turn is a JSON document authored for the model, not a schema.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const evidence = JSON.parse(messages[1]!.content) as {
         options: Array<{ letter: string; description: string }>;
       };

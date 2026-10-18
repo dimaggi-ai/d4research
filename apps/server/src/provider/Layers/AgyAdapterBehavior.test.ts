@@ -165,7 +165,6 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
 
       const thread = yield* adapter.readThread(threadId);
       assert.equal(thread.turns.length, 1);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(thread.turns[0]), "Hello world.");
     }).pipe(Effect.scoped),
   );
@@ -181,7 +180,6 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
       yield* settle;
       yield* Fiber.interrupt(events.fiber);
       const thread = yield* adapter.readThread(threadId);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(thread.turns[0]), "the final answer");
       const deltas = (yield* Ref.get(events.ref))
         .filter((event) => event.type === "content.delta")
@@ -209,7 +207,6 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
         .map((event) => (event.payload as { delta: string }).delta);
       assert.deepStrictEqual(deltas, ["result-only answer"]);
       const thread = yield* adapter.readThread(threadId);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(thread.turns[0]), "result-only answer");
     }).pipe(Effect.scoped),
   );
@@ -236,7 +233,6 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
           'process.stdin.on("data", () => {});',
           'process.stdin.on("end", () => {',
           '  process.stderr.write("model quota exhausted");',
-          // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds a protocol fixture in mock source.
           `  console.log(${JSON.stringify(resultLine("ERROR"))});`,
           "  process.exit(1);",
           "});",
@@ -334,7 +330,6 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
       const turn = yield* adapter.sendTurn({ threadId, input: "hi", attachments: [] });
       assert.isDefined(turn.turnId);
       const thread = yield* adapter.readThread(threadId);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(thread.turns[0]), "still fine");
     }).pipe(Effect.scoped),
   );
@@ -454,7 +449,6 @@ describe("AgyAdapter process lifecycle", () => {
         "process.stdin.resume();",
         'process.stdin.on("data", () => {});',
         'process.stdin.on("end", () => {',
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds an exact protocol line in mock source.
         `  setTimeout(() => { console.log(${JSON.stringify(
           resultLine("SUCCESS", "winner"),
         )}); process.exit(0); }, 80);`,
@@ -477,7 +471,6 @@ describe("AgyAdapter process lifecycle", () => {
       assert.equal(exits.filter(Exit.isSuccess).length, 1);
       const failures = exits.filter(Exit.isFailure);
       assert.equal(failures.length, 1);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - searches a captured failure for the busy sentinel.
       assert.include(JSON.stringify(failures[0]), "already has a turn in progress");
       const seen = yield* Ref.get(events.ref);
       assert.equal(seen.filter((event) => event.type === "turn.started").length, 1);
@@ -509,9 +502,7 @@ describe("AgyAdapter process lifecycle", () => {
         adapter.sendTurn({ threadId, input: "are you there", attachments: [] }),
       );
       const refusedAsBusy =
-        Exit.isFailure(second) &&
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - searches a diagnostic failure for the busy sentinel.
-        JSON.stringify(second).includes("already has a turn in progress");
+        Exit.isFailure(second) && JSON.stringify(second).includes("already has a turn in progress");
       assert.isFalse(refusedAsBusy, "session stayed wedged after a timeout");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

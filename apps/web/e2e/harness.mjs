@@ -246,8 +246,9 @@ export async function openProject(page, workspacePath) {
       timeout: 10_000,
     });
     await page.keyboard.type("Add project");
+    // Settings search also lists "Add project starts in"; pick the action itself.
     await page
-      .getByRole("option", { name: /^Add project/ })
+      .getByRole("option", { name: /^Add project(?! starts in)/ })
       .first()
       .click();
     const localFolder = page.getByText("Local folder", { exact: true });

@@ -1,7 +1,8 @@
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
-import { createPairingUrl } from "./harness.mjs";
+import { createPairingUrl, openProject } from "./harness.mjs";
 
 export async function mobileQueueWhileRunning({ page, context, app, screenshotDir }) {
   await context.addInitScript(() => {
@@ -143,9 +144,15 @@ export async function mobileQueueWhileRunning({ page, context, app, screenshotDi
       }
     };
   });
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(createPairingUrl(app, "mobile-queue"), { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Toggle main sidebar", exact: true }).waitFor();
+  // The guard suite runs this case before any case has added a project. Add it at
+  // the default viewport, where the empty-state sidebar is visible.
+  const workspace = NodePath.join(app.baseDir, "mobile-queue-workspace");
+  await NodeFSP.mkdir(workspace, { recursive: true });
+  await NodeFSP.writeFile(NodePath.join(workspace, "README.md"), "# fixture\n");
+  await openProject(page, workspace);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForURL((url) => url.pathname !== "/" && url.pathname !== "/pair", {
     timeout: 20000,
   });

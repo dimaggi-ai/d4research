@@ -40,4 +40,14 @@ describe("d4 native release isolation", () => {
     expect(config.updates?.enabled).toBe(true);
     expect(config.updates?.url).toBe("https://updates.example.test/d4");
   });
+
+  it("signs every target under an owned bundle identifier", async () => {
+    vi.stubEnv("APP_VARIANT", "production");
+    vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM", "");
+    vi.stubEnv("T3CODE_IOS_BUNDLE_ID", "com.example.d4");
+    const config = await loadConfig();
+    expect(config.ios?.bundleIdentifier).toBe("com.example.d4");
+    expect(JSON.stringify(config.plugins)).toContain('"com.example.d4.sharing"');
+    expect(JSON.stringify(config.plugins)).toContain('"group.com.example.d4"');
+  });
 });

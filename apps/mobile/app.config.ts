@@ -10,6 +10,9 @@ const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
+// Lets a paid team that does not own the variant's identifier (for example an Xcode Cloud
+// workflow on a personal account) sign the full app, extensions included.
+const teamBundleIdentifier = repoEnv.T3CODE_IOS_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
@@ -22,6 +25,10 @@ if (
   throw new Error(
     "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code when T3CODE_IOS_PERSONAL_TEAM=1.",
   );
+}
+
+if (teamBundleIdentifier && !IOS_BUNDLE_IDENTIFIER_PATTERN.test(teamBundleIdentifier)) {
+  throw new Error("T3CODE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as com.example.d4.");
 }
 
 const DEVELOPMENT_ASSETS = {
@@ -104,7 +111,7 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+  : teamBundleIdentifier || variant.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",

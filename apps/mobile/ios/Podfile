@@ -1,0 +1,130 @@
+require File.join(File.dirname(`node --print "require.resolve('expo/package.json')"`), "scripts/autolinking")
+require File.join(File.dirname(`node --print "require.resolve('react-native/package.json')"`), "scripts/react_native_pods")
+
+require 'json'
+podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
+
+def ccache_enabled?(podfile_properties)
+  # Environment variable takes precedence
+  return ENV['USE_CCACHE'] == '1' if ENV['USE_CCACHE']
+
+  # Fall back to Podfile properties
+  podfile_properties['apple.ccacheEnabled'] == 'true'
+end
+
+ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] ||= podfile_properties['EX_DEV_CLIENT_NETWORK_INSPECTOR']
+ENV['RCT_USE_RN_DEP'] ||= podfile_properties['ios.buildReactNativeFromSource'] == 'true' ? '0' : '1'
+ENV['RCT_USE_PREBUILT_RNCORE'] ||= podfile_properties['ios.buildReactNativeFromSource'] == 'true' ? '0' : '1'
+ENV['RCT_HERMES_V1_ENABLED'] ||= '0' if podfile_properties['expo.useHermesV1'] == 'false'
+# An explicit `ios.usePrecompiledModules: false` must win even when the env var is already set
+# (e.g. EXPO_USE_PRECOMPILED_MODULES exported by EAS Build), so force-disable here before the default.
+ENV['EXPO_USE_PRECOMPILED_MODULES'] = '0' if podfile_properties['EXPO_USE_PRECOMPILED_MODULES'] == 'false'
+ENV['EXPO_USE_PRECOMPILED_MODULES'] ||= '1'
+platform :ios, podfile_properties['ios.deploymentTarget'] || '16.4'
+
+prepare_react_native_project!
+
+target 'd4research' do
+  use_expo_modules!
+
+  if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
+    config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
+  else
+    config_command = [
+      'node',
+      '--no-warnings',
+      '--eval',
+      'require(\'expo/bin/autolinking\')',
+      'expo-modules-autolinking',
+      'react-native-config',
+      '--json',
+      '--platform',
+      'ios'
+    ]
+  end
+
+  config = use_native_modules!(config_command)
+
+  use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
+  use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/..",
+    :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
+  )
+
+  post_install do |installer|
+# t3code: repair cached CocoaPods UUID allocation before SPM integration
+    pods_project = installer.pods_project
+    existing_uuids = pods_project.objects.map(&:uuid)
+    uuid_prefix = pods_project.instance_variable_get(:@uuid_prefix)[0, 6]
+    sequential_uuid = /\A#{Regexp.escape(uuid_prefix)}([0-9A-F]{7})0\z/
+    highest_index = existing_uuids.filter_map do |uuid|
+      match = sequential_uuid.match(uuid)
+      match && match[1].to_i(16)
+    end.max || -1
+
+    # Pod::Project generates sequential UUIDs without collision checks because CocoaPods
+    # normally creates the project in this process. EAS can restore Pods.xcodeproj from
+    # cache, leaving the allocator behind the loaded objects. React Native's SPM support
+    # then reuses an existing UUID and silently corrupts the project graph.
+    next_index = highest_index + 1
+    pods_project.instance_variable_set(:@generated_uuids, Array.new(next_index))
+    pods_project.instance_variable_set(:@available_uuids, [])
+    pods_project.generate_available_uuid_list(1_000)
+    Pod::UI.puts "T3Code: reset CocoaPods UUID allocator at #{next_index} (#{existing_uuids.length} existing objects)"
+    expo_widgets_post_install(installer)
+
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      :ccache_enabled => ccache_enabled?(podfile_properties),
+    )
+    # LLAMA_RN_CXX20: Force C++20 on all Pods
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++20'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '$(inherited) -std=gnu++20'
+      end
+    end
+
+  end
+
+end
+
+require File.join(File.dirname(`node --print "require.resolve('expo-widgets/package.json')"`), "scripts/autolinking")
+target "ExpoWidgetsTarget" do
+    use_expo_modules_widgets!
+
+    if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
+      config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
+    else
+      config_command = [
+        'node',
+        '--no-warnings',
+        '--eval',
+        "require(require.resolve('expo-modules-autolinking', { paths: [require.resolve('expo/package.json')] }))(process.argv.slice(1))",
+        'react-native-config',
+        '--json',
+        '--platform',
+        'ios'
+      ]
+    end
+
+    config = use_expo_native_module!(config_command)
+
+    use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
+    use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
+
+    use_react_native!(
+      :path => config[:reactNativePath],
+      :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
+      :app_path => "#{Pod::Config.instance.installation_root}/..",
+      :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
+    )
+end

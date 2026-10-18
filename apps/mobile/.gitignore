@@ -36,6 +36,6 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
+# generated native folders; ios/ stays committed because Xcode Cloud requires the
+# project to be present (ios/.gitignore excludes Pods and build output)
 /android

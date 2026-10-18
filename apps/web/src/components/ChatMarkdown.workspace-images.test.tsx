@@ -8,7 +8,6 @@ const testState = vi.hoisted(() => ({
   imageDimensions: undefined as { width: number; height: number } | undefined,
 }));
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../assets/assetUrls", () => ({
   useAssetUrlRefresh: () => vi.fn(),
   useAssetUrlState: (_environmentId: unknown, resource: unknown) => {

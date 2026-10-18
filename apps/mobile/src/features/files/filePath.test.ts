@@ -35,6 +35,8 @@ describe("file preview types", () => {
     expect(isBrowserPreviewFile("reports/summary.html")).toBe(true);
     expect(isImagePreviewFile("assets/icon.png")).toBe(true);
     expect(isImagePreviewFile("assets/diagram.SVG?raw=1")).toBe(true);
+    expect(isImagePreviewFile("assets/diagram.svg#icon")).toBe(true);
+    expect(isImagePreviewFile("src/image.ts?name=diagram.svg")).toBe(false);
     expect(isImagePreviewFile("src/image.ts")).toBe(false);
   });
 

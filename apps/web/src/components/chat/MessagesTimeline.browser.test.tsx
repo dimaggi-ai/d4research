@@ -1287,9 +1287,15 @@ describe("d4 handoff and skill rendering", () => {
     expect(container.querySelector("[data-provider-handoff-fold]")).not.toBeNull();
     expect(text()).toContain("Handed off to Claude Code / claude-sonnet-5");
     expect(
-      container.querySelector("[data-provider-handoff-fold] button")?.getAttribute("aria-expanded"),
+      container.querySelector("button[data-provider-handoff-fold]")?.getAttribute("aria-expanded"),
     ).toBe("false");
     // The boilerplate prompt body stays behind the fold until expanded.
+    expect(text()).not.toContain("context synchronization only");
+    await click(button(/Handed off to/));
+    expect(button(/Handed off to/).getAttribute("aria-expanded")).toBe("true");
+    expect(text()).toContain("context synchronization only");
+    await click(button(/Handed off to/));
+    expect(button(/Handed off to/).getAttribute("aria-expanded")).toBe("false");
     expect(text()).not.toContain("context synchronization only");
   });
   it("keeps the instruction visible and the attached context folded on a combined handoff", async () => {
@@ -1314,13 +1320,20 @@ describe("d4 handoff and skill rendering", () => {
     expect(container.querySelector("[data-provider-handoff-fold]")).not.toBeNull();
     expect(text()).toContain("Handed off to Claude Code / claude-sonnet-5");
     expect(
-      container.querySelector("[data-provider-handoff-fold] button")?.getAttribute("aria-expanded"),
+      container.querySelector("button[data-provider-handoff-fold]")?.getAttribute("aria-expanded"),
     ).toBe("false");
     // The user's instruction keeps its normal bubble; the machine block does not.
     expect(text()).toContain("Rerun the failing suite and report what broke.");
     expect(text()).not.toContain("Context summary (reference only)");
     expect(text()).not.toContain("ASSISTANT: fixed.");
     expect(text()).not.toContain("handoff_context");
+    await click(button(/Handed off to/));
+    expect(button(/Handed off to/).getAttribute("aria-expanded")).toBe("true");
+    expect(text()).toContain("ASSISTANT: fixed.");
+    await click(button(/Handed off to/));
+    expect(button(/Handed off to/).getAttribute("aria-expanded")).toBe("false");
+    expect(text()).not.toContain("ASSISTANT: fixed.");
+    expect(text()).toContain("Rerun the failing suite and report what broke.");
   });
   it("renders enabled skills as badges without leaking server transport markup", async () => {
     const messageText = appendEnabledSkillsContext("Fix the flaky test", [

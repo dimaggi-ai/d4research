@@ -107,7 +107,7 @@ export function isBrowserPreviewFile(path: string): boolean {
 }
 
 export function isImagePreviewFile(path: string): boolean {
-  return isWorkspaceImagePreviewPath(path);
+  return isWorkspaceImagePreviewPath(path.split(/[?#]/, 1)[0] ?? "");
 }
 
 export function isAudioPreviewFile(path: string): boolean {

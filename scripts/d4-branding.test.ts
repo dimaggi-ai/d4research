@@ -1,10 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - This repository branding test reads source files directly.
 import { expect, it } from "vite-plus/test";
-import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeURL from "node:url";
 import { checkD4Icons } from "./export-d4-icons.ts";
 
-const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+const repoRoot = NodeURL.fileURLToPath(new URL("../", import.meta.url));
 
 it("keeps every d4 icon and publish-time override in sync with the canonical mark", async () => {
   await checkD4Icons();
@@ -12,9 +12,9 @@ it("keeps every d4 icon and publish-time override in sync with the canonical mar
 
 it("keeps visible desktop and web copy free of upstream product branding", async () => {
   for (const root of ["apps/web/src", "apps/desktop/src", "apps/desktop/gnome-extension"]) {
-    for (const file of await readdir(`${repoRoot}${root}`, { recursive: true })) {
+    for (const file of await NodeFSP.readdir(`${repoRoot}${root}`, { recursive: true })) {
       if (!/\.(tsx?|jsx?|json)$/.test(file) || file.includes(".test.")) continue;
-      const source = await readFile(`${repoRoot}${root}/${file}`, "utf8");
+      const source = await NodeFSP.readFile(`${repoRoot}${root}/${file}`, "utf8");
       const visibleLines = source.split("\n").filter(
         (line) =>
           !/^\s*(\/\/|\*|\/\*)/.test(line) &&
@@ -27,11 +27,14 @@ it("keeps visible desktop and web copy free of upstream product branding", async
 });
 
 it("uses the canonical d4 mark in inherited wordmarks and Mac installers", async () => {
-  const wordmark = await readFile(`${repoRoot}apps/web/src/components/T3Wordmark.tsx`, "utf8");
+  const wordmark = await NodeFSP.readFile(
+    `${repoRoot}apps/web/src/components/T3Wordmark.tsx`,
+    "utf8",
+  );
   expect(wordmark).toContain('href="/d4-mark.svg"');
   expect(wordmark).not.toContain("M33.4509");
   for (const channel of ["latest", "nightly"]) {
-    const installer = await readFile(
+    const installer = await NodeFSP.readFile(
       `${repoRoot}apps/desktop/resources/dmg/dmg-background-${channel}.svg`,
       "utf8",
     );

@@ -1,5 +1,5 @@
-import * as assert from "node:assert/strict";
-import * as path from "node:path";
+import * as NodeAssert from "node:assert/strict";
+import * as NodePath from "node:path";
 import { createPairingUrl, openProject } from "./harness.mjs";
 
 export async function reconnectBanner({ page, context, app, screenshotDir }) {
@@ -29,13 +29,13 @@ export async function reconnectBanner({ page, context, app, screenshotDir }) {
         for (const socket of window.__reconnectTestSockets) socket.close();
       });
       await connections.first().waitFor({ state: "visible" });
-      assert.equal(await connections.count(), 1, "Only one reconnect banner owns Connections");
-      assert.equal(
+      NodeAssert.equal(await connections.count(), 1, "Only one reconnect banner owns Connections");
+      NodeAssert.equal(
         await page.getByRole("button", { name: /^Reconnect(?:ing\.\.\.)?$/ }).count(),
         1,
         "Only one reconnect action is rendered",
       );
-      await page.screenshot({ path: path.join(screenshotDir, `reconnect-${width}.png`) });
+      await page.screenshot({ path: NodePath.join(screenshotDir, `reconnect-${width}.png`) });
       await context.setOffline(false);
       await connections.waitFor({ state: "hidden", timeout: 30000 });
     }

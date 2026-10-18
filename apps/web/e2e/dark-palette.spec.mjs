@@ -1,5 +1,5 @@
-import * as assert from "node:assert/strict";
-import * as path from "node:path";
+import * as NodeAssert from "node:assert/strict";
+import * as NodePath from "node:path";
 import { openProject } from "./harness.mjs";
 
 export async function darkPalette({ page, app, screenshotDir }) {
@@ -10,19 +10,19 @@ export async function darkPalette({ page, app, screenshotDir }) {
   await send.waitFor();
   const canvasColor = () =>
     send.evaluate((el) => getComputedStyle(el.closest(".bg-background")).backgroundColor);
-  assert.equal(await canvasColor(), "rgb(18, 19, 23)");
-  assert.equal(
+  NodeAssert.equal(await canvasColor(), "rgb(18, 19, 23)");
+  NodeAssert.equal(
     await page
       .locator('[data-slot="sidebar-inner"]')
       .first()
       .evaluate((el) => getComputedStyle(el).backgroundColor),
     "rgb(22, 23, 27)",
   );
-  assert.equal(
+  NodeAssert.equal(
     await send.evaluate((el) => getComputedStyle(el).backgroundColor),
     "rgb(255, 152, 46)",
   );
-  assert.equal(await send.evaluate((el) => getComputedStyle(el).color), "rgb(10, 16, 49)");
+  NodeAssert.equal(await send.evaluate((el) => getComputedStyle(el).color), "rgb(10, 16, 49)");
   // Keep this as a local draft: show the enabled accent without invoking a provider.
   await page.getByTestId("composer-editor").fill("Compare compute scheduling strategies");
   await page.waitForFunction(
@@ -35,7 +35,7 @@ export async function darkPalette({ page, app, screenshotDir }) {
   ]) {
     await page.setViewportSize({ width, height });
     await page.screenshot({
-      path: path.join(screenshotDir, `dark-palette-${width}.png`),
+      path: NodePath.join(screenshotDir, `dark-palette-${width}.png`),
       animations: "disabled",
     });
   }
@@ -45,8 +45,8 @@ export async function darkPalette({ page, app, screenshotDir }) {
   await page.evaluate(() => localStorage.setItem("t3code:theme", "light"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await send.waitFor();
-  assert.equal(await canvasColor(), "oklch(0.992 0 0)");
-  assert.notEqual(
+  NodeAssert.equal(await canvasColor(), "oklch(0.992 0 0)");
+  NodeAssert.notEqual(
     await send.evaluate((el) => getComputedStyle(el).backgroundColor),
     "rgb(255, 152, 46)",
   );

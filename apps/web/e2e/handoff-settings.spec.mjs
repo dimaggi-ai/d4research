@@ -1,20 +1,22 @@
-import assert from "node:assert/strict";
-import path from "node:path";
-import { watch } from "node:fs";
-import { readFile } from "node:fs/promises";
+import * as NodeAssert from "node:assert/strict";
+import * as NodePath from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
 
 async function savedChange(app, change, matches) {
-  const directory = path.join(app.baseDir, "userdata");
+  const directory = NodePath.join(app.baseDir, "userdata");
   let watcher;
   let timer;
   const saved = new Promise((resolve, reject) => {
     const check = async () => {
       try {
-        const settings = JSON.parse(await readFile(path.join(directory, "settings.json"), "utf8"));
+        const settings = JSON.parse(
+          await NodeFSP.readFile(NodePath.join(directory, "settings.json"), "utf8"),
+        );
         if (matches(settings.handoff?.contextCompression ?? {})) resolve();
       } catch {}
     };
-    watcher = watch(directory, () => {
+    watcher = NodeFS.watch(directory, () => {
       void check();
     });
     timer = setTimeout(
@@ -35,7 +37,7 @@ export async function handoffSettings({ page, app, screenshotDir }) {
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   const mode = page.getByRole("combobox", { name: "Automatic handoff", exact: true });
   await mode.waitFor();
-  assert.match(await mode.innerText(), /Bounded history/);
+  NodeAssert.match(await mode.innerText(), /Bounded history/);
   await mode.click();
   await savedChange(
     app,
@@ -45,8 +47,8 @@ export async function handoffSettings({ page, app, screenshotDir }) {
   await page.reload({ waitUntil: "domcontentloaded" });
   await mode.waitFor();
   await mode.getByText("Direct (no compaction)", { exact: true }).waitFor();
-  assert.match(await mode.innerText(), /Direct/);
-  await page.screenshot({ path: path.join(screenshotDir, "handoff-direct.png") });
+  NodeAssert.match(await mode.innerText(), /Direct/);
+  await page.screenshot({ path: NodePath.join(screenshotDir, "handoff-direct.png") });
   await mode.click();
   await savedChange(
     app,
@@ -78,20 +80,23 @@ export async function handoffSettings({ page, app, screenshotDir }) {
   await page.getByText("Max output characters", { exact: true }).waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
   await judge.waitFor();
-  assert.equal(await judge.inputValue(), "bonsai2-27b:latest");
-  assert.equal(
+  NodeAssert.equal(await judge.inputValue(), "bonsai2-27b:latest");
+  NodeAssert.equal(
     await page.getByRole("textbox", { name: "Second judge model", exact: true }).inputValue(),
     "local-test-judge",
   );
-  assert.equal(
+  NodeAssert.equal(
     await page.getByRole("textbox", { name: "Second judge endpoint", exact: true }).inputValue(),
     "http://127.0.0.1:9000",
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await mode.scrollIntoViewIfNeeded();
   const box = await mode.boundingBox();
-  assert.ok(box && box.x >= 0 && box.x + box.width <= 390, "mode picker fits the phone viewport");
-  await page.screenshot({ path: path.join(screenshotDir, "handoff-smart-mobile.png") });
+  NodeAssert.ok(
+    box && box.x >= 0 && box.x + box.width <= 390,
+    "mode picker fits the phone viewport",
+  );
+  await page.screenshot({ path: NodePath.join(screenshotDir, "handoff-smart-mobile.png") });
   await mode.click();
   await savedChange(
     app,
@@ -101,5 +106,5 @@ export async function handoffSettings({ page, app, screenshotDir }) {
   await judge.waitFor({ state: "hidden" });
   await page.reload({ waitUntil: "domcontentloaded" });
   await mode.waitFor();
-  assert.match(await mode.innerText(), /Bounded history/);
+  NodeAssert.match(await mode.innerText(), /Bounded history/);
 }

@@ -74,7 +74,13 @@
           "tryCatchInEffectGen": "off",
           "unnecessaryFailYieldableError": "off",
           "unnecessaryPipeChain": "off"
-        }
+        },
+        "overrides": [
+          {
+            "include": ["**/*.test.ts", "**/*.test.tsx"],
+            "options": { "diagnosticSeverity": { "preferSchemaOverJson": "off" } }
+          }
+        ]
       }
     ]
   }

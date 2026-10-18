@@ -54,13 +54,15 @@ jobs:
         run: |
           workspace="$(ls -d *.xcworkspace | head -1)"
           scheme="${workspace%.xcworkspace}"
-          set -o pipefail
+          log="$RUNNER_TEMP/xcodebuild.log"
+          status=0
           xcodebuild archive \
             -workspace "$workspace" -scheme "$scheme" -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/app.xcarchive" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E '(error|warning: .*T3AppleLLM|\*\* ARCHIVE)' || true
-          test -d "$RUNNER_TEMP/app.xcarchive/Products/Applications"
+            > "$log" 2>&1 || status=$?
+          grep -E '(error:|warning:|\*\* ARCHIVE)' "$log" | tail -200 || true
+          exit "$status"
 
       - name: Package IPA
         run: |

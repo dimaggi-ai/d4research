@@ -3,8 +3,12 @@
 # present before this runs); this installs the JavaScript dependencies its build
 # phases and Podfile read, then the CocoaPods excluded from source control.
 #
-# After changing app.config.ts or native dependencies, regenerate the project with
-# `expo prebuild --clean --platform ios` and `pod install` on a Mac, keeping this folder.
+# After changing app.config.ts or native dependencies, regenerate the project on a Mac with
+# `expo prebuild --clean --platform ios`, then `git restore ios/ci_scripts` (--clean deletes
+# this folder), then `pod install`, and commit ios/ including Podfile.lock.
+#
+# Set T3CODE_IOS_BUNDLE_ID in the Xcode Cloud workflow to sign under a team that does not own
+# ai.dimaggi.d4research; this script rewrites the committed identifiers before the build.
 set -eu
 
 export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
@@ -24,11 +28,28 @@ npm install --global "$(node --print "require('./package.json').packageManager")
 pnpm install --frozen-lockfile --filter . --filter "@d4research/mobile..."
 
 cd "$REPO/apps/mobile/ios"
+BUNDLE_ID="${T3CODE_IOS_BUNDLE_ID:-}"
+if [ -n "$BUNDLE_ID" ]; then
+  # Same pattern app.config.ts enforces.
+  if ! printf '%s\n' "$BUNDLE_ID" | grep -Eqx '[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+'; then
+    echo "T3CODE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as com.example.d4." >&2
+    exit 1
+  fi
+  # Covers the app, .widgets and .sharing targets and the group.<id> app group.
+  BUNDLE_ID="$BUNDLE_ID" perl -pi -e 's/ai\.dimaggi\.d4research/$ENV{BUNDLE_ID}/g' \
+    d4research.xcodeproj/project.pbxproj \
+    d4research/Info.plist d4research/d4research.entitlements \
+    ExpoWidgetsTarget/Info.plist ExpoWidgetsTarget/ExpoWidgetsTarget.entitlements \
+    expo-sharing-extension/Info.plist expo-sharing-extension/expo-sharing-extension.entitlements
+fi
+
 pod install
 
 # Xcode build phases do not inherit this shell; React Native sources .xcode.env.local.
+# The expo-constants phase evaluates app.config.ts, so it needs the same identifier.
 cat > .xcode.env.local <<ENV
 export NODE_BINARY="$NODE_BIN/node"
 export NODE_OPTIONS="$NODE_OPTIONS"
 export APP_VARIANT="$APP_VARIANT"
+export T3CODE_IOS_BUNDLE_ID="$BUNDLE_ID"
 ENV

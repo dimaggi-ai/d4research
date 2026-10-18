@@ -1,8 +1,7 @@
 import { X } from "lucide-react";
 
 import { isValidHistoryTimestamp, type BrowserHistoryEntry } from "~/browserHistoryStore";
-import { useNowMinute } from "~/hooks/useNowMinute";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { RelativeTime } from "~/components/RelativeTime";
 
 import { BrowserMockup } from "./BrowserMockup";
 
@@ -16,10 +15,9 @@ export function PreviewRecentUrlCard({ entry, onOpen, onRemove }: Props) {
   const parsed = new URL(entry.url);
   const path = parsed.pathname === "/" ? "" : parsed.pathname;
   const label = `${parsed.host}${path}${parsed.search}${parsed.hash}`;
-  const visitedAt = isValidHistoryTimestamp(entry.lastVisitedAt)
-    ? formatRelativeTimeLabel(new Date(entry.lastVisitedAt).toISOString())
-    : "";
-  useNowMinute();
+  const visitedAt = isValidHistoryTimestamp(entry.lastVisitedAt) ? (
+    <RelativeTime timestamp={new Date(entry.lastVisitedAt).toISOString()} />
+  ) : null;
   return (
     <div className="group relative flex w-full items-center">
       <button

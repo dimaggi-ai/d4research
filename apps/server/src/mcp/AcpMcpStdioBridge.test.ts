@@ -1,6 +1,4 @@
-// @effect-diagnostics preferSchemaOverJson:off -- Fixtures assert raw JSON wire values and provider output.
-// The harness asserts raw JSON-RPC wire strings, mirroring the bridge's
-// schema-free passthrough.
+// @effect-diagnostics preferSchemaOverJson:off - These tests construct and inspect raw JSON wire fixtures independently of production codecs.
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off
 import * as NodeStream from "node:stream";
 

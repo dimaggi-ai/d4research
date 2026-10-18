@@ -15,7 +15,6 @@ import { observeResize } from "../../lib/observeResize";
 
 const loadPhoneViewer = () => import("@d4research/client-runtime/device/phone-viewer");
 
-/** Web shell for the framework-independent viewer. The decoded screen and input connection remain owned by DeviceStreamView. */
 export function DevicePhoneViewport(props: {
   readonly profile: DeviceShapeProfile;
   readonly model: DeviceModelSource | null;

@@ -5,6 +5,14 @@
 The environment server uses an OAuth-shaped model so permission checks and token
 exchange behavior can be audited against established concepts.
 
+Pairing delegates a set of scopes. Exchanging a bootstrap credential can narrow
+that grant but cannot widen it. Ordinary pairing grants client operations without
+access management. Administrative bootstrap credentials also grant
+`access:read access:write`. Creating another pairing link requires both
+`access:write` and every scope being delegated. The
+[auth handlers](../../apps/server/src/auth/http.ts) enforce this at issuance;
+client labels and device metadata have no authorization role.
+
 ## Authorization Model
 
 Environment authorization is capability-based. A session carries zero or more
@@ -26,7 +34,7 @@ approval page names the host access goes to and approving stays the owner's
 call. Every client is public and proves itself with PKCE; a client that asks
 for a secret is registered without one. Client registration is stateless, so an unauthenticated caller cannot grow server
 state. Approval spends a one-time pairing code, or uses a browser session with
-`access:write`; proof-bound T3 Connect codes are refused without being spent.
+`access:write`.
 
 The user grants either read-only access or a runtime-mode ceiling, not a
 scope list: MCP tools are all orchestration, and `orchestration:operate`
@@ -43,11 +51,13 @@ parameters only pick targets; see
 
 Issuer and resource URLs come from the request's Host and
 `X-Forwarded-Proto`, so one server answers over loopback, Tailscale Serve and a
-T3 Connect tunnel. A proxy that rewrites Host or drops the protocol header
+reverse proxy. A proxy that rewrites Host or drops the protocol header
 breaks sign-in.
 
-Ordinary pairing links grant the four client-operation scopes:
-`orchestration:read orchestration:operate terminal:operate review:write`.
+Ordinary pairing links grant the client-operation permissions defined by
+[`AuthStandardClientScopes`](../../packages/contracts/src/auth.ts), excluding
+access management. `review:write` remains decodable for existing credentials but
+grants no current RPC access.
 The desktop bootstrap credential and command-line administrative bootstrap
 credentials also grant `access:read access:write`.
 Bearer and DPoP clients obtain short-lived WebSocket tickets through authenticated

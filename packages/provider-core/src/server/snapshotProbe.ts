@@ -34,7 +34,6 @@ const WINDOWS_COMMAND_NOT_FOUND_PATTERNS = [
   /wird nicht als interner oder externer befehl/i,
 ] as const;
 
-/** Whether a Windows exit means the command was not found rather than that it failed. */
 export const isWindowsCommandNotFound = Effect.fn("isWindowsCommandNotFound")(function* (
   code: number | null,
   stderr: string,
@@ -46,7 +45,6 @@ export const isWindowsCommandNotFound = Effect.fn("isWindowsCommandNotFound")(fu
 });
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
-// Auth status checks involve disk/network lookups and can be slow on first run (especially Windows)
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
 
 export const COMPACT_SLASH_COMMAND = {
@@ -189,10 +187,6 @@ export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Comman
     return result;
   }).pipe(Effect.scoped);
 
-/**
- * Return the first semantic version found in CLI output, or null. Accepts a
- * leading "v" (for example `opencode v2.0.3`).
- */
 export function parseGenericCliVersion(output: string): string | null {
   // "opencode v2.0.3"-style output: the optional "v" has to be consumed first,
   // since "v2" itself contains no word boundary.
@@ -241,7 +235,6 @@ export function providerModelsFromSettings(
   const resolvedBuiltInModels = builtInModels.map((model) => {
     const name = nameOverrides.get(model.slug);
     if (!name) return model;
-    // The built-in short name would undo the override in compact UI.
     const { shortName: _shortName, ...rest } = model;
     return { ...rest, name };
   });

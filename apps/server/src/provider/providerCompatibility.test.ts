@@ -25,8 +25,7 @@ import {
 const driver = ProviderDriverKind.make("codex");
 const policy: ProviderCompatibilityPolicy = {
   driver,
-  // d4research: the server package is 0.2.x, so the window must include it.
-  t3CodeRange: ">=0.0.42 <1.0.0",
+  t3CodeRange: ">=0.0.0",
   recommendedVersion: "2.0.0",
   recommendedRange: ">=2.0.0 <3.0.0",
   ranges: [
@@ -51,7 +50,6 @@ const provider: ServerProvider = {
   slashCommands: [],
 };
 
-// The first release that runs the V2 orchestrator.
 const V2_RELEASE = "0.0.46";
 
 describe("provider compatibility", () => {
@@ -91,7 +89,6 @@ describe("provider compatibility", () => {
       assert.strictEqual(advisory?.status, expected, `OpenCode ${version} on 0.0.45`);
       assert.strictEqual(advisory?.recommendedVersion, "1.14.19");
     }
-    // Pi has no driver before V2.
     assert.isUndefined(
       resolveProviderCompatibility(
         ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
@@ -107,7 +104,6 @@ describe("provider compatibility", () => {
     for (const [version, expected] of [
       ["2.0.18", "supported"],
       ["2.1.0", "supported"],
-      // Early OpenCode 2 releases predate the API the adapter was built against.
       ["2.0.17", "unsupported"],
       ["2.0.0", "unsupported"],
       ["1.99.0", "graceful"],
@@ -125,7 +121,6 @@ describe("provider compatibility", () => {
         assert.strictEqual(advisory?.recommendedRange, ">=2.0.18");
       }
     }
-    // The advisory rides beside the probe: a ready 1.x instance stays ready and selectable.
     const ready = applyProviderCompatibility(
       { ...provider, driver: opencode, version: "1.18.33", status: "ready", message: undefined },
       undefined,
@@ -225,7 +220,19 @@ describe("provider compatibility", () => {
     ] as const) {
       assert.strictEqual(resolveProviderCompatibility([policy], driver, version)?.status, expected);
     }
-    assert.isUndefined(resolveProviderCompatibility([policy], driver, "0.9.0", "1.0.0"));
+  });
+
+  it("applies policies only within their T3 Code version range", () => {
+    const scopedPolicy = { ...policy, t3CodeRange: ">=0.0.42 <0.1.0" };
+    for (const version of ["0.0.42", "0.0.45"]) {
+      assert.strictEqual(
+        resolveProviderCompatibility([scopedPolicy], driver, "0.9.0", version)?.status,
+        "broken",
+      );
+    }
+    for (const version of ["0.0.41", "0.1.0"]) {
+      assert.isUndefined(resolveProviderCompatibility([scopedPolicy], driver, "0.9.0", version));
+    }
   });
 
   it("supports every driver without inventing policies for uncovered adapters", () => {
@@ -256,7 +263,7 @@ describe("provider compatibility", () => {
     assert.strictEqual(supported.status, "error");
     assert.strictEqual(supported.message, "Authentication failed");
     assert.strictEqual(
-      applyProviderCompatibility(supported, [{ ...policy, t3CodeRange: ">=9.0.0" }], [policy])
+      applyProviderCompatibility(supported, [{ ...policy, t3CodeRange: "<0.0.0" }], [policy])
         .compatibilityAdvisory?.status,
       "broken",
     );
@@ -283,11 +290,11 @@ describe("provider compatibility", () => {
       ranges: [{ range: ">=v2.0 <v3", status: "supported" }],
     });
     assert.strictEqual(
-      resolveProviderCompatibility([prefixed], driver, "2.0.0")?.status,
+      resolveProviderCompatibility([prefixed], driver, "2.0.0", "0.0.45")?.status,
       "supported",
     );
     assert.strictEqual(
-      resolveProviderCompatibility([prefixed], driver, "3.0.0")?.status,
+      resolveProviderCompatibility([prefixed], driver, "3.0.0", "0.0.45")?.status,
       "unknown",
     );
     for (const invalid of [

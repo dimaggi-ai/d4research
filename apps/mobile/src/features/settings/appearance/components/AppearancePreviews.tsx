@@ -7,7 +7,7 @@ import {
   useColorScheme,
 } from "react-native";
 
-import { AppText as Text } from "../../../../components/AppText";
+import { AppText as Text } from "../../../../components/ui/AppText";
 import {
   resolveMarkdownFontSizes,
   resolveMobileCodeSurface,
@@ -20,12 +20,10 @@ const CODE_FONT_FAMILY = Platform.select({
   default: "monospace",
 });
 
-/** Hairline between a section's preview surface and its control rows. */
 export function AppearancePreviewSeparator() {
   return <View className="h-px bg-separator" />;
 }
 
-/** Live sample of body text rendered at the chosen base font size. */
 export function TextAppearancePreview(props: { readonly fontSize: number }) {
   const sizes = resolveMarkdownFontSizes(props.fontSize);
 
@@ -47,10 +45,6 @@ export function TextAppearancePreview(props: { readonly fontSize: number }) {
   );
 }
 
-/**
- * Live terminal sample using the real terminal theme's text colors and font,
- * on the shared card background so it reads like the other previews.
- */
 export function TerminalAppearancePreview(props: { readonly fontSize: number }) {
   const scheme = useColorScheme() === "light" ? "light" : "dark";
   const theme = getPierreTerminalTheme(scheme);
@@ -60,9 +54,6 @@ export function TerminalAppearancePreview(props: { readonly fontSize: number }) 
     fontSize: props.fontSize,
     lineHeight,
   } as const;
-  // AppText stamps the sans font on every node, so nested spans must
-  // re-apply the terminal font instead of relying on inheritance, exactly
-  // like the code preview's tokens below.
   const span = (color: string, extra?: TextStyle): StyleProp<TextStyle> => [
     lineStyle,
     { color, ...extra },
@@ -133,11 +124,6 @@ const CODE_PREVIEW_LINES: ReadonlyArray<CodePreviewLine> = [
   { id: "close", tokens: [{ text: "}" }] },
 ];
 
-/**
- * Live code sample matching the code & diff surface metrics. Long lines wrap
- * when word break is on and scroll horizontally when it is off, mirroring the
- * real code surface.
- */
 export function CodeAppearancePreview(props: {
   readonly fontSize: number;
   readonly wordBreak: boolean;

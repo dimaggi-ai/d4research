@@ -71,9 +71,7 @@ export const make = Effect.gen(function* () {
   >(new Map());
 
   /**
-   * Confirms a direct address still serves the expected environment before a
-   * credential is sent there. A saved LAN address can belong to another
-   * machine on a different network.
+   * A saved LAN address can belong to another machine on a different network.
    */
   const verifyDirectEndpoint = Effect.fn("clientRuntime.connection.remote.verifyDirectEndpoint")(
     function* (input: {

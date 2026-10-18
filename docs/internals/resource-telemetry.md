@@ -6,6 +6,13 @@ Status: implemented
 
 ## Purpose
 
+The native child owns sampling and bounded in-memory history. It samples on a timer
+only while diagnostics has live subscribers. With none, the server sends a sample
+interval of 0 and the child samples only on request, so an idle server never walks
+the process table. History therefore covers only time with a live subscriber, plus
+on-demand samples. Consuming host power for background scheduling must not retain
+live diagnostics. There is no telemetry database or recurring shell-probe fallback.
+
 Resource telemetry replaces recurring `ps`, PowerShell, `ioreg`, and `pmset`
 subprocess probes with two persistent, direct data sources:
 

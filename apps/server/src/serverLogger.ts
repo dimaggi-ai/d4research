@@ -1,3 +1,5 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as SharedObservability from "@d4research/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -7,6 +9,7 @@ import * as ServerConfig from "./config.ts";
 
 export const layer = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
+  const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
   // Historical exporter settings do not opt this local-first fork into network export.

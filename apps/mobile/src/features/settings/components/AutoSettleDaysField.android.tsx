@@ -4,8 +4,8 @@ import {
 } from "@d4research/contracts";
 import { View } from "react-native";
 
-import { AppText } from "../../../components/AppText";
-import { MaterialIconButton } from "../../../components/MaterialIconButton";
+import { AppText } from "../../../components/ui/AppText";
+import { IconButton } from "../../../components/ui/IconButton";
 import type { AutoSettleDaysFieldProps } from "./AutoSettleDaysField";
 
 export function AutoSettleDaysField(props: AutoSettleDaysFieldProps) {
@@ -26,7 +26,7 @@ export function AutoSettleDaysField(props: AutoSettleDaysFieldProps) {
         className="absolute inset-x-0 rounded-full bg-subtle"
         style={{ height: 32 }}
       />
-      <MaterialIconButton
+      <IconButton
         icon="minus"
         accessibilityLabel="Decrease days before auto-settle"
         disabled={props.disabled || props.value <= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
@@ -40,7 +40,7 @@ export function AutoSettleDaysField(props: AutoSettleDaysFieldProps) {
       >
         {props.value}
       </AppText>
-      <MaterialIconButton
+      <IconButton
         icon="plus"
         accessibilityLabel="Increase days before auto-settle"
         disabled={props.disabled || props.value >= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}

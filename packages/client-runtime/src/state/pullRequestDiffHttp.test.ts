@@ -1,3 +1,4 @@
+// @effect-diagnostics preferSchemaOverJson:off - These tests construct and inspect raw JSON wire fixtures independently of production codecs.
 import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -69,9 +70,6 @@ describe("fetchEnvironmentPullRequestDiff", () => {
           : init.body instanceof Uint8Array
             ? new TextDecoder().decode(init.body)
             : "";
-      // The assertion deliberately inspects the serialized wire body rather than decoding a
-      // domain value for use in application code.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off -- Assert the serialized wire body.
       expect(JSON.parse(body)).toEqual({
         projectId: "project-1",
         repository: "owner/repository",

@@ -178,8 +178,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
       Effect.flatMap((json) => store.set(new TextEncoder().encode(json))),
       Effect.mapError(() => failure("save", "Could not save the ChatGPT connection.")),
     );
-  // Registration profiles outlive tokens, but belong only to this environment/instance.
-  // Accept the original single-registration record until it is next saved.
   const readRegistrations = registrationStore.get.pipe(
     Effect.mapError(() =>
       failure("registration", "Could not read the ChatGPT sign-in registration. Try again."),
@@ -233,7 +231,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
       ),
     );
   });
-  // The active pointer and all profile token sets change in one protected atomic write.
   const save = Effect.fnUntraced(function* (record: CodexChatGptCredentials, activate = true) {
     const saved = yield* readSessions;
     yield* writeSessions({
@@ -256,7 +253,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
       );
   });
   const remove = Effect.gen(function* () {
-    // Promote legacy identity into the retained profile before deleting credentials.
     const credentials = yield* read;
     if (Option.isSome(credentials)) {
       const { clientId, subject, email } = credentials.value;
@@ -753,7 +749,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
           description: "Register a connection for another ChatGPT account.",
           type: "agent" as const,
         },
-        // The wire contract allows 32 methods; advertise the 30 most recent profiles.
         ...profiles.slice(0, 30).map((profile) => ({
           id: profileMethodId(profile.clientId),
           name: `${profile.email ?? "ChatGPT account"} · ${profile.connectionLabel}`,

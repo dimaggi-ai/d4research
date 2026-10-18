@@ -4,9 +4,12 @@ import * as NodeDns from "node:dns";
 import * as NodeOS from "node:os";
 import * as NodeSea from "node:sea";
 
-export const Platform = Context.Reference<NodeJS.Platform>("@d4research/shared/HostProcess/Platform", {
-  defaultValue: () => process.platform,
-});
+export const Platform = Context.Reference<NodeJS.Platform>(
+  "@d4research/shared/HostProcess/Platform",
+  {
+    defaultValue: () => process.platform,
+  },
+);
 
 export const Architecture = Context.Reference<NodeJS.Architecture>(
   "@d4research/shared/HostProcess/Architecture",
@@ -63,25 +66,20 @@ export const InvokedAs = Context.Reference<string>("@d4research/shared/HostProce
   defaultValue: () => process.argv0,
 });
 
-/**
- * Whether this process is a Node single-executable rather than a script run
- * by a Node on the machine. Code that needs a sibling file or a Node to run
- * one branches on this: an executable hosts such things as hidden
- * subcommands of itself.
- */
-export const IsExecutable = Context.Reference<boolean>("@d4research/shared/HostProcess/IsExecutable", {
-  defaultValue: () => NodeSea.isSea(),
-});
+export const IsExecutable = Context.Reference<boolean>(
+  "@d4research/shared/HostProcess/IsExecutable",
+  {
+    defaultValue: () => NodeSea.isSea(),
+  },
+);
 
 /**
  * Every IP address this machine answers to: the interface addresses, plus
  * whatever the resolver returns for the machine's own hostname. The latter
  * matters because a hostname can map to an address no interface carries —
  * Debian-style hosts put `127.0.1.1` in `/etc/hosts` — and a program that
- * records "its" address by resolving its hostname (Firefox's profile lock
- * does) will write that one. "Is this address ours" has to accept both.
- *
- * Best effort: a failed lookup just leaves the interface set.
+ * records "its" address by resolving its hostname (Firefox's profile lock does)
+ * will write that one.
  */
 export const Addresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
   "@d4research/shared/HostProcess/Addresses",
@@ -103,8 +101,11 @@ export const Addresses = Context.Reference<Effect.Effect<ReadonlySet<string>>>(
 );
 
 /** Undefined on platforms without POSIX uids (Windows). */
-export const UserId = Context.Reference<number | undefined>("@d4research/shared/HostProcess/UserId", {
-  defaultValue: () => process.getuid?.(),
-});
+export const UserId = Context.Reference<number | undefined>(
+  "@d4research/shared/HostProcess/UserId",
+  {
+    defaultValue: () => process.getuid?.(),
+  },
+);
 
 export const isWindows = Effect.map(Platform, (platform) => platform === "win32");

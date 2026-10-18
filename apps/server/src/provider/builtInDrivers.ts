@@ -39,11 +39,6 @@ import type {
   ProviderUsageReaderEnv,
 } from "@d4research/provider-core/server/driver";
 
-/**
- * Union of infrastructure services required to construct any built-in
- * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
- * layer must provide every service in this union.
- */
 export type BuiltInDriversEnv =
   | AgyDriverEnv
   | AcpRegistryDriverEnv
@@ -57,11 +52,6 @@ export type BuiltInDriversEnv =
   | OpenCodeDriverEnv
   | PiDriverEnv;
 
-/**
- * Ordered list of built-in drivers. Order matters only for tie-breaking in
- * UI presentation — the registry itself is keyed by `driverKind`, so
- * iteration order has no functional effect on instance lookup.
- */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
@@ -76,7 +66,6 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   AcpRegistryDriver,
 ];
 
-/** Services the built-in usage readers need. */
 export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof ClaudeDriver>
   | ProviderUsageReaderEnv<typeof CodexDriver>
@@ -87,9 +76,8 @@ export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof PiDriver>;
 
 /**
- * The drivers that keep usage history, in the order the usage page reads
- * them: transcript readers first, then scan readers. Aggregation keeps the
- * first copy of a duplicate record, so the order is part of the result.
+ * Aggregation keeps the first copy of a duplicate record, so the order is part
+ * of the result.
  */
 export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
   AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>

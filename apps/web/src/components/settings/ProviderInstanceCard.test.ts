@@ -1,20 +1,18 @@
+import { ProviderDriverKind } from "@d4research/contracts";
+import { ProviderInstanceId } from "@d4research/contracts";
+import { type ServerProvider } from "@d4research/contracts";
+import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { vi } from "vite-plus/test";
 import { ProviderDetailsButton } from "./ProviderInstanceCard";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProvider,
-  type ServerProviderModel,
-} from "@d4research/contracts";
+import type { ServerProviderModel } from "@d4research/contracts";
 
 import {
   deriveProviderModelsForDisplay,
   nextProviderEnvironmentWithFieldValue,
   providerEnvironmentWithoutNames,
-  ProviderInstanceCard,
   readProviderEnvironmentVariable,
 } from "./ProviderInstanceCard";
 
@@ -75,7 +73,6 @@ describe("deriveProviderModelsForDisplay", () => {
       ],
     });
 
-    // A bare entry keeps the driver default the server filled in.
     expect(display[0]).toEqual({
       slug: "bare",
       name: "bare",

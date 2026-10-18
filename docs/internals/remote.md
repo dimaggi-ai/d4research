@@ -37,6 +37,15 @@ the connection layer, never by splitting the runtime.
 A single running T3 server instance owns provider availability and auth, model availability,
 projects and threads, terminal processes, filesystem access, git operations, and server settings.
 
+A connected server reports the LAN and tailnet addresses it is bound to, and the
+client saves them as learned routes. A learned route reuses the credential of
+the route it was learned over: the paired bearer token. A paired token only learns a plain HTTP address off the tailnet
+when it was itself paired over plain HTTP, so a token paired over HTTPS never
+starts travelling unencrypted. Learned routes the server stops reporting are
+dropped, which is how a changed LAN address replaces the old one; routes the
+user saved are never touched. The reported addresses are hints like any advertised endpoint, so a
+learned route still has to answer as this environment before it is used.
+
 The server identifies it with a stable `environmentId`, persisted at `<stateDir>/environment-id` and
 generated on first start (`apps/server/src/environment/ServerEnvironment.ts`). Desktop, mobile, and
 web all reason about the same concept.

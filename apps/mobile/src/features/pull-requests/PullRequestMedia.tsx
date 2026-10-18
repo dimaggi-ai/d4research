@@ -6,7 +6,7 @@ import { githubMediaFetchUrl } from "@d4research/shared/githubMedia";
 import { videoMimeType } from "@d4research/shared/video";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
-import { AppText } from "../../components/AppText";
+import { AppText } from "../../components/ui/AppText";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
 import { VideoAttachmentTile } from "../../components/VideoAttachmentTile";
@@ -23,7 +23,6 @@ export const PullRequestMediaContext = createContext<{
   readonly cwd: string;
 } | null>(null);
 
-/** Only GitHub-hosted media needs the environment's authenticated asset path. */
 export function usePullRequestMediaUrl(url: string) {
   const context = useContext(PullRequestMediaContext);
   const fetchUrl = githubMediaFetchUrl(url);

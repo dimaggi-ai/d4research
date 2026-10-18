@@ -7,10 +7,11 @@ const mode = process.argv[3];
 const withHandoff = mode.startsWith("handoff");
 const require = NodeModule.createRequire(root + "/apps/server/package.json");
 const load = (name) => import(NodeURL.pathToFileURL(require.resolve("effect/" + name)));
-const [Effect, Layer, FileSystem] = await Promise.all([
+const [Effect, Layer, FileSystem, Path] = await Promise.all([
   load("Effect"),
   load("Layer"),
   load("FileSystem"),
+  load("Path"),
 ]);
 const app = (file) => import(NodeURL.pathToFileURL(root + "/apps/server/src/" + file + ".ts"));
 const providerCore = (file) =>
@@ -29,13 +30,17 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     app("project/ProjectService"),
     app("provider/ProviderAuthService"),
   ]);
+const Mcp = await providerCore("McpProviderSessions");
+const Research = await app("orchestration-v2/ProviderTurnStartService.testkit");
 const Settings = await app("serverSettings");
-const Registry = await app("provider/Services/ProviderRegistry");
+const Registry = await app("provider/ProviderRegistry");
 const { DEFAULT_SERVER_SETTINGS } = await import(
   NodeURL.pathToFileURL(root + "/packages/contracts/src/settings.ts")
 );
+const Config = await app("config");
 let current;
 let fullReads = 0;
+let threadReads = 0;
 const liveRuns = [];
 const refs = [];
 const checkpoints = [];
@@ -50,6 +55,8 @@ const session = {
   compactThread: () => Effect.void,
 };
 const dependencies = Layer.mergeAll(
+  Mcp.layer,
+  Research.researchTurnDependenciesTestLayer,
   Layer.mock(Registry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
   Layer.mock(Settings.ServerSettingsService)({
     getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
@@ -57,9 +64,12 @@ const dependencies = Layer.mergeAll(
   Layer.mock(Handoff.ContextHandoffServiceV2)({}),
   Id.layer,
   FileSystem.layerNoop({}),
+  Path.layer,
   Layer.mock(Git.GitWorkflowService)({}),
   Layer.mock(Project.ProjectService)({}),
   Layer.mock(Auth.ProviderAuthService)({}),
+  Layer.mock(Config.ServerConfig)({ worktreesDir: "/synthetic-worktrees" }),
+  Settings.layerTest(),
   Layer.mock(Projection.ProjectionStoreV2)({
     getThreadProjection: () =>
       Effect.sync(() => {
@@ -67,6 +77,13 @@ const dependencies = Layer.mergeAll(
         throw new Error("full transcript read");
       }),
     hasUnpairedRunInterruptRequest: () => Effect.succeed(false),
+    getThreadRecords: (threadId, fields) =>
+      Effect.sync(() => {
+        NodeAssert.equal(threadId, current.thread.id);
+        NodeAssert.deepEqual(fields, []);
+        threadReads++;
+        return { thread: current.thread };
+      }),
     getTurnStartContext: () =>
       Effect.sync(() => {
         fullReads++;
@@ -177,7 +194,6 @@ await Effect.runPromise(
     for (let i = 0; i < count; i++) {
       current = fixture(i);
       yield* service.start({ threadId: "thread", runId: "run:" + i });
-      // The run worker must keep checking current durable state, not its startup copy.
       const controls = liveRuns.at(-1);
       current = { ...current, turnItems: [] };
       NodeAssert.equal(yield* controls.shouldStartProviderTurn(), true);
@@ -190,8 +206,10 @@ await Effect.runPromise(
       NodeAssert.equal(yield* controls.shouldFinalizeRun(), false);
       NodeAssert.deepEqual(yield* controls.loadInheritedBackgroundTurnItems(), []);
       NodeAssert.equal(fullReads, i + 1);
+      NodeAssert.equal(threadReads, i + 1);
       NodeAssert.equal(yield* controls.hasUnpairedRunInterruptRequest(), false);
       NodeAssert.equal(fullReads, i + 1);
+      NodeAssert.equal(threadReads, i + 1);
       current = null;
       if (i === Math.floor(count / 2) - 1 || i === count - 1) {
         yield* Effect.promise(async () => {

@@ -1,8 +1,3 @@
-/**
- * The built-in transcript formats by provider, for engine and cache tests.
- *
- * @module usageTestFormats
- */
 import type { UsageProviderKind } from "@d4research/contracts";
 import type { TranscriptUsageFormat } from "@d4research/provider-core/server/usage";
 import { piUsageFormat } from "@d4research/provider-pi/server/usage";

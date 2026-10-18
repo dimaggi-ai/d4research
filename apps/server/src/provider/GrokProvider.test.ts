@@ -419,7 +419,11 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
   // A stand-in for the Grok CLI: `--version` and `models` print canned text,
   // and `agent stdio` execs the mock ACP agent so `initialize` returns model metadata.
-  const writeFakeGrokCli = (input: { readonly modelsOutput: string; readonly acp: boolean }) =>
+  const writeFakeGrokCli = (input: {
+    readonly modelsOutput: string;
+    readonly acp: boolean;
+    readonly updateLogPath?: string;
+  }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-probe-" });
@@ -428,6 +432,14 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         directory: dir,
         name: "grok",
         source: [
+          ...(input.updateLogPath
+            ? [
+                'import { appendFileSync as appendUpdateAttempt } from "node:fs";',
+                'if (process.env.GROK_DISABLE_AUTOUPDATER !== "1") {',
+                `  appendUpdateAttempt(${JSON.stringify(input.updateLogPath)}, "update\\n");`,
+                "}",
+              ]
+            : []),
           'if (process.argv[2] === "--version") {',
           '  process.stdout.write("grok 1.0.13\\n");',
           "  process.exit(0);",
@@ -442,6 +454,44 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         ].join("\n"),
       });
     });
+
+  it.effect("reports ready with ACP-discovered models without running startup updates", () =>
+    Effect.gen(function* () {
+      const environment = { ...process.env, XAI_API_KEY: "", GROK_DISABLE_AUTOUPDATER: "0" };
+      const { snapshot, updateRan } = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-updater-" });
+          const updateLogPath = NodePath.join(dir, "updates.log");
+          const grokPath = yield* writeFakeGrokCli({
+            modelsOutput: LOGGED_IN_MODELS_OUTPUT,
+            acp: true,
+            updateLogPath,
+          });
+          const snapshot = yield* checkGrokProviderStatus(
+            decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+            environment,
+          );
+          return { snapshot, updateRan: yield* fs.exists(updateLogPath) };
+        }),
+      );
+
+      expect(updateRan).toBe(false);
+      expect(environment.GROK_DISABLE_AUTOUPDATER).toBe("0");
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.version).toBe("1.0.13");
+      expect(snapshot.auth).toEqual({
+        status: "authenticated",
+        type: "cached_token",
+        label: "Grok account",
+      });
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-mock-alt"]);
+      expect(snapshot.models[0]?.isDefault).toBe(true);
+      expect(
+        snapshot.models[0]?.capabilities?.optionDescriptors?.map((option) => option.id) ?? [],
+      ).toEqual(["reasoningEffort"]);
+    }),
+  );
 
   it.effect("keeps an installed CLI available when model metadata discovery fails", () =>
     Effect.gen(function* () {
@@ -515,9 +565,6 @@ describe("Grok usage limits", () => {
     for (const response of [{}, { config: {} }, { config: { creditUsagePercent: NaN } }]) {
       const limits = grokUsageResponseToLimits(response, checkedAt);
       expect(limits.windows).toEqual([]);
-      // Nothing metered yet, which xAI reports by omitting the field until
-      // usage registers. Marking it `unsupported` would drop the account from
-      // the Limits view for good; leaving the marker off keeps it listed.
       expect(limits.unavailable).toBeUndefined();
     }
     expect(

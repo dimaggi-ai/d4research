@@ -1,6 +1,5 @@
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { Pressable, StyleSheet, useColorScheme } from "react-native";
-
 import { useThemeColor } from "../../lib/useThemeColor";
 
 export type SidebarFilterButtonIcon =

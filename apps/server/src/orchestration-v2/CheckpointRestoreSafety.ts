@@ -1,4 +1,7 @@
-import type { OrchestrationV2AppThread, OrchestrationV2CheckpointScope } from "@d4research/contracts";
+import type {
+  OrchestrationV2AppThread,
+  OrchestrationV2CheckpointScope,
+} from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -33,8 +36,19 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
     const worktreePath = thread.worktreePath;
     let shared = worktreePath == null;
     if (!shared && worktreePath !== null) {
-      const cwd = yield* fileSystem.realPath(scope.cwd);
-      const worktreeCwd = yield* fileSystem.realPath(worktreePath);
+      // Storage cleanup may have removed the worktree; rollback recreates it.
+      const resolve = (target: string) =>
+        fileSystem
+          .realPath(target)
+          .pipe(
+            Effect.catch((error) =>
+              error.reason._tag === "NotFound"
+                ? Effect.succeed(path.resolve(target))
+                : Effect.fail(error),
+            ),
+          );
+      const cwd = yield* resolve(scope.cwd);
+      const worktreeCwd = yield* resolve(worktreePath);
       shared = cwd !== worktreeCwd;
       if (!shared) {
         const shell = yield* projections.getShellSnapshot();
@@ -59,7 +73,6 @@ export const isCheckpointRestoreIsolated = Effect.fn("orchestrationV2.isCheckpoi
               .map((session) => session.cwd),
           ].filter((value): value is string => value !== null);
           if (otherThread.worktreePath === null) {
-            // A thread without a worktree works in its project's checkout.
             const project = yield* projects.get(otherThread.projectId, { includeDeleted: true });
             if (Option.isNone(project)) return false;
             paths.push(project.value.workspaceRoot);

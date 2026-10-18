@@ -1,17 +1,9 @@
 import type { ScheduledTaskWebhookEndpoint } from "@d4research/contracts";
 import { isLocalLoopbackHost } from "@d4research/shared/hostClassification";
 
-/**
- * Where a sender can call a webhook task, as a client shows it. A supplied
- * URL takes precedence; otherwise the path is resolved against the address
- * this client uses to reach the environment.
- */
 export interface WebhookAddress {
-  /** The URL to give a sender, or the bare path when no address is known. */
   readonly address: string;
-  /** Whether `address` is a full URL a sender can call. */
   readonly copyable: boolean;
-  /** One line on who can reach `address`; null for a server-supplied URL. */
   readonly note: string | null;
 }
 

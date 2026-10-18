@@ -14,7 +14,6 @@ import { museClient } from "@d4research/provider-muse/client";
 import { openCodeClient } from "@d4research/provider-opencode/client";
 import { piClient } from "@d4research/provider-pi/client";
 
-/** The provider client definitions this web build ships, in presentation order. */
 export const providerClients = makeProviderClientRegistry([
   {
     driverKind: ProviderDriverKind.make("codex"),

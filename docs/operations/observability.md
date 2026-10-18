@@ -49,6 +49,13 @@ records instead carry OTLP resource, scope, and optional status fields.
 The `TraceRecord`, `EffectTraceRecord`, and `OtlpTraceRecord` schemas live in
 `packages/shared/src/observability.ts`.
 
+SQL statement spans (named `sqlite`) and `sql.transaction` spans carry `db.connection` and
+`db.lock_wait_ms`. `db.connection` is `writer` for the main connection, which runs on the event loop,
+or `reader` for the read-only connection in a worker thread. `db.lock_wait_ms` is the part of the
+span spent waiting for that connection, behind other SQL. That wait does not block the event loop,
+so subtract it before you blame a slow span on the query. Statements inside a transaction use its
+connection and do not carry these attributes.
+
 DPoP proof failures include the safe `environment.dpop.failure_code` span
 attribute. A `time_window` failure means that a signed proof was too old or too
 far in the future for the environment server's allowed window. It can point to
@@ -87,6 +94,11 @@ the loop stalled for more than 2 s since the previous sample, it records a root
 `server.eventLoop.stall` span with a warning. The span has trace level `Warn`, so it stays when
 `T3CODE_TRACE_MIN_LEVEL` is `Warn`. The warning shows in Settings > Diagnostics. The span time
 is when the sample ran, not when the stall happened.
+
+Each stall is also appended as one NDJSON line to `event-loop-stalls.ndjson`,
+next to the trace file, so the stall record survives trace-file rotation. A line has `time` and the span
+attributes. The file rotates at 256 KiB and keeps one backup
+(`event-loop-stalls.ndjson.1`). Use it to see how often a server stalls over days.
 
 Some delay is not recorded:
 
@@ -140,6 +152,94 @@ node --run dev
 ```bash
 node --run dev:desktop
 ```
+
+### Option 2: Run With A Local LGTM Stack
+
+#### 1. Start Grafana LGTM
+
+```bash
+docker run --name lgtm \
+  -p 3000:3000 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  --rm -ti \
+  grafana/otel-lgtm
+```
+
+Then open `http://localhost:3000`.
+
+Default Grafana login:
+
+- username: `admin`
+- password: `admin`
+
+#### 2. Export OTLP env vars
+
+For endpoint settings and startup precedence, see the
+[user telemetry guide](../user/telemetry.md#export-diagnostics-to-your-own-receiver).
+In a worktree, use `vp run dev` instead of `node apps/server/src/bin.ts` to keep state isolated.
+
+```bash
+export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
+export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics
+export T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs
+export OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=development
+```
+
+Optional:
+
+```bash
+export T3CODE_TRACE_MIN_LEVEL=Info
+export T3CODE_TRACE_TIMING_ENABLED=true
+```
+
+#### 3. Launch the app from that same shell
+
+CLI:
+
+```bash
+node apps/server/src/bin.ts
+```
+
+Monorepo web/server dev:
+
+```bash
+node --run dev
+```
+
+Monorepo desktop dev:
+
+```bash
+node --run dev:desktop
+```
+
+Packaged desktop app:
+
+Launch the actual app executable from the same shell so the desktop app and embedded backend inherit `T3CODE_OTLP_*`.
+
+macOS app bundle example:
+
+```bash
+T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
+T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
+T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
+"/Applications/d4research.app/Contents/MacOS/d4research"
+```
+
+Direct binary example:
+
+```bash
+T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
+T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
+T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
+./path/to/your/desktop-app-binary
+```
+
+Do not rely on launching from Finder, Spotlight, the dock, or the Start menu after setting shell env vars. Those launches usually will not pick them up.
+
+#### 4. Fully restart after changing env
+
+The backend reads observability config at process start. If you change OTLP env vars, stop the app completely and start it again.
 
 ## How To Use Traces And Metrics To Debug The Server
 
@@ -451,7 +551,8 @@ The current high-value span and metric boundaries are:
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
-- sqlite query execution
+- sqlite query execution, except the statements inside `orchestrationV2.EventSink.write`, which
+  its `sql.transaction` span times as one
 - event loop stalls (`server.eventLoop.stall`)
 
 ### Current Constraints

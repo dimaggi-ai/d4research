@@ -508,7 +508,7 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
     ].join("\n");
 
     const modelSelection = { instanceId, model: parsedTarget.model };
-    const entropy = yield* crypto.randomUUIDv4.pipe(
+    const entropy = yield* crypto.randomUUIDv4().pipe(
       Effect.mapError(
         () =>
           new ResearchDelegateError({

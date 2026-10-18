@@ -1,9 +1,3 @@
-/**
- * Pi's client definition: settings form, label, and glyph. Browser- and
- * React Native-safe.
- *
- * @module provider-pi/client
- */
 import { ProviderDriverKind } from "@d4research/contracts";
 import { defineProviderClient } from "@d4research/provider-core/client";
 

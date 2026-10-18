@@ -58,8 +58,6 @@ class FileMetadataRequest extends Request.Class<
   | EnvironmentRpcTimeoutError
 > {}
 
-/** Shared by file chips, search results, and the file tree in one client. Cache
- * entries belong to an RPC session so reconnects and grant changes recheck them. */
 export function createFileMetadataAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -256,7 +254,6 @@ export function createFileMetadataAtoms<R, E>(
       const path = resolveWorkspaceFilePath(entry.path, cwd);
       const previous = knownEntry(session.value, path, now);
       if (previous?.value?.kind === entry.kind) continue;
-      // Listing kinds avoid another request; size and MIME hints are optional.
       remember(session.value, path, { kind: entry.kind }, now, true);
     }
   });

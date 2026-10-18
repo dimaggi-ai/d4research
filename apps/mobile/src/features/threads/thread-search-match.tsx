@@ -1,7 +1,7 @@
 import { splitThreadSearchText } from "@d4research/shared/threadSearch";
 import type { EnvironmentThreadSearchMatch } from "@d4research/client-runtime/state/thread-search";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 
 export function ThreadSearchMatchExcerpt(props: {

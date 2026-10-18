@@ -46,7 +46,6 @@ import {
 } from "../../../lib/mobileThemeRuntime";
 
 interface AppearancePreferencesContextValue {
-  /** Effective values with base-size derivation applied. Use this for rendering. */
   readonly appearance: ResolvedAppearance;
   readonly themeId: MobileThemeId;
   readonly themeIds: MobileThemeIds;
@@ -67,9 +66,7 @@ interface AppearancePreferencesContextValue {
   readonly setThemeIdForBothAppearances: (value: MobileThemeId) => void;
   readonly setThemeMode: (value: MobileThemeMode) => void;
   readonly setBaseFontSize: (value: number) => void;
-  /** Pass null to clear the override and follow the base font size. */
   readonly setTerminalFontSize: (value: number | null) => void;
-  /** Pass null to clear the override and follow the base font size. */
   readonly setCodeFontSize: (value: number | null) => void;
   readonly setCodeWordBreak: (value: boolean) => void;
 }
@@ -137,8 +134,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     () => resolveAppearance({ baseFontSize, codeFontSize, codeWordBreak, terminalFontSize }),
     [baseFontSize, codeFontSize, codeWordBreak, terminalFontSize],
   );
-  // Preference patches are optimistic. Keep controls interactive while a save is
-  // in flight so rapid theme choices can supersede one another immediately.
   const isReady = AsyncResult.isSuccess(preferencesResult);
   const runtimeState = useMemo<MobileThemeRuntimeState>(
     () => ({
@@ -181,9 +176,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
 
   const updateThemePreferences = useCallback(
     (patch: Partial<Preferences>) => {
-      // Theme selection owns the visible root ScopedTheme value. Keep its
-      // optimistic atom update urgent so the first frame after a press is the
-      // complete new palette rather than a deferred transition render.
       savePreferences(patch);
     },
     [savePreferences],

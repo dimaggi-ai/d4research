@@ -312,7 +312,6 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         existing,
       ]);
 
-      // Removing the added rule later must survive the next startup.
       yield* writeKeybindingsConfig(keybindingsConfigPath, [existing]);
       yield* keybindings.syncDefaultKeybindingsOnStartup;
       assert.deepStrictEqual(yield* backgroundRules, [existing]);
@@ -617,7 +616,6 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      // A directory where the file should be makes the read itself fail.
       yield* fileSystem.makeDirectory(keybindingsConfigPath, { recursive: true });
 
       const keybindings = yield* Keybindings.Keybindings;

@@ -3,9 +3,9 @@ import { Platform, Pressable, View } from "react-native";
 
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { cn } from "../lib/cn";
-import { AppText } from "./AppText";
-import { SymbolView } from "./AppSymbol";
-import { useAndroidControlSizing } from "./useAndroidControlSizing";
+import { AppText } from "./ui/AppText";
+import { SymbolView } from "./ui/AppSymbol";
+import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
 /** Shared geometry for Material navigation and selection lists. Group rows in one card. */
 export function MaterialListRow({

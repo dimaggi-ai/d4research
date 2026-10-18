@@ -6,7 +6,6 @@ import * as Option from "effect/Option";
 export class RelayDeliveryProof extends Context.Service<
   RelayDeliveryProof,
   {
-    /** The relay's own delivery id and receive time, when the request proves it came from the relay. */
     readonly verify: (input: {
       readonly headers: Readonly<Record<string, string>>;
       readonly hookId: string;

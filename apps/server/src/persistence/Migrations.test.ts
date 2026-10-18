@@ -135,6 +135,8 @@ describe("runMigrations", () => {
         [66, "McpAppModelContext"],
         [67, "ThreadSnapshotWindowIndexes"],
         [68, "PullRequestReviewGuides"],
+        [69, "ThreadFailureLookupIndex"],
+        [70, "DropUnusedV1Projections"],
       ]);
       assert.deepStrictEqual(yield* history, migrationManifest);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

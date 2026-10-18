@@ -231,6 +231,15 @@ If that does not print a compatible Node version, configure your version manager
 nvm alias default 24
 ```
 
+Each desktop app keeps one session on the host for its SSH connection and reuses
+it when it reconnects. Revoke sessions you no longer use in **Settings →
+Connections** on the host, or on a headless host with `d4research auth session list` and
+`d4research auth session revoke <id>`. A desktop that can still sign in over SSH pairs
+again on its next connect.
+
+For Antigravity's Google callback on a remote host, see
+[remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
+
 With mise, asdf, fnm, or nodenv, make sure the tool's shim directory is installed and resolves to a Node version satisfying the range above without an interactive shell.
 
 If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.t3/ssh-launch` or kill `t3` processes manually.
@@ -315,3 +324,44 @@ Use `d4research auth --help` and the nested subcommand help pages for the full r
 - Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
 - Hosted pairing links keep the credential in the URL hash so it is not sent to the hosted app server, but it can still be exposed through browser history, screenshots, logs, or copy/paste.
 - Use `d4research auth` to revoke credentials or sessions you no longer trust.
+
+```sh
+d4research pair --scope orchestration:read
+```
+
+The selected scopes replace the default permissions. The same option works with
+`d4research auth pairing create` and `d4research auth session issue`; each command's
+`--help` lists the available scopes. Without `--scope`, ordinary pairing tokens grant client operations but exclude
+access management. Operator-issued bearer sessions also grant access management.
+A terminal or a full-access agent on the host can reach those as well, so a
+client that should not manage access also needs to go without `terminal:operate`
+and `orchestration:operate`.
+
+To change an existing client's permissions, create a fresh pairing link with the
+scopes it needs. In a browser opened directly on the environment, open that link
+to replace the browser's current grant. For mobile or a saved remote environment
+in web or desktop, use **Add Environment** with the fresh link or code; pairing
+the same environment replaces its saved grant. Reconnecting alone does not change
+permissions.
+
+Grouping checkouts does not combine their permissions. Shared project settings
+require `orchestration:operate` on every member environment; actions on one
+checkout use that checkout's permissions.
+
+`source-control:write` covers direct Git and pull request changes made from the
+client: pushing, switching or creating branches, cloning, and removing
+worktrees. It does not restrict what a task does. Starting a task in a new
+worktree still creates that branch and worktree with `orchestration:operate`,
+and the agent it runs can use Git however the environment allows.
+
+Settings changes, provider management, environment maintenance, and access
+management can each be granted separately. Ordinary new
+pairings without `--scope` exclude access management. Existing clients keep the
+permissions they paired with and can stay connected after an update, but newly
+separated features may require pairing again with the permissions they need.
+Older clients may show controls that the server denies. Create a fresh pairing
+link to change a client's permissions.
+
+`filesystem:read` allows browsing host files, opening workspace files, and viewing
+local changes. Add `filesystem:write` to allow editing files or saving plans to
+the workspace. These scopes control direct file access from the client.

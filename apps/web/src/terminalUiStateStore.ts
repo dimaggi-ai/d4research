@@ -1,10 +1,3 @@
-/**
- * Single Zustand store for terminal UI state keyed by scoped thread identity.
- *
- * Terminal UI transition helpers are intentionally private to keep the public
- * API constrained to store actions/selectors.
- */
-
 import { parseScopedThreadKey, scopedThreadKey } from "@d4research/client-runtime/environment";
 import { type ScopedThreadRef } from "@d4research/contracts";
 import { create } from "zustand";
@@ -562,7 +555,6 @@ function removeRecordEntry<T>(record: Record<string, T>, key: string): Record<st
 
 interface TerminalUiStateStoreState {
   terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>;
-  /** Closed ids hidden from stale server metadata until that id is explicitly opened again. */
   suppressedTerminalIdsByThreadKey: Record<string, string[]>;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;

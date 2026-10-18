@@ -103,7 +103,7 @@ export const makeMuseMspRuntime = Effect.fn("makeMuseMspRuntime")(function* (
     method: Msp.MspMethod,
     params: object,
   ) {
-    return yield* request(method, { ...params, commandId: yield* crypto.randomUUIDv7 });
+    return yield* request(method, { ...params, commandId: yield* crypto.randomUUIDv7() });
   });
   const ceiling = (error: { readonly data?: Msp.ErrorData }) =>
     error.data?.kind === "commandRejected" && error.data.reason === "approval_mode_ceiling";

@@ -2,10 +2,6 @@ import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/conn
 import type { EnvironmentShellStatus } from "@d4research/client-runtime/state/shell";
 import type { EnvironmentThreadStatus } from "@d4research/client-runtime/state/threads";
 
-/**
- * Reports whether the route-local projections can still yield the requested
- * thread. Explicit terminal outcomes win over unrelated synchronization.
- */
 export function threadRouteIsHydrating(input: {
   readonly isLoadingConnections: boolean;
   readonly connectionState: EnvironmentConnectionPhase;

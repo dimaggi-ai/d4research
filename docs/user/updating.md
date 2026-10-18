@@ -18,6 +18,9 @@ different value, use **Apply to all** in Settings after it connects.
 d4research must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
+A thread that finished its turn to wait on a monitor, subagent, or background task
+is woken and told that this work stopped. A background shell, such as a dev server,
+does not wake it; the thread learns about it with your next message.
 A thread is not resumed while it waits for your approval, answer, or secret, or
 while it is archived, snoozed, or settled. After three automatic resumes in a row,
 the thread waits for your next message.
@@ -45,6 +48,10 @@ The script typechecks and builds with bounded deadlines, schedules the restart o
 agent session, and waits for HTTP readiness. It is not a clean-machine installer. Maintainer setup
 and logs are documented in [Local Deployment](../operations/local-deployment.md).
 
+Only one server can use a T3 home directory at a time. If startup reports that
+another server owns it, stop that server before retrying, or use a separate home
+directory and pair with the running server.
+
 ## Update providers
 
 On web and desktop, **Settings → Providers** shows provider updates for the selected environment.
@@ -62,6 +69,14 @@ mismatch can prevent connection rather than merely show a version warning.
 Update the server machine, not only the browser or phone used to reach it. Provider CLIs, Memo,
 projects, and runtime state live in that server environment. Keep the client open during a planned
 restart; it reconnects and reloads durable thread state when the server returns.
+
+The same page lets you refresh provider status and update supported providers.
+These controls require a connected environment and permission to operate it.
+Provider update checks and restart continuation preferences are in
+**Settings → Maintenance**. If provider update checks are disabled, enable them
+there before refreshing to find newer versions. The same setting controls whether
+d4research downloads model catalog updates, so with it off new models may not appear
+until you enable it and refresh provider status.
 
 If a version mismatch persists, confirm that the browser points to the environment you updated and
 that its manifest now reports the expected build. Do not use an upstream T3 desktop or CLI update to

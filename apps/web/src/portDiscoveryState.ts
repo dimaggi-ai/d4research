@@ -32,22 +32,35 @@ export function boundConfiguredLocalServerUrls(
       seen.add(resourceUrl.href);
       bounded.push(url.href);
       if (bounded.length >= CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS) break;
-    } catch {
-      // Invalid and non-local project preview URLs are not discovery candidates.
-    }
+    } catch {}
   }
   return bounded;
 }
 
 export function useDiscoveredPorts(
   environmentId: EnvironmentId | null,
+  configuredUrls?: ReadonlyArray<string>,
 ): ReadonlyArray<DiscoveredLocalServer> {
+  return useDiscoveredPortsState(environmentId, configuredUrls).servers;
+}
+
+export function useDiscoveredPortsState(
+  environmentId: EnvironmentId | null,
+  configuredUrls?: ReadonlyArray<string>,
+): DiscoveredPortsState {
+  const boundedConfiguredUrls = boundConfiguredLocalServerUrls(configuredUrls);
   const query = useEnvironmentQuery(
     environmentId === null
       ? null
-      : previewEnvironment.discoveredServers({ environmentId, input: {} }),
+      : previewEnvironment.discoveredServers({
+          environmentId,
+          input: boundedConfiguredUrls.length ? { configuredUrls: boundedConfiguredUrls } : {},
+        }),
   );
-  return query.data?.servers ?? EMPTY_PORTS;
+  return {
+    servers: query.data?.servers ?? EMPTY_PORTS,
+    configuredUrlProbing: query.data?.configuredUrlProbing === true,
+  };
 }
 
 export function useThreadDiscoveredPorts(input: {
@@ -55,13 +68,9 @@ export function useThreadDiscoveredPorts(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<DiscoveredLocalServer> {
   const ports = useDiscoveredPorts(input.environmentId);
-  return useMemo(
-    () =>
-      input.threadId
-        ? ports.filter((port) => port.terminal?.threadId === input.threadId)
-        : EMPTY_PORTS,
-    [input.threadId, ports],
-  );
+  return input.threadId
+    ? ports.filter((port) => port.terminal?.threadId === input.threadId)
+    : EMPTY_PORTS;
 }
 
 export function useTerminalDiscoveredPorts(input: {

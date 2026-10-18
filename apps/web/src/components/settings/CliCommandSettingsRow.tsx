@@ -1,15 +1,12 @@
+import { useCallback } from "react";
 import type { DesktopCliCommandState } from "@d4research/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-/**
- * Settings → `d4research` command: puts the desktop app's bundled CLI on PATH, or takes
- * it off again. Hidden where the desktop build has no launcher to install.
- */
 export function CliCommandSettingsRow() {
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.cliCommand;
   const [state, setState] = useState<DesktopCliCommandState | null>(null);

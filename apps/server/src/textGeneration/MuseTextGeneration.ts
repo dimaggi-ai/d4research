@@ -69,7 +69,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const completed = yield* Deferred.make<void, TextGenerationError>();
-      const commandId = yield* crypto.randomUUIDv7;
+      const commandId = yield* crypto.randomUUIDv7();
       const items = new Set<string>();
       let output = "";
       const runtime = yield* (options?.makeRuntime ?? makeMuseMspRuntime)({

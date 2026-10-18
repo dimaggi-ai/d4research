@@ -19,7 +19,6 @@ export interface VersionMismatch {
 
 const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
 
-// Dismiss one failed attempt without hiding a retry or clearing Settings errors.
 const dismissedServerUpdateFailures = new WeakSet<ServerUpdateState>();
 
 export function isServerUpdateFailureDismissed(state: ServerUpdateState): boolean {
@@ -41,22 +40,10 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
-/** Core `major.minor.patch`, dropping any prerelease or build suffix. */
 function versionCore(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
 
-/**
- * The skew a user can act on: the connected server runs an older d4research than
- * this client (or than `clientVersion`, the version this client is about to
- * update to), so the server is the side that needs updating.
- *
- * Two nightly builds compare their full versions, including the date and run.
- * Other combinations compare their core `major.minor.patch` only, so a stable
- * build and a nightly build with the same core do not cause an update warning.
- * A server ahead of the client does not need an update. Versions that do not
- * parse as semver fall back to plain string inequality.
- */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
   clientVersion: string = APP_VERSION,
@@ -96,8 +83,6 @@ export function resolveServerConfigVersionMismatch(
   return resolveVersionMismatch(serverConfig?.environment.serverVersion);
 }
 
-/** The update path the connected server offers, or null when it only
-    supports a manual relaunch (older servers, dev checkouts, Windows). */
 export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): ServerSelfUpdateCapability | null {
@@ -116,7 +101,6 @@ export function supportsServerUpdateThreadContinuation(
   return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
 }
 
-/** The command to hand users whose server cannot update itself. */
 export function manualServerUpdateCommand(
   targetVersion: string,
   installation?: ServerInstallation,

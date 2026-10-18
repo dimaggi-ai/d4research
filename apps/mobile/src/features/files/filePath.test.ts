@@ -52,7 +52,6 @@ describe("fileHeaderSubtitle", () => {
   });
 
   it("shows only the directory for a host file outside the workspace", () => {
-    // It is not under the project, so naming the project there would be a lie.
     expect(fileHeaderSubtitle("t3code", "/tmp/report.md")).toBe("/tmp");
   });
 

@@ -116,7 +116,6 @@ describe("webhook route", () => {
     const deliveryId = ScheduledTaskWebhookDeliveryId.make("delivery:1");
     const cases: ReadonlyArray<[WebhookTriggerResult, number, string]> = [
       [{ _tag: "accepted", deliveryId, outcome: "accepted" }, 202, "accepted"],
-      // Same status as a started run; only the header tells them apart.
       [{ _tag: "accepted", deliveryId, outcome: "duplicate" }, 202, "duplicate"],
       [{ _tag: "accepted", deliveryId, outcome: "prompt_too_long" }, 202, "prompt_too_long"],
       [{ _tag: "not_found" }, 404, "not_found"],
@@ -150,7 +149,6 @@ describe("webhook route", () => {
       expect((await handler(post("/api/hooks/id", "{}"))).status).toBe(404);
       expect((await handler(post("/api/hooks/id/tok/extra", "{}"))).status).toBe(404);
       expect((await handler(post("/api/hooks/%E0/tok", "{}"))).status).toBe(404);
-      // No content-length: the reader cap must still apply.
       const chunked = new ReadableStream<Uint8Array>({
         start(controller) {
           for (let sent = 0; sent <= WEBHOOK_MAX_BODY_BYTES; sent += 64 * 1024) {

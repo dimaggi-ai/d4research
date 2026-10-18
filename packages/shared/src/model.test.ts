@@ -63,6 +63,15 @@ const codexCaps: ModelCapabilities = createModelCapabilities({
   ],
 });
 
+describe("model slug normalization", () => {
+  it("expands known provider aliases while preserving exact custom slugs", () => {
+    const claude = ProviderDriverKind.make("claudeAgent");
+
+    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
+    expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
 const claudeCaps: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
     {
@@ -200,7 +209,7 @@ describe("descriptor helpers", () => {
 });
 
 describe("model slug normalization", () => {
-  it("preserves exact custom slugs instead of expanding provider aliases", () => {
+  it("expands known provider aliases while preserving exact custom slugs", () => {
     const claude = ProviderDriverKind.make("claudeAgent");
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");

@@ -5,8 +5,10 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
+import packageJson from "../../package.json" with { type: "json" };
 import {
   formatCliCommand,
+  resolveHostCliCommand,
   resolveRootCliCommand,
   resolveServerInstallation,
 } from "./invocation.ts";
@@ -104,7 +106,6 @@ it("formats serve suggestions to match the launching command", () => {
 });
 
 it.layer(NodeServices.layer)("root CLI commands", (it) => {
-  /** `sudo d4research browser setup` as this process would render it, with `d4research` on PATH or not. */
   const rootCommand = (input: {
     readonly node: string;
     readonly entry: string;
@@ -120,7 +121,6 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       Effect.provideService(HostProcess.Environment, { PATH: input.path ?? "", ...input.env }),
     );
 
-  /** A directory holding an executable `d4research`, to stand in for one on PATH. */
   const pathWithT3 = Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -163,13 +163,13 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
         entry: "/tmp/.mount_T3abc/resources/app.asar/apps/server/dist/bin.mjs",
         env: { T3CODE_CLI_PATH: shim },
       };
-      // The desktop app's shim, quoted for the shell and run as root as is.
+
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
-      // A `d4research` the person put on PATH still wins.
+
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
         'sudo env "PATH=$PATH" d4research browser setup',
       );
-      // A standalone binary names itself.
+
       expect(
         yield* rootCommand({
           node: "/opt/d4research/d4research",
@@ -177,7 +177,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           executable: true,
         }),
       ).toBe("sudo /opt/d4research/d4research browser setup");
-      // A stale shim path, then no launcher at all, fall back to plain `d4research`.
+
       expect(
         yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
       ).toBe('sudo env "PATH=$PATH" d4research browser setup');
@@ -185,25 +185,87 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
   );
 });
 
+it.layer(NodeServices.layer)("host CLI commands", (it) => {
+  it.effect("renders a PowerShell command line on Windows", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const shim = path.join(home, "d4research.cmd");
+      yield* fs.writeFileString(shim, "@echo off\r\n");
+      const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
+        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
+          Effect.provideService(
+            HostProcess.ExecutablePath,
+            "C:\\Program Files\\T3 Code\\d4research.exe",
+          ),
+          Effect.provideService(HostProcess.Arguments, [
+            "C:\\Program Files\\T3 Code\\d4research.exe",
+            "C:\\Program Files\\T3 Code\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
+          ]),
+          Effect.provideService(HostProcess.IsExecutable, false),
+          Effect.provideService(HostProcess.Platform, platform),
+          Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
+        );
+      // The desktop shim is called through `&`, and each argument is quoted
+      // the PowerShell way: no POSIX single quotes anywhere.
+      expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
+        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
+      );
+      // Without a launcher, plain `d4research` with PowerShell-quoted arguments.
+      expect((yield* hostCommand("win32", {})).command).toBe(
+        'd4research doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+      );
+      // Typographic quotes also delimit PowerShell strings; doubling keeps them.
+      expect(
+        (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
+          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Environment, { PATH: "" }),
+          Effect.provideService(HostProcess.ExecutablePath, "C:\\d4research.exe"),
+          Effect.provideService(HostProcess.Arguments, ["C:\\d4research.exe", "C:\\bin.mjs"]),
+          Effect.provideService(HostProcess.IsExecutable, false),
+        )).command,
+      ).toBe('d4research doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
+      // POSIX hosts keep single quotes for the same input. The shim prefix is
+      // a host path, so only the arguments are asserted.
+      expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
+        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
+      );
+    }).pipe(Effect.scoped),
+  );
+});
+
 it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
-  it.effect("recognizes runner caches for both script and executable packages", () =>
+  it.effect("recognizes runner caches for script packages and the npm launcher", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
+      const executable = path.join(root, ".t3/runtime/versions/1.0.0/d4research");
+      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+      yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
         ["npm/_npx/hash/node_modules/d4research/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/@d4research/d4research-linux-x64/d4research", "npx"],
+        ["npm/_npx/hash/node_modules/d4research/bin/d4research.mjs", "npx"],
         ["pnpm/dlx/hash/node_modules/d4research/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/d4research/dist/bin.mjs", "bunx"],
       ] as const) {
         const entry = path.join(root, relative);
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
         yield* fs.writeFileString(entry, "");
+        yield* fs.writeFileString(
+          path.join(path.dirname(entry), "../package.json"),
+          `{"name":"d4research","version":"${packageJson.version}","bin":{"d4research":"./bin/d4research.mjs"}}`,
+        );
+        const launchedBy = entry.endsWith("d4research.mjs");
         const installation = yield* resolveServerInstallation.pipe(
-          Effect.provideService(HostProcess.Arguments, ["node", entry]),
-          Effect.provideService(HostProcess.ExecutablePath, entry),
-          Effect.provideService(HostProcess.IsExecutable, entry.endsWith("/d4research")),
+          Effect.provideService(HostProcess.Arguments, [launchedBy ? executable : "node", entry]),
+          Effect.provideService(HostProcess.ExecutablePath, executable),
+          Effect.provideService(HostProcess.IsExecutable, launchedBy),
+          Effect.provideService(
+            HostProcess.Environment,
+            launchedBy ? { T3CODE_NPM_LAUNCHER_PATH: entry } : {},
+          ),
         );
         expect(installation).toEqual({ kind });
       }
@@ -241,40 +303,37 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     }),
   );
 
-  it.effect("proves the native executable belongs to the npm launcher", () =>
+  it.effect("proves the downloaded executable was started by a global npm launcher", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/d4research");
-      const launcher = path.join(packageRoot, "bin/d4research.js");
-      const entry = path.join(
-        packageRoot,
-        "node_modules/@d4research/d4research-linux-x64/d4research",
-      );
+      const launcher = path.join(packageRoot, "bin/d4research.mjs");
+      const executable = path.join(root, ".t3/runtime/versions/1.0.0/d4research");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
+      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.makeDirectory(path.join(prefix, "bin"));
       yield* fs.writeFileString(launcher, "");
-      yield* fs.writeFileString(entry, "");
-      yield* fs.writeFileString(
-        path.join(packageRoot, "package.json"),
-        '{"name":"d4research","version":"0.0.45","bin":{"d4research":"./bin/d4research.js"},"optionalDependencies":{"@d4research/d4research-linux-x64":"0.0.45"}}',
-      );
+      yield* fs.writeFileString(executable, "");
       yield* fs.symlink(launcher, path.join(prefix, "bin/d4research"));
       const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcess.ExecutablePath, entry),
+        Effect.provideService(HostProcess.ExecutablePath, executable),
+        Effect.provideService(HostProcess.Arguments, [executable, executable]),
         Effect.provideService(HostProcess.IsExecutable, true),
         Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Environment, { T3CODE_NPM_LAUNCHER_PATH: launcher }),
       );
+      // A launcher for another version is some other `d4research` the server spawned
+      // (the variable is inherited), not the install this executable runs from.
       for (const [version, expected] of [
-        ["0.0.44", null],
-        ["0.0.45", { kind: "npm-global", prefix }],
-      ]) {
+        ["0.0.1", null],
+        [packageJson.version, { kind: "npm-global", prefix }],
+      ] as const) {
         yield* fs.writeFileString(
-          path.join(path.dirname(entry), "package.json"),
-          `{"name":"@d4research/d4research-linux-x64","version":"${version}"}`,
+          path.join(packageRoot, "package.json"),
+          `{"name":"d4research","version":"${version}","bin":{"d4research":"./bin/d4research.mjs"}}`,
         );
         expect(yield* resolve).toEqual(expected);
       }

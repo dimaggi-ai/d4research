@@ -30,7 +30,7 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           (38, 'ProjectionThreadResumeSchedule')
       `;
 
-      const executed = yield* runMigrations();
+      const executed = yield* runMigrations({ toMigrationInclusive: 69 });
       assert.deepStrictEqual(
         executed.map(([id, name]) => [id, name]),
         [
@@ -62,6 +62,7 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
           [66, "McpAppModelContext"],
           [67, "ThreadSnapshotWindowIndexes"],
           [68, "PullRequestReviewGuides"],
+          [69, "ThreadFailureLookupIndex"],
         ],
       );
 
@@ -82,6 +83,8 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
         PRAGMA index_list(projection_turns)
       `;
       assert.ok(turnIndexes.some((index) => index.name === "idx_projection_turns_thread_keyset"));
+      assert.deepStrictEqual(yield* runMigrations(), [[70, "DropUnusedV1Projections"]]);
+      assert.deepStrictEqual(yield* sql`PRAGMA table_info(projection_turns)`, []);
     }),
   );
 });
@@ -131,6 +134,8 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [66, "McpAppModelContext"],
           [67, "ThreadSnapshotWindowIndexes"],
           [68, "PullRequestReviewGuides"],
+          [69, "ThreadFailureLookupIndex"],
+          [70, "DropUnusedV1Projections"],
         ],
       );
 
@@ -172,6 +177,8 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [66, "McpAppModelContext"],
           [67, "ThreadSnapshotWindowIndexes"],
           [68, "PullRequestReviewGuides"],
+          [69, "ThreadFailureLookupIndex"],
+          [70, "DropUnusedV1Projections"],
         ],
       );
     }),
@@ -210,7 +217,10 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
       const executed = yield* runMigrations();
       assert.deepStrictEqual(
         executed.map(([id]) => id),
-        [47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68],
+        [
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70,
+        ],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       assert.ok(columns.some((column) => column.name === "auto_pull"));

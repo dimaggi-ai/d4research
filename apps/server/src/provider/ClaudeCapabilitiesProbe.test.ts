@@ -146,6 +146,7 @@ it("isolates Claude capability probes without dropping workspace setting sources
       ENABLE_CLAUDEAI_MCP_SERVERS: "true",
     },
     cwd: "/workspace/project",
+    managedMcpConfig: false,
   });
 
   assert.deepEqual(options.mcpServers, {});
@@ -227,6 +228,21 @@ it("maps supported and unsupported Claude usage limits", () => {
       message: null,
     },
   );
+});
+
+it("drops strict MCP mode, and only that, next to an administrator's managed-mcp.json", () => {
+  const options = buildClaudeCapabilitiesProbeQueryOptions({
+    executablePath: "/usr/bin/claude",
+    abortController: new AbortController(),
+    environment: { HOME: "/home/user" },
+    cwd: undefined,
+    managedMcpConfig: true,
+  });
+
+  // Claude exits before initializing when handed --strict-mcp-config here.
+  assert.equal(options.strictMcpConfig, undefined);
+  assert.deepEqual(options.mcpServers, {});
+  assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
 });
 
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
@@ -422,8 +438,6 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       const workspaceCwd = yield* fs.makeTempDirectory({ prefix: "t3-claude-probe-cwd-" });
       // Node's own retry rather than an Effect schedule: it.effect runs on a
       // TestClock, so a scheduled retry would wait for time nobody advances.
-      // If the child still holds the directory after that, an empty temp
-      // directory is left behind rather than failing the test for it.
       yield* Effect.addFinalizer(() =>
         Effect.promise(() =>
           NodeFSP.rm(workspaceCwd, {

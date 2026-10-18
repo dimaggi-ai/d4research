@@ -111,7 +111,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
   const instanceId = options?.instanceId ?? ProviderInstanceId.make("muse");
   const sessions = new Map<ThreadId, MuseContext>();
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
-  const boot = yield* crypto.randomUUIDv7.pipe(Effect.orDie);
+  const boot = yield* crypto.randomUUIDv7().pipe(Effect.orDie);
   let sequence = 0;
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const stamp = (threadId: ThreadId) =>
@@ -305,7 +305,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           ([, value]) => value.approvalId === p.approvalId,
         );
         if (old) yield* resolveApproval(ctx, old[0], "cancel");
-        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7.pipe(Effect.orDie));
+        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
         ctx.pendingApprovals.set(id, p);
         const auto = p.availableChoices.find((choice) =>
           ["approved", "approvedForSession", "approvedPolicyAmendment"].includes(choice.decision),
@@ -343,7 +343,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           [...ctx.pendingUserInputs.values()].some((value) => value.userInputId === p.userInputId)
         )
           return;
-        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7.pipe(Effect.orDie));
+        const id = ApprovalRequestId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
         ctx.pendingUserInputs.set(id, p);
         yield* offer({
           ...(yield* stamp(ctx.session.threadId)),
@@ -773,7 +773,7 @@ export const makeMuseAdapter = Effect.fn("makeMuseAdapter")(function* (
           settings.reasoningEffort;
         const reasoningEffort = MUSE_REASONING_EFFORTS.find((value) => value === effort);
         ctx.items.clear();
-        const turnId = TurnId.make(yield* crypto.randomUUIDv7.pipe(Effect.orDie));
+        const turnId = TurnId.make(yield* crypto.randomUUIDv7().pipe(Effect.orDie));
         ctx.activeTurnId = turnId;
         const ack = yield* ctx.runtime
           .startTurn({

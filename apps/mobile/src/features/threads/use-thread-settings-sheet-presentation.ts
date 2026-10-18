@@ -72,6 +72,7 @@ export function useThreadSettingsSheetPresentation(input: {
     restoreFocusOnSaveRef.current = false;
     isActiveRef.current = false;
 
+    setPhase("closed");
     if (shouldRestoreFocus) {
       input.editorRef.current?.focus();
     }
@@ -87,6 +88,7 @@ export function useThreadSettingsSheetPresentation(input: {
 
   return {
     isActive: phase !== "closed",
+    keepsComposerExpanded: phase !== "closed",
     isActiveRef,
     isVisible: phase === "visible",
     open,

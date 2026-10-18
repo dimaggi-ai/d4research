@@ -1,5 +1,6 @@
+"use client";
+
 import { isBrowserRecordingStartCancelledError } from "~/browser/browserRecording";
-("use client");
 
 import { scopeThreadRef, scopedThreadKey } from "@d4research/client-runtime/environment";
 import { settlePromise } from "@d4research/client-runtime/state/runtime";

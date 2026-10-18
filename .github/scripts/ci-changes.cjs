@@ -32,7 +32,10 @@ const RUNS_EVERYTHING = [
 // through relative imports rather than a package.json dependency.
 const EXTRA_OWNERS = [
   // Vite configs and tsconfigs of these apps import scripts/lib directly.
-  [/^scripts\/lib\//, ["@d4research/desktop", "@d4research/mobile", "@d4research/web", "t3"]],
+  [
+    /^scripts\/lib\//,
+    ["@d4research/desktop", "@d4research/mobile", "@d4research/web", "d4research"],
+  ],
   // scripts/build-desktop-artifact.ts reads the GNOME extension manifest.
   [/^apps\/desktop\/gnome-extension\//, ["@d4research/scripts"]],
   [/^native\/browser-secret\//, ["@d4research/desktop"]],
@@ -49,13 +52,13 @@ const TEST_ONLY_DEPS = {
     "@d4research/desktop",
     "@d4research/mobile",
     "@d4research/web",
-    "t3",
+    "d4research",
     "@d4research/provider-cursor",
   ],
 };
 // Declared dependencies that only feed a build step: the server bundles the
 // built web app (apps/server/vite.config.ts) but never imports it.
-const BUILD_ONLY_DEPS = { t3: ["@d4research/web"] };
+const BUILD_ONLY_DEPS = { d4research: ["@d4research/web"] };
 
 // Sources scripts/mobile-native-static-check.ts lints, plus the tool and rule
 // configuration that decides how it lints them, plus the root package.json
@@ -64,7 +67,7 @@ const MOBILE_NATIVE =
   /^apps\/mobile\/.*\.(swift|kt|kts)$|^apps\/mobile\/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts\/mobile-native-static-check\.ts$|^package\.json$|^\.github\/workflows\/ci\.yml$|^\.github\/scripts\/ci-changes\.cjs$|^\.github\/actions\/ci-changes\//;
 
 // Jobs that test every package except these, which have jobs of their own.
-const OWN_TEST_JOB = new Set(["t3", "@d4research/web", "@d4research/monorepo"]);
+const OWN_TEST_JOB = new Set(["d4research", "@d4research/web", "@d4research/monorepo"]);
 
 function readWorkspace() {
   const patterns = [];
@@ -171,12 +174,12 @@ function decide(files, packages, full) {
     affected: [...affected].sort(),
     outputs: {
       typecheck: affected.size > 0,
-      build: has("@d4research/desktop") || has("t3") || has("@d4research/web"),
+      build: has("@d4research/desktop") || has("d4research") || has("@d4research/web"),
       test: tested.length > 0,
       // Empty means every package the Test job covers.
       test_packages: everything ? "" : tested.map((pkg) => pkg.name).join(" "),
       test_web: has("@d4research/web"),
-      test_server: has("t3"),
+      test_server: has("d4research"),
       rust: everything || rust,
       release_smoke: scriptsChanged,
       mobile_native: files === null || files.some((file) => MOBILE_NATIVE.test(file)),

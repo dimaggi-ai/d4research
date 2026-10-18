@@ -1,10 +1,11 @@
+"use client";
+
 import { getCloneDestinationBrowsePath } from "@d4research/client-runtime/operations/projects";
 import { getCloneDirectoryName } from "@d4research/client-runtime/operations/projects";
 import { isWindowsPlatform } from "../lib/utils";
 import { filterPinnedBrowseEntries } from "./CommandPalette.logic";
 import { resolveEnvironmentMachineKind } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
-("use client");
 
 import { threadPullRequestLinkMode } from "@d4research/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@d4research/shared/threadPullRequests";

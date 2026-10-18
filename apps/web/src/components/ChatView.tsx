@@ -9603,10 +9603,6 @@ function ChatViewContent(props: ChatViewProps) {
           />
         </header>
 
-        <ThreadErrorBanner
-          error={threadError}
-          onDismiss={() => setThreadError(activeThread.id, null)}
-        />
         {/* Main content area with optional plan sidebar */}
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
@@ -10135,7 +10131,6 @@ function ChatViewContent(props: ChatViewProps) {
                                 {...(hasMultipleEnvironments
                                   ? { onEnvironmentChange: onEnvironmentChangeStable }
                                   : {})}
-                                {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
                                 availableEnvironments={logicalProjectEnvironments}
                                 autoEnvironmentLabel={autoEnvironmentLabel}
                                 onAutoEnvironment={

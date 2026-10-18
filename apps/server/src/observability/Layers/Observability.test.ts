@@ -8,7 +8,7 @@ import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
-import { ObservabilityLive } from "../Observability.ts";
+import { layer } from "../Observability.ts";
 
 it.effect("keeps diagnostics local even with legacy external exporter settings", () =>
   Effect.gen(function* () {
@@ -23,7 +23,7 @@ it.effect("keeps diagnostics local even with legacy external exporter settings",
       otlpTracesExport: { ...config.otlpTracesExport, exportIntervalMs: 1 },
       otlpMetricsExport: { ...config.otlpMetricsExport, exportIntervalMs: 1 },
     });
-    const observability = ObservabilityLive.pipe(
+    const observability = layer.pipe(
       Layer.provide(legacyConfig),
       Layer.provide(ResourceAttribution.layer),
       Layer.provide(

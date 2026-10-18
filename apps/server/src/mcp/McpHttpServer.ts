@@ -886,5 +886,3 @@ export const layer = Layer.mergeAll(
   layerDeviceToolkit,
   layerHtmlToolkit,
 ).pipe(Layer.provideMerge(layerMcpTransport));
-
-export const McpTransportLive = layerMcpTransport;

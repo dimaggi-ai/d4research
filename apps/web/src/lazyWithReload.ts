@@ -50,7 +50,7 @@ export function shouldReloadForChunkFailure(
 }
 
 /** Clears the guard so a later deploy can recover the same way. */
-export function clearChunkReloadGuard(
+function clearChunkReloadGuard(
   storage: Pick<Storage, "removeItem"> | undefined = globalThis.sessionStorage,
 ): void {
   try {

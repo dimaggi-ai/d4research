@@ -1,6 +1,6 @@
 import type { DpopFailureReason } from "@d4research/contracts";
 
-export const DPOP_CLOCK_HINT =
+const DPOP_CLOCK_HINT =
   "Hint: Check that automatic date and time is enabled on both devices, then try again.";
 
 /** Older servers omit the DPoP category, but newer servers can also omit it for

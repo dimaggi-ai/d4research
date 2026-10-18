@@ -20,5 +20,3 @@ const makeProviderRegistryMock = (
 
 export const layer = (providers: ReadonlyArray<ServerProvider> = []) =>
   Layer.succeed(ProviderRegistry.ProviderRegistry, makeProviderRegistryMock(providers));
-
-export const makeProviderRegistryLayer = layer;

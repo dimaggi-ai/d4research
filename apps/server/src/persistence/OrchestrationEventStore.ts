@@ -754,5 +754,3 @@ const makeEventStore = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(OrchestrationEventStore, makeEventStore);
-
-export const OrchestrationEventStoreLive = layer;

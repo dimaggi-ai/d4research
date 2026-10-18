@@ -8,7 +8,7 @@ import { MuseSettings } from "@d4research/contracts";
 import { execScriptSource, writeFakeCli } from "@d4research/provider-testing/fakeCli";
 
 const decodeMuseSettings = Schema.decodeUnknownEffect(MuseSettings);
-export const sourceRange = {
+const sourceRange = {
   first: { id: "r", sequence: 1 },
   last: { id: "r", sequence: 1 },
   stream: { id: "s", kind: "session" },

@@ -259,7 +259,7 @@ function toEntry(
 }
 
 /** Resolve the known root directories for a home dir + workspace pair. */
-export function resolveSkillsRoots(options: SkillsInventoryOptions = {}) {
+function resolveSkillsRoots(options: SkillsInventoryOptions = {}) {
   const homeDir = options.homeDir ?? NodeOS.homedir();
   return {
     homeDir,
@@ -622,7 +622,7 @@ const SHARE_TARGET_ROOTS: ReadonlySet<ShareSkillTargetRoot> = new Set<ShareSkill
 const PORTABLE_SKILL_DIRECTORY_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/u;
 const skillMutationSemaphore = Semaphore.makeUnsafe(1);
 
-export const withSkillMutationLock = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const withSkillMutationLock = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   skillMutationSemaphore.withPermits(1)(effect);
 
 export function isShareSkillTargetRoot(value: unknown): value is ShareSkillTargetRoot {

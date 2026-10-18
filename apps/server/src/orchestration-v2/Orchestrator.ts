@@ -411,7 +411,7 @@ function wakeWorkStartedAt(
 }
 
 /** A native /compact or /logout turn: provider maintenance, not agent work. */
-export function isNativeMaintenanceCommand(message: {
+function isNativeMaintenanceCommand(message: {
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly context?: import("@d4research/contracts").OrchestrationMessageContext | undefined;

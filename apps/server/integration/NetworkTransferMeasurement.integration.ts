@@ -119,7 +119,7 @@ function rawDataBytes(data: NodeSocket.NodeWS.RawData): number {
   return data.byteLength;
 }
 
-export function makeWebSocketTransferRecorder(): WebSocketTransferRecorder {
+function makeWebSocketTransferRecorder(): WebSocketTransferRecorder {
   let socket: NodeWebSocketWithTransport | null = null;
   // Held separately from the WebSocket so wire totals survive a close, which
   // is when a reconnect measurement reads them.
@@ -182,7 +182,7 @@ function layerCountingWsRpcProtocol(input: {
   );
 }
 
-export const makeCountingWsRpcClient = RpcClient.make(WsRpcGroup);
+const makeCountingWsRpcClient = RpcClient.make(WsRpcGroup);
 export type CountingWsRpcClient = Effect.Success<typeof makeCountingWsRpcClient>;
 
 export interface MeasuredWsClient {

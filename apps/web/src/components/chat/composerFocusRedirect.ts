@@ -1,7 +1,7 @@
 // Type-to-focus: printable keys and pastes that land on no editable target go to
 // the composer, so the user can start typing anywhere in the chat.
 
-export const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
+const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
   "textarea",
   "select",
@@ -23,7 +23,7 @@ const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
 ].join(",");
 // Popups match only while open or closing: some stay mounted when closed,
 // such as the chat header actions menu.
-export const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
+const TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR = [
   '[role="dialog"][aria-modal="true"]',
   '[data-slot="alert-dialog-popup"]:is([data-open],[data-ending-style])',
   '[data-slot="command-dialog-popup"]:is([data-open],[data-ending-style])',

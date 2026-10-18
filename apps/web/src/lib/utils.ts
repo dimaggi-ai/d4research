@@ -1,4 +1,3 @@
-import { CommandId } from "@d4research/contracts";
 import { MessageId, ProjectId, ThreadId } from "@d4research/contracts";
 import { isMacPlatform } from "@d4research/shared/keybindings";
 import { type CxOptions, cx } from "class-variance-authority";
@@ -20,10 +19,6 @@ export function isWindowsPlatform(platform: string): boolean {
   return /^win(dows)?/i.test(platform);
 }
 
-export function isLinuxPlatform(platform: string): boolean {
-  return /linux/i.test(platform);
-}
-
 export function randomUUID(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40;
@@ -31,8 +26,6 @@ export function randomUUID(): string {
   const hex = Hex.encode(bytes);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-
-export const newCommandId = (): CommandId => CommandId.make(randomUUID());
 
 export const newProjectId = (): ProjectId => ProjectId.make(randomUUID());
 

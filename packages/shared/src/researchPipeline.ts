@@ -18,7 +18,7 @@ import { sha256Hex } from "./hash.ts";
 // old threads and muscle memory keep working, but nothing writes it any more —
 // every insertion point emits `!research:<scenario>`. It is deliberately not a
 // named constant: an exported tag invites re-wiring a control back to it.
-export const RESEARCH_TRIGGER_PREFIX = "!research";
+const RESEARCH_TRIGGER_PREFIX = "!research";
 export const DEFAULT_RESEARCH_SCENARIO_NAME = "default";
 
 // `!research:blog task…`, `!research task…`, or legacy `#deep-research[:name]`.

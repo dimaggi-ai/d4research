@@ -119,7 +119,7 @@ export const ResearchDelegateOutput = Schema.Struct({
 });
 export type ResearchDelegateOutput = typeof ResearchDelegateOutput.Type;
 
-export const ResearchDelegateTool = Tool.make("research_delegate", {
+const ResearchDelegateTool = Tool.make("research_delegate", {
   description:
     "Send one bounded request to another provider/model named by the research or development pipeline and return its answer. Explicit fallbacks may be used only under the shared labeled-fallback policy. The result always identifies the requested and actual model.",
   parameters: ResearchDelegateInput,

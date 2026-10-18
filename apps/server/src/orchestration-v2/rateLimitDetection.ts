@@ -1,9 +1,6 @@
 import type { ServerProviderUsage } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
 
-export const RATE_LIMIT_CONTINUATION_PROMPT =
-  "Continue the previous task from where it stopped. The provider usage limit that interrupted it has reset.";
-
 const RATE_LIMIT_PHRASES = [
   "rate limit",
   "rate_limit",

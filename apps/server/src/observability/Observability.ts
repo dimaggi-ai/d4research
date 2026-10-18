@@ -78,5 +78,3 @@ export const layer = Layer.unwrap(
     );
   }),
 );
-
-export const ObservabilityLive = layer;

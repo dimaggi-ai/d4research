@@ -120,5 +120,3 @@ export const layer: Layer.Layer<
   never,
   ProviderInstanceRegistryHydrationEnv
 >;
-
-export const ProviderInstanceRegistryHydrationLive = layer;

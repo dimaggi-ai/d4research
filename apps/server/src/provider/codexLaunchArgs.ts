@@ -10,8 +10,8 @@ export const resolveCodexLaunchArgs = (
 const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenizeCliArgs(launchArgs);
 
 /** Codex config path that enables the native `web_search` tool. */
-export const CODEX_WEB_SEARCH_CONFIG_KEY = "tools.web_search";
-export const CODEX_T3_MCP_TOOL_TIMEOUT_CONFIG_KEY = "mcp_servers.t3-code.tool_timeout_sec";
+const CODEX_WEB_SEARCH_CONFIG_KEY = "tools.web_search";
+const CODEX_T3_MCP_TOOL_TIMEOUT_CONFIG_KEY = "mcp_servers.t3-code.tool_timeout_sec";
 
 const hasCodexConfigOverride = (launchArgs: string | undefined, key: string): boolean =>
   codexLaunchArgv(launchArgs).some((arg) => {
@@ -24,7 +24,7 @@ const hasCodexConfigOverride = (launchArgs: string | undefined, key: string): bo
  * takes the equivalent as a config override. An explicit `tools.web_search`
  * already present in launch args always wins, so a user can still force it off.
  */
-export const codexWebSearchArgs = (
+const codexWebSearchArgs = (
   webSearch: boolean | undefined,
   launchArgs?: string,
 ): ReadonlyArray<string> => {
@@ -73,13 +73,4 @@ export const codexExecLaunchArgs = (launchArgs?: string) => {
   }
 
   return execArgs;
-};
-
-export const codexSessionAppServerArgs = (
-  appServerArgs: ReadonlyArray<string> | undefined,
-  launchArgs: string | undefined,
-  webSearch?: boolean,
-) => {
-  const launchAppServerArgs = codexAppServerArgs(launchArgs, webSearch);
-  return appServerArgs ? [...launchAppServerArgs, ...appServerArgs] : launchAppServerArgs;
 };

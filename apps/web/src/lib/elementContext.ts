@@ -128,7 +128,7 @@ function shortenTagLabel(tagName: string): string {
  * Compact chip label — `<Button>` for component picks, `<button>` otherwise.
  * Component name takes priority because it's higher-signal for the agent.
  */
-export function formatElementContextLabel(context: ElementContextSelection): string {
+function formatElementContextLabel(context: ElementContextSelection): string {
   if (context.componentName) return `<${context.componentName}>`;
   return `<${shortenTagLabel(context.tagName)}>`;
 }
@@ -138,7 +138,7 @@ function basenameFromPath(filePath: string): string {
   return parts[parts.length - 1] ?? filePath;
 }
 
-export function formatElementContextSourceLabel(context: ElementContextSelection): string | null {
+function formatElementContextSourceLabel(context: ElementContextSelection): string | null {
   const source = context.source;
   if (!source?.fileName) return null;
   const base = basenameFromPath(source.fileName);

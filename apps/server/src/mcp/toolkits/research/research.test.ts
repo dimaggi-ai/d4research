@@ -65,7 +65,7 @@ type ProjectionThreadCheckpointContext = {
 };
 import { ProviderAdapterRegistryV2 as ProviderAdapterRegistry } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { makeLegacyAdapterV2 } from "../../../provider/Layers/LegacyAdapterV2.ts";
-import { makeProviderRegistryLayer } from "../../../provider/testUtils/providerRegistryMock.ts";
+import * as ProviderRegistryMock from "../../../provider/testUtils/providerRegistryMock.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 
@@ -553,7 +553,7 @@ describe("research delegate handler", () => {
       const layer = Layer.mergeAll(
         settingsLayer,
         registryLayer,
-        makeProviderRegistryLayer([providerSnapshot]),
+        ProviderRegistryMock.layer([providerSnapshot]),
         projectionLayer,
         ResearchDelegationBudgetLive,
         NodeServices.layer,
@@ -904,7 +904,7 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
         list: () => Effect.succeed([instanceId]),
       }),
     ),
-    makeProviderRegistryLayer([providerSnapshot]),
+    ProviderRegistryMock.layer([providerSnapshot]),
     Layer.mock(ProjectionStoreV2)({
       getThread: () =>
         Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId: ThreadId.make("missing") })),

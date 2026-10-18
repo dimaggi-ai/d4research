@@ -130,7 +130,7 @@ export interface ParsedTerminalContextEntry {
 const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
   /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
 
-export function formatInlineTerminalContextLabel(selection: {
+function formatInlineTerminalContextLabel(selection: {
   terminalLabel: string;
   lineStart: number;
   lineEnd: number;
@@ -149,9 +149,7 @@ function buildTerminalContextBodyLines(selection: TerminalContextSelection): str
     .map((line, index) => `  ${selection.lineStart + index} | ${line}`);
 }
 
-export function buildTerminalContextBlock(
-  contexts: ReadonlyArray<TerminalContextSelection>,
-): string {
+function buildTerminalContextBlock(contexts: ReadonlyArray<TerminalContextSelection>): string {
   const normalizedContexts: TerminalContextSelection[] = [];
   for (const context of contexts) {
     const normalized = normalizeTerminalContextSelection(context);
@@ -174,7 +172,7 @@ export function buildTerminalContextBlock(
   return ["<terminal_context>", ...lines, "</terminal_context>"].join("\n");
 }
 
-export function materializeInlineTerminalContextPrompt(
+function materializeInlineTerminalContextPrompt(
   prompt: string,
   contexts: ReadonlyArray<{
     terminalLabel: string;
@@ -213,7 +211,7 @@ export function appendTerminalContextsToPrompt(
   return trimmedPrompt.length > 0 ? `${trimmedPrompt}\n\n${contextBlock}` : contextBlock;
 }
 
-export function extractTrailingTerminalContexts(prompt: string): ExtractedTerminalContexts {
+function extractTrailingTerminalContexts(prompt: string): ExtractedTerminalContexts {
   const match = TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN.exec(prompt);
   if (!match) {
     return {
@@ -293,73 +291,4 @@ function parseTerminalContextEntries(block: string): ParsedTerminalContextEntry[
 
   commitCurrent();
   return entries;
-}
-
-export function countInlineTerminalContextPlaceholders(prompt: string): number {
-  let count = 0;
-  for (const char of prompt) {
-    if (char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
-      count += 1;
-    }
-  }
-  return count;
-}
-
-export function ensureInlineTerminalContextPlaceholders(
-  prompt: string,
-  terminalContextCount: number,
-): string {
-  const missingCount = terminalContextCount - countInlineTerminalContextPlaceholders(prompt);
-  if (missingCount <= 0) {
-    return prompt;
-  }
-  return `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER.repeat(missingCount)}${prompt}`;
-}
-
-function isInlineTerminalContextBoundaryWhitespace(char: string | undefined): boolean {
-  return char === undefined || char === " " || char === "\n" || char === "\t" || char === "\r";
-}
-
-export function insertInlineTerminalContextPlaceholder(
-  prompt: string,
-  cursorInput: number,
-): { prompt: string; cursor: number; contextIndex: number } {
-  const cursor = Math.max(0, Math.min(prompt.length, Math.floor(cursorInput)));
-  const needsLeadingSpace = !isInlineTerminalContextBoundaryWhitespace(prompt[cursor - 1]);
-  const replacement = `${needsLeadingSpace ? " " : ""}${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} `;
-  const rangeEnd = prompt[cursor] === " " ? cursor + 1 : cursor;
-  return {
-    prompt: `${prompt.slice(0, cursor)}${replacement}${prompt.slice(rangeEnd)}`,
-    cursor: cursor + replacement.length,
-    contextIndex: countInlineTerminalContextPlaceholders(prompt.slice(0, cursor)),
-  };
-}
-
-export function stripInlineTerminalContextPlaceholders(prompt: string): string {
-  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, "");
-}
-
-export function removeInlineTerminalContextPlaceholder(
-  prompt: string,
-  contextIndex: number,
-): { prompt: string; cursor: number } {
-  if (contextIndex < 0) {
-    return { prompt, cursor: prompt.length };
-  }
-
-  let placeholderIndex = 0;
-  for (let index = 0; index < prompt.length; index += 1) {
-    if (prompt[index] !== INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
-      continue;
-    }
-    if (placeholderIndex === contextIndex) {
-      return {
-        prompt: prompt.slice(0, index) + prompt.slice(index + 1),
-        cursor: index,
-      };
-    }
-    placeholderIndex += 1;
-  }
-
-  return { prompt, cursor: prompt.length };
 }

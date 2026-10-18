@@ -12,7 +12,7 @@ import {
 } from "./connectors.ts";
 import { makeBuiltinMemoryConnector } from "./builtinStore.ts";
 
-export const BUILTIN_MEMORY_FILENAME = "memory.sqlite";
+const BUILTIN_MEMORY_FILENAME = "memory.sqlite";
 
 /**
  * The one place that turns memory settings into a live connector, shared by

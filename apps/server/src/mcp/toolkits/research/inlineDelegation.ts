@@ -31,18 +31,6 @@ import type { ResearchDelegateError } from "./tools.ts";
  */
 export const INLINE_DELEGATION_STEP = "inline";
 
-/**
- * Turn ids an inline delegation runs under. The prefix is the only marker
- * distinguishing a delegate turn from a provider turn in projected state, and
- * restart reconciliation reads it to settle a delegation honestly instead of
- * reporting a provider session that never existed.
- */
-export const INLINE_DELEGATE_TURN_PREFIX = "inline-delegate:";
-
-export function isInlineDelegateTurnId(turnId: string | null | undefined): boolean {
-  return typeof turnId === "string" && turnId.startsWith(INLINE_DELEGATE_TURN_PREFIX);
-}
-
 export type InlineDelegationResult = Effect.Success<ReturnType<typeof runBoundedDelegation>>;
 
 export type InlineDelegationTarget = {

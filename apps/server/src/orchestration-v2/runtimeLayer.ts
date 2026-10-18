@@ -389,12 +389,3 @@ export const layerProduction = Layer.mergeAll(
   Layer.provide(Scheduler.layer),
   Layer.provideMerge(layerEventInfrastructure),
 );
-
-export const ProjectSetupScriptRunnerLayerLive = layerProjectSetupScriptRunner;
-
-export const OrchestrationV2EventSinkLayerLive = layerEventSink;
-export const OrchestrationEventInfrastructureLayerLive = layerEventInfrastructure;
-export const OrchestrationV2ProductionLayerLive = layerProduction;
-export const ProjectServiceLayerLive = layerProjectService;
-
-export const OrchestrationV2LayerLive = layer;

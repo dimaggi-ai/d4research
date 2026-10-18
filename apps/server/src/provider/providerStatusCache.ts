@@ -14,7 +14,7 @@ import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
 // Bump to invalidate every previously written snapshot — e.g. after a model
 // discovery/parsing fix, so caches poisoned by the old code are ignored
 // instead of being rehydrated (and re-persisted) forever.
-export const PROVIDER_STATUS_CACHE_VERSION = 2;
+const PROVIDER_STATUS_CACHE_VERSION = 2;
 
 const ProviderStatusCacheEnvelope = Schema.Struct({
   cacheVersion: Schema.Number,

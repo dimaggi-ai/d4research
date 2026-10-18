@@ -6,14 +6,14 @@ import * as NodePath from "@effect/platform-node/NodePath";
 import { ResearchDelegationBudgetLive } from "../mcp/toolkits/research/budget.ts";
 import { InlineDelegationRunner } from "../mcp/toolkits/research/inlineDelegation.ts";
 import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
-import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
+import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMock.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 // Native-provider replay tests never invoke d4's inline delegate. Fail loudly
 // if a fixture accidentally enters that separate workflow.
 export const researchTurnDependenciesTestLayer = Layer.mergeAll(
   NodePath.layer,
-  makeProviderRegistryLayer(),
+  ProviderRegistryMock.layer(),
   ServerSettings.layerTest().pipe(Layer.orDie),
   ResearchDelegationBudgetLive,
   NodeHttpClient.layerUndici,
@@ -35,5 +35,3 @@ export const layer = Layer.merge(
     getById: () => Effect.succeed(Option.none()),
   }),
 );
-
-export const worktreeRepairDependenciesTestLayer = layer;

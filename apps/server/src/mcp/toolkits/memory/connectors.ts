@@ -41,7 +41,7 @@ export const MemoryAddResult = Schema.Struct({
 export type MemoryAddResult = typeof MemoryAddResult.Type;
 
 export const DEFAULT_LOCAL_MEMO_BASE_URL = "http://127.0.0.1:8099";
-export const DEFAULT_MEMORY_TIMEOUT_MS = 10_000;
+const DEFAULT_MEMORY_TIMEOUT_MS = 10_000;
 
 const asRecord = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)

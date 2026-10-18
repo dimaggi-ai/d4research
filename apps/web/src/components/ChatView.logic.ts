@@ -566,13 +566,6 @@ export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
-// Dismissed research progress banners, persisted so a completed run's banner
-// stays closed across reloads. Keyed by `threadId:planTurnId`; a new run mints
-// a new plan turn and therefore a new, undismissed key.
-export const DISMISSED_RESEARCH_BANNERS_KEY = "t3code:dismissed-research-banners";
-
-export const EMPTY_DISMISSED_RESEARCH_BANNERS: ReadonlyArray<string> = [];
-
 export type ThreadPipelineKind = "research" | "dev";
 
 /**
@@ -683,7 +676,7 @@ const AUDIO_ARTIFACT_EXTENSIONS = new Set([
   "weba",
 ]);
 
-export function isAudioArtifactPath(path: string): boolean {
+function isAudioArtifactPath(path: string): boolean {
   const extension = path.split(".").pop()?.toLowerCase();
   return extension !== undefined && AUDIO_ARTIFACT_EXTENSIONS.has(extension);
 }
@@ -715,43 +708,6 @@ export function collectAudioArtifactPaths(
     }
   }
   return [...paths];
-}
-
-export function hasLiveAgentSession(
-  phase: SessionPhase,
-  backgroundLiveness: "working" | "monitoring" | null | undefined,
-): boolean {
-  // Neither a connected provider nor a new parent turn revives old children.
-  // The server tracks live child work during active and settled parent turns.
-  return phase !== "disconnected" && backgroundLiveness != null;
-}
-
-/** Delete only a research shell whose first turn was never accepted. */
-export function shouldDeleteFailedResearchThread(turnStarted: boolean): boolean {
-  return !turnStarted;
-}
-
-/** A failed turn may restore its snapshot only when the user has not started another draft. */
-export function shouldRestoreComposerSnapshot(input: {
-  queuedRequest: boolean;
-  promptLength: number;
-  imageCount: number;
-  terminalContextCount: number;
-  elementContextCount: number;
-  pastedContextCount: number;
-  previewAnnotationCount: number;
-  reviewCommentCount: number;
-}): boolean {
-  return (
-    !input.queuedRequest &&
-    input.promptLength === 0 &&
-    input.imageCount === 0 &&
-    input.terminalContextCount === 0 &&
-    input.elementContextCount === 0 &&
-    input.pastedContextCount === 0 &&
-    input.previewAnnotationCount === 0 &&
-    input.reviewCommentCount === 0
-  );
 }
 
 /**

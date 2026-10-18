@@ -95,7 +95,7 @@ import { makeEventNdjsonLogger } from "../EventNdjsonLogger.ts";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
-export const acpSessionReadyReason = (displayName: string) => `${displayName} ACP session ready`;
+const acpSessionReadyReason = (displayName: string) => `${displayName} ACP session ready`;
 export const acpPromptRequestFailedMessage = (displayName: string) =>
   `${displayName} prompt request failed.`;
 const GROK_RESUME_VERSION = 1 as const;
@@ -274,7 +274,7 @@ function clearProposedPlanFallback(ctx: GrokSessionContext): void {
 }
 
 /** Detect Grok's enter_plan_mode tool call from ACP tool state. */
-export function isGrokEnterPlanModeToolCall(toolCall: {
+function isGrokEnterPlanModeToolCall(toolCall: {
   readonly title?: string;
   readonly data: Record<string, unknown>;
 }): boolean {
@@ -295,7 +295,7 @@ export function isGrokEnterPlanModeToolCall(toolCall: {
 }
 
 /** Failed enter_plan_mode must not leave planModeActive stuck on. */
-export function nextGrokPlanModeActive(
+function nextGrokPlanModeActive(
   currentlyActive: boolean,
   toolCall: {
     readonly title?: string;
@@ -330,7 +330,7 @@ function parseGrokResume(raw: unknown): { sessionId: string } | undefined {
   return { sessionId: raw.sessionId.trim() };
 }
 
-export function selectGrokPermissionOptionId(
+function selectGrokPermissionOptionId(
   request: EffectAcpSchema.RequestPermissionRequest,
   decision: Exclude<ProviderApprovalDecision, "cancel">,
 ): string | undefined {
@@ -374,7 +374,7 @@ function completedStopReasonFromPromptResponse(
   return response.stopReason;
 }
 
-export function grokPromptSettlementBelongsToContext(input: {
+function grokPromptSettlementBelongsToContext(input: {
   readonly liveAcpSessionId: string;
   readonly expectedAcpSessionId: string;
   readonly liveActiveTurnId: TurnId | undefined;

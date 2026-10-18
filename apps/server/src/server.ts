@@ -96,7 +96,6 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import { ResearchDelegationBudgetLive } from "./mcp/toolkits/research/budget.ts";
 import { ResearchIntegrityReactorLive } from "./orchestration-v2/Layers/ResearchIntegrityReactor.ts";
 import { ResearchIntegrityReactor } from "./orchestration-v2/Services/ResearchIntegrityReactor.ts";
-import { ProviderRegistryLive } from "./provider/ProviderRegistry.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -170,7 +169,6 @@ import * as EventStoreV2 from "./orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as IdAllocatorV2 from "@d4research/provider-core/server/IdAllocator";
-import { OrchestrationV2EventSinkLayerLive } from "./orchestration-v2/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -517,11 +515,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ResearchIntegrityReactor.use((reactor) => reactor.start())).pipe(
     Layer.provide(ResearchIntegrityReactorLive),
     Layer.provide(
-      Layer.mergeAll(
-        ProjectionStoreV2.layer,
-        IdAllocatorV2.layer,
-        OrchestrationV2EventSinkLayerLive,
-      ),
+      Layer.mergeAll(ProjectionStoreV2.layer, IdAllocatorV2.layer, RuntimeLayer.layerEventSink),
     ),
   ),
   layerThreadSettlementWorker,
@@ -584,7 +578,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
   ),
-  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistryLive)),
+  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistry.layer)),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;

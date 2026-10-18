@@ -23,7 +23,7 @@ const GROK_SKILLS_PROBE_TIMEOUT_MS = 4_000;
  * name or a filesystem path are skipped; `userInvocable: false` skills are
  * kept but disabled so pickers that filter on `enabled` hide them.
  */
-export function parseGrokInspectSkills(stdout: string): ReadonlyArray<ServerProviderSkill> {
+function parseGrokInspectSkills(stdout: string): ReadonlyArray<ServerProviderSkill> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);

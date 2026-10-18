@@ -86,9 +86,9 @@ const DELEGATE_START_TIMEOUT_MILLIS = 180_000;
  */
 const DELEGATE_WARMUP_TIMEOUT_MILLIS = 360_000;
 /** Cap what flows back into the orchestrator context per delegation. */
-export const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
+const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
 /** Keep automatic shared memory smaller than one full composer attachment chunk set. */
-export const RESEARCH_SHARED_MEMO_MAX_CHARS = 24_000;
+const RESEARCH_SHARED_MEMO_MAX_CHARS = 24_000;
 /** Delegates advise only; write operations must remain provider-gated. */
 export const DELEGATE_RUNTIME_MODE: RuntimeMode = "approval-required";
 

@@ -6,7 +6,6 @@ import type {
   MessageId,
   OrchestrationProjectShell,
   OrchestrationV2ProviderGoal,
-  OrchestrationV2ShellSnapshot,
   OrchestrationV2RunStatus,
   OrchestrationV2ProviderFailureClass,
   OrchestrationV2ThreadProjection,
@@ -320,13 +319,4 @@ export function resolveThreadWorkingStartedAt(input: {
     return valid(run.startedAt) ?? valid(run.requestedAt);
   }
   return null;
-}
-
-export function selectEnvironmentThreadShell(
-  snapshot: OrchestrationV2ShellSnapshot | null,
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-): EnvironmentThreadShell | null {
-  const thread = snapshot?.threads.find((candidate) => candidate.id === threadId) ?? null;
-  return thread ? scopeThreadShell(environmentId, thread) : null;
 }

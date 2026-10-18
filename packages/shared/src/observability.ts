@@ -791,5 +791,3 @@ export const OtlpHeadersFromString = Schema.String.pipe(
     }),
   ),
 );
-
-export const otlpSerializationLayer = layerOtlpSerialization;

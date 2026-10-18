@@ -637,7 +637,7 @@ export const SkillsInventoryResult = Schema.Struct({
 });
 export type SkillsInventoryResult = typeof SkillsInventoryResult.Type;
 
-export class EnvironmentSkillsHttpApi extends HttpApiGroup.make("skills").add(
+class EnvironmentSkillsHttpApi extends HttpApiGroup.make("skills").add(
   HttpApiEndpoint.get("inventory", "/api/skills", {
     headers: OptionalBearerHeaders,
     query: { cwd: Schema.optionalKey(Schema.String) },

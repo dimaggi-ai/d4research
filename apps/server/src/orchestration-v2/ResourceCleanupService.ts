@@ -82,5 +82,3 @@ export const layer = Layer.effect(
     };
   }),
 );
-
-export const live = layer;

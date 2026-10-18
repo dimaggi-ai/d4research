@@ -22,7 +22,7 @@ const decodeCursor = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unkno
 const encodeCursor = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /** Keep the native adapters as protocol owners while translating their event boundary. */
-export function legacyAdapterCapabilities(
+function legacyAdapterCapabilities(
   adapter: ProviderAdapterShape<ProviderAdapterError>,
 ): OrchestrationV2ProviderCapabilities {
   const interactive = adapter.provider !== "agy";

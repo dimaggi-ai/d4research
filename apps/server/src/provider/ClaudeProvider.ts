@@ -1,7 +1,6 @@
 import {
   type ClaudeSettings,
   type ModelCapabilities,
-  type ModelSelection,
   type ServerProviderModel,
   type ServerProvider,
   type ServerProviderSlashCommand,
@@ -18,12 +17,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import {
-  createModelCapabilities,
-  getModelSelectionStringOptionValue,
-  getProviderOptionCurrentValue,
-  getProviderOptionDescriptors,
-} from "@d4research/shared/model";
+import { createModelCapabilities } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import { compareSemverVersions } from "@d4research/shared/semver";
 import {
@@ -388,7 +382,7 @@ const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.
 // published embedder follows.
 const OLLAMA_EMBEDDING_MODEL_PATTERN = /embed|minilm|reranker/iu;
 
-export function isLikelyOllamaEmbeddingModel(slug: string): boolean {
+function isLikelyOllamaEmbeddingModel(slug: string): boolean {
   return OLLAMA_EMBEDDING_MODEL_PATTERN.test(slug);
 }
 
@@ -518,89 +512,6 @@ const discoverLocalOllamaModels = (environment: NodeJS.ProcessEnv) =>
       ? ({ models: [], reachable: false } satisfies LocalOllamaDiscovery)
       : ({ models: tags, reachable: true } satisfies LocalOllamaDiscovery);
   });
-
-export function getClaudeModelCapabilities(model: string | null | undefined): ModelCapabilities {
-  const slug = model?.trim();
-  return (
-    BUILT_IN_MODELS.find((candidate) => candidate.slug === slug)?.capabilities ??
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES
-  );
-}
-
-export function resolveClaudeEffort(
-  caps: ModelCapabilities,
-  raw: string | null | undefined,
-): string | undefined {
-  const descriptors = getProviderOptionDescriptors({
-    caps,
-    ...(raw ? { selections: [{ id: "effort", value: raw }] } : {}),
-  });
-  const effortDescriptor = descriptors.find((descriptor) => descriptor.id === "effort");
-  const value = getProviderOptionCurrentValue(effortDescriptor);
-  return typeof value === "string" ? value : undefined;
-}
-
-/**
- * Normalize a resolved Claude effort value into one suitable for the Claude
- * CLI's `--effort` flag.
- *
- * Mirrors the mapping used when invoking the Claude Agent SDK
- * ({@link getEffectiveClaudeAgentEffort} in ClaudeAdapter): `ultracode` is a
- * Claude Code setting that pairs with `xhigh`, `ultrathink` is filtered out
- * because it is a prompt-prefix mode, and older model compatibility mappings
- * are preserved for current Claude Code behavior.
- */
-export function normalizeClaudeCliEffort(
-  effort: string | null | undefined,
-  model: string | null | undefined,
-): string | undefined {
-  if (!effort || effort === "ultrathink") {
-    return undefined;
-  }
-  if (effort === "ultracode") {
-    return "xhigh";
-  }
-  if (
-    effort === "xhigh" &&
-    model !== "claude-fable-5" &&
-    model !== "claude-opus-5" &&
-    model !== "claude-opus-4-8" &&
-    model !== "claude-sonnet-5"
-  ) {
-    return "max";
-  }
-  if (effort === "max" && model === "claude-sonnet-4-6") {
-    return "high";
-  }
-  return effort;
-}
-
-export function isClaudeUltracodeEffort(effort: string | null | undefined): boolean {
-  return effort === "ultracode";
-}
-
-export function resolveClaudeContextWindow(
-  modelSelection: ModelSelection | undefined,
-): string | undefined {
-  const caps = getClaudeModelCapabilities(modelSelection?.model);
-  const raw = getModelSelectionStringOptionValue(modelSelection, "contextWindow");
-  const descriptors = getProviderOptionDescriptors({
-    caps,
-    ...(raw ? { selections: [{ id: "contextWindow", value: raw }] } : {}),
-  });
-  const descriptor = descriptors.find((candidate) => candidate.id === "contextWindow");
-  const value = getProviderOptionCurrentValue(descriptor);
-  return typeof value === "string" ? value : undefined;
-}
-
-export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
-  switch (resolveClaudeContextWindow(modelSelection)) {
-    case "1m":
-      return `${modelSelection.model}[1m]`;
-    default:
-      return modelSelection.model;
-  }
-}
 
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];

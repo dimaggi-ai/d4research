@@ -1,4 +1,4 @@
-export const PWA_BUILD_ID_PLACEHOLDER = "__T3CODE_BUILD_ID__";
+const PWA_BUILD_ID_PLACEHOLDER = "__T3CODE_BUILD_ID__";
 
 export function stampPwaServiceWorker(source: string, buildId: string): string {
   const normalizedBuildId = buildId.trim();

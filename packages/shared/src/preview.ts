@@ -25,18 +25,6 @@ export function isLoopbackHost(host: string): boolean {
   return false;
 }
 
-export function isPreviewableUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl);
-    return (
-      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      isLoopbackHost(parsed.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
-
 export class PreviewUrlNormalizationError extends Schema.TaggedError<PreviewUrlNormalizationError>()(
   "PreviewUrlNormalizationError",
   {

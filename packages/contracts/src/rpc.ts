@@ -870,13 +870,13 @@ const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
   },
 );
 
-export const WsThreadsGetTokenUsageRpc = Rpc.make(WS_METHODS.threadsGetTokenUsage, {
+const WsThreadsGetTokenUsageRpc = Rpc.make(WS_METHODS.threadsGetTokenUsage, {
   payload: ThreadTurnUsageInput,
   success: Schema.Array(ThreadTurnUsageRow),
   error: EnvironmentAuthorizationError,
 });
 
-export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
+const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
   payload: Schema.Struct({}),
   success: ResourceTelemetryRetryResult,
   error: EnvironmentAuthorizationError,
@@ -906,7 +906,7 @@ const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   error: EnvironmentAuthorizationError,
 });
 
-export const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientActivity, {
+const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientActivity, {
   payload: ClientActivityReportInput,
   error: EnvironmentAuthorizationError,
 });

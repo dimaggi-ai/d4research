@@ -302,5 +302,3 @@ export const makeProviderAuthService = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ProviderAuthService, makeProviderAuthService);
-
-export const ProviderAuthServiceLive = layer;

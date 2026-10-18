@@ -183,7 +183,7 @@ export function buildStructuredHandoffTranscript(
   return [...headerParts, tailSections.join(SECTION_SEPARATOR)].join(SECTION_SEPARATOR);
 }
 
-export const EMPTY_PROVIDER_HANDOFF_TRANSCRIPT =
+const EMPTY_PROVIDER_HANDOFF_TRANSCRIPT =
   "No prior conversation messages were available for this context handoff.";
 
 /**

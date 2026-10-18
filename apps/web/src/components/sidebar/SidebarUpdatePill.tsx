@@ -1,6 +1,6 @@
 import type { DesktopBridge, DesktopUpdateState } from "@d4research/contracts";
 import { TriangleAlertIcon, XIcon } from "lucide-react";
-import { type ComponentProps, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { settlePromise, squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { isElectron } from "../../env";

@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { SessionPermissions } from "./SessionPermissions";
 import { AUTH_SCOPE_OPTIONS } from "@d4research/shared/authScopeOptions";
@@ -2414,17 +2413,14 @@ export function ConnectionsSettings() {
 
   // Removing forgets the pairing, credentials, and cached threads on this
   // device. Switching off is the reversible path, so removal always confirms.
-  const handleRemoveSavedBackend = useCallback(
-    async (environment: EnvironmentPresentation) => {
-      // Fail closed: no mounted confirm host means no removal.
-      const confirmed = await requestConfirmDialog(
-        `Remove ${environment.label} from this device?\nThis forgets its pairing, credentials, and cached threads here. Switch it off instead to keep it saved.`,
-        { variant: "destructive" },
-      );
-      if (confirmed === true) await removeSavedBackend(environment);
-    },
-    [removeSavedBackend],
-  );
+  const handleRemoveSavedBackend = async (environment: EnvironmentPresentation) => {
+    // Fail closed: no mounted confirm host means no removal.
+    const confirmed = await requestConfirmDialog(
+      `Remove ${environment.label} from this device?\nThis forgets its pairing, credentials, and cached threads here. Switch it off instead to keep it saved.`,
+      { variant: "destructive" },
+    );
+    if (confirmed === true) await removeSavedBackend(environment);
+  };
 
   const visibleDesktopPairingLinks = desktopPairingLinks;
   const tailscaleHttpsEndpoint = desktopAdvertisedEndpoints.find(isTailscaleHttpsEndpoint) ?? null;

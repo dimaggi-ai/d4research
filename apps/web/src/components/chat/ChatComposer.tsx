@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-import { useCallback } from "react";
 import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -2109,25 +2107,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const researchTrigger = parseResearchTrigger(prompt);
   const isResearchMode = researchTrigger !== null;
   const activeResearchScenario = researchTrigger?.scenarioName ?? null;
-  const selectResearchScenario = useCallback(
-    (scenarioName: string | null) => {
-      if (scenarioName === null) {
-        composerRef.current?.replacePrompt(stripResearchTrigger(prompt));
-        return;
-      }
-      onStartDeepResearch(scenarioName);
-    },
-    [prompt, composerRef, onStartDeepResearch],
-  );
+  const selectResearchScenario = (scenarioName: string | null) => {
+    if (scenarioName === null) {
+      composerRef.current?.replacePrompt(stripResearchTrigger(prompt));
+      return;
+    }
+    onStartDeepResearch(scenarioName);
+  };
+  const selectResearchScenarioStable = useStableCallback(selectResearchScenario);
   const activeDevPipeline = activeDevScenarioName(prompt);
-  const selectDevPipeline = useCallback(
-    (scenarioName: string | null) => {
-      composerRef.current?.replacePrompt(
-        applyDevTrigger(stripResearchTrigger(prompt), scenarioName),
-      );
-    },
-    [prompt, composerRef],
-  );
+  const selectDevPipeline = (scenarioName: string | null) => {
+    composerRef.current?.replacePrompt(applyDevTrigger(stripResearchTrigger(prompt), scenarioName));
+  };
+  const selectDevPipelineStable = useStableCallback(selectDevPipeline);
   const composerPastedContexts = composerDraft.pastedContexts;
   const addComposerDraftPastedContexts = useComposerDraftStore((store) => store.addPastedContexts);
   const removeComposerDraftPastedContext = useComposerDraftStore(
@@ -2651,18 +2643,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     preparedConnection,
   });
   const [isSessionSkillsOpen, setIsSessionSkillsOpen] = useState(false);
-  const environmentSkillEntries = useMemo(
-    () => [...providerSkillsToInventoryEntries(providerStatuses), ...inventoryFallback.entries],
-    [inventoryFallback.entries, providerStatuses],
-  );
-  const composerSkills = useMemo<ReadonlyArray<ServerProviderSkill>>(
-    () => toComposerFallbackSkills(environmentSkillEntries),
-    [environmentSkillEntries],
-  );
-  const delegateCandidates = useMemo(
-    () => deriveResearchProviderCandidatesFromProviders(providerStatuses),
-    [providerStatuses],
-  );
+  const environmentSkillEntries = [
+    ...providerSkillsToInventoryEntries(providerStatuses),
+    ...inventoryFallback.entries,
+  ];
+  const composerSkills = ((): ReadonlyArray<ServerProviderSkill> =>
+    toComposerFallbackSkills(environmentSkillEntries))();
+  const delegateCandidates = deriveResearchProviderCandidatesFromProviders(providerStatuses);
   const pullRequestListTargets =
     composerTriggerKind !== "pull-request" ||
     pullRequestProjectId === null ||
@@ -5389,10 +5376,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
           onPipelineTargetPolicyChange={onPipelineTargetPolicyChange}
-          onSelectResearchScenario={selectResearchScenario}
+          onSelectResearchScenario={selectResearchScenarioStable}
           devPipelines={devPipelines}
           activeDevPipeline={activeDevPipeline}
-          onSelectDevPipeline={selectDevPipeline}
+          onSelectDevPipeline={selectDevPipelineStable}
         />
 
         {providerTraitsPicker}
@@ -5755,9 +5742,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   };
 
-  // ------------------------------------------------------------------
-  // Callbacks: paste / drag
-  // ------------------------------------------------------------------
   const addComposerTextFiles = async (files: File[]) => {
     if (files.length === 0) return;
     const targetKey = composerDraftOperationKey(composerDraftTarget);
@@ -5770,7 +5754,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (reserved > 0) {
       pendingPastedContextReadsRef.current.set(targetKey, pending + reserved);
     }
-    try {
+    const completeOperation = async () => {
       const result = await readPastedContextFiles(files, available);
       if (result.contexts.length > 0) {
         addComposerDraftPastedContexts(composerDraftTarget, result.contexts);
@@ -5788,35 +5772,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ];
         setThreadError(activeThreadId, reasons.join(" "));
       }
-    } finally {
+    };
+    return await completeOperation().finally(() => {
       const remaining = (pendingPastedContextReadsRef.current.get(targetKey) ?? 0) - reserved;
       if (remaining > 0) pendingPastedContextReadsRef.current.set(targetKey, remaining);
       else pendingPastedContextReadsRef.current.delete(targetKey);
-    }
+    });
   };
-  const reportVoiceError = useCallback((description: string) => {
+  const reportVoiceError = (description: string) => {
     toastManager.add(
       stackedThreadToast({ type: "error", title: "Voice conversation", description }),
     );
-  }, []);
-  const submitVoiceTranscript = useCallback(
-    (transcript: string) => {
-      if (promptRef.current.trim()) {
-        reportVoiceError("Send or clear the current draft before starting a voice turn.");
-        return false;
-      }
-      promptRef.current = transcript;
-      setComposerDraftPrompt(composerDraftTarget, transcript);
-      composerRef.current?.resetCursorState({ prompt: transcript, cursor: transcript.length });
-      onSend();
-      return true;
-    },
-    [composerDraftTarget, composerRef, onSend, promptRef, reportVoiceError, setComposerDraftPrompt],
-  );
+  };
+  const reportVoiceErrorStable = useStableCallback(reportVoiceError);
+  const submitVoiceTranscript = (transcript: string) => {
+    if (promptRef.current.trim()) {
+      reportVoiceError("Send or clear the current draft before starting a voice turn.");
+      return false;
+    }
+    promptRef.current = transcript;
+    setComposerDraftPrompt(composerDraftTarget, transcript);
+    composerRef.current?.resetCursorState({ prompt: transcript, cursor: transcript.length });
+    onSend();
+    return true;
+  };
+  const submitVoiceTranscriptStable = useStableCallback(submitVoiceTranscript);
   const voiceConversation = useVoiceConversation({
     messages: promptHistoryMessages,
-    onTranscript: submitVoiceTranscript,
-    onError: reportVoiceError,
+    onTranscript: submitVoiceTranscriptStable,
+    onError: reportVoiceErrorStable,
   });
   useEffect(() => {
     composerPastedContextsRef.current = composerPastedContexts;

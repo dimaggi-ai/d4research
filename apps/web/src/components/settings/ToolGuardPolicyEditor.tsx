@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangleIcon,
   PlusIcon,
@@ -132,7 +132,9 @@ function RuleEditDialog({
   const [field, setField] = useState("parameters.command");
   const [pattern, setPattern] = useState("");
 
-  useEffect(() => {
+  const [previousOpenRule, setPreviousOpenRule] = useState({ open: false, rule });
+  if (previousOpenRule.open !== open || previousOpenRule.rule !== rule) {
+    setPreviousOpenRule({ open, rule });
     if (open) {
       if (rule) {
         setRuleId(rule.rule_id);
@@ -148,7 +150,7 @@ function RuleEditDialog({
         setPattern("");
       }
     }
-  }, [open, rule]);
+  }
 
   const handleSave = () => {
     const trimmedId = ruleId.trim();
@@ -272,7 +274,9 @@ export function ToolGuardPolicyEditor({
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [isNewRule, setIsNewRule] = useState(false);
 
-  useEffect(() => {
+  const [previousOpenPolicy, setPreviousOpenPolicy] = useState({ open: false, policy });
+  if (previousOpenPolicy.open !== open || previousOpenPolicy.policy !== policy) {
+    setPreviousOpenPolicy({ open, policy });
     if (open && policy) {
       setLocalRules([...policy.rules]);
       setScope({
@@ -280,36 +284,33 @@ export function ToolGuardPolicyEditor({
         toolGroups: policy.scope.tool_groups.join(", "),
       });
     }
-  }, [open, policy]);
+  }
 
-  const handleAddRule = useCallback(() => {
+  const handleAddRule = () => {
     setEditingRule(null);
     setIsNewRule(true);
     setRuleDialogOpen(true);
-  }, []);
+  };
 
-  const handleEditRule = useCallback((rule: ToolGuardPolicyRule) => {
+  const handleEditRule = (rule: ToolGuardPolicyRule) => {
     setEditingRule(rule);
     setIsNewRule(false);
     setRuleDialogOpen(true);
-  }, []);
+  };
 
-  const handleDeleteRule = useCallback((ruleId: string) => {
+  const handleDeleteRule = (ruleId: string) => {
     setLocalRules((rules) => rules.filter((r) => r.rule_id !== ruleId));
-  }, []);
+  };
 
-  const handleSaveRule = useCallback(
-    (rule: ToolGuardPolicyRule) => {
-      if (isNewRule) {
-        setLocalRules((rules) => [...rules, rule]);
-      } else {
-        setLocalRules((rules) => rules.map((r) => (r.rule_id === rule.rule_id ? rule : r)));
-      }
-    },
-    [isNewRule],
-  );
+  const handleSaveRule = (rule: ToolGuardPolicyRule) => {
+    if (isNewRule) {
+      setLocalRules((rules) => [...rules, rule]);
+    } else {
+      setLocalRules((rules) => rules.map((r) => (r.rule_id === rule.rule_id ? rule : r)));
+    }
+  };
 
-  const handleSavePolicy = useCallback(async () => {
+  const handleSavePolicy = async () => {
     if (!policy) return;
     const toolNames = scope.toolNames
       .split(",")
@@ -326,7 +327,7 @@ export function ToolGuardPolicyEditor({
     };
     const ok = await onSave(updated);
     if (ok) onOpenChange(false);
-  }, [localRules, onOpenChange, onSave, policy, scope]);
+  };
 
   if (!policy) return null;
 

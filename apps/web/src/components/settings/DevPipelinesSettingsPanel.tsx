@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PaperclipIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { ResearchScenario } from "@d4research/contracts";
 import {
@@ -58,23 +58,12 @@ export function DevPipelinesSettingsPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const candidates = useMemo(
-    () =>
-      deriveResearchProviderCandidates(
-        sortProviderInstanceEntries(
-          applyProviderInstanceSettings(
-            deriveProviderInstanceEntries(serverProviders),
-            settings,
-            null,
-          ),
-        ),
-      ),
-    [serverProviders, settings],
+  const candidates = deriveResearchProviderCandidates(
+    sortProviderInstanceEntries(
+      applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings, null),
+    ),
   );
-  const persistedPipelines = useMemo(
-    () => listDevScenarios(settings.dev, candidates),
-    [candidates, settings.dev],
-  );
+  const persistedPipelines = listDevScenarios(settings.dev, candidates);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [pipelines, setPipelines] = useState(persistedPipelines);
   const pipelinesRef = useRef<ReadonlyArray<ResearchScenario>>(persistedPipelines);
@@ -117,18 +106,21 @@ export function DevPipelinesSettingsPanel() {
     setLocalPipelines(next, active);
     setSaving(true);
     setSaveError(null);
-    try {
-      await updateSettings({ dev: { scenarios: next, activeScenario: active } });
-      return true;
-    } catch (error) {
-      if (saveRevisionRef.current === revision) {
-        setLocalPipelines(previous, previousActive);
-        setSaveError(error instanceof Error ? error.message : "Could not save dev pipelines.");
+    const completeOperation = async () => {
+      try {
+        await updateSettings({ dev: { scenarios: next, activeScenario: active } });
+        return true;
+      } catch (error) {
+        if (saveRevisionRef.current === revision) {
+          setLocalPipelines(previous, previousActive);
+          setSaveError(error instanceof Error ? error.message : "Could not save dev pipelines.");
+        }
+        return false;
       }
-      return false;
-    } finally {
+    };
+    return await completeOperation().finally(() => {
       if (saveRevisionRef.current === revision) setSaving(false);
-    }
+    });
   };
   const updatePipeline = (partial: Partial<ResearchScenario>) =>
     savePipelines(

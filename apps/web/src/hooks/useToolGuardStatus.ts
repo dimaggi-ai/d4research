@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export type ToolGuardLifecycleAction =
   | "install"
@@ -51,23 +51,30 @@ const INITIAL_STATUS = {
   message: "Checking local Tool Guard Core…",
 } as const;
 
+function requireSuccessfulResponse(response: Response, message: string): void {
+  if (!response.ok) throw new Error(message);
+}
+
 export function useToolGuardStatus(): ToolGuardStatusState {
   const [status, setStatus] =
     useState<Omit<ToolGuardStatusState, "action" | "runAction" | "refresh">>(INITIAL_STATUS);
   const [action, setAction] = useState<ToolGuardLifecycleAction | null>(null);
-  const [refreshSequence, setRefreshSequence] = useState(0);
-  const refresh = useCallback(() => setRefreshSequence((value) => value + 1), []);
+  const [refreshSequence, setRefreshSequence] = useState({
+    credentials: "include" as const,
+    cache: "no-store" as const,
+  });
+  const refresh = () => setRefreshSequence((options) => ({ ...options }));
 
   useEffect(() => {
     const controller = new AbortController();
+
     const load = async () => {
       try {
         const response = await fetch("/api/tool-guard/status", {
-          credentials: "include",
-          cache: "no-store",
+          ...refreshSequence,
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error(`status ${response.status}`);
+        requireSuccessfulResponse(response, `status ${response.status}`);
         const payload = (await response.json()) as Record<string, unknown>;
         const integration =
           payload.integration === "managed" ||
@@ -114,20 +121,23 @@ export function useToolGuardStatus(): ToolGuardStatusState {
     };
   }, [refreshSequence]);
 
-  const runAction = useCallback(async (nextAction: ToolGuardLifecycleAction) => {
+  const runAction = async (nextAction: ToolGuardLifecycleAction) => {
     setAction(nextAction);
-    try {
-      const result = await requestToolGuardLifecycleAction(nextAction);
-      setStatus((current) => ({ ...current, message: result.message }));
-      if (result.ok) setRefreshSequence((value) => value + 1);
-      return result.ok;
-    } catch {
-      setStatus((current) => ({ ...current, message: "Could not update Tool Guard." }));
-      return false;
-    } finally {
+    const completeOperation = async () => {
+      try {
+        const result = await requestToolGuardLifecycleAction(nextAction);
+        setStatus((current) => ({ ...current, message: result.message }));
+        if (result.ok) setRefreshSequence((options) => ({ ...options }));
+        return result.ok;
+      } catch {
+        setStatus((current) => ({ ...current, message: "Could not update Tool Guard." }));
+        return false;
+      }
+    };
+    return await completeOperation().finally(() => {
       setAction(null);
-    }
-  }, []);
+    });
+  };
 
   return { ...status, action, runAction, refresh };
 }

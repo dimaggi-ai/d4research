@@ -40,7 +40,7 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { DeepMutable } from "effect/Types";
 import { createModelSelection, normalizeModelSlug } from "@d4research/shared/model";
-import { useMemo } from "react";
+
 import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";

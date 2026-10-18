@@ -9,7 +9,7 @@ import {
   RotateCw,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAssetUrls } from "../../assets/assetUrls";
 import { cn } from "~/lib/utils";
@@ -63,10 +63,8 @@ export function PodcastPlayer(props: {
   className?: string;
 }) {
   const { environmentId, threadId, artifacts, onRemove } = props;
-  const resources = useMemo<ReadonlyArray<AssetResource>>(
-    () => artifacts.map((path) => ({ _tag: "workspace-file", threadId, path })),
-    [artifacts, threadId],
-  );
+  const resources = ((): ReadonlyArray<AssetResource> =>
+    artifacts.map((path) => ({ _tag: "workspace-file", threadId, path })))();
   const urls = useAssetUrls(environmentId, resources);
 
   return (
@@ -100,32 +98,34 @@ export function PodcastPlayerView(props: {
   const currentUrl = urls[index] ?? null;
 
   // A new track resets the transport; the element reloads via its `key`.
-  useEffect(() => {
+  const [previousCurrentUrl, setPreviousCurrentUrl] = useState({ currentUrl });
+  if (previousCurrentUrl.currentUrl !== currentUrl) {
+    setPreviousCurrentUrl({ currentUrl });
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
-  }, [currentUrl]);
+  }
 
-  const togglePlay = useCallback(() => {
+  const togglePlay = () => {
     const el = audioRef.current;
     if (!el) return;
     if (el.paused) void el.play();
     else el.pause();
-  }, []);
+  };
 
-  const skip = useCallback((delta: number) => {
+  const skip = (delta: number) => {
     const el = audioRef.current;
     if (!el) return;
     el.currentTime = clampPodcastTime(el.currentTime + delta, el.duration);
-  }, []);
+  };
 
-  const cycleRate = useCallback(() => {
+  const cycleRate = () => {
     setRate((current) => {
       const next = nextPodcastPlaybackRate(current);
       if (audioRef.current) audioRef.current.playbackRate = next;
       return next;
     });
-  }, []);
+  };
 
   if (!currentPath) return null;
 
@@ -219,12 +219,16 @@ export function PodcastPlayerView(props: {
               </button>
             </>
           ) : null}
-          <span
-            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-            title={currentPath}
-          >
-            {basename(currentPath)}
-          </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {basename(currentPath)}
+                </span>
+              }
+            />
+            <TooltipPopup>{currentPath}</TooltipPopup>
+          </Tooltip>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-9 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">

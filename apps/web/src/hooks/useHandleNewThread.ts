@@ -9,7 +9,7 @@ import {
   type ThreadId,
 } from "@d4research/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+
 import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,

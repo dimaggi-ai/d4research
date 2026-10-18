@@ -5,7 +5,7 @@ import {
 } from "@d4research/contracts";
 import { mergeEnabledSkillNames } from "@d4research/shared/enabledSkillsContext";
 import { CheckIcon, SearchIcon, SparklesIcon } from "lucide-react";
-import { memo, type ComponentProps, useEffect, useMemo, useState } from "react";
+import { memo, type ComponentProps, useEffect, useState } from "react";
 
 import {
   type SkillsInventoryEntry,
@@ -98,25 +98,20 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
   const updateSettings = useUpdateEnvironmentSettings(props.environmentId);
   const [query, setQuery] = useState("");
   const [savingName, setSavingName] = useState<string | null>(null);
-  const globalSet = useMemo(() => new Set(props.globalNames), [props.globalNames]);
+  const globalSet = new Set(props.globalNames);
   const configuredSessionNames = props.enabledByThread[props.threadId] ?? EMPTY_SKILL_NAMES;
-  const sessionNames = useMemo(
-    () => configuredSessionNames.filter((name) => !globalSet.has(name)),
-    [configuredSessionNames, globalSet],
-  );
-  const sessionSet = useMemo(() => new Set(sessionNames), [sessionNames]);
-  const effectiveNames = useMemo(
-    () => mergeEnabledSkillNames(props.globalNames, sessionNames),
-    [props.globalNames, sessionNames],
-  );
+  const sessionNames = configuredSessionNames.filter((name) => !globalSet.has(name));
+  const sessionSet = new Set(sessionNames);
+  const effectiveNames = mergeEnabledSkillNames(props.globalNames, sessionNames);
+  const { disabled, open, onOpenChange } = props;
   useEffect(() => {
-    if (props.disabled && props.open) props.onOpenChange(false);
-  }, [props.disabled, props.onOpenChange, props.open]);
-  const options = useMemo(
-    () => buildSessionSkillOptions(props.inventoryEntries, [...props.globalNames, ...sessionNames]),
-    [props.globalNames, props.inventoryEntries, sessionNames],
-  );
-  const visibleOptions = useMemo(() => {
+    if (disabled && open) onOpenChange(false);
+  }, [disabled, onOpenChange, open]);
+  const options = buildSessionSkillOptions(props.inventoryEntries, [
+    ...props.globalNames,
+    ...sessionNames,
+  ]);
+  const visibleOptions = (() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return options;
     return options.filter(
@@ -124,13 +119,13 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
         option.name.toLocaleLowerCase().includes(normalizedQuery) ||
         option.description?.toLocaleLowerCase().includes(normalizedQuery),
     );
-  }, [options, query]);
+  })();
 
   const toggleSessionSkill = async (name: string) => {
     if (props.disabled || globalSet.has(name) || savingName !== null) return;
     const enabled = !sessionSet.has(name);
     setSavingName(name);
-    try {
+    const completeOperation = async () => {
       await updateSettings({
         skills: {
           setEnabledForThreadSkill: {
@@ -140,9 +135,10 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
           },
         },
       });
-    } finally {
+    };
+    return await completeOperation().finally(() => {
       setSavingName(null);
-    }
+    });
   };
 
   const activeSessionCount = sessionNames.filter((name) => !globalSet.has(name)).length;
@@ -232,7 +228,7 @@ export const ComposerSessionSkillsControl = memo(function ComposerSessionSkillsC
                     globallyEnabled ? "global" : sessionEnabled ? "session" : "off"
                   }
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-md px-2 py-2 text-start outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50",
+                    "flex w-full items-start gap-2 rounded-md px-2 py-2 text-start outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",
                     itemDisabled && !globallyEnabled && "opacity-50",
                   )}
                   onClick={() => void toggleSessionSkill(option.name)}

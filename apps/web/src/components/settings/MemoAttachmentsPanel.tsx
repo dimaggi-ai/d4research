@@ -1,6 +1,6 @@
 import type { PreparedConnection } from "@d4research/client-runtime/connection";
 import { RefreshCwIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   deleteStoredMemoAttachment,
@@ -54,18 +54,27 @@ export function MemoAttachmentsPanel({
   readonly enabled: boolean;
   readonly preparedConnection: PreparedConnection | null;
 }) {
-  const [loadState, setLoadState] = useState<LoadState>({ status: "idle" });
+  const [loadState, setLoadState] = useState<LoadState>({
+    status: enabled && preparedConnection !== null ? "loading" : "idle",
+  });
   const [refreshSequence, setRefreshSequence] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<StoredMemoAttachmentSummary | null>(null);
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
 
+  const [request, setRequest] = useState({ enabled, preparedConnection, refreshSequence });
+  if (
+    request.enabled !== enabled ||
+    request.preparedConnection !== preparedConnection ||
+    request.refreshSequence !== refreshSequence
+  ) {
+    setRequest({ enabled, preparedConnection, refreshSequence });
+    setLoadState({ status: enabled && preparedConnection !== null ? "loading" : "idle" });
+  }
+
   useEffect(() => {
-    if (!enabled || preparedConnection === null) {
-      setLoadState({ status: "idle" });
-      return;
-    }
+    const { enabled, preparedConnection } = request;
+    if (!enabled || preparedConnection === null) return;
     let cancelled = false;
-    setLoadState({ status: "loading" });
     void listStoredMemoAttachments(preparedConnection).then(
       (result) => {
         if (!cancelled) setLoadState({ status: "success", result });
@@ -82,46 +91,46 @@ export function MemoAttachmentsPanel({
     return () => {
       cancelled = true;
     };
-  }, [enabled, preparedConnection, refreshSequence]);
+  }, [request]);
 
   const attachments = loadState.status === "success" ? loadState.result.attachments : ([] as const);
-  const pendingDeleteName = useMemo(
-    () => pendingDelete?.name ?? "this incomplete attachment",
-    [pendingDelete],
-  );
+  const pendingDeleteName = pendingDelete?.name ?? "this incomplete attachment";
 
-  const deleteAttachment = useCallback(async () => {
+  const deleteAttachment = async () => {
     if (pendingDelete === null || preparedConnection === null || deletingToken !== null) return;
     const attachment = pendingDelete;
     setDeletingToken(attachment.documentToken);
-    try {
-      const deleted = await deleteStoredMemoAttachment(
-        preparedConnection,
-        attachment.documentToken,
-      );
-      setPendingDelete(null);
-      setRefreshSequence((sequence) => sequence + 1);
-      toastManager.add({
-        type: "success",
-        title: "Attachment removed from Memo",
-        description:
-          deleted === 0
-            ? "It was already absent. The original chat message remains in the transcript."
-            : `Removed ${deleted.toLocaleString()} stored rows. The original chat message remains in the transcript.`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not delete the attachment.";
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not remove attachment",
-          description: message,
-        }),
-      );
-    } finally {
+    const completeOperation = async () => {
+      try {
+        const deleted = await deleteStoredMemoAttachment(
+          preparedConnection,
+          attachment.documentToken,
+        );
+        setPendingDelete(null);
+        setRefreshSequence((sequence) => sequence + 1);
+        toastManager.add({
+          type: "success",
+          title: "Attachment removed from Memo",
+          description:
+            deleted === 0
+              ? "It was already absent. The original chat message remains in the transcript."
+              : `Removed ${deleted.toLocaleString()} stored rows. The original chat message remains in the transcript.`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not delete the attachment.";
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not remove attachment",
+            description: message,
+          }),
+        );
+      }
+    };
+    return await completeOperation().finally(() => {
       setDeletingToken(null);
-    }
-  }, [deletingToken, pendingDelete, preparedConnection]);
+    });
+  };
 
   const description = !enabled
     ? "Enable Local Memo to inspect or remove documents saved by the composer."

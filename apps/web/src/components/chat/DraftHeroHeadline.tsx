@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@d4research/contracts";
@@ -144,18 +143,15 @@ export function DraftHeroHeadline({
   // {value, label} items let Base UI drive the combobox selection while the
   // popup search filters the same collection. "Add project" is an action, not
   // a project, so it only trails the unfiltered list.
-  const pickerItems = useMemo<readonly PickerItem[]>(
-    () => [
-      ...(scratchWorkspaceRoot === null ? [] : [{ value: NO_PROJECT_VALUE, label: "No project" }]),
-      ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
-      { value: ADD_PROJECT_VALUE, label: "Add project" },
-    ],
-    [menuEntries, scratchWorkspaceRoot],
-  );
+  const pickerItems = ((): readonly PickerItem[] => [
+    ...(scratchWorkspaceRoot === null ? [] : [{ value: NO_PROJECT_VALUE, label: "No project" }]),
+    ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
+    { value: ADD_PROJECT_VALUE, label: "Add project" },
+  ])();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const pickerFilter = useComboboxFilter();
-  const filteredPickerItems = useMemo(() => {
+  const filteredPickerItems = (() => {
     const query = pickerQuery.trim();
     if (query.length === 0) return pickerItems;
     return pickerItems.filter(
@@ -163,7 +159,7 @@ export function DraftHeroHeadline({
         item.value !== ADD_PROJECT_VALUE &&
         pickerFilter.contains(item, query, (candidate) => candidate.label),
     );
-  }, [pickerFilter, pickerItems, pickerQuery]);
+  })();
   const selectedPickerItem =
     pickerItems.find(
       (item) => item.value === (isScratchDraft ? NO_PROJECT_VALUE : activeProjectKey),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ToolGuardPolicy } from "@d4research/contracts";
 
 export type ToolGuardPolicyReadResult =
@@ -65,22 +65,29 @@ export interface ToolGuardPolicyState {
 export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
   const [policy, setPolicy] = useState<ToolGuardPolicy | null>(null);
   const [source, setSource] = useState<"managed" | "bundled" | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "unavailable">(
+    enabled ? "loading" : "unavailable",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshSequence, setRefreshSequence] = useState(0);
-  const refresh = useCallback(() => setRefreshSequence((v) => v + 1), []);
+  const refresh = () => setRefreshSequence((v) => v + 1);
 
-  useEffect(() => {
+  const [request, setRequest] = useState({ enabled, refreshSequence });
+  if (request.enabled !== enabled || request.refreshSequence !== refreshSequence) {
+    setRequest({ enabled, refreshSequence });
+    setState(enabled ? "loading" : "unavailable");
     if (!enabled) {
-      setState("unavailable");
       setPolicy(null);
       setSource(null);
-      return;
     }
+  }
+
+  useEffect(() => {
+    const { enabled } = request;
+    if (!enabled) return;
     const controller = new AbortController();
     const load = async () => {
-      setState("loading");
       try {
         const result = await requestToolGuardPolicy(fetch, controller.signal);
         if (!result.ok) {
@@ -101,26 +108,29 @@ export function useToolGuardPolicy(enabled: boolean): ToolGuardPolicyState {
     };
     void load();
     return () => controller.abort();
-  }, [enabled, refreshSequence]);
+  }, [request]);
 
-  const save = useCallback(async (nextPolicy: ToolGuardPolicy) => {
+  const save = async (nextPolicy: ToolGuardPolicy) => {
     setSaving(true);
     setError(null);
-    try {
-      const result = await saveToolGuardPolicy(nextPolicy);
-      if (result.ok) {
-        setPolicy(nextPolicy);
-        return true;
+    const completeOperation = async () => {
+      try {
+        const result = await saveToolGuardPolicy(nextPolicy);
+        if (result.ok) {
+          setPolicy(nextPolicy);
+          return true;
+        }
+        setError(result.message);
+        return false;
+      } catch {
+        setError("Failed to save policy.");
+        return false;
       }
-      setError(result.message);
-      return false;
-    } catch {
-      setError("Failed to save policy.");
-      return false;
-    } finally {
+    };
+    return await completeOperation().finally(() => {
       setSaving(false);
-    }
-  }, []);
+    });
+  };
 
   return { state, policy, source, saving, error, refresh, save };
 }

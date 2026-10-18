@@ -20,10 +20,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   type CSSProperties,
   type ReactNode,
-  useCallback,
   useEffect,
   useEffectEvent,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -302,9 +300,11 @@ function AutoSettleDaysInput({
   // Local draft so the field can be emptied mid-edit; the setting only moves
   // on valid input and snaps back to the persisted value on blur.
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => {
+  const [previousValue, setPreviousValue] = useState({ value });
+  if (previousValue.value !== value) {
+    setPreviousValue({ value });
     setDraft(String(value));
-  }, [value]);
+  }
 
   return (
     <Input
@@ -2184,14 +2184,8 @@ function LegacyFeaturesSection() {
 
 export function GeneralSettingsPanel() {
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
-  const openInOptions = useMemo(
-    () => resolveOpenInOptions(navigator.platform, availableEditors),
-    [availableEditors],
-  );
-  const availableOpenTargets = useMemo(
-    () => openInOptions.map((option) => option.value),
-    [openInOptions],
-  );
+  const openInOptions = resolveOpenInOptions(navigator.platform, availableEditors);
+  const availableOpenTargets = openInOptions.map((option) => option.value);
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableOpenTargets);
 
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
@@ -3827,13 +3821,9 @@ export function ProviderSettingsPanel() {
   >(() => new Set());
   const refreshingRef = useRef(false);
 
-  const providerUpdateCandidates = useMemo(
-    () => collectProviderUpdateCandidates(serverProviders),
-    [serverProviders],
-  );
-  const providerUpdateCandidateByInstanceId = useMemo(
-    () => new Map(providerUpdateCandidates.map((candidate) => [candidate.instanceId, candidate])),
-    [providerUpdateCandidates],
+  const providerUpdateCandidates = collectProviderUpdateCandidates(serverProviders);
+  const providerUpdateCandidateByInstanceId = new Map(
+    providerUpdateCandidates.map((candidate) => [candidate.instanceId, candidate]),
   );
   const visibleProviderSettings = PROVIDER_SETTINGS.filter(
     (providerSettings) =>
@@ -3861,7 +3851,7 @@ export function ProviderSettingsPanel() {
         )
       : null;
 
-  const refreshProviders = useCallback(() => {
+  const refreshProviders = () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
     setIsRefreshingProviders(true);
@@ -3885,56 +3875,53 @@ export function ProviderSettingsPanel() {
         });
       }
     })();
-  }, [primaryEnvironment, refreshServerProviders]);
+  };
 
-  const runProviderUpdate = useCallback(
-    async (candidate: ProviderUpdateCandidate) => {
-      if (!primaryEnvironment) return;
-      let started = false;
-      setUpdatingProviderDrivers((previous) => {
-        if (previous.has(candidate.driver)) {
-          return previous;
-        }
-        started = true;
-        const next = new Set(previous);
-        next.add(candidate.driver);
-        return next;
-      });
-      if (!started) {
-        return;
+  const runProviderUpdate = async (candidate: ProviderUpdateCandidate) => {
+    if (!primaryEnvironment) return;
+    let started = false;
+    setUpdatingProviderDrivers((previous) => {
+      if (previous.has(candidate.driver)) {
+        return previous;
       }
+      started = true;
+      const next = new Set(previous);
+      next.add(candidate.driver);
+      return next;
+    });
+    if (!started) {
+      return;
+    }
 
-      const result = await updateProvider({
-        environmentId: primaryEnvironment.environmentId,
-        input: {
-          provider: candidate.driver,
-          instanceId: candidate.instanceId,
-        },
-      });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: `Could not update ${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}`,
-            description:
-              error instanceof Error
-                ? error.message
-                : "The provider update command could not be started.",
-          }),
-        );
+    const result = await updateProvider({
+      environmentId: primaryEnvironment.environmentId,
+      input: {
+        provider: candidate.driver,
+        instanceId: candidate.instanceId,
+      },
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Could not update ${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}`,
+          description:
+            error instanceof Error
+              ? error.message
+              : "The provider update command could not be started.",
+        }),
+      );
+    }
+    setUpdatingProviderDrivers((previous) => {
+      if (!previous.has(candidate.driver)) {
+        return previous;
       }
-      setUpdatingProviderDrivers((previous) => {
-        if (!previous.has(candidate.driver)) {
-          return previous;
-        }
-        const next = new Set(previous);
-        next.delete(candidate.driver);
-        return next;
-      });
-    },
-    [primaryEnvironment, updateProvider],
-  );
+      const next = new Set(previous);
+      next.delete(candidate.driver);
+      return next;
+    });
+  };
 
   interface InstanceRow {
     readonly instanceId: ProviderInstanceId;

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { useState } from "react";
 import { DownloadIcon, Link2Icon, SearchIcon, Share2Icon } from "lucide-react";
 import { ENABLED_BY_DEFAULT_SKILL_MAX_COUNT } from "@d4research/contracts";
 
@@ -114,12 +115,19 @@ function SkillRow({
         {entry.description ? (
           <p className="text-xs text-muted-foreground">{entry.description}</p>
         ) : null}
-        <p className="truncate font-mono text-[11px] text-muted-foreground/60" title={entry.path}>
-          {entry.isSymlinked ? (
-            <Link2Icon className="mr-1 inline size-3 align-[-1px]" aria-hidden />
-          ) : null}
-          {entry.path}
-        </p>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <p className="truncate font-mono text-[11px] text-muted-foreground/60">
+                {entry.isSymlinked ? (
+                  <Link2Icon className="mr-1 inline size-3 align-[-1px]" aria-hidden />
+                ) : null}
+                {entry.path}
+              </p>
+            }
+          />
+          <TooltipPopup>{entry.path}</TooltipPopup>
+        </Tooltip>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {canEnableSkillForAllChats(entry) ? (
@@ -172,19 +180,18 @@ export function SkillsSettingsPanel() {
   // project explicitly instead of silently scanning the server's own cwd.
   const primaryEnvironment = usePrimaryEnvironment();
   const projects = useProjects();
-  const projectOptions = useMemo(
-    () =>
-      projects.filter(
-        (project) =>
-          project.environmentId === primaryEnvironment?.environmentId && project.workspaceRoot,
-      ),
-    [primaryEnvironment?.environmentId, projects],
+  const projectOptions = projects.filter(
+    (project) =>
+      project.environmentId === primaryEnvironment?.environmentId && project.workspaceRoot,
   );
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  useEffect(() => {
-    if (projectOptions.some((project) => project.id === selectedProjectId)) return;
-    setSelectedProjectId(String(projectOptions[0]?.id ?? ""));
-  }, [projectOptions, selectedProjectId]);
+  const fallbackProjectId = String(projectOptions[0]?.id ?? "");
+  if (
+    !projectOptions.some((project) => project.id === selectedProjectId) &&
+    selectedProjectId !== fallbackProjectId
+  ) {
+    setSelectedProjectId(fallbackProjectId);
+  }
   const selectedProject = projectOptions.find(
     (project) => String(project.id) === selectedProjectId,
   );
@@ -215,7 +222,7 @@ export function SkillsSettingsPanel() {
     }
   };
 
-  const grouped = useMemo(() => {
+  const grouped = (() => {
     const needle = query.trim().toLocaleLowerCase();
     const matches = needle
       ? inventory.entries.filter((entry) =>
@@ -228,17 +235,13 @@ export function SkillsSettingsPanel() {
       root,
       entries: matches.filter((entry) => entry.root === root),
     }));
-  }, [inventory.entries, query]);
+  })();
 
   const hasMatches = grouped.some((group) => group.entries.length > 0);
   const enabledByDefault = settings.skills.enabledByDefault;
-  const enabledByDefaultSet = useMemo(() => new Set(enabledByDefault), [enabledByDefault]);
-  const availableSkillNames = useMemo(
-    () =>
-      new Set(
-        inventory.entries.filter((entry) => entry.kind === "skill").map((entry) => entry.name),
-      ),
-    [inventory.entries],
+  const enabledByDefaultSet = new Set(enabledByDefault);
+  const availableSkillNames = new Set(
+    inventory.entries.filter((entry) => entry.kind === "skill").map((entry) => entry.name),
   );
   const missingEnabledNames = enabledByDefault.filter((name) => !availableSkillNames.has(name));
   const chatsWithSessionSkills = Object.keys(settings.skills.enabledByThread).length;
@@ -247,13 +250,18 @@ export function SkillsSettingsPanel() {
     if (savingDefaultName !== null) return;
     setSavingDefaultName(name);
     setDefaultSaveError(null);
-    try {
-      await updateSettings({ skills: { setEnabledByDefault: { name, enabled } } });
-    } catch (error) {
-      setDefaultSaveError(error instanceof Error ? error.message : "Could not save global skills.");
-    } finally {
+    const completeOperation = async () => {
+      try {
+        await updateSettings({ skills: { setEnabledByDefault: { name, enabled } } });
+      } catch (error) {
+        setDefaultSaveError(
+          error instanceof Error ? error.message : "Could not save global skills.",
+        );
+      }
+    };
+    return await completeOperation().finally(() => {
       setSavingDefaultName(null);
-    }
+    });
   };
 
   return (

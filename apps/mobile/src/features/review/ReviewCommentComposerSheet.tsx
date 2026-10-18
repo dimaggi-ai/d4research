@@ -1,7 +1,7 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { TextInputWrapper } from "expo-paste-input";
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -21,7 +21,6 @@ import { ControlPill } from "../../components/ui/ControlPill";
 import { cn } from "../../lib/cn";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { useNativePaste } from "../../lib/useNativePaste";
 import { setPendingConnectionError } from "../../state/use-remote-environment-registry";
 import { appendReviewCommentToDraft } from "../../state/use-thread-composer-state";
@@ -53,7 +52,6 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
-  const iconTint = String(useThemeColor("--color-icon"));
   const target = useReviewCommentTarget();
   const { codeSurface } = useAppearanceCodeSurface();
   const { environmentId, threadId } = props.route.params;
@@ -64,10 +62,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const [attachments, setAttachments] = useState<ReadonlyArray<DraftComposerImageAttachment>>([]);
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
 
-  const selectedLines = useMemo(
-    () => (target ? getSelectedReviewCommentLines(target) : []),
-    [target],
-  );
+  const selectedLines = target ? getSelectedReviewCommentLines(target) : [];
   const firstLine = selectedLines[0] ?? null;
   const lastLine = selectedLines[selectedLines.length - 1] ?? null;
   const firstNumber = firstLine ? getReviewUnifiedLineNumber(firstLine) : null;
@@ -88,10 +83,10 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     codeSurface.rowHeight,
   );
   const previewViewportWidth = Math.max(width - 40, 280);
-  const dismissComposer = useCallback(() => {
+  const dismissComposer = () => {
     clearReviewCommentTarget();
     navigation.goBack();
-  }, [navigation]);
+  };
   const handleNativePaste = useNativePaste((uris) => {
     void (async () => {
       try {
@@ -146,7 +141,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     }
   }
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = () => {
     if (!target || !environmentId || !threadId || commentText.trim().length === 0) {
       return;
     }
@@ -159,7 +154,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     });
     setAttachments([]);
     dismissComposer();
-  }, [attachments, commentText, dismissComposer, environmentId, target, threadId]);
+  };
 
   return (
     <View className="flex-1">
@@ -176,7 +171,12 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               className="bg-subtle h-12 w-12 items-center justify-center rounded-full"
               onPress={dismissComposer}
             >
-              <SymbolView name="xmark" size={18} tintColor={iconTint} type="monochrome" />
+              <SymbolView
+                name="xmark"
+                size={18}
+                tintColorClassName="accent-icon"
+                type="monochrome"
+              />
             </Pressable>
 
             <Text className="text-lg font-t3-bold text-foreground">Add Comment</Text>

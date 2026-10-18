@@ -57,6 +57,14 @@ const MODE_OPTIONS = [
   },
 ] as const;
 
+function formatScratchTestResult(result: { ok?: boolean; logs?: unknown; error?: string }): string {
+  return [
+    result.ok ? "Scratch test passed." : "Scratch test failed.",
+    ...(Array.isArray(result.logs) ? result.logs : []),
+    result.error ?? "",
+  ].join("\n");
+}
+
 export function LocalDevelopmentScreen() {
   const [workspace, setWorkspace] = useState(emptyWorkspace);
   const current = useRef(workspace);
@@ -131,19 +139,22 @@ export function LocalDevelopmentScreen() {
     operation.current = true;
     setBusy(true);
     setError("");
-    try {
-      await action();
-    } catch (cause) {
-      if (mounted.current)
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "The operation failed. Your saved files remain on this device.",
-        );
-    } finally {
+    const completeOperation = async () => {
+      try {
+        await action();
+      } catch (cause) {
+        if (mounted.current)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "The operation failed. Your saved files remain on this device.",
+          );
+      }
+    };
+    return await completeOperation().finally(() => {
       operation.current = false;
       if (mounted.current) setBusy(false);
-    }
+    });
   }
   const dirty = content !== (workspace.files[path] ?? "");
   async function send() {
@@ -160,7 +171,7 @@ export function LocalDevelopmentScreen() {
     setGenerating(true);
     const timer = setTimeout(() => abort.abort(), 180_000);
     setProposal(null);
-    try {
+    const completeOperation = async () => {
       const text = await generateLocalTask(snapshot, path, task, apiKey, abort.signal);
       if (abort.signal.aborted || !mounted.current) return;
       const changes = decodeProposal(text);
@@ -191,11 +202,12 @@ export function LocalDevelopmentScreen() {
         setProposal(pending);
         setPrompt("");
       }
-    } finally {
+    };
+    return await completeOperation().finally(() => {
       clearTimeout(timer);
       controller.current = null;
       if (mounted.current) setGenerating(false);
-    }
+    });
   }
   async function importFile() {
     const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
@@ -487,13 +499,7 @@ export function LocalDevelopmentScreen() {
               onMessage={(event) => {
                 try {
                   const result = JSON.parse(event.nativeEvent.data);
-                  setTestResult(
-                    [
-                      result.ok ? "Scratch test passed." : "Scratch test failed.",
-                      ...(Array.isArray(result.logs) ? result.logs : []),
-                      result.error ?? "",
-                    ].join("\n"),
-                  );
+                  setTestResult(formatScratchTestResult(result));
                 } catch {
                   setTestResult("The scratch test returned an invalid result.");
                 }

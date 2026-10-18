@@ -1,6 +1,6 @@
 import { DEFAULT_TERMINAL_ID, type EnvironmentId, type ThreadId } from "@d4research/contracts";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -27,36 +27,42 @@ interface ThreadTerminalPanelProps {
 const DEFAULT_TERMINAL_COLS = 80;
 const DEFAULT_TERMINAL_ROWS = 24;
 
-export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
-  props: ThreadTerminalPanelProps,
-) {
+export function ThreadTerminalPanel(props: ThreadTerminalPanelProps) {
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const resizeTerminal = useAtomCommand(terminalEnvironment.resize, "terminal resize");
   const closeTerminal = useAtomCommand(terminalEnvironment.close, "terminal close");
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const nativeTerminalAvailable = hasNativeTerminalSurface();
   const terminalId = DEFAULT_TERMINAL_ID;
-  const lastGridSizeRef = useRef<TerminalGridSize>({
+  const [lastGridSize, setLastGridSize] = useState<TerminalGridSize>({
     cols: DEFAULT_TERMINAL_COLS,
     rows: DEFAULT_TERMINAL_ROWS,
   });
-  const subscriptionIdentity = useMemo<ThreadTerminalSubscriptionIdentity>(
-    () => ({
-      environmentId: props.environmentId,
-      threadId: props.threadId,
-      terminalId,
-      cwd: props.cwd,
-      worktreePath: props.worktreePath,
-    }),
-    [props.cwd, props.environmentId, props.threadId, props.worktreePath, terminalId],
-  );
-  const attachInput = useMemo(
-    () =>
-      props.visible
-        ? buildThreadTerminalAttachInput(subscriptionIdentity, lastGridSizeRef.current)
-        : null,
-    [props.visible, subscriptionIdentity],
-  );
+  const lastGridSizeRef = useRef(lastGridSize);
+  const subscriptionIdentity = ((): ThreadTerminalSubscriptionIdentity => ({
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    terminalId,
+    cwd: props.cwd,
+    worktreePath: props.worktreePath,
+  }))();
+  const [attachState, setAttachState] = useState(() => ({
+    identity: subscriptionIdentity,
+    visible: props.visible,
+    size: lastGridSize,
+  }));
+  if (
+    attachState.identity.environmentId !== props.environmentId ||
+    attachState.identity.threadId !== props.threadId ||
+    attachState.identity.cwd !== props.cwd ||
+    attachState.identity.worktreePath !== props.worktreePath ||
+    attachState.visible !== props.visible
+  ) {
+    setAttachState({ identity: subscriptionIdentity, visible: props.visible, size: lastGridSize });
+  }
+  const attachInput = props.visible
+    ? buildThreadTerminalAttachInput(subscriptionIdentity, attachState.size)
+    : null;
   const terminal = useAttachedTerminalSession({
     environmentId: props.environmentId,
     terminal: attachInput,
@@ -153,20 +159,17 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
     props.onClose();
   }, [attachInput, closeTerminal, isRunning, props, terminal.status, terminalId, terminalKey]);
 
-  const sendResize = useCallback(
-    (size: TerminalGridSize) => {
-      void resizeTerminal({
-        environmentId: props.environmentId,
-        input: {
-          threadId: props.threadId,
-          terminalId,
-          cols: size.cols,
-          rows: size.rows,
-        },
-      });
-    },
-    [props.environmentId, props.threadId, resizeTerminal, terminalId],
-  );
+  const sendResize = (size: TerminalGridSize) => {
+    void resizeTerminal({
+      environmentId: props.environmentId,
+      input: {
+        threadId: props.threadId,
+        terminalId,
+        cols: size.cols,
+        rows: size.rows,
+      },
+    });
+  };
 
   useEffect(() => {
     if (isRunning) {
@@ -174,40 +177,35 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
     }
   }, [isRunning, sendResize]);
 
-  const handleInput = useCallback(
-    (data: string) => {
-      if (!isRunning) {
-        return;
-      }
+  const handleInput = (data: string) => {
+    if (!isRunning) {
+      return;
+    }
 
-      void writeTerminal({
-        environmentId: props.environmentId,
-        input: {
-          threadId: props.threadId,
-          terminalId,
-          data,
-        },
-      });
-    },
-    [isRunning, props.environmentId, props.threadId, terminalId, writeTerminal],
-  );
+    void writeTerminal({
+      environmentId: props.environmentId,
+      input: {
+        threadId: props.threadId,
+        terminalId,
+        data,
+      },
+    });
+  };
 
-  const handleResize = useCallback(
-    (size: TerminalGridSize) => {
-      const previousSize = lastGridSizeRef.current;
-      if (size.cols === previousSize.cols && size.rows === previousSize.rows) {
-        return;
-      }
+  const handleResize = (size: TerminalGridSize) => {
+    const previousSize = lastGridSizeRef.current;
+    if (size.cols === previousSize.cols && size.rows === previousSize.rows) {
+      return;
+    }
 
-      lastGridSizeRef.current = size;
-      if (!isRunning) {
-        return;
-      }
+    lastGridSizeRef.current = size;
+    setLastGridSize(size);
+    if (!isRunning) {
+      return;
+    }
 
-      sendResize(size);
-    },
-    [isRunning, sendResize],
-  );
+    sendResize(size);
+  };
 
   if (!props.visible) {
     return null;
@@ -248,4 +246,4 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
       />
     </View>
   );
-});
+}

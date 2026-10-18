@@ -7,7 +7,7 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "./ui/button";
 import { cn } from "~/lib/utils";
@@ -16,6 +16,10 @@ export const SYSTEM_MONITOR_POLL_INTERVAL_MS = 2_000;
 const SYSTEM_MONITOR_URL = "/api/system-monitor";
 const TOOL_GUARD_STATUS_URL = "/api/tool-guard/status";
 const TOOL_GUARD_POLL_INTERVAL_MS = 30_000;
+
+function requireSuccessfulResponse(response: Response, message: string): void {
+  if (!response.ok) throw new Error(message);
+}
 
 export function startSystemMonitorPolling(
   refresh: () => void,
@@ -124,7 +128,7 @@ export function SystemPanel() {
   const [toolGuard, setToolGuard] = useState<ToolGuardSnapshot | null>(null);
   const toolGuardReadAtRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     const now = Date.now();
     const toolGuardRequest =
       now - toolGuardReadAtRef.current >= TOOL_GUARD_POLL_INTERVAL_MS
@@ -149,7 +153,7 @@ export function SystemPanel() {
       const response = await fetch(SYSTEM_MONITOR_URL, {
         signal: AbortSignal.timeout(3_000),
       });
-      if (!response.ok) throw new Error(`Mission Control returned ${response.status}`);
+      requireSuccessfulResponse(response, `Mission Control returned ${response.status}`);
       setSnapshot((await response.json()) as SystemSnapshot);
       setError(null);
       setUpdatedAt(new Date());
@@ -157,7 +161,7 @@ export function SystemPanel() {
       setError("Mission Control is unavailable. Check mission-control.service.");
     }
     await toolGuardRequest;
-  }, []);
+  };
 
   useEffect(() => {
     return startSystemMonitorPolling(() => void refresh());

@@ -2,7 +2,6 @@ import { CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS } from "@d4research/contracts";
 import { PREVIEW_URL_MAX_LENGTH } from "@d4research/contracts";
 import { isLoopbackHost } from "@d4research/shared/preview";
 import type { DiscoveredLocalServer, EnvironmentId, ThreadId } from "@d4research/contracts";
-import { useMemo } from "react";
 
 import { previewEnvironment } from "./state/preview";
 import { useEnvironmentQuery } from "./state/query";
@@ -79,15 +78,11 @@ export function useTerminalDiscoveredPorts(input: {
   readonly terminalId: string | null;
 }): ReadonlyArray<DiscoveredLocalServer> {
   const ports = useDiscoveredPorts(input.environmentId);
-  return useMemo(
-    () =>
-      input.threadId && input.terminalId
-        ? ports.filter(
-            (port) =>
-              port.terminal?.threadId === input.threadId &&
-              port.terminal.terminalId === input.terminalId,
-          )
-        : EMPTY_PORTS,
-    [input.terminalId, input.threadId, ports],
-  );
+  return input.threadId && input.terminalId
+    ? ports.filter(
+        (port) =>
+          port.terminal?.threadId === input.threadId &&
+          port.terminal.terminalId === input.terminalId,
+      )
+    : EMPTY_PORTS;
 }

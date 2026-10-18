@@ -42,7 +42,6 @@ import type {
   ServerProviderUsageWindow,
   UsageProviderKind,
 } from "@d4research/contracts";
-import { useMemo } from "react";
 
 import { formatDateTimeShort } from "@d4research/shared/usageFormat";
 
@@ -98,7 +97,7 @@ export function formatLimitReset(resetsAt: string | null, planType: string | nul
  */
 export function UsageLimits() {
   const providers = useAtomValue(primaryServerProvidersAtom);
-  const rows = useMemo(() => selectProviderLimitWindows(providers), [providers]);
+  const rows = selectProviderLimitWindows(providers);
   return <UsageLimitsView rows={rows} />;
 }
 

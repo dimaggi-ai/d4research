@@ -167,15 +167,6 @@ function RootRouteView() {
     authGateState.status === "hosted-static",
   );
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      syncBrowserChromeTheme();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [pathname]);
-
   if (pathname === "/pair" || pathname === "/connect-agent") {
     return (
       <>

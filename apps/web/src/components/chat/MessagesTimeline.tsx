@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { readTimelinePosition } from "./timelineScrollAnchoring";
 import { rememberTimelinePosition } from "./timelineScrollAnchoring";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
@@ -2174,17 +2173,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
-  const wireContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  const wireContext = resolveUserMessageContext(row.message);
   const displayedUserMessage = extractUserMessageContexts(wireContext.text);
   const pastedContexts = displayedUserMessage.pastedContexts;
   const elementContexts = displayedUserMessage.elementContexts;
   const globalEnabledSkills = displayedUserMessage.globalEnabledSkills;
   const sessionEnabledSkills = displayedUserMessage.sessionEnabledSkills;
   const resolvedContext = { ...wireContext, text: displayedUserMessage.visibleText };
-  const previewImages = useMemo(
-    () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
-    [userImages],
-  );
+  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
   const chippedAttachmentIds = new Set(
     collectComposerContextReferences(resolvedContext.text).flatMap((occurrence) => {

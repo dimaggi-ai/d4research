@@ -1,5 +1,4 @@
 import { AuthEnvironmentMaintainScope } from "@d4research/contracts";
-import { useMemo } from "react";
 
 import { AuthAccessWriteScope } from "@d4research/contracts";
 
@@ -59,35 +58,30 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
   );
 
-  return useMemo(
-    () =>
-      filterAvailableSettingsSearchItems({
-        hasCloudPublicConfig: false,
-        hasEnvironment: environments.some((environment) => environment.serverConfig !== null),
-        hasProviderSettingsEnvironment: environments.some((environment) =>
-          isProviderSettingsEnvironmentAvailable({
-            connectionPhase: environment.connection.phase,
-            hasServerConfig: environment.serverConfig !== null,
-          }),
-        ),
-        hasMacProviderSettingsEnvironment: environments.some(
-          (environment) =>
-            (scopeSearch.machine === undefined ||
-              environment.environmentId === scopeSearch.machine) &&
-            environment.serverConfig?.environment.platform.os === "darwin" &&
-            isProviderSettingsEnvironmentAvailable({
-              connectionPhase: environment.connection.phase,
-              hasServerConfig: true,
-            }),
-        ),
-        canManageLocalBackend,
-        isWslSettingsRowVisible: isWslSettingsRowVisible({
-          state: desktopWsl.data,
-          error: desktopWsl.error,
-        }),
-        hasThreadAutoSettlement:
-          getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+  return filterAvailableSettingsSearchItems({
+    hasCloudPublicConfig: false,
+    hasEnvironment: environments.some((environment) => environment.serverConfig !== null),
+    hasProviderSettingsEnvironment: environments.some((environment) =>
+      isProviderSettingsEnvironmentAvailable({
+        connectionPhase: environment.connection.phase,
+        hasServerConfig: environment.serverConfig !== null,
       }),
-    [canManageLocalBackend, desktopWsl.data, desktopWsl.error, environments, scopeSearch.machine],
-  );
+    ),
+    hasMacProviderSettingsEnvironment: environments.some(
+      (environment) =>
+        (scopeSearch.machine === undefined || environment.environmentId === scopeSearch.machine) &&
+        environment.serverConfig?.environment.platform.os === "darwin" &&
+        isProviderSettingsEnvironmentAvailable({
+          connectionPhase: environment.connection.phase,
+          hasServerConfig: true,
+        }),
+    ),
+    canManageLocalBackend,
+    isWslSettingsRowVisible: isWslSettingsRowVisible({
+      state: desktopWsl.data,
+      error: desktopWsl.error,
+    }),
+    hasThreadAutoSettlement:
+      getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+  });
 }

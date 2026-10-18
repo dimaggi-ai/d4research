@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import type { DesktopCliCommandState } from "@d4research/contracts";
 import { useEffect, useState } from "react";
 
@@ -26,28 +25,23 @@ export function CliCommandSettingsRow() {
     };
   }, [bridge]);
 
-  const change = useCallback(
-    (action: "install" | "uninstall") => {
-      if (!bridge || pending) return;
-      setPending(true);
-      void bridge[action]()
-        .then(setState)
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title:
-                action === "install"
-                  ? "Could not install d4research"
-                  : "Could not remove d4research",
-              description: error instanceof Error ? error.message : "Something went wrong.",
-            }),
-          );
-        })
-        .finally(() => setPending(false));
-    },
-    [bridge, pending],
-  );
+  const change = (action: "install" | "uninstall") => {
+    if (!bridge || pending) return;
+    setPending(true);
+    void bridge[action]()
+      .then(setState)
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title:
+              action === "install" ? "Could not install d4research" : "Could not remove d4research",
+            description: error instanceof Error ? error.message : "Something went wrong.",
+          }),
+        );
+      })
+      .finally(() => setPending(false));
+  };
 
   if (!bridge || !state?.supported) return null;
   const installed = state.installedPath !== null;

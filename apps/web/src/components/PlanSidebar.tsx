@@ -1,5 +1,5 @@
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@d4research/shared/proposedPlanText";
-import { memo, useState, useCallback } from "react";
+import { memo, useState } from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -88,18 +88,18 @@ const PlanSidebar = memo(function PlanSidebar({
   const displayedPlanMarkdown = planMarkdown ? stripDisplayedPlanMarkdown(planMarkdown) : null;
   const planTitle = planMarkdown ? proposedPlanTitle(planMarkdown) : null;
 
-  const handleCopyPlan = useCallback(() => {
+  const handleCopyPlan = () => {
     if (!planMarkdown) return;
     copyToClipboard(planMarkdown);
-  }, [planMarkdown, copyToClipboard]);
+  };
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = () => {
     if (!planMarkdown) return;
     const filename = buildProposedPlanMarkdownFilename(planMarkdown);
     downloadPlanAsTextFile(filename, normalizePlanMarkdownForExport(planMarkdown));
-  }, [planMarkdown]);
+  };
 
-  const handleSaveToWorkspace = useCallback(() => {
+  const handleSaveToWorkspace = () => {
     if (!workspaceRoot || !planMarkdown) return;
     const filename = buildProposedPlanMarkdownFilename(planMarkdown);
     setIsSavingToWorkspace(true);
@@ -132,7 +132,7 @@ const PlanSidebar = memo(function PlanSidebar({
         );
       }
     })();
-  }, [environmentId, planMarkdown, workspaceRoot, writeProjectFile]);
+  };
 
   return (
     <div

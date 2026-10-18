@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   PencilIcon,
   PlusIcon,
@@ -140,7 +140,9 @@ function RuleEditDialog({
   const [field, setField] = useState("parameters.command");
   const [pattern, setPattern] = useState("");
 
-  useEffect(() => {
+  const [previousOpenRule, setPreviousOpenRule] = useState({ open: false, rule });
+  if (previousOpenRule.open !== open || previousOpenRule.rule !== rule) {
+    setPreviousOpenRule({ open, rule });
     if (open) {
       if (rule) {
         setRuleId(rule.rule_id);
@@ -156,7 +158,7 @@ function RuleEditDialog({
         setPattern("");
       }
     }
-  }, [open, rule]);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

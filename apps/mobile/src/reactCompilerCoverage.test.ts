@@ -59,11 +59,8 @@ const KNOWN_BAILOUTS: Record<string, string> = {
   "src/features/review/reviewDiffRendering.tsx": "mutates a frozen value",
   "src/features/review/useNativeReviewDiffHighlighting.ts": "conditional inside try",
   "src/features/settings/SettingsAboutRouteScreen.tsx": "try without catch",
-  "src/features/settings/SettingsAuthRouteScreen.tsx": "ref read during render",
   "src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx":
     "try without catch, try/finally",
-  "src/features/settings/SettingsEnvironmentsRouteScreen.tsx": "try without catch",
-  "src/features/settings/SettingsNotificationsRouteScreen.tsx": "try without catch",
   "src/features/settings/SettingsProjectOverviewRouteScreen.tsx": "try without catch",
   "src/features/settings/SettingsProviderAccountsRouteScreen.tsx": "conditional inside try",
   "src/features/settings/SettingsScheduledTasksRouteScreen.tsx": "unsupported syntax",

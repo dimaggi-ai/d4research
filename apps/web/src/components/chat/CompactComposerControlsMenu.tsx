@@ -3,7 +3,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@d4research/contracts";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { shouldExitPlanForDevPipelineSelection } from "../../devPipeline";
@@ -63,9 +63,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (props.disabled && open) setOpen(false);
-  }, [open, props.disabled]);
+  if (props.disabled && open) setOpen(false);
   return (
     <Menu
       open={open}

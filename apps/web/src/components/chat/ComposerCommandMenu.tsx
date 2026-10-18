@@ -22,7 +22,7 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
@@ -155,10 +155,10 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   onSelect: (item: ComposerCommandItem) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
-  const groups = useMemo(
-    () =>
-      groupCommandItems(props.items, props.triggerKind, props.groupSlashCommandSections ?? true),
-    [props.groupSlashCommandSections, props.items, props.triggerKind],
+  const groups = groupCommandItems(
+    props.items,
+    props.triggerKind,
+    props.groupSlashCommandSections ?? true,
   );
 
   useLayoutEffect(() => {

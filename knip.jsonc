@@ -15,11 +15,20 @@
       ],
       "vite": { "entry": [".github/**/*.test.cjs"] },
       "vitest": { "entry": [".github/**/*.test.cjs"] },
+      // Vitest loads its coverage provider by name when run with --coverage.
+      "ignoreDependencies": ["@vitest/coverage-v8"],
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly.
-      "entry": ["knip-schemas.ts", "mobile-native-client.ts", "setup-worktree.ts"],
+      "entry": [
+        "knip-schemas.ts",
+        "mobile-native-client.ts",
+        "setup-worktree.ts",
+        // Manual research-product QA and fixture recorders, run by hand.
+        "qa-*.{ts,mjs}",
+        "record-claude-fixture.ts",
+      ],
       // The `t3` npm package's files: copied into the package, never imported.
       "ignore": ["npm-launcher/**"],
     },
@@ -64,8 +73,15 @@
       "ignoreDependencies": ["playwright-core", "electron-builder"],
     },
     "apps/web": {
-      // Worktree setup (scripts/setup-worktree.ts) runs this directly.
-      "entry": ["scripts/warm-dep-cache.ts"],
+      "entry": [
+        // Worktree setup (scripts/setup-worktree.ts) runs this directly.
+        "scripts/warm-dep-cache.ts",
+        // Manual Playwright explorations, run by hand rather than by a test runner.
+        "e2e/ui.e2e.mjs",
+        "e2e/menu-alignment.audit.mjs",
+        // ui.e2e.mjs imports this by URL inside the browser page.
+        "e2e/PodcastPlayerFixture.tsx",
+      ],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
@@ -91,9 +107,6 @@
     "apps/mobile/modules/t3-source-text": {
       // React Native codegen discovers component specifications by filename.
       "entry": ["src/*NativeComponent.ts!"],
-    },
-    "infra/relay": {
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!"],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

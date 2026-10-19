@@ -1420,6 +1420,16 @@ export type DevSettings = typeof DevSettings.Type;
 export const PipelineTargetPolicy = Schema.Literals(["exact", "labeled-fallback"]);
 export type PipelineTargetPolicy = typeof PipelineTargetPolicy.Type;
 
+// ── Second brain ─────────────────────────────────────────────────────────
+/**
+ * A plain-Markdown knowledge folder (AGENTS.md map plus one file per topic)
+ * that every provider reaches through the `brain_*` MCP tools. Empty = off.
+ */
+export const SecondBrainSettings = Schema.Struct({
+  path: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type SecondBrainSettings = typeof SecondBrainSettings.Type;
+
 // ── Memory connector settings ────────────────────────────────────────────
 export const MemoryLocalBackend = Schema.Literals(["builtin", "memo-rest"]);
 export type MemoryLocalBackend = typeof MemoryLocalBackend.Type;
@@ -1848,6 +1858,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   memory: MemoryConnectorSettings,
+  secondBrain: SecondBrainSettings,
   handoff: HandoffSettings,
   skills: SkillsSettings,
   research: ResearchSettings,
@@ -2196,6 +2207,11 @@ export const ServerSettingsPatch = Schema.Struct({
       localEnabled: Schema.optionalKey(Schema.Boolean),
       localBackend: Schema.optionalKey(MemoryLocalBackend),
       localBaseUrl: Schema.optionalKey(TrimmedString),
+    }),
+  ),
+  secondBrain: Schema.optionalKey(
+    Schema.Struct({
+      path: Schema.optionalKey(TrimmedString),
     }),
   ),
   handoff: Schema.optionalKey(

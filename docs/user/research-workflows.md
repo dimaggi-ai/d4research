@@ -226,6 +226,26 @@ provider cannot hold the switch open. Compression and Memo persistence are both 
 neither Memo write succeeds, d4research still attaches the prepared summary when one exists (or the
 structured transcript after a preparation failure) and continues the handoff.
 
+## Second brain
+
+A second brain is a folder of plain Markdown files that every agent can read and update. At the
+root, an `AGENTS.md` file describes the layout and rules, for example `notes/`, `people/` and
+`projects/`, with one topic per file. A `CLAUDE.md` file can also serve as the map. A `@` line in
+the map, such as `@MEMORY.md`, includes the text of the file it names.
+
+Set the folder in **Settings → Research → Second brain**, for example `~/second-brain`.
+Every agent can then use these tools:
+
+- `brain_map`: returns the map with its `@` lines expanded, plus a list of every Markdown file.
+- `brain_read`: returns one file.
+- `brain_search`: finds text in file names and lines.
+- `brain_write`: adds to the end of a file or replaces it, and creates the file if needed.
+
+The tools work only on `.md` files inside the folder. They refuse paths that leave the folder
+(including through symlinks) and paths inside hidden directories such as `.git`. If you keep the
+folder in git, a `brain_write` that replaced a file can be undone. Leave the setting empty to turn
+the tools off.
+
 ## Boundaries
 
 - Deep Research executes the pipeline you wrote; it does not create an unbounded autonomous swarm.

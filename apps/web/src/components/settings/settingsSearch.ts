@@ -976,6 +976,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "research-pipeline",
   },
   {
+    id: "research-second-brain",
+    title: "Second brain",
+    searchTerms: ["knowledge", "notes", "markdown", "memory"],
+    to: "/settings/research",
+  },
+  {
     id: "dev-pipelines",
     title: "Dev pipelines",
     to: "/settings/dev-pipelines",

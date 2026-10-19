@@ -45,6 +45,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { BrainToolkitHandlersLive } from "./toolkits/brain/handlers.ts";
+import { BrainToolkit } from "./toolkits/brain/tools.ts";
 import { MemoryToolkitHandlersLive } from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import { ResearchToolkitHandlersLive } from "./toolkits/research/handlers.ts";
@@ -774,6 +776,10 @@ const MemoryToolkitRegistrationLive = requestContextToolkitRegistration(MemoryTo
   Layer.provide(MemoryToolkitHandlersLive),
 );
 
+const BrainToolkitRegistrationLive = requestContextToolkitRegistration(BrainToolkit).pipe(
+  Layer.provide(BrainToolkitHandlersLive),
+);
+
 const SkillsToolkitRegistrationLive = requestContextToolkitRegistration(SkillsToolkit).pipe(
   Layer.provide(SkillsToolkitHandlersLive),
 );
@@ -872,6 +878,7 @@ export const layerMcpTransport = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   layerPreviewToolkit,
   MemoryToolkitRegistrationLive,
+  BrainToolkitRegistrationLive,
   SkillsToolkitRegistrationLive,
   ResearchToolkitRegistrationLive,
   PipelinesToolkitRegistrationLive,

@@ -122,27 +122,32 @@ function Assistant(props: {
       setError("");
       setTask(next);
       setBaseline(props.draft);
-      try {
-        const output = await runLocalAssistant(
-          next,
-          source,
-          (instructions, input, signal) =>
-            appleGenerate(
-              [
-                { role: "system", content: instructions },
-                { role: "user", content: input },
-              ],
-              signal,
-            ),
-          controller.signal,
-        );
-        if (!controller.signal.aborted) setResult(output);
-      } catch (cause) {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "Local generation failed.");
-      } finally {
-        if (abort.current === controller) setBusy(false);
-      }
+      // React Compiler cannot lower try/finally; use promise chaining instead.
+      await runLocalAssistant(
+        next,
+        source,
+        (instructions, input, signal) =>
+          appleGenerate(
+            [
+              { role: "system", content: instructions },
+              { role: "user", content: input },
+            ],
+            signal,
+          ),
+        controller.signal,
+      )
+        .then(
+          (output) => {
+            if (!controller.signal.aborted) setResult(output);
+          },
+          (cause: unknown) => {
+            if (!controller.signal.aborted)
+              setError(cause instanceof Error ? cause.message : "Local generation failed.");
+          },
+        )
+        .finally(() => {
+          if (abort.current === controller) setBusy(false);
+        });
     },
     [busy, source, props.draft],
   );
@@ -232,14 +237,15 @@ function Assistant(props: {
                     const asset = picked.assets[0];
                     if (!asset) return;
                     const file = new File(asset.uri);
-                    try {
-                      if (file.size > 48_000) throw new Error("Choose a text file up to 48 KB.");
-                      setSource(await file.text());
-                      setResult("");
-                      setError("");
-                    } finally {
-                      file.delete();
-                    }
+                    const text = await Promise.resolve()
+                      .then(() => {
+                        if (file.size > 48_000) throw new Error("Choose a text file up to 48 KB.");
+                        return file.text();
+                      })
+                      .finally(() => file.delete());
+                    setSource(text);
+                    setResult("");
+                    setError("");
                   } catch (cause) {
                     setError(
                       cause instanceof Error ? cause.message : "Could not read the text file.",

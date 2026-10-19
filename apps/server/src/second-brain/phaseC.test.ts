@@ -120,7 +120,7 @@ it.effect("validates edited note kinds and preserves pending proposals on invali
   ),
 );
 
-it.effect("refuses oversized review details rather than presenting an incomplete diff", () =>
+it.effect("returns a bounded truncated review that can still be rejected", () =>
   withBrain(() =>
     Effect.gen(function* () {
       const brain = yield* Brain.SecondBrainService;
@@ -136,10 +136,44 @@ it.effect("refuses oversized review details rather than presenting an incomplete
         },
         "agent",
       );
-      expect(yield* brain.reviewProposal(p.id).pipe(Effect.flip)).toMatchObject({
-        code: "oversized",
-      });
-      expect((yield* brain.listProposalSummaries({}))[0]?.path).toBe("notes/large.md");
+      const detail = yield* brain.reviewProposal(p.id);
+      expect(detail.truncated).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(detail))).toBeLessThan(262144);
+      expect((yield* brain.rejectProposal(p.id, "human", "Too large")).state).toBe("rejected");
+      expect((yield* brain.listProposalSummaries({ state: "rejected" }))[0]?.path).toBe(
+        "notes/large.md",
+      );
+    }),
+  ),
+);
+
+it.effect("accepts a full human replacement for a truncated proposal", () =>
+  withBrain(() =>
+    Effect.gen(function* () {
+      const brain = yield* Brain.SecondBrainService;
+      const p = yield* brain.propose(
+        {
+          path: "notes/large.md",
+          kind: "note",
+          operation: "create",
+          content: "# Large\n" + "large body ".repeat(30000),
+          expectedHash: null,
+          rationale: "Keep",
+          evidence: [],
+        },
+        "agent",
+      );
+      expect((yield* brain.reviewProposal(p.id)).truncated).toBe(true);
+      expect(
+        (yield* brain.acceptProposal(p.id, "human", {
+          id: p.id,
+          expectedHash: null,
+          contentOverride: "# Reviewed\nComplete replacement",
+        })).state,
+      ).toBe("accepted");
+      expect((yield* brain.read({ path: p.path })).content).toBe(
+        "# Reviewed\nComplete replacement",
+      );
     }),
   ),
 );

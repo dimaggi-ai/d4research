@@ -136,6 +136,7 @@ export const BrainLintIssue = Schema.Struct({
 });
 export type BrainLintIssue = typeof BrainLintIssue.Type;
 export const BrainStatus = Schema.Struct({
+  captureJobs: Schema.optionalKey(Schema.Struct({ pending: Schema.Int, failed: Schema.Int })),
   enabled: Schema.Boolean,
   vault: Schema.NullOr(Schema.String),
   generation: Schema.Int,

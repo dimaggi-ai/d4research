@@ -87,6 +87,7 @@ export class SecondBrainService extends Context.Service<
     ) => BrainEffect<BrainProposal[]>;
     readonly listProposalSummaries: (
       query: BrainProposalQuery,
+      actor?: string,
     ) => BrainEffect<BrainProposalSummary[]>;
     readonly getProposal: (id: string) => BrainEffect<BrainProposal>;
     readonly reviewProposal: (id: string) => BrainEffect<BrainProposalDetail>;
@@ -135,21 +136,59 @@ const optionalRead = (files: Files.SecondBrainFiles["Service"], root: string, fi
       SecondBrainError: (e) => (e.code === "not_found" ? Effect.succeed(null) : Effect.fail(e)),
     }),
   );
-function resolveLink(note: NoteDocument, target: string, relative: boolean, notes: NoteDocument[]) {
-  const exact = relative
-    ? NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(note.path), target))
-    : target;
-  const paths = notes.filter(
-    (n) => n.path === exact || n.path === `${exact}.md` || n.metadata.id === target,
-  );
-  if (paths.length) return paths;
-  return notes.filter(
-    (n) =>
-      n.title === target ||
-      NodePath.posix.basename(n.path, ".md") === target ||
-      n.metadata.aliases?.includes(target),
-  );
+function linkGraph(notes: NoteDocument[]) {
+  const paths = new Map<string, NoteDocument[]>();
+  const ids = new Map<string, NoteDocument[]>();
+  const names = new Map<string, NoteDocument[]>();
+  const titles = new Map<string, NoteDocument[]>();
+  const add = (map: Map<string, NoteDocument[]>, key: string, note: NoteDocument) => {
+    const found = map.get(key);
+    if (found) found.push(note);
+    else map.set(key, [note]);
+  };
+  for (const note of notes) {
+    add(paths, note.path, note);
+    if (note.metadata.id) add(ids, note.metadata.id, note);
+    add(titles, note.title, note);
+    for (const name of new Set([
+      note.title,
+      NodePath.posix.basename(note.path, ".md"),
+      ...(note.metadata.aliases ?? []),
+    ]))
+      add(names, name, note);
+  }
+  const resolve = (note: NoteDocument, target: string, relative: boolean) => {
+    const exact = relative
+      ? NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(note.path), target))
+      : target;
+    const matches = [
+      ...new Set([
+        ...(paths.get(exact) ?? []),
+        ...(paths.get(`${exact}.md`) ?? []),
+        ...(ids.get(target) ?? []),
+      ]),
+    ];
+    return matches.length ? matches : (names.get(target) ?? []);
+  };
+  const inbound = new Map<string, Set<string>>();
+  const backlinks = new Map<string, Set<string>>();
+  for (const source of notes)
+    for (const link of source.links) {
+      const targets = resolve(source, link.target, link.relative);
+      for (const target of targets) {
+        if (source.path !== target.path) {
+          if (!inbound.has(target.path)) inbound.set(target.path, new Set());
+          inbound.get(target.path)!.add(source.path);
+        }
+        if (targets.length === 1) {
+          if (!backlinks.has(target.path)) backlinks.set(target.path, new Set());
+          backlinks.get(target.path)!.add(source.path);
+        }
+      }
+    }
+  return { resolve, inbound, backlinks, titles, ids };
 }
+const isApprovedPath = (path: string) => path !== "log.md" && !path.startsWith("raw/");
 function boundedRead(
   file: string,
   snapshot: Files.FileSnapshot,
@@ -197,6 +236,33 @@ const make = Effect.gen(function* () {
   let semanticStatus: BrainSemanticStatus = "disabled";
   let scanIssues: BrainLintIssue[] = [];
   let scanCount = 0;
+  const graphs = new WeakMap<Index.IndexSnapshot, ReturnType<typeof linkGraph>>();
+  const graphOf = (snapshot: Index.IndexSnapshot) => {
+    let graph = graphs.get(snapshot);
+    if (!graph) {
+      graph = linkGraph(snapshot.notes.map((n) => n.document));
+      graphs.set(snapshot, graph);
+    }
+    return graph;
+  };
+  const coreGenerations = new WeakMap<Index.IndexSnapshot, number>();
+  const coreGeneration = (snapshot: Index.IndexSnapshot) => {
+    let generation = coreGenerations.get(snapshot);
+    if (generation === undefined) {
+      generation = Number.parseInt(
+        contentHash(
+          encodeJson(
+            snapshot.notes
+              .filter((n) => isApprovedPath(n.document.path))
+              .map((n) => [n.document.path, n.document.hash]),
+          ),
+        ).slice(0, 12),
+        16,
+      );
+      coreGenerations.set(snapshot, generation);
+    }
+    return generation;
+  };
   const settings = settingsService.getSettings.pipe(
     Effect.map((s) => s.secondBrain),
     Effect.mapError(() => new SecondBrainError({ code: "unavailable" })),
@@ -219,24 +285,35 @@ const make = Effect.gen(function* () {
   });
   const appendLog = (audit: Index.AuditEntry) =>
     Effect.gen(function* () {
+      if (audit.logStatus) return audit.logStatus;
       const current = yield* optionalRead(files, audit.vault, "log.md");
       const marker = `<!-- brain-operation:${audit.id} -->`;
-      if (current?.content.includes(marker)) return;
+      if (current?.content.includes(marker)) return "written" as const;
       const summary = audit.operation === "ingest" ? "Source stored" : "Revision applied";
       const line = `## [${audit.timestamp.slice(0, 10)}] ${audit.operation} | ${audit.path} | ${summary}\n${marker}\n`;
-      yield* files.write(
-        audit.vault,
-        "log.md",
-        `${current?.content ?? ""}${line}`,
-        current?.hash ?? null,
-      );
-    });
+      let prefix = current?.content ?? "";
+      if (Buffer.byteLength(prefix) + Buffer.byteLength(line) > NOTE_BYTES) {
+        // Retain a bounded tail; the durable audit table is the complete operation history.
+        prefix = prefix.slice(-Math.floor(NOTE_BYTES / 8));
+        prefix = prefix.slice(prefix.indexOf("\n") + 1);
+      }
+      yield* files.write(audit.vault, "log.md", `${prefix}${line}`, current?.hash ?? null);
+      return "written" as const;
+    }).pipe(
+      Effect.catchTags({
+        SecondBrainError: (error) =>
+          Effect.logWarning("Second brain operation log skipped", {
+            auditId: audit.id,
+            code: error.code,
+          }).pipe(Effect.as("skipped" as const)),
+      }),
+    );
   const recovery = (vault: string) =>
     Effect.gen(function* () {
       for (const audit of yield* index.pendingAudits(vault)) {
         const current = yield* optionalRead(files, vault, audit.path);
         const state = current?.hash === audit.newHash ? "applied" : "conflict";
-        if (state === "applied") yield* appendLog(audit);
+        const logStatus = state === "applied" ? yield* appendLog(audit) : audit.logStatus;
         if (audit.proposalId) {
           const proposal = yield* index.proposal(vault, audit.proposalId);
           yield* index.saveProposal({
@@ -246,35 +323,45 @@ const make = Effect.gen(function* () {
             reason: state === "conflict" ? "stale_revision" : null,
           });
         }
-        yield* index.audit({ ...audit, state });
+        yield* index.audit({ ...audit, state, ...(logStatus ? { logStatus } : {}) });
       }
     });
   const generate = (vault: string, notes: Index.IndexedNote[]) =>
     Effect.gen(function* () {
       const current = yield* optionalRead(files, vault, "INDEX.md");
-      if (current && !current.content.startsWith(INDEX_MARKER))
-        return yield* new SecondBrainError({ code: "forbidden" });
+      if (current && !current.content.startsWith(INDEX_MARKER)) {
+        scanIssues.push({ path: "INDEX.md", code: "index_generation_skipped" });
+        return;
+      }
       const content = generatedIndex(notes.map((n) => n.document));
       if (current?.content !== content)
         yield* files.write(vault, "INDEX.md", content, current?.hash ?? null);
-    });
+    }).pipe(
+      Effect.catchTags({
+        SecondBrainError: (error) =>
+          Effect.sync(() => {
+            scanIssues.push({ path: "INDEX.md", code: error.code });
+          }),
+      }),
+    );
   const sync = (vault: string, config: SecondBrainSettings, force = false, rebuild = false) =>
     Effect.gen(function* () {
       yield* recovery(vault);
       force = force || resetVault;
-      const previous = yield* index.snapshot(vault);
+      const metadata = yield* index.metadata(vault);
       const now = yield* Clock.currentTimeMillis;
       if (
         !force &&
-        previous.lastIndexedAt &&
-        now - Date.parse(previous.lastIndexedAt) < config.reconcileIntervalSeconds * 1000
+        metadata.lastIndexedAt &&
+        now - Date.parse(metadata.lastIndexedAt) < config.reconcileIntervalSeconds * 1000
       )
-        return previous;
+        return yield* index.snapshot(vault);
+      const previous = yield* index.snapshot(vault);
       scanCount++;
       const walk = yield* files.walk(vault);
       const existing = new Map(previous.notes.map((n) => [n.document.path, n]));
       const notes: Index.IndexedNote[] = [];
-      scanIssues = [];
+      scanIssues = [...(walk.issues ?? [])];
       let total = 0;
       let truncated = walk.truncated;
       for (const file of walk.files) {
@@ -294,7 +381,12 @@ const make = Effect.gen(function* () {
           notes.push(old);
           continue;
         }
-        const snapshot = yield* files.read(vault, file.path);
+        const read = yield* files.read(vault, file.path).pipe(Effect.result);
+        if (read._tag === "Failure") {
+          scanIssues.push({ path: file.path, code: read.failure.code });
+          continue;
+        }
+        const snapshot = read.success;
         const parsed = yield* pure(() => parseNote(file.path, snapshot.content)).pipe(
           Effect.result,
         );
@@ -340,7 +432,10 @@ const make = Effect.gen(function* () {
   const getStatus = (force = false) =>
     Effect.gen(function* () {
       const { vault, config, snapshot } = yield* ready(force);
-      return toStatus(vault, config, snapshot);
+      return {
+        ...toStatus(vault, config, snapshot),
+        captureJobs: yield* index.captureCounts(vault),
+      };
     });
   const catalogOf = (snapshot: Index.IndexSnapshot) => {
     const notes = snapshot.notes.map((n) => n.document);
@@ -365,15 +460,7 @@ const make = Effect.gen(function* () {
           .slice(0, 160),
         status: n.metadata.status ?? null,
         updated: n.metadata.updated ?? null,
-        inboundLinks: notes.filter(
-          (source) =>
-            source.path !== n.path &&
-            source.links.some((l) =>
-              resolveLink(source, l.target, l.relative, notes).some(
-                (target) => target.path === n.path,
-              ),
-            ),
-        ).length,
+        inboundLinks: graphOf(snapshot).inbound.get(n.path)?.size ?? 0,
       }));
   };
   const mapIn = (vault: string, snapshot: Index.IndexSnapshot, budget = RESPONSE_BYTES) =>
@@ -454,15 +541,17 @@ const make = Effect.gen(function* () {
     config: SecondBrainSettings,
     snapshot: Index.IndexSnapshot,
     input: BrainSearchInput,
+    approvedOnly = false,
   ) =>
     Effect.gen(function* () {
-      const lexical = yield* index.search(vault, input);
+      const lexical = yield* index.search(vault, input, approvedOnly);
       let results = lexical;
       semanticStatus = config.embeddings.enabled ? "unavailable" : "disabled";
       if (config.embeddings.enabled && input.query.trim()) {
         const candidates: BrainSearchResult[] = snapshot.notes
           .filter(
             ({ document: n }) =>
+              (!approvedOnly || isApprovedPath(n.path)) &&
               (!input.kind || n.kind === input.kind) &&
               (!input.tag || n.metadata.tags?.includes(input.tag)) &&
               (!input.path || n.path.startsWith(input.path)),
@@ -559,8 +648,8 @@ const make = Effect.gen(function* () {
       };
       yield* index.audit(audit);
       const written = yield* files.write(vault, edit.path, content, edit.expectedHash);
-      yield* appendLog(audit);
-      if (!proposalId) yield* index.audit({ ...audit, state: "applied" });
+      const logStatus = yield* appendLog(audit);
+      yield* index.audit({ ...audit, logStatus, state: proposalId ? "prepared" : "applied" });
       return written;
     });
   const possibleDuplicates = (
@@ -639,8 +728,8 @@ const make = Effect.gen(function* () {
           };
           yield* index.audit(audit);
           yield* files.write(vault, path, valid.sourceText, null);
-          yield* appendLog(audit);
-          yield* index.audit({ ...audit, state: "applied" });
+          const logStatus = yield* appendLog(audit);
+          yield* index.audit({ ...audit, logStatus, state: "applied" });
           const related = yield* searchIn(vault, config, snapshot, {
             query: valid.sourceTitle,
             limit: 5,
@@ -754,16 +843,8 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { vault, snapshot } = yield* ready();
           yield* files.read(vault, file);
-          const notes = snapshot.notes.map((n) => n.document);
           return {
-            paths: notes
-              .filter((n) =>
-                n.links.some((l) => {
-                  const targets = resolveLink(n, l.target, l.relative, notes);
-                  return targets.length === 1 && targets[0]!.path === file;
-                }),
-              )
-              .map((n) => n.path),
+            paths: [...(graphOf(snapshot).backlinks.get(file) ?? [])],
             truncated: snapshot.truncated,
           };
         }),
@@ -771,7 +852,7 @@ const make = Effect.gen(function* () {
     lint: () =>
       locked(
         Effect.gen(function* () {
-          const { vault, config, snapshot } = yield* ready(true);
+          const { vault, config, snapshot } = yield* ready();
           const issues = [...scanIssues];
           const notes = snapshot.notes.map((n) => n.document);
           const now = yield* Clock.currentTimeMillis;
@@ -782,15 +863,7 @@ const make = Effect.gen(function* () {
               !["log.md", "AGENTS.md", "CLAUDE.md", "MEMORY.md"].includes(note.path)
             )
               issues.push({ path: note.path, code: "missing_summary" });
-            const inbound = notes.some(
-              (n) =>
-                n.path !== note.path &&
-                n.links.some((l) =>
-                  resolveLink(n, l.target, l.relative, notes).some(
-                    (target) => target.path === note.path,
-                  ),
-                ),
-            );
+            const inbound = (graphOf(snapshot).inbound.get(note.path)?.size ?? 0) > 0;
             if (note.path.startsWith("raw/") && !inbound)
               issues.push({ path: note.path, code: "unreferenced_raw" });
             if (note.path.startsWith("notes/") && !inbound && !note.metadata.tags?.length)
@@ -821,12 +894,9 @@ const make = Effect.gen(function* () {
               !note.frontmatter
             )
               issues.push({ path: note.path, code: "missing_frontmatter" });
-            if (notes.some((n) => n.path !== note.path && n.title === note.title))
+            if ((graphOf(snapshot).titles.get(note.title)?.length ?? 0) > 1)
               issues.push({ path: note.path, code: "duplicate_title" });
-            if (
-              note.metadata.id &&
-              notes.some((n) => n.path !== note.path && n.metadata.id === note.metadata.id)
-            )
+            if (note.metadata.id && (graphOf(snapshot).ids.get(note.metadata.id)?.length ?? 0) > 1)
               issues.push({ path: note.path, code: "duplicate_id" });
             if (
               note.kind === "project" &&
@@ -837,7 +907,7 @@ const make = Effect.gen(function* () {
             )
               issues.push({ path: note.path, code: "stale_project" });
             for (const link of note.links) {
-              const targets = resolveLink(note, link.target, link.relative, notes);
+              const targets = graphOf(snapshot).resolve(note, link.target, link.relative);
               if (targets.length !== 1)
                 issues.push({
                   path: note.path,
@@ -873,7 +943,10 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { vault, config, snapshot } = yield* ready();
           yield* generate(vault, snapshot.notes);
-          return toStatus(vault, config, snapshot);
+          return {
+            ...toStatus(vault, config, snapshot),
+            captureJobs: yield* index.captureCounts(vault),
+          };
         }),
       ),
     propose: (input, actor) =>
@@ -913,13 +986,16 @@ const make = Effect.gen(function* () {
           return yield* index.proposals(vault, valid, valid.own ? actor : undefined);
         }),
       ),
-    listProposalSummaries: (query) =>
+    listProposalSummaries: (query, actor) =>
       locked(
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposalQuery, query);
           const { root: vault } = yield* configure;
-          const proposals = yield* index.proposals(vault, valid);
-          return proposals.map(({ id, path, kind, state, createdAt, evidence }) => ({
+          const proposals = valid.id
+            ? [yield* index.proposal(vault, valid.id)]
+            : yield* index.proposals(vault, valid, valid.own ? actor : undefined);
+          let bytes = 256;
+          const summaries = proposals.map(({ id, path, kind, state, createdAt, evidence }) => ({
             id,
             path,
             kind,
@@ -929,6 +1005,10 @@ const make = Effect.gen(function* () {
               .slice(0, 1)
               .map(({ threadId, messageId }) => ({ threadId, messageId })),
           }));
+          return summaries.filter((summary) => {
+            bytes += Buffer.byteLength(encodeJson(summary)) + 1;
+            return bytes <= RESPONSE_BYTES;
+          });
         }),
       ),
     getProposal: (id) =>
@@ -970,8 +1050,22 @@ const make = Effect.gen(function* () {
             conflict,
             truncated: false,
           };
-          if (Buffer.byteLength(encodeJson(detail)) > RESPONSE_BYTES)
-            return yield* new SecondBrainError({ code: "oversized" });
+          if (Buffer.byteLength(encodeJson(detail)) > RESPONSE_BYTES) {
+            const preview = (text: string) => text.slice(0, 4096);
+            return {
+              ...detail,
+              proposal: {
+                ...proposal,
+                content: preview(proposal.content),
+                evidence: [],
+                possibleDuplicates: [],
+              },
+              currentContent: preview(detail.currentContent),
+              proposedContent: preview(detail.proposedContent),
+              diff: preview(detail.diff),
+              truncated: true,
+            };
+          }
           return detail;
         }),
       ),
@@ -1080,7 +1174,8 @@ const make = Effect.gen(function* () {
             ? yield* index.deliveredGeneration(vault, input.providerThreadId)
             : null;
           const includeCore =
-            input.includeCore || (!!input.providerThreadId && previous !== snapshot.generation);
+            input.includeCore ||
+            (!!input.providerThreadId && previous !== coreGeneration(snapshot));
           let core = "";
           if (includeCore) {
             const budget = config.injection.coreBudgetChars;
@@ -1141,14 +1236,20 @@ const make = Effect.gen(function* () {
             if (included < catalog.length)
               append(`(+${catalog.length - included} more notes — use brain_search)\n`);
           }
-          const found = yield* searchIn(vault, config, snapshot, {
-            query: input.userText.slice(0, 4096),
-            limit: config.injection.retrievalResults,
-          });
+          const found = yield* searchIn(
+            vault,
+            config,
+            snapshot,
+            {
+              query: input.userText.slice(0, 4096),
+              limit: config.injection.retrievalResults,
+            },
+            true,
+          );
           let retrieved = "";
           const citations: BrainCitation[] = [];
           for (const { citation: c, score } of found.results) {
-            if (score <= 0.00000001 || c.path === "log.md") continue;
+            if (score <= 0.00000001 || !isApprovedPath(c.path)) continue;
             const block = `[brain: ${c.path}#L${c.startLine}-L${c.endLine}]\n${c.excerpt}\n`;
             if (retrieved.length + block.length + 40 > config.injection.retrievalBudgetChars)
               continue;
@@ -1161,7 +1262,7 @@ const make = Effect.gen(function* () {
               ? {
                   delivery: {
                     vault,
-                    generation: snapshot.generation,
+                    generation: coreGeneration(snapshot),
                     providerThreadId: input.providerThreadId,
                   },
                 }

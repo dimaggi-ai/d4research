@@ -261,8 +261,8 @@ Files and the index stay on that environment, but retrieved context is sent to t
 agent provider. Capture uses visible user and assistant text, excludes tools and reasoning,
 and redacts recognized secrets; this is not a guarantee that all sensitive text is removed.
 Do not store secrets in the brain. Files larger than 1 MiB and unsafe paths are refused.
-Review details larger than 256 KiB cannot be opened in the inbox. Keep notes and proposals
-small enough to review in full.
+Review details larger than 256 KiB show an incomplete preview. You can reject the proposal
+on either client, or supply the full replacement file on web before accepting it.
 
 ## Boundaries
 

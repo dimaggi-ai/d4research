@@ -1,5 +1,6 @@
 import { it, expect } from "@effect/vitest";
 import { ThreadId, type OrchestrationV2StoredEvent } from "@d4research/contracts";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -130,4 +131,67 @@ it.effect("capture off advances the cursor without inference", () =>
       expect(yield* index.captureCursor()).toBe(1);
     }),
   ),
+);
+
+it.effect(
+  "maintenance retries failed jobs once per reconciliation interval and stops at three attempts",
+  () =>
+    withBrain(
+      (root) =>
+        Effect.gen(function* () {
+          const index = yield* Index.SecondBrainIndex;
+          yield* index.enqueueCapture({
+            id: "retry",
+            vault: root,
+            threadId: "t",
+            runFrom: 1,
+            runTo: 1,
+            transcriptHash: "hash",
+            version: "v1",
+            messages: [],
+            state: "failed",
+            proposalIds: [],
+            attempts: 1,
+          });
+          let attempts = 0;
+          yield* Effect.gen(function* () {
+            const reactor = yield* Reactor.SecondBrainCaptureReactor;
+            yield* reactor.retry();
+            yield* reactor.drain;
+            yield* reactor.retry();
+            yield* reactor.drain;
+            expect(attempts).toBe(1);
+            yield* TestClock.adjust("61 seconds");
+            yield* reactor.retry();
+            yield* reactor.drain;
+            expect(attempts).toBe(2);
+            expect(yield* index.pendingCaptures()).toEqual([]);
+          }).pipe(
+            Effect.provide(
+              Reactor.layer.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
+                    Layer.mock(EventStore.EventStoreV2)({ read: () => Stream.empty }),
+                    Layer.mock(Capture.SecondBrainCapture)({
+                      process: (input) =>
+                        Effect.gen(function* () {
+                          const job = yield* index.enqueueCapture(input);
+                          attempts++;
+                          yield* index.saveCapture({
+                            ...job,
+                            state: "failed",
+                            attempts: (job.attempts ?? 0) + 1,
+                          });
+                          return [];
+                        }),
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      { capture: "proposals", reconcileIntervalSeconds: 60 },
+    ),
 );

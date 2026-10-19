@@ -512,15 +512,6 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
           Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
         ),
       );
-    if (brainContext && sharedContext) {
-      [brainContext.core, brainContext.retrieved]
-        .join("\n")
-        .split("\n")
-        .filter((line) => line.length > 40)
-        .forEach((line) => {
-          sharedContext = sharedContext!.replaceAll(line, "");
-        });
-    }
     const turnInput = [
       ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
       ...(sharedContext !== null

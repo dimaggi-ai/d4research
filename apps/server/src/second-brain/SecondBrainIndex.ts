@@ -32,6 +32,7 @@ export type CaptureJob = {
   messages: Array<{ messageId: string; text: string }>;
   state: "pending" | "completed" | "failed";
   proposalIds: string[];
+  attempts?: number;
 };
 export type IndexedNote = { document: NoteDocument; mtime: number; size: number };
 export type IndexSnapshot = {
@@ -51,6 +52,7 @@ export type AuditEntry = {
   actor: string;
   timestamp: string;
   state: "prepared" | "applied" | "conflict";
+  logStatus?: "written" | "skipped";
 };
 export class SecondBrainIndex extends Context.Service<
   SecondBrainIndex,
@@ -69,6 +71,16 @@ export class SecondBrainIndex extends Context.Service<
       thread: string,
       generation: number,
     ) => Effect.Effect<void, SecondBrainError>;
+    readonly metadata: (
+      vault: string,
+    ) => Effect.Effect<Omit<IndexSnapshot, "notes">, SecondBrainError>;
+    readonly captureCounts: (
+      vault: string,
+    ) => Effect.Effect<{ pending: number; failed: number }, SecondBrainError>;
+    readonly completedCaptureRun: (
+      vault: string,
+      thread: string,
+    ) => Effect.Effect<number, SecondBrainError>;
     readonly snapshot: (vault: string) => Effect.Effect<IndexSnapshot, SecondBrainError>;
     readonly reconcile: (
       vault: string,
@@ -80,6 +92,7 @@ export class SecondBrainIndex extends Context.Service<
     readonly search: (
       vault: string,
       input: BrainSearchInput,
+      approvedOnly?: boolean,
     ) => Effect.Effect<BrainSearchResult[], SecondBrainError>;
     readonly saveProposal: (proposal: BrainProposal) => Effect.Effect<void, SecondBrainError>;
     readonly proposals: (
@@ -171,7 +184,39 @@ const make = Effect.gen(function* () {
   };
   const decodeProposal = (row: Record<string, unknown>) =>
     decodeBrainProposal(JSON.parse(String(row.document)));
+  const snapshots = new Map<string, IndexSnapshot>();
+  const metadata = (vault: string) => {
+    const row = db.prepare("SELECT * FROM vaults WHERE root=?").get(vault);
+    return {
+      generation: Number(row?.generation ?? 0),
+      lastIndexedAt: row?.indexed_at ? String(row.indexed_at) : null,
+      truncated: row?.truncated === 1,
+    };
+  };
   return SecondBrainIndex.of({
+    metadata: (vault) => run(() => metadata(vault)),
+    captureCounts: (vault) =>
+      run(() => {
+        const rows = db
+          .prepare(
+            "SELECT state,count(*) AS count FROM brain_capture_jobs WHERE json_extract(document,'$.vault')=? GROUP BY state",
+          )
+          .all(vault);
+        return {
+          pending: Number(rows.find((r) => r.state === "pending")?.count ?? 0),
+          failed: Number(rows.find((r) => r.state === "failed")?.count ?? 0),
+        };
+      }),
+    completedCaptureRun: (vault, thread) =>
+      run(() =>
+        Number(
+          db
+            .prepare(
+              "SELECT max(json_extract(document,'$.runTo')) AS ordinal FROM brain_capture_jobs WHERE state='completed' AND json_extract(document,'$.vault')=? AND json_extract(document,'$.threadId')=?",
+            )
+            .get(vault, thread)?.ordinal ?? 0,
+        ),
+      ),
     enqueueCapture: (job) =>
       run(() => {
         db.prepare("INSERT OR IGNORE INTO brain_capture_jobs VALUES(?,?,?)").run(
@@ -196,7 +241,9 @@ const make = Effect.gen(function* () {
     pendingCaptures: () =>
       run(() =>
         db
-          .prepare("SELECT document FROM brain_capture_jobs WHERE state='pending' ORDER BY rowid")
+          .prepare(
+            "SELECT document FROM brain_capture_jobs WHERE state='pending' OR (state='failed' AND coalesce(json_extract(document,'$.attempts'),0)<3) ORDER BY rowid",
+          )
           .all()
           .map((r) => JSON.parse(String(r.document)) as CaptureJob),
       ),
@@ -227,7 +274,12 @@ const make = Effect.gen(function* () {
       }),
     snapshot: (vault) =>
       run(() => {
-        const row = db.prepare("SELECT * FROM vaults WHERE root=?").get(vault);
+        const meta = metadata(vault);
+        const cached = snapshots.get(vault);
+        if (cached?.generation === meta.generation) {
+          Object.assign(cached, meta);
+          return cached;
+        }
         const notes = db
           .prepare("SELECT document,mtime,size FROM notes WHERE vault=? ORDER BY path")
           .all(vault)
@@ -236,12 +288,9 @@ const make = Effect.gen(function* () {
             mtime: Number(r.mtime),
             size: Number(r.size),
           }));
-        return {
-          notes,
-          generation: Number(row?.generation ?? 0),
-          lastIndexedAt: row?.indexed_at ? String(row.indexed_at) : null,
-          truncated: row?.truncated === 1,
-        };
+        const snapshot = { notes, ...meta };
+        snapshots.set(vault, snapshot);
+        return snapshot;
       }),
     reconcile: (vault, notes, timestamp, truncated, rebuild = false) =>
       run(() =>
@@ -311,19 +360,36 @@ const make = Effect.gen(function* () {
             "INSERT INTO vaults VALUES(?,1,?,?) ON CONFLICT(root) DO UPDATE SET generation=generation+?,indexed_at=excluded.indexed_at,truncated=excluded.truncated",
           ).run(vault, timestamp, Number(truncated), Number(changed));
         }),
+      ).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            const meta = metadata(vault);
+            const cached = snapshots.get(vault);
+            if (cached?.generation === meta.generation)
+              Object.assign(cached, meta, {
+                notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
+              });
+            else
+              snapshots.set(vault, {
+                notes: [...notes].sort((a, b) => a.document.path.localeCompare(b.document.path)),
+                ...meta,
+              });
+          }),
+        ),
       ),
-    search: (vault, input) =>
+    search: (vault, input, approvedOnly = false) =>
       run(() => {
         const terms = input.query.match(/[\p{L}\p{N}_]+/gu)?.slice(0, 64) ?? [];
         if (!terms.length) return [];
         const query = terms.map((t) => `"${t}"`).join(" OR ");
         const rows = db
           .prepare(
-            `SELECT c.*, bm25(chunks_fts,8,5,3,1) AS rank FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid WHERE chunks_fts MATCH ? AND c.vault=? AND (? IS NULL OR c.kind=?) AND (? IS NULL OR c.path LIKE ? ESCAPE '\\') AND (? IS NULL OR EXISTS(SELECT 1 FROM json_each(c.tags) WHERE value=?)) ORDER BY rank,c.path,c.ordinal LIMIT ?`,
+            `SELECT c.*, bm25(chunks_fts,8,5,3,1) AS rank FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid WHERE chunks_fts MATCH ? AND c.vault=? AND (?=0 OR (c.path!='log.md' AND c.path NOT LIKE 'raw/%')) AND (? IS NULL OR c.kind=?) AND (? IS NULL OR c.path LIKE ? ESCAPE '\\') AND (? IS NULL OR EXISTS(SELECT 1 FROM json_each(c.tags) WHERE value=?)) ORDER BY rank,c.path,c.ordinal LIMIT ?`,
           )
           .all(
             query,
             vault,
+            Number(approvedOnly),
             input.kind ?? null,
             input.kind ?? null,
             input.path ?? null,

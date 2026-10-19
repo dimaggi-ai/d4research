@@ -240,7 +240,7 @@ it.effect("generates a deterministic marked index and preserves human INDEX.md",
         yield* service.reindex();
         expect(yield* fs.readFileString(`${root}/INDEX.md`)).toBe(text);
         yield* fs.writeFileString(`${root}/INDEX.md`, "human index");
-        expect((yield* service.reindex().pipe(Effect.result))._tag).toBe("Failure");
+        expect((yield* service.reindex().pipe(Effect.result))._tag).toBe("Success");
         expect(yield* fs.readFileString(`${root}/INDEX.md`)).toBe("human index");
       }),
     { generateIndex: true },

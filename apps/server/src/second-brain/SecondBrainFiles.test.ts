@@ -40,7 +40,10 @@ it.effect(
           ["dead.md", `${outside}/missing`],
         ]) {
           yield* fs.symlink(target!, `${root}/${name}`);
-          expect((yield* files.walk(root).pipe(Effect.result))._tag).toBe("Failure");
+          expect((yield* files.walk(root)).issues).toContainEqual({
+            path: name,
+            code: "unsafe_path",
+          });
           expect(
             (yield* files
               .read(root, name === "link" ? "link/secret.md" : name!)

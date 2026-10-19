@@ -524,13 +524,15 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
-  Layer.effectDiscard(
-    SecondBrainCaptureReactor.SecondBrainCaptureReactor.use((reactor) => reactor.start()),
+  Layer.merge(
+    Layer.effectDiscard(
+      SecondBrainCaptureReactor.SecondBrainCaptureReactor.use((reactor) => reactor.start()),
+    ),
+    SecondBrainMaintenance.layer.pipe(Layer.provide(Scheduler.layer)),
   ).pipe(
     Layer.provide(SecondBrainCaptureReactor.layer),
     Layer.provide(EventStoreV2.layerFromOrchestrationEventStore),
   ),
-  SecondBrainMaintenance.layer.pipe(Layer.provide(Scheduler.layer)),
   Layer.effectDiscard(ResearchIntegrityReactor.use((reactor) => reactor.start())).pipe(
     Layer.provide(ResearchIntegrityReactorLive),
     Layer.provide(

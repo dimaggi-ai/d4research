@@ -1,3 +1,4 @@
+import * as Brain from "../../../second-brain/SecondBrainService.ts";
 import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import { it, expect } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@d4research/contracts";
@@ -50,7 +51,13 @@ const scope = (
     : undefined,
   client: provider ? undefined : { sessionId: "c", label: "test", access },
 });
-function call(tool: string, access: "read-only" | "full-access", provider = false, active = true) {
+function call(
+  tool: string,
+  access: "read-only" | "full-access",
+  provider = false,
+  active = true,
+  input?: Record<string, unknown>,
+) {
   const registration = toolkitRegistration(BrainToolkit, BrainToolkitHandlersLive).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(
@@ -70,13 +77,14 @@ function call(tool: string, access: "read-only" | "full-access", provider = fals
     const result = yield* server.callTool({
       name: tool,
       arguments:
-        tool === "brain_ingest"
+        input ??
+        (tool === "brain_ingest"
           ? { sourceTitle: "Source", sourceText: "Source text" }
           : tool === "brain_record_decision"
             ? { title: "Local", context: "Offline", decision: "Local", consequences: "Disk" }
             : tool === "brain_reindex" || tool === "brain_capture"
               ? {}
-              : edit,
+              : edit),
     });
     return result.content
       .filter((p) => p.type === "text")
@@ -158,5 +166,43 @@ it.effect("capture uses the calling provider thread and refuses unscoped writabl
 it.effect("writable clients can ingest in review mode", () =>
   withBrain(() =>
     call("brain_ingest", "full-access").pipe(Effect.map((text) => expect(text).toContain("raw/"))),
+  ),
+);
+
+it.effect("paginates bounded proposal summaries without exposing large bodies", () =>
+  withBrain(() =>
+    Effect.gen(function* () {
+      const brain = yield* Brain.SecondBrainService;
+      for (let i = 0; i < 3; i++)
+        yield* brain.propose(
+          {
+            ...edit,
+            path: `notes/large-${i}.md`,
+            kind: "note",
+            operation: "create",
+            content: "body ".repeat(60000),
+          },
+          "c",
+        );
+      const page = JSON.parse(
+        yield* call("brain_proposals", "read-only", false, true, {
+          own: true,
+          limit: 2,
+          offset: 0,
+        }),
+      );
+      const next = JSON.parse(
+        yield* call("brain_proposals", "read-only", false, true, {
+          own: true,
+          limit: 2,
+          offset: 2,
+        }),
+      );
+      expect(page).toHaveLength(2);
+      expect(next).toHaveLength(1);
+      expect(page[0]).not.toHaveProperty("content");
+      expect(new Set([...page, ...next].map((p) => p.id)).size).toBe(3);
+      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(262144);
+    }),
   ),
 );

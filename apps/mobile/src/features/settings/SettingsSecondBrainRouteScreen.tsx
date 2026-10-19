@@ -260,6 +260,8 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
             </Text>
             <Text>Last reconcile: {status.data.lastIndexedAt ?? "Never"}</Text>
             <Text>Semantic status: {status.data.semanticStatus}</Text>
+            <Text>Pending capture jobs: {status.data.captureJobs?.pending ?? 0}</Text>
+            <Text>Failed capture jobs: {status.data.captureJobs?.failed ?? 0}</Text>
             <Text>Generation: {status.data.generation}</Text>
             {status.data.truncated ? <Text>Index is truncated.</Text> : null}
           </View>
@@ -438,13 +440,13 @@ function ProposalDetail({
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const data = detail.data;
-  const reviewable = data?.proposal.state === "pending" || data?.proposal.state === "conflict";
-  if (!data) return <Text>{detail.error ?? "Loading proposal…"}</Text>;
+  const reviewable =
+    !data || data.proposal.state === "pending" || data.proposal.state === "conflict";
   const review = async (action: "accept" | "reject") => {
     if (
       busyRef.current ||
       !reviewable ||
-      (action === "accept" && (data.conflict || data.truncated))
+      (action === "accept" && (!data || data.conflict || data.truncated))
     )
       return;
     busyRef.current = true;
@@ -453,7 +455,7 @@ function ProposalDetail({
     try {
       const result =
         action === "accept"
-          ? await accept({ environmentId, input: { id, expectedHash: data.currentHash } })
+          ? await accept({ environmentId, input: { id, expectedHash: data!.currentHash } })
           : await reject({ environmentId, input: { id, reason: reason.trim() } });
       if (result._tag === "Success") onReviewed();
       else {
@@ -465,6 +467,28 @@ function ProposalDetail({
       setBusy(false);
     }
   };
+  if (!data)
+    return (
+      <View className="gap-3 p-4">
+        <Text>{detail.error ?? "Loading proposal…"}</Text>
+        <AppTextInput
+          accessibilityLabel="Rejection reason"
+          placeholder="Rejection reason"
+          value={reason}
+          onChangeText={setReason}
+          editable={!busy && canReject}
+          multiline
+          className="min-h-16 px-3 py-2 text-base text-foreground"
+        />
+        <SettingsActionRow
+          label="Reject proposal"
+          tone="danger"
+          disabled={!canReject || busy || !reason.trim()}
+          onPress={() => void review("reject")}
+        />
+        {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+      </View>
+    );
   return (
     <View className="gap-3 p-4">
       <Text>{data.proposal.path}</Text>

@@ -476,8 +476,13 @@ describe("research delegate handler", () => {
       >(Option.some(orchestratorContext));
       const projectionLayer = Layer.mergeAll(
         Layer.mock(SecondBrainService.SecondBrainService)({
-          buildTurnContext: () =>
-            Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+          buildTurnContext: ({ userText, projectTitle }) =>
+            Effect.succeed({
+              policy: userText === "scopeboundary" && projectTitle ? "Reference policy" : "",
+              core: "scopeboundary project A context is preserved verbatim in both sources",
+              retrieved: "",
+              citations: [],
+            }),
           markContextDelivered: () => Effect.void,
         }),
         Layer.mock(ProjectionStoreV2)({
@@ -558,8 +563,13 @@ describe("research delegate handler", () => {
       );
       const layer = Layer.mergeAll(
         Layer.mock(SecondBrainService.SecondBrainService)({
-          buildTurnContext: () =>
-            Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+          buildTurnContext: ({ userText, projectTitle }) =>
+            Effect.succeed({
+              policy: userText === "scopeboundary" && projectTitle ? "Reference policy" : "",
+              core: "scopeboundary project A context is preserved verbatim in both sources",
+              retrieved: "",
+              citations: [],
+            }),
           markContextDelivered: () => Effect.void,
         }),
         settingsLayer,
@@ -719,7 +729,11 @@ describe("research delegate handler", () => {
         research: { ...settings.research, shareMemoContext: true },
       });
       const memory = yield* makeConfiguredMemoryConnector().pipe(Effect.provide(layer));
-      yield* memory.add("scopeboundary project A context", "test", "Project A");
+      yield* memory.add(
+        "scopeboundary project A context is preserved verbatim in both sources",
+        "test",
+        "Project A",
+      );
       yield* memory.add("scopeboundary project B private context", "test", "Project B");
       const scopedMemoryResult = yield* makeResearchDelegateHandler({ pollDelay: Effect.void })({
         target: "codex:gpt-5.6-sol",
@@ -734,7 +748,9 @@ describe("research delegate handler", () => {
       );
       expect(scopedMemoryResult.text).toBe("review verdict: PASS");
       const scopedTurnInput = (yield* Ref.get(sent)).at(-1) ?? "";
-      expect(scopedTurnInput).toContain("scopeboundary project A context");
+      expect(scopedTurnInput.split("--- SHARED CONTEXT (local memory, verbatim) ---")[1]).toContain(
+        "scopeboundary project A context is preserved verbatim in both sources",
+      );
       expect(scopedTurnInput).not.toContain("scopeboundary project B private context");
       expect(yield* Ref.get(stopped)).toHaveLength(5);
 

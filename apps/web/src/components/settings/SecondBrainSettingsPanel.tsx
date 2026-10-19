@@ -248,6 +248,10 @@ function SecondBrainPanel({ environmentId }: { environmentId: EnvironmentId }) {
             </dd>
             <dt>Semantic search</dt>
             <dd>{status.data.semanticStatus}</dd>
+            <dt>Pending capture jobs</dt>
+            <dd>{status.data.captureJobs?.pending ?? 0}</dd>
+            <dt>Failed capture jobs</dt>
+            <dd>{status.data.captureJobs?.failed ?? 0}</dd>
             <dt>Generation</dt>
             <dd>{status.data.generation}</dd>
           </dl>
@@ -429,7 +433,7 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const review = async (action: "accept" | "reject") => {
-    if (!detail.data) return;
+    if (action === "accept" && !detail.data) return;
     setBusy(true);
     setError(null);
     try {
@@ -439,7 +443,7 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
               environmentId,
               input: {
                 id,
-                expectedHash: detail.data.currentHash,
+                expectedHash: detail.data!.currentHash,
                 ...(edit === null ? {} : { contentOverride: edit }),
               },
             })
@@ -453,7 +457,26 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
     }
   };
   if (!detail.data)
-    return <p role={detail.error ? "alert" : "status"}>{detail.error ?? "Loading proposal…"}</p>;
+    return (
+      <div>
+        <p role={detail.error ? "alert" : "status"}>{detail.error ?? "Loading proposal…"}</p>
+        <Input
+          aria-label="Rejection reason"
+          placeholder="Reason for rejection"
+          value={reason}
+          maxLength={4096}
+          onChange={(event) => setReason(event.target.value)}
+        />
+        <Button
+          variant="outline"
+          disabled={!canReject || busy || !reason.trim()}
+          onClick={() => void review("reject")}
+        >
+          Reject
+        </Button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    );
   const { proposal, conflict, truncated } = detail.data;
   const reviewable = proposal.state === "pending" || proposal.state === "conflict";
   return (
@@ -467,7 +490,10 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
         </p>
       )}
       {truncated && (
-        <p role="alert">This preview is incomplete. Acceptance and editing are disabled.</p>
+        <p role="alert">
+          This preview is incomplete. To accept, supply the full replacement file. You can also
+          reject this proposal.
+        </p>
       )}
       <pre
         className="max-h-96 overflow-auto rounded border p-3 text-xs whitespace-pre-wrap"
@@ -500,8 +526,10 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
         <>
           <Button
             variant="outline"
-            disabled={!canAccept || busy || conflict || truncated}
-            onClick={() => setEdit(edit === null ? detail.data!.proposedContent : null)}
+            disabled={!canAccept || busy || conflict}
+            onClick={() =>
+              setEdit(edit === null ? (truncated ? "" : detail.data!.proposedContent) : null)
+            }
           >
             {edit === null ? "Edit proposed file" : "Discard edit"}
           </Button>
@@ -522,7 +550,7 @@ function ProposalDetail({ environmentId, id }: { environmentId: EnvironmentId; i
           />
           <div className="flex gap-2">
             <Button
-              disabled={!canAccept || busy || conflict || truncated}
+              disabled={!canAccept || busy || conflict || (truncated && !edit?.trim())}
               onClick={() => void review("accept")}
             >
               Accept{edit === null ? "" : " edited file"}

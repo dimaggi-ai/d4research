@@ -1,5 +1,6 @@
 import { type OrchestrationV2DomainEvent } from "@d4research/contracts";
 import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,6 +19,7 @@ export class SecondBrainCaptureReactor extends Context.Service<
   {
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly notify: (event: OrchestrationV2DomainEvent) => Effect.Effect<void>;
+    readonly retry: () => Effect.Effect<void>;
     readonly drain: Effect.Effect<void>;
   }
 >()("d4research/second-brain/SecondBrainCaptureReactor") {}
@@ -43,7 +45,7 @@ const make = Effect.gen(function* () {
   );
   const queue = (job: Index.CaptureJob) =>
     Effect.gen(function* () {
-      if (job.state !== "pending" || queued.has(job.id)) return;
+      if (job.state === "completed" || (job.attempts ?? 0) >= 3 || queued.has(job.id)) return;
       queued.add(job.id);
       yield* worker.enqueue(job);
     });
@@ -88,12 +90,15 @@ const make = Effect.gen(function* () {
       yield* Effect.yieldNow;
     }
   });
-  const recover = Effect.gen(function* () {
-    const config = yield* settings.getSettings;
-    if (config.secondBrain.capture === "proposals" && config.secondBrain.path)
-      for (const job of yield* index.pendingCaptures()) yield* queue(job);
-    yield* replay;
-  });
+  let lastRetry: number | undefined;
+  const recover = (retryFailed = false) =>
+    Effect.gen(function* () {
+      const config = yield* settings.getSettings;
+      if (config.secondBrain.capture === "proposals" && config.secondBrain.path)
+        for (const job of yield* index.pendingCaptures())
+          if (job.state === "pending" || retryFailed) yield* queue(job);
+      yield* replay;
+    });
   const notify = (event: OrchestrationV2DomainEvent) =>
     event.type === "run.updated" && event.payload.status === "completed"
       ? replay.pipe(
@@ -101,17 +106,29 @@ const make = Effect.gen(function* () {
         )
       : Effect.void;
   return {
+    retry: () =>
+      Effect.gen(function* () {
+        const config = yield* settings.getSettings;
+        const now = yield* Clock.currentTimeMillis;
+        if (
+          lastRetry !== undefined &&
+          now - lastRetry < config.secondBrain.reconcileIntervalSeconds * 1000
+        )
+          return;
+        lastRetry = now;
+        yield* recover(true);
+      }).pipe(Effect.catchCause(() => Effect.logWarning("Second brain capture retry failed"))),
     notify,
     start: () =>
       Effect.gen(function* () {
         yield* forkParked(Stream.runForEach(engine.streamDomainEvents, notify));
         yield* forkParked(
-          recover.pipe(
+          recover().pipe(
             Effect.catchCause(() => Effect.logWarning("Second brain capture recovery failed")),
           ),
         );
       }),
-    drain: recover.pipe(
+    drain: recover().pipe(
       Effect.catchCause(() => Effect.logWarning("Second brain capture replay failed")),
       Effect.andThen(worker.drain),
     ),

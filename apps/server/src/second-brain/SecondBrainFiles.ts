@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous hashing and exclusive temporary names are required inside the filesystem transaction.
 import * as NodeCrypto from "node:crypto";
-import { SecondBrainError } from "@d4research/contracts";
+import { SecondBrainError, type BrainLintIssue } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -17,6 +17,7 @@ const isBrainError = Schema.is(SecondBrainError);
 
 export type FileSnapshot = { content: string; hash: string; size: number; mtime: number };
 export type VaultWalk = {
+  issues?: BrainLintIssue[];
   files: Array<{ path: string; size: number; mtime: number }>;
   truncated: boolean;
 };
@@ -158,6 +159,7 @@ const make = Effect.gen(function* () {
     walk: (root) =>
       attempt(() => {
         const files: VaultWalk["files"] = [];
+        const issues: BrainLintIssue[] = [];
         let entries = 0;
         let truncated = false;
         const walk = (directory: string, relative: string, depth: number) => {
@@ -186,14 +188,20 @@ const make = Effect.gen(function* () {
               if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
               const target = NodePath.join(pinned, entry.name);
               const name = relative ? `${relative}/${entry.name}` : entry.name;
-              const stat = NodeFS.lstatSync(target);
-              if (stat.isSymbolicLink()) throw new SecondBrainError({ code: "unsafe_path" });
-              if (stat.isDirectory()) {
-                if (depth >= 16) truncated = true;
-                else walk(target, name, depth + 1);
-              } else if (/\.md$/i.test(entry.name)) {
-                if (!stat.isFile()) throw new SecondBrainError({ code: "unsafe_path" });
-                files.push({ path: name, size: stat.size, mtime: stat.mtimeMs });
+              try {
+                const stat = NodeFS.lstatSync(target);
+                if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+                  issues.push({ path: name, code: "unsafe_path" });
+                  continue;
+                }
+                if (stat.isDirectory()) {
+                  if (depth >= 16) truncated = true;
+                  else walk(target, name, depth + 1);
+                } else if (/\.md$/i.test(entry.name)) {
+                  files.push({ path: name, size: stat.size, mtime: stat.mtimeMs });
+                }
+              } catch (error) {
+                issues.push({ path: name, code: normalizeError(error).code });
               }
               if (truncated && entries > 10000) break;
             }
@@ -203,7 +211,7 @@ const make = Effect.gen(function* () {
           }
         };
         walk(root, "", 0);
-        return { files: files.sort((a, b) => a.path.localeCompare(b.path)), truncated };
+        return { files: files.sort((a, b) => a.path.localeCompare(b.path)), truncated, issues };
       }),
     write: (root, file, content, expectedHash) =>
       attempt(() => {

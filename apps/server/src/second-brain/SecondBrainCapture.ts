@@ -19,7 +19,7 @@ const Candidate = Schema.Struct({
   kind: BrainNoteKind,
   content: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
   messageId: Schema.String,
-  quote: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)),
+  quote: Schema.String.check(Schema.isMinLength(12), Schema.isMaxLength(4096)),
 });
 const Output = Schema.Struct({ candidates: Schema.Array(Candidate).check(Schema.isMaxLength(12)) });
 const decodeOutput = Schema.decodeUnknownSync(Output);
@@ -42,7 +42,7 @@ const format = {
           kind: { type: "string", enum: ["note", "person", "project", "decision", "learning"] },
           content: { type: "string" },
           messageId: { type: "string" },
-          quote: { type: "string" },
+          quote: { type: "string", minLength: 12 },
         },
       },
     },
@@ -60,6 +60,18 @@ export class SecondBrainCapture extends Context.Service<
   }
 >()("d4research/second-brain/SecondBrainCapture") {}
 
+const tokens = (text: string) =>
+  text
+    .toLowerCase()
+    .match(/[\p{L}\p{N}]{3,}/gu)
+    ?.filter(
+      (t) => !["the", "and", "for", "with", "that", "this", "from", "are", "what"].includes(t),
+    ) ?? [];
+const similarContent = (existing: string, candidate: string) => {
+  const wanted = new Set(tokens(candidate));
+  const present = new Set(tokens(existing));
+  return wanted.size > 0 && [...wanted].filter((t) => present.has(t)).length / wanted.size >= 0.8;
+};
 const make = Effect.gen(function* () {
   const settings = yield* Settings.ServerSettingsService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -71,7 +83,12 @@ const make = Effect.gen(function* () {
       const status = yield* brain.status();
       if (!status.vault) return yield* new SecondBrainError({ code: "disabled" });
       const records = yield* projections.getThreadRecords(threadId, ["runs", "attempts"]);
-      const runs = records.runs.filter((r) => throughRun === undefined || r.ordinal <= throughRun);
+      const completed = yield* index.completedCaptureRun(status.vault, threadId);
+      const runs = records.runs
+        .filter(
+          (r) => r.ordinal > completed && (throughRun === undefined || r.ordinal <= throughRun),
+        )
+        .sort((a, b) => a.ordinal - b.ordinal);
       const runIds = new Set(runs.map((r) => r.id));
       const history = yield* projections.getTurnStartHistory(threadId, [...runIds]);
       const visible = createOrchestrationV2TurnItemVisibility({
@@ -91,8 +108,8 @@ const make = Effect.gen(function* () {
         if (budget <= 0 || messages.length >= 100) break;
       }
       const transcriptHash = contentHash(encodeJson(messages));
-      const runFrom = runs[0]?.ordinal ?? 0;
-      const runTo = runs.at(-1)?.ordinal ?? 0;
+      const runFrom = runs[0]?.ordinal ?? completed;
+      const runTo = runs.at(-1)?.ordinal ?? completed;
       const version = "capture-v1";
       return yield* index.enqueueCapture({
         id: contentHash(
@@ -113,12 +130,15 @@ const make = Effect.gen(function* () {
     lock.withPermits(1)(
       Effect.gen(function* () {
         const job = yield* index.enqueueCapture(input);
-        if (job.state !== "pending") return job.proposalIds;
+        if (job.state === "completed" || (job.attempts ?? 0) >= 3) return job.proposalIds;
+        const ids = [...job.proposalIds];
+        const attempt = { ...job, attempts: (job.attempts ?? 0) + 1, proposalIds: ids };
+        yield* index.saveCapture({ ...attempt, state: "pending" });
         const extract = Effect.gen(function* () {
           const config = yield* settings.getSettings;
           const status = yield* brain.status();
           if (status.vault !== job.vault) return yield* new SecondBrainError({ code: "disabled" });
-          if (!job.messages.length) return [];
+          if (!job.messages.length) return ids;
           const output = yield* Effect.tryPromise({
             try: async (signal) => {
               // @effect-diagnostics-next-line globalFetchInEffect:off -- Local extraction uses bounded response streaming and cancellation.
@@ -165,13 +185,13 @@ const make = Effect.gen(function* () {
           const candidates = output.candidates.filter(
             (c) =>
               !c.quote.includes("[REDACTED]") &&
+              tokens(c.quote).some((t) => tokens(c.content).includes(t)) &&
               job.messages.some((m) => m.messageId === c.messageId && m.text.includes(c.quote)),
           );
           yield* Effect.try({
             try: () => candidates.forEach((c) => assertNoSecrets(encodeJson(c))),
             catch: () => new SecondBrainError({ code: "secret_detected" }),
           });
-          const ids: string[] = [];
           for (const c of candidates) {
             const name = slug(c.title).slice(0, 120);
             if (!name) continue;
@@ -193,6 +213,15 @@ const make = Effect.gen(function* () {
               learning: "learnings",
             }[c.kind];
             const path = `${folder}/${name}.md`;
+            let duplicate = false;
+            for (let offset = 0; !duplicate; offset += 50) {
+              const pending = yield* brain.listProposals({ state: "pending", offset, limit: 50 });
+              duplicate = pending.some(
+                (p) => p.path === path && similarContent(p.content, c.content),
+              );
+              if (pending.length < 50) break;
+            }
+            if (duplicate) continue;
             const existing = yield* brain.read({ path }).pipe(
               Effect.catchTags({
                 SecondBrainError: (e) =>
@@ -213,16 +242,17 @@ const make = Effect.gen(function* () {
               },
               `capture:${job.id}`,
             );
-            ids.push(proposal.id);
+            if (!ids.includes(proposal.id)) ids.push(proposal.id);
+            yield* index.saveCapture({ ...attempt, state: "pending", proposalIds: [...ids] });
           }
           return ids;
         });
         const result = yield* extract.pipe(Effect.result);
         if (result._tag === "Failure") {
-          yield* index.saveCapture({ ...job, state: "failed" });
+          yield* index.saveCapture({ ...attempt, state: "failed", proposalIds: ids });
           return yield* new SecondBrainError({ code: "unavailable" });
         }
-        yield* index.saveCapture({ ...job, state: "completed", proposalIds: result.success });
+        yield* index.saveCapture({ ...attempt, state: "completed", proposalIds: result.success });
         return result.success;
       }),
     );

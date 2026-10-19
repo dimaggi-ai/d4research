@@ -15,6 +15,7 @@ import {
   BrainProposeInput,
   BrainProposal,
   BrainProposalQuery,
+  BrainProposalSummary,
   BrainEdit,
   BrainLintIssue,
   SecondBrainError,
@@ -124,9 +125,9 @@ export const BrainToolkit = Toolkit.make(
     Tool.make("brain_proposals", {
       ...common,
       description:
-        "Read a proposal by id or list pending proposals. Proposals are not approved facts.",
+        "List proposal summaries without bodies. Use offset and limit to paginate, or id to select one. Proposals are not approved facts.",
       parameters: BrainProposalQuery,
-      success: Schema.Array(BrainProposal),
+      success: Schema.Array(BrainProposalSummary),
     }),
   ),
   write(

@@ -38,7 +38,7 @@ export const BrainToolkitHandlersLive = McpToolAccess.toLayer(
         Effect.flatMap(actor, (id) => service.propose(input, id)),
       ),
       brain_proposals: McpToolAccess.reads((input) =>
-        Effect.flatMap(actor, (id) => service.listProposals(input, id)),
+        Effect.flatMap(actor, (id) => service.listProposalSummaries(input, id)),
       ),
       brain_write: McpToolAccess.writesWithCapability((input) =>
         Effect.flatMap(actor, (id) => service.write(input, id)),

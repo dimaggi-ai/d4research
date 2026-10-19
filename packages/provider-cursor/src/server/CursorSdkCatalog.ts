@@ -93,5 +93,3 @@ export function layerTest(
 ): Layer.Layer<CursorSdkCatalog> {
   return Layer.succeed(CursorSdkCatalog, CursorSdkCatalog.of({ read }));
 }
-
-export const CursorSdkCatalogLive = layer;

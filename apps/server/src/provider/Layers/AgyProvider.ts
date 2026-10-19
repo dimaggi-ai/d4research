@@ -44,7 +44,7 @@ const ANSI_ESCAPE_REGEX =
 // BSD `script` opens every session by printing a literal `^D` and immediately
 // erasing it. Dropping the backspaces as control characters would leave the
 // caret glued to the first real token, so replay the erasure instead.
-export function applyBackspaces(value: string): string {
+function applyBackspaces(value: string): string {
   if (!value.includes("\b")) return value;
   let result = "";
   for (const character of value) {
@@ -63,7 +63,7 @@ export const quotePosixShellArgument = (value: string) => `'${value.replaceAll("
 
 // Platforms where `script` can hand the models probe a pseudo-terminal.
 // Windows has no equivalent, so it keeps the plain pipe.
-export const isPtyProbePlatform = (platform: NodeJS.Platform) =>
+const isPtyProbePlatform = (platform: NodeJS.Platform) =>
   platform === "linux" || platform === "darwin";
 
 export function parseAgyModelsOutput(stdout: string): ReadonlyArray<{
@@ -165,32 +165,32 @@ const runAgy = (
     );
   });
 
-export const buildInitialAgyProviderSnapshot = Effect.fn("buildInitialAgyProviderSnapshot")(
-  function* (settings: AgySettings): Effect.fn.Return<ServerProviderDraft> {
-    const checkedAt = DateTime.formatIso(yield* DateTime.now);
-    return buildServerProvider({
-      presentation: PRESENTATION,
-      enabled: settings.enabled,
-      checkedAt,
-      models: fallbackModelsFor(settings),
-      probe: settings.enabled
-        ? {
-            installed: true,
-            version: null,
-            status: "warning",
-            auth: { status: "unknown" },
-            message: "Checking Agy CLI availability...",
-          }
-        : {
-            installed: false,
-            version: null,
-            status: "warning",
-            auth: { status: "unknown" },
-            message: "Agy is disabled in d4research settings.",
-          },
-    });
-  },
-);
+const buildInitialAgyProviderSnapshot = Effect.fn("buildInitialAgyProviderSnapshot")(function* (
+  settings: AgySettings,
+): Effect.fn.Return<ServerProviderDraft> {
+  const checkedAt = DateTime.formatIso(yield* DateTime.now);
+  return buildServerProvider({
+    presentation: PRESENTATION,
+    enabled: settings.enabled,
+    checkedAt,
+    models: fallbackModelsFor(settings),
+    probe: settings.enabled
+      ? {
+          installed: true,
+          version: null,
+          status: "warning",
+          auth: { status: "unknown" },
+          message: "Checking Agy CLI availability...",
+        }
+      : {
+          installed: false,
+          version: null,
+          status: "warning",
+          auth: { status: "unknown" },
+          message: "Agy is disabled in d4research settings.",
+        },
+  });
+});
 
 export const checkAgyProviderStatus = Effect.fn("checkAgyProviderStatus")(function* (
   settings: AgySettings,

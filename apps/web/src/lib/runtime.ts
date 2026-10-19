@@ -3,13 +3,13 @@ import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";
 
-import { remoteHttpClientLayer } from "@d4research/client-runtime/rpc";
+import { layerRemoteHttpClient } from "@d4research/client-runtime/rpc";
 import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClient";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 import * as ClientTracer from "../observability/clientTracer";
 import { cryptoLayer } from "../connection/crypto";
 
-const layerHttpClient = remoteHttpClientLayer((input, init) => globalThis.fetch(input, init));
+const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
 type RuntimeLayerSource =
   | typeof layerHttpClient
   | typeof ClientTracer.layer

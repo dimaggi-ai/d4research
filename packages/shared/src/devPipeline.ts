@@ -9,12 +9,12 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 
-export const DEV_TRIGGER_PREFIX = "!dev";
-export const DEFAULT_DEV_SCENARIO_NAME = "default";
-export const DEV_PROTOCOL_SENTINEL = "Dev pipeline protocol (non-negotiable):";
-export const DEV_PIPELINE_SENTINEL = "PIPELINE (verbatim):";
-export const PIPELINE_DIRECTIVE_MAX_COUNT = 64;
-export const DEV_PIPELINE_OPTION_EVENT_PREFIX = "options:dev-pipeline:";
+const DEV_TRIGGER_PREFIX = "!dev";
+const DEFAULT_DEV_SCENARIO_NAME = "default";
+const DEV_PROTOCOL_SENTINEL = "Dev pipeline protocol (non-negotiable):";
+const DEV_PIPELINE_SENTINEL = "PIPELINE (verbatim):";
+const PIPELINE_DIRECTIVE_MAX_COUNT = 64;
+const DEV_PIPELINE_OPTION_EVENT_PREFIX = "options:dev-pipeline:";
 
 const DEV_TRIGGER_REGEX = /^\s*!dev(?::([a-z0-9][a-z0-9-]*))?(?=\s|$)/i;
 const DIRECTIVE_REGEX = /!([A-Za-z0-9][A-Za-z0-9_-]*):([A-Za-z0-9][A-Za-z0-9._:/-]*)/g;

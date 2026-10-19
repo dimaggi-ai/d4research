@@ -29,5 +29,3 @@ export const layer = Layer.mergeAll(
   IdAllocator.layer,
   ProviderContinuationRequests.layer,
 );
-
-export const ProviderOrchestrationAdapterInfrastructureLive = layer;

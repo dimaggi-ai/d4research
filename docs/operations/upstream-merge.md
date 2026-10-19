@@ -43,8 +43,7 @@ map in `release-ops/merge-upstream.sh` before merging.
 telemetry}/`, `apps/server/src/cloud/` except the service-launcher files the
   fork keeps (`bootService`, `pinnedRuntime`, `selfUpdate`, `serviceLauncherClient`,
   `servicePreflight`, `serviceProtocol`, `traceRelayRequest`), `apps/web/src/cloud/`,
-  `apps/web/src/components/{clerk,cloud}/`, `apps/mobile/src/features/{cloud
-(except cloudDebugLog.ts),observability}/`, Clerk/vercel/web-preview workflow
+  `apps/web/src/components/{clerk,cloud}/`, `apps/mobile/src/features/{cloud,observability}/`, Clerk/vercel/web-preview workflow
   files. Reconsider only if upstream's change reveals functionality we
   actually depend on.
 - **Clusters the fork keeps** (they are live and wired; never `git rm` them

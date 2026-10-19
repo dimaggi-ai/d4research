@@ -359,8 +359,6 @@ export function shouldSubmitComposerOnEnter(input: {
   return !input.isMobileViewport && !input.shiftKey;
 }
 
-export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
-
 /**
  * Banner copy for a staged provider handoff. A draft that opens with
  * `!provider:model` will NOT pick the handoff up — the delegation is answered

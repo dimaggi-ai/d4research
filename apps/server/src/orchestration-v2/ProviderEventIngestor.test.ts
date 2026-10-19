@@ -109,7 +109,7 @@ const makeSharedWorktree = Effect.gen(function* () {
     "-m",
     "initial",
   ]);
-  yield* command(repo, ["worktree", "add", "-b", "d4research/abcd1234", worktreePath]);
+  yield* command(repo, ["worktree", "add", "-b", "t3/abcd1234", worktreePath]);
   return { repo, worktreePath, command };
 });
 const modelSelection = {
@@ -1782,7 +1782,7 @@ layer("ProviderEventIngestorV2", (it) => {
         if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
         const parent = {
           ...rootEvent.payload,
-          branch: "d4research/abcd1234",
+          branch: "t3/abcd1234",
           worktreePath,
         };
         yield* eventSink.write({ events: [{ ...rootEvent, payload: parent }] });
@@ -1908,7 +1908,7 @@ layer("ProviderEventIngestorV2", (it) => {
             ? "child-feature"
             : scenario === "legacy"
               ? "t3-abcd1234"
-              : "d4research/abcd1234";
+              : "t3/abcd1234";
         if (scenario === "explicit" || scenario === "legacy")
           yield* command(worktreePath, ["branch", "-m", branch]);
         if (scenario === "detached") yield* command(worktreePath, ["checkout", "--detach"]);
@@ -1976,7 +1976,7 @@ layer("ProviderEventIngestorV2", (it) => {
       const { repo, worktreePath: sharedPath, command } = yield* makeSharedWorktree;
       const isolatedPath = `${sharedPath}-isolated`;
       yield* command(sharedPath, ["branch", "-m", "generated-branch"]);
-      yield* command(repo, ["worktree", "add", "-b", "d4research/abcd1234", isolatedPath]);
+      yield* command(repo, ["worktree", "add", "-b", "t3/abcd1234", isolatedPath]);
       const actualPath =
         worktreePath === "/repo/shared" ? sharedPath : worktreePath === null ? null : isolatedPath;
       const now = yield* DateTime.now;
@@ -1993,7 +1993,7 @@ layer("ProviderEventIngestorV2", (it) => {
       const offered: OrchestrationV2AppThread = {
         ...rootEvent.payload,
         id: childThreadId,
-        branch: "d4research/abcd1234",
+        branch: "t3/abcd1234",
         worktreePath: actualPath,
         lineage: {
           parentThreadId: rootEvent.threadId,

@@ -17,15 +17,14 @@ import {
 } from "../ui/menu";
 
 /** Sentinel for the "no research" row; scenario names can never be empty. */
-export const RESEARCH_OFF_VALUE = "__research_off__";
+const RESEARCH_OFF_VALUE = "__research_off__";
 
 /**
  * The Build control is a picker: ordinary build, one of the dev pipelines, or
  * plan. Sentinels keep those two fixed rows from colliding with a pipeline a
  * user happens to name "build".
  */
-export const BUILD_MODE_VALUE = "__build__";
-export const PLAN_MODE_VALUE = "__plan__";
+const BUILD_MODE_VALUE = "__build__";
 
 export function compactInteractionModeSelection(input: {
   readonly currentMode: ProviderInteractionMode;

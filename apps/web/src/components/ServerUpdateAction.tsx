@@ -38,7 +38,7 @@ const UPDATE_STAGE_LABELS: Record<ServerUpdateStage, string> = {
 };
 const pendingUpdateEnvironmentIds = new Set<EnvironmentId>();
 
-export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
+function serverUpdateStageLabel(stage: ServerUpdateStage): string {
   return UPDATE_STAGE_LABELS[stage];
 }
 

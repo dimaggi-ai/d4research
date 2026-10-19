@@ -1554,17 +1554,3 @@ export const layerStaticAndDevRoute = Layer.unwrap(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),
 );
-
-export const httpCompressionLayer = layerHttpCompression;
-
-export const browserApiCorsLayer = layerBrowserApiCors;
-
-export const serverEnvironmentHttpApiLayer = layerServerEnvironmentHttpApi;
-
-export const otlpTracesProxyRouteLayer = layerOtlpTracesProxyRoute;
-
-export const assetRouteLayer = layerAssetRoute;
-
-export const attachmentUploadRouteLayer = layerAttachmentUploadRoute;
-
-export const staticAndDevRouteLayer = layerStaticAndDevRoute;

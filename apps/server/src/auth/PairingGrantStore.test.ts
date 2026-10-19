@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { AuthAdministrativeScopes, AuthStandardClientScopes } from "@d4research/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";

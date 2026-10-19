@@ -38,7 +38,7 @@ export const SkillsSearchOutput = Schema.Struct({
 });
 export type SkillsSearchOutput = typeof SkillsSearchOutput.Type;
 
-export const SkillsSearchTool = Tool.make("skills_search", {
+const SkillsSearchTool = Tool.make("skills_search", {
   description:
     "Search the local agent skills installed on this machine. Answers from a live scan, so results are never stale. Returns each skill's absolute SKILL.md path — read that file to get its instructions. This tool never runs a skill.",
   parameters: SkillsSearchInput,

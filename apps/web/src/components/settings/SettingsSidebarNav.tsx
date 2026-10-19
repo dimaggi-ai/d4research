@@ -83,6 +83,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/scheduled-tasks": CalendarClockIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/research": TelescopeIcon,
+  "/settings/second-brain": SparklesIcon,
   "/settings/dev-pipelines": BracesIcon,
   "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,

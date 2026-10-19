@@ -45,8 +45,6 @@ import type {
 
 import { formatDateTimeShort } from "@d4research/shared/usageFormat";
 
-import { primaryServerProvidersAtom } from "../../state/server";
-
 export interface ProviderLimitWindow {
   readonly key: string;
   readonly providerLabel: string;
@@ -88,17 +86,6 @@ export function formatLimitReset(resetsAt: string | null, planType: string | nul
       ? `Resets ${formatDateTimeShort(resetsAt)}`
       : "Reset time unavailable";
   return planType === null ? reset : `${planType} · ${reset}`;
-}
-
-/**
- * Account rate limits as the providers themselves report them, alongside the
- * spend the rest of the page derives from transcripts. Renders nothing when no
- * connected provider exposes a window.
- */
-export function UsageLimits() {
-  const providers = useAtomValue(primaryServerProvidersAtom);
-  const rows = selectProviderLimitWindows(providers);
-  return <UsageLimitsView rows={rows} />;
 }
 
 /** The presentation half, split out so it renders without the atom registry. */

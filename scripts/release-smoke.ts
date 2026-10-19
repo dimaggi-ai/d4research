@@ -225,7 +225,7 @@ try {
     "blacksmith-",
     "Release workflow must use runners available to the d4research fork.",
   );
-  for (const runner of ["ubuntu-24.04", "macos-14", "windows-2025"]) {
+  for (const runner of ["ubuntu-24.04", "macos-15", "macos-15-intel", "windows-2025"]) {
     assertContains(
       releaseWorkflow,
       `runner: ${runner}`,

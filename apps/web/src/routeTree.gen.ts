@@ -33,6 +33,7 @@ import { Route as SettingsProjectsRouteImport } from './routes/settings.projects
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsResearchRouteImport } from './routes/settings.research'
 import { Route as SettingsScheduledTasksRouteImport } from './routes/settings.scheduled-tasks'
+import { Route as SettingsSecondBrainRouteImport } from './routes/settings.second-brain'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
@@ -161,6 +162,11 @@ const SettingsScheduledTasksRoute = SettingsScheduledTasksRouteImport.update({
   path: '/scheduled-tasks',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSecondBrainRoute = SettingsSecondBrainRouteImport.update({
+  id: '/second-brain',
+  path: '/second-brain',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
@@ -222,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
   '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
+  '/settings/second-brain': typeof SettingsSecondBrainRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
   '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
+  '/settings/second-brain': typeof SettingsSecondBrainRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -287,6 +295,7 @@ export interface FileRoutesById {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/research': typeof SettingsResearchRoute
   '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
+  '/settings/second-brain': typeof SettingsSecondBrainRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -322,6 +331,7 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/research'
     | '/settings/scheduled-tasks'
+    | '/settings/second-brain'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -353,6 +363,7 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/research'
     | '/settings/scheduled-tasks'
+    | '/settings/second-brain'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -386,6 +397,7 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/research'
     | '/settings/scheduled-tasks'
+    | '/settings/second-brain'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -577,6 +589,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsScheduledTasksRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/second-brain': {
+      id: '/settings/second-brain'
+      path: '/second-brain'
+      fullPath: '/settings/second-brain'
+      preLoaderRoute: typeof SettingsSecondBrainRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/skills': {
       id: '/settings/skills'
       path: '/skills'
@@ -661,6 +680,7 @@ interface SettingsRouteChildren {
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsResearchRoute: typeof SettingsResearchRoute
   SettingsScheduledTasksRoute: typeof SettingsScheduledTasksRoute
+  SettingsSecondBrainRoute: typeof SettingsSecondBrainRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
@@ -682,6 +702,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsResearchRoute: SettingsResearchRoute,
   SettingsScheduledTasksRoute: SettingsScheduledTasksRoute,
+  SettingsSecondBrainRoute: SettingsSecondBrainRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSnapShotRoute: SettingsSnapShotRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,

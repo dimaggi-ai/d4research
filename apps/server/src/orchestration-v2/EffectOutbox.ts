@@ -713,5 +713,3 @@ export const layerPruneWorker = Layer.effectDiscard(
     );
   }),
 );
-
-export const pruneWorkerLive = layerPruneWorker;

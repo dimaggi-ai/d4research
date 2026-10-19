@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -86,9 +87,9 @@ const DELEGATE_START_TIMEOUT_MILLIS = 180_000;
  */
 const DELEGATE_WARMUP_TIMEOUT_MILLIS = 360_000;
 /** Cap what flows back into the orchestrator context per delegation. */
-export const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
+const DELEGATE_MAX_OUTPUT_CHARS = 24_000;
 /** Keep automatic shared memory smaller than one full composer attachment chunk set. */
-export const RESEARCH_SHARED_MEMO_MAX_CHARS = 24_000;
+const RESEARCH_SHARED_MEMO_MAX_CHARS = 24_000;
 /** Delegates advise only; write operations must remain provider-gated. */
 export const DELEGATE_RUNTIME_MODE: RuntimeMode = "approval-required";
 
@@ -497,7 +498,22 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
       }).pipe(Effect.orElseSucceed(() => null));
     }
 
+    const brain = yield* SecondBrainService.SecondBrainService;
+    const brainContext = yield* brain
+      .buildTurnContext({
+        userText: input.prompt,
+        includeCore: true,
+        ...(memoProject ? { projectTitle: memoProject } : {}),
+        ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
+      })
+      .pipe(
+        Effect.timeout("1500 millis"),
+        Effect.catchCause(() =>
+          Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
+        ),
+      );
     const turnInput = [
+      ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
       ...(sharedContext !== null
         ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
         : []),

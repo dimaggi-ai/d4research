@@ -697,9 +697,6 @@ export const AntigravityIcon: Icon = (props) => (
   </svg>
 );
 
-/** Product-facing provider name for the installed `agy` CLI. */
-export const AgyIcon = AntigravityIcon;
-
 export const JunieIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}

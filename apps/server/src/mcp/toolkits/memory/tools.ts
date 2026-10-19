@@ -111,7 +111,7 @@ const readonlyMemoryTool = <T extends Tool.Any>(tool: T): T =>
     .annotate(Tool.Destructive, false)
     .annotate(Tool.Idempotent, true) as T;
 
-export const MemorySearchTool = readonlyMemoryTool(
+const MemorySearchTool = readonlyMemoryTool(
   Tool.make("memory_search", {
     description:
       "Search local Memo semantic memory. This is an explicit read and never writes memory.",
@@ -122,7 +122,7 @@ export const MemorySearchTool = readonlyMemoryTool(
   }).annotate(Tool.Title, "Search memory"),
 );
 
-export const MemoryRememberTool = Tool.make("memory_remember", {
+const MemoryRememberTool = Tool.make("memory_remember", {
   description: "Explicitly store a self-contained memory in local Memo.",
   parameters: MemoryRememberInput,
   success: MemoryRememberOutput,
@@ -135,7 +135,7 @@ export const MemoryRememberTool = Tool.make("memory_remember", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false);
 
-export const MemoryStatusTool = readonlyMemoryTool(
+const MemoryStatusTool = readonlyMemoryTool(
   Tool.make("memory_status", {
     description: "Check reachability and current status for local Memo.",
     parameters: MemoryStatusInput,
@@ -145,7 +145,7 @@ export const MemoryStatusTool = readonlyMemoryTool(
   }).annotate(Tool.Title, "Memory status"),
 );
 
-export const MemoryAttachmentSearchTool = readonlyMemoryTool(
+const MemoryAttachmentSearchTool = readonlyMemoryTool(
   Tool.make("memory_attachment_search", {
     description:
       "Search relevant chunks inside one complete local Memo document. Use the exact document token and project from <memo_document>; results cannot cross into another attachment.",

@@ -51,7 +51,7 @@ export class PipelineToolError extends Schema.TaggedError<PipelineToolError>()(
   { detail: Schema.String },
 ) {}
 
-export const PipelineListTool = Tool.make("pipeline_list", {
+const PipelineListTool = Tool.make("pipeline_list", {
   description:
     "List the named development and research pipelines configured in this d4research environment. Use pipeline_get before editing one.",
   parameters: Schema.Struct({ kind: Schema.optional(PipelineKind) }),
@@ -65,7 +65,7 @@ export const PipelineListTool = Tool.make("pipeline_list", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
-export const PipelineGetTool = Tool.make("pipeline_get", {
+const PipelineGetTool = Tool.make("pipeline_get", {
   description:
     "Read one complete d4research pipeline, including its prompt and attached prompt files. Returns the exact trigger and edit guidance.",
   parameters: PipelineSelector,
@@ -79,7 +79,7 @@ export const PipelineGetTool = Tool.make("pipeline_get", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
-export const PipelineUpsertTool = Tool.make("pipeline_upsert", {
+const PipelineUpsertTool = Tool.make("pipeline_upsert", {
   description:
     "Create or replace one named d4research pipeline atomically. Read an existing pipeline first; omitting promptFiles preserves its attachments.",
   parameters: Schema.Struct({
@@ -100,7 +100,7 @@ export const PipelineUpsertTool = Tool.make("pipeline_upsert", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
-export const PipelineDeleteTool = Tool.make("pipeline_delete", {
+const PipelineDeleteTool = Tool.make("pipeline_delete", {
   description:
     "Delete one named d4research pipeline atomically. This cannot be undone; read it first and confirm the user requested deletion.",
   parameters: PipelineSelector,

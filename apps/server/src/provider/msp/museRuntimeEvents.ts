@@ -28,7 +28,7 @@ export function mapTurnError(error?: TurnError) {
     ? `${error.kind}: ${error.message}${error.retryable ? " (retryable)" : ""}`
     : "Muse turn failed.";
 }
-export function tokenUsageFromMsp(usage: TokenUsage): TurnTokenUsage {
+function tokenUsageFromMsp(usage: TokenUsage): TurnTokenUsage {
   return {
     usageScope: "main_agent",
     usageStatus: "complete",
@@ -39,7 +39,7 @@ export function tokenUsageFromMsp(usage: TokenUsage): TurnTokenUsage {
     hasSubagents: false,
   };
 }
-export function itemTypeForMsp(item: Item): ItemLifecyclePayload["itemType"] {
+function itemTypeForMsp(item: Item): ItemLifecyclePayload["itemType"] {
   switch (item.kind) {
     case "agentMessage":
       return "assistant_message";

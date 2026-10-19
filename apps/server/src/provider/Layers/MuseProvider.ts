@@ -3,13 +3,11 @@ import * as NodeOS from "node:os";
 import {
   MUSE_REASONING_EFFORTS,
   type MuseSettings,
-  type ServerProvider,
   type ServerProviderModel,
 } from "@d4research/contracts";
 import { createModelCapabilities } from "@d4research/shared/model";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
-import { DateTime, Effect, FileSystem, Option, Result } from "effect";
-import { HttpClient } from "effect/http";
+import { DateTime, Effect, FileSystem, Result } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import {
   buildServerProvider,
@@ -18,13 +16,9 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
 } from "@d4research/provider-core/server/snapshotProbe";
-import {
-  enrichProviderSnapshotWithVersionAdvisory,
-  type ProviderMaintenanceCapabilities,
-} from "@d4research/provider-core/server/maintenanceResolver";
 import { makeMuseMspRuntime } from "../msp/MspSessionRuntime.ts";
 
-export const MUSE_PRESENTATION = {
+const MUSE_PRESENTATION = {
   displayName: "Muse",
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
@@ -47,26 +41,26 @@ const modelsFromSettings = (
     { slug: "default", name: "Host default", isCustom: false, capabilities: CAPABILITIES },
   ],
 ) => providerModelsFromSettings(models, settings.customModels, CAPABILITIES);
-export const buildInitialMuseProviderSnapshot = Effect.fn("buildInitialMuseProviderSnapshot")(
-  function* (settings: MuseSettings) {
-    return buildServerProvider({
-      presentation: MUSE_PRESENTATION,
-      enabled: settings.enabled,
-      checkedAt: DateTime.formatIso(yield* DateTime.now),
-      models: modelsFromSettings(settings),
-      slashCommands: [],
-      probe: {
-        installed: settings.enabled,
-        version: null,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: settings.enabled
-          ? "Checking Muse CLI availability..."
-          : "Muse is disabled in T3 Code settings.",
-      },
-    });
-  },
-);
+const buildInitialMuseProviderSnapshot = Effect.fn("buildInitialMuseProviderSnapshot")(function* (
+  settings: MuseSettings,
+) {
+  return buildServerProvider({
+    presentation: MUSE_PRESENTATION,
+    enabled: settings.enabled,
+    checkedAt: DateTime.formatIso(yield* DateTime.now),
+    models: modelsFromSettings(settings),
+    slashCommands: [],
+    probe: {
+      installed: settings.enabled,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: settings.enabled
+        ? "Checking Muse CLI availability..."
+        : "Muse is disabled in T3 Code settings.",
+    },
+  });
+});
 export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(function* (
   settings: MuseSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -153,22 +147,4 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
         : {}),
     },
   });
-});
-export const enrichMuseSnapshot = Effect.fn("enrichMuseSnapshot")(function* (input: {
-  snapshot: ServerProvider;
-  maintenanceCapabilities: ProviderMaintenanceCapabilities;
-  enableProviderUpdateChecks?: boolean;
-  publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
-}) {
-  const http = yield* Effect.serviceOption(HttpClient.HttpClient);
-  if (Option.isNone(http)) return yield* input.publishSnapshot(input.snapshot);
-  const snapshot = yield* enrichProviderSnapshotWithVersionAdvisory(
-    input.snapshot,
-    input.maintenanceCapabilities,
-    { enableProviderUpdateChecks: input.enableProviderUpdateChecks },
-  ).pipe(
-    Effect.provideService(HttpClient.HttpClient, http.value),
-    Effect.orElseSucceed(() => input.snapshot),
-  );
-  yield* input.publishSnapshot(snapshot);
 });

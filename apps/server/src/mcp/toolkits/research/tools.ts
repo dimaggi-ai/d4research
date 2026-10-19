@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Path from "effect/Path";
@@ -40,6 +41,7 @@ export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateEr
 ) {}
 
 const dependencies = [
+  SecondBrainService.SecondBrainService,
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProviderAdapterRegistryV2,
@@ -119,7 +121,7 @@ export const ResearchDelegateOutput = Schema.Struct({
 });
 export type ResearchDelegateOutput = typeof ResearchDelegateOutput.Type;
 
-export const ResearchDelegateTool = Tool.make("research_delegate", {
+const ResearchDelegateTool = Tool.make("research_delegate", {
   description:
     "Send one bounded request to another provider/model named by the research or development pipeline and return its answer. Explicit fallbacks may be used only under the shared labeled-fallback policy. The result always identifies the requested and actual model.",
   parameters: ResearchDelegateInput,

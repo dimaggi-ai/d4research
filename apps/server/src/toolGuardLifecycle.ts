@@ -151,7 +151,7 @@ const writeJson = Effect.fn("writeToolGuardJson")(function* (filePath: string, v
   yield* fileSystem.writeFileString(filePath, `${JSON.stringify(value, null, 2)}\n`);
 });
 
-export const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
+const providerHookPaths = (home: string, path: Pick<Path.Path, "join">) => [
   path.join(home, ".claude", "settings.json"),
   path.join(home, ".codex", "hooks.json"),
   path.join(home, ".gemini", "config", "hooks.json"),

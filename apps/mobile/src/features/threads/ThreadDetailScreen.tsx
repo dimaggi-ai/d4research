@@ -158,6 +158,7 @@ import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 export interface ThreadDetailScreenProps {
+  readonly focusMessageId?: string | undefined;
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
   readonly canOperateThread: boolean;
@@ -1084,6 +1085,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               threadId={props.selectedThread.id}
               workspaceRoot={props.threadCwd}
               feed={props.selectedThreadFeed}
+              focusMessageId={props.focusMessageId}
               pendingHandoff={props.pendingHandoff}
               worktreeSetup={props.worktreeSetup}
               setupWorkingStartedAt={props.setupWorkingStartedAt}

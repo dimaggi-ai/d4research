@@ -13,8 +13,8 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "d4research (Dev)" : "d4research (Alpha)";
-export const APP_BUNDLE_ID = isDevelopment
+const APP_DISPLAY_NAME = isDevelopment ? "d4research (Dev)" : "d4research (Alpha)";
+const APP_BUNDLE_ID = isDevelopment
   ? `ai.dimaggi.d4research.dev.${devBundleIdSuffix || "local"}`
   : "ai.dimaggi.d4research";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];

@@ -509,7 +509,6 @@
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
     "effect": "catalog:",
-    "jose": "catalog:",
     "mdast-util-directive": "catalog:",
     "micromark-extension-directive": "catalog:",
     "micromark-util-character": "catalog:",

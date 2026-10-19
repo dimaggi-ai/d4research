@@ -137,6 +137,12 @@ function SettingsIndexSections() {
 
       <SettingsSection title="Server settings">
         <SettingsRow
+          icon="text.alignleft"
+          label="Second brain"
+          target="SettingsSecondBrain"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
           icon="person.crop.circle"
           label="Provider accounts"
           target="SettingsProviderAccounts"
@@ -170,7 +176,7 @@ function SettingsIndexSections() {
 
       <SettingsSection title="App">
         <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
-        <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+        <SettingsRow icon="info.circle" label="About d4research" target="SettingsAbout" />
       </SettingsSection>
     </>
   );

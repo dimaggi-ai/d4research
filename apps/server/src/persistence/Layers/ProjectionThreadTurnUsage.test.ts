@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { ProviderInstanceId, ThreadId, TurnId } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -6,10 +5,10 @@ import * as Layer from "effect/Layer";
 
 import { ProjectionThreadTurnUsageRepository } from "../Services/ProjectionThreadTurnUsage.ts";
 import { ProjectionThreadTurnUsageRepositoryLive } from "./ProjectionThreadTurnUsage.ts";
-import { SqlitePersistenceMemory } from "../Sqlite.ts";
+import { layerMemory } from "../Sqlite.ts";
 
 const layer = it.layer(
-  ProjectionThreadTurnUsageRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+  ProjectionThreadTurnUsageRepositoryLive.pipe(Layer.provideMerge(layerMemory)),
 );
 
 layer("ProjectionThreadTurnUsageRepository", (it) => {

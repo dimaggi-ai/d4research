@@ -6,8 +6,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 import type { PastedContextDraft } from "./lib/pastedContext";
 import { runtime } from "./lib/runtime";
 
-export const MEMO_ATTACHMENT_PERSIST_TIMEOUT_MS = 60_000;
-export const MEMO_ATTACHMENT_MANAGE_TIMEOUT_MS = 20_000;
+const MEMO_ATTACHMENT_PERSIST_TIMEOUT_MS = 60_000;
 export const MEMO_ATTACHMENT_SEND_RESERVE_CHARS = Math.floor(
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS * 0.1,
 );
@@ -78,7 +77,7 @@ function memoAttachmentPreview(content: string): string {
   ].join("\n");
 }
 
-export function buildMemoAttachmentReference(input: {
+function buildMemoAttachmentReference(input: {
   readonly name: string;
   readonly project: string;
   readonly content: string;
@@ -249,111 +248,4 @@ export function makeMemoAttachmentPersistence(
       clearTimeout(timer);
     }
   };
-}
-
-async function memoAttachmentManagementRequest(
-  preparedConnection: PreparedConnection,
-  method: "GET" | "POST",
-  path: string,
-  body?: unknown,
-): Promise<unknown> {
-  const endpoint = new URL(path, preparedConnection.httpBaseUrl).toString();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MEMO_ATTACHMENT_MANAGE_TIMEOUT_MS);
-  try {
-    const auth = await runtime.runPromise(
-      preparedEnvironmentFetchAuthorization(preparedConnection, method, endpoint),
-    );
-    const response = await fetch(endpoint, {
-      method,
-      cache: "no-store",
-      ...(auth.credentials ? { credentials: auth.credentials } : {}),
-      headers: {
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...auth.headers,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: controller.signal,
-    });
-    const result = (await response.json().catch(() => null)) as {
-      readonly message?: unknown;
-    } | null;
-    if (!response.ok) {
-      throw new Error(
-        typeof result?.message === "string" ? result.message : "Local Memo request failed.",
-      );
-    }
-    return result;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("The Local Memo request timed out.", { cause: error });
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function isStoredMemoAttachmentSummary(value: unknown): value is StoredMemoAttachmentSummary {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.documentToken === "string" &&
-    (typeof entry.name === "string" || entry.name === null) &&
-    (typeof entry.project === "string" || entry.project === null) &&
-    (typeof entry.characterCount === "number" || entry.characterCount === null) &&
-    (typeof entry.chunkCount === "number" || entry.chunkCount === null) &&
-    typeof entry.storedAt === "string" &&
-    typeof entry.incomplete === "boolean"
-  );
-}
-
-export async function listStoredMemoAttachments(
-  preparedConnection: PreparedConnection,
-): Promise<MemoAttachmentListResult> {
-  const result = (await memoAttachmentManagementRequest(
-    preparedConnection,
-    "GET",
-    "/api/memory/attachments",
-  )) as {
-    readonly ok?: unknown;
-    readonly backend?: unknown;
-    readonly supported?: unknown;
-    readonly attachments?: unknown;
-  } | null;
-  if (
-    result?.ok !== true ||
-    (result.backend !== "builtin" && result.backend !== "memo-rest") ||
-    typeof result.supported !== "boolean" ||
-    !Array.isArray(result.attachments) ||
-    !result.attachments.every(isStoredMemoAttachmentSummary)
-  ) {
-    throw new Error("Local Memo returned an invalid attachment list.");
-  }
-  return {
-    backend: result.backend,
-    supported: result.supported,
-    attachments: result.attachments,
-  };
-}
-
-export async function deleteStoredMemoAttachment(
-  preparedConnection: PreparedConnection,
-  documentToken: string,
-): Promise<number> {
-  const result = (await memoAttachmentManagementRequest(
-    preparedConnection,
-    "POST",
-    "/api/memory/attachment/delete",
-    { documentToken },
-  )) as { readonly ok?: unknown; readonly deleted?: unknown } | null;
-  if (
-    result?.ok !== true ||
-    typeof result.deleted !== "number" ||
-    !Number.isSafeInteger(result.deleted) ||
-    result.deleted < 0
-  ) {
-    throw new Error("Local Memo returned an invalid deletion result.");
-  }
-  return result.deleted;
 }

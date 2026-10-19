@@ -14,6 +14,7 @@ const EXPECTED_SETTINGS_SCREENS = [
   "/settings/scheduled-tasks",
   "/settings/source-control",
   "/settings/research",
+  "/settings/second-brain",
   "/settings/dev-pipelines",
   "/settings/storage",
   "/settings/connections",

@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -30,18 +31,6 @@ import type { ResearchDelegateError } from "./tools.ts";
  * `${step}→${target}` visit key.
  */
 export const INLINE_DELEGATION_STEP = "inline";
-
-/**
- * Turn ids an inline delegation runs under. The prefix is the only marker
- * distinguishing a delegate turn from a provider turn in projected state, and
- * restart reconciliation reads it to settle a delegation honestly instead of
- * reporting a provider session that never existed.
- */
-export const INLINE_DELEGATE_TURN_PREFIX = "inline-delegate:";
-
-export function isInlineDelegateTurnId(turnId: string | null | undefined): boolean {
-  return typeof turnId === "string" && turnId.startsWith(INLINE_DELEGATE_TURN_PREFIX);
-}
 
 export type InlineDelegationResult = Effect.Success<ReturnType<typeof runBoundedDelegation>>;
 
@@ -106,6 +95,7 @@ export class InlineDelegationRunner extends Context.Service<
     InlineDelegationRunner,
     Effect.gen(function* () {
       const context = yield* Effect.context<
+        | SecondBrainService.SecondBrainService
         | Crypto.Crypto
         | HttpClient.HttpClient
         | Path.Path

@@ -1,3 +1,4 @@
+import * as SecondBrain from "./second-brain/SecondBrainService.ts";
 import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -1205,6 +1206,7 @@ const layerWsRpc = (
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const secondBrain = yield* SecondBrain.SecondBrainService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -2300,6 +2302,16 @@ const layerWsRpc = (
         [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
+        [WS_METHODS.secondBrainStatus]: () => secondBrain.status(),
+        [WS_METHODS.secondBrainListProposals]: (input) => secondBrain.listProposalSummaries(input),
+        [WS_METHODS.secondBrainGetProposal]: ({ id }) => secondBrain.reviewProposal(id),
+        [WS_METHODS.secondBrainAcceptProposal]: (input) =>
+          secondBrain.acceptProposal(input.id, currentSessionId, input),
+        [WS_METHODS.secondBrainRejectProposal]: ({ id, reason }) =>
+          secondBrain.rejectProposal(id, currentSessionId, reason),
+        [WS_METHODS.secondBrainReindex]: () => secondBrain.reindex(),
+        [WS_METHODS.secondBrainLint]: () => secondBrain.lint(),
+        [WS_METHODS.secondBrainRegenerateIndex]: () => secondBrain.regenerateIndex(),
         [WS_METHODS.serverGetSettings]: (_input) =>
           serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>

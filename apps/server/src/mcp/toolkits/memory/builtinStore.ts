@@ -250,15 +250,13 @@ export function makeBuiltinMemoryConnector(dbPath: string): LocalMemoConnector {
                   ORDER BY grouped.created_at DESC`,
               )
               .all(prefix, prefixEnd)) as unknown as ReadonlyArray<MemorySourceGroupRow>;
-        return rows.map(
-          (row): MemorySourceGroup => ({
-            source: row.source,
-            project: row.project,
-            rowCount: Number(row.row_count),
-            createdAt: row.created_at,
-            latestText: row.latest_text,
-          }),
-        );
+        return rows.map((row): MemorySourceGroup => ({
+          source: row.source,
+          project: row.project,
+          rowCount: Number(row.row_count),
+          createdAt: row.created_at,
+          latestText: row.latest_text,
+        }));
       }),
   };
 }

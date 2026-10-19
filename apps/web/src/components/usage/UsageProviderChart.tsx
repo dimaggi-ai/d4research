@@ -172,26 +172,6 @@ export function niceScale(peak: number, count: number): { max: number; ticks: re
   return { max, ticks };
 }
 
-/**
- * Turns the merged daily totals into one column per day.
- *
- * Values are absolute, not cumulative: the series are layered from a shared
- * zero baseline rather than stacked. A stacked chart puts whichever provider is
- * drawn last permanently above the other, which reads as "that one is bigger"
- * even on days where it is not.
- *
- * The chart paths and the hover readout both consume this, so the number under
- * the cursor is by construction the number that was plotted rather than a
- * second derivation that can drift from it.
- */
-export function buildDayColumns(
-  days: readonly string[],
-  byDay: ReadonlyMap<string, DailyTotals>,
-  metric: UsageChartMetric,
-): readonly DayColumn[] {
-  return buildPeriodColumns(days, byDay, metric);
-}
-
 const PLACEHOLDER_TICKS = Array.from({ length: TICK_COUNT + 1 }, (_, index) => index);
 
 export function chartScale(
@@ -545,28 +525,6 @@ export function UsageProviderChart({
             : formatPeriod(periods[periods.length - 1] ?? "")}
         </span>
       </div>
-    </div>
-  );
-}
-
-export function UsageChartLegend() {
-  return (
-    <div className="flex items-center gap-4">
-      {PROVIDER_ORDER.map((provider) => {
-        // The marks carry the same fills as the bands, so they key the chart
-        // just as a colour swatch would.
-        const presentation = PROVIDER_PRESENTATION[provider];
-        return (
-          <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <ProviderInstanceIcon
-              driverKind={presentation.driverKind}
-              displayName={presentation.label}
-              iconClassName="size-3.5"
-            />
-            {PROVIDER_PRESENTATION[provider].label}
-          </span>
-        );
-      })}
     </div>
   );
 }

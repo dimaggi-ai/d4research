@@ -2,10 +2,10 @@ import { ThreadId } from "@d4research/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Sqlite.ts";
+import { layerMemory } from "../persistence/Sqlite.ts";
 import { getThreadTokenUsage } from "./ThreadTokenUsage.ts";
 
-it.layer(SqlitePersistenceMemory)("V2 token usage", (it) => {
+it.layer(layerMemory)("V2 token usage", (it) => {
   it.effect("reports main-agent usage and keeps legacy history without reading tool output", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

@@ -220,11 +220,8 @@ it.layer(NodeServices.layer)("AgyAdapter stress", (it) => {
         "let buf = Buffer.from(process.stdin.isTTY ? [] : []);",
         'process.stdin.on("data", () => {});',
         'process.stdin.on("end", () => {',
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds exact chunk bytes in mock source.
         `  process.stdout.write(${JSON.stringify(line.slice(0, midpoint))});`,
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds exact chunk bytes in mock source.
         `  setTimeout(() => { process.stdout.write(${JSON.stringify(line.slice(midpoint) + "\n")}); `,
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds exact protocol line in mock source.
         `    process.stdout.write(${JSON.stringify(resultLine("SUCCESS", "split-safe") + "\n")}); process.exit(0); }, 30);`,
         "});",
       ].join("\n");
@@ -249,7 +246,6 @@ it.layer(NodeServices.layer)("AgyAdapter stress", (it) => {
       const body = [
         'process.stdin.on("data", () => {});',
         'process.stdin.on("end", () => {',
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - embeds exact binary fixture in mock source.
         `  const b = Buffer.from(${JSON.stringify(buf.toString("base64"))}, "base64");`,
         `  process.stdout.write(b.subarray(0, ${splitAt}));`,
         `  setTimeout(() => { process.stdout.write(b.subarray(${splitAt})); process.exit(0); }, 30);`,
@@ -332,9 +328,7 @@ it.layer(NodeServices.layer)("AgyAdapter stress", (it) => {
         adapter.sendTurn({ threadId, input: "again", attachments: [] }),
       );
       const wedged =
-        Exit.isFailure(second) &&
-        // @effect-diagnostics-next-line preferSchemaOverJson:off - searches a diagnostic failure for the busy sentinel.
-        JSON.stringify(second).includes("already has a turn in progress");
+        Exit.isFailure(second) && JSON.stringify(second).includes("already has a turn in progress");
       assert.isFalse(wedged, "resultless turn must not wedge the session");
       void secondMock;
     }).pipe(Effect.scoped),
@@ -619,13 +613,9 @@ it.layer(NodeServices.layer)("AgyAdapter stress", (it) => {
       assert.notEqual(String(resA.turnId), String(resB.turnId), "turn ids across sessions differ");
       const threadA = yield* a.adapter.readThread(a.threadId);
       const threadB = yield* bAdapter.readThread(bThread);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(threadA), "AAA");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.notInclude(JSON.stringify(threadA), "BBB");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.include(JSON.stringify(threadB), "BBB");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - assertion-only transcript rendering.
       assert.notInclude(JSON.stringify(threadB), "AAA");
     }).pipe(Effect.scoped),
   );

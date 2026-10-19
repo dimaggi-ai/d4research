@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect";
 
 /** llama.cpp server behind `bonsai2.service`; the only local endpoint that returns logprobs. */
 export const DEFAULT_LOCAL_JUDGE_BASE_URL = "http://127.0.0.1:8094";
-export const DEFAULT_LOCAL_JUDGE_MODEL = "bonsai2-27b:latest";
+const DEFAULT_LOCAL_JUDGE_MODEL = "bonsai2-27b:latest";
 /** The bonsai2 server exposes three slots; more in flight only queues. */
 export const LOCAL_JUDGE_CONCURRENCY = 3;
 const LOCAL_JUDGE_TIMEOUT_MILLIS = 20_000;

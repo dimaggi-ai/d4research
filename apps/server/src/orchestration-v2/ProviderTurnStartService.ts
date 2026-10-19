@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../second-brain/SecondBrainService.ts";
 import { modelSelectionsEqual } from "@d4research/shared/model";
 import {
   deriveDevProviderCandidates,
@@ -44,7 +45,6 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -110,6 +110,7 @@ export class ProviderTurnStartServiceV2 extends Context.Service<
 export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   never,
+  | SecondBrainService.SecondBrainService
   | EventSink.EventSinkV2
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
@@ -137,8 +138,8 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const serverConfig = yield* ServerConfig.ServerConfig;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const brain = yield* SecondBrainService.SecondBrainService;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
@@ -1234,6 +1235,37 @@ export const layer: Layer.Layer<
                 !coveredItemIds.has(item.id) &&
                 historicalMessage(item) !== null,
             );
+      const nativeThreadHasTurns =
+        nativeInputRunIds.size > 0 ||
+        (legacyInputRunIds.size > 0 &&
+          sameNativeThread &&
+          !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
+      const brainContext =
+        !settings.secondBrain.path ||
+        !settings.secondBrain.injection.enabled ||
+        message.text.trimStart().startsWith("/")
+          ? null
+          : yield* Effect.gen(function* () {
+              const brainProject = yield* projects.getById(projection.thread.projectId).pipe(
+                Effect.map(Option.getOrUndefined),
+                Effect.orElseSucceed(() => undefined),
+              );
+              return yield* brain.buildTurnContext({
+                userText: message.text,
+                includeCore:
+                  !nativeThreadHasTurns || effectiveHandoffs.length > 0 || missedItems.length > 0,
+                providerThreadId: providerThread.id,
+                ...(brainProject
+                  ? { projectTitle: brainProject.title, workspacePath: brainProject.workspaceRoot }
+                  : {}),
+              });
+            }).pipe(
+              Effect.timeout("1500 millis"),
+              Effect.catchCause(() =>
+                Effect.logWarning("Second brain context unavailable").pipe(Effect.as(null)),
+              ),
+            );
+      const brainText = brainContext ? SecondBrainService.formatTurnContext(brainContext) : "";
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1340,7 +1372,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
+          const context = [delivery.context, restartNote, compact ? "" : brainText]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1365,6 +1397,13 @@ export const layer: Layer.Layer<
                 : Effect.void,
             ),
           );
+          if (!compact && brainContext)
+            yield* brain.markContextDelivered(brainContext).pipe(
+              Effect.timeout("100 millis"),
+              Effect.catchCause(() =>
+                Effect.logWarning("Second brain delivery receipt unavailable"),
+              ),
+            );
           // The provider already accepted the turn. A stale pending marker
           // can force a fresh thread later, but must not stop live ingestion.
           yield* delivery.delivered.pipe(
@@ -1392,6 +1431,7 @@ export const layer: Layer.Layer<
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
         restartNote === "" &&
+        brainText === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
@@ -1424,11 +1464,7 @@ export const layer: Layer.Layer<
               .filter((turn) => turn.providerThreadId === providerThread.id)
               .map((turn) => turn.ordinal),
           ) + 1,
-        nativeThreadHasTurns:
-          nativeInputRunIds.size > 0 ||
-          (legacyInputRunIds.size > 0 &&
-            sameNativeThread &&
-            !acceptedAttempts.some((source) => source.nativeThreadId !== undefined)),
+        nativeThreadHasTurns,
         shouldStartProviderTurn: runControls.shouldStartProviderTurn,
         shouldFinalizeRun: runControls.shouldFinalizeRun,
         hasUnpairedRunInterruptRequest: runControls.hasUnpairedRunInterruptRequest,

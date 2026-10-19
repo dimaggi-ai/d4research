@@ -461,6 +461,15 @@ export function buildReviewSectionItems(input: {
   return [...turnItems, ...visibleGitItems];
 }
 
+export function getRequestedReviewSectionId(
+  sections: ReadonlyArray<ReviewSectionItem>,
+  checkpointTurnCount: number | undefined,
+): string | null {
+  if (checkpointTurnCount === undefined) return null;
+  const id = getReviewSectionIdForCheckpoint({ checkpointTurnCount });
+  return sections.some((section) => section.kind === "turn" && section.id === id) ? id : null;
+}
+
 export function getDefaultReviewSectionId(
   sections: ReadonlyArray<ReviewSectionItem>,
 ): string | null {

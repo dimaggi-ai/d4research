@@ -286,43 +286,6 @@ export const issueActiveMcpCredential = (
     : Effect.undefined;
 
 /**
- * Issue a second credential while keeping the current thread credential
- * usable. Session replacement uses this during its commit window and revokes
- * the previous provider session only after the new binding is durable.
- */
-export const issueActiveMcpCredentialPreserving = (
-  request: McpCredentialRequest,
-): Effect.Effect<McpIssuedCredential | undefined> =>
-  activeMcpSessionRegistry
-    ? activeMcpSessionRegistry.issue(request)
-    : Effect.sync((): McpIssuedCredential | undefined => undefined);
-
-/**
- * Revoke one credential without disturbing another credential for the same
- * thread. ProviderService uses this to make session replacement reversible:
- * the old process keeps its token until the new routing binding is durable and
- * stale-session cleanup has succeeded.
- */
-export const revokeActiveMcpProviderSession = (providerSessionId: string): Effect.Effect<void> =>
-  activeMcpSessionRegistry
-    ? activeMcpSessionRegistry.revokeProviderSession(providerSessionId)
-    : Effect.void;
-
-/**
- * Revoke every credential for a thread except the credential currently used by
- * the committed provider session. This closes over credentials left by an
- * interrupted or failed replacement, including credentials no longer present
- * in the in-memory MCP routing slot.
- */
-export const revokeActiveMcpThreadExcept = (
-  threadId: ThreadId,
-  providerSessionId: string | undefined,
-): Effect.Effect<void> =>
-  activeMcpSessionRegistry
-    ? activeMcpSessionRegistry.revokeThreadExcept(threadId, providerSessionId)
-    : Effect.void;
-
-/**
  * Refreshes the liveness of a thread's MCP credential. Called on every provider
  * turn so an active session is never mistaken for an abandoned one.
  */

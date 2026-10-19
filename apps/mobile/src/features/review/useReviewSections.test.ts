@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   sessionAtom: {},
   effects: [] as Array<() => void>,
   checkpoints: [] as ReadonlyArray<ThreadCheckpointSummary>,
+  diffInputs: [] as unknown[],
 }));
 
 vi.mock("@d4research/client-runtime/state/thread-checkpoints", () => ({
@@ -50,7 +51,10 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("../../state/queries", () => ({
-  useCheckpointDiff: () => ({ data: null, error: null, isPending: false, refresh: vi.fn() }),
+  useCheckpointDiff: (input: unknown) => {
+    state.diffInputs.push(input);
+    return { data: null, error: null, isPending: false, refresh: vi.fn() };
+  },
 }));
 vi.mock("../../state/review", () => ({
   reviewEnvironment: { diffPreview: vi.fn() },
@@ -69,6 +73,7 @@ import { useReviewSections } from "./useReviewSections";
 beforeEach(() => {
   vi.clearAllMocks();
   state.effects = [];
+  state.diffInputs = [];
   state.session = { authenticated: true, scopes: [AuthFilesystemReadScope] };
   state.sessionError = null;
   state.checkpoints = [
@@ -120,7 +125,7 @@ function makeInput(reviewCache = makeReviewCache()) {
   };
 }
 
-function renderSections(input: ReturnType<typeof makeInput>) {
+function renderSections(input: Parameters<typeof useReviewSections>[0]) {
   const result = useReviewSections(input);
   const effects = state.effects.splice(0);
   effects.forEach((effect) => effect());
@@ -207,4 +212,43 @@ it("keeps a cached checkpoint available when the filesystem access check fails",
   const checkpoint = renderSections(makeInput());
   expect(checkpoint.selectedSection?.diff).toBe(checkpointDiff);
   expect(checkpoint.error).toBeNull();
+});
+
+it("opens the requested historical checkpoint instead of the cached git selection", () => {
+  state.checkpoints = [
+    state.checkpoints[0]!,
+    {
+      ...state.checkpoints[0]!,
+      runId: RunId.make("turn-2"),
+      checkpointTurnCount: 2,
+    },
+  ];
+  const input = makeInput();
+  const result = renderSections({ ...input, initialCheckpointTurnCount: 1 });
+  expect(result.selectedSection?.id).toBe("turn:1");
+  expect(state.diffInputs.at(-1)).toMatchObject({ fromTurnCount: 0, toTurnCount: 1 });
+  expect(setReviewSelectedSectionId).toHaveBeenCalledWith("environment:thread", "turn:1");
+});
+
+it("keeps the cached selection when the requested checkpoint is unavailable", () => {
+  const result = renderSections({ ...makeInput(), initialCheckpointTurnCount: 99 });
+  expect(result.selectedSection?.id).toBe("git:working-tree");
+  expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
+});
+
+it("selects a requested checkpoint when delayed thread data arrives", () => {
+  const checkpoints = state.checkpoints;
+  state.checkpoints = [];
+  const input = { ...makeInput(), initialCheckpointTurnCount: 1 };
+  expect(renderSections(input).selectedSection?.id).toBe("git:working-tree");
+  state.checkpoints = checkpoints;
+  expect(renderSections(input).selectedSection?.id).toBe("turn:1");
+});
+
+it("allows a later manual selection after the initial route scope is consumed", () => {
+  const input = makeInput();
+  expect(renderSections({ ...input, initialCheckpointTurnCount: 1 }).selectedSection?.id).toBe(
+    "turn:1",
+  );
+  expect(renderSections(input).selectedSection?.id).toBe("git:working-tree");
 });

@@ -21,7 +21,7 @@ export const OLLAMA_CLAUDE_CLOUD_MODELS = [
   "gpt-oss:20b-cloud",
 ] as const;
 
-export const OLLAMA_ANTHROPIC_BASE_URL = "http://127.0.0.1:11434";
+const OLLAMA_ANTHROPIC_BASE_URL = "http://127.0.0.1:11434";
 
 /**
  * The variables `ollama launch claude` exports (verified against ollama
@@ -203,11 +203,6 @@ export async function discoverOllamaModels(
   return { models: [], reachable: false };
 }
 
-/** Back-compat shim for callers that only need the slug list. */
-export async function fetchLocalOllamaModelIds(): Promise<ReadonlyArray<string>> {
-  return (await discoverOllamaModels()).models;
-}
-
 /**
  * Every variable the preset writes. Reverting removes these outright rather
  * than blanking them: an empty `ANTHROPIC_API_KEY` still shadows the key the
@@ -255,7 +250,7 @@ function readPresetBackup(config: Record<string, unknown>): OllamaPresetBackup |
  * a `:cloud`/`-cloud` suffix, neither of which a hand-entered Anthropic model
  * slug ever does.
  */
-export function isOllamaPresetModel(model: string): boolean {
+function isOllamaPresetModel(model: string): boolean {
   const id = model.trim();
   return (
     (OLLAMA_CLAUDE_CLOUD_MODELS as ReadonlyArray<string>).includes(id) ||

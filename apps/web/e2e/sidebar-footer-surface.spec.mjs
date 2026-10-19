@@ -1,5 +1,5 @@
-import * as assert from "node:assert/strict";
-import * as path from "node:path";
+import * as NodeAssert from "node:assert/strict";
+import * as NodePath from "node:path";
 
 export async function sidebarFooterSurface({ page, webUrl, screenshotDir }) {
   const cdp = await page.context().newCDPSession(page);
@@ -46,33 +46,36 @@ export async function sidebarFooterSurface({ page, webUrl, screenshotDir }) {
           probe.remove();
           return result;
         });
-        assert.ok(Math.abs(metrics.width - metrics.parentWidth) <= 2, "Footer fills sidebar width");
-        assert.ok(
+        NodeAssert.ok(
+          Math.abs(metrics.width - metrics.parentWidth) <= 2,
+          "Footer fills sidebar width",
+        );
+        NodeAssert.ok(
           Math.abs(metrics.bottom - metrics.viewportHeight) <= 1,
           "Footer surface reaches the viewport bottom without a safe-area gap",
         );
-        assert.ok(
+        NodeAssert.ok(
           metrics.bottomPadding >= 20,
           "Footer controls stay above the home-indicator safe area",
         );
-        assert.equal(
+        NodeAssert.equal(
           metrics.background,
           metrics.expectedBackground,
           "Footer uses the shared raised surface",
         );
-        assert.notEqual(metrics.background, "rgba(0, 0, 0, 0)");
-        assert.equal(metrics.border, "1px", "Footer has a subtle top separator");
-        assert.ok(metrics.buttons.length >= 3);
+        NodeAssert.notEqual(metrics.background, "rgba(0, 0, 0, 0)");
+        NodeAssert.equal(metrics.border, "1px", "Footer has a subtle top separator");
+        NodeAssert.ok(metrics.buttons.length >= 3);
         for (const button of metrics.buttons) {
-          assert.equal(button.width, metrics.width - 16, "Footer actions fill the padded row");
-          assert.equal(
+          NodeAssert.equal(button.width, metrics.width - 16, "Footer actions fill the padded row");
+          NodeAssert.equal(
             button.color,
             metrics.expectedText,
             "Footer actions retain full text contrast",
           );
         }
         await page.screenshot({
-          path: path.join(screenshotDir, `footer-surface-${theme}-${width}.png`),
+          path: NodePath.join(screenshotDir, `footer-surface-${theme}-${width}.png`),
         });
         await footer.getByRole("button", { name: "Settings", exact: true }).click();
         await page.waitForURL((url) => url.pathname === "/settings/general");

@@ -84,7 +84,7 @@ describe("Muse events", () => {
       payload: { state: "compacted", beforeTokens: 100, afterTokens: 20 },
     });
   });
-  for (const [kind, tool, expected] of [
+  it.each([
     ["agentMessage", undefined, "assistant_message"],
     ["reasoning", undefined, "reasoning"],
     ["toolCall", "shell", "command_execution"],
@@ -92,15 +92,13 @@ describe("Muse events", () => {
     ["toolCall", "web_search", "web_search"],
     ["toolCall", "custom", "dynamic_tool_call"],
     ["userShell", undefined, "command_execution"],
-  ]) {
-    it(`maps ${kind}/${tool} lifecycle`, () => {
-      expect(
-        map("item/started", {
-          item: { itemId: "i", kind, status: "inProgress", revision: 1, ...(tool ? { tool } : {}) },
-        })[0]?.payload,
-      ).toMatchObject({ itemType: expected, status: "inProgress" });
-    });
-  }
+  ])("maps %s/%s lifecycle", (kind, tool, expected) => {
+    expect(
+      map("item/started", {
+        item: { itemId: "i", kind, status: "inProgress", revision: 1, ...(tool ? { tool } : {}) },
+      })[0]?.payload,
+    ).toMatchObject({ itemType: expected, status: "inProgress" });
+  });
   it("routes deltas by item kind and field", () => {
     ctx.items.set("i", { itemId: "i", kind: "reasoning", status: "inProgress", revision: 1 });
     expect(

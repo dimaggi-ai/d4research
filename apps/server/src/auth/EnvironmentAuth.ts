@@ -1375,5 +1375,3 @@ export const layerRuntime = layer.pipe(
   Layer.provideMerge(layerStorage),
   Layer.provideMerge(ServerEnvironment.layerIdentity),
 );
-
-export const runtimeLayer = layerRuntime;

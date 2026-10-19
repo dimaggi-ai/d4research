@@ -36,7 +36,7 @@ export const RESEARCH_RETAINED_RUN_LIMIT = 1_024;
  * for four times that deadline is safe to classify as abandoned. A full map
  * with no such entry rejects new runs; it never resets a possibly active run.
  */
-export const RESEARCH_RUN_IDLE_RETENTION_MILLIS = 2 * 60 * 60 * 1_000;
+const RESEARCH_RUN_IDLE_RETENTION_MILLIS = 2 * 60 * 60 * 1_000;
 
 export class ResearchDelegationBudget extends Context.Service<
   ResearchDelegationBudget,

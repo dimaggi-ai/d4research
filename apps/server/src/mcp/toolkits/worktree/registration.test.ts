@@ -1,3 +1,5 @@
+import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import { ResearchDelegationBudgetLive } from "../research/budget.ts";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
@@ -39,6 +41,8 @@ import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
 
 const layerStubServices = Layer.mergeAll(
+  Layer.mock(SecondBrainService.SecondBrainService)({}),
+  Layer.mock(Capture.SecondBrainCapture)({}),
   McpProviderSessions.layer,
   ResearchDelegationBudgetLive,
   Layer.mock(ProjectStore.ProjectStoreV2)({}),

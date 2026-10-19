@@ -1,3 +1,11 @@
+import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
+import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
+import * as Scheduler from "./scheduling/Scheduler.ts";
+import * as SecondBrainService from "./second-brain/SecondBrainService.ts";
+import * as SecondBrainFiles from "./second-brain/SecondBrainFiles.ts";
+import * as SecondBrainIndex from "./second-brain/SecondBrainIndex.ts";
+import * as SecondBrainEmbeddings from "./second-brain/SecondBrainEmbeddings.ts";
+import * as SecondBrainMaintenance from "./second-brain/SecondBrainMaintenance.ts";
 import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -12,10 +20,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import * as Schedule from "effect/Schedule";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
@@ -44,7 +50,6 @@ import {
   layerStaticAndDevRoute as staticAndDevRouteLayer,
   layerBrowserApiCors as browserApiCorsLayer,
   layerHttpCompression as httpCompressionLayer,
-  layerUntracedRequests as untracedRequestsLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { PortableSkillsInventoryLive, reconcileUserSkills } from "./skillsInventory.ts";
@@ -85,7 +90,6 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
-import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -96,7 +100,6 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import { ResearchDelegationBudgetLive } from "./mcp/toolkits/research/budget.ts";
 import { ResearchIntegrityReactorLive } from "./orchestration-v2/Layers/ResearchIntegrityReactor.ts";
 import { ResearchIntegrityReactor } from "./orchestration-v2/Services/ResearchIntegrityReactor.ts";
-import { ProviderRegistryLive } from "./provider/ProviderRegistry.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -170,7 +173,6 @@ import * as EventStoreV2 from "./orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as IdAllocatorV2 from "@d4research/provider-core/server/IdAllocator";
-import { OrchestrationV2EventSinkLayerLive } from "./orchestration-v2/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -226,6 +228,13 @@ const layerPtyAdapter = NodePtyAdapter.layer;
 const layerServerSettings = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
+);
+
+const layerSecondBrain = SecondBrainService.layer.pipe(
+  Layer.provide(SecondBrainFiles.layer),
+  Layer.provideMerge(SecondBrainIndex.layer),
+  Layer.provide(SecondBrainEmbeddings.layer),
+  Layer.provide(layerServerSettings),
 );
 
 const layerNativeTelemetry = NativeTelemetryClient.layer.pipe(
@@ -456,6 +465,7 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerSecondBrain),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(ResourceCleanupService.layer),
@@ -514,14 +524,19 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  Layer.merge(
+    Layer.effectDiscard(
+      SecondBrainCaptureReactor.SecondBrainCaptureReactor.use((reactor) => reactor.start()),
+    ),
+    SecondBrainMaintenance.layer.pipe(Layer.provide(Scheduler.layer)),
+  ).pipe(
+    Layer.provide(SecondBrainCaptureReactor.layer),
+    Layer.provide(EventStoreV2.layerFromOrchestrationEventStore),
+  ),
   Layer.effectDiscard(ResearchIntegrityReactor.use((reactor) => reactor.start())).pipe(
     Layer.provide(ResearchIntegrityReactorLive),
     Layer.provide(
-      Layer.mergeAll(
-        ProjectionStoreV2.layer,
-        IdAllocatorV2.layer,
-        OrchestrationV2EventSinkLayerLive,
-      ),
+      Layer.mergeAll(ProjectionStoreV2.layer, IdAllocatorV2.layer, RuntimeLayer.layerEventSink),
     ),
   ),
   layerThreadSettlementWorker,
@@ -564,6 +579,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
+  Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
+  Layer.provideMerge(layerSecondBrain),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerProjectService),
   // HTTP/MCP handlers resolve adapters when a request arrives, not only while
@@ -584,7 +601,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
   ),
-  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistryLive)),
+  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistry.layer)),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;

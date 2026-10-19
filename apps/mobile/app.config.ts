@@ -250,7 +250,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID ?? "CR2PTQ345T",
+    appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID || "CR2PTQ345T",
     infoPlist: {
       UISupportedInterfaceOrientations: [
         "UIInterfaceOrientationPortrait",

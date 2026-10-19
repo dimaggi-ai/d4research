@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import { describe, expect, it } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -65,7 +66,7 @@ type ProjectionThreadCheckpointContext = {
 };
 import { ProviderAdapterRegistryV2 as ProviderAdapterRegistry } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { makeLegacyAdapterV2 } from "../../../provider/Layers/LegacyAdapterV2.ts";
-import { makeProviderRegistryLayer } from "../../../provider/testUtils/providerRegistryMock.ts";
+import * as ProviderRegistryMock from "../../../provider/testUtils/providerRegistryMock.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { makeConfiguredMemoryConnector } from "../memory/localConnector.ts";
 
@@ -474,6 +475,16 @@ describe("research delegate handler", () => {
         Option.Option<ProjectionThreadCheckpointContext>
       >(Option.some(orchestratorContext));
       const projectionLayer = Layer.mergeAll(
+        Layer.mock(SecondBrainService.SecondBrainService)({
+          buildTurnContext: ({ userText, projectTitle }) =>
+            Effect.succeed({
+              policy: userText === "scopeboundary" && projectTitle ? "Reference policy" : "",
+              core: "scopeboundary project A context is preserved verbatim in both sources",
+              retrieved: "",
+              citations: [],
+            }),
+          markContextDelivered: () => Effect.void,
+        }),
         Layer.mock(ProjectionStoreV2)({
           getThread: () =>
             Ref.get(orchestratorContextRef).pipe(
@@ -551,9 +562,19 @@ describe("research delegate handler", () => {
         Layer.provide(NodeServices.layer),
       );
       const layer = Layer.mergeAll(
+        Layer.mock(SecondBrainService.SecondBrainService)({
+          buildTurnContext: ({ userText, projectTitle }) =>
+            Effect.succeed({
+              policy: userText === "scopeboundary" && projectTitle ? "Reference policy" : "",
+              core: "scopeboundary project A context is preserved verbatim in both sources",
+              retrieved: "",
+              citations: [],
+            }),
+          markContextDelivered: () => Effect.void,
+        }),
         settingsLayer,
         registryLayer,
-        makeProviderRegistryLayer([providerSnapshot]),
+        ProviderRegistryMock.layer([providerSnapshot]),
         projectionLayer,
         ResearchDelegationBudgetLive,
         NodeServices.layer,
@@ -708,7 +729,11 @@ describe("research delegate handler", () => {
         research: { ...settings.research, shareMemoContext: true },
       });
       const memory = yield* makeConfiguredMemoryConnector().pipe(Effect.provide(layer));
-      yield* memory.add("scopeboundary project A context", "test", "Project A");
+      yield* memory.add(
+        "scopeboundary project A context is preserved verbatim in both sources",
+        "test",
+        "Project A",
+      );
       yield* memory.add("scopeboundary project B private context", "test", "Project B");
       const scopedMemoryResult = yield* makeResearchDelegateHandler({ pollDelay: Effect.void })({
         target: "codex:gpt-5.6-sol",
@@ -723,7 +748,9 @@ describe("research delegate handler", () => {
       );
       expect(scopedMemoryResult.text).toBe("review verdict: PASS");
       const scopedTurnInput = (yield* Ref.get(sent)).at(-1) ?? "";
-      expect(scopedTurnInput).toContain("scopeboundary project A context");
+      expect(scopedTurnInput.split("--- SHARED CONTEXT (local memory, verbatim) ---")[1]).toContain(
+        "scopeboundary project A context is preserved verbatim in both sources",
+      );
       expect(scopedTurnInput).not.toContain("scopeboundary project B private context");
       expect(yield* Ref.get(stopped)).toHaveLength(5);
 
@@ -880,6 +907,11 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
     respondToUserInput: () => Effect.void,
   } as never;
   const layer = Layer.mergeAll(
+    Layer.mock(SecondBrainService.SecondBrainService)({
+      buildTurnContext: () =>
+        Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+      markContextDelivered: () => Effect.void,
+    }),
     Layer.succeed(
       ServerSettingsService,
       ServerSettingsService.of({
@@ -904,7 +936,7 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
         list: () => Effect.succeed([instanceId]),
       }),
     ),
-    makeProviderRegistryLayer([providerSnapshot]),
+    ProviderRegistryMock.layer([providerSnapshot]),
     Layer.mock(ProjectionStoreV2)({
       getThread: () =>
         Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId: ThreadId.make("missing") })),

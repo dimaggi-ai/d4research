@@ -23,7 +23,7 @@ import { decodeMspNotification } from "../provider/msp/MspProtocol.ts";
 import { mapTurnError } from "../provider/msp/museRuntimeEvents.ts";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
-export const MUSE_TIMEOUT_MS = 180_000;
+const MUSE_TIMEOUT_MS = 180_000;
 export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(function* (
   settings: MuseSettings,
   environment: NodeJS.ProcessEnv = process.env,

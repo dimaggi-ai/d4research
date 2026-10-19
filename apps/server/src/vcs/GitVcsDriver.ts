@@ -1301,5 +1301,3 @@ export const make = Effect.gen(function* () {
 
 export const layerVcs = Layer.effect(VcsDriver.VcsDriver, makeVcsDriver);
 export const layer = Layer.effect(GitVcsDriver, make);
-
-export const vcsLayer = layerVcs;

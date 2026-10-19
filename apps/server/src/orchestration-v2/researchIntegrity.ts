@@ -41,10 +41,7 @@ function hasResearchRunManifest(projection: ResearchIntegrityProjection, runId: 
  * expanded protocol sentinel or its compact `!research` / `!dev` trigger, or
  * if turn-start persisted the explicit research manifest system notice.
  */
-export function isPipelineOrchestratorRun(
-  projection: ResearchIntegrityProjection,
-  runId: RunId,
-): boolean {
+function isPipelineOrchestratorRun(projection: ResearchIntegrityProjection, runId: RunId): boolean {
   if (hasResearchRunManifest(projection, runId)) return true;
   return projection.turnItems.some((item) => {
     if (!belongsToRun(item, runId) || item.type !== "user_message") return false;
@@ -81,10 +78,7 @@ export function hasAdvancedPastBrief(
 const PIPELINE_COMPLETION_CLAIM_RE =
   /(?:^|\n)\s*RUN STATE\b|\b(?:research|dev) pipeline (?:is )?complete\b|\bfinal synthesis\b/gim;
 
-export function claimsPipelineCompletion(
-  projection: ResearchIntegrityProjection,
-  runId: RunId,
-): boolean {
+function claimsPipelineCompletion(projection: ResearchIntegrityProjection, runId: RunId): boolean {
   return projection.turnItems.some((item) => {
     if (!belongsToRun(item, runId) || item.type !== "assistant_message") return false;
     PIPELINE_COMPLETION_CLAIM_RE.lastIndex = 0;
@@ -112,7 +106,7 @@ export function countResearchDelegations(
   ).length;
 }
 
-export function alreadyWarned(projection: ResearchIntegrityProjection, runId: RunId): boolean {
+function alreadyWarned(projection: ResearchIntegrityProjection, runId: RunId): boolean {
   return projection.turnItems.some(
     (item) =>
       belongsToRun(item, runId) &&

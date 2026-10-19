@@ -77,7 +77,7 @@ export function CompactBrandTitle(
           letterSpacing: -0.5 * scale,
         }}
       >
-        Code
+        research
       </Text>
       {showStage ? (
         <View

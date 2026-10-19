@@ -1,21 +1,21 @@
-import * as assert from "node:assert/strict";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as sqlite from "node:sqlite";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import { createPairingUrl } from "./harness.mjs";
 
 export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) {
   // The preceding queue case creates this persisted thread without invoking a provider.
-  const db = new sqlite.DatabaseSync(path.join(app.baseDir, "userdata/statev2.sqlite"), {
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(app.baseDir, "userdata/statev2.sqlite"), {
     readOnly: true,
   });
   const thread = db
     .prepare("SELECT thread_id FROM orchestration_v2_projection_threads WHERE title = ? LIMIT 1")
     .get("Mobile queue fixture");
   db.close();
-  assert.ok(thread, "The queue fixture must have created a persisted thread");
+  NodeAssert.ok(thread, "The queue fixture must have created a persisted thread");
   const environmentId = (
-    await fs.readFile(path.join(app.baseDir, "userdata/environment-id"), "utf8")
+    await NodeFSP.readFile(NodePath.join(app.baseDir, "userdata/environment-id"), "utf8")
   ).trim();
   await context.addInitScript(
     ({ threadId }) => {
@@ -213,16 +213,18 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.getByText("Finished the source update.", { exact: true }).waitFor();
-    assert.equal(
+    NodeAssert.equal(
       await page.getByRole("button", { name: "Remove audio artifact", exact: true }).count(),
       0,
     );
-    assert.equal(
+    NodeAssert.equal(
       await page.getByRole("button", { name: /Toggle right panel, .*agents working/ }).count(),
       0,
     );
-    assert.equal(await page.getByText(/agents working in the background/).count(), 0);
-    await page.screenshot({ path: path.join(screenshotDir, `idle-agents-no-audio-${width}.png`) });
+    NodeAssert.equal(await page.getByText(/agents working in the background/).count(), 0);
+    await page.screenshot({
+      path: NodePath.join(screenshotDir, `idle-agents-no-audio-${width}.png`),
+    });
   }
   // Positive control: V2 pending-background work must stay visible in the composer.
   await page.evaluate(() => sessionStorage.setItem("fixture-live-agents", "true"));
@@ -231,5 +233,5 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
   await page.evaluate(() => sessionStorage.setItem("fixture-delivered-audio", "true"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Remove audio artifact", exact: true }).waitFor();
-  await page.screenshot({ path: path.join(screenshotDir, "live-agents-delivered-audio.png") });
+  await page.screenshot({ path: NodePath.join(screenshotDir, "live-agents-delivered-audio.png") });
 }

@@ -12,7 +12,7 @@ import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
 
-export const RIGHT_PANEL_KINDS = [
+const RIGHT_PANEL_KINDS = [
   "plan",
   "diff",
   "files",
@@ -292,23 +292,6 @@ export function pullRequestSurface(target: {
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
   };
-}
-
-/**
- * A pull-request tab's status map with one entry set. Keyed by the surface the panel is showing
- * rather than by a key rebuilt from the status, so the tab is found again whether or not that
- * surface was opened with an environment on it. Returns the same map when the tab's own fields
- * have not changed, so a caller can skip a re-render.
- */
-export function updatePullRequestTabStatus<Status extends { state: unknown; isDraft: boolean }>(
-  statuses: Readonly<Record<string, Status>>,
-  surfaceId: string,
-  status: Status,
-): Readonly<Record<string, Status>> {
-  return statuses[surfaceId]?.state === status.state &&
-    statuses[surfaceId]?.isDraft === status.isDraft
-    ? statuses
-    : { ...statuses, [surfaceId]: status };
 }
 
 const upsertSurface = (

@@ -30,13 +30,20 @@ import {
 const MOCK_PROVIDER = ProviderDriverKind.make("mock");
 const MOCK_INSTANCE = ProviderInstanceId.make("mock-compressor");
 
-function makeMockAdapter(
+type MockAdapterOptions = { readonly failStart?: boolean; readonly hangTurn?: boolean };
+
+const makeMockAdapter = (responseText: string, options?: MockAdapterOptions) =>
+  Effect.map(PubSub.unbounded<ProviderRuntimeEvent>(), (events) =>
+    mockAdapter(events, responseText, options),
+  );
+
+function mockAdapter(
+  events: PubSub.PubSub<ProviderRuntimeEvent>,
   responseText: string,
-  options?: { readonly failStart?: boolean; readonly hangTurn?: boolean },
+  options?: MockAdapterOptions,
 ) {
   const sessions = new Map<string, { turns: Array<{ id: string; items: unknown[] }> }>();
   const stopCalls: string[] = [];
-  const events = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
   return {
     provider: MOCK_PROVIDER,
     capabilities: { sessionModelSwitch: "unsupported" as const },
@@ -124,7 +131,10 @@ function makeMockAdapter(
 }
 
 function registryLayer(responseText: string) {
-  const adapter = makeMockAdapter(responseText);
+  return Layer.unwrap(Effect.map(makeMockAdapter(responseText), registryLayerFor));
+}
+
+function registryLayerFor(adapter: ReturnType<typeof mockAdapter>) {
   return Layer.succeed(ProviderAdapterRegistry, {
     get: (instanceId: ProviderInstanceId) =>
       instanceId === MOCK_INSTANCE
@@ -143,7 +153,7 @@ function registryLayer(responseText: string) {
   });
 }
 
-function singleAdapterRegistryLayer(adapter: ReturnType<typeof makeMockAdapter>) {
+function singleAdapterRegistryLayer(adapter: ReturnType<typeof mockAdapter>) {
   return Layer.succeed(ProviderAdapterRegistry, {
     get: () =>
       Effect.succeed(
@@ -159,69 +169,47 @@ function singleAdapterRegistryLayer(adapter: ReturnType<typeof makeMockAdapter>)
 
 describe("compressHandoffContext", () => {
   it.effect("attempts cleanup when compression-session startup fails", () => {
-    const adapter = makeMockAdapter("unused", { failStart: true });
-    return Effect.gen(function* () {
-      const result = yield* Effect.exit(
-        compressHandoffContext({
-          transcript: "test",
-          instanceId: MOCK_INSTANCE,
-          model: "test-model",
-          maxOutputCharacters: 5000,
-          customPrompt: "",
-          cwd: "/tmp",
-        }),
-      );
-      expect(result._tag).toBe("Failure");
-      expect(adapter.stopCalls).toHaveLength(1);
-      expect(adapter.stopCalls[0]).toMatch(/^handoff-compress-/);
-    }).pipe(
-      Effect.provide(
-        Layer.succeed(ProviderAdapterRegistry, {
-          get: () =>
-            Effect.succeed(
-              makeLegacyAdapterV2(
-                adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
-                MOCK_INSTANCE,
-              ),
-            ),
-
-          list: () => Effect.succeed([MOCK_INSTANCE]),
-        }),
+    return makeMockAdapter("unused", { failStart: true }).pipe(
+      Effect.flatMap((adapter) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.exit(
+            compressHandoffContext({
+              transcript: "test",
+              instanceId: MOCK_INSTANCE,
+              model: "test-model",
+              maxOutputCharacters: 5000,
+              customPrompt: "",
+              cwd: "/tmp",
+            }),
+          );
+          expect(result._tag).toBe("Failure");
+          expect(adapter.stopCalls).toHaveLength(1);
+          expect(adapter.stopCalls[0]).toMatch(/^handoff-compress-/);
+        }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter))),
       ),
     );
   });
 
   it.effect("uses distinct temporary sessions for concurrent handoffs", () => {
-    const adapter = makeMockAdapter("Compressed context summary.");
-    return Effect.gen(function* () {
-      const results = yield* Effect.all(
-        [1, 2].map(() =>
-          compressHandoffContext({
-            transcript: "test",
-            instanceId: MOCK_INSTANCE,
-            model: "test-model",
-            maxOutputCharacters: 5000,
-            customPrompt: "",
-            cwd: "/tmp",
-          }),
-        ),
-        { concurrency: "unbounded" },
-      );
-      expect(results).toEqual(["Compressed context summary.", "Compressed context summary."]);
-      expect(new Set(adapter.stopCalls).size).toBe(2);
-    }).pipe(
-      Effect.provide(
-        Layer.succeed(ProviderAdapterRegistry, {
-          get: () =>
-            Effect.succeed(
-              makeLegacyAdapterV2(
-                adapter as unknown as ProviderAdapterShape<ProviderAdapterError>,
-                MOCK_INSTANCE,
-              ),
+    return makeMockAdapter("Compressed context summary.").pipe(
+      Effect.flatMap((adapter) =>
+        Effect.gen(function* () {
+          const results = yield* Effect.all(
+            [1, 2].map(() =>
+              compressHandoffContext({
+                transcript: "test",
+                instanceId: MOCK_INSTANCE,
+                model: "test-model",
+                maxOutputCharacters: 5000,
+                customPrompt: "",
+                cwd: "/tmp",
+              }),
             ),
-
-          list: () => Effect.succeed([MOCK_INSTANCE]),
-        }),
+            { concurrency: "unbounded" },
+          );
+          expect(results).toEqual(["Compressed context summary.", "Compressed context summary."]);
+          expect(new Set(adapter.stopCalls).size).toBe(2);
+        }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter))),
       ),
     );
   });
@@ -319,44 +307,52 @@ describe("compressHandoffContextWithFallback", () => {
   );
 
   it.effect("falls back to the transcript when the compression session cannot start", () => {
-    const adapter = makeMockAdapter("unused", { failStart: true });
     const transcript = "keep this verbatim";
-    return Effect.gen(function* () {
-      const result = yield* compressHandoffContextWithFallback({
-        transcript,
-        clipped: transcript,
-        instanceId: MOCK_INSTANCE,
-        model: "test-model",
-        maxOutputCharacters: 5000,
-        customPrompt: "",
-        cwd: "/tmp",
-      });
-      expect(result).toBe(transcript);
-    }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter)));
+    return makeMockAdapter("unused", { failStart: true }).pipe(
+      Effect.flatMap((adapter) =>
+        Effect.gen(function* () {
+          const result = yield* compressHandoffContextWithFallback({
+            transcript,
+            clipped: transcript,
+            instanceId: MOCK_INSTANCE,
+            model: "test-model",
+            maxOutputCharacters: 5000,
+            customPrompt: "",
+            cwd: "/tmp",
+          });
+          expect(result).toBe(transcript);
+        }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter))),
+      ),
+    );
   });
 
   it.effect("never blocks the handoff: a hung provider times out to the transcript", () => {
-    const adapter = makeMockAdapter("unused", { hangTurn: true });
     const transcript = "hung provider transcript";
-    return Effect.gen(function* () {
-      const fiber = yield* compressHandoffContextWithFallback({
-        transcript,
-        clipped: transcript,
-        instanceId: MOCK_INSTANCE,
-        model: "test-model",
-        maxOutputCharacters: 5000,
-        customPrompt: "",
-        cwd: "/tmp",
-      }).pipe(Effect.forkScoped);
-      // Past the handoff timeout the attempt is interrupted and the truncated
-      // transcript stands in — the user is never left waiting on a wedged CLI.
-      yield* Effect.yieldNow;
-      yield* TestClock.adjust(Duration.millis(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS + 1_000));
-      const result = yield* Fiber.join(fiber);
-      expect(result).toBe(transcript);
-      // Cleanup still runs on the interrupted attempt.
-      expect(adapter.stopCalls).toHaveLength(1);
-    }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter)));
+    return makeMockAdapter("unused", { hangTurn: true }).pipe(
+      Effect.flatMap((adapter) =>
+        Effect.gen(function* () {
+          const fiber = yield* compressHandoffContextWithFallback({
+            transcript,
+            clipped: transcript,
+            instanceId: MOCK_INSTANCE,
+            model: "test-model",
+            maxOutputCharacters: 5000,
+            customPrompt: "",
+            cwd: "/tmp",
+          }).pipe(Effect.forkScoped);
+          // Past the handoff timeout the attempt is interrupted and the truncated
+          // transcript stands in — the user is never left waiting on a wedged CLI.
+          yield* Effect.yieldNow;
+          yield* TestClock.adjust(
+            Duration.millis(PROVIDER_HANDOFF_COMPRESSION_TIMEOUT_MILLIS + 1_000),
+          );
+          const result = yield* Fiber.join(fiber);
+          expect(result).toBe(transcript);
+          // Cleanup still runs on the interrupted attempt.
+          expect(adapter.stopCalls).toHaveLength(1);
+        }).pipe(Effect.provide(singleAdapterRegistryLayer(adapter))),
+      ),
+    );
   });
 });
 

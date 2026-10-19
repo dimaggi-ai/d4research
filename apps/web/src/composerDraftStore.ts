@@ -190,42 +190,6 @@ function boundedUniquePastedContexts(
   });
 }
 
-export function markPromotedDraftThread(threadId: ThreadId): void {
-  const store = useComposerDraftStore.getState();
-  const draftThreadTargets: ComposerThreadTarget[] = [];
-  for (const [draftId, draftThread] of Object.entries(store.draftThreadsByThreadKey)) {
-    if (draftThread.threadId === threadId) {
-      draftThreadTargets.push(DraftId.make(draftId));
-    }
-  }
-  if (draftThreadTargets.length === 0) {
-    return;
-  }
-  for (const draftThreadTarget of draftThreadTargets) {
-    store.markDraftThreadPromoting(draftThreadTarget);
-  }
-}
-
-export function markPromotedDraftThreads(serverThreadIds: Iterable<ThreadId>): void {
-  for (const threadId of serverThreadIds) {
-    markPromotedDraftThread(threadId);
-  }
-}
-
-export function markPromotedDraftThreadsByRef(serverThreadRefs: Iterable<ScopedThreadRef>): void {
-  for (const threadRef of serverThreadRefs) {
-    markPromotedDraftThreadByRef(threadRef);
-  }
-}
-
-export function finalizePromotedDraftThreadsByRef(
-  serverThreadRefs: Iterable<ScopedThreadRef>,
-): void {
-  for (const threadRef of serverThreadRefs) {
-    finalizePromotedDraftThreadByRef(threadRef);
-  }
-}
-
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 
 const COMPOSER_DRAFT_STORAGE_VERSION = 9;

@@ -173,5 +173,3 @@ export const executeEnvironmentHttpRequest = <A, E, R>(
     ),
     Effect.catch((cause) => failRemoteRequest(requestUrl, cause)),
   );
-
-export const remoteHttpClientLayer = layerRemoteHttpClient;

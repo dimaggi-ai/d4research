@@ -1178,7 +1178,7 @@ it.effect.each(
       "-m",
       "initial",
     ]);
-    yield* command(repo, ["worktree", "add", "-b", "d4research/abcd1234", worktreePath]);
+    yield* command(repo, ["worktree", "add", "-b", "t3/abcd1234", worktreePath]);
     yield* command(repo, ["worktree", "add", "-b", "user/checkout", movedPath]);
     const branchNameStarted = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>();
     const allowBranchName = yield* Deferred.make<void>();
@@ -1203,11 +1203,11 @@ it.effect.each(
           command: "command:launch:temp-branch",
           thread: "thread:launch:temp-branch",
           message: "Build the feature",
-          workspace: { type: "worktree", baseRef: "main", branch: "d4research/abcd1234" },
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
       const renameFiber = yield* Deferred.await(branchNameStarted);
-      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "d4research/abcd1234");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
       yield* waitUntil(() =>
         threads
           .getThreadProjection(launched.threadId)
@@ -1215,7 +1215,7 @@ it.effect.each(
       );
       assert.equal(
         (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
-        "d4research/abcd1234",
+        "t3/abcd1234",
       );
       const parent = yield* threads.getThreadProjection(launched.threadId);
       const run = parent.runs[0]!;
@@ -1236,7 +1236,7 @@ it.effect.each(
       const delegated = yield* threads.getThreadProjection(launched.threadId);
       const childThreadId = delegated.subagents[0]!.childThreadId!;
       const child = yield* threads.getThreadProjection(childThreadId);
-      assert.equal(child.thread.branch, "d4research/abcd1234");
+      assert.equal(child.thread.branch, "t3/abcd1234");
       assert.equal(child.thread.worktreePath, worktreePath);
       assert.equal(child.thread.lineage.parentThreadId, launched.threadId);
 
@@ -1244,7 +1244,7 @@ it.effect.each(
       const otherPathThreadId = ThreadId.make("thread:launch:other-worktree");
       for (const [threadId, branch, otherWorktreePath] of [
         [otherThreadId, "other-feature", worktreePath],
-        [otherPathThreadId, "d4research/abcd1234", "/repo-worktrees/other"],
+        [otherPathThreadId, "t3/abcd1234", "/repo-worktrees/other"],
       ] as const) {
         yield* threads.dispatch({
           type: "thread.create",
@@ -1310,7 +1310,7 @@ it.effect.each(
           commandId: CommandId.make("command:launch:stale-branch-update"),
           threadId: otherThreadId,
           branch: "generated-branch",
-          expectedBranch: "d4research/abcd1234",
+          expectedBranch: "t3/abcd1234",
           expectedWorktreePath: worktreePath,
         })
         .pipe(Effect.flip);
@@ -1321,7 +1321,7 @@ it.effect.each(
       );
       assert.deepEqual(harness.renameBranch.mock.calls[0]?.[0], {
         cwd: worktreePath,
-        oldBranch: "d4research/abcd1234",
+        oldBranch: "t3/abcd1234",
         newBranch: "generated-branch",
       });
     }).pipe(Effect.provide(harness.layer));
@@ -1352,7 +1352,7 @@ it.effect("provisions under t3-<hash> when a plain t3 branch blocks t3/*", () =>
           command: "command:launch:blocked-namespace",
           thread: "thread:launch:blocked-namespace",
           message: "Build the feature",
-          workspace: { type: "worktree", baseRef: "main", branch: "d4research/abcd1234" },
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
       yield* waitUntil(() =>
@@ -1403,11 +1403,11 @@ it.effect("keeps the temporary branch when branch generation fails", () =>
           command: "command:launch:branch-fallback",
           thread: "thread:launch:branch-fallback",
           message: "Build the feature",
-          workspace: { type: "worktree", baseRef: "main", branch: "d4research/abcd1234" },
+          workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
       yield* waitUntil(() => Effect.sync(() => harness.generateBranchName.mock.calls.length === 1));
-      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "d4research/abcd1234");
+      assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
       yield* waitUntil(() =>
         threads
           .getThreadProjection(launched.threadId)
@@ -1416,7 +1416,7 @@ it.effect("keeps the temporary branch when branch generation fails", () =>
       assert.equal(harness.renameBranch.mock.calls.length, 0);
       assert.equal(
         (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
-        "d4research/abcd1234",
+        "t3/abcd1234",
       );
     }).pipe(Effect.provide(harness.layer));
   }),
@@ -1436,7 +1436,7 @@ it.effect("renames a temporary branch on an existing worktree to a generated nam
           workspace: {
             type: "existing_worktree",
             worktreePath: "/repo-worktrees/t3-abcd1234",
-            branch: "d4research/abcd1234",
+            branch: "t3/abcd1234",
           },
         }),
       );
@@ -1447,7 +1447,7 @@ it.effect("renames a temporary branch on an existing worktree to a generated nam
       );
       assert.deepEqual(harness.renameBranch.mock.calls[0]?.[0], {
         cwd: "/repo-worktrees/t3-abcd1234",
-        oldBranch: "d4research/abcd1234",
+        oldBranch: "t3/abcd1234",
         newBranch: "generated-branch",
       });
     }).pipe(Effect.provide(harness.layer));

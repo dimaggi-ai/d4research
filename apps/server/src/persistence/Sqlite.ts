@@ -84,5 +84,3 @@ export const layerConfig = Layer.unwrap(
     return layerFromPath(dbPath);
   }),
 );
-
-export const SqlitePersistenceMemory = layerMemory;

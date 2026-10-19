@@ -9,7 +9,7 @@ import {
 
 export const MEMO_ATTACHMENT_MAX_CHARACTERS = 2_000_000;
 export const MEMO_ATTACHMENT_CHUNK_CHARACTERS = 16_000;
-export const MEMO_ATTACHMENT_SOURCE = "d4research-composer-attachment";
+const MEMO_ATTACHMENT_SOURCE = "d4research-composer-attachment";
 
 const MEMO_ATTACHMENT_TOKEN_PATTERN = /^memoattachment[a-z0-9]{16,80}$/;
 
@@ -71,7 +71,7 @@ export function isMemoAttachmentDocumentToken(value: string): boolean {
   return MEMO_ATTACHMENT_TOKEN_PATTERN.test(value);
 }
 
-export function memoAttachmentChunkToken(documentToken: string, index: number): string {
+function memoAttachmentChunkToken(documentToken: string, index: number): string {
   return `${documentToken}chunk${String(index + 1).padStart(4, "0")}`;
 }
 

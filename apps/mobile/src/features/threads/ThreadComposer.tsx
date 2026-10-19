@@ -1107,6 +1107,37 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </Animated.View>
         </ComposerSurface>
 
+        {props.activeThreadBusy && queuedEdit === null ? (
+          <View className="flex-row flex-wrap items-center gap-2 pt-2">
+            {!hasContent ? (
+              <Text className="w-full text-xs text-foreground-muted">
+                Type a follow-up, then choose how to send it.
+              </Text>
+            ) : null}
+            {[sendPresentation.action, sendPresentation.alternate]
+              .filter((action): action is ActiveTurnComposerAction => action !== null)
+              .map((action) => (
+                <Pressable
+                  key={action}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    action === "queue" ? "Queue next prompt" : FOLLOW_UP_ACTION_LABEL[action]
+                  }
+                  accessibilityHint={FOLLOW_UP_ACTION_SUBTITLE[action]}
+                  accessibilityState={{ disabled: !canSend }}
+                  disabled={!canSend}
+                  onPress={() => void handleSend(action)}
+                  className="min-h-11 justify-center rounded-lg bg-subtle-strong px-3"
+                  style={{ opacity: canSend ? 1 : 0.5 }}
+                >
+                  <Text className="text-sm text-foreground">
+                    {action === "queue" ? "Queue next prompt" : FOLLOW_UP_ACTION_LABEL[action]}
+                  </Text>
+                </Pressable>
+              ))}
+          </View>
+        ) : null}
+
         {props.connectionState === "connected" && !props.canOperateThread ? (
           <Text className="pt-2 text-xs text-foreground-muted">
             This connection cannot control this task. You can still edit your draft.

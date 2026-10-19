@@ -27,6 +27,8 @@ Signing is automatic. Apple manages the distribution signing credentials.
 The Xcode shell environment raises Metro's soft open-file limit to at most
 65,536 without changing the build service's hard limit. This avoids `EMFILE`
 while scanning the monorepo's icon package during release packaging.
+The Expo updates resource phase uses a non-login shell so machine login profiles
+cannot replace these build settings or lower its hard file limit.
 
 The App Store Connect app must use the exact registered application identifier,
 not an identifier derived from its display name. Select iOS as the platform;

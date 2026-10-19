@@ -433,29 +433,6 @@ export function ResearchSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection {...searchableSetting("research-second-brain")}>
-        <SettingsRow
-          title="Folder"
-          description="A Markdown folder with an AGENTS.md map. Every provider reads and writes it through the brain_* tools. Leave empty to turn it off."
-          control={
-            <Input
-              key={settings.secondBrain.path}
-              defaultValue={settings.secondBrain.path}
-              placeholder="~/second-brain"
-              autoCapitalize="none"
-              spellCheck={false}
-              aria-label="Second brain folder"
-              onBlur={(event) => {
-                const value = event.target.value.trim();
-                if (value !== settings.secondBrain.path) {
-                  updateSettings({ secondBrain: { path: value } });
-                }
-              }}
-            />
-          }
-        />
-      </SettingsSection>
-
       <Dialog open={viewedFile !== null} onOpenChange={(open) => !open && setViewedFile(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

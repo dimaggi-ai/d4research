@@ -137,6 +137,12 @@ function SettingsIndexSections() {
 
       <SettingsSection title="Server settings">
         <SettingsRow
+          icon="text.alignleft"
+          label="Second brain"
+          target="SettingsSecondBrain"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
           icon="person.crop.circle"
           label="Provider accounts"
           target="SettingsProviderAccounts"

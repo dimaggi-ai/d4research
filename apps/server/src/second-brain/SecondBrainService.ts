@@ -3,6 +3,9 @@ import * as NodeCrypto from "node:crypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Pure path operations also run inside synchronous SQLite and filesystem boundaries.
 import * as NodePath from "node:path";
 import {
+  BrainAcceptProposalInput,
+  type BrainProposalDetail,
+  type BrainProposalSummary,
   BrainIngestInput,
   BrainIngestResult,
   BrainDecisionInput,
@@ -35,6 +38,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import * as Files from "./SecondBrainFiles.ts";
 import * as Index from "./SecondBrainIndex.ts";
 import * as Embeddings from "./SecondBrainEmbeddings.ts";
+import { proposalDiff } from "./proposalDiff.ts";
 import { assertNoSecrets } from "./secrets.ts";
 import {
   slug,
@@ -81,8 +85,16 @@ export class SecondBrainService extends Context.Service<
       query: BrainProposalQuery,
       actor?: string,
     ) => BrainEffect<BrainProposal[]>;
+    readonly listProposalSummaries: (
+      query: BrainProposalQuery,
+    ) => BrainEffect<BrainProposalSummary[]>;
     readonly getProposal: (id: string) => BrainEffect<BrainProposal>;
-    readonly acceptProposal: (id: string, reviewer: string) => BrainEffect<BrainProposal>;
+    readonly reviewProposal: (id: string) => BrainEffect<BrainProposalDetail>;
+    readonly acceptProposal: (
+      id: string,
+      reviewer: string,
+      review?: BrainAcceptProposalInput,
+    ) => BrainEffect<BrainProposal>;
     readonly rejectProposal: (
       id: string,
       reviewer: string,
@@ -901,6 +913,24 @@ const make = Effect.gen(function* () {
           return yield* index.proposals(vault, valid, valid.own ? actor : undefined);
         }),
       ),
+    listProposalSummaries: (query) =>
+      locked(
+        Effect.gen(function* () {
+          const valid = yield* validate(BrainProposalQuery, query);
+          const { root: vault } = yield* configure;
+          const proposals = yield* index.proposals(vault, valid);
+          return proposals.map(({ id, path, kind, state, createdAt, evidence }) => ({
+            id,
+            path,
+            kind,
+            state,
+            createdAt,
+            evidence: evidence
+              .slice(0, 1)
+              .map(({ threadId, messageId }) => ({ threadId, messageId })),
+          }));
+        }),
+      ),
     getProposal: (id) =>
       locked(
         Effect.gen(function* () {
@@ -909,7 +939,43 @@ const make = Effect.gen(function* () {
           return yield* index.proposal(vault, id);
         }),
       ),
-    acceptProposal: (id, reviewer) =>
+    reviewProposal: (id) =>
+      locked(
+        Effect.gen(function* () {
+          const { root: vault } = yield* configure;
+          yield* recovery(vault);
+          const proposal = yield* index.proposal(vault, id);
+          const current = yield* optionalRead(files, vault, proposal.path);
+          const currentHash = current?.hash ?? null;
+          const conflict =
+            proposal.state === "conflict" ||
+            (proposal.state === "pending" && currentHash !== proposal.expectedHash);
+          const timestamp = DateTime.formatIso(yield* DateTime.now);
+          const preview = yield* pure(() =>
+            proposal.state === "accepted" || proposal.state === "rejected"
+              ? (current?.content ?? "")
+              : updateFrontmatter(
+                  applyEdit(current?.content ?? null, proposal, timestamp.slice(0, 10)),
+                  timestamp,
+                ),
+          ).pipe(Effect.result);
+          if (preview._tag === "Failure" && !conflict) return yield* Effect.fail(preview.failure);
+          const proposedContent = preview._tag === "Success" ? preview.success : proposal.content;
+          const detail: BrainProposalDetail = {
+            proposal,
+            currentHash,
+            currentContent: current?.content ?? "",
+            proposedContent,
+            diff: proposalDiff(proposal.path, current?.content ?? "", proposedContent),
+            conflict,
+            truncated: false,
+          };
+          if (Buffer.byteLength(encodeJson(detail)) > RESPONSE_BYTES)
+            return yield* new SecondBrainError({ code: "oversized" });
+          return detail;
+        }),
+      ),
+    acceptProposal: (id, reviewer, review) =>
       locked(
         Effect.gen(function* () {
           const { root: vault, config } = yield* configure;
@@ -917,7 +983,25 @@ const make = Effect.gen(function* () {
           const proposal = yield* index.proposal(vault, id);
           if (proposal.state !== "pending")
             return yield* new SecondBrainError({ code: "forbidden" });
-          const result = yield* apply(vault, proposal, reviewer, id).pipe(Effect.result);
+          const validReview =
+            review === undefined ? undefined : yield* validate(BrainAcceptProposalInput, review);
+          if (
+            validReview !== undefined &&
+            (validReview.id !== id || validReview.expectedHash !== proposal.expectedHash)
+          )
+            return yield* new SecondBrainError({ code: "stale_revision" });
+          const edit =
+            validReview?.contentOverride === undefined
+              ? proposal
+              : {
+                  ...proposal,
+                  operation:
+                    proposal.expectedHash === null
+                      ? ("create" as const)
+                      : ("replace_file" as const),
+                  content: validReview.contentOverride,
+                };
+          const result = yield* apply(vault, edit, reviewer, id).pipe(Effect.result);
           if (result._tag === "Failure") {
             if (result.failure.code !== "stale_revision") return yield* Effect.fail(result.failure);
             const conflict: BrainProposal = {

@@ -89,6 +89,7 @@ import {
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
+import { SettingsSecondBrainRouteScreen } from "./features/settings/SettingsSecondBrainRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
@@ -243,6 +244,11 @@ const SettingsContentStack = createV5SheetStackNavigator({
       screen: SettingsEnvironmentSourceControlRouteScreen,
       linking: "source-control",
       options: { title: "Source control" },
+    }),
+    SettingsSecondBrain: createNativeStackScreen({
+      screen: SettingsSecondBrainRouteScreen,
+      linking: "second-brain",
+      options: { title: "Second brain" },
     }),
     SettingsEnvironmentAgentBehavior: createNativeStackScreen({
       screen: SettingsEnvironmentAgentBehaviorRouteScreen,

@@ -263,6 +263,7 @@ export interface ThreadFeedHistoryControls {
 }
 
 export interface ThreadFeedProps {
+  readonly focusMessageId?: string | undefined;
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
   readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
@@ -2145,6 +2146,59 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.latestRun,
     ],
   );
+  const focusedMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    const messageId = props.focusMessageId;
+    const focusKey = `${feedThreadKey}:${messageId}`;
+    if (!messageId || focusedMessageRef.current === focusKey) return;
+    const message = props.feed.find(
+      (entry) => entry.type === "message" && entry.message.id === messageId,
+    );
+    if (!message) {
+      if (
+        props.historyControls?.hasMoreHistory &&
+        !props.historyControls.loading &&
+        !props.historyControls.error
+      ) {
+        props.historyControls.onLoadEarlier();
+      }
+      return;
+    }
+    if (
+      message.type === "message" &&
+      message.message.runId &&
+      !expandedTurnIds.has(message.message.runId)
+    ) {
+      const runId = message.message.runId;
+      setInteractionState((current) => ({
+        ...current,
+        expandedTurnIds: new Set(current.expandedTurnIds).add(runId),
+      }));
+      return;
+    }
+    const index = presentedFeed.findIndex(
+      (entry) => entry.type === "message" && entry.message.id === messageId,
+    );
+    if (index < 0 || viewportHeight <= 0) return;
+    setEndFollow(false);
+    const frame = requestAnimationFrame(() => {
+      if (!props.listRef.current) return;
+      props.listRef.current.scrollToIndex({ index, animated: false, viewPosition: 0.25 });
+      focusedMessageRef.current = focusKey;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    props.focusMessageId,
+    props.feed,
+    props.historyControls,
+    props.listRef,
+    feedThreadKey,
+    expandedTurnIds,
+    presentedFeed,
+    viewportHeight,
+    setEndFollow,
+  ]);
+
   const setupAnchorIndex = presentedFeed.findIndex(
     (entry) => entry.type === "message" && entry.message.role === "user",
   );

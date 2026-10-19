@@ -228,23 +228,41 @@ structured transcript after a preparation failure) and continues the handoff.
 
 ## Second brain
 
-A second brain is a folder of plain Markdown files that every agent can read and update. At the
-root, an `AGENTS.md` file describes the layout and rules, for example `notes/`, `people/` and
-`projects/`, with one topic per file. A `CLAUDE.md` file can also serve as the map. A `@` line in
-the map, such as `@MEMORY.md`, includes the text of the file it names.
+The second brain keeps approved knowledge in a Markdown folder on the connected environment.
+Use one topic per file in `notes/`, `people/`, `projects/`, `decisions/`, or `learnings/`.
+`MEMORY.md` holds core knowledge; `AGENTS.md` maps the folder. Memo remains separate session
+and handoff memory.
 
-Set the folder in **Settings → Research → Second brain**, for example `~/second-brain`.
-Every agent can then use these tools:
+Open **Settings → Second brain**, select the environment, and set its folder path. Leave the
+path empty to disable the brain. Enable context injection and set the core and retrieval
+budgets there. Agents receive bounded core context at the start of a provider thread, and again
+after handoffs or indexed changes. On ordinary turns they receive relevant excerpts. They can search and
+read notes with `brain_search` and `brain_read`, and cite the returned file and line ranges.
+Slash commands and compact turns skip injection.
 
-- `brain_map`: returns the map with its `@` lines expanded, plus a list of every Markdown file.
-- `brain_read`: returns one file.
-- `brain_search`: finds text in file names and lines.
-- `brain_write`: adds to the end of a file or replaces it, and creates the file if needed.
+Keep **Write mode** set to **Review** to require approval for agent proposals. Open the review
+inbox from Second brain settings or the web command palette. Check the diff, source quotes,
+and possible duplicates before accepting; you can edit the proposed file on the web. Reject
+with a reason to suppress identical proposals. If the file changed, reject the conflicting
+proposal and ask the agent for a new one. Accepting requires settings-write access to that
+environment. **Direct** mode permits audited agent writes without inbox approval.
 
-The tools work only on `.md` files inside the folder. They refuse paths that leave the folder
-(including through symlinks) and paths inside hidden directories such as `.git`. If you keep the
-folder in git, a `brain_write` that replaced a file can be undone. Leave the setting empty to turn
-the tools off.
+Capture is off by default. Choose **Proposals** to extract candidate knowledge after successful
+turns using local Ollama. An empty capture-model field uses the handoff compression model.
+Agents can also request capture with `brain_capture`. Extraction creates proposals, never
+approved notes, and can miss useful information. Model failures produce no proposals.
+
+Use **Reindex** to rebuild search data, **Lint** to find note and link issues, and
+**Regenerate INDEX** to refresh the generated catalog. Lint does not rename files. Optional
+embeddings use local Ollama; search falls back to text matching if the model is unavailable.
+An unmarked, manually maintained `INDEX.md` is preserved.
+
+Files and the index stay on that environment, but retrieved context is sent to the selected
+agent provider. Capture uses visible user and assistant text, excludes tools and reasoning,
+and redacts recognized secrets; this is not a guarantee that all sensitive text is removed.
+Do not store secrets in the brain. Files larger than 1 MiB and unsafe paths are refused.
+Review details larger than 256 KiB cannot be opened in the inbox. Keep notes and proposals
+small enough to review in full.
 
 ## Boundaries
 

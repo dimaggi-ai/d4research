@@ -220,3 +220,31 @@ export const BrainDecisionInput = Schema.Struct({
   project: Schema.optionalKey(BrainPath),
 });
 export type BrainDecisionInput = typeof BrainDecisionInput.Type;
+
+export const BrainProposalDetail = Schema.Struct({
+  proposal: BrainProposal,
+  currentHash: Schema.NullOr(Schema.String),
+  currentContent: Schema.String,
+  proposedContent: Schema.String,
+  diff: Schema.String,
+  conflict: Schema.Boolean,
+  truncated: Schema.Boolean,
+});
+export type BrainProposalDetail = typeof BrainProposalDetail.Type;
+export const BrainAcceptProposalInput = Schema.Struct({
+  id: ShortText,
+  expectedHash: Schema.NullOr(Schema.String),
+  contentOverride: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1048576))),
+});
+export type BrainAcceptProposalInput = typeof BrainAcceptProposalInput.Type;
+export const BrainRejectProposalInput = Schema.Struct({ id: ShortText, reason: ShortText });
+
+export const BrainProposalSummary = Schema.Struct({
+  id: Schema.String,
+  path: BrainPath,
+  kind: BrainNoteKind,
+  state: BrainProposalState,
+  createdAt: Schema.String,
+  evidence: Schema.Array(Schema.Struct({ threadId: ShortText, messageId: ShortText })),
+});
+export type BrainProposalSummary = typeof BrainProposalSummary.Type;

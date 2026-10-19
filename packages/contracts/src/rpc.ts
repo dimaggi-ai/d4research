@@ -1,4 +1,15 @@
 import {
+  BrainStatus,
+  BrainProposalSummary,
+  BrainProposal,
+  BrainProposalQuery,
+  BrainProposalDetail,
+  BrainAcceptProposalInput,
+  BrainRejectProposalInput,
+  BrainLintIssue,
+  SecondBrainError,
+} from "./secondBrain.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -474,6 +485,14 @@ export const WS_METHODS = {
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
+  secondBrainStatus: "secondBrain.status",
+  secondBrainListProposals: "secondBrain.listProposals",
+  secondBrainGetProposal: "secondBrain.getProposal",
+  secondBrainAcceptProposal: "secondBrain.acceptProposal",
+  secondBrainRejectProposal: "secondBrain.rejectProposal",
+  secondBrainReindex: "secondBrain.reindex",
+  secondBrainLint: "secondBrain.lint",
+  secondBrainRegenerateIndex: "secondBrain.regenerateIndex",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -723,6 +742,47 @@ const WsServerCommitDesktopUpdateRpc = Rpc.make(WS_METHODS.serverCommitDesktopUp
   payload: DesktopUpdateCommitInput,
   success: ServerSelfUpdateResult,
   error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
+});
+
+const WsSecondBrainStatusRpc = Rpc.make(WS_METHODS.secondBrainStatus, {
+  payload: Schema.Struct({}),
+  success: BrainStatus,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainListProposalsRpc = Rpc.make(WS_METHODS.secondBrainListProposals, {
+  payload: BrainProposalQuery,
+  success: Schema.Array(BrainProposalSummary),
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainGetProposalRpc = Rpc.make(WS_METHODS.secondBrainGetProposal, {
+  payload: Schema.Struct({ id: Schema.String }),
+  success: BrainProposalDetail,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainAcceptProposalRpc = Rpc.make(WS_METHODS.secondBrainAcceptProposal, {
+  payload: BrainAcceptProposalInput,
+  success: BrainProposal,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainRejectProposalRpc = Rpc.make(WS_METHODS.secondBrainRejectProposal, {
+  payload: BrainRejectProposalInput,
+  success: BrainProposal,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainReindexRpc = Rpc.make(WS_METHODS.secondBrainReindex, {
+  payload: Schema.Struct({}),
+  success: BrainStatus,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainLintRpc = Rpc.make(WS_METHODS.secondBrainLint, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({ issues: Schema.Array(BrainLintIssue), truncated: Schema.Boolean }),
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
+});
+const WsSecondBrainRegenerateIndexRpc = Rpc.make(WS_METHODS.secondBrainRegenerateIndex, {
+  payload: Schema.Struct({}),
+  success: BrainStatus,
+  error: Schema.Union([SecondBrainError, EnvironmentAuthorizationError]),
 });
 
 const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup, {
@@ -1868,6 +1928,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerCommitDesktopUpdateRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
+  WsSecondBrainStatusRpc,
+  WsSecondBrainListProposalsRpc,
+  WsSecondBrainGetProposalRpc,
+  WsSecondBrainAcceptProposalRpc,
+  WsSecondBrainRejectProposalRpc,
+  WsSecondBrainReindexRpc,
+  WsSecondBrainLintRpc,
+  WsSecondBrainRegenerateIndexRpc,
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,

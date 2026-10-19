@@ -24,6 +24,7 @@ export type SettingsPath =
   | "/settings/scheduled-tasks"
   | "/settings/source-control"
   | "/settings/research"
+  | "/settings/second-brain"
   | "/settings/dev-pipelines"
   | "/settings/integrations"
   | "/settings/storage"
@@ -77,6 +78,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/scheduled-tasks": "Scheduled Tasks",
   "/settings/source-control": "Source Control",
   "/settings/research": "Research",
+  "/settings/second-brain": "Second brain",
   "/settings/dev-pipelines": "Dev pipelines",
   "/settings/storage": "Storage",
   "/settings/connections": "Connections",
@@ -978,8 +980,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "research-second-brain",
     title: "Second brain",
-    searchTerms: ["knowledge", "notes", "markdown", "memory"],
-    to: "/settings/research",
+    searchTerms: ["knowledge", "notes", "markdown", "memory", "capture", "embeddings", "index"],
+    to: "/settings/second-brain",
+  },
+  {
+    id: "second-brain-inbox",
+    title: "Second brain review inbox",
+    searchTerms: ["proposals", "accept", "reject", "evidence"],
+    to: "/settings/second-brain",
   },
   {
     id: "dev-pipelines",
@@ -1042,6 +1050,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/scheduled-tasks": null,
   "/settings/archived": "project-defaults",
   "/settings/research": "environment",
+  "/settings/second-brain": "environment",
   "/settings/dev-pipelines": "environment",
   "/settings/skills": "environment",
   "/settings/tool-guard": "environment",

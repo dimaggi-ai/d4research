@@ -440,3 +440,53 @@ it.effect("denies manual cleanup before the handler without settings permission"
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );
+
+it.effect("requires settings-write before any second brain mutation handler", () =>
+  Effect.gen(function* () {
+    const methods = [
+      WS_METHODS.secondBrainAcceptProposal,
+      WS_METHODS.secondBrainRejectProposal,
+      WS_METHODS.secondBrainReindex,
+      WS_METHODS.secondBrainRegenerateIndex,
+    ] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof methods)[number]> =>
+          !methods.includes(tag as (typeof methods)[number]),
+      ),
+    );
+    let handled = 0;
+    const deniedHandler = () =>
+      Effect.sync(() => {
+        handled++;
+        throw new Error("Unauthorized handler executed");
+      });
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayer({
+            [WS_METHODS.secondBrainAcceptProposal]: deniedHandler,
+            [WS_METHODS.secondBrainRejectProposal]: deniedHandler,
+            [WS_METHODS.secondBrainReindex]: deniedHandler,
+            [WS_METHODS.secondBrainRegenerateIndex]: deniedHandler,
+          }),
+          RpcAuthorization.layer([AuthOrchestrationReadScope]),
+        ),
+      ),
+    );
+    const errors = [
+      yield* client[WS_METHODS.secondBrainAcceptProposal]({
+        id: "proposal",
+        expectedHash: null,
+      }).pipe(Effect.flip),
+      yield* client[WS_METHODS.secondBrainRejectProposal]({ id: "proposal", reason: "No" }).pipe(
+        Effect.flip,
+      ),
+      yield* client[WS_METHODS.secondBrainReindex]({}).pipe(Effect.flip),
+      yield* client[WS_METHODS.secondBrainRegenerateIndex]({}).pipe(Effect.flip),
+    ];
+    for (const error of errors)
+      expect(error).toMatchObject({ requiredPermission: AuthSettingsWriteScope });
+    expect(handled).toBe(0);
+  }).pipe(Effect.scoped),
+);

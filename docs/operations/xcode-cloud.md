@@ -23,7 +23,10 @@ Xcode Cloud discovers `ci_scripts` beside the workspace. `ci_post_clone.sh`
 installs Node 24, the repository-pinned pnpm version, CocoaPods, and Watchman,
 restores frozen JavaScript and native dependencies, and applies `CI_BUILD_NUMBER` to the app and both extensions.
 React Native is compiled from source because the liquid-glass module requires
-headers missing from its prebuilt framework. Signing is automatic. Apple manages the distribution signing credentials.
+headers missing from its prebuilt framework. The preparation script enables
+the native layout module’s iOS 27.1 hinge APIs only when the selected SDK
+provides them; older SDKs retain the existing safe-area metrics.
+Signing is automatic. Apple manages the distribution signing credentials.
 
 The Xcode shell environment raises Metro's soft open-file limit to at most
 65,536 without changing the build service's hard limit. This avoids `EMFILE`

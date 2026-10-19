@@ -33,3 +33,20 @@ project.targets.each do |target|
   end
 end
 project.save
+
+# Swift 6.4 also ships with the iOS 27.0 SDK. Runtime availability
+# alone cannot hide types absent from the SDK used to compile the app.
+sdk_version, status = Open3.capture2('xcrun', '--sdk', 'iphoneos', '--show-sdk-version')
+abort 'Unable to resolve the iOS SDK version' unless status.success?
+has_hinge_apis = Gem::Version.new(sdk_version.strip) >= Gem::Version.new('27.1')
+pods = Xcodeproj::Project.open(File.expand_path('../Pods/Pods.xcodeproj', __dir__))
+controls = pods.targets.find { |target| target.name == 'T3NativeControls' }
+abort 'T3NativeControls pod target is missing' unless controls
+controls.build_configurations.each do |configuration|
+  conditions = Array(configuration.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS']).flat_map(&:split)
+  conditions |= ['$(inherited)']
+  conditions.delete('T3_IOS_27_1_SDK')
+  conditions << 'T3_IOS_27_1_SDK' if has_hinge_apis
+  configuration.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = conditions.join(' ')
+end
+pods.save

@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -497,7 +498,31 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
       }).pipe(Effect.orElseSucceed(() => null));
     }
 
+    const brain = yield* SecondBrainService.SecondBrainService;
+    const brainContext = yield* brain
+      .buildTurnContext({
+        userText: input.prompt,
+        includeCore: true,
+        ...(memoProject ? { projectTitle: memoProject } : {}),
+        ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
+      })
+      .pipe(
+        Effect.timeout("1500 millis"),
+        Effect.catchCause(() =>
+          Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
+        ),
+      );
+    if (brainContext && sharedContext) {
+      [brainContext.core, brainContext.retrieved]
+        .join("\n")
+        .split("\n")
+        .filter((line) => line.length > 40)
+        .forEach((line) => {
+          sharedContext = sharedContext!.replaceAll(line, "");
+        });
+    }
     const turnInput = [
+      ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
       ...(sharedContext !== null
         ? ["--- SHARED CONTEXT (local memory, verbatim) ---", sharedContext, ""]
         : []),

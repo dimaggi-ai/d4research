@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import { describe, expect, it } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -474,6 +475,11 @@ describe("research delegate handler", () => {
         Option.Option<ProjectionThreadCheckpointContext>
       >(Option.some(orchestratorContext));
       const projectionLayer = Layer.mergeAll(
+        Layer.mock(SecondBrainService.SecondBrainService)({
+          buildTurnContext: () =>
+            Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+          markContextDelivered: () => Effect.void,
+        }),
         Layer.mock(ProjectionStoreV2)({
           getThread: () =>
             Ref.get(orchestratorContextRef).pipe(
@@ -551,6 +557,11 @@ describe("research delegate handler", () => {
         Layer.provide(NodeServices.layer),
       );
       const layer = Layer.mergeAll(
+        Layer.mock(SecondBrainService.SecondBrainService)({
+          buildTurnContext: () =>
+            Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+          markContextDelivered: () => Effect.void,
+        }),
         settingsLayer,
         registryLayer,
         ProviderRegistryMock.layer([providerSnapshot]),
@@ -880,6 +891,11 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
     respondToUserInput: () => Effect.void,
   } as never;
   const layer = Layer.mergeAll(
+    Layer.mock(SecondBrainService.SecondBrainService)({
+      buildTurnContext: () =>
+        Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+      markContextDelivered: () => Effect.void,
+    }),
     Layer.succeed(
       ServerSettingsService,
       ServerSettingsService.of({

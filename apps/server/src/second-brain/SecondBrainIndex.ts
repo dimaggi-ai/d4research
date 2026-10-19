@@ -21,6 +21,18 @@ const decodeBrainProposal = Schema.decodeUnknownSync(BrainProposal);
 
 const isBrainError = Schema.is(SecondBrainError);
 
+export type CaptureJob = {
+  id: string;
+  vault: string;
+  threadId: string;
+  runFrom: number;
+  runTo: number;
+  transcriptHash: string;
+  version: string;
+  messages: Array<{ messageId: string; text: string }>;
+  state: "pending" | "completed" | "failed";
+  proposalIds: string[];
+};
 export type IndexedNote = { document: NoteDocument; mtime: number; size: number };
 export type IndexSnapshot = {
   notes: IndexedNote[];
@@ -43,6 +55,20 @@ export type AuditEntry = {
 export class SecondBrainIndex extends Context.Service<
   SecondBrainIndex,
   {
+    readonly enqueueCapture: (job: CaptureJob) => Effect.Effect<CaptureJob, SecondBrainError>;
+    readonly saveCapture: (job: CaptureJob) => Effect.Effect<void, SecondBrainError>;
+    readonly pendingCaptures: () => Effect.Effect<CaptureJob[], SecondBrainError>;
+    readonly captureCursor: () => Effect.Effect<number, SecondBrainError>;
+    readonly setCaptureCursor: (sequence: number) => Effect.Effect<void, SecondBrainError>;
+    readonly deliveredGeneration: (
+      vault: string,
+      thread: string,
+    ) => Effect.Effect<number | null, SecondBrainError>;
+    readonly markDelivered: (
+      vault: string,
+      thread: string,
+      generation: number,
+    ) => Effect.Effect<void, SecondBrainError>;
     readonly snapshot: (vault: string) => Effect.Effect<IndexSnapshot, SecondBrainError>;
     readonly reconcile: (
       vault: string,
@@ -75,8 +101,20 @@ export class SecondBrainIndex extends Context.Service<
 >()("d4research/second-brain/SecondBrainIndex") {}
 
 export const proposalFingerprint = (
-  p: Pick<BrainProposal, "path" | "operation" | "content" | "expectedHash" | "heading">,
-) => JSON.stringify([p.path, p.operation, p.content, p.expectedHash, p.heading ?? null]);
+  p: Pick<
+    BrainProposal,
+    "path" | "operation" | "content" | "expectedHash" | "heading" | "oldStr" | "newStr"
+  >,
+) =>
+  JSON.stringify([
+    p.path,
+    p.operation,
+    p.content,
+    p.expectedHash,
+    p.heading ?? null,
+    p.oldStr ?? null,
+    p.newStr ?? null,
+  ]);
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const db = yield* Effect.acquireRelease(
@@ -92,9 +130,9 @@ const make = Effect.gen(function* () {
       catch: (e) => (isBrainError(e) ? e : new SecondBrainError({ code: "unavailable" })),
     });
   yield* run(() => {
-    db.exec("PRAGMA busy_timeout=3000; PRAGMA journal_mode=WAL;");
+    db.exec("PRAGMA busy_timeout=50; PRAGMA journal_mode=WAL;");
     const version = Number(db.prepare("PRAGMA user_version").get()?.user_version);
-    if (version > 1) throw new SecondBrainError({ code: "unavailable" });
+    if (version > 3) throw new SecondBrainError({ code: "unavailable" });
     if (version === 0)
       db.exec(`BEGIN;
       CREATE TABLE vaults (root TEXT PRIMARY KEY, generation INTEGER NOT NULL, indexed_at TEXT, truncated INTEGER NOT NULL);
@@ -111,6 +149,15 @@ const make = Effect.gen(function* () {
       CREATE TABLE audit (id TEXT PRIMARY KEY, vault TEXT NOT NULL, state TEXT NOT NULL, document TEXT NOT NULL);
       CREATE INDEX audit_vault ON audit(vault,state);
       PRAGMA user_version=1; COMMIT;`);
+    if (version < 2)
+      db.exec(`BEGIN;
+      CREATE TABLE brain_deliveries(vault TEXT NOT NULL, thread TEXT NOT NULL, generation INTEGER NOT NULL, PRIMARY KEY(vault,thread));
+      PRAGMA user_version=2; COMMIT;`);
+    if (version < 3)
+      db.exec(`BEGIN;
+      CREATE TABLE brain_capture_jobs(id TEXT PRIMARY KEY, state TEXT NOT NULL, document TEXT NOT NULL);
+      CREATE TABLE brain_capture_cursor(id INTEGER PRIMARY KEY CHECK(id=1), sequence INTEGER NOT NULL);
+      PRAGMA user_version=3; COMMIT;`);
   });
   const transaction = (body: () => void) => {
     db.exec("BEGIN IMMEDIATE");
@@ -125,6 +172,59 @@ const make = Effect.gen(function* () {
   const decodeProposal = (row: Record<string, unknown>) =>
     decodeBrainProposal(JSON.parse(String(row.document)));
   return SecondBrainIndex.of({
+    enqueueCapture: (job) =>
+      run(() => {
+        db.prepare("INSERT OR IGNORE INTO brain_capture_jobs VALUES(?,?,?)").run(
+          job.id,
+          job.state,
+          JSON.stringify(job),
+        );
+        return JSON.parse(
+          String(
+            db.prepare("SELECT document FROM brain_capture_jobs WHERE id=?").get(job.id)!.document,
+          ),
+        ) as CaptureJob;
+      }),
+    saveCapture: (job) =>
+      run(() => {
+        db.prepare("UPDATE brain_capture_jobs SET state=?, document=? WHERE id=?").run(
+          job.state,
+          JSON.stringify(job),
+          job.id,
+        );
+      }),
+    pendingCaptures: () =>
+      run(() =>
+        db
+          .prepare("SELECT document FROM brain_capture_jobs WHERE state='pending' ORDER BY rowid")
+          .all()
+          .map((r) => JSON.parse(String(r.document)) as CaptureJob),
+      ),
+    captureCursor: () =>
+      run(() =>
+        Number(
+          db.prepare("SELECT sequence FROM brain_capture_cursor WHERE id=1").get()?.sequence ?? 0,
+        ),
+      ),
+    setCaptureCursor: (sequence) =>
+      run(() => {
+        db.prepare(
+          "INSERT INTO brain_capture_cursor VALUES(1,?) ON CONFLICT(id) DO UPDATE SET sequence=max(sequence,excluded.sequence)",
+        ).run(sequence);
+      }),
+    deliveredGeneration: (vault, thread) =>
+      run(() => {
+        const row = db
+          .prepare("SELECT generation FROM brain_deliveries WHERE vault=? AND thread=?")
+          .get(vault, thread);
+        return row ? Number(row.generation) : null;
+      }),
+    markDelivered: (vault, thread, generation) =>
+      run(() => {
+        db.prepare(
+          "INSERT INTO brain_deliveries VALUES(?,?,?) ON CONFLICT(vault,thread) DO UPDATE SET generation=excluded.generation",
+        ).run(vault, thread, generation);
+      }),
     snapshot: (vault) =>
       run(() => {
         const row = db.prepare("SELECT * FROM vaults WHERE root=?").get(vault);
@@ -152,6 +252,9 @@ const make = Effect.gen(function* () {
               .all(vault)
               .map((r) => [String(r.path), String(r.hash)]),
           );
+          const changed =
+            notes.length !== existing.size ||
+            notes.some((n) => existing.get(n.document.path) !== n.document.hash);
           const incoming = new Set(notes.map((n) => n.document.path));
           const remove = (file: string) => {
             db.prepare("DELETE FROM chunks WHERE vault=? AND path=?").run(vault, file);
@@ -205,8 +308,8 @@ const make = Effect.gen(function* () {
               );
           }
           db.prepare(
-            "INSERT INTO vaults VALUES(?,1,?,?) ON CONFLICT(root) DO UPDATE SET generation=generation+1,indexed_at=excluded.indexed_at,truncated=excluded.truncated",
-          ).run(vault, timestamp, Number(truncated));
+            "INSERT INTO vaults VALUES(?,1,?,?) ON CONFLICT(root) DO UPDATE SET generation=generation+?,indexed_at=excluded.indexed_at,truncated=excluded.truncated",
+          ).run(vault, timestamp, Number(truncated), Number(changed));
         }),
       ),
     search: (vault, input) =>

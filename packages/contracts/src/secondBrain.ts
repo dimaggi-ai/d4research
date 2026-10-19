@@ -9,6 +9,7 @@ export const BrainNoteMetadata = Schema.Struct({
   id: Schema.optionalKey(ShortText),
   kind: Schema.optionalKey(BrainNoteKind),
   title: Schema.optionalKey(ShortText),
+  summary: Schema.optionalKey(ShortText),
   created: Schema.optionalKey(ShortText),
   updated: Schema.optionalKey(ShortText),
   status: Schema.optionalKey(ShortText),
@@ -42,6 +43,9 @@ export const BrainReadInput = Schema.Struct({
 });
 export type BrainReadInput = typeof BrainReadInput.Type;
 export const BrainReadResult = Schema.Struct({
+  possibleDuplicates: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ path: BrainPath, reason: Schema.String })),
+  ),
   content: Schema.String,
   hash: Schema.String,
   citation: BrainCitation,
@@ -72,10 +76,21 @@ export type BrainSearchResponse = typeof BrainSearchResponse.Type;
 export const BrainEdit = Schema.Struct({
   path: BrainPath,
   kind: BrainNoteKind,
-  operation: Schema.Literals(["create", "append", "replace-section", "replace"]),
+  operation: Schema.Literals([
+    "create",
+    "append",
+    "replace-section",
+    "replace",
+    "patch_section",
+    "str_replace",
+    "supersede",
+    "replace_file",
+  ]),
   content: Schema.String.check(Schema.isMaxLength(1048576)),
   expectedHash: Schema.NullOr(Schema.String),
   heading: Schema.optionalKey(ShortText),
+  oldStr: Schema.optionalKey(ShortText),
+  newStr: Schema.optionalKey(ShortText),
 });
 export type BrainEdit = typeof BrainEdit.Type;
 export const BrainEvidence = Schema.Struct({
@@ -99,6 +114,9 @@ export const BrainProposal = Schema.Struct({
   createdAt: Schema.String,
   reviewedAt: Schema.NullOr(Schema.String),
   reason: Schema.NullOr(Schema.String),
+  possibleDuplicates: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ path: BrainPath, reason: Schema.String })),
+  ),
 });
 export type BrainProposal = typeof BrainProposal.Type;
 export const BrainProposalQuery = Schema.Struct({
@@ -128,7 +146,18 @@ export const BrainStatus = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type BrainStatus = typeof BrainStatus.Type;
+export const BrainCatalogEntry = Schema.Struct({
+  path: BrainPath,
+  title: Schema.String,
+  kind: BrainNoteKind,
+  summary: Schema.String,
+  status: Schema.NullOr(Schema.String),
+  updated: Schema.NullOr(Schema.String),
+  inboundLinks: Schema.Int,
+});
 export const BrainMap = Schema.Struct({
+  catalog: Schema.Array(BrainCatalogEntry),
+  stats: Schema.Struct({ notes: Schema.Int, chunks: Schema.Int, generation: Schema.Int }),
   mapFile: Schema.NullOr(Schema.String),
   map: Schema.String,
   files: Schema.Array(Schema.String),
@@ -137,6 +166,13 @@ export const BrainMap = Schema.Struct({
 });
 export type BrainMap = typeof BrainMap.Type;
 export const BrainTurnContext = Schema.Struct({
+  delivery: Schema.optionalKey(
+    Schema.Struct({
+      vault: Schema.String,
+      generation: Schema.Int,
+      providerThreadId: Schema.String,
+    }),
+  ),
   policy: Schema.String,
   core: Schema.String,
   retrieved: Schema.String,
@@ -145,6 +181,7 @@ export const BrainTurnContext = Schema.Struct({
 export type BrainTurnContext = typeof BrainTurnContext.Type;
 export class SecondBrainError extends Schema.TaggedError<SecondBrainError>()("SecondBrainError", {
   code: Schema.Literals([
+    "secret_detected",
     "disabled",
     "invalid_path",
     "unsafe_path",
@@ -162,3 +199,24 @@ export class SecondBrainError extends Schema.TaggedError<SecondBrainError>()("Se
       : `Second brain operation failed (${this.code}).`;
   }
 }
+
+export const BrainIngestInput = Schema.Struct({
+  sourceTitle: ShortText,
+  sourceText: Schema.String.check(Schema.isMaxLength(262144)),
+});
+export type BrainIngestInput = typeof BrainIngestInput.Type;
+export const BrainIngestResult = Schema.Struct({
+  path: BrainPath,
+  related: BrainSearchResponse,
+  checklist: Schema.Array(Schema.String),
+});
+export type BrainIngestResult = typeof BrainIngestResult.Type;
+export const BrainDecisionInput = Schema.Struct({
+  title: ShortText,
+  context: ShortText,
+  decision: ShortText,
+  consequences: ShortText,
+  supersedes: Schema.optionalKey(BrainPath),
+  project: Schema.optionalKey(BrainPath),
+});
+export type BrainDecisionInput = typeof BrainDecisionInput.Type;

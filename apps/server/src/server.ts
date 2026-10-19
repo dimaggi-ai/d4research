@@ -1,3 +1,5 @@
+import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
+import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
 import * as Scheduler from "./scheduling/Scheduler.ts";
 import * as SecondBrainService from "./second-brain/SecondBrainService.ts";
 import * as SecondBrainFiles from "./second-brain/SecondBrainFiles.ts";
@@ -230,7 +232,7 @@ const layerServerSettings = ServerSettings.layer.pipe(
 
 const layerSecondBrain = SecondBrainService.layer.pipe(
   Layer.provide(SecondBrainFiles.layer),
-  Layer.provide(SecondBrainIndex.layer),
+  Layer.provideMerge(SecondBrainIndex.layer),
   Layer.provide(SecondBrainEmbeddings.layer),
   Layer.provide(layerServerSettings),
 );
@@ -463,6 +465,7 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerSecondBrain),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(ResourceCleanupService.layer),
@@ -521,6 +524,12 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  Layer.effectDiscard(
+    SecondBrainCaptureReactor.SecondBrainCaptureReactor.use((reactor) => reactor.start()),
+  ).pipe(
+    Layer.provide(SecondBrainCaptureReactor.layer),
+    Layer.provide(EventStoreV2.layerFromOrchestrationEventStore),
+  ),
   SecondBrainMaintenance.layer.pipe(Layer.provide(Scheduler.layer)),
   Layer.effectDiscard(ResearchIntegrityReactor.use((reactor) => reactor.start())).pipe(
     Layer.provide(ResearchIntegrityReactorLive),
@@ -568,6 +577,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
+  Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   Layer.provideMerge(layerSecondBrain),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerProjectService),

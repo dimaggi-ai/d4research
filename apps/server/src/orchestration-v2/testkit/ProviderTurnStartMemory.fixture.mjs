@@ -7,11 +7,12 @@ const mode = process.argv[3];
 const withHandoff = mode.startsWith("handoff");
 const require = NodeModule.createRequire(root + "/apps/server/package.json");
 const load = (name) => import(NodeURL.pathToFileURL(require.resolve("effect/" + name)));
-const [Effect, Layer, FileSystem, Path] = await Promise.all([
+const [Effect, Layer, FileSystem, Path, Option] = await Promise.all([
   load("Effect"),
   load("Layer"),
   load("FileSystem"),
   load("Path"),
+  load("Option"),
 ]);
 const app = (file) => import(NodeURL.pathToFileURL(root + "/apps/server/src/" + file + ".ts"));
 const providerCore = (file) =>
@@ -30,6 +31,10 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     app("project/ProjectService"),
     app("provider/ProviderAuthService"),
   ]);
+const Brain = await app("second-brain/SecondBrainService");
+let brainCalls = 0;
+let receipts = 0;
+const sent = [];
 const Mcp = await providerCore("McpProviderSessions");
 const Research = await app("orchestration-v2/ProviderTurnStartService.testkit");
 const Settings = await app("serverSettings");
@@ -50,13 +55,32 @@ const session = {
   driver: "codex",
   providerSession: { id: "session", driver: "codex" },
   resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
-  startTurn: () =>
-    mode === "handoff-failure" ? Effect.fail("Synthetic startup failure") : Effect.void,
+  startTurn: (input) => {
+    sent.push(input.message.text);
+    return mode === "handoff-failure" ? Effect.fail("Synthetic startup failure") : Effect.void;
+  },
   compactThread: () => Effect.void,
 };
 const dependencies = Layer.mergeAll(
   Mcp.layer,
   Research.researchTurnDependenciesTestLayer,
+  Layer.mock(Brain.SecondBrainService)({
+    buildTurnContext: () => {
+      brainCalls++;
+      return mode === "brain-error"
+        ? Effect.fail("Brain unavailable")
+        : Effect.succeed({
+            policy: mode.startsWith("brain") ? "Trusted brain policy" : "",
+            core: mode.startsWith("brain") ? "Core data" : "",
+            retrieved: "",
+            citations: [],
+          });
+    },
+    markContextDelivered: () =>
+      Effect.sync(() => {
+        receipts++;
+      }),
+  }),
   Layer.mock(Registry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
   Layer.mock(Settings.ServerSettingsService)({
     getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
@@ -66,10 +90,15 @@ const dependencies = Layer.mergeAll(
   FileSystem.layerNoop({}),
   Path.layer,
   Layer.mock(Git.GitWorkflowService)({}),
-  Layer.mock(Project.ProjectService)({}),
-  Layer.mock(Auth.ProviderAuthService)({}),
+  Layer.mock(Project.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+  Layer.mock(Auth.ProviderAuthService)({ tryHandlePromptCommand: () => Effect.succeed(false) }),
   Layer.mock(Config.ServerConfig)({ worktreesDir: "/synthetic-worktrees" }),
-  Settings.layerTest(),
+  Settings.layerTest({
+    secondBrain: {
+      path: mode.startsWith("brain") && mode !== "brain-empty" ? "/synthetic-brain" : "",
+      injection: { enabled: mode !== "brain-disabled" },
+    },
+  }),
   Layer.mock(Projection.ProjectionStoreV2)({
     getThreadProjection: () =>
       Effect.sync(() => {
@@ -103,7 +132,7 @@ const dependencies = Layer.mergeAll(
         liveRuns.push(input);
         const turnInput = { ...input, message: input.message };
         const result = yield* Effect.exit(
-          mode === "handoff-compact"
+          mode === "handoff-compact" || mode === "brain-compact"
             ? input.session.compactThread(turnInput)
             : input.session.startTurn(turnInput),
         );
@@ -163,7 +192,13 @@ function fixture(index) {
         handoffIds: [],
       },
     ],
-    messages: [{ id: "message", text: "Continue", attachments: [] }],
+    messages: [
+      {
+        id: "message",
+        text: mode === "brain-slash" ? "/help" : mode === "brain-compact" ? "/compact" : "Continue",
+        attachments: [],
+      },
+    ],
     checkpointScopes: [{ id: "scope" }],
     contextHandoffs: withHandoff
       ? [
@@ -194,6 +229,10 @@ await Effect.runPromise(
     for (let i = 0; i < count; i++) {
       current = fixture(i);
       yield* service.start({ threadId: "thread", runId: "run:" + i });
+      NodeAssert.equal(
+        current.messages[0].text,
+        mode === "brain-slash" ? "/help" : mode === "brain-compact" ? "/compact" : "Continue",
+      );
       const controls = liveRuns.at(-1);
       current = { ...current, turnItems: [] };
       NodeAssert.equal(yield* controls.shouldStartProviderTurn(), true);
@@ -228,4 +267,4 @@ await Effect.runPromise(
     }
   }).pipe(Effect.provide(Start.layer.pipe(Layer.provide(dependencies)))),
 );
-console.log(JSON.stringify({ checkpoints }));
+console.log(JSON.stringify({ checkpoints, brainCalls, receipts, sent }));

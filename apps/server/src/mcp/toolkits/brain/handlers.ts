@@ -1,3 +1,4 @@
+import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import * as Effect from "effect/Effect";
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -14,6 +15,20 @@ export const BrainToolkitHandlersLive = McpToolAccess.toLayer(
   Effect.gen(function* () {
     const service = yield* SecondBrainService.SecondBrainService;
     return {
+      brain_capture: McpToolAccess.writesWithCapability(() =>
+        Effect.gen(function* () {
+          const scope = yield* McpInvocationContext.McpInvocationContext;
+          const caller = yield* McpInvocationContext.requireThreadScope(scope, "brain_capture");
+          const capture = yield* Capture.SecondBrainCapture;
+          return yield* capture.capture(caller.thread.threadId);
+        }),
+      ),
+      brain_ingest: McpToolAccess.writesWithCapability((input) =>
+        Effect.flatMap(actor, (id) => service.ingest(input, id)),
+      ),
+      brain_record_decision: McpToolAccess.writesWithCapability((input) =>
+        Effect.flatMap(actor, (id) => service.recordDecision(input, id)),
+      ),
       brain_status: McpToolAccess.reads(() => service.status()),
       brain_map: McpToolAccess.reads(() => service.map()),
       brain_read: McpToolAccess.reads((input) => service.read(input)),

@@ -212,14 +212,30 @@ export function noteTemplate(kind: BrainNoteKind, title: string, id: string, dat
   };
   return `---\nschema: 1\nid: ${JSON.stringify(id)}\nkind: ${kind}\ntitle: ${JSON.stringify(title)}\ncreated: ${JSON.stringify(date)}\nupdated: ${JSON.stringify(date)}\nstatus: active\ntags: []\naliases: []\nsources: []\n---\n# ${title}\n\n${sections[kind].map((s) => `## ${s}\n`).join("\n")}`;
 }
-export function applyEdit(previous: string | null, edit: BrainEdit) {
+export function applyEdit(previous: string | null, edit: BrainEdit, date?: string) {
   if (edit.operation === "create" && previous !== null)
     throw new SecondBrainError({ code: "stale_revision" });
   if (edit.operation !== "create" && previous === null)
     throw new SecondBrainError({ code: "not_found" });
   if (edit.operation === "append") return `${previous!.trimEnd()}\n${edit.content}\n`;
-  if (edit.operation !== "replace-section") return edit.content;
-  const lines = previous!.split("\n");
+  if (edit.operation === "str_replace" || edit.operation === "supersede") {
+    if (!edit.oldStr || previous!.split(edit.oldStr).length !== 2)
+      throw new SecondBrainError({ code: "malformed" });
+    if (edit.operation === "str_replace") {
+      if (edit.newStr === undefined) throw new SecondBrainError({ code: "malformed" });
+      return previous!.replace(edit.oldStr, () => edit.newStr!);
+    }
+    if (!date || edit.oldStr.includes("\n") || !previous!.split(/\r?\n/).includes(edit.oldStr))
+      throw new SecondBrainError({ code: "malformed" });
+    return previous!.replace(
+      edit.oldStr,
+      () =>
+        `~~${edit.oldStr}~~ (superseded ${date} by ${edit.content.replace(/\s+/g, " ")})\n${edit.content}`,
+    );
+  }
+  if (edit.operation !== "replace-section" && edit.operation !== "patch_section")
+    return edit.content;
+  const lines = previous!.split(/\r?\n/);
   const headings: Array<{ i: number; level: number; title: string }> = [];
   let fence: string | undefined;
   for (const [i, line] of lines.entries()) {
@@ -259,4 +275,35 @@ export function generatedIndex(notes: ReadonlyArray<NoteDocument>) {
           .join("\n")}\n`,
     )
     .join("")}`;
+}
+
+export const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+export function updateFrontmatter(content: string, date: string) {
+  if (content.startsWith("---\r\n")) content = content.replaceAll("\r\n", "\n");
+  if (!content.startsWith("---\n")) return content;
+  const end = content.indexOf("\n---", 4);
+  if (end < 0) return content;
+  const header = content.slice(0, end);
+  return (
+    (/^updated:.*$/m.test(header)
+      ? header.replace(/^updated:.*$/m, `updated: "${date}"`)
+      : `${header}\nupdated: "${date}"`) + content.slice(end)
+  );
+}
+export function nearSlug(left: string, right: string) {
+  const a = slug(left).split("-").sort().join("-");
+  const b = slug(right).split("-").sort().join("-");
+  if (Math.abs(a.length - b.length) > 2) return false;
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 0; i < a.length; i++) {
+    const next = [i + 1];
+    for (let j = 0; j < b.length; j++)
+      next.push(Math.min(next[j]! + 1, row[j + 1]! + 1, row[j]! + Number(a[i] !== b[j])));
+    row = next;
+  }
+  return row[b.length]! <= 2;
 }

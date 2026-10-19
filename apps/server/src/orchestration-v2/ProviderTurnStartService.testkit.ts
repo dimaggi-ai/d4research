@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../second-brain/SecondBrainService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -12,6 +13,10 @@ import * as ServerSettings from "../serverSettings.ts";
 // Native-provider replay tests never invoke d4's inline delegate. Fail loudly
 // if a fixture accidentally enters that separate workflow.
 export const researchTurnDependenciesTestLayer = Layer.mergeAll(
+  Layer.mock(SecondBrainService.SecondBrainService)({
+    buildTurnContext: () => Effect.succeed({ policy: "", core: "", retrieved: "", citations: [] }),
+    markContextDelivered: () => Effect.void,
+  }),
   NodePath.layer,
   ProviderRegistryMock.layer(),
   ServerSettings.layerTest().pipe(Layer.orDie),

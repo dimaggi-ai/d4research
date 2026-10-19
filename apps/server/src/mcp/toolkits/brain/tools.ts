@@ -1,6 +1,10 @@
+import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import {
+  BrainIngestInput,
+  BrainIngestResult,
+  BrainDecisionInput,
   BrainStatus,
   BrainMap,
   BrainReadInput,
@@ -41,6 +45,33 @@ const write = <T extends Tool.Any>(tool: T): T =>
     .annotate(Tool.Destructive, true)
     .annotate(Tool.Idempotent, false) as T;
 export const BrainToolkit = Toolkit.make(
+  write(
+    Tool.make("brain_capture", {
+      ...common,
+      dependencies: [...common.dependencies, Capture.SecondBrainCapture],
+      description:
+        "Capture cross-session knowledge from the calling thread as evidence-backed proposals. Excludes code-derivable facts, transient errors, and secrets.",
+      success: Schema.Array(Schema.String),
+    }),
+  ),
+  write(
+    Tool.make("brain_ingest", {
+      ...common,
+      description:
+        "Store an immutable raw source and return related notes to update through proposals. Writable callers may ingest in review mode; raw sources are not approved knowledge.",
+      parameters: BrainIngestInput,
+      success: BrainIngestResult,
+    }),
+  ),
+  write(
+    Tool.make("brain_record_decision", {
+      ...common,
+      description:
+        "Propose a decision with context and consequences, and optionally a link from its project card.",
+      parameters: BrainDecisionInput,
+      success: Schema.Array(BrainProposal),
+    }),
+  ),
   read(
     Tool.make("brain_status", {
       ...common,
@@ -58,7 +89,8 @@ export const BrainToolkit = Toolkit.make(
   read(
     Tool.make("brain_read", {
       ...common,
-      description: "Read a Markdown note or line range with its revision and citation.",
+      description:
+        "Read a Markdown note or line range with its revision. Cite as [brain: path#Lstart-Lend] only for paths returned by brain_read or brain_search in this session.",
       parameters: BrainReadInput,
       success: BrainReadResult,
     }),
@@ -67,7 +99,7 @@ export const BrainToolkit = Toolkit.make(
     Tool.make("brain_search", {
       ...common,
       description:
-        "Search approved notes by ranked relevance. No results means no matching evidence was retrieved.",
+        "Search notes and raw sources by ranked relevance. Cite as [brain: path#Lstart-Lend] only for paths returned by brain_read or brain_search in this session. If nothing relevant is found, say: Not found in second brain (searched: …).",
       parameters: BrainSearchInput,
       success: BrainSearchResponse,
     }),

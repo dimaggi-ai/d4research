@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -94,6 +95,7 @@ export class InlineDelegationRunner extends Context.Service<
     InlineDelegationRunner,
     Effect.gen(function* () {
       const context = yield* Effect.context<
+        | SecondBrainService.SecondBrainService
         | Crypto.Crypto
         | HttpClient.HttpClient
         | Path.Path

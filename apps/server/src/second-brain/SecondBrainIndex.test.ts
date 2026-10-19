@@ -36,6 +36,20 @@ it.effect(
           Effect.gen(function* () {
             const index = yield* Index.SecondBrainIndex;
             yield* index.saveProposal(p);
+            yield* index.markDelivered("v", "provider", 7);
+            yield* index.setCaptureCursor(42);
+            yield* index.enqueueCapture({
+              id: "job",
+              vault: "v",
+              threadId: "thread",
+              runFrom: 1,
+              runTo: 2,
+              transcriptHash: "hash",
+              version: "v1",
+              messages: [{ messageId: "m", text: "Safe" }],
+              state: "pending",
+              proposalIds: [],
+            });
             yield* index.audit({
               id: "audit",
               vault: "v",
@@ -61,6 +75,10 @@ it.effect(
             const index = yield* Index.SecondBrainIndex;
             expect((yield* index.proposal("v", p.id)).state).toBe("pending");
             expect(yield* index.pendingAudits("v")).toHaveLength(1);
+            expect(yield* index.deliveredGeneration("v", "provider")).toBe(7);
+            expect(yield* index.deliveredGeneration("other", "provider")).toBeNull();
+            expect(yield* index.captureCursor()).toBe(42);
+            expect(yield* index.pendingCaptures()).toHaveLength(1);
             expect(yield* index.search("v", { query: "quartz", path: "a" })).toHaveLength(1);
             expect(yield* index.search("other", { query: "quartz" })).toHaveLength(0);
             yield* index.reconcile(

@@ -1,3 +1,4 @@
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Path from "effect/Path";
@@ -40,6 +41,7 @@ export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateEr
 ) {}
 
 const dependencies = [
+  SecondBrainService.SecondBrainService,
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
   ProviderAdapterRegistryV2,

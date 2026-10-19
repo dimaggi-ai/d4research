@@ -24,6 +24,10 @@ installs Node 24, pnpm 11.10.0, CocoaPods, and Watchman, restores frozen JavaScr
 native dependencies, and applies `CI_BUILD_NUMBER` to the app and both extensions.
 Signing is automatic. Apple manages the distribution signing credentials.
 
+The Xcode shell environment raises Metro's soft open-file limit to at most
+65,536 without changing the build service's hard limit. This avoids `EMFILE`
+while scanning the monorepo's icon package during release packaging.
+
 The App Store Connect app must use the exact registered application identifier,
 not an identifier derived from its display name. Select iOS as the platform;
 the resulting archive supports both iPhone and iPad.

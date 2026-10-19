@@ -17,7 +17,14 @@ pnpm install --frozen-lockfile
 
 cd apps/mobile/ios
 printf 'export NODE_BINARY="%s"\nexport PATH="%s/bin:%s/bin:$PATH"\nexport APP_VARIANT=production\nexport CI=1\n' "$(command -v node)" "$(brew --prefix node@24)" "$(brew --prefix)" > .xcode.env.local
-printf 'ulimit -n 65536\n' >> .xcode.env.local
+cat >> .xcode.env.local <<'ENV'
+D4_FILE_LIMIT=$(ulimit -Hn)
+if [ "$D4_FILE_LIMIT" = unlimited ] || [ "$D4_FILE_LIMIT" -gt 65536 ]; then
+  D4_FILE_LIMIT=65536
+fi
+ulimit -S -n "$D4_FILE_LIMIT"
+unset D4_FILE_LIMIT
+ENV
 pod install --deployment
 # CocoaPods plugins may rewrite project settings; apply release metadata last.
 GEM_HOME="$(brew --prefix cocoapods)/libexec" "$(brew --prefix ruby)/bin/ruby" ci_scripts/prepare_signing.rb

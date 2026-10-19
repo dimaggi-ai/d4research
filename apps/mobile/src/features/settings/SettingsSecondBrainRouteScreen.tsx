@@ -129,12 +129,10 @@ function EnvironmentBrain({ target }: { target: SettingsTarget }) {
     busyRef.current = true;
     setBusy(true);
     setError(null);
-    try {
-      await operation();
-    } finally {
+    await operation().finally(() => {
       busyRef.current = false;
       setBusy(false);
-    }
+    });
   };
   const write = (patch: Partial<SecondBrainSettings>) =>
     void run(async () => {
@@ -452,19 +450,18 @@ function ProposalDetail({
     busyRef.current = true;
     setBusy(true);
     setError(null);
-    try {
-      const result =
-        action === "accept"
-          ? await accept({ environmentId, input: { id, expectedHash: data!.currentHash } })
-          : await reject({ environmentId, input: { id, reason: reason.trim() } });
-      if (result._tag === "Success") onReviewed();
-      else {
-        setError("Review failed. Refresh the proposal and try again.");
-        detail.refresh();
-      }
-    } finally {
+    const request =
+      action === "accept"
+        ? accept({ environmentId, input: { id, expectedHash: data!.currentHash } })
+        : reject({ environmentId, input: { id, reason: reason.trim() } });
+    const result = await request.finally(() => {
       busyRef.current = false;
       setBusy(false);
+    });
+    if (result._tag === "Success") onReviewed();
+    else {
+      setError("Review failed. Refresh the proposal and try again.");
+      detail.refresh();
     }
   };
   if (!data)

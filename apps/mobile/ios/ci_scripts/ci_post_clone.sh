@@ -47,7 +47,7 @@ fi
 
 # ExpoWidgets embeds the checkout path in its podspec script phases, so its
 # checksum changes on Cloud. Keep locked pod versions while refreshing metadata.
-pod install
+pod install --verbose
 
 GEM_HOME="$(brew --prefix cocoapods)/libexec" "$(brew --prefix ruby)/bin/ruby" ci_scripts/prepare_signing.rb
 

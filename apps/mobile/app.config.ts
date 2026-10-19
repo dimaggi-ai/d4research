@@ -250,7 +250,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    ...(repoEnv.T3CODE_IOS_APPLE_TEAM_ID ? { appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID } : {}),
+    appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID || "CR2PTQ345T",
     infoPlist: {
       UISupportedInterfaceOrientations: [
         "UIInterfaceOrientationPortrait",
@@ -425,6 +425,7 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
+    "./plugins/withIosPodDeploymentTarget.cjs",
     // Only the accelerometer is used (device viewer shake). Compile out the
     // pedometer so iOS needs no motion purpose string.
     ["expo-sensors", { motionPermission: false }],

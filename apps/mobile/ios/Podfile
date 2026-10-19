@@ -57,6 +57,21 @@ target 'd4research' do
   )
 
   post_install do |installer|
+    # d4: align legacy pod resource targets with the application minimum
+    installer.pods_project.targets.each do |target|
+      # Xcode's .xcode.env supplies Node; login profiles can lower hard limits.
+      if target.name == 'EXUpdates'
+        target.shell_script_build_phases.each do |phase|
+          phase.shell_script = phase.shell_script.gsub('bash -l -c', 'bash -c')
+        end
+      end
+      target.build_configurations.each do |configuration|
+        minimum = configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if minimum && Gem::Version.new(minimum) < Gem::Version.new('18.0')
+          configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '18.0'
+        end
+      end
+    end
 # t3code: repair cached CocoaPods UUID allocation before SPM integration
     pods_project = installer.pods_project
     existing_uuids = pods_project.objects.map(&:uuid)

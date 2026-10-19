@@ -12,7 +12,9 @@
 set -eu
 
 export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
-brew install node@24
+brew list node@24 >/dev/null 2>&1 || brew install node@24
+brew list cocoapods >/dev/null 2>&1 || brew install cocoapods
+brew list watchman >/dev/null 2>&1 || brew install watchman
 NODE_BIN="$(brew --prefix node@24)/bin"
 export PATH="$NODE_BIN:$PATH"
 
@@ -43,12 +45,19 @@ if [ -n "$BUNDLE_ID" ]; then
     expo-sharing-extension/Info.plist expo-sharing-extension/expo-sharing-extension.entitlements
 fi
 
-pod install
+# ExpoWidgets embeds the checkout path in its podspec script phases, so its
+# checksum changes on Cloud. Keep locked pod versions while refreshing metadata.
+pod install --verbose
+
+GEM_HOME="$(brew --prefix cocoapods)/libexec" "$(brew --prefix ruby)/bin/ruby" ci_scripts/prepare_signing.rb
 
 # Xcode build phases do not inherit this shell; React Native sources .xcode.env.local.
 # The expo-constants phase evaluates app.config.ts, so it needs the same identifier.
 cat > .xcode.env.local <<ENV
 export NODE_BINARY="$NODE_BIN/node"
+export PATH="$NODE_BIN:$(brew --prefix)/bin:\$PATH"
+export CI=1
+export RCT_USE_PREBUILT_RNCORE=0
 export NODE_OPTIONS="$NODE_OPTIONS"
 export APP_VARIANT="$APP_VARIANT"
 export T3CODE_IOS_BUNDLE_ID="$BUNDLE_ID"

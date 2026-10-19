@@ -11,7 +11,7 @@ async function loadConfig() {
 }
 
 describe("d4 native release isolation", () => {
-  it("does not inherit upstream signing or hosted update defaults", async () => {
+  it("signs with the d4 team and does not inherit hosted update defaults", async () => {
     for (const name of [
       "T3CODE_IOS_APPLE_TEAM_ID",
       "T3CODE_MOBILE_UPDATES_URL",
@@ -26,7 +26,7 @@ describe("d4 native release isolation", () => {
     expect(config.ios?.bundleIdentifier).toBe("ai.dimaggi.d4research");
     expect(config.updates?.enabled).toBe(false);
     expect(config.updates?.url).toBeUndefined();
-    expect(config.ios?.appleTeamId).toBeUndefined();
+    expect(config.ios?.appleTeamId).toBe("CR2PTQ345T");
     expect(config.extra?.eas).toBeUndefined();
     expect(config.owner).toBeUndefined();
   });

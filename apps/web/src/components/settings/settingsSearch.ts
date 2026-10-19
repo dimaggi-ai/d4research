@@ -949,6 +949,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "handoff",
   },
   {
+    id: "handoff-memory-backend",
+    title: "Meko MCP handoff memory",
+    to: "/settings/general",
+    targetId: "handoff-memory-backend",
+  },
+  {
     id: "research-pipeline",
     title: "Research",
     to: "/settings/research",

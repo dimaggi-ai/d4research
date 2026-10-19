@@ -1458,3 +1458,62 @@ describe("server model preferences", () => {
     });
   });
 });
+
+describe("provider appearance preferences", () => {
+  it("defaults to no overrides and round-trips independent provider appearances", () => {
+    expect(decodeClientSettings({}).providerAppearance).toEqual({});
+    const providerAppearance = {
+      codex: {
+        icon: "claudeAgent",
+        badgeIcon: "cursor",
+        modelNames: { "gpt-6-astra": "Research" },
+      },
+      claude_work: { icon: "opencode", badgeIcon: "none", modelNames: { opus: "Writer" } },
+    };
+    expect(decodeClientSettingsPatch({ providerAppearance }).providerAppearance).toEqual(
+      providerAppearance,
+    );
+    expect(
+      encodeClientSettings(decodeClientSettings({ providerAppearance })).providerAppearance,
+    ).toEqual(providerAppearance);
+  });
+});
+
+it("keeps Meko opt-in and round-trips an explicit MCP destination", () => {
+  expect(decodeServerSettings({}).handoff.memoryBackend).toBe("local");
+  expect(decodeServerSettings({}).handoff.meko.url).toBe("");
+  const handoff = {
+    memoryBackend: "meko",
+    meko: {
+      url: "https://example.test/mcp",
+      datapackId: "test-datapack",
+      agentId: "test-agent",
+      tokenEnv: "MEKO_TEST_TOKEN",
+    },
+  };
+  const settings = decodeServerSettings({ handoff });
+  expect(decodeServerSettings(encodeServerSettings(settings)).handoff).toMatchObject(handoff);
+  expect(decodeServerSettingsPatch({ handoff })).toEqual({ handoff });
+});
+
+it.each([
+  "http://example.test/mcp",
+  "https://user:placeholder@example.test/mcp",
+  "https://example.test/mcp?credential=placeholder",
+  "https://example.test/mcp#fragment",
+])("rejects unsafe Meko destinations: %s", (url) => {
+  expect(() => decodeServerSettingsPatch({ handoff: { meko: { url } } })).toThrow();
+});
+it("accepts empty or loopback Meko configuration and rejects credential values as names", () => {
+  for (const url of [
+    "",
+    "http://127.0.0.1:8090/mcp",
+    "http://[::1]:8090/mcp",
+    "https://example.test/mcp",
+  ]) {
+    expect(decodeServerSettingsPatch({ handoff: { meko: { url } } }).handoff?.meko?.url).toBe(url);
+  }
+  expect(() =>
+    decodeServerSettingsPatch({ handoff: { meko: { tokenEnv: "not-a-variable" } } }),
+  ).toThrow();
+});

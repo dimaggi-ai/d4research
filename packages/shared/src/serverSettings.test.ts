@@ -1352,3 +1352,23 @@ describe("synchronized model preferences", () => {
     });
   });
 });
+
+it("merges Meko connection edits without resetting compression or switching backends", () => {
+  const selected = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    handoff: {
+      memoryBackend: "meko",
+      meko: { url: "https://example.test/mcp", datapackId: "test-datapack" },
+      contextCompression: { enabled: true },
+    },
+  });
+  const updated = applyServerSettingsPatch(selected, {
+    handoff: { meko: { tokenEnv: "MY_TOKEN" } },
+  });
+  expect(updated.handoff.memoryBackend).toBe("meko");
+  expect(updated.handoff.meko.url).toBe("https://example.test/mcp");
+  expect(updated.handoff.contextCompression.enabled).toBe(true);
+  expect(
+    applyServerSettingsPatch(updated, { handoff: { memoryBackend: "local" } }).handoff
+      .memoryBackend,
+  ).toBe("local");
+});

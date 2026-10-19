@@ -803,13 +803,17 @@ describe("provider handoff", () => {
       await expect(
         persistProviderHandoffMemoryFallback({
           text: "context",
+          threadId: "test-thread",
           preparedConnection: preparedConnection(),
           signal: controller.signal,
         }),
       ).resolves.toBe(true);
       expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
       const init = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-      expect(JSON.parse(String(init[1].body))).toEqual({ text: "context" });
+      expect(JSON.parse(String(init[1].body))).toEqual({
+        text: "context",
+        threadId: "test-thread",
+      });
     } finally {
       remove.mockRestore();
       globalThis.fetch = original;

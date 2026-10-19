@@ -1,3 +1,4 @@
+import * as HandoffMemory from "../../../handoffMemory.ts";
 import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
@@ -105,6 +106,7 @@ it.effect("production mcp layer lists worktree tools over http", () =>
         ),
         Layer.provide(PreviewAutomationBroker.layer),
         Layer.provide(PreviewBrowser.layer),
+        Layer.provide(HandoffMemory.layer),
         Layer.provide(layerStubServices),
         Layer.build,
       );
@@ -151,6 +153,8 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       expect(toolNames).toContain("t3_worktree_status");
       expect(toolNames).toContain("preview_status");
       expect(toolNames).toContain("delegate_task");
+      expect(toolNames).toContain("handoff_status");
+      expect(toolNames).toContain("handoff_read");
 
       const handoff = tools.find((tool) => tool.name === "t3_worktree_handoff");
       expect(handoff?.annotations?.readOnlyHint).toBe(false);

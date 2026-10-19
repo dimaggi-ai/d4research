@@ -1,3 +1,4 @@
+import { applyModelDisplayNames } from "./providerAppearance";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -189,12 +190,15 @@ function getAppModelOptions(
   }
 
   const preferences = readInstanceModelPreferences(settings, defaultInstanceId);
-  return appendUnavailableDynamicModelSelection(
-    applyInstanceModelPreferences(options, preferences),
-    rawModels,
-    provider,
-    selectedModel,
-    preferences.hiddenModels,
+  return applyModelDisplayNames(
+    appendUnavailableDynamicModelSelection(
+      applyInstanceModelPreferences(options, preferences),
+      rawModels,
+      provider,
+      selectedModel,
+      preferences.hiddenModels,
+    ),
+    settings.providerAppearance[defaultInstanceId]?.modelNames,
   );
 }
 
@@ -224,12 +228,15 @@ export function getAppModelOptionsForInstance(
   }
 
   const preferences = readInstanceModelPreferences(settings, entry.instanceId);
-  return appendUnavailableDynamicModelSelection(
-    applyInstanceModelPreferences(options, preferences),
-    entry.models,
-    entry.driverKind,
-    selectedModel,
-    preferences.hiddenModels,
+  return applyModelDisplayNames(
+    appendUnavailableDynamicModelSelection(
+      applyInstanceModelPreferences(options, preferences),
+      entry.models,
+      entry.driverKind,
+      selectedModel,
+      preferences.hiddenModels,
+    ),
+    settings.providerAppearance[entry.instanceId]?.modelNames,
   );
 }
 

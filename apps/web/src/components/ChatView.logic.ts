@@ -1202,7 +1202,7 @@ export function getStartedThreadModelChangeBlockReason(input: {
   currentProviderInstanceId?: ModelSelection["instanceId"] | null | undefined;
   nextModelSelection: ModelSelection;
 }): { title: string; description: string } | null {
-  if (!input.hasStartedSession) {
+  if (!input.hasStartedSession || input.supportsProviderSwitchingViaHandoff) {
     return null;
   }
   const currentInstanceId =

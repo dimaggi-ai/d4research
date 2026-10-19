@@ -69,6 +69,49 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it("keeps display names scoped to the selected provider instance", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claude_work",
+        models: ["opus"],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claude_personal",
+        models: ["opus"],
+      }),
+    ];
+    const [work, personal] = deriveProviderInstanceEntries(providers);
+    const settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerAppearance: {
+        [ProviderInstanceId.make("claude_work")]: { modelNames: { opus: "Writer" } },
+      },
+    };
+    expect(getAppModelOptionsForInstance(settings, work!)[0]?.name).toBe("Writer");
+    expect(getAppModelOptionsForInstance(settings, personal!)[0]?.name).toBe("opus");
+  });
+  it("uses display aliases without changing the Codex model selected for dispatch", () => {
+    const providers = [provider({ instanceId: "codex", models: ["gpt-6-astra"] })];
+    const entry = deriveProviderInstanceEntries(providers)[0]!;
+    const settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerAppearance: { [entry.instanceId]: { modelNames: { "gpt-6-astra": "Claude Opus" } } },
+    };
+    expect(getAppModelOptionsForInstance(settings, entry)[0]).toMatchObject({
+      slug: "gpt-6-astra",
+      name: "Claude Opus",
+      shortName: "Claude Opus",
+    });
+    expect(
+      resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, "gpt-6-astra"),
+    ).toBe("gpt-6-astra");
+    expect(getAppModelOptionsForInstance(DEFAULT_UNIFIED_SETTINGS, entry)[0]?.name).toBe(
+      "gpt-6-astra",
+    );
+  });
+
   it("shows a missing OpenCode selection without making it selectable", () => {
     const providers = [
       provider({

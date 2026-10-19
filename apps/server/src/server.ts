@@ -1,3 +1,4 @@
+import * as HandoffMemory from "./handoffMemory.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
 import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
 import * as Scheduler from "./scheduling/Scheduler.ts";
@@ -41,6 +42,7 @@ import {
   skillsShareRouteLayer,
   skillsInstallRouteLayer,
   handoffMemoryRouteLayer,
+  mekoHandoffRouteLayer,
   handoffCompressRouteLayer,
   handoffPrepareRouteLayer,
   memoAttachmentRouteLayer,
@@ -582,6 +584,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   Layer.provideMerge(layerSecondBrain),
   Layer.provideMerge(layerOrchestrationApplication),
+  Layer.provideMerge(HandoffMemory.layer),
   Layer.provideMerge(RuntimeLayer.layerProjectService),
   // HTTP/MCP handlers resolve adapters when a request arrives, not only while
   // their route layers are built. Keep the shared facade in the server context.
@@ -690,6 +693,7 @@ const layerMakeRoutes = Layer.mergeAll(
     skillsShareRouteLayer,
     skillsInstallRouteLayer,
     handoffMemoryRouteLayer,
+    mekoHandoffRouteLayer,
     handoffCompressRouteLayer,
     handoffPrepareRouteLayer,
     memoAttachmentRouteLayer,

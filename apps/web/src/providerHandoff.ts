@@ -403,6 +403,7 @@ export async function prepareDurableProviderHandoff(
   if (input.signal?.aborted) return prepared?.summary ?? input.transcript;
 
   await persistProviderHandoffMemoryFallback({
+    threadId: input.sourceThreadId,
     text: buildProviderHandoffMemory({
       sourceThreadId: ThreadId.make(input.sourceThreadId),
       sourceThreadTitle: input.sourceThreadTitle,
@@ -426,6 +427,7 @@ export async function prepareDurableProviderHandoff(
  * summary or directly attached transcript regardless of the mirror result.
  */
 export async function persistProviderHandoffMemoryFallback(input: {
+  readonly threadId?: string | undefined;
   readonly text: string;
   readonly project?: string | undefined;
   readonly preparedConnection?: PreparedConnection | undefined;

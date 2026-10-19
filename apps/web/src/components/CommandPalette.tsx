@@ -1239,6 +1239,7 @@ function OpenCommandPaletteDialog(props: {
         null;
       return (
         <ThreadCommandSubtitle
+          providerInstanceId={modelInstanceId}
           project={projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null}
           projectTitle={projectTitle ?? null}
           environmentLabel={

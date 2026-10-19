@@ -408,6 +408,18 @@ describe("getStartedThreadModelChangeBlockReason", () => {
     ).toBeNull();
   });
 
+  it("allows a restricted model change when the current thread supports context handoff", () => {
+    expect(
+      getStartedThreadModelChangeBlockReason({
+        providers,
+        hasStartedSession: true,
+        supportsProviderSwitchingViaHandoff: true,
+        currentModelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
+        nextModelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-other" },
+      }),
+    ).toBeNull();
+  });
+
   it("blocks started-session model changes for providers that require a new thread", () => {
     expect(
       getStartedThreadModelChangeBlockReason({

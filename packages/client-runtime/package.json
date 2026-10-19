@@ -434,6 +434,10 @@
     "./state/second-brain": {
       "types": "./src/state/secondBrain.ts",
       "default": "./src/state/secondBrain.ts"
+    },
+    "./provider-appearance": {
+      "types": "./src/providerAppearance.ts",
+      "default": "./src/providerAppearance.ts"
     }
   },
   "scripts": {

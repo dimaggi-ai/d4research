@@ -81,6 +81,7 @@ export default mergeConfig(
         // would still be bundled — which silently inlined native loaders such
         // as node-gyp-build, losing native acceleration.
         alwaysBundle: shouldBundleCliDependency,
+        neverBundle: isExternalCliDependency,
         onlyBundle: false,
       },
       banner: {

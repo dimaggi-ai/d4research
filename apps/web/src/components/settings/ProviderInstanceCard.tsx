@@ -1,5 +1,7 @@
 "use client";
 
+import { ProviderAppearanceSettings } from "./ProviderAppearanceSettings";
+
 import { Spinner } from "~/components/ui/spinner";
 
 import {
@@ -876,6 +878,7 @@ export function ProviderInstanceCard({
 
   const titleIconNode = (
     <ProviderInstanceIcon
+      instanceId={instanceId}
       driverKind={driverKind ?? instance.driver}
       displayName={displayName}
       accentColor={accentColor}
@@ -1387,6 +1390,13 @@ export function ProviderInstanceCard({
               Model preferences and custom models are saved on the selected environment and shared
               across connected devices.
             </p>
+            {driverKind ? (
+              <ProviderAppearanceSettings
+                instanceId={instanceId}
+                driverKind={driverKind}
+                displayName={displayName}
+              />
+            ) : null}
             <ProviderModelsSection
               canManageCustomModels={!readOnly}
               canWritePreferences={canWriteSettings}

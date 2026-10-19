@@ -72,6 +72,9 @@ function AccountAvatar({
   if (account.redeem) {
     return (
       <ProviderInstanceIcon
+        instanceId={
+          "instanceId" in account.redeem.input ? account.redeem.input.instanceId : undefined
+        }
         driverKind={account.driver}
         displayName={
           account.displayName ??

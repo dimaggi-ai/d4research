@@ -1,3 +1,6 @@
+import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
+import * as HandoffMemory from "../handoffMemory.ts";
+import { FetchHttpClient } from "effect/http";
 import * as SecondBrainService from "../second-brain/SecondBrainService.ts";
 import { modelSelectionsEqual } from "@d4research/shared/model";
 import {
@@ -133,6 +136,7 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
+    const handoffMemory = yield* HandoffMemory.HandoffMemory;
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1097,6 +1101,62 @@ export const layer: Layer.Layer<
         text: providerMessageText,
         records: message.context?.records ?? [],
       });
+      const saveHandoff = (text: string) =>
+        handoffMemory.schedule({ text, threadId: input.threadId }, (receipt) =>
+          Effect.gen(function* () {
+            const current = yield* projectionStore.getThreadProjection(input.threadId);
+            const now = yield* DateTime.now;
+            yield* eventSink.write({
+              events: [
+                {
+                  id: yield* idAllocator.allocate.event({ threadId: input.threadId }),
+                  type: "turn-item.updated",
+                  threadId: input.threadId,
+                  runId,
+                  providerInstanceId: run.providerInstanceId,
+                  occurredAt: now,
+                  payload: {
+                    id: idAllocator.derive.runSignalTurnItem({
+                      runId,
+                      signal: "meko-handoff-failed",
+                    }),
+                    threadId: input.threadId,
+                    runId,
+                    nodeId: rootNode.id,
+                    providerThreadId: providerThread.id,
+                    providerTurnId: null,
+                    nativeItemRef: null,
+                    parentItemId: null,
+                    ordinal:
+                      Math.max(
+                        0,
+                        ...current.turnItems
+                          .filter((item) => item.runId === runId)
+                          .map((item) => item.ordinal),
+                      ) + 1,
+                    status: "completed",
+                    startedAt: now,
+                    updatedAt: now,
+                    completedAt: now,
+                    type: "system_notice",
+                    title: "Meko handoff save was not verified",
+                    message: receipt.message,
+                    activity: { kind: "handoff.meko.failed", payload: { status: receipt.status } },
+                  },
+                },
+              ],
+            });
+          }).pipe(
+            Effect.catchCause(() =>
+              Effect.logWarning("Meko handoff receipt could not be recorded."),
+            ),
+          ),
+        );
+      const attachedHandoff = extractTrailingProviderHandoffContext(
+        extractTrailingEnabledSkillsContext(userText).promptText,
+      ).handoff;
+      if (settings.handoff.memoryBackend === "meko" && attachedHandoff !== null)
+        yield* saveHandoff(attachedHandoff.summary);
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(
@@ -1303,6 +1363,14 @@ export const layer: Layer.Layer<
               restoreHandoffHistory(handoff, history, projection.runs),
             );
           }
+          if (settings.handoff.memoryBackend === "meko" && deliveryHandoffs.length > 0) {
+            yield* saveHandoff(
+              deliveryHandoffs
+                .map((handoff) => handoff.summaryText)
+                .join("\n\n")
+                .slice(0, 60_000),
+            );
+          }
           const delivery = yield* deliverContextHandoffs({
             handoffs: deliveryHandoffs,
             mode: compression.mode,
@@ -1505,4 +1573,4 @@ export const layer: Layer.Layer<
         ),
     });
   }),
-);
+).pipe(Layer.provide(HandoffMemory.layer.pipe(Layer.provide(FetchHttpClient.layer))));

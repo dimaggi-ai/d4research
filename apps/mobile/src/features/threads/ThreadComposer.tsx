@@ -1,4 +1,3 @@
-import { LocalAssistantPanel } from "./LocalAssistantPanel";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -1107,14 +1106,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </ComposerDictationToolbar>
           </Animated.View>
         </ComposerSurface>
-
-        <LocalAssistantPanel
-          key={composerOwnerKey}
-          draft={props.draftMessage}
-          onChange={props.onChangeDraftMessage}
-          environmentId={props.environmentId}
-          threadId={props.selectedThread.id}
-        />
 
         {props.activeThreadBusy && queuedEdit === null ? (
           <View className="flex-row flex-wrap items-center gap-2 pt-2">

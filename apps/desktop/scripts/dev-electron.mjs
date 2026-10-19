@@ -59,14 +59,6 @@ NodeChildProcess.execFileSync(
   { stdio: "inherit" },
 );
 
-if (hostPlatform === "darwin") {
-  NodeChildProcess.execFileSync(
-    process.execPath,
-    [NodePath.join(desktopDir, "scripts/build-apple-assistant.mjs")],
-    { stdio: "inherit" },
-  );
-}
-
 await waitForResources({
   baseDir: desktopDir,
   files: requiredFiles,

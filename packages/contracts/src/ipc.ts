@@ -1040,13 +1040,6 @@ export interface DesktopBridge {
    */
   getSystemLocale?: () => string | null;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
-  localAssistantStatus?: () => Promise<{ available: boolean; error?: string }>;
-  localAssistantCancel?: (requestId: string) => Promise<void>;
-  localAssistantGenerate?: (request: {
-    requestId: string;
-    instructions: string;
-    input: string;
-  }) => Promise<{ available: boolean; text?: string; error?: string }>;
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;

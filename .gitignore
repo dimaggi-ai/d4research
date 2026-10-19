@@ -52,5 +52,3 @@ release-ops/spec-*.md
 release-ops/test-spec-*.md
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
-
-/apps/desktop/resources/apple-assistant/

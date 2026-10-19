@@ -958,8 +958,6 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
   "!**/*.map",
   "!**/*.d.cts",
-  "!apps/desktop/resources/apple-assistant{,/**/*}",
-  "!apps/desktop/prod-resources/apple-assistant{,/**/*}",
   "!apps/desktop/resources/browser-secret",
   "!apps/desktop/resources/browser-secret/**/*",
   "!apps/desktop/prod-resources/browser-secret",
@@ -2597,9 +2595,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       : {}),
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
-      ...(platform === "mac"
-        ? [{ from: "apps/desktop/prod-resources/apple-assistant", to: "apple-assistant" }]
-        : []),
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
@@ -3541,22 +3536,6 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         arch: options.arch,
         verbose: options.verbose,
       });
-  }
-  if (options.platform === "mac") {
-    yield* runCommand(
-      ChildProcess.make(
-        "node",
-        [
-          path.join(repoRoot, "apps/desktop/scripts/build-apple-assistant.mjs"),
-          "--arch",
-          options.arch,
-          "--output",
-          path.join(stageResourcesDir, "apple-assistant", "d4-apple-assistant"),
-        ],
-        { cwd: repoRoot },
-      ),
-      { label: "build Apple on-device assistant", verbose: options.verbose },
-    );
   }
   yield* stageBrowserSecret({
     repoRoot,

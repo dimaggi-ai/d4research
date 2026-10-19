@@ -1,8 +1,9 @@
+import { Redacted } from "effect";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import { makeLocalMemoConnector } from "./connectors.ts";
 
@@ -37,7 +38,10 @@ describe("local Memo connector", () => {
     }).pipe(
       Effect.provide(
         fakeHttpLayer((request) => {
-          requestedParams = request.urlParams.params;
+          requestedParams = request.urlParams.params.map(
+            ([key, value]) =>
+              [key, Redacted.isRedacted(value) ? Redacted.value(value) : value] as const,
+          );
           return { results: [{ id: "memo-1", memory: "Keep replies concise", score: 0.9 }] };
         }),
       ),

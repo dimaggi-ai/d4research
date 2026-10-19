@@ -2,7 +2,10 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  ConfiguredLocalServerUrls,
+  CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   DiscoveredLocalServer,
+  PREVIEW_URL_MAX_LENGTH,
   PreviewEvent,
   PreviewNavStatus,
   PreviewSessionSnapshot,
@@ -21,6 +24,7 @@ const decodePreviewEvent = Schema.decodeUnknownSync(PreviewEvent);
 const decodeSnapshot = Schema.decodeUnknownSync(PreviewSessionSnapshot);
 const decodeNavStatus = Schema.decodeUnknownSync(PreviewNavStatus);
 const decodeServer = Schema.decodeUnknownSync(DiscoveredLocalServer);
+const decodeConfiguredLocalServerUrls = Schema.decodeUnknownSync(ConfiguredLocalServerUrls);
 const decodeViewport = Schema.decodeUnknownSync(PreviewViewportSetting);
 const decodeResizeInput = Schema.decodeUnknownSync(PreviewAutomationResizeInput);
 const decodeOpenInput = Schema.decodeUnknownSync(PreviewAutomationOpenInput);
@@ -204,7 +208,7 @@ describe("PreviewAutomationStatus", () => {
       available: true,
       visible: false,
       tabId: "preview-t",
-      url: "https://example.com",
+      url: "https://example.com/",
       title: "Example",
       loading: false,
     };
@@ -339,6 +343,22 @@ describe("DiscoveredLocalServer", () => {
         pid: null,
         terminal: null,
       }),
+    ).toThrow();
+  });
+});
+
+describe("ConfiguredLocalServerUrls", () => {
+  it("bounds the number and length of probe candidates", () => {
+    expect(() =>
+      decodeConfiguredLocalServerUrls(
+        Array.from(
+          { length: CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS + 1 },
+          (_, index) => `http://localhost:${3_000 + index}`,
+        ),
+      ),
+    ).toThrow();
+    expect(() =>
+      decodeConfiguredLocalServerUrls([`http://localhost/${"a".repeat(PREVIEW_URL_MAX_LENGTH)}`]),
     ).toThrow();
   });
 });

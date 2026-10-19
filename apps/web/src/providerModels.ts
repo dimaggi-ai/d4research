@@ -8,7 +8,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@d4research/contracts";
-import { createModelCapabilities, normalizeModelSlug } from "@d4research/shared/model";
+import { createModelCapabilities, resolveSelectableModel } from "@d4research/shared/model";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -30,7 +30,7 @@ export function getProviderModels(
   return getProviderSnapshot(providers, provider)?.models ?? [];
 }
 
-export function getProviderSnapshot(
+function getProviderSnapshot(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
 ): ServerProvider | undefined {
@@ -62,7 +62,6 @@ export function isProviderEnabled(
   }
   return getProviderSnapshot(providers, provider)?.enabled ?? false;
 }
-
 // Resolve an instance selection to the correlated live driver. If the
 // instance is absent, fall back to a live enabled provider instead of
 // inferring a driver from the missing instance id.
@@ -81,9 +80,35 @@ export function getProviderModelCapabilities(
   models: ReadonlyArray<ServerProviderModel>,
   model: string | null | undefined,
   provider: ProviderDriverKind,
+  planModeEnabled = true,
 ): ModelCapabilities {
-  const slug = normalizeModelSlug(model, provider);
-  return models.find((candidate) => candidate.slug === slug)?.capabilities ?? EMPTY_CAPABILITIES;
+  const slug = resolveSelectableModel(provider, model, models);
+  const selectedModel = models.find((candidate) => candidate.slug === slug);
+  const caps = selectedModel?.capabilities ?? EMPTY_CAPABILITIES;
+  if (planModeEnabled) {
+    return caps;
+  }
+  return withoutPlanAgentOption(caps);
+}
+
+function withoutPlanAgentOption(caps: ModelCapabilities): ModelCapabilities {
+  return {
+    ...caps,
+    optionDescriptors: (caps.optionDescriptors ?? []).flatMap((descriptor) => {
+      if (descriptor.type !== "select" || descriptor.id !== "agent") {
+        return [descriptor];
+      }
+      const options = descriptor.options.filter((option) => option.id !== "plan");
+      if (options.length === 0) {
+        return [];
+      }
+      const currentValue =
+        descriptor.currentValue && options.some((option) => option.id === descriptor.currentValue)
+          ? descriptor.currentValue
+          : (options.find((option) => option.isDefault)?.id ?? options[0]?.id);
+      return [{ ...descriptor, options, ...(currentValue ? { currentValue } : {}) }];
+    }),
+  };
 }
 
 export function getDefaultServerModel(

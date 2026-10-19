@@ -216,6 +216,48 @@ test("does not guess when a fallback commit belongs to multiple PRs", async () =
   assert.equal(fetchedPull, false);
 });
 
+test("does not report a passing run that skipped the server tests", async () => {
+  const outputs = {};
+  const listWorkflowRunArtifacts = () => {};
+  await resolve({
+    github: {
+      paginate: async (method) => {
+        assert.equal(method, listWorkflowRunArtifacts);
+        return [];
+      },
+      rest: {
+        actions: { listWorkflowRunArtifacts },
+        pulls: {
+          get: async () => ({
+            data: { head: { sha: "head-sha" }, base: { sha: "base-sha", ref: "main" } },
+          }),
+        },
+      },
+    },
+    context: {
+      repo: { owner: "pingdotgg", repo: "t3code" },
+      payload: {
+        workflow_run: {
+          id: 2,
+          event: "pull_request",
+          workflow_id: 3,
+          head_sha: "head-sha",
+          conclusion: "success",
+          pull_requests: [{ number: 5350 }],
+        },
+      },
+    },
+    core: {
+      info: () => {},
+      setOutput: (key, value) => {
+        outputs[key] = value;
+      },
+    },
+  });
+
+  assert.equal(outputs.publish, "false");
+});
+
 test("does not publish a stale result after the PR head advances", async () => {
   let listedComments = false;
   const info = [];
@@ -289,4 +331,22 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
 
   assert.equal(published, true);
   assert.equal(updatedComment, false);
+});
+
+test("accepts V2 without comparing it to the V1 scenario", () => {
+  const current = result();
+  current.scenario.id = "thread-transfer-v2";
+  current.providers.codex.ceiling = { ...current.providers.codex.ceiling, totalWireBytes: 3000000 };
+  assert.equal(validateResult(current), current);
+  const comment = renderComment({
+    current,
+    baseline: result(),
+    currentRun: { sha: "bbbbbbbb", conclusion: "success", url: "https://example.com/current" },
+    baselineRun: { sha: "aaaaaaaa", matchesBase: true, url: "https://example.com/baseline" },
+  });
+  assert.match(comment, /fixture changed/);
+  assert.doesNotMatch(comment, /This PR changes transfer ceilings/);
+  assert.doesNotMatch(comment, /[+-]\d+\.\d+%/);
+  current.scenario.id = "unrecognized";
+  assert.throws(() => validateResult(current), /not supported/);
 });

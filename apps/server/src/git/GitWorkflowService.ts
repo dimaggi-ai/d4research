@@ -35,6 +35,15 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
+    readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
+    readonly hasCommit: (input: {
+      readonly cwd: string;
+      readonly refName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
+    readonly hasRefNamed: (input: {
+      readonly cwd: string;
+      readonly refName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
     readonly status: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
@@ -43,7 +52,7 @@ export class GitWorkflowService extends Context.Service<
     ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
     readonly remoteStatus: (
       input: VcsStatusInput,
-      options?: GitVcsDriver.GitRemoteStatusOptions,
+      options?: GitManager.GitRemoteStatusOptions,
     ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -64,14 +73,22 @@ export class GitWorkflowService extends Context.Service<
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
+      options?: GitVcsDriver.CreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
+    readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly fetchRemote: (input: {
       readonly cwd: string;
       readonly remoteName: string;
+      readonly refName?: string;
     }) => Effect.Effect<void, GitCommandError>;
     readonly remoteExists: (input: {
       readonly cwd: string;
       readonly remoteName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
+    readonly remoteBranchExists: (input: {
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly refName: string;
     }) => Effect.Effect<boolean, GitCommandError>;
     readonly resolveRemoteTrackingCommit: (input: {
       readonly cwd: string;
@@ -84,6 +101,12 @@ export class GitWorkflowService extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    readonly pruneWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<void, GitCommandError>;
+    readonly deleteLocalBranch: (
+      input: GitVcsDriver.GitDeleteLocalBranchInput,
+    ) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -91,6 +114,7 @@ export class GitWorkflowService extends Context.Service<
       input: VcsSwitchRefInput,
     ) => Effect.Effect<VcsSwitchRefResult, GitCommandError>;
     readonly renameBranch: (input: {
+      readonly exactName?: boolean;
       readonly cwd: string;
       readonly oldBranch: string;
       readonly newBranch: string;
@@ -134,6 +158,7 @@ function nonRepositoryListRefs(): VcsListRefsResult {
   };
 }
 
+/** @public */
 export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -254,6 +279,50 @@ export const make = Effect.gen(function* () {
       ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
   return GitWorkflowService.of({
+    isRepository: (cwd) =>
+      registry.detect({ cwd }).pipe(
+        Effect.map((handle) => handle?.kind === "git"),
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.isRepository",
+              cwd,
+              detail: "Failed to detect a VCS repository for this Git workflow.",
+              cause,
+            }),
+        ),
+      ),
+    hasCommit: (input) =>
+      ensureGitCommand("GitWorkflowService.hasCommit", input.cwd).pipe(
+        Effect.andThen(
+          git.execute({
+            operation: "GitWorkflowService.hasCommit",
+            cwd: input.cwd,
+            args: ["rev-parse", "--verify", `${input.refName}^{commit}`],
+            allowNonZeroExit: true,
+          }),
+        ),
+        Effect.map((result) => result.exitCode === 0),
+      ),
+    hasRefNamed: (input) =>
+      // No ref name holds a pattern character, and one here would widen the match.
+      /[*?[\\]/.test(input.refName)
+        ? Effect.succeed(false)
+        : ensureGitCommand("GitWorkflowService.hasRefNamed", input.cwd).pipe(
+            Effect.andThen(
+              git.execute({
+                operation: "GitWorkflowService.hasRefNamed",
+                cwd: input.cwd,
+                args: [
+                  "for-each-ref",
+                  "--count=1",
+                  "--format=%(refname)",
+                  `refs/**/${input.refName}`,
+                ],
+              }),
+            ),
+            Effect.map((result) => result.stdout.trim().length > 0),
+          ),
     status: (input) =>
       detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>
@@ -299,9 +368,13 @@ export const make = Effect.gen(function* () {
           isGitRepository ? git.listRefs(input) : Effect.succeed(nonRepositoryListRefs()),
         ),
       ),
-    createWorktree: (input) =>
+    createWorktree: (input, options) =>
       ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
-        Effect.andThen(git.createWorktree(input)),
+        Effect.andThen(gitManager.createWorktree(input, options)),
+      ),
+    listLocalBranchNames: (cwd) =>
+      ensureGitCommand("GitWorkflowService.listLocalBranchNames", cwd).pipe(
+        Effect.andThen(git.listLocalBranchNames(cwd)),
       ),
     fetchRemote: (input) =>
       ensureGitCommand("GitWorkflowService.fetchRemote", input.cwd).pipe(
@@ -311,6 +384,10 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.remoteExists", input.cwd).pipe(
         Effect.andThen(git.remoteExists(input)),
       ),
+    remoteBranchExists: (input) =>
+      ensureGitCommand("GitWorkflowService.remoteBranchExists", input.cwd).pipe(
+        Effect.andThen(git.remoteBranchExists(input)),
+      ),
     resolveRemoteTrackingCommit: (input) =>
       ensureGitCommand("GitWorkflowService.resolveRemoteTrackingCommit", input.cwd).pipe(
         Effect.andThen(git.resolveRemoteTrackingCommit(input)),
@@ -318,6 +395,14 @@ export const make = Effect.gen(function* () {
     removeWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
         Effect.andThen(git.removeWorktree(input)),
+      ),
+    pruneWorktrees: (input) =>
+      ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(
+        Effect.andThen(git.pruneWorktrees(input)),
+      ),
+    deleteLocalBranch: (input) =>
+      ensureGitCommand("GitWorkflowService.deleteLocalBranch", input.cwd).pipe(
+        Effect.andThen(git.deleteLocalBranch(input)),
       ),
     createRef: (input) =>
       ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(

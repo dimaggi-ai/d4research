@@ -1,11 +1,22 @@
 import type {
   EnvironmentId,
   PreviewOpenInput,
+  PreviewRuntime,
   PreviewSessionSnapshot,
+  PreviewViewportSetting,
   ScopedThreadRef,
 } from "@d4research/contracts";
 import type { AtomCommandResult } from "@d4research/client-runtime/state/runtime";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 
+import {
+  browserDefaultOpenProfileId,
+  browserDefaultOpenViewport,
+  resolveBrowserDefaults,
+} from "~/browser/browserDefaults";
+import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
+import { previewRuntimeFor } from "~/browser/previewRuntime";
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
 interface OpenPreviewSessionInput<E> {
@@ -15,16 +26,31 @@ interface OpenPreviewSessionInput<E> {
   }) => Promise<AtomCommandResult<PreviewSessionSnapshot, E>>;
   threadRef: ScopedThreadRef;
   url?: string;
+  viewport?: PreviewViewportSetting;
+  profileId?: string;
+  runtime?: PreviewRuntime;
 }
 
 export async function openPreviewSession<E>(
   input: OpenPreviewSessionInput<E>,
-): Promise<AtomCommandResult<PreviewSessionSnapshot, E>> {
+): Promise<AtomCommandResult<PreviewSessionSnapshot, E | BrowserSettingsReadError>> {
+  // Resolved once: a tab opened before client settings hydrate would otherwise
+  // be born at the schema defaults and never corrected.
+  const defaults = await resolveBrowserDefaults().catch(
+    (cause: unknown) => new BrowserSettingsReadError({ cause }),
+  );
+  if (defaults instanceof BrowserSettingsReadError) {
+    return AsyncResult.failure(Cause.fail(defaults));
+  }
+  const runtime = input.runtime ?? previewRuntimeFor(input.threadRef.environmentId);
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
       ...(input.url === undefined ? {} : { url: input.url }),
+      viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
+      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      ...(runtime === undefined || runtime === "desktop" ? {} : { runtime }),
     },
   });
   if (result._tag === "Failure") {

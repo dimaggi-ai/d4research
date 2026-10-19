@@ -1,5 +1,8 @@
+import { SourceControlProviderKind } from "@d4research/contracts";
+import { vi } from "vite-plus/test";
 import {
   EnvironmentId,
+  AuthSourceControlWriteScope,
   WS_METHODS,
   type SourceControlPublishRepositoryResult,
 } from "@d4research/contracts";
@@ -8,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -34,7 +37,7 @@ const TARGET = new PrimaryConnectionTarget({
 
 const PUBLISH_RESULT: SourceControlPublishRepositoryResult = {
   repository: {
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     nameWithOwner: "t3tools/t3code",
     url: "https://github.com/t3tools/t3code",
     sshUrl: "git@github.com:t3tools/t3code.git",
@@ -50,6 +53,7 @@ function session(client: WsRpcProtocolClient): RpcSession {
   return {
     client,
     initialConfig: Effect.never,
+    subscribeServerConfig: (input) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
     closed: Effect.never,
@@ -100,14 +104,14 @@ describe("source control environment atoms", () => {
         } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"]);
         const removed = new Array<string>();
         const cache = Persistence.EnvironmentCacheStore.of({
-          loadShell: () => Effect.succeed(Option.none()),
+          loadShell: () => Effect.succeedNone,
           saveShell: () => Effect.void,
-          loadThread: () => Effect.succeed(Option.none()),
+          loadThread: () => Effect.succeedNone,
           saveThread: () => Effect.void,
           removeThread: () => Effect.void,
-          loadServerConfig: () => Effect.succeed(Option.none()),
+          loadServerConfig: () => Effect.succeedNone,
           saveServerConfig: () => Effect.void,
-          loadVcsRefs: () => Effect.succeed(Option.none()),
+          loadVcsRefs: () => Effect.succeedNone,
           saveVcsRefs: () => Effect.void,
           removeVcsRefs: (environmentId, cwd) =>
             Effect.sync(() => {
@@ -137,7 +141,7 @@ describe("source control environment atoms", () => {
             environmentId: TARGET.environmentId,
             input: {
               cwd: "/repo",
-              provider: "github",
+              provider: SourceControlProviderKind.make("github"),
               repository: "t3tools/t3code",
               visibility: "private",
             },
@@ -153,7 +157,7 @@ describe("source control environment atoms", () => {
             environmentId: TARGET.environmentId,
             input: {
               cwd: "/repo",
-              provider: "github",
+              provider: SourceControlProviderKind.make("github"),
               repository: "t3tools/t3code",
               visibility: "private",
             },
@@ -167,3 +171,21 @@ describe("source control environment atoms", () => {
     ),
   );
 });
+
+vi.mock("./session.ts", () => ({
+  createEnvironmentSessionAtoms: () => ({ sessionStateAtom: grantedSessions }),
+}));
+const grantedSessions = Atom.family((_id: EnvironmentId) =>
+  Atom.make(
+    AsyncResult.success({
+      authenticated: true,
+      auth: {
+        policy: "remote-reachable",
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test",
+      },
+      scopes: [AuthSourceControlWriteScope],
+    }),
+  ),
+);

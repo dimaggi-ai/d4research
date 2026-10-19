@@ -19,7 +19,7 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
 import { junieModelsFromSessionSetup } from "../Layers/JunieProvider.ts";
@@ -42,11 +42,9 @@ const recordDiagnostic = (diagnostics: Array<string>, line: string): void => {
 
 const makeProbeRuntime = (cwd: string = process.cwd(), diagnostics?: Array<string>) =>
   Effect.gen(function* () {
-    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     return yield* makeJunieAcpRuntime({
       junieSettings: { binaryPath: "junie", defaultModel: "" },
       environment: process.env,
-      childProcessSpawner,
       cwd,
       clientInfo: { name: "t3-junie-probe", version: "0.0.0" },
       ...(diagnostics

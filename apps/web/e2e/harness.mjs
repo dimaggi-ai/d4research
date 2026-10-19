@@ -96,6 +96,9 @@ export async function startIsolatedApp() {
         HOME: agentHome,
         USERPROFILE: agentHome,
         T3CODE_PORT_OFFSET: String(webPort - 5733),
+        // Specs own the project list; the dev server's cwd must not become a
+        // second project that the root route can open instead of the fixture.
+        T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
       },
       // The dev runner owns a server and a Vite child. Give the isolated stack
       // its own process group so teardown can stop the whole captured tree
@@ -139,6 +142,7 @@ export function createPairingUrl(app, label = "e2e") {
     {
       cwd: repoRoot,
       encoding: "utf8",
+      timeout: 30000,
       env: { ...process.env, T3CODE_PORT: String(app.serverPort) },
     },
   );
@@ -157,9 +161,15 @@ export async function openAuthenticatedPage(app, label = "e2e") {
       if (message.type() === "error") consoleErrors.push(message.text().slice(0, 300));
     });
 
-    await page.goto(createPairingUrl(app, label), { waitUntil: "domcontentloaded" });
+    // The first load waits on Vite's cold dev compile of the whole app graph,
+    // which exceeds 30s on a busy machine; later navigations are warm.
+    await page.goto(createPairingUrl(app, label), {
+      waitUntil: "domcontentloaded",
+      timeout: BOOT_TIMEOUT_MS,
+    });
     await page.waitForURL((url) => !url.href.includes("/pair"), { timeout: 30_000 });
-    await page.waitForSelector('[aria-label="d4research"]', { timeout: 30_000 });
+    await page.waitForSelector('[aria-label="d4research"]', { timeout: BOOT_TIMEOUT_MS });
+    await completeOnboarding(page);
 
     return { browser, context, page, consoleErrors };
   } catch (cause) {
@@ -169,23 +179,76 @@ export async function openAuthenticatedPage(app, label = "e2e") {
 }
 
 /**
+ * Finishes the first-run wizard the way a user would. Until onboarding is
+ * complete, FirstRunGate sends every route back to /welcome.
+ */
+async function completeOnboarding(page) {
+  const skipImport = page.getByRole("button", { name: "Do not import projects" });
+  for (let step = 0; step < 4 && !(await skipImport.isVisible()); step++) {
+    const next = page.getByRole("button", { name: "Continue", exact: true });
+    await next.waitFor({ state: "visible", timeout: 30_000 });
+    const currentStep = await page.locator('[aria-current="step"]').getAttribute("aria-label");
+    // Continue stays disabled until the step's own checks settle.
+    await next.click({ timeout: 30_000 });
+    await page.waitForFunction(
+      (previous) =>
+        document.querySelector('[aria-current="step"]')?.getAttribute("aria-label") !== previous,
+      currentStep,
+      { timeout: 30_000 },
+    );
+  }
+  await skipImport.click({ timeout: 30_000 });
+  await page.waitForURL((url) => url.pathname !== "/welcome", { timeout: 30_000 });
+}
+
+/**
  * Ensures a project exists and the page sits on one of its threads. Specs share
  * a browser context, so this both registers the project on first use and
  * re-opens it afterwards — thread-scoped chrome (composer, Monitor) only
- * renders inside a thread route.
+ * renders inside a thread route. Callers own a stack whose only project is
+ * `workspacePath`, so any mounted composer belongs to it.
  */
 export async function openProject(page, workspacePath) {
-  // Once a project exists the app opens a draft on load, so only register it
-  // the first time. "Add project" is always in the sidebar and is therefore not
-  // a usable signal for whether registration already happened.
-  const alreadyOpen = await page
-    .waitForURL(/\/(draft|thread)\//, { timeout: 5_000 })
+  const composer = page.locator('[data-chat-composer-form="true"]');
+  const expandComposer = page.getByRole("button", { name: "Expand composer", exact: true });
+  const threadReady = composer.or(expandComposer).filter({ visible: true }).first();
+  const noProjects = page.getByText("No projects yet", { exact: true });
+  const composerVisible = await threadReady
+    .waitFor({ state: "visible", timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
 
-  if (!alreadyOpen) {
+  if (!composerVisible) {
+    // Once a project exists the root opens a draft in it. Starting from the
+    // root also clears focus left in a settings field or an open popover,
+    // either of which would swallow the palette shortcut below.
+    await page.goto(new URL("/", page.url()).href, { waitUntil: "domcontentloaded" });
+    await Promise.race([
+      threadReady.waitFor({ state: "visible", timeout: 30_000 }),
+      noProjects.waitFor({ state: "visible", timeout: 30_000 }),
+    ]);
+  }
+
+  // The sidebar also reads "No projects yet" while the first snapshot loads, so
+  // only treat it as empty if no composer mounts shortly after.
+  const empty =
+    (await noProjects.isVisible()) &&
+    !(await threadReady
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false));
+  if (empty) {
+    // The sidebar button only renders in this empty state and can sit under a
+    // toast; the palette is the entry point that is always reachable.
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByPlaceholder("Search commands, projects, and threads...").waitFor({
+      state: "visible",
+      timeout: 10_000,
+    });
+    await page.keyboard.type("Add project");
+    // Settings search also lists "Add project starts in"; pick the action itself.
     await page
-      .getByRole("button", { name: /add project/i })
+      .getByRole("option", { name: /^Add project(?! starts in)/ })
       .first()
       .click();
     const localFolder = page.getByText("Local folder", { exact: true });
@@ -199,13 +262,12 @@ export async function openProject(page, workspacePath) {
   }
   // The route resolves before the thread chrome mounts; wait for a control that
   // only exists inside a thread so callers can query the header immediately.
-  await page
-    .getByRole("button", { name: /send message/i })
-    .first()
-    .waitFor({
-      state: "visible",
-      timeout: 30_000,
-    });
+  await threadReady.waitFor({ state: "visible", timeout: 30_000 });
+  if (await expandComposer.isVisible()) await expandComposer.click();
+  await composer.waitFor({
+    state: "visible",
+    timeout: 30_000,
+  });
 }
 
 export async function stopIsolatedApp(app) {

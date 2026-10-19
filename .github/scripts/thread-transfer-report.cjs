@@ -61,7 +61,7 @@ function validateResult(value) {
   }
 
   assertExactKeys(value.scenario, SCENARIO_KEYS, "result.scenario");
-  if (value.scenario.id !== "thread-transfer-v1") {
+  if (!["thread-transfer-v1", "thread-transfer-v2"].includes(value.scenario.id)) {
     throw new Error("result.scenario.id is not supported");
   }
   for (const key of SCENARIO_KEYS.slice(1)) {
@@ -157,7 +157,7 @@ function renderComment(input) {
         `| ${provider === "codex" ? "Codex" : "Claude"} | ${metric.label} | ${baselineObserved === undefined ? "—" : formatValue(baselineObserved, metric.kind)} | ${formatValue(observed, metric.kind)} | ${formatImpact(observed, baselineObserved, metric.kind)} | ${formatValue(ceiling, metric.kind)} | ${pass ? "✅" : "❌"} |`,
       );
 
-      if (baseline && baseline.providers[provider].ceiling[metric.key] !== ceiling) {
+      if (comparable && baseline.providers[provider].ceiling[metric.key] !== ceiling) {
         ceilingChanges.push(
           `- ${provider === "codex" ? "Codex" : "Claude"} ${metric.label}: ${formatValue(baseline.providers[provider].ceiling[metric.key], metric.kind)} → ${formatValue(ceiling, metric.kind)}`,
         );
@@ -278,6 +278,13 @@ async function resolve({ github, context, core }) {
 
   const sourceArtifacts = await artifactsForRun(github, owner, repo, source.id);
   const sourceArtifact = findResultArtifact(sourceArtifacts);
+  // CI requires the artifact whenever the server tests run, so a passing run
+  // without one skipped them because the PR cannot affect the server.
+  if (!sourceArtifact && source.conclusion === "success") {
+    core.info("CI skipped the server tests for this change; nothing to report.");
+    core.setOutput("publish", "false");
+    return;
+  }
   const workflowRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
     owner,
     repo,

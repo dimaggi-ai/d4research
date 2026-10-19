@@ -23,43 +23,28 @@ const isErrnoExceptionWithCode = (
 const closeServer = (server: NodeNet.Server) => {
   try {
     server.close();
-  } catch {
-    // Ignore close failures during cleanup.
-  }
+  } catch {}
 };
 
 export interface NetServiceShape {
-  /**
-   * Returns true when a TCP server can bind to {host, port}.
-   */
   readonly canListenOnHost: (port: number, host: string) => Effect.Effect<boolean>;
 
-  /**
-   * Checks loopback availability on both IPv4 and IPv6 localhost addresses.
-   */
   readonly isPortAvailableOnLoopback: (port: number) => Effect.Effect<boolean>;
 
-  /**
-   * Reserve an ephemeral loopback port and release it immediately.
-   */
+  readonly hasListenerOnHost: (port: number, host: string) => Effect.Effect<boolean>;
+
   readonly reserveLoopbackPort: (host?: string) => Effect.Effect<number, NetError>;
 
-  /**
-   * Resolve an available listening port, preferring the provided port first.
-   */
   readonly findAvailablePort: (preferred: number) => Effect.Effect<number, NetError>;
 }
 
-/**
- * NetService - Service tag for startup networking helpers.
- */
 export class NetService extends Context.Service<NetService, NetServiceShape>()(
   "@d4research/shared/Net/NetService",
 ) {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = () => {
   /**
-   * Returns true when a TCP server can bind to {host, port}.
    * `EADDRNOTAVAIL` is treated as available so IPv6-absent hosts don't fail
    * loopback availability checks.
    */
@@ -144,10 +129,6 @@ export const make = () => {
       );
     });
 
-  /**
-   * Reserve an ephemeral loopback port and release it immediately.
-   * Returns the reserved port number.
-   */
   const reserveLoopbackPort = (host = "127.0.0.1"): Effect.Effect<number, NetError> =>
     Effect.callback<number, NetError>((resume) => {
       const probe = NodeNet.createServer();
@@ -183,6 +164,7 @@ export const make = () => {
   return {
     canListenOnHost,
     isPortAvailableOnLoopback,
+    hasListenerOnHost,
     reserveLoopbackPort,
     findAvailablePort: (preferred) =>
       Effect.gen(function* () {

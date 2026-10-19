@@ -41,6 +41,26 @@ authenticated.
 - Pass dev-runner flags directly after the root task name, for example:
   `vp run dev --home-dir /tmp/t3code-dev`
 
+### Agent pipeline API
+
+Provider agents use the authenticated `t3-code` MCP server to discover and maintain the named Dev
+and Research pipeline scenarios stored in the current environment:
+
+| Tool              | Purpose                                                                    |
+| ----------------- | -------------------------------------------------------------------------- |
+| `pipeline_list`   | List scenario names, kinds, triggers, active state, and attachment names.  |
+| `pipeline_get`    | Read one exact scenario before editing it.                                 |
+| `pipeline_upsert` | Atomically create or replace one scenario; omitted files remain unchanged. |
+| `pipeline_delete` | Atomically delete one scenario and repair the active selection if needed.  |
+
+These tools expose only pipeline fields, never unrelated server settings or provider secrets. The
+MCP bearer credential is provider-scoped, so the same interface works for Codex, Claude, Cursor,
+Grok, OpenCode, and other adapters that connect to the built-in toolkit. Pipeline definitions are
+environment settings rather than files in `scripts/`: their contract is
+`packages/contracts/src/settings.ts`, patch semantics are in
+`packages/shared/src/serverSettings.ts`, and handlers live under
+`apps/server/src/mcp/toolkits/pipelines/`.
+
 ### Dev state directories
 
 - Dev commands run from a linked **git worktree** default to that worktree's gitignored `.t3`, even
@@ -77,10 +97,98 @@ authenticated.
 - `vp run dist:desktop:win`: Builds a Windows NSIS installer into `./release`. `:arm64` and `:x64`
   variants exist.
 
+### Linux AppImage prerequisites
+
+Linux AppImage packaging compiles the Rust resource monitor and the libsecret browser import
+helper. Install a Rust toolchain, the standard C/C++ build tools, libsecret development headers,
+pkg-config, and ImageMagick before running `vp run dist:desktop:linux`.
+
+Ubuntu and Debian:
+
+```bash
+sudo apt-get update
+sudo apt-get install cargo rustc build-essential libsecret-1-dev pkg-config imagemagick
+```
+
+Fedora:
+
+```bash
+sudo dnf install rust cargo gcc gcc-c++ make libsecret-devel pkgconf-pkg-config ImageMagick
+```
+
+Arch Linux:
+
+```bash
+sudo pacman -S rust base-devel libsecret pkgconf imagemagick
+```
+
+Linux desktop development also needs the C compiler, pkg-config, and libsecret headers. Its build
+and launch commands compile `native/browser-secret/main.c` into the gitignored native build
+directory. Releases place the executable in `resources/browser-secret`, outside `app.asar`.
+The helper performs a read-only Chromium schema lookup through libsecret and writes the exact
+secret bytes to its stdout pipe. Exit codes are 2 for a missing key, 3 for denied/locked access,
+and 4 for other keyring failures; the desktop importer preserves these distinctions.
+
+The artifact script checks these capabilities before starting the web and desktop builds. If
+anything is unavailable, it reports every failed check together and prints the Ubuntu/Debian
+installation command. The check compiles and links tiny temporary programs, so it also catches
+installed runtime X11 libraries that are missing their development headers or linker symlinks.
+
+### macOS DMG prerequisites
+
+Install the Xcode Command Line Tools and Rust before building a DMG:
+
+```bash
+xcode-select --install
+```
+
+Install Rust from [rustup.rs](https://rustup.rs). The artifact script checks Cargo, Clang, Make,
+`sips`, and `iconutil`. Universal builds additionally require `lipo`. It also verifies that Rust
+has every requested target; add missing targets with:
+
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+```
+
+Unsigned local builds need no Apple credentials. Builds using `--signed` additionally require the
+certificate, provisioning profile, team ID, and notarization configuration described below.
+
+### Windows installer prerequisites
+
+Install Rust from [rustup.rs](https://rustup.rs), Python 3, and Visual Studio Build Tools. In the
+Visual Studio Installer, select **Desktop development with C++** and include:
+
+- MSVC x64/x86 build tools
+- A Windows 10 or Windows 11 SDK
+- MSVC Spectre-mitigated libraries
+
+ARM64 installers require the corresponding MSVC ARM64 build tools and Spectre-mitigated libraries
+instead of the x64/x86 components.
+
+Add the Rust target matching the installer architecture:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+# For an arm64 installer:
+rustup target add aarch64-pc-windows-msvc
+```
+
+Windows supplies `tar.exe`; it is checked when `--wsl-prebuild` makes the artifact include the WSL
+runtime. NSIS is downloaded by electron-builder and does not need a separate installation.
+When `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true` points the build at an existing resource monitor,
+the artifact script skips the Rust and Visual Studio checks because it does not compile the monitor.
+Unsigned local builds need no Azure credentials. Builds using `--signed` additionally require the
+Azure Trusted Signing configuration described below.
+
 ### Desktop `.dmg` packaging notes
 
 - Default build is unsigned/not notarized for local sharing.
 - The DMG build uses `assets/prod/black-macos-1024.png` as the production app icon source.
+- The DMG chrome follows the release channel: neutral for Latest and the Nightly sky artwork for
+  Nightly. Blueprint artwork remains exclusive to Dev builds. Packaging rasterizes the selected
+  SVG into standard and Retina PNGs inside the disposable staging directory.
+- The Finder window is 540×412 while its background is 540×380; the extra 32px accounts for the
+  title bar included in Finder's window bounds.
 - Desktop production windows load the bundled UI from the `t3code://app/` root URL (not a
   `127.0.0.1` document URL, and not an explicit `index.html` path).
 - Desktop packaging includes `apps/server/dist` (the `t3` backend) and starts it on loopback with an
@@ -97,9 +205,9 @@ authenticated.
 
 ## Browser development
 
-`dev` and `dev:web` leave `VITE_HTTP_URL` and `VITE_WS_URL` unset so the browser resolves the backend
-from `window.location.origin`. Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known` to the
-server, allowing the same bundle to work from localhost or a tailnet hostname.
+`dev` and `dev:web` leave `VITE_HTTP_URL` and `VITE_WS_URL` unset, letting the browser resolve the
+backend from `window.location.origin`. Vite proxies `/api`, `/ws`, `/oauth`, and `/.well-known` to
+the server so the same bundle works from localhost or a tailnet hostname.
 
 ## Running multiple dev instances
 

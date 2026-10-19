@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 
 import * as ServerConfig from "./config.ts";
 import { setToolGuardRuntimeEnabled } from "./provider/toolGuardRuntime.ts";
@@ -165,8 +165,8 @@ export const externalToolGuardHookPaths = (home: string, path: Pick<Path.Path, "
 const hasExternalToolGuardHook = Effect.fn("hasExternalToolGuardHook")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = toolGuardHome(platform, environment);
   if (!home) return false;
   const contents = yield* Effect.forEach(externalToolGuardHookPaths(home, path), (configPath) =>
@@ -184,8 +184,8 @@ const removeExternalToolGuardHooksFromConfigs = Effect.fn(
 )(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(
@@ -208,8 +208,8 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(
@@ -233,8 +233,8 @@ const setManagedHooksEnabled = Effect.fn("setManagedHooksEnabled")(function* (
 
 const validateProviderHookConfigs = Effect.fn("validateProviderHookConfigs")(function* () {
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = toolGuardHome(platform, environment);
   if (!home) return;
   yield* Effect.forEach(externalToolGuardHookPaths(home, path), readJson, { discard: true });
@@ -245,8 +245,8 @@ export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const home = toolGuardHome(platform, environment);
   const binaryName = platform === "win32" ? "tg.exe" : "tg";
   const pathSeparator = platform === "win32" ? ";" : ":";
@@ -271,8 +271,8 @@ export const findToolGuardBinary = Effect.fn("findToolGuardBinary")(function* (
 const resolveResources = Effect.fn("resolveToolGuardResources")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const environment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const bundled = path.join(import.meta.dirname, "tool-guard");
   const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
   const profilesCandidates = [
@@ -322,7 +322,7 @@ export const readToolGuardManifest = Effect.fn("readToolGuardManifest")(function
 export const initializeToolGuardRuntime = Effect.fn("initializeToolGuardRuntime")(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const manifest = yield* readToolGuardManifest(managed.manifest);
   setToolGuardRuntimeEnabled(manifest?.enabled === true);
@@ -333,7 +333,7 @@ export const manageToolGuard = Effect.fn("manageToolGuard")(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     const managed = managedToolGuardPaths(config.stateDir, path, platform);
     const manifest = yield* readToolGuardManifest(managed.manifest);
     yield* validateProviderHookConfigs();

@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentShellStatus } from "@d4research/client-runtime/state/shell";
 import type { EnvironmentId, MessageId } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentShell } from "./shell";
@@ -23,12 +23,16 @@ const threadOutboxShellStatusesAtom = Atom.make(
 /**
  * Queued pending tasks the outbox drain must not deliver right now: the one
  * open in the new-task editor, plus any whose latest edits could not be saved
- * back yet (delivering those would send stale content). Editing sessions hold
- * their message id here and release it once the queued payload is current.
+ * back yet (delivering those would send stale content).
  */
 export const editingQueuedMessageIdsAtom = Atom.make<Readonly<Record<MessageId, true>>>({}).pipe(
   Atom.keepAlive,
   Atom.withLabel("mobile:thread-outbox:editing-message-ids"),
+);
+
+export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
 );
 
 export function holdEditingQueuedMessage(messageId: MessageId): void {
@@ -51,6 +55,22 @@ export function releaseEditingQueuedMessage(messageId: MessageId): void {
 
 export function useThreadOutboxMessages() {
   return useAtomValue(threadOutboxManager.queuedMessagesByThreadKeyAtom);
+}
+
+export const queuedThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
+  const keys = new Set<string>();
+  for (const [threadKey, queue] of Object.entries(
+    get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
+  )) {
+    if (queue.some((message) => message.creation === undefined)) {
+      keys.add(threadKey);
+    }
+  }
+  return keys;
+}).pipe(Atom.withLabel("mobile:thread-outbox:queued-thread-keys"));
+
+export function useQueuedThreadKeys(): ReadonlySet<string> {
+  return useAtomValue(queuedThreadKeysAtom);
 }
 
 export function useThreadOutboxShellStatuses() {

@@ -3,7 +3,8 @@ import { isWindowsPlatform } from "../lib/utils";
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_TAG_URL = "https://github.com/dimaggi-ai/d4research/releases/tag";
+const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/dimaggi-ai/d4research/releases";
+const DESKTOP_RELEASE_TAG_URL = `${DESKTOP_RELEASE_HISTORY_URL}/tag`;
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -14,7 +15,6 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
   return state.downloadedVersion ?? state.availableVersion;
 }
 
-/** Release notes for an exact downloaded build; nightly suffixes are part of the tag. */
 export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
@@ -36,16 +36,6 @@ export function resolveDesktopUpdateButtonAction(
     }
   }
   return "none";
-}
-
-export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
-  if (!state || !state.enabled) {
-    return false;
-  }
-  if (state.status === "downloading") {
-    return true;
-  }
-  return resolveDesktopUpdateButtonAction(state) !== "none";
 }
 
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
@@ -72,6 +62,13 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
+  if (
+    state.notAppliedVersion !== undefined &&
+    (state.status === "available" || state.status === "downloaded") &&
+    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+  ) {
+    return `Update ${state.notAppliedVersion} did not apply. Click to retry.`;
+  }
   if (state.status === "available") {
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
@@ -130,4 +127,18 @@ export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
     state.status !== "downloaded" &&
     state.status !== "disabled"
   );
+}
+
+export function getDesktopUpdateReleaseHistoryUrl(): string {
+  return DESKTOP_RELEASE_HISTORY_URL;
+}
+
+export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
+  if (!state || !state.enabled) {
+    return false;
+  }
+  if (state.status === "downloading") {
+    return true;
+  }
+  return resolveDesktopUpdateButtonAction(state) !== "none";
 }

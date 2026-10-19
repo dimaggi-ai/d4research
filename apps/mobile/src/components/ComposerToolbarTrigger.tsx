@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -12,10 +12,9 @@ import {
   type ViewStyle,
 } from "react-native";
 
-import { useThemeColor } from "../lib/useThemeColor";
 import { cn } from "../lib/cn";
-import { AppText as Text } from "./AppText";
-import { SymbolView } from "./AppSymbol";
+import { AppText as Text } from "./ui/AppText";
+import { SymbolView } from "./ui/AppSymbol";
 
 export const COMPOSER_TOOLBAR_CONTROL_HEIGHT = 44;
 export const COMPOSER_TOOLBAR_GAP = 8;
@@ -58,33 +57,33 @@ export function ComposerToolbarScroller(props: {
     viewportWidth: 0,
   });
 
-  const scrollEdges = useMemo(() => {
+  const scrollEdges = (() => {
     const maxOffset = Math.max(0, metrics.contentWidth - metrics.viewportWidth);
     return {
       showLeftFade: metrics.offsetX > COMPOSER_TOOLBAR_SCROLL_EPSILON,
       showRightFade: metrics.offsetX < maxOffset - COMPOSER_TOOLBAR_SCROLL_EPSILON,
     };
-  }, [metrics]);
+  })();
 
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+  const handleLayout = (event: LayoutChangeEvent) => {
     const viewportWidth = event.nativeEvent.layout.width;
     setMetrics((current) =>
       current.viewportWidth === viewportWidth ? current : { ...current, viewportWidth },
     );
-  }, []);
+  };
 
-  const handleContentSizeChange = useCallback((contentWidth: number) => {
+  const handleContentSizeChange = (contentWidth: number) => {
     setMetrics((current) =>
       current.contentWidth === contentWidth ? current : { ...current, contentWidth },
     );
-  }, []);
+  };
 
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     setMetrics((current) =>
       Math.abs(current.offsetX - offsetX) < 1 ? current : { ...current, offsetX },
     );
-  }, []);
+  };
 
   return (
     <View className="relative min-w-0 flex-1">
@@ -152,10 +151,6 @@ export function ComposerToolbarButton(props: {
   readonly style?: StyleProp<ViewStyle>;
 }) {
   const isDarkMode = useColorScheme() === "dark";
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const primaryFg = useThemeColor("--color-primary-foreground");
-  const dangerFg = useThemeColor("--color-danger-foreground");
   const variant = props.variant ?? "default";
   const isCircle = !props.label && props.showChevron === false;
   const defaultBorderColor = isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
@@ -169,11 +164,11 @@ export function ComposerToolbarButton(props: {
   const iconTintColor =
     variant === "primary"
       ? props.disabled
-        ? iconSubtle
-        : primaryFg
+        ? "accent-icon-subtle"
+        : "accent-primary-foreground"
       : variant === "danger"
-        ? dangerFg
-        : iconColor;
+        ? "accent-danger-foreground"
+        : "accent-icon";
 
   return (
     <Pressable
@@ -222,7 +217,12 @@ export function ComposerToolbarButton(props: {
       {props.iconNode ? (
         <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
       ) : props.icon ? (
-        <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+        <SymbolView
+          name={props.icon}
+          size={16}
+          tintColorClassName={iconTintColor}
+          type="monochrome"
+        />
       ) : null}
       {props.label ? (
         <Text
@@ -242,7 +242,12 @@ export function ComposerToolbarButton(props: {
         </Text>
       ) : null}
       {props.showChevron === false ? null : (
-        <SymbolView name="chevron.down" size={11} tintColor={iconTintColor} type="monochrome" />
+        <SymbolView
+          name="chevron.down"
+          size={11}
+          tintColorClassName={iconTintColor}
+          type="monochrome"
+        />
       )}
     </Pressable>
   );

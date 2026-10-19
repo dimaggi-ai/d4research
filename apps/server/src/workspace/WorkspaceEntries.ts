@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,6 +11,7 @@ import * as Schema from "effect/Schema";
 import type {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
+  ProjectEntry,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectSearchContentsInput,
@@ -19,14 +19,16 @@ import type {
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
 } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@d4research/shared/path";
 import { normalizeSearchQuery } from "@d4research/shared/searchRanking";
 
+import { expandHomePath } from "@d4research/provider-core/server/pathExpansion";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
-export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedErrorClass<WorkspaceEntriesWindowsPathUnsupportedError>()(
+export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
   "WorkspaceEntriesWindowsPathUnsupportedError",
   {
     cwd: Schema.optional(Schema.String),
@@ -40,7 +42,7 @@ export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedEr
   }
 }
 
-export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedErrorClass<WorkspaceEntriesCurrentProjectRequiredError>()(
+export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedError<WorkspaceEntriesCurrentProjectRequiredError>()(
   "WorkspaceEntriesCurrentProjectRequiredError",
   {
     partialPath: Schema.String,
@@ -51,7 +53,7 @@ export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedEr
   }
 }
 
-export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedErrorClass<WorkspaceEntriesReadDirectoryError>()(
+export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<WorkspaceEntriesReadDirectoryError>()(
   "WorkspaceEntriesReadDirectoryError",
   {
     cwd: Schema.optional(Schema.String),
@@ -74,6 +76,7 @@ export const WorkspaceEntriesBrowseError = Schema.Union([
 export type WorkspaceEntriesBrowseError = typeof WorkspaceEntriesBrowseError.Type;
 
 export const WorkspaceEntriesError = Schema.Union([
+  WorkspaceEntriesReadDirectoryError,
   WorkspacePaths.WorkspaceRootNotExistsError,
   WorkspacePaths.WorkspaceRootCreateFailedError,
   WorkspacePaths.WorkspaceRootStatFailedError,
@@ -103,21 +106,14 @@ export class WorkspaceEntries extends Context.Service<
   }
 >()("d4research/workspace/WorkspaceEntries") {}
 
-function expandHomePath(input: string, path: Path.Path): string {
-  if (input === "~") {
-    return NodeOS.homedir();
-  }
-  if (input.startsWith("~/") || input.startsWith("~\\")) {
-    return path.join(NodeOS.homedir(), input.slice(2));
-  }
-  return input;
-}
+/** Paths sent to one `git check-ignore` call when labelling a folder's children. */
+const IGNORE_CHECK_CHUNK_SIZE = 1000;
 
 const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
   input: FilesystemBrowseInput,
   path: Path.Path,
 ): Effect.fn.Return<string, WorkspaceEntriesBrowseError> {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   if (platform !== "win32" && isWindowsAbsolutePath(input.partialPath)) {
     return yield* new WorkspaceEntriesWindowsPathUnsupportedError({
       cwd: input.cwd,
@@ -127,7 +123,7 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   }
 
   if (!isExplicitRelativePath(input.partialPath)) {
-    return path.resolve(expandHomePath(input.partialPath, path));
+    return path.resolve(expandHomePath(input.partialPath, yield* HostProcess.HomeDirectory));
   }
 
   if (!input.cwd) {
@@ -135,13 +131,18 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
       partialPath: input.partialPath,
     });
   }
-  return path.resolve(expandHomePath(input.cwd, path), input.partialPath);
+  return path.resolve(
+    expandHomePath(input.cwd, yield* HostProcess.HomeDirectory),
+    input.partialPath,
+  );
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
+  const vcsProcess = yield* VcsProcess.VcsProcess;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
@@ -275,6 +276,104 @@ export const make = Effect.gen(function* () {
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+      if (input.directoryPath !== undefined) {
+        const directoryPath = input.directoryPath;
+        const toError = (cause: unknown) =>
+          new WorkspaceEntriesReadDirectoryError({
+            cwd: normalizedCwd,
+            partialPath: directoryPath,
+            parentPath: path.resolve(normalizedCwd, directoryPath),
+            cause,
+          });
+        const target =
+          directoryPath === ""
+            ? { absolutePath: normalizedCwd, relativePath: "" }
+            : yield* workspacePaths
+                .resolveRelativePathWithinRoot({
+                  workspaceRoot: normalizedCwd,
+                  relativePath: directoryPath,
+                })
+                .pipe(Effect.mapError(toError));
+        const { entries, throughSymlink } = yield* Effect.tryPromise({
+          try: async () => {
+            const root = await NodeFSP.realpath(normalizedCwd);
+            const directory = await NodeFSP.realpath(target.absolutePath);
+            const relative = path.relative(root, directory);
+            if (
+              relative === ".." ||
+              relative.startsWith(`..${path.sep}`) ||
+              path.isAbsolute(relative) ||
+              relative.split(path.sep).includes(".git") ||
+              target.relativePath.split("/").includes(".git")
+            ) {
+              throw new Error("Directory must be inside the workspace and outside .git.");
+            }
+            const children = await NodeFSP.readdir(directory, { withFileTypes: true });
+            return {
+              entries: children.flatMap((child): ProjectEntry[] => {
+                if (child.name === ".git" || (!child.isDirectory() && !child.isFile())) return [];
+                return [
+                  {
+                    path: target.relativePath ? `${target.relativePath}/${child.name}` : child.name,
+                    kind: child.isDirectory() ? "directory" : "file",
+                  },
+                ];
+              }),
+              // Git refuses to classify paths beyond a symbolic link.
+              throughSymlink: relative !== target.relativePath.split("/").join(path.sep),
+            };
+          },
+          catch: toError,
+        });
+        // Use stdin so large directories cannot exceed the command-line argument limit.
+        // Ignore classification is optional in non-git workspaces or when git is unavailable.
+        const checkIgnore = (paths: ReadonlyArray<string>) =>
+          vcsProcess
+            .run({
+              operation: "WorkspaceEntries.list",
+              command: "git",
+              args: ["-c", "core.fsmonitor=false", "check-ignore", "-z", "--stdin"],
+              cwd: normalizedCwd,
+              stdin: `${paths.join("\0")}\0`,
+              allowNonZeroExit: true,
+              timeoutMs: 10_000,
+              maxOutputBytes: 16 * 1024 * 1024,
+            })
+            .pipe(Effect.orElseSucceed(() => undefined));
+        // Git consults the index for every path it classifies, which costs hundreds of
+        // milliseconds for a `node_modules`-sized folder. Asking about the folder itself answers
+        // for every child: `check-ignore` exits 0 only when the folder is ignored and nothing
+        // under it is tracked, and an ignored folder hides all of its children. Git reads paths as
+        // pathspecs, so a folder whose path has magic (`:foo`) or glob (`[id]`) characters, or
+        // one reached through a symlink, can get a different answer per child and still asks git
+        // about each.
+        if (
+          entries.length > IGNORE_CHECK_CHUNK_SIZE &&
+          target.relativePath !== "" &&
+          !throughSymlink &&
+          !/^:|[*?[\\]/.test(target.relativePath) &&
+          (yield* checkIgnore([target.relativePath]))?.exitCode === 0
+        ) {
+          return {
+            entries: entries.map((entry) => ({ ...entry, ignored: true })),
+            truncated: false,
+          };
+        }
+        const ignored = new Set<string>();
+        for (let offset = 0; offset < entries.length; offset += IGNORE_CHECK_CHUNK_SIZE) {
+          const result = yield* checkIgnore(
+            entries.slice(offset, offset + IGNORE_CHECK_CHUNK_SIZE).map((entry) => entry.path),
+          );
+          if (!result || (result.exitCode !== 0 && result.exitCode !== 1)) break;
+          for (const ignoredPath of result.stdout.split("\0")) ignored.add(ignoredPath);
+        }
+        return {
+          entries: entries.map((entry) =>
+            ignored.has(entry.path) ? { ...entry, ignored: true } : entry,
+          ),
+          truncated: false,
+        };
+      }
       return yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* searchIndex.list();
@@ -293,4 +392,5 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(
   Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
+  Layer.provide(VcsProcess.layer),
 );

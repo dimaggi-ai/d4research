@@ -34,12 +34,26 @@ the connection layer, never by splitting the runtime.
 
 ### ExecutionEnvironment
 
-One running T3 server instance. It owns provider availability and auth, model availability, projects
-and threads, terminal processes, filesystem access, git operations, and server settings.
+A single running T3 server instance owns provider availability and auth, model availability,
+projects and threads, terminal processes, filesystem access, git operations, and server settings.
 
-It is identified by a stable `environmentId`, persisted by the server at `<stateDir>/environment-id`
-and generated on first start (`apps/server/src/environment/ServerEnvironment.ts`). Desktop, mobile,
-and web all reason about the same concept.
+A connected server reports the LAN and tailnet addresses it is bound to, and the
+client saves them as learned routes. A learned route reuses the credential of
+the route it was learned over: the paired bearer token. A paired token only learns a plain HTTP address off the tailnet
+when it was itself paired over plain HTTP, so a token paired over HTTPS never
+starts travelling unencrypted. Learned routes the server stops reporting are
+dropped, which is how a changed LAN address replaces the old one; routes the
+user saved are never touched. The reported addresses are hints like any advertised endpoint, so a
+learned route still has to answer as this environment before it is used.
+
+The server identifies it with a stable `environmentId`, persisted at `<stateDir>/environment-id` and
+generated on first start (`apps/server/src/environment/ServerEnvironment.ts`). Desktop, mobile, and
+web all reason about the same concept.
+
+Initialization publishes the complete ID atomically. If the ID file is empty or contains only
+whitespace, the system repairs it using the retained `<stateDir>/environment-id.recovery` file so
+that concurrent and delayed repairs select the same ID. Existing nonempty ID files remain
+authoritative.
 
 ### Known environments and connection targets
 
@@ -56,25 +70,25 @@ control plane or a copy of session state.
 | `BearerConnectionTarget`  | Any manually paired endpoint reached over direct HTTP/WebSocket.         |
 | `SshConnectionTarget`     | Desktop-managed SSH environments.                                        |
 
-Bearer and SSH are persisted; primary is platform-managed. Note that Tailscale is not a
-separate target kind. A Tailscale URL is paired through the ordinary bearer path in
-[`onboarding.ts`][onboarding] (`preparePairingRegistration`), which accepts either a pairing URL or a
-host plus pairing code. Tailscale is an endpoint provider and transport, not a distinct runtime
-concept.
+Bearer and SSH are persisted; primary is platform-managed. Tailscale is not a separate target kind.
+A Tailscale URL pairs through the ordinary bearer path in [`onboarding.ts`][onboarding]
+(`preparePairingRegistration`), which accepts either a pairing URL or a host plus pairing code.
+Tailscale acts as an endpoint provider and transport, not a distinct runtime concept.
 
 ### AdvertisedEndpoint
 
-A server- or desktop-authored candidate endpoint for an environment: a concrete HTTP and WebSocket
-base URL pair, a default/available/unavailable marker, reachability hints (loopback, LAN, private,
-public, tunnel), and compatibility hints such as whether the hosted HTTPS app can use it.
+A candidate endpoint for an environment, authored by a server or desktop: a concrete HTTP and
+WebSocket base URL pair, a default/available/unavailable marker, reachability hints (loopback,
+LAN, private, public, tunnel), and compatibility hints such as whether the hosted HTTPS app can
+use it.
 
 Clients treat advertised endpoints as hints, not proof that a route works from the current device.
 The connection attempt decides.
 
-The UI shows one default endpoint in the network-access summary and keeps the rest behind an advanced
-list. `selectPairingEndpoint` in
-[`ConnectionsSettings.tsx`](../../apps/web/src/components/settings/ConnectionsSettings.tsx) excludes
-unavailable endpoints and then picks, in order:
+The UI displays one default endpoint in the network-access summary and hides the rest behind an
+advanced list. `selectPairingEndpoint` in
+[`ConnectionsSettings.tsx`](../../apps/web/src/components/settings/ConnectionsSettings.tsx) filters
+out unavailable endpoints, then selects based on this order:
 
 1. the saved `defaultEndpointKey` override;
 2. the first endpoint marked `isDefault`;
@@ -82,7 +96,7 @@ unavailable endpoints and then picks, in order:
 4. the first endpoint compatible with the hosted HTTPS app;
 5. otherwise nothing.
 
-There is no unconditional loopback fallback. A loopback endpoint only wins through an explicit saved
+No unconditional loopback fallback exists. A loopback endpoint only wins via an explicit saved
 override or `isDefault`. Persist the override by stable endpoint kind rather than raw URL where
 possible, since LAN addresses change with networks; Tailscale endpoints use provider-specific stable
 keys (`tailscale-ip:`, `tailscale-magicdns:`).
@@ -141,9 +155,8 @@ are part of it: a hosted HTTPS client cannot connect to plain `ws://` or `http:/
 
 ### Tailscale access
 
-A T3-managed `tailscale serve` mapping exposes the server on the tailnet over HTTPS, and the
-resulting private-network endpoints are advertised for pairing. Connection then follows the ordinary
-bearer path.
+A T3-managed `tailscale serve` mapping exposes the server on the tailnet over HTTPS, advertising the
+resulting private-network endpoints for pairing. Connection then follows the ordinary bearer path.
 
 ### Desktop-managed SSH access
 
@@ -151,10 +164,10 @@ SSH is an access and launch helper, not a separate environment type. `DesktopSsh
 ([apps/desktop/src/ssh/DesktopSshEnvironment.ts][sshenv]) exposes `discoverHosts`,
 `ensureEnvironment`, and `disconnectEnvironment`. It discovers targets from SSH config and known
 hosts, owns password/askpass prompts, and delegates lifecycle to `SshEnvironmentManager` in
-[packages/ssh/src/tunnel.ts][sshtunnel], which resolves the target, launches or reuses the remote T3
-server, opens a local tunnel, checks HTTP readiness, optionally issues a remote pairing token, and
-returns local HTTP/WS endpoints. Disconnect closes the tunnel and stops the remote server if the
-launcher started it; a server that was already running (marked `external`) is left running.
+[packages/ssh/src/tunnel.ts][sshtunnel]. That manager resolves the target, launches or reuses the
+remote T3 server, opens a local tunnel, checks HTTP readiness, optionally issues a remote pairing
+token, and returns local HTTP/WS endpoints. Disconnect closes the tunnel and stops the remote server
+if the launcher started it; a server that was already running (marked `external`) is left running.
 
 The desktop main process owns this because it can spawn SSH, manage prompts, write launch scripts,
 and clean up forwards. The renderer connects through the forwarded URL like any other environment and
@@ -206,6 +219,34 @@ right action without making the transport responsible for process management. Th
 supervisor owns the resulting disconnect and reconnect like any other involuntary close. See
 [server-updates.md](./server-updates.md).
 
+## Machine identity
+
+Every environment is drawn with one of a fixed set of machine glyphs (`EnvironmentMachineKind` in
+contracts: server, cloud, desktop, laptop, mac-mini, mac-studio). Two inputs feed it, and the
+precedence lives in one helper, `resolveEnvironmentMachineKind`, so web and mobile cannot drift:
+
+1. `settings.environmentIcon`, a nullable server setting the user picks in Settings → Connections.
+   It is server state rather than client state so every device connecting to that server agrees.
+2. `environment.platform.machine`, detected once at startup by [ServerEnvironmentMachine.ts][machine]
+   (IOKit product name / `hw.model` on macOS, `/sys/class/dmi/id` on Linux with virtualization
+   markers mapped to "cloud"). Absent when there is no signal, so older servers, Windows hosts, and
+   containers decode without it.
+3. A generic server otherwise.
+
+Clients treat the field like any other capability: absent means "use the fallback", never "wait".
+
+## Desktop without a local environment
+
+Desktop normally launches its own primary server, but the desktop setting `localEnvironmentEnabled`
+(`apps/desktop/src/settings/DesktopAppSettings.ts`) turns that off. Changing it relaunches the app;
+no local state is deleted. On the next start the main process skips port selection, server exposure,
+and the primary and WSL backends, and opens the window right away. The renderer sees this through
+`desktopBridge.getLocalEnvironmentEnabled()`: `readPrimaryEnvironmentTarget` returns null, so primary
+auth and platform-managed discovery are skipped and only saved environments (bearer, SSH) connect.
+This is possible because the desktop renderer is not served by the backend: the `t3code://` scheme
+serves the bundled client from disk (Vite in development) and API traffic always goes to the
+environment's own URL.
+
 ## Future work
 
 These remain unbuilt and are listed to keep the model honest:
@@ -218,3 +259,4 @@ These remain unbuilt and are listed to keep the model honest:
 [authremote]: ../../packages/client-runtime/src/authorization/remote.ts
 [sshenv]: ../../apps/desktop/src/ssh/DesktopSshEnvironment.ts
 [sshtunnel]: ../../packages/ssh/src/tunnel.ts
+[machine]: ../../apps/server/src/environment/ServerEnvironmentMachine.ts

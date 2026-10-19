@@ -1,18 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import type { ComponentType } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Platform,
+  RefreshControl,
   ScrollView,
   Text as NativeText,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
-
-import { AppText as Text } from "../../components/AppText";
-import { LoadingStrip } from "../../components/LoadingStrip";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppText as Text } from "../../components/ui/AppText";
+import { LoadingStrip } from "../../components/ui/LoadingStrip";
+import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import {
   type NativeReviewDiffViewProps,
   resolveNativeReviewDiffView,
@@ -23,19 +25,25 @@ import type { ReviewHighlightedToken } from "../review/shikiReviewHighlighter";
 import { cn } from "../../lib/cn";
 import type { ResolvedMobileCodeSurface } from "../../lib/appearancePreferences";
 import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import {
   buildNativeSourceTokens,
   NATIVE_SOURCE_CONTENT_WIDTH,
   nativeSourceRowId,
 } from "./nativeSourceFileAdapter";
-import { prepareSourceFileDocument } from "./source-file-document";
+import { SourceText } from "@d4research/mobile-source-text";
+
+import { boundedSelectableSourceTokens, prepareSourceFileDocument } from "./source-file-document";
 import { sourceHighlightAtom } from "./sourceHighlightingState";
 
 interface SourceFileSurfaceProps {
   readonly contents: string;
   readonly path: string;
+  readonly embedded?: boolean;
   readonly initialLine?: number | null;
-  /** Enables native pull-to-refresh on the source surface. */
+  readonly headerInsetTop?: number;
+  readonly selectable?: boolean;
   readonly onRefresh?: () => Promise<void> | void;
 }
 
@@ -67,6 +75,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
       </NativeText>
       <NativeText
         selectable
+        selectionColorClassName={Platform.OS === "android" ? "accent-focus/32" : undefined}
         numberOfLines={props.wordBreak ? undefined : 1}
         className="flex-1 font-normal text-foreground"
         style={{
@@ -96,6 +105,9 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
                   <NativeText
                     key={`${start}:${token.content.length}:${token.color ?? ""}`}
                     selectable
+                    selectionColorClassName={
+                      Platform.OS === "android" ? "accent-focus/32" : undefined
+                    }
                     style={{
                       color: token.color ?? undefined,
                       fontFamily: REVIEW_MONO_FONT_FAMILY,
@@ -115,8 +127,7 @@ const HighlightedSourceLine = memo(function HighlightedSourceLine(props: {
 });
 
 function useSourceFileModel(props: SourceFileSurfaceProps) {
-  const colorScheme = useColorScheme();
-  const theme: "dark" | "light" = colorScheme === "dark" ? "dark" : "light";
+  const { themeAppearance: theme } = useAppearancePreferences();
   const document = useMemo(() => prepareSourceFileDocument(props.contents), [props.contents]);
   const { contents: normalizedContents, lines, rowsJson } = document;
   const targetIndex =
@@ -135,7 +146,7 @@ function useSourceFileModel(props: SourceFileSurfaceProps) {
       ? "ready"
       : "highlighting";
 
-  return { lines, rowsJson, status, targetIndex, theme, tokens };
+  return { normalizedContents, lines, rowsJson, status, targetIndex, theme, tokens };
 }
 
 function SourceHighlightStatusView(props: { readonly status: SourceHighlightStatus }) {
@@ -152,15 +163,7 @@ function SourceHighlightStatusView(props: { readonly status: SourceHighlightStat
   return null;
 }
 
-function NativeSourceFileSurface(
-  props: SourceFileSurfaceProps & {
-    readonly NativeView: ComponentType<NativeReviewDiffViewProps>;
-  },
-) {
-  const { NativeView, onRefresh } = props;
-  const { codeSurface, codeWordBreak, nativeSourceStyle } = useAppearanceCodeSurface();
-  const { width: viewportWidth } = useWindowDimensions();
-  const { rowsJson, status, targetIndex, theme, tokens } = useSourceFileModel(props);
+function useSourceFileRefresh(onRefresh: SourceFileSurfaceProps["onRefresh"]) {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullToRefresh = useCallback(async () => {
     if (!onRefresh) {
@@ -173,12 +176,33 @@ function NativeSourceFileSurface(
       setIsPullRefreshing(false);
     }
   }, [onRefresh]);
+  return { isPullRefreshing, handlePullToRefresh };
+}
+
+function NativeSourceFileSurface(
+  props: SourceFileSurfaceProps & {
+    readonly NativeView: ComponentType<NativeReviewDiffViewProps>;
+  },
+) {
+  const { NativeView, onRefresh } = props;
+  const insets = useSafeAreaInsets();
+  const columnMetrics = useNativeColumnLayoutMetrics();
+  const safeArea = columnMetrics?.safeArea ?? insets;
+  const { codeSurface, codeWordBreak, nativeSourceStyle } = useAppearanceCodeSurface();
+  const { themeAppearance, themeId } = useAppearancePreferences();
+  const appTheme = useUniwindTheme();
+  const { width: viewportWidth } = useWindowDimensions();
+  const { rowsJson, status, targetIndex, tokens } = useSourceFileModel(props);
+  const { isPullRefreshing, handlePullToRefresh } = useSourceFileRefresh(onRefresh);
   const tokensJson = useMemo(() => JSON.stringify(buildNativeSourceTokens(tokens)), [tokens]);
   const selectedRowIdsJson = useMemo(
     () => JSON.stringify(targetIndex === null ? [] : [nativeSourceRowId(targetIndex)]),
     [targetIndex],
   );
-  const themeJson = useMemo(() => JSON.stringify(createNativeReviewDiffTheme(theme)), [theme]);
+  const themeJson = useMemo(
+    () => JSON.stringify(createNativeReviewDiffTheme(themeAppearance, themeId, appTheme)),
+    [appTheme, themeAppearance, themeId],
+  );
   const styleJson = useMemo(() => JSON.stringify(nativeSourceStyle), [nativeSourceStyle]);
   const contentWidth = codeWordBreak
     ? Math.max(240, viewportWidth - codeSurface.gutterWidth - 24)
@@ -191,9 +215,11 @@ function NativeSourceFileSurface(
         collapsable={false}
         testID="source-native-code-view"
         style={{ flex: 1 }}
-        appearanceScheme={theme}
+        appearanceScheme={themeAppearance}
         contentResetKey={props.path}
         contentWidth={contentWidth}
+        contentInsetTop={props.embedded ? 0 : (props.headerInsetTop ?? safeArea.top)}
+        contentInsetBottom={props.embedded ? 0 : safeArea.bottom + 8}
         initialRowIndex={targetIndex ?? -1}
         rowHeight={nativeSourceStyle.rowHeight ?? codeSurface.rowHeight}
         rowsJson={rowsJson}
@@ -213,9 +239,19 @@ function NativeSourceFileSurface(
 }
 
 function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
+  const usesAutomaticInsets = Platform.OS === "ios" && !props.embedded;
+  const foreground = useUniwindTheme()["--color-foreground"];
   const { codeSurface, codeWordBreak } = useAppearanceCodeSurface();
-  const { lines, status, targetIndex, tokens } = useSourceFileModel(props);
+  const { normalizedContents, lines, status, targetIndex, tokens } = useSourceFileModel(props);
+  const selectableTokens = useMemo(
+    () => (props.selectable ? boundedSelectableSourceTokens(tokens) : null),
+    [props.selectable, tokens],
+  );
   const listRef = useRef<FlatList<string>>(null);
+  const { isPullRefreshing, handlePullToRefresh } = useSourceFileRefresh(props.onRefresh);
+  const refreshControl = props.onRefresh ? (
+    <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullToRefresh()} />
+  ) : undefined;
 
   useEffect(() => {
     if (targetIndex === null) {
@@ -241,9 +277,61 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     [codeSurface, codeWordBreak, targetIndex, tokens],
   );
 
+  // On iOS `uiTextView` renders a real `UITextView`, which selects across every line,
+  // wraps, and lays out long documents through TextKit; on Android the primitive is an RN
+  // `Text`, which selects across its nested children. Either way "select all" takes the
+  // file rather than a line, which a `FlatList` row can never do because each row is its
+  // own selection scope.
+  const selectableBlock = props.selectable ? (
+    <SourceText
+      selectable
+      selectionColorClassName={Platform.OS === "android" ? "accent-focus/32" : undefined}
+      style={{
+        color: foreground,
+        fontFamily: REVIEW_MONO_FONT_FAMILY,
+        fontSize: codeSurface.fontSize,
+        lineHeight: codeSurface.rowHeight,
+      }}
+    >
+      {selectableTokens
+        ? lines.map((line, index) => {
+            const lineTokens = selectableTokens[index] ?? null;
+            const body =
+              lineTokens && lineTokens.length > 0
+                ? lineTokens.map((token, tokenIndex) => (
+                    <SourceText
+                      key={`${index}:${tokenIndex}`}
+                      style={{
+                        color: token.color ?? foreground,
+                        fontWeight:
+                          token.fontStyle !== null && (token.fontStyle & 2) === 2 ? "700" : "400",
+                        fontStyle:
+                          token.fontStyle !== null && (token.fontStyle & 1) === 1
+                            ? "italic"
+                            : "normal",
+                      }}
+                    >
+                      {token.content}
+                    </SourceText>
+                  ))
+                : line;
+            return (
+              <SourceText key={index}>
+                {body}
+                {index < lines.length - 1 ? "\n" : ""}
+              </SourceText>
+            );
+          })
+        : normalizedContents}
+    </SourceText>
+  ) : null;
+
   const list = (
     <FlatList
       ref={listRef}
+      contentInsetAdjustmentBehavior={usesAutomaticInsets ? "automatic" : "never"}
+      automaticallyAdjustsScrollIndicatorInsets={usesAutomaticInsets}
+      refreshControl={refreshControl}
       data={lines}
       keyExtractor={(_line, index) => String(index)}
       initialNumToRender={80}
@@ -267,14 +355,39 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     />
   );
 
+  const usesLineList = !props.selectable;
+  const padded = (
+    <ScrollView
+      refreshControl={refreshControl}
+      className="flex-1"
+      contentInsetAdjustmentBehavior={usesAutomaticInsets ? "automatic" : "never"}
+      automaticallyAdjustsScrollIndicatorInsets={usesAutomaticInsets}
+      contentContainerStyle={{
+        paddingBottom: codeSurface.rowHeight,
+        paddingHorizontal: 12,
+        paddingTop: 8,
+      }}
+    >
+      {selectableBlock}
+    </ScrollView>
+  );
+
   return (
     <View className="relative flex-1 bg-sheet">
       <SourceHighlightStatusView status={status} />
-      {codeWordBreak ? (
-        list
+      {usesLineList ? (
+        codeWordBreak ? (
+          list
+        ) : (
+          <ScrollView horizontal bounces={false} className="flex-1">
+            {list}
+          </ScrollView>
+        )
+      ) : codeWordBreak ? (
+        padded
       ) : (
         <ScrollView horizontal bounces={false} className="flex-1">
-          {list}
+          {padded}
         </ScrollView>
       )}
     </View>
@@ -283,9 +396,12 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
 
 export function SourceFileSurface(props: SourceFileSurfaceProps) {
   const NativeView = resolveNativeReviewDiffView();
-  return NativeView ? (
-    <NativeSourceFileSurface {...props} NativeView={NativeView} />
-  ) : (
-    <JavaScriptSourceFileSurface {...props} />
-  );
+  const { codeWordBreak } = useAppearanceCodeSurface();
+  const surface =
+    NativeView && !codeWordBreak && !props.selectable ? (
+      <NativeSourceFileSurface {...props} NativeView={NativeView} />
+    ) : (
+      <JavaScriptSourceFileSurface {...props} />
+    );
+  return surface;
 }

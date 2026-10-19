@@ -1,0 +1,85 @@
+name: Mobile iOS Unsigned IPA
+
+# Builds an unsigned Release .ipa for sideloading (SideStore/AltStore re-sign it on device).
+# Personal-team mode drops widgets, share extension and app groups, which free signing cannot provision.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ipad/**"]
+
+jobs:
+  ipa:
+    name: Unsigned IPA
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      APP_VARIANT: production
+      T3CODE_IOS_PERSONAL_TEAM: "1"
+      T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: ai.dimaggi.d4research.ipad
+      EXPO_NO_GIT_STATUS: "1"
+      # @callstack/liquid-glass imports RCTConversions.h, which the prebuilt React.xcframework omits.
+      RCT_USE_PREBUILT_RNCORE: "0"
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@d4research/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Prebuild native project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --clean --platform ios
+
+      - name: Archive without signing
+        working-directory: apps/mobile/ios
+        run: |
+          workspace="$(ls -d *.xcworkspace | head -1)"
+          scheme="${workspace%.xcworkspace}"
+          log="$RUNNER_TEMP/xcodebuild.log"
+          status=0
+          xcodebuild archive \
+            -workspace "$workspace" -scheme "$scheme" -configuration Release \
+            -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            > "$log" 2>&1 || status=$?
+          grep -E '(error:|warning:|\*\* ARCHIVE)' "$log" | tail -200 || true
+          exit "$status"
+
+      - name: Package IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP"/app.xcarchive/Products/Applications/*.app "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/d4research-ipad-unsigned.ipa" Payload)
+          ls -la d4research-ipad-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: d4research-ipad-unsigned
+          path: d4research-ipad-unsigned.ipa
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xcodebuild-log
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore

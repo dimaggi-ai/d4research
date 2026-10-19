@@ -1,11 +1,6 @@
 import { FileTextIcon, X } from "lucide-react";
 
-import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
-} from "../composerInlineChip";
+import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { type PastedContextDraft, countLines } from "~/lib/pastedContext";
@@ -51,9 +46,9 @@ function ComposerPendingPastedContextChip({
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
-            <FileTextIcon className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-            <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{context.name}</span>
+          <ContextChip kind="file" className="select-none pr-1">
+            <FileTextIcon />
+            <ContextChipLabel>{context.name}</ContextChipLabel>
             <span className="select-none text-[10px] font-normal leading-tight text-muted-foreground/85">
               {meta}
             </span>
@@ -69,22 +64,20 @@ function ComposerPendingPastedContextChip({
                 {memoLabel}
               </span>
             ) : null}
-            <button
-              type="button"
+            <ContextChipAction
               aria-label={`Remove ${context.name}`}
-              className={COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onRemove(context.id);
               }}
             >
-              <X className="size-3" aria-hidden />
-            </button>
-          </span>
+              <X aria-hidden />
+            </ContextChipAction>
+          </ContextChip>
         }
       />
-      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap leading-tight">
+      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
         {`${context.name}\n${meta}\n\n${context.content.slice(0, 600)}${
           context.content.length > 600 ? "\n…" : ""
         }`}

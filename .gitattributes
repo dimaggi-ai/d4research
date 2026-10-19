@@ -1,2 +1,8 @@
 # git autocrlf=true converts LF to CRLF on Windows, causing issues with oxfmt
 * text=auto eol=lf
+# Batch files need CRLF for cmd.exe to parse them reliably.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+# GitHub's GraphQL schema and the operations graphqlgen writes from it.
+packages/source-control-github/schema/** linguist-generated
+**/*.graphql.ts linguist-generated

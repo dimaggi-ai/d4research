@@ -5,6 +5,7 @@ import type {
 } from "@d4research/contracts";
 import * as NetService from "@d4research/shared/Net";
 import * as SshAuth from "@d4research/ssh/auth";
+import { resolveSshTarget } from "@d4research/ssh/command";
 import { discoverSshHosts } from "@d4research/ssh/config";
 import {
   SshCommandError,
@@ -17,17 +18,19 @@ import {
 } from "@d4research/ssh/errors";
 import * as SshTunnel from "@d4research/ssh/tunnel";
 import * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as HttpClient from "effect/http/HttpClient";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopSshPasswordPrompts from "./DesktopSshPasswordPrompts.ts";
 
 export type DesktopSshEnvironmentRuntimeServices =
   | ChildProcessSpawner.ChildProcessSpawner
+  | Crypto.Crypto
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
@@ -44,16 +47,15 @@ export type DesktopSshEnvironmentOperationError =
 
 export type DesktopSshEnvironmentDiscoverError = SshHostDiscoveryError;
 
-export type DesktopSshEnvironmentError =
-  | DesktopSshEnvironmentDiscoverError
-  | DesktopSshEnvironmentOperationError;
-
 export class DesktopSshEnvironment extends Context.Service<
   DesktopSshEnvironment,
   {
     readonly discoverHosts: (input?: {
       readonly homeDir?: string;
     }) => Effect.Effect<readonly DesktopDiscoveredSshHost[], DesktopSshEnvironmentDiscoverError>;
+    readonly resolveHost: (
+      alias: string,
+    ) => Effect.Effect<DesktopSshEnvironmentTarget, SshCommandError | SshInvalidTargetError>;
     readonly ensureEnvironment: (
       target: DesktopSshEnvironmentTarget,
       options?: { readonly issuePairingToken?: boolean },
@@ -65,7 +67,6 @@ export class DesktopSshEnvironment extends Context.Service<
 >()("@d4research/desktop/ssh/DesktopSshEnvironment") {}
 
 export interface DesktopSshEnvironmentLayerOptions {
-  readonly resolveCliPackageSpec?: () => string;
   readonly resolveCliRunner?: Effect.Effect<SshTunnel.RemoteT3RunnerOptions>;
 }
 
@@ -124,6 +125,7 @@ const makePasswordPrompt = (
     prompts.request(request).pipe(Effect.mapError(toSshPasswordPromptError)),
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const manager = yield* SshTunnel.SshEnvironmentManager;
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
@@ -135,6 +137,11 @@ export const make = Effect.gen(function* () {
       discoverDesktopSshHostsEffect(input).pipe(
         Effect.provide(runtimeContext),
         Effect.withSpan("desktop.ssh.discoverHosts"),
+      ),
+    resolveHost: (alias) =>
+      resolveSshTarget(alias.trim()).pipe(
+        Effect.provide(runtimeContext),
+        Effect.withSpan("desktop.ssh.resolveHost"),
       ),
     ensureEnvironment: (target, ensureOptions) =>
       manager
@@ -158,13 +165,10 @@ export const make = Effect.gen(function* () {
 export const layer = (options: DesktopSshEnvironmentLayerOptions = {}) =>
   Layer.effect(DesktopSshEnvironment, make).pipe(
     Layer.provide(
-      SshTunnel.SshEnvironmentManager.layer({
-        ...(options.resolveCliPackageSpec === undefined
+      SshTunnel.SshEnvironmentManager.layer(
+        options.resolveCliRunner === undefined
           ? {}
-          : { resolveCliPackageSpec: options.resolveCliPackageSpec }),
-        ...(options.resolveCliRunner === undefined
-          ? {}
-          : { resolveCliRunner: options.resolveCliRunner }),
-      }),
+          : { resolveCliRunner: options.resolveCliRunner },
+      ),
     ),
   );

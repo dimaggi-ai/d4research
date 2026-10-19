@@ -1,6 +1,6 @@
 # Remote Access
 
-Use this when you want to connect to a d4research server from another device such as a phone, tablet, or separate desktop app.
+Use this to connect to a d4research server from another device such as a phone, tablet, or separate desktop app.
 
 ## Quick Pairing for a Running Server
 
@@ -22,8 +22,8 @@ node apps/server/src/bin.ts pair --tailscale
 
 This publishes the server over Tailscale Serve HTTPS (configuring the mapping if needed — it persists until you run `tailscale serve --https=443 off`) and pairs through the `https://machine.tailnet.ts.net/` URL. Use `--tailscale-serve-port` for a different HTTPS port, `--ttl` to change the token lifetime, and `--base-dir` to target a specific data directory.
 
-If no server is running, start the released server with `npx d4research@0.2.0` or start a source
-checkout. The upstream `npx t3` package starts T3 Code, not d4research.
+If no server is running, start the source checkout before pairing. The upstream `npx t3` package
+starts T3 Code, not d4research.
 
 ## Recommended Setup
 
@@ -76,12 +76,76 @@ Depending on your Tailscale setup, this may include:
 The Tailscale HTTPS endpoint uses the clean MagicDNS URL, such as
 `https://machine.tailnet.ts.net/`, and is off until you opt in. Turn on **Enable Tailscale HTTPS**
 on the **Tailscale HTTPS** row in **Settings** → **Connections**. The desktop app restarts the
-backend with the same server-side behavior as `t3 serve --tailscale-serve`, then the server asks
+backend with the same server-side behavior as `d4research serve --tailscale-serve`, then the server asks
 Tailscale Serve to proxy HTTPS traffic to the local backend. Turn the same switch off to stop it.
 
 The Tailscale support is an endpoint provider add-on. The core remote model still works without Tailscale: LAN HTTP endpoints, custom HTTPS endpoints, future tunnels, and SSH-launched environments all use the same saved environment and pairing flow.
 
 For `https://app.t3.codes`, prefer an HTTPS Tailnet or other HTTPS endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser mixed-content rules.
+
+Scan the QR code on your phone or paste the pairing URL into **Add environment**
+in the receiving app. Connection settings are under **Settings → Connections**
+on web and desktop and **Settings → Environments** on mobile. A loopback address
+such as `127.0.0.1` reaches only the device opening the link.
+
+Pairing authorizes that device for future connections. Use a fresh one-time link
+for each new device; you do not need the original token to reconnect. Links
+created in Settings can only be copied from the client that created them while
+its Connections page stays open. If you leave or reload that page, create
+another link to share.
+
+### Reach one machine several ways
+
+A machine can have more than one route: LAN, Tailscale, another VPN, a public
+URL, or SSH. An address in the `100.64.0.0/10` range shows as VPN unless the machine
+confirms it is on Tailscale. To add a route, choose **Add
+route** in the machine's route list.
+Pairing the same machine again over another address also adds a route instead
+of a second machine. A new route is placed by speed, in that order, and you can
+reorder routes at any time.
+
+While connected through a paired address, d4research also learns the
+machine's current LAN and Tailscale addresses and adds them as routes. When the
+machine's LAN address changes, for example after it joins another Wi-Fi network,
+the learned route follows it. The machine must allow network access for its LAN
+address to be learned. You can reorder a learned route, but not remove it; it
+goes away with the route it was learned through, or when the machine stops
+reporting that address.
+
+d4research connects over the first route that answers. Away from home, a LAN
+address that does not answer is checked briefly and skipped. It is only tried
+again, after the other routes, if none of them connect. While connected over a
+later route, d4research checks the earlier ones when your network changes, when you
+return to the app, and every minute, and moves back as soon as one works.
+
+On web and desktop, select the route count under the machine's name in
+**Settings → Connections** to see its routes. Drag a route to change the order,
+or remove it. On mobile, open the machine under **Settings → Environments** and
+choose **Edit**.
+
+Open **Permissions** next to **Routes** in web or desktop, or **Your permissions**
+in the mobile route details, to see what your current connection can do on that
+environment. For a remote environment, this is in its route details. Permissions
+shown there apply only to the route marked **In use**; other routes are not
+checked. Different routes may grant different permissions.
+
+### Balance new threads across machines
+
+Auto balance is off by default. On web and desktop, enable it in
+**Settings → Connections → Load balancing** to automatically choose a machine for
+new threads in projects grouped across connected environments. The section
+appears once two or more machines are switched on.
+Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
+memory available, **Less often** to reduce its share, or **Manual only** to exclude
+it from automatic selection. These are preferences, not fixed traffic percentages.
+Preferences are saved separately in each client.
+
+The composer checks eligible machines when choosing a draft's environment, then keeps
+that choice stable. Choose **Auto balance** again to check current resources, or choose
+a specific machine to override it. Choosing a branch or worktree also keeps the draft
+on that machine. Existing threads stay where they started. If resource checks are
+unavailable or all eligible machines are full, choose a machine manually to continue.
+Mobile keeps its manual environment selection.
 
 ### Option 2: Headless Server (CLI)
 
@@ -93,7 +157,7 @@ Run the source CLI from the checkout.
 node apps/server/src/bin.ts serve --host "$(tailscale ip -4)"
 ```
 
-`t3 serve` starts the server without opening a browser and prints:
+`d4research serve` starts the server without opening a browser and prints:
 
 - a connection string
 - a pairing token
@@ -107,7 +171,7 @@ From there, connect from another device in either of these ways:
 - in the desktop app, enter the host and token separately
 - in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
 
-Use `node apps/server/src/bin.ts serve --help` for the full flag reference. It supports the same
+Run `node apps/server/src/bin.ts serve --help` for the full flag reference. It supports the same
 general startup options as the normal server command, including an optional `cwd` argument.
 
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
@@ -167,6 +231,15 @@ If that does not print a compatible Node version, configure your version manager
 nvm alias default 24
 ```
 
+Each desktop app keeps one session on the host for its SSH connection and reuses
+it when it reconnects. Revoke sessions you no longer use in **Settings →
+Connections** on the host, or on a headless host with `d4research auth session list` and
+`d4research auth session revoke <id>`. A desktop that can still sign in over SSH pairs
+again on its next connect.
+
+For Antigravity's Google callback on a remote host, see
+[remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
+
 With mise, asdf, fnm, or nodenv, make sure the tool's shim directory is installed and resolves to a Node version satisfying the range above without an interactive shell.
 
 If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.t3/ssh-launch` or kill `t3` processes manually.
@@ -190,7 +263,7 @@ The remote device does not need a long-lived secret up front.
 
 Instead:
 
-1. `t3 serve` issues a one-time owner pairing token.
+1. `d4research serve` issues a one-time owner pairing token.
 2. The remote device exchanges that token with the server.
 3. The server creates an authenticated session for that device.
 
@@ -208,11 +281,33 @@ Use hosted pairing when the backend is reachable from the browser over HTTPS/WSS
 
 Do not use hosted pairing for plain HTTP LAN URLs such as `http://192.168.x.y:3773`. Browsers block an HTTPS page from connecting to an insecure HTTP or WS backend. For those endpoints, use the direct pairing URL shown by the desktop app or CLI from a client that can open that HTTP URL directly.
 
-Hosted pairing does not proxy traffic through d4research. The browser still connects directly to the backend URL in the pairing link.
+Hosted pairing does not proxy traffic through d4research; the browser connects directly to the backend URL in the pairing link.
+
+### Browser host setup
+
+macOS, Windows, and Linux desktops run the browser as is. Some Linux hosts need
+one-time setup: Ubuntu 23.10 and later block the sandbox the browser runs in,
+and minimal images and containers lack libraries it loads. When that happens,
+the server says so at startup, and browser tabs and HTML previews show the
+command to run on the host:
+
+```sh
+sudo node apps/server/src/bin.ts browser setup
+```
+
+The server shows the exact line for how you started it, such as
+`sudo node apps/server/src/bin.ts browser setup`, and keeps your `PATH` when Node is installed only
+for your user. Where `d4research` is not on your `PATH`, such as with only the
+desktop app installed, it names the full path of the app's own `d4research` instead. It allows Chrome's sandbox with an AppArmor profile and installs
+any missing libraries with apt. It is safe to run again. Without `sudo`, it
+only reports what it would change.
+
+The browser always runs in Chrome's sandbox. Where you cannot change the host,
+set `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
 
 ## Managing Access Later
 
-Use `t3 auth` to manage access after the initial pairing flow.
+Use `d4research auth` to manage access after the initial pairing flow.
 
 Typical uses:
 
@@ -220,7 +315,7 @@ Typical uses:
 - inspect active sessions
 - revoke old pairing links or sessions
 
-Use `t3 auth --help` and the nested subcommand help pages for the full reference.
+Use `d4research auth --help` and the nested subcommand help pages for the full reference.
 
 ## Security Notes
 
@@ -228,4 +323,45 @@ Use `t3 auth --help` and the nested subcommand help pages for the full reference
 - Prefer binding `--host` to a trusted private address, such as a Tailnet IP, instead of exposing the server broadly.
 - Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
 - Hosted pairing links keep the credential in the URL hash so it is not sent to the hosted app server, but it can still be exposed through browser history, screenshots, logs, or copy/paste.
-- Use `t3 auth` to revoke credentials or sessions you no longer trust.
+- Use `d4research auth` to revoke credentials or sessions you no longer trust.
+
+```sh
+d4research pair --scope orchestration:read
+```
+
+The selected scopes replace the default permissions. The same option works with
+`d4research auth pairing create` and `d4research auth session issue`; each command's
+`--help` lists the available scopes. Without `--scope`, ordinary pairing tokens grant client operations but exclude
+access management. Operator-issued bearer sessions also grant access management.
+A terminal or a full-access agent on the host can reach those as well, so a
+client that should not manage access also needs to go without `terminal:operate`
+and `orchestration:operate`.
+
+To change an existing client's permissions, create a fresh pairing link with the
+scopes it needs. In a browser opened directly on the environment, open that link
+to replace the browser's current grant. For mobile or a saved remote environment
+in web or desktop, use **Add Environment** with the fresh link or code; pairing
+the same environment replaces its saved grant. Reconnecting alone does not change
+permissions.
+
+Grouping checkouts does not combine their permissions. Shared project settings
+require `orchestration:operate` on every member environment; actions on one
+checkout use that checkout's permissions.
+
+`source-control:write` covers direct Git and pull request changes made from the
+client: pushing, switching or creating branches, cloning, and removing
+worktrees. It does not restrict what a task does. Starting a task in a new
+worktree still creates that branch and worktree with `orchestration:operate`,
+and the agent it runs can use Git however the environment allows.
+
+Settings changes, provider management, environment maintenance, and access
+management can each be granted separately. Ordinary new
+pairings without `--scope` exclude access management. Existing clients keep the
+permissions they paired with and can stay connected after an update, but newly
+separated features may require pairing again with the permissions they need.
+Older clients may show controls that the server denies. Create a fresh pairing
+link to change a client's permissions.
+
+`filesystem:read` allows browsing host files, opening workspace files, and viewing
+local changes. Add `filesystem:write` to allow editing files or saving plans to
+the workspace. These scopes control direct file access from the client.

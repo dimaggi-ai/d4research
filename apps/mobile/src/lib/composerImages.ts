@@ -1,36 +1,340 @@
 import {
+  clampFileAttachmentUploadBytes,
+  fileAttachmentTooLargeMessage,
+} from "@d4research/client-runtime/state/attachments";
+import {
+  isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type EnvironmentId,
+  type PastedTextAttachmentSource,
   type UploadChatImageAttachment,
 } from "@d4research/contracts";
+import type { DocumentPickerResult } from "expo-document-picker";
 import { estimateBase64ByteSize } from "./base64";
+import {
+  COMPOSER_ATTACHMENT_DIRECTORY,
+  isComposerAttachmentFileRetained,
+  resolveOwnedComposerAttachmentFileUri,
+} from "./composerAttachmentFiles";
+import { imageMimeType } from "@d4research/shared/image";
+import { videoMimeType } from "@d4research/shared/video";
+import { fitComposerImage, renderPhoto } from "./composerImageFit";
+import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
+import { writeFileAtomically } from "./atomic-file";
 
-export interface DraftComposerImageAttachment extends UploadChatImageAttachment {
+export interface DraftComposerImageAttachment extends Omit<UploadChatImageAttachment, "dataUrl"> {
   readonly id: string;
   readonly previewUri: string;
+  readonly fileUri?: string;
+  readonly dataUrl?: string;
+  readonly uploadedAttachmentId?: string;
+  readonly uploadEnvironmentId?: EnvironmentId;
 }
 
-/** Wire shape for startTurn: pure uploads without client draft id / previewUri. */
-export function toUploadChatImageAttachments(
-  attachments: ReadonlyArray<DraftComposerImageAttachment>,
-): ReadonlyArray<UploadChatImageAttachment> {
-  return attachments.map((attachment) => ({
-    type: attachment.type,
-    name: attachment.name,
-    mimeType: attachment.mimeType,
-    sizeBytes: attachment.sizeBytes,
-    dataUrl: attachment.dataUrl,
-  }));
+export interface DraftComposerFileAttachment {
+  readonly id: string;
+  readonly type: "file";
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly fileUri: string;
+  readonly source?: PastedTextAttachmentSource;
+  readonly uploadedAttachmentId?: string;
+  readonly uploadEnvironmentId?: EnvironmentId;
+}
+
+export async function createPastedTextComposerAttachment(input: {
+  readonly text: string;
+  readonly name: string;
+  readonly maxBytes: number;
+}): Promise<DraftComposerFileAttachment> {
+  const bytes = new TextEncoder().encode(input.text).byteLength;
+  if (bytes <= 0) {
+    throw new Error("Clipboard is empty.");
+  }
+  if (bytes > input.maxBytes) {
+    throw new Error(fileAttachmentTooLargeMessage(input.name, input.maxBytes));
+  }
+
+  const { Directory, File, Paths } = await import("expo-file-system");
+  const directory = new Directory(Paths.document, COMPOSER_ATTACHMENT_DIRECTORY);
+  directory.create({ idempotent: true, intermediates: true });
+  const file = new File(directory, `${uuidv4()}-${input.name}`);
+  await writeFileAtomically(file, input.text);
+  return {
+    id: uuidv4(),
+    type: "file",
+    name: input.name,
+    mimeType: "text/plain;charset=utf-8",
+    sizeBytes: bytes,
+    fileUri: file.uri,
+    source: { _tag: "pasted-text" },
+  };
+}
+
+export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
+
+/**
+ * The chip is not optional for a non-media file. Every path that attaches one also writes
+ * its reference, so a file with no chip means the draft lost it rather than that the strip
+ * should stand in.
+ */
+export function composerStripAttachments(
+  attachments: ReadonlyArray<DraftComposerAttachment>,
+): ReadonlyArray<DraftComposerAttachment> {
+  return attachments.filter(
+    (attachment) => isComposerImageAttachment(attachment) || videoMimeType(attachment) !== null,
+  );
+}
+
+/**
+ * The document picker types every pick as a plain file, so the answer comes from the
+ * attachment itself rather than from which picker made it.
+ */
+export function isComposerImageAttachment(
+  attachment: DraftComposerAttachment,
+): attachment is DraftComposerImageAttachment {
+  return attachment.type === "image" || imageMimeType(attachment) !== null;
+}
+
+export type FileBackedComposerAttachment = DraftComposerAttachment & { readonly fileUri: string };
+
+export function isFileBackedComposerAttachment(
+  attachment: DraftComposerAttachment,
+): attachment is FileBackedComposerAttachment {
+  return attachment.fileUri !== undefined;
+}
+
+/**
+ * A picture taken from the photo library or the clipboard owns no file and carries its bytes
+ * inline, and its `attachmentId` is a local draft id the server has never seen — so falling
+ * back to a remote asset for one only ever fails.
+ */
+export function composerAttachmentInlineUri(
+  attachment: DraftComposerAttachment | undefined,
+): string | undefined {
+  if (attachment === undefined || isFileBackedComposerAttachment(attachment)) return undefined;
+  return attachment.type === "image" ? (attachment.dataUrl ?? attachment.previewUri) : undefined;
 }
 
 const OWNED_PASTED_IMAGE_DIRECTORY = "t3-composer-paste";
+const ATTACHMENT_COPY_CHUNK_BYTES = 64 * 1024;
+
+export async function persistComposerAttachmentFile(
+  uri: string,
+  name: string,
+  maxBytes?: number,
+): Promise<string> {
+  const { Directory, File, FileMode, Paths } = await import("expo-file-system");
+  const directory = new Directory(Paths.document, COMPOSER_ATTACHMENT_DIRECTORY);
+  directory.create({ idempotent: true, intermediates: true });
+  const safeName =
+    Array.from(name, (character) =>
+      character === "/" || character === "\\" || character.charCodeAt(0) < 32 ? "-" : character,
+    ).join("") || "file";
+  const destination = new File(directory, `${uuidv4()}-${safeName}`);
+  const source = new File(uri);
+  const sourceSize = source.size;
+  if (
+    maxBytes !== undefined &&
+    (sourceSize === null || (sourceSize === 0 && uri.startsWith("content:")))
+  ) {
+    destination.create();
+    try {
+      const reader = source.open(FileMode.ReadOnly);
+      try {
+        const writer = destination.open(FileMode.WriteOnly);
+        try {
+          let copiedBytes = 0;
+          while (true) {
+            const chunk = await reader.readBytes(
+              Math.min(ATTACHMENT_COPY_CHUNK_BYTES, maxBytes - copiedBytes + 1),
+            );
+            if (chunk.byteLength === 0) {
+              break;
+            }
+            copiedBytes += chunk.byteLength;
+            if (copiedBytes > maxBytes) {
+              throw new Error(fileAttachmentTooLargeMessage(name, maxBytes));
+            }
+            await writer.writeBytes(chunk);
+          }
+        } finally {
+          writer.close();
+        }
+      } finally {
+        reader.close();
+      }
+    } catch (error) {
+      if (destination.exists) {
+        destination.delete();
+      }
+      throw error;
+    }
+    return destination.uri;
+  }
+
+  if (maxBytes !== undefined && sourceSize !== null && sourceSize > maxBytes) {
+    throw new Error(fileAttachmentTooLargeMessage(name, maxBytes));
+  }
+  try {
+    await source.copy(destination);
+  } catch (error) {
+    // A failed copy can leave a partial destination file behind with no URI
+    // returned to release it later; delete it before surfacing the failure.
+    try {
+      if (destination.exists) {
+        destination.delete();
+      }
+    } catch (cleanupError) {
+      console.warn("[composer-attachments] could not remove a partial copy", cleanupError);
+    }
+    throw error;
+  }
+  // An Android content: stream can deliver more bytes than the size it
+  // reported before the copy. Validate the persisted copy so an oversized
+  // file is never retained under a stale recorded size.
+  const copiedSize = destination.size;
+  if (maxBytes !== undefined && copiedSize !== null && copiedSize > maxBytes) {
+    try {
+      if (destination.exists) {
+        destination.delete();
+      }
+    } catch (cleanupError) {
+      console.warn("[composer-attachments] could not remove an oversized copy", cleanupError);
+    }
+    throw new Error(fileAttachmentTooLargeMessage(name, maxBytes));
+  }
+  return destination.uri;
+}
+
+export async function removePersistedComposerAttachmentFile(uri: string): Promise<void> {
+  try {
+    const { File, Paths } = await import("expo-file-system");
+    const ownedUri = resolveOwnedComposerAttachmentFileUri(uri, Paths.document.uri);
+    if (ownedUri === null || isComposerAttachmentFileRetained(ownedUri)) {
+      return;
+    }
+    const file = new File(ownedUri);
+    if (file.exists) {
+      file.delete();
+    }
+  } catch (error) {
+    console.warn("[composer-attachments] could not remove local file", error);
+  }
+}
+
+async function createComposerFileAttachment(input: {
+  readonly uri: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number | null;
+  readonly maxBytes: number;
+}): Promise<DraftComposerFileAttachment> {
+  if (input.sizeBytes !== null && input.sizeBytes > input.maxBytes) {
+    throw new Error(fileAttachmentTooLargeMessage(input.name, input.maxBytes));
+  }
+  const { File } = await import("expo-file-system");
+  const fileUri = await persistComposerAttachmentFile(input.uri, input.name, input.maxBytes);
+  try {
+    const sizeBytes = new File(fileUri).size ?? input.sizeBytes ?? 0;
+    if (sizeBytes <= 0) {
+      throw new Error(`'${input.name}' is empty or could not be read.`);
+    }
+    if (sizeBytes > input.maxBytes) {
+      throw new Error(fileAttachmentTooLargeMessage(input.name, input.maxBytes));
+    }
+    return {
+      id: uuidv4(),
+      type: "file",
+      name: input.name,
+      mimeType: input.mimeType,
+      sizeBytes,
+      fileUri,
+    };
+  } catch (error) {
+    await removePersistedComposerAttachmentFile(fileUri);
+    throw error;
+  }
+}
+
+export async function pickComposerFiles(input: {
+  readonly existingCount: number;
+  readonly maxBytes?: number;
+}): Promise<{
+  readonly files: ReadonlyArray<DraftComposerFileAttachment>;
+  readonly error: string | null;
+}> {
+  const remainingSlots = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - input.existingCount;
+  if (remainingSlots <= 0) {
+    return {
+      files: [],
+      error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
+    };
+  }
+
+  const { getDocumentAsync } = await import("expo-document-picker");
+  const endHandoff = beginForegroundHandoff();
+  let result: DocumentPickerResult;
+  try {
+    // File providers may expose a URI that FileSystem cannot read directly.
+    // Import a readable cache copy before persisting the draft's owned file.
+    result = await getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
+  } catch (cause) {
+    return {
+      files: [],
+      error: cause instanceof Error ? cause.message : "Could not open the file picker.",
+    };
+  } finally {
+    endHandoff();
+  }
+  if (result.canceled) {
+    return { files: [], error: null };
+  }
+
+  const maxBytes = clampFileAttachmentUploadBytes(
+    input.maxBytes ?? PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  );
+  const attachments: DraftComposerFileAttachment[] = [];
+  let error: string | null = null;
+  let exceededAttachmentLimit = false;
+  for (const file of result.assets) {
+    if (attachments.length >= remainingSlots) {
+      exceededAttachmentLimit = true;
+      break;
+    }
+    // A SAF/document picker can hand back a blank display name; the wire
+    // contract rejects empty names at send time, so fall back before the name
+    // reaches storage, errors, or the attachment itself.
+    const name = file.name.trim().length > 0 ? file.name : "file";
+    try {
+      attachments.push(
+        await createComposerFileAttachment({
+          uri: file.uri,
+          name,
+          mimeType: file.mimeType || "application/octet-stream",
+          sizeBytes: file.size ?? null,
+          maxBytes,
+        }),
+      );
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : `Could not read '${name}'.`;
+    }
+  }
+  if (exceededAttachmentLimit) {
+    error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+  }
+  return { files: attachments, error };
+}
 
 async function loadImagePicker() {
   try {
     return await import("expo-image-picker");
   } catch (error) {
-    throw new Error("Image attachments are unavailable right now.", { cause: error });
+    throw new Error("The photo library is unavailable right now.", { cause: error });
   }
 }
 
@@ -46,11 +350,25 @@ export async function pickComposerImages(input: { readonly existingCount: number
   readonly images: ReadonlyArray<DraftComposerImageAttachment>;
   readonly error: string | null;
 }> {
+  const result = await pickComposerMedia(input);
+  return {
+    images: result.attachments.filter((attachment) => attachment.type === "image"),
+    error: result.error,
+  };
+}
+
+export async function pickComposerMedia(input: {
+  readonly existingCount: number;
+  readonly maxVideoBytes?: number;
+}): Promise<{
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly error: string | null;
+}> {
   const remainingSlots = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - input.existingCount;
   if (remainingSlots <= 0) {
     return {
-      images: [],
-      error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+      attachments: [],
+      error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`,
     };
   }
 
@@ -59,71 +377,167 @@ export async function pickComposerImages(input: { readonly existingCount: number
     imagePicker = await loadImagePicker();
   } catch (error) {
     return {
-      images: [],
-      error:
-        error instanceof Error ? error.message : "Image attachments are unavailable right now.",
+      attachments: [],
+      error: error instanceof Error ? error.message : "The photo library is unavailable right now.",
     };
   }
 
-  const result = await imagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    allowsMultipleSelection: true,
-    selectionLimit: remainingSlots,
-    base64: true,
-    quality: 1,
-  });
+  // The picker covers the Android activity, which reports the app as
+  // backgrounded; the guard keeps background-triggered restarts away mid-pick.
+  const endHandoff = beginForegroundHandoff();
+  let result: Awaited<ReturnType<typeof imagePicker.launchImageLibraryAsync>>;
+  try {
+    result = await imagePicker.launchImageLibraryAsync({
+      mediaTypes: input.maxVideoBytes === undefined ? ["images"] : ["images", "videos"],
+      allowsMultipleSelection: true,
+      selectionLimit: remainingSlots,
+      // Bytes stay in the picker's file until we know how much of them we need. Asking for
+      // base64 here made iOS decode and re-encode every camera photo at full resolution and
+      // hand JS a 10 MB+ string, which stalled the composer for seconds.
+      base64: false,
+      quality: 1,
+      shouldDownloadFromNetwork: true,
+    });
+  } catch (error) {
+    return {
+      attachments: [],
+      error: error instanceof Error ? error.message : "Could not open the photo library.",
+    };
+  } finally {
+    endHandoff();
+  }
 
   if (result.canceled) {
     return {
-      images: [],
+      attachments: [],
       error: null,
     };
   }
 
-  const nextImages: DraftComposerImageAttachment[] = [];
+  const attachments: DraftComposerAttachment[] = [];
   let error: string | null = null;
 
   for (const asset of result.assets) {
+    if (attachments.length >= remainingSlots) {
+      error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`;
+      break;
+    }
     const mimeType = asset.mimeType?.toLowerCase();
-    if (!mimeType?.startsWith("image/")) {
+    if (asset.type === "video" || mimeType?.startsWith("video/")) {
+      if (input.maxVideoBytes === undefined) {
+        error = "Video attachments are unavailable here.";
+        continue;
+      }
+      try {
+        const { File } = await import("expo-file-system");
+        const file = new File(asset.uri);
+        attachments.push(
+          await createComposerFileAttachment({
+            uri: asset.uri,
+            name: asset.fileName?.trim() || file.name || "video",
+            mimeType: mimeType || file.type || "application/octet-stream",
+            sizeBytes: asset.fileSize ?? null,
+            maxBytes: clampFileAttachmentUploadBytes(input.maxVideoBytes),
+          }),
+        );
+      } catch (cause) {
+        error =
+          cause instanceof Error ? cause.message : `Could not read '${asset.fileName ?? "video"}'.`;
+      }
+      continue;
+    }
+    if (asset.type !== "image" && !mimeType?.startsWith("image/")) {
       error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
       continue;
     }
 
-    const base64 = asset.base64;
-    if (!base64) {
-      error = `Failed to read '${asset.fileName ?? "image"}'.`;
+    const name = asset.fileName?.trim() || "image";
+    // The picker's reported size is a hint, not a measurement: Android content streams can
+    // deliver more bytes than they advertise. Only a size read from the file itself decides
+    // whether the original bytes are safe to load into JS.
+    let sourceBytes: number | null = null;
+    try {
+      const { File } = await import("expo-file-system");
+      sourceBytes = new File(asset.uri).size;
+    } catch {
+      sourceBytes = null;
+    }
+    // Originals the provider can read and that fit the cap pass through byte for byte so
+    // transparency and animation survive.
+    const originalMimeType =
+      mimeType !== undefined &&
+      isProviderSendTurnSupportedImageMimeType(mimeType) &&
+      sourceBytes !== null &&
+      sourceBytes > 0 &&
+      sourceBytes <= PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+        ? mimeType
+        : null;
+
+    let image: { base64: string; mimeType: string; name: string; previewUri: string };
+    try {
+      if (originalMimeType !== null) {
+        const { File } = await import("expo-file-system");
+        const base64 = await new File(asset.uri).base64();
+        const fitted = await fitComposerImage({
+          uri: asset.uri,
+          mimeType: originalMimeType,
+          base64,
+        });
+        image = {
+          base64: fitted?.base64 ?? base64,
+          mimeType: originalMimeType,
+          name,
+          previewUri: fitted?.uri ?? asset.uri,
+        };
+      } else {
+        const rendered = await renderPhoto(asset.uri);
+        image = {
+          base64: rendered.base64,
+          mimeType: "image/jpeg",
+          name: /\.jpe?g$/i.test(name) ? name : `${name.replace(/\.[^.]+$/, "")}.jpg`,
+          previewUri: rendered.uri,
+        };
+      }
+    } catch {
+      error = `Failed to read '${name}'.`;
       continue;
     }
 
-    const sizeBytes = asset.fileSize ?? estimateBase64ByteSize(base64);
+    const sizeBytes = estimateBase64ByteSize(image.base64);
     if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-      error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+      error = `'${name}' exceeds the 10 MB attachment limit.`;
       continue;
     }
 
-    nextImages.push({
+    attachments.push({
       id: uuidv4(),
       type: "image",
-      name: asset.fileName ?? "image",
-      mimeType,
+      name: image.name,
+      mimeType: image.mimeType,
       sizeBytes,
-      dataUrl: `data:${mimeType};base64,${base64}`,
-      previewUri: asset.uri,
+      dataUrl: `data:${image.mimeType};base64,${image.base64}`,
+      previewUri: image.previewUri,
     });
   }
 
   return {
-    images: nextImages,
+    attachments,
     error,
   };
 }
 
-export async function pasteComposerClipboard(input: { readonly existingCount: number }): Promise<{
-  readonly images: ReadonlyArray<DraftComposerImageAttachment>;
-  readonly text: string | null;
-  readonly error: string | null;
-}> {
+export async function pasteComposerClipboard(input: { readonly existingCount: number }): Promise<
+  | {
+      readonly images: ReadonlyArray<DraftComposerImageAttachment>;
+      readonly text: null;
+      readonly error: string | null;
+    }
+  | {
+      readonly images: readonly [];
+      readonly text: string;
+      readonly error: null;
+    }
+> {
   let clipboard: Awaited<ReturnType<typeof loadClipboard>>;
   try {
     clipboard = await loadClipboard();
@@ -154,7 +568,14 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
       };
     }
 
-    const base64 = image.data.split(",")[1] ?? "";
+    const pastedBase64 = image.data.split(",")[1] ?? "";
+    const fitted = await fitComposerImage({
+      uri: image.data,
+      mimeType: "image/png",
+      base64: pastedBase64,
+    });
+    const base64 = fitted?.base64 ?? pastedBase64;
+    const dataUrl = fitted ? `data:image/png;base64,${base64}` : image.data;
     const sizeBytes = estimateBase64ByteSize(base64);
     if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
       return {
@@ -172,8 +593,8 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
           name: "pasted-image.png",
           mimeType: "image/png",
           sizeBytes,
-          dataUrl: image.data,
-          previewUri: image.data,
+          dataUrl,
+          previewUri: dataUrl,
         },
       ],
       text: null,
@@ -185,8 +606,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
     const text = await clipboard.getStringAsync();
     return {
       images: [],
-      text: text.length > 0 ? text : null,
-      error: text.length > 0 ? null : "Clipboard is empty.",
+      ...(text.length > 0 ? { text, error: null } : { text: null, error: "Clipboard is empty." }),
     };
   }
 
@@ -246,12 +666,14 @@ export async function convertPastedImagesToAttachments(input: {
         continue;
       }
       const file = new File(uri);
-      const base64 = await file.base64();
+      const mimeType = mimeTypeFromUri(uri);
+      const pastedBase64 = await file.base64();
+      const fitted = await fitComposerImage({ uri, mimeType, base64: pastedBase64 });
+      const base64 = fitted?.base64 ?? pastedBase64;
       const sizeBytes = estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
         continue;
       }
-      const mimeType = mimeTypeFromUri(uri);
       results.push({
         id: uuidv4(),
         type: "image",
@@ -259,7 +681,7 @@ export async function convertPastedImagesToAttachments(input: {
         mimeType,
         sizeBytes,
         dataUrl: `data:${mimeType};base64,${base64}`,
-        previewUri: ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : uri,
+        previewUri: ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : (fitted?.uri ?? uri),
       });
     } catch (error) {
       console.warn("Failed to read pasted image", uri, error);

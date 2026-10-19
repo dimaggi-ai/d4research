@@ -5,6 +5,7 @@ import {
   type DesktopUpdateChannel,
 } from "@d4research/contracts";
 import { fromLenientJson } from "@d4research/shared/schemaJson";
+import { resolveSymlinkTarget } from "@d4research/shared/symlink";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -25,6 +26,7 @@ import { resolveDefaultDesktopUpdateChannel } from "../updates/updateChannels.ts
 import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
+  readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
   readonly mainWindowMaximized: boolean;
@@ -33,19 +35,9 @@ export interface DesktopSettings {
   readonly tailscaleServePort: number;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
-  // Was a "local" | "wsl" swap mode in an earlier iteration of the WSL
-  // integration. We now run Windows and WSL backends side by side, so the
-  // setting is just whether the WSL backend should be running alongside the
-  // primary. Persisted documents that still carry the legacy `wslMode: "wsl"`
-  // value are migrated to `wslBackendEnabled: true` on load.
   readonly wslBackendEnabled: boolean;
   readonly wslDistro: string | null;
-  // When true (and wslBackendEnabled is also true) the desktop runs only
-  // the WSL backend as the primary, and the Windows-side Node backend is
-  // not started. Designed for users who develop entirely inside WSL and
-  // don't want a second backend process running. Defaults to false so
-  // existing setups stay on the parallel-backends behavior. Changing
-  // this requires a desktop restart because the pool's primary spec is
+  // Changing this requires a desktop restart because the pool's primary spec is
   // chosen once at layer init.
   readonly wslOnly: boolean;
 }
@@ -55,7 +47,7 @@ export interface DesktopSettingsChange {
   readonly changed: boolean;
 }
 
-export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
+const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const MIN_MAIN_WINDOW_SIZE = {
   width: 840,
   height: 620,
@@ -73,6 +65,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
   mainWindowMaximized: false,
@@ -94,6 +87,7 @@ const DesktopWindowBoundsDocument = Schema.Struct({
 });
 
 const DesktopSettingsDocument = Schema.Struct({
+  localEnvironmentEnabled: Schema.optionalKey(Schema.Boolean),
   linuxPasswordStore: Schema.optionalKey(Schema.Unknown),
   mainWindowBounds: Schema.optionalKey(Schema.NullOr(DesktopWindowBoundsDocument)),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
@@ -102,9 +96,6 @@ const DesktopSettingsDocument = Schema.Struct({
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   updateChannel: Schema.optionalKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
-  // Newer form of the WSL toggle. `wslMode` is still accepted on load so
-  // existing on-disk settings keep working; on the next persist we write the
-  // new boolean and the legacy key drops out.
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
   wslMode: Schema.optionalKey(Schema.Literals(["local", "wsl"])),
   wslDistro: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -127,6 +118,7 @@ const settingsChange = (settings: DesktopSettings, changed: boolean): DesktopSet
 
 const DesktopSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
+  "resolve-symlink",
   "encode-document",
   "create-directory",
   "write-temporary-file",
@@ -134,7 +126,7 @@ const DesktopSettingsWriteOperation = Schema.Literals([
 ]);
 type DesktopSettingsWriteOperation = typeof DesktopSettingsWriteOperation.Type;
 
-export class DesktopSettingsWriteError extends Schema.TaggedErrorClass<DesktopSettingsWriteError>()(
+export class DesktopSettingsWriteError extends Schema.TaggedError<DesktopSettingsWriteError>()(
   "DesktopSettingsWriteError",
   {
     operation: DesktopSettingsWriteOperation,
@@ -152,6 +144,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setLocalEnvironmentEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setMainWindowBounds: (
       bounds: DesktopWindowBounds,
       isMaximized: boolean,
@@ -216,14 +211,12 @@ function normalizeDesktopSettingsDocument(
     parsed.updateChannelConfiguredByUser === true ||
     (isLegacySettings && Option.contains(parsedUpdateChannel, "nightly"));
 
-  // Newer form wins when both are present; otherwise fall back to the legacy
-  // `wslMode === "wsl"` signal so users coming off the swap-mode build keep
-  // their WSL backend enabled.
   const wslBackendEnabled =
     parsed.wslBackendEnabled === true ||
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
 
   return {
+    localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
@@ -246,6 +239,10 @@ function toDesktopSettingsDocument(
   defaults: DesktopSettings,
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
+
+  if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
+    document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
+  }
 
   if (settings.linuxPasswordStore !== defaults.linuxPasswordStore) {
     document.linuxPasswordStore = settings.linuxPasswordStore;
@@ -370,6 +367,12 @@ function setWslOnly(settings: DesktopSettings, enabled: boolean): DesktopSetting
       };
 }
 
+function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+  return settings.localEnvironmentEnabled === enabled
+    ? settings
+    : { ...settings, localEnvironmentEnabled: enabled };
+}
+
 function applyWslWindowsFallback(settings: DesktopSettings): DesktopSettings {
   return setWslOnly(setWslBackendEnabled(settings, false), false);
 }
@@ -404,8 +407,20 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
   readonly defaultSettings: DesktopSettings;
   readonly suffix: string;
 }): Effect.fn.Return<void, DesktopSettingsWriteError> {
-  const directory = input.path.dirname(input.settingsPath);
-  const tempPath = `${input.settingsPath}.${process.pid}.${input.suffix}.tmp`;
+  const targetPath = yield* resolveSymlinkTarget(input.settingsPath).pipe(
+    Effect.provideService(FileSystem.FileSystem, input.fileSystem),
+    Effect.provideService(Path.Path, input.path),
+    Effect.mapError(
+      (cause) =>
+        new DesktopSettingsWriteError({
+          operation: "resolve-symlink",
+          path: input.settingsPath,
+          cause,
+        }),
+    ),
+  );
+  const directory = input.path.dirname(targetPath);
+  const tempPath = `${targetPath}.${process.pid}.${input.suffix}.tmp`;
   const encoded = yield* encodeDesktopSettingsJson(
     toDesktopSettingsDocument(input.settings, input.defaultSettings),
   ).pipe(
@@ -438,7 +453,7 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
         }),
     ),
   );
-  yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
+  yield* input.fileSystem.rename(tempPath, targetPath).pipe(
     Effect.mapError(
       (cause) =>
         new DesktopSettingsWriteError({
@@ -450,6 +465,8 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
   );
 });
 
+/** @public */
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -472,7 +489,7 @@ export const make = Effect.gen(function* () {
         return Effect.succeed([settingsChange(settings, false), settings] as const);
       }
 
-      return crypto.randomUUIDv4.pipe(
+      return crypto.randomUUIDv4().pipe(
         Effect.map((uuid) => uuid.replace(/-/g, "")),
         Effect.mapError(
           (cause) =>
@@ -544,6 +561,10 @@ export const make = Effect.gen(function* () {
       persist((settings) => setWslOnly(settings, enabled)).pipe(
         Effect.withSpan("desktop.settings.setWslOnly", { attributes: { enabled } }),
       ),
+    setLocalEnvironmentEnabled: (enabled) =>
+      persist((settings) => setLocalEnvironmentEnabled(settings, enabled)).pipe(
+        Effect.withSpan("desktop.settings.setLocalEnvironmentEnabled", { attributes: { enabled } }),
+      ),
     applyWslWindowsFallback: persist(applyWslWindowsFallback).pipe(
       Effect.withSpan("desktop.settings.applyWslWindowsFallback"),
     ),
@@ -585,6 +606,8 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
           update((settings) => setWslBackendEnabled(settings, enabled)),
         setWslDistro: (distro) => update((settings) => setWslDistro(settings, distro)),
         setWslOnly: (enabled) => update((settings) => setWslOnly(settings, enabled)),
+        setLocalEnvironmentEnabled: (enabled) =>
+          update((settings) => setLocalEnvironmentEnabled(settings, enabled)),
         applyWslWindowsFallback: update(applyWslWindowsFallback),
         applyWslWindowsFallbackInMemory: update(applyWslWindowsFallback),
       });

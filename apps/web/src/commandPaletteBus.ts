@@ -1,9 +1,16 @@
-// Tiny event bus allowing components to programmatically open the command palette
-// without owning its React state.
+import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@d4research/contracts";
+
+export interface CommandPaletteLinkedThreads {
+  readonly environmentId: EnvironmentId;
+  readonly threads: PullRequestLinkedThreadsResult["threads"];
+}
+
 const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
+  readonly query?: string;
+  readonly linkedThreads?: CommandPaletteLinkedThreads;
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {
@@ -22,7 +29,6 @@ export function onOpenCommandPalette(
   return () => window.removeEventListener(COMMAND_PALETTE_OPEN_EVENT, handler);
 }
 
-/** Read at event time so consumers do not subscribe to transient dialog state. */
 export function isCommandPaletteOpen(): boolean {
   return (
     typeof document !== "undefined" && document.querySelector("[data-command-palette]") !== null

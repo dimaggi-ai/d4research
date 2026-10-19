@@ -1,14 +1,16 @@
-import type { EnvironmentId } from "@d4research/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@d4research/contracts";
 import { Globe, History, RadioTower } from "lucide-react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
+import { DiscoveryList } from "../ui/discovery-list";
 
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
 
 interface Props {
+  threadRef: ScopedThreadRef;
   environmentId: EnvironmentId;
   configuredUrls?: ReadonlyArray<string> | undefined;
   recentlySeenUrls?: ReadonlyArray<string> | undefined;
@@ -18,6 +20,7 @@ interface Props {
 }
 
 export function PreviewEmptyState({
+  threadRef,
   environmentId,
   configuredUrls,
   recentlySeenUrls,
@@ -48,7 +51,7 @@ export function PreviewEmptyState({
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-y-auto px-5 py-8">
+    <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
       <div className="m-auto flex w-full max-w-xl flex-col gap-6">
         {recents.length > 0 ? (
           <div className="flex flex-col gap-3">
@@ -56,7 +59,7 @@ export function PreviewEmptyState({
               <History className="size-4 shrink-0" />
               <h2 className="font-medium">Recently used</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
+            <DiscoveryList>
               {recents.map((entry) => (
                 <PreviewRecentUrlCard
                   key={entry.url}
@@ -65,7 +68,7 @@ export function PreviewEmptyState({
                   onRemove={() => onRemoveRecent(entry.url)}
                 />
               ))}
-            </div>
+            </DiscoveryList>
           </div>
         ) : null}
         {servers.length > 0 ? (
@@ -74,15 +77,16 @@ export function PreviewEmptyState({
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">Local servers</h2>
             </div>
-            <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-background">
+            <DiscoveryList>
               {servers.map((server) => (
                 <PreviewLocalServerCard
+                  threadRef={threadRef}
                   key={`${server.host}:${server.port}`}
                   server={server}
                   onOpen={() => onOpenUrl(server.requestedUrl)}
                 />
               ))}
-            </div>
+            </DiscoveryList>
             <p className="px-1 text-xs text-muted-foreground">
               Select a listening port to open it in this browser tab.
             </p>

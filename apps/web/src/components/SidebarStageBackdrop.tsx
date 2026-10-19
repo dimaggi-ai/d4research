@@ -8,8 +8,6 @@ import { primaryServerConfigAtom } from "../state/server";
 export type SidebarStageBackdropVariant = "nightly" | "dev";
 export type EnvironmentIdentificationPillLabel = "Dev" | "Nightly";
 
-// A wide viewBox keeps the 96-unit art height at a fixed scale while sidebar resizing reveals
-// more horizontal canvas instead of zooming the scene.
 const STAGE_BACKDROP_VIEW_BOX = "0 0 8192 96";
 
 export function resolveSidebarStageBackdropVariant(
@@ -21,14 +19,6 @@ export function resolveSidebarStageBackdropVariant(
   if (normalized === "nightly") return "nightly";
   if (normalized === "dev") return "dev";
   return null;
-}
-
-export function resolveSidebarStageFocusRingOffsetClass(
-  variant: SidebarStageBackdropVariant,
-): string {
-  return variant === "nightly"
-    ? "focus-visible:ring-offset-(--stage-night-bottom)"
-    : "focus-visible:ring-offset-(--stage-art-bottom)";
 }
 
 export function resolveEnvironmentIdentificationPillLabel(
@@ -54,7 +44,6 @@ export function useSidebarStageBackdropVariant(enabled = true): SidebarStageBack
   return resolveSidebarStageBackdropVariant(useEnvironmentStageLabel(), enabled);
 }
 
-/** Stage-channel header art; palettes mirror the per-channel app icons in `assets/`. */
 export function SidebarStageBackdrop({ variant }: { variant: SidebarStageBackdropVariant }) {
   return (
     <div
@@ -116,7 +105,8 @@ function NightlySkyArt({ compact = false }: { compact?: boolean }) {
 
   return (
     <svg
-      className="stage-art stage-nightly h-full w-full"
+      data-stage-art="nightly"
+      className="h-full w-full"
       fill="none"
       preserveAspectRatio="xMinYMin slice"
       viewBox={compact ? "96 0 8192 96" : STAGE_BACKDROP_VIEW_BOX}
@@ -144,10 +134,10 @@ function NightlySkyArt({ compact = false }: { compact?: boolean }) {
           gradientTransform="translate(216 18) rotate(137) scale(120 84)"
           gradientUnits="userSpaceOnUse"
         >
-          <stop style={{ stopColor: "var(--stage-night-highlight)" }} stopOpacity="0.4" />
+          <stop style={{ stopColor: "var(--stage-night-glow-highlight)" }} stopOpacity="0.4" />
           <stop
             offset="0.5"
-            style={{ stopColor: "var(--stage-night-secondary)" }}
+            style={{ stopColor: "var(--stage-night-glow-secondary)" }}
             stopOpacity="0.16"
           />
           <stop offset="1" style={{ stopColor: "var(--stage-night-bottom)" }} stopOpacity="0" />
@@ -177,7 +167,7 @@ function NightlySkyArt({ compact = false }: { compact?: boolean }) {
             ))}
           </g>
           <g
-            style={{ stroke: "var(--stage-night-line)" }}
+            style={{ stroke: "var(--stage-night-sparkle)" }}
             strokeLinecap="round"
             strokeOpacity="0.7"
             strokeWidth="0.6"
@@ -230,7 +220,8 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
 
   return (
     <svg
-      className="stage-art stage-blueprint h-full w-full"
+      data-stage-art="blueprint"
+      className="h-full w-full"
       fill="none"
       preserveAspectRatio="xMinYMin slice"
       viewBox={compact ? "64 0 8192 96" : STAGE_BACKDROP_VIEW_BOX}
@@ -274,10 +265,10 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
           gradientTransform="translate(474 44) rotate(166) scale(156 92)"
           gradientUnits="userSpaceOnUse"
         >
-          <stop style={{ stopColor: "var(--stage-art-highlight)" }} stopOpacity="0.34" />
+          <stop style={{ stopColor: "var(--stage-art-celeste-highlight)" }} stopOpacity="0.34" />
           <stop
             offset="0.5"
-            style={{ stopColor: "var(--stage-art-secondary)" }}
+            style={{ stopColor: "var(--stage-art-celeste-secondary)" }}
             stopOpacity="0.18"
           />
           <stop offset="1" style={{ stopColor: "var(--stage-art-bottom)" }} stopOpacity="0" />
@@ -290,7 +281,7 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
           gradientTransform="translate(704 18) rotate(145) scale(132 88)"
           gradientUnits="userSpaceOnUse"
         >
-          <stop style={{ stopColor: "var(--stage-art-highlight)" }} stopOpacity="0.3" />
+          <stop style={{ stopColor: "var(--stage-art-violet-highlight)" }} stopOpacity="0.3" />
           <stop
             offset="0.52"
             style={{ stopColor: "var(--stage-art-tertiary)" }}
@@ -301,7 +292,7 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
         <pattern id={minorGridId} width="8" height="8" patternUnits="userSpaceOnUse">
           <path
             d="M8 0H0V8"
-            style={{ stroke: "var(--stage-art-line)" }}
+            style={{ stroke: "var(--stage-art-grid-line)" }}
             strokeOpacity="0.14"
             strokeWidth="0.5"
           />
@@ -309,7 +300,7 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
         <pattern id={majorGridId} width="32" height="32" patternUnits="userSpaceOnUse">
           <path
             d="M32 0H0V32"
-            style={{ stroke: "var(--stage-art-line)" }}
+            style={{ stroke: "var(--stage-art-grid-line)" }}
             strokeOpacity="0.26"
             strokeWidth="0.6"
           />

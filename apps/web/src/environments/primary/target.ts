@@ -4,6 +4,8 @@ import {
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
+
 const PrimaryEnvironmentTargetSource = Schema.Literals([
   "configured",
   "window-origin",
@@ -19,7 +21,7 @@ const PrimaryEnvironmentUrlKind = Schema.Literals([
 ]);
 type PrimaryEnvironmentUrlKind = typeof PrimaryEnvironmentUrlKind.Type;
 
-export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedErrorClass<PrimaryEnvironmentUrlInvalidError>()(
+export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedError<PrimaryEnvironmentUrlInvalidError>()(
   "PrimaryEnvironmentUrlInvalidError",
   {
     source: PrimaryEnvironmentTargetSource,
@@ -32,7 +34,7 @@ export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedErrorClass<P
   }
 }
 
-export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedErrorClass<PrimaryEnvironmentProtocolUnsupportedError>()(
+export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedError<PrimaryEnvironmentProtocolUnsupportedError>()(
   "PrimaryEnvironmentProtocolUnsupportedError",
   {
     source: PrimaryEnvironmentTargetSource,
@@ -44,7 +46,7 @@ export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedErr
   }
 }
 
-export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErrorClass<DesktopEnvironmentBootstrapIncompleteError>()(
+export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedError<DesktopEnvironmentBootstrapIncompleteError>()(
   "DesktopEnvironmentBootstrapIncompleteError",
   {
     hasHttpBaseUrl: Schema.Boolean,
@@ -57,6 +59,15 @@ export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErr
       ...(this.hasWsBaseUrl ? [] : ["wsBaseUrl"]),
     ];
     return `Desktop bootstrap is missing ${missing.join(" and ")} for the local environment.`;
+  }
+}
+
+export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryEnvironmentDisabledError>()(
+  "PrimaryEnvironmentDisabledError",
+  {},
+) {
+  override get message(): string {
+    return "The local environment is disabled.";
   }
 }
 
@@ -79,9 +90,6 @@ export interface PrimaryEnvironmentTarget {
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 
 function getDesktopLocalEnvironmentBootstrap(): DesktopEnvironmentBootstrap | null {
-  // The primary (Windows-native) backend keeps the "primary" id. The
-  // plural list may include a second WSL entry; the primary-target
-  // resolver only cares about the primary, so just find it.
   const bootstraps = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
   return bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID) ?? null;
 }
@@ -192,14 +200,18 @@ function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
     return null;
   }
 
+  // Scheme checks run on the raw configured string, while the URL parser
+  // folds schemes to lowercase ("WSS://host" parses fine). Without the
+  // case folding an uppercase scheme would be classified as plaintext and
+  // swapped to http/ws, silently downgrading TLS.
   const resolvedHttpBaseUrl =
     configuredHttpBaseUrl ??
-    (configuredWsBaseUrl?.startsWith("wss:")
+    (configuredWsBaseUrl?.toLowerCase().startsWith("wss:")
       ? swapBaseUrlProtocol(configuredWsBaseUrl, "https:", "websocket-base-url")
       : swapBaseUrlProtocol(configuredWsBaseUrl!, "http:", "websocket-base-url"));
   const resolvedWsBaseUrl =
     configuredWsBaseUrl ??
-    (configuredHttpBaseUrl?.startsWith("https:")
+    (configuredHttpBaseUrl?.toLowerCase().startsWith("https:")
       ? swapBaseUrlProtocol(configuredHttpBaseUrl, "wss:", "http-base-url")
       : swapBaseUrlProtocol(configuredHttpBaseUrl!, "ws:", "http-base-url"));
 
@@ -275,6 +287,9 @@ export function resolvePrimaryEnvironmentHttpUrl(
   searchParams?: Record<string, string>,
 ): string {
   const primaryTarget = readPrimaryEnvironmentTarget();
+  if (!primaryTarget) {
+    throw new PrimaryEnvironmentDisabledError();
+  }
 
   const url = parseTargetUrl({
     rawValue: resolveHttpRequestBaseUrl(primaryTarget),
@@ -288,7 +303,12 @@ export function resolvePrimaryEnvironmentHttpUrl(
   return url.toString();
 }
 
-export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget {
+// Null only when the desktop app runs with its local environment disabled;
+// every other host has a primary (falling back to the page origin).
+export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget | null {
+  if (isLocalEnvironmentDisabled()) {
+    return null;
+  }
   return (
     resolveDesktopPrimaryTarget() ??
     resolveConfiguredPrimaryTarget() ??

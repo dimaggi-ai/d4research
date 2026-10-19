@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
+  hasRelayRoute,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
 } from "@d4research/client-runtime/connection";
 import type { EnvironmentId } from "@d4research/contracts";

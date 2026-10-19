@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { layerRemoteHttpClient as remoteHttpClientLayer } from "../rpc/http.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");

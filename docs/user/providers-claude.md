@@ -34,6 +34,38 @@ When you set this field, d4research points Claude Code at that directory with th
 `CLAUDE_CONFIG_DIR` environment variable. It does not change `HOME`, so your system keychain and
 the rest of your environment stay as they are.
 
+## Reduce Context Usage
+
+In Settings, open your Claude provider and set **Auto-compact after** to a token count between
+`100000` and `1000000`. For example, `300000` compacts the conversation into a summary once it
+reaches about 300,000 tokens, without changing the model's context window. Leave the field
+empty to keep Claude Code's default behavior.
+
+On web and desktop, when you return to an older Claude thread with a large context, T3 Code
+offers to compact the conversation before you continue. You can also select **Compact context**
+from the context meter. On every client, you can enter `/compact` in the message composer, and
+Claude can show its own resume prompt when you continue an old session.
+
+## Where Claude Skills Are Loaded
+
+You can also send `/compact` in an existing conversation. Web and desktop offer
+**Compact context** from the context meter. When you return to a large thread
+after Claude's prompt cache expires, a **Compact** chip with the thread's token count shows
+next to the send button. While it is on, Enter summarizes the history first, then
+sends your message. Click the chip to switch it to **Full** and keep the full
+history for that message. The cache lasts about an hour on a Claude
+subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands and skills](./composer.md#commands-and-skills) for using
+composer commands.
+
+If the same skill name exists in more than one folder, the one in the Claude config directory
+wins, the same way Claude Code resolves it.
+
+A skill set to `off` in Claude Code's `skillOverrides` is left out of both composer menus. A skill
+marked `disable-model-invocation` still appears, because you start it yourself when you pick it.
+Claude Code runs one skill per message; when a message names several, the last one runs directly and
+Claude starts the others through its Skill tool, which refuses skills marked
+`disable-model-invocation`.
+
 ## I Want Work And Personal Claude Accounts
 
 Use a different Claude config directory for each account.
@@ -100,7 +132,7 @@ instead of trying to share part of the state.
 Use this when you want Claude Code to talk to OpenRouter directly, without running a local router.
 This is the simplest external-provider setup.
 
-OpenRouter provides a Claude Code integration through Claude's Anthropic-compatible environment
+OpenRouter offers a Claude Code integration via Claude's Anthropic-compatible environment
 variables.
 
 ### Configure A Claude OpenRouter Provider
@@ -148,6 +180,12 @@ CLAUDE_CODE_SUBAGENT_MODEL      anthropic/claude-sonnet-4.6
 ```
 
 Add those to the same provider's Environment variables section if you want stable model choices.
+
+Select the model you want in d4research. For an OpenRouter model outside the built-in list, open
+that Claude instance in **Settings > Providers** and add its full model ID with **Add custom
+model**. Then select it in the chat model picker. `ANTHROPIC_DEFAULT_*_MODEL` variables map Claude
+Code aliases such as `sonnet`; they do not replace the explicit model ID selected in d4research.
+Custom models may have fewer effort, thinking, or context controls than built-in models.
 
 ### Verify OpenRouter Is Being Used
 

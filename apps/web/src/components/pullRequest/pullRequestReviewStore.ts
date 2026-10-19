@@ -6,17 +6,14 @@
  * hosts that have no pending review of their own. That also means a draft lives only as long
  * as the tab does, which is why this is deliberately not persisted.
  */
-import type { ProjectId, PullRequestDiffSide, PullRequestRef } from "@d4research/contracts";
+import type {
+  ProjectId,
+  PullRequestRef,
+  PullRequestReviewCommentDraft,
+} from "@d4research/contracts";
 import { create } from "zustand";
 
-export interface PendingReviewComment {
-  readonly id: string;
-  readonly path: string;
-  /** The line in the file the comment's side names: the new file on the right, the old on the left. */
-  readonly line: number;
-  readonly side: PullRequestDiffSide;
-  readonly body: string;
-}
+export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
 
 /**
  * A counter rather than anything derived from the comment: two remarks on one line can be the
@@ -31,9 +28,13 @@ export function nextPendingReviewCommentId(): string {
   return `pending-review-comment-${pendingCommentSequence}`;
 }
 
-/** One pull request's draft, scoped by project as well as repository: a repository can be checked out twice. */
 export function pullRequestReviewKey(reference: PullRequestRef): string {
-  return `${reference.projectId}/${reference.repository}#${reference.number}`;
+  return JSON.stringify([
+    reference.projectId,
+    reference.host?.toLowerCase() ?? null,
+    reference.repository.toLowerCase(),
+    reference.number,
+  ]);
 }
 
 interface PullRequestReviewStoreState {
@@ -87,12 +88,9 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
     }),
 }));
 
-/** The comments a pull request's draft holds, stable across renders while it is empty. */
-export function usePendingReviewComments(reference: {
-  readonly projectId: ProjectId;
-  readonly repository: string;
-  readonly number: number;
-}): ReadonlyArray<PendingReviewComment> {
+export function usePendingReviewComments(
+  reference: PullRequestRef,
+): ReadonlyArray<PendingReviewComment> {
   return usePullRequestReviewStore(
     (store) => store.drafts[pullRequestReviewKey(reference)] ?? EMPTY,
   );

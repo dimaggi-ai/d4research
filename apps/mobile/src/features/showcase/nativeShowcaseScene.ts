@@ -1,6 +1,15 @@
 import { requireOptionalNativeModule } from "expo";
 
-export const SHOWCASE_SCENES = ["threads", "thread", "terminal", "review", "environments"] as const;
+import { MOBILE_THEME_IDS, type MobileThemeId } from "../../lib/mobileTheme";
+
+export const SHOWCASE_SCENES = [
+  "threads",
+  "thread",
+  "terminal",
+  "review",
+  "environments",
+  "agent-activity",
+] as const;
 export type ShowcaseScene = (typeof SHOWCASE_SCENES)[number];
 
 export type ShowcaseOrientation = "portrait" | "landscape";
@@ -8,6 +17,7 @@ export type ShowcaseOrientation = "portrait" | "landscape";
 interface NativeShowcaseControls {
   readonly getShowcasePairingUrl?: () => string | null;
   readonly getShowcaseScene?: () => string | null;
+  readonly getShowcaseTheme?: () => string | null;
   readonly getShowcaseOrientation?: () => string | null;
   readonly applyShowcaseOrientation?: (orientation: ShowcaseOrientation) => Promise<void>;
   readonly getInterfaceOrientation?: () => Promise<string>;
@@ -38,9 +48,7 @@ export function getNativeShowcasePairingUrls(): ReadonlyArray<string> {
             typeof candidate === "string" && candidate.trim().length > 0,
         );
       }
-    } catch {
-      // Older runners pass a single URL rather than a JSON array.
-    }
+    } catch {}
     return [raw];
   } catch {
     return [];
@@ -56,12 +64,19 @@ export function getNativeShowcaseScene(): ShowcaseScene | null {
   }
 }
 
+export function getNativeShowcaseTheme(): MobileThemeId | null {
+  try {
+    const theme = nativeShowcaseControls()?.getShowcaseTheme?.()?.trim();
+    return MOBILE_THEME_IDS.find((candidate) => candidate === theme) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function prepareNativeShowcaseCapture(): void {
   try {
     nativeShowcaseControls()?.prepareShowcaseCapture?.();
-  } catch {
-    // The harness still works when a development build predates this helper.
-  }
+  } catch {}
 }
 
 export function getNativeShowcaseOrientation(): ShowcaseOrientation | null {
@@ -96,7 +111,5 @@ export async function applyNativeShowcaseOrientation(
 export function markNativeShowcaseReady(scene: ShowcaseScene): void {
   try {
     nativeShowcaseControls()?.markShowcaseReady?.(scene);
-  } catch {
-    // The readiness marker is capture-runner metadata, never app functionality.
-  }
+  } catch {}
 }

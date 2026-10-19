@@ -18,14 +18,25 @@ export function useConnectionController() {
   const updateBearer = useAtomCommand(updateBearerConnection, { reportFailure: false });
   const removeEnvironmentMutation = useAtomCommand(environmentCatalog.remove, "environment remove");
   const retryEnvironmentMutation = useAtomCommand(environmentCatalog.retryNow, "environment retry");
+  const setEnvironmentEnabledMutation = useAtomCommand(
+    environmentCatalog.setEnabled,
+    "environment toggle",
+  );
 
   const connectedEnvironments = useMemo<ReadonlyArray<WorkspaceEnvironment>>(
-    () => environments.map(projectWorkspaceEnvironment),
+    () =>
+      environments.map((environment) =>
+        projectWorkspaceEnvironment(environment.environmentId, environment),
+      ),
     [environments],
   );
 
   const connectPairingUrl = useCallback(
-    (pairingUrl: string) => connectPairingUrlMutation(pairingUrl),
+    (pairingUrl: string, expectedEnvironmentId?: EnvironmentId) =>
+      connectPairingUrlMutation({
+        pairingUrl,
+        ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }),
+      }),
     [connectPairingUrlMutation],
   );
   const removeEnvironment = useCallback(
@@ -35,6 +46,11 @@ export function useConnectionController() {
   const retryEnvironment = useCallback(
     (environmentId: EnvironmentId) => retryEnvironmentMutation(environmentId),
     [retryEnvironmentMutation],
+  );
+  const setEnvironmentEnabled = useCallback(
+    (environmentId: EnvironmentId, enabled: boolean) =>
+      setEnvironmentEnabledMutation({ environmentId, enabled }),
+    [setEnvironmentEnabledMutation],
   );
   const updateEnvironment = useCallback(
     (
@@ -54,6 +70,7 @@ export function useConnectionController() {
     connectPairingUrl,
     removeEnvironment,
     retryEnvironment,
+    setEnvironmentEnabled,
     updateEnvironment,
   };
 }

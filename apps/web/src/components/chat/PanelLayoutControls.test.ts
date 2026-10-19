@@ -9,6 +9,10 @@ describe("panel layout controls", () => {
     const markup = renderToStaticMarkup(
       createElement(PanelLayoutControls, {
         terminalAvailable: true,
+        threadPanelOpen: false,
+        threadPanelPresentation: "inline",
+        threadPanelShortcutLabel: null,
+        onToggleThreadPanel: () => undefined,
         terminalOpen: false,
         terminalShortcutLabel: null,
         rightPanelAvailable: true,
@@ -16,7 +20,6 @@ describe("panel layout controls", () => {
         rightPanelShortcutLabel: null,
         tasksOpen: false,
         tasksLabel: "Tasks",
-        liveAgentCount: 2,
         onOpenFiles: () => undefined,
         onToggleTasks: () => undefined,
         onToggleTerminal: () => undefined,
@@ -26,13 +29,17 @@ describe("panel layout controls", () => {
 
     expect(markup).toContain('aria-label="Open Files"');
     expect(markup).toContain('aria-label="Open Tasks"');
-    expect(markup).toContain("Toggle right panel, 2 agents working");
+    expect(markup).toContain("Toggle right panel");
   });
 
   it("exposes the reverse Tasks action and disables unavailable Files", () => {
     const markup = renderToStaticMarkup(
       createElement(PanelLayoutControls, {
         terminalAvailable: true,
+        threadPanelOpen: false,
+        threadPanelPresentation: "inline",
+        threadPanelShortcutLabel: null,
+        onToggleThreadPanel: () => undefined,
         terminalOpen: false,
         terminalShortcutLabel: null,
         rightPanelAvailable: false,
@@ -40,7 +47,6 @@ describe("panel layout controls", () => {
         rightPanelShortcutLabel: null,
         tasksOpen: true,
         tasksLabel: "Plan",
-        liveAgentCount: 0,
         onOpenFiles: () => undefined,
         onToggleTasks: () => undefined,
         onToggleTerminal: () => undefined,

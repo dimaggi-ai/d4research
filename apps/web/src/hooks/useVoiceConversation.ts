@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../types";
 
 const DEFAULT_VOICE_GATEWAY_URL = "http://127.0.0.1:8093";
@@ -51,6 +51,10 @@ function recordingExtension(mimeType: string): string {
   if (mimeType.includes("mp4")) return "mp4";
   if (mimeType.includes("ogg")) return "ogg";
   return "webm";
+}
+
+function requireSuccessfulResponse(response: Response, message: string): void {
+  if (!response.ok) throw new Error(message);
 }
 
 export function spokenExcerpt(markdown: string): string {
@@ -137,16 +141,16 @@ export function useVoiceConversation(options: {
   const originalReplyRef = useRef<string | null>(null);
   const startListeningRef = useRef<() => Promise<void>>(async () => undefined);
 
-  const stopTracks = useCallback(() => {
+  const stopTracks = () => {
     if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
     animationFrameRef.current = null;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-  }, []);
+  };
 
-  const clearPlaybackHandlers = useCallback((audio: HTMLAudioElement) => {
+  const clearPlaybackHandlers = (audio: HTMLAudioElement) => {
     if (audioEndedHandlerRef.current) {
       audio.removeEventListener("ended", audioEndedHandlerRef.current);
       audioEndedHandlerRef.current = null;
@@ -155,9 +159,9 @@ export function useVoiceConversation(options: {
       audio.removeEventListener("error", audioErrorHandlerRef.current);
       audioErrorHandlerRef.current = null;
     }
-  }, []);
+  };
 
-  const stopPlayback = useCallback(() => {
+  const stopPlayback = () => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
@@ -165,12 +169,12 @@ export function useVoiceConversation(options: {
     if (audio.src.startsWith("blob:")) URL.revokeObjectURL(audio.src);
     audio.removeAttribute("src");
     audioRef.current = null;
-  }, [clearPlaybackHandlers]);
+  };
 
   // iOS only allows delayed playback when an audio element was unlocked by
   // the original tap. Reuse that element for every spoken reply in this
   // conversation instead of creating one after the model finishes.
-  const unlockPlayback = useCallback(() => {
+  const unlockPlayback = () => {
     const audio = new Audio(SILENT_WAV_DATA_URL);
     audio.setAttribute("playsinline", "");
     audioRef.current = audio;
@@ -181,9 +185,9 @@ export function useVoiceConversation(options: {
       },
       () => undefined,
     );
-  }, []);
+  };
 
-  const stopConversation = useCallback(() => {
+  const stopConversation = () => {
     activeRef.current = false;
     setActive(false);
     pendingAssistantIdsRef.current = null;
@@ -195,106 +199,97 @@ export function useVoiceConversation(options: {
     stopTracks();
     stopPlayback();
     setStatus("idle");
-  }, [stopPlayback, stopTracks]);
+  };
 
-  const failConversation = useCallback(
-    (message: string) => {
-      stopConversation();
-      onError(message);
-    },
-    [onError, stopConversation],
-  );
+  const failConversation = (message: string) => {
+    stopConversation();
+    onError(message);
+  };
 
-  const speak = useCallback(
-    async (markdown: string, summarize = true) => {
-      if (!spokenExcerpt(markdown)) {
-        if (activeRef.current) void startListeningRef.current();
-        return;
-      }
-      const unlockedAudio = audioRef.current;
-      unlockedAudio?.pause();
-      if (summarize) {
-        originalReplyRef.current = markdown;
-        setHasOriginalReply(true);
-        setStatus("summarizing");
-      }
-      try {
-        const text = summarize
-          ? await summarizeReplyForSpeech(markdown)
-          : speechReadyText(markdown).slice(0, 6_000);
-        if (!activeRef.current) return;
-        setStatus("speaking");
-        const body = new URLSearchParams({ text });
-        const response = await fetch(`${voiceGatewayUrl()}/voice/tts`, { method: "POST", body });
-        if (!response.ok) throw new Error(`Voice gateway returned ${response.status}`);
-        const audio = unlockedAudio ?? new Audio();
-        const objectUrl = URL.createObjectURL(await response.blob());
-        audio.src = objectUrl;
-        audio.setAttribute("playsinline", "");
-        audioRef.current = audio;
-        const finish = () => {
-          URL.revokeObjectURL(objectUrl);
-          audio.removeAttribute("src");
-          clearPlaybackHandlers(audio);
-          if (activeRef.current) window.setTimeout(() => void startListeningRef.current(), 300);
-        };
-        const handleError = () =>
-          failConversation("The local voice gateway could not play the reply.");
-        audioEndedHandlerRef.current = finish;
-        audioErrorHandlerRef.current = handleError;
-        audio.addEventListener("ended", finish, { once: true });
-        audio.addEventListener("error", handleError, { once: true });
-        await audio.play();
-      } catch {
-        failConversation(voiceGatewayUnavailableMessage());
-      }
-    },
-    [clearPlaybackHandlers, failConversation],
-  );
+  const speak = async (markdown: string, summarize = true) => {
+    if (!spokenExcerpt(markdown)) {
+      if (activeRef.current) void startListeningRef.current();
+      return;
+    }
+    const unlockedAudio = audioRef.current;
+    unlockedAudio?.pause();
+    if (summarize) {
+      originalReplyRef.current = markdown;
+      setHasOriginalReply(true);
+      setStatus("summarizing");
+    }
+    try {
+      const text = summarize
+        ? await summarizeReplyForSpeech(markdown)
+        : speechReadyText(markdown).slice(0, 6_000);
+      if (!activeRef.current) return;
+      setStatus("speaking");
+      const body = new URLSearchParams({ text });
+      const response = await fetch(`${voiceGatewayUrl()}/voice/tts`, { method: "POST", body });
+      requireSuccessfulResponse(response, `Voice gateway returned ${response.status}`);
+      const audio = unlockedAudio ?? new Audio();
+      const objectUrl = URL.createObjectURL(await response.blob());
+      audio.src = objectUrl;
+      audio.setAttribute("playsinline", "");
+      audioRef.current = audio;
+      const finish = () => {
+        URL.revokeObjectURL(objectUrl);
+        audio.removeAttribute("src");
+        clearPlaybackHandlers(audio);
+        if (activeRef.current) window.setTimeout(() => void startListeningRef.current(), 300);
+      };
+      const handleError = () =>
+        failConversation("The local voice gateway could not play the reply.");
+      audioEndedHandlerRef.current = finish;
+      audioErrorHandlerRef.current = handleError;
+      audio.addEventListener("ended", finish, { once: true });
+      audio.addEventListener("error", handleError, { once: true });
+      await audio.play();
+    } catch {
+      failConversation(voiceGatewayUnavailableMessage());
+    }
+  };
 
-  const expectAssistantReply = useCallback(() => {
+  const expectAssistantReply = () => {
     pendingAssistantIdsRef.current = new Set(
       messages.filter((message) => message.role === "assistant").map((message) => message.id),
     );
-  }, [messages]);
+  };
 
-  const transcribeRecording = useCallback(
-    async (audio: Blob, mimeType: string) => {
-      if (!activeRef.current) return;
-      setStatus("transcribing");
-      try {
-        const form = new FormData();
-        form.append("audio", audio, `voice.${recordingExtension(mimeType)}`);
-        const response = await fetch(`${voiceGatewayUrl()}/voice/transcribe`, {
-          method: "POST",
-          body: form,
-        });
-        if (!response.ok) throw new Error(`Voice gateway returned ${response.status}`);
-        const result = (await response.json()) as { text?: unknown };
-        const transcript = typeof result.text === "string" ? result.text.trim() : "";
-        if (!transcript) {
-          await startListeningRef.current();
-          return;
-        }
-        const originalReply = originalReplyRef.current;
-        if (originalReply && isReadOriginalRequest(transcript)) {
-          void speak(originalReply, false);
-          return;
-        }
-        expectAssistantReply();
-        if (!onTranscript(transcript)) {
-          stopConversation();
-          return;
-        }
-        setStatus("waiting");
-      } catch {
-        failConversation(voiceGatewayUnavailableMessage());
+  const transcribeRecording = async (audio: Blob, mimeType: string) => {
+    if (!activeRef.current) return;
+    setStatus("transcribing");
+    try {
+      const form = new FormData();
+      form.append("audio", audio, `voice.${recordingExtension(mimeType)}`);
+      const response = await fetch(`${voiceGatewayUrl()}/voice/transcribe`, {
+        method: "POST",
+        body: form,
+      });
+      requireSuccessfulResponse(response, `Voice gateway returned ${response.status}`);
+      const result = (await response.json()) as { text?: unknown };
+      const transcript = typeof result.text === "string" ? result.text.trim() : "";
+      if (!transcript) {
+        await startListeningRef.current();
+        return;
       }
-    },
-    [expectAssistantReply, failConversation, onTranscript, speak, stopConversation],
-  );
+      const originalReply = originalReplyRef.current;
+      if (originalReply && isReadOriginalRequest(transcript)) {
+        void speak(originalReply, false);
+        return;
+      }
+      expectAssistantReply();
+      if (!onTranscript(transcript)) {
+        stopConversation();
+        return;
+      }
+      setStatus("waiting");
+    } catch {
+      failConversation(voiceGatewayUnavailableMessage());
+    }
+  };
 
-  const startListening = useCallback(async () => {
+  const startListening = async () => {
     if (!activeRef.current || recorderRef.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -344,7 +339,7 @@ export function useVoiceConversation(options: {
         );
         const now = performance.now();
         if (rms >= SILENCE_THRESHOLD) {
-          heardSpeechAt ??= now;
+          if (heardSpeechAt === null) heardSpeechAt = now;
           lastVoiceAt = now;
         }
         if (
@@ -361,10 +356,12 @@ export function useVoiceConversation(options: {
     } catch {
       failConversation("Microphone access is required for voice conversation.");
     }
-  }, [failConversation, stopTracks, transcribeRecording]);
-  startListeningRef.current = startListening;
+  };
+  useLayoutEffect(() => {
+    startListeningRef.current = startListening;
+  });
 
-  const toggleConversation = useCallback(() => {
+  const toggleConversation = () => {
     if (activeRef.current) {
       stopConversation();
       return;
@@ -373,7 +370,7 @@ export function useVoiceConversation(options: {
     setActive(true);
     unlockPlayback();
     void startListeningRef.current();
-  }, [stopConversation, unlockPlayback]);
+  };
 
   useEffect(() => {
     const pendingIds = pendingAssistantIdsRef.current;

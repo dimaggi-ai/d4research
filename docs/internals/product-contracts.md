@@ -2,15 +2,15 @@
 
 > For maintainers. Generated summary of `packages/contracts/src` — the typed surface every client
 > and the server agree on. One section per module; regenerate rather than hand-drift. All schemas
-> are Effect Schema; `index.ts` re-exports every module listed here. The package also exposes
-> `./settings` as a dedicated subpath export.
+> are Effect Schema; `index.ts` re-exports every module listed here (plus `./settings` and
+> `./relay` as dedicated subpath exports).
 
 ## index
 
 `packages/contracts/src/index.ts` is the public aggregation boundary for the contracts package. It
-re-exports the module-level schemas, branded identifiers, HTTP API declarations, and RPC method
-maps consumed by the server, web, desktop, mobile, and client-runtime packages; it does not define
-a second wire model of its own.
+re-exports module-level schemas, branded identifiers, HTTP API declarations, and RPC method maps
+used by the server, web, desktop, mobile, and client-runtime packages; it does not define a second
+wire model of its own.
 
 ## baseSchemas
 
@@ -39,7 +39,7 @@ background-activity layers that differ between web and mobile.
 Descriptors for an execution environment: platform (`ExecutionEnvironmentPlatform` os/arch),
 capabilities including self-update (`ServerSelfUpdateMethod`, `ServerSelfUpdateCapability`),
 `ExecutionEnvironmentDescriptor`, `EnvironmentConnectionState`, and `RepositoryIdentityLocator`.
-Consumed by all clients to describe and pick environments.
+All clients consume these to describe and pick environments.
 
 ## environmentHttp
 
@@ -69,8 +69,8 @@ app branding (`DesktopAppBrandingSchema`). Desktop-only.
 
 Server-owned PTY sessions: `TerminalOpenInput`, `TerminalAttachInput` (server stream of raw
 bytes), `TerminalWriteInput`, `TerminalResizeInput`, `TerminalClearInput`, `TerminalRestartInput`,
-`TerminalCloseInput`, keyed by thread (`TerminalThreadInput`, `DEFAULT_TERMINAL_ID`). Renderer
-choice (libghostty-vt) never crosses this wire.
+and `TerminalCloseInput`, keyed by thread (`TerminalThreadInput`, `DEFAULT_TERMINAL_ID`). The
+renderer choice (libghostty-vt) never crosses this wire.
 
 ## provider
 
@@ -89,8 +89,8 @@ This is what Settings → Providers edits.
 
 ## providerRuntime
 
-Normalized runtime event stream every driver maps its transport into: session/thread/turn state
-enums (`RuntimeSessionState`, `RuntimeThreadState`, `RuntimeTurnState`), item and request
+Every driver maps its transport into this normalized runtime event stream: session/thread/turn
+state enums (`RuntimeSessionState`, `RuntimeThreadState`, `RuntimeTurnState`), item and request
 taxonomies (`CanonicalItemType`, `CanonicalRequestType`, `ToolLifecycleItemType`), the
 `ProviderRuntimeEventType` union with payloads (`SessionStartedPayload`, `SessionExitedPayload`,
 `ThreadStateChangedPayload`, `ThreadMetadataUpdatedPayload`, …), raw passthrough
@@ -101,8 +101,8 @@ token/cost report that feeds the context-window meter.
 
 Model and option descriptors: `ModelCapabilities`, provider option descriptors
 (`SelectProviderOptionDescriptor`, `BooleanProviderOptionDescriptor`,
-`ProviderOptionDescriptor`), and user selections (`ProviderOptionSelection(s)`). Drives the model
-picker and per-model option UI.
+`ProviderOptionDescriptor`), and user selections (`ProviderOptionSelection(s)`). These drive the
+model picker and per-model option UI.
 
 ## keybindings
 
@@ -124,34 +124,18 @@ freshness, `canStart`, and remediation),
 
 ## settings
 
-Client and server configuration plus atomic patch contracts. `ClientSettingsSchema` covers local UI
-preferences and defaults. `ServerSettings` owns appearance, sidebar behavior, timestamps, thread
-defaults, `MemoryConnectorSettings`, `HandoffSettings`, provider instances, named
-`ResearchScenario`/`ResearchSettings`, named Dev scenarios through `DevSettings`, and the shared
-`PipelineTargetPolicy` (`exact` or `labeled-fallback`). `UnifiedSettings` combines both sides for
-clients. `ServerSettingsPatch` and `ClientSettingsPatch` define bounded partial updates instead of
-whole-file replacement. Handoff compression retains its bounded input/output defaults and optional
-custom prompt. Forward-compatible unions let older clients tolerate newer settings values.
+`ServerSettings` — the server-persisted configuration tree: appearance (font sizes/families,
+smoothing), sidebar ordering/grouping/preview counts and auto-settle, timestamp format, thread
+defaults, `MemoryConnectorSettings` (`memory.localEnabled`, built-in or external backend, local
+Memo base URL), shared `PipelineTargetPolicy` (`exact` or `labeled-fallback`), and
+`HandoffSettings` with `HandoffContextCompressionSettings` (`enabled`, `instanceId`, `model`,
+`maxInputCharacters` default 6000, `maxOutputCharacters` default 2000, `customPrompt`). Unions
+decode forward-compatibly so older clients survive newer config.
 
-## pullRequest
-
-Pull-request list, detail, review, action, and capability contracts shared by server and clients.
-Defines involvement and state enums, repository/author/reviewer data, changed files and comments,
-`PullRequestCapabilities`, action inputs/results, and typed provider/error variants. RPC methods in
-`rpc.ts` expose listing, detail loading, review submission, and supported pull-request actions.
-
-## threadTurnUsage
-
-Per-turn token accounting used by `threads.getTokenUsage`. `ThreadTurnUsageRow` records the thread,
-turn, provider/model identity, input/output/cached/reasoning token counts, cost, and timestamps;
-`ThreadTurnUsageInput` selects the thread whose usage rows the client requests.
-
-## usage
-
-Versioned environment-wide transcript usage reporting. `USAGE_CONTRACT_VERSION` anchors the schema
-version; bucket, token, source, pricing, input, summary, and typed error schemas support
-`server.getUsageSummary`. The server aggregates the data and web/desktop clients render the returned
-summary without inventing a second usage model.
+Named Dev and Research pipelines share `ResearchScenario` (name, pipeline prompt, attached prompt
+files). `ServerSettingsPatch` supports whole-array UI replacement plus atomic single-scenario
+upsert/removal operations used by the authenticated agent pipeline API; an upsert that omits
+`promptFiles` preserves the current attachments.
 
 ## git
 
@@ -174,32 +158,20 @@ protocol). Backs Settings → Source control and the PR/MR flows.
 
 ## orchestration
 
-The event-sourced core: command and event unions for projects and threads (client-dispatchable
-commands like `thread.create`, `thread.turn.start`, `thread.queue.steer`, `thread.queue.remove`,
-`thread.approval.respond`, and `thread.checkpoint.revert`; internal commands such as
-`thread.queue.drain`; events including `thread.message-queued`,
-`thread.queued-message-removed`, and `thread.message.assistant.delta`), the read model
-(`OrchestrationProject`, `OrchestrationThread`, persisted `OrchestrationQueuedMessage` entries,
-`pendingTurnStart`, messages, activities — including `context-window.updated` — checkpoints, and
-session state), mode enums (`RuntimeMode`:
-`approval-required` | `auto-accept-edits` | `auto` | `full-access`, `ProviderInteractionMode`:
-`default` | `plan`, `AssistantDeliveryMode`: `streaming` | `buffered`), approval policy/sandbox
-enums, `ModelSelection`, and `ORCHESTRATION_WS_METHODS`.
-
-An active thread's `thread.turn.start` is queue-by-default. The server persists the message before
-acknowledging the command, projects the queue to web, desktop, and mobile, and drains entries in
-stable order after the active turn ends. Explicit steer removes one queued entry and dispatches it
-into a running provider session; remove discards it without adding it to the transcript.
-`thread.turn.start.scheduledAt` places a future request in that same durable queue even when the
-thread is idle. `thread.message-queued.scheduledAt` and `OrchestrationQueuedMessage.scheduledAt`
-carry the due time to every client. A server reactor scans the indexed projection for due entries,
-so execution does not depend on a browser or phone remaining connected; future entries never block
-an unscheduled or already-due entry behind them.
+The event-sourced core defines command and event unions for projects and threads.
+Client-dispatchable commands include `thread.create`, `thread.turn.start`,
+`thread.approval.respond`, and `thread.checkpoint.revert`; internal events include
+`thread.message.assistant.delta`. The read model covers `OrchestrationProject`,
+`OrchestrationThread`, messages, activities (including `context-window.updated`), checkpoints,
+and session state. It also defines mode enums (`RuntimeMode`: `approval-required` |
+`auto-accept-edits` | `auto` | `full-access`, `ProviderInteractionMode`: `default` | `plan`,
+`AssistantDeliveryMode`: `streaming` | `buffered`), approval policy/sandbox enums,
+`ModelSelection`, and `ORCHESTRATION_WS_METHODS`.
 
 ## t3ProjectFile
 
-The `t3.json` project file: `T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_SCHEMA_URL`,
-`T3ProjectFile` and `T3ProjectFileScript` (project-declared scripts, runnable via keybindings).
+`t3.json` project file: `T3_PROJECT_FILE_NAME`, `T3_PROJECT_FILE_SCHEMA_URL`, `T3ProjectFile`,
+and `T3ProjectFileScript` (project-declared scripts, runnable via keybindings).
 
 ## editor
 
@@ -221,9 +193,8 @@ Generic host filesystem browsing for pickers: `FilesystemBrowseInput`, `Filesyst
 ## assets
 
 Workspace asset (image/attachment) resolution: `AssetResource`, signed URL creation
-(`AssetCreateUrlInput`/`Result`), and a family of tagged errors covering workspace context
-resolution, path validation, preview type checks, attachment lookup, and project favicon
-resolution.
+(`AssetCreateUrlInput`/`Result`), plus tagged errors for workspace context, path
+validation, preview type checks, attachment lookup, and project favicon resolution.
 
 ## review
 
@@ -267,9 +238,9 @@ Plain TypeScript interfaces (not Effect Schema) for the Tool Guard policy docume
 
 ## rpc
 
-The assembled WebSocket contract: `WS_METHODS` names every unary and streaming member
+The assembled WebSocket contract: `WS_METHODS` lists every unary and streaming member
 (orchestration dispatch/subscriptions, `terminal.*`, `preview.*`, keybindings, settings get/update,
 provider refresh/update, server update with progress, source-control discovery, diagnostics,
-resource telemetry, process signals, …), and the per-method `Ws…Rpc` definitions are aggregated
-into the `WsRpcGroup` served at `/ws`. `RPC_REQUIRED_SCOPE` (server-side) pairs each method with an
-`auth` scope.
+resource telemetry, process signals, …), and the per-method `Ws…Rpc` definitions aggregate into the
+`WsRpcGroup` served at `/ws`. `RPC_REQUIRED_SCOPE` (server-side) pairs each method with an `auth`
+scope.

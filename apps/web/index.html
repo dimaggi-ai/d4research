@@ -6,20 +6,20 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#121317" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="d4research" />
+    <meta name="apple-mobile-web-app-title" content="d4[Research]" />
     <!-- use-credentials: the PWA can sit behind a cookie-auth reverse proxy
          (passkey gate); a credential-less manifest fetch would 302 to the
          login page and fail manifest parsing. -->
     <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.ico?v=formula-1" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=formula-1" />
     <script>
       (() => {
         const LIGHT_BACKGROUND = "#ffffff";
-        const DARK_BACKGROUND = "#0a0a0a";
+        const DARK_BACKGROUND = "#121317";
         const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
         const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
         const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
@@ -31,9 +31,9 @@
             accent: "#4f46e5",
           },
           dark: {
-            background: "#0a0a0a",
-            foreground: "#f5f5f5",
-            accent: "#818cf8",
+            background: "#121317",
+            foreground: "#c7ccd4",
+            accent: "#ff982e",
           },
         };
         // These are the runtime defaults used to complete a custom palette
@@ -423,8 +423,8 @@
       }
 
       html.dark body {
-        background: #0a0a0a;
-        color: #f5f5f5;
+        background: #121317;
+        color: #c7ccd4;
       }
 
       #boot-shell {
@@ -447,10 +447,11 @@
         position: relative;
         z-index: 1;
         display: flex;
+        flex-direction: column;
+        gap: 12px;
         align-items: center;
         justify-content: center;
-        width: 96px;
-        height: 96px;
+        min-width: 96px;
       }
 
       #boot-shell-logo {
@@ -458,17 +459,42 @@
         height: 64px;
         object-fit: contain;
       }
+
+      #boot-error {
+        display: grid;
+        justify-items: center;
+        gap: 16px;
+        max-width: 600px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      #boot-error p {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+
+      #boot-error button {
+        padding: 8px 16px;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
     </style>
-    <title>d4research</title>
+    <title>d4[Research]</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
         <div id="boot-shell-card" aria-label="d4research splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="d4research" />
+          <img id="boot-shell-logo" src="/d4-mark.svg" alt="d4" />
+          <span style="font: 14px system-ui">[Research]</span>
         </div>
       </div>
     </div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

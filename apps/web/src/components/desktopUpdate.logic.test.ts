@@ -1,3 +1,4 @@
+import { getDesktopUpdateReleaseHistoryUrl } from "./desktopUpdate.logic";
 import { describe, expect, it } from "vite-plus/test";
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@d4research/contracts";
 
@@ -26,6 +27,7 @@ const baseState: DesktopUpdateState = {
   availableVersion: null,
   downloadedVersion: null,
   releaseNotes: [],
+  omittedReleaseCount: 0,
   downloadPercent: null,
   checkedAt: null,
   message: null,
@@ -56,6 +58,26 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
     expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+  });
+
+  it("says when the same version did not apply before", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      availableVersion: "1.1.0",
+      downloadedVersion: "1.1.0",
+      notAppliedVersion: "1.1.0",
+    };
+    expect(getDesktopUpdateButtonTooltip(state)).toBe(
+      "Update 1.1.0 did not apply. Click to retry.",
+    );
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...state,
+        availableVersion: "1.2.0",
+        downloadedVersion: "1.2.0",
+      }),
+    ).toContain("1.2.0 downloaded");
   });
 
   it("keeps install action available after an install error", () => {
@@ -174,6 +196,12 @@ describe("desktop update UI helpers", () => {
   it("omits the release URL when the updater does not report a version", () => {
     expect(getDesktopUpdateReleaseUrl(null)).toBeNull();
     expect(getDesktopUpdateReleaseUrl("  ")).toBeNull();
+  });
+
+  it("builds the release history URL", () => {
+    expect(getDesktopUpdateReleaseHistoryUrl()).toBe(
+      "https://github.com/dimaggi-ai/d4research/releases",
+    );
   });
 
   it("toasts only for actionable updater errors", () => {

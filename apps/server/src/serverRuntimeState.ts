@@ -4,24 +4,27 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "./atomicWrite.ts";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
+import packageJson from "../package.json" with { type: "json" };
 import type * as ServerConfig from "./config.ts";
 import { formatHostForUrl, isWildcardHost } from "./startupAccess.ts";
 
 export const PersistedServerRuntimeState = Schema.Struct({
   version: Schema.Literal(1),
   pid: Schema.Int,
+  ownerId: Schema.optional(Schema.String),
   host: Schema.optional(Schema.String),
   port: Schema.Int,
   origin: Schema.String,
-  // Present when the server fronts a dev web server (VITE_DEV_SERVER_URL).
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
+  serviceManaged: Schema.optional(Schema.Boolean),
+  serverVersion: Schema.optional(Schema.String),
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
-export class ServerRuntimeStateError extends Schema.TaggedErrorClass<ServerRuntimeStateError>()(
+export class ServerRuntimeStateError extends Schema.TaggedError<ServerRuntimeStateError>()(
   "ServerRuntimeStateError",
   {
     operation: Schema.Literals(["persist", "read", "decode", "clear"]),
@@ -50,6 +53,7 @@ const runtimeOriginForConfig = (
 export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<ServerConfig.ServerConfig["Service"], "host" | "devUrl">;
   readonly port: number;
+  readonly serviceManaged?: boolean;
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
@@ -59,6 +63,8 @@ export const makePersistedServerRuntimeState = (input: {
     origin: runtimeOriginForConfig(input.config, input.port),
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
+    ...(input.serviceManaged ? { serviceManaged: true } : {}),
+    serverVersion: packageJson.version,
   }));
 
 export const persistServerRuntimeState = (input: {
@@ -104,6 +110,20 @@ export const clearPersistedServerRuntimeState = (path: string) =>
     );
   });
 
+/**
+ * Signal 0 delivers nothing; it only reports whether the pid exists. EPERM
+ * means it exists but belongs to another user, which still counts as alive.
+ */
+export const isProcessAlive = (pid: number): boolean => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+};
+
 export const readPersistedServerRuntimeState = (path: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -119,7 +139,7 @@ export const readPersistedServerRuntimeState = (path: string) =>
                   cause,
                 }),
               ),
-        onSuccess: (contents) => Effect.succeed(Option.some(contents)),
+        onSuccess: (contents) => Effect.succeedSome(contents),
       }),
     );
     if (Option.isNone(raw)) {
@@ -132,7 +152,7 @@ export const readPersistedServerRuntimeState = (path: string) =>
     }
 
     return yield* decodePersistedServerRuntimeState(trimmed).pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       Effect.mapError(
         (cause) =>
           new ServerRuntimeStateError({

@@ -1,0 +1,184 @@
+import { describe, expect, it } from "@effect/vitest";
+
+import * as Effect from "effect/Effect";
+import * as EffectAcpErrors from "effect-acp/errors";
+
+import {
+  applyGrokAcpModelSelection,
+  buildGrokAcpSpawnInput,
+  grokAcpRuntimeProcessOwnership,
+  grokAcpSpawnArgs,
+  isValidGrokReasoningEffortToken,
+  resolveGrokAcpBaseModelId,
+} from "./acpSupport.ts";
+
+describe("grokAcpRuntimeProcessOwnership", () => {
+  it("opts Grok into detached process-tree ownership on the injected host platform", () => {
+    expect(grokAcpRuntimeProcessOwnership("linux")).toEqual({
+      ownDescendantProcessGroups: true,
+      ownDetachedProcessGroup: true,
+      processGroupPlatform: "linux",
+    });
+  });
+
+  it("uses the prior provider-group path on Darwin and Windows", () => {
+    expect(grokAcpRuntimeProcessOwnership("darwin")).toEqual({
+      ownDescendantProcessGroups: false,
+      ownDetachedProcessGroup: true,
+      processGroupPlatform: "darwin",
+    });
+    expect(grokAcpRuntimeProcessOwnership("win32")).toEqual({
+      ownDescendantProcessGroups: false,
+      ownDetachedProcessGroup: true,
+      processGroupPlatform: "win32",
+    });
+  });
+});
+
+describe("resolveGrokAcpBaseModelId", () => {
+  it("normalizes empty and custom Grok model ids", () => {
+    // Normalization retains the product slug; model selection filters it at the ACP boundary.
+    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId("grok-build")).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
+    expect(resolveGrokAcpBaseModelId("grok-4.6")).toBe("grok-4.6");
+  });
+});
+
+describe("grokAcpSpawnArgs", () => {
+  it("inherits the Grok CLI config when no T3 runtime mode is set", () => {
+    expect(grokAcpSpawnArgs()).toEqual(["agent", "stdio"]);
+  });
+
+  it("forces Grok to ask when T3 is Supervised", () => {
+    expect(grokAcpSpawnArgs("approval-required")).toEqual([
+      "--permission-mode",
+      "default",
+      "agent",
+      "stdio",
+    ]);
+  });
+
+  it("maps Full access to Grok always-approve", () => {
+    expect(grokAcpSpawnArgs("full-access")).toEqual(["agent", "--always-approve", "stdio"]);
+  });
+
+  it("launches Auto on Grok's classifier and a mode Grok does not offer asking", () => {
+    expect(grokAcpSpawnArgs("auto")).toEqual(["--permission-mode", "auto", "agent", "stdio"]);
+    expect(grokAcpSpawnArgs("auto-accept-edits")).toEqual([
+      "--permission-mode",
+      "default",
+      "agent",
+      "stdio",
+    ]);
+  });
+});
+
+describe("buildGrokAcpSpawnInput", () => {
+  it("passes the T3 Code referrer through Grok OAuth env", () => {
+    const spawn = buildGrokAcpSpawnInput({ binaryPath: "/usr/local/bin/grok" }, "/tmp/project", {
+      XAI_API_KEY: "secret",
+      GROK_OAUTH2_REFERRER: "other-client",
+    });
+
+    expect(spawn).toEqual({
+      command: "/usr/local/bin/grok",
+      args: ["agent", "stdio"],
+      cwd: "/tmp/project",
+      env: {
+        XAI_API_KEY: "secret",
+        GROK_OAUTH2_REFERRER: "t3code",
+      },
+    });
+  });
+});
+
+describe("applyGrokAcpModelSelection", () => {
+  const makeRecordingRuntime = (failure?: EffectAcpErrors.AcpError) => {
+    const modelCalls: Array<string> = [];
+    const runtime = {
+      setSessionModel: (modelId: string) =>
+        Effect.gen(function* () {
+          modelCalls.push(modelId);
+          if (failure) return yield* failure;
+          return {};
+        }),
+    };
+    return { runtime, modelCalls };
+  };
+
+  it.effect("keeps the session model for empty and default product selections", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      for (const model of [undefined, "   ", "grok-build"]) {
+        const result = yield* applyGrokAcpModelSelection({
+          runtime,
+          currentModelId: "grok-4.6",
+          requestedModelId: resolveGrokAcpBaseModelId(model),
+          mapError: (cause) => cause.message,
+        });
+        expect(result).toBe("grok-4.6");
+      }
+      expect(modelCalls).toEqual([]);
+    }),
+  );
+
+  it.effect("calls session/set_model when the requested model differs from current", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-build",
+        requestedModelId: "grok-mock-alt",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual(["grok-mock-alt"]);
+      expect(result).toBe("grok-mock-alt");
+    }),
+  );
+
+  it.effect("skips set_model when requested matches current", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-build",
+        requestedModelId: "grok-build",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([]);
+      expect(result).toBe("grok-build");
+    }),
+  );
+
+  it.effect("skips set_model when no model is requested", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-build",
+        requestedModelId: undefined,
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([]);
+      expect(result).toBe("grok-build");
+    }),
+  );
+
+  it.effect("propagates session/set_model failures via mapError", () =>
+    Effect.gen(function* () {
+      const failure = EffectAcpErrors.AcpRequestError.invalidParams("session id not known");
+      const { runtime } = makeRecordingRuntime(failure);
+      const error = yield* Effect.flip(
+        applyGrokAcpModelSelection({
+          runtime,
+          currentModelId: "grok-build",
+          requestedModelId: "grok-mock-alt",
+          mapError: (cause) => cause.message,
+        }),
+      );
+      expect(error).toBe(failure.message);
+    }),
+  );
+});

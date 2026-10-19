@@ -1,4 +1,8 @@
-import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@d4research/contracts";
+import {
+  type ClientConnectionMethod,
+  EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+} from "@d4research/contracts";
 import { resolveRemoteWebSocketConnectionUrl } from "./remote.ts";
 import { environmentMismatchError, mapRemoteEnvironmentError } from "../connection/errors.ts";
 import type { ConnectionAttemptError, PreparedHttpAuthorization } from "../connection/model.ts";
@@ -8,7 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 export interface AuthorizedRemoteEnvironment {
   readonly environmentId: EnvironmentId;
@@ -16,6 +20,13 @@ export interface AuthorizedRemoteEnvironment {
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
   readonly httpAuthorization: PreparedHttpAuthorization;
+}
+
+export interface AuthorizedRemoteHttpEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly httpBaseUrl: string;
+  readonly httpAuthorization: Extract<PreparedHttpAuthorization, { readonly _tag: "Dpop" }>;
 }
 
 export class RemoteEnvironmentAuthorization extends Context.Service<
@@ -26,7 +37,12 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
+      readonly connectionMethod?: ClientConnectionMethod;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
+    readonly authorizeDpopHttp?: (input: {
+      readonly expectedEnvironmentId: EnvironmentId;
+      readonly rejectedAccessToken?: string;
+    }) => Effect.Effect<AuthorizedRemoteHttpEnvironment, ConnectionAttemptError>;
   }
 >()("@d4research/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
@@ -34,9 +50,10 @@ const BEARER_DESCRIPTOR_CACHE_TTL_MS = 10_000;
 
 const fetchDescriptor = Effect.fn("clientRuntime.connection.remote.fetchDescriptor")(function* (
   httpBaseUrl: string,
+  connectionMethod: ClientConnectionMethod = "direct",
 ) {
   return yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
-    Effect.mapError(mapRemoteEnvironmentError),
+    Effect.mapError((error) => mapRemoteEnvironmentError(error, connectionMethod)),
   );
 });
 
@@ -53,14 +70,16 @@ export const make = Effect.gen(function* () {
     >
   >(new Map());
 
-  const authorizeBearer = Effect.fn("clientRuntime.connection.remote.authorizeBearer")(
+  /**
+   * A saved LAN address can belong to another machine on a different network.
+   */
+  const verifyDirectEndpoint = Effect.fn("clientRuntime.connection.remote.verifyDirectEndpoint")(
     function* (input: {
-      readonly expectedEnvironmentId: Parameters<
-        RemoteEnvironmentAuthorization["Service"]["authorizeBearer"]
-      >[0]["expectedEnvironmentId"];
+      readonly expectedEnvironmentId: EnvironmentId;
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
+      readonly connectionMethod?: ClientConnectionMethod;
     }) {
       const now = yield* Clock.currentTimeMillis;
       const cachedDescriptor = (yield* Ref.get(bearerDescriptors)).get(input.expectedEnvironmentId);
@@ -69,7 +88,7 @@ export const make = Effect.gen(function* () {
         cachedDescriptor.validatedAtEpochMs + BEARER_DESCRIPTOR_CACHE_TTL_MS > now;
       const descriptor = canReuseDescriptor
         ? cachedDescriptor.descriptor
-        : yield* fetchDescriptor(input.httpBaseUrl).pipe(
+        : yield* fetchDescriptor(input.httpBaseUrl, input.connectionMethod).pipe(
             Effect.provideService(HttpClient.HttpClient, httpClient),
           );
       if (descriptor.environmentId !== input.expectedEnvironmentId) {
@@ -89,12 +108,27 @@ export const make = Effect.gen(function* () {
           return next;
         });
       }
+      return descriptor;
+    },
+  );
+
+  const authorizeBearer = Effect.fn("clientRuntime.connection.remote.authorizeBearer")(
+    function* (input: {
+      readonly expectedEnvironmentId: Parameters<
+        RemoteEnvironmentAuthorization["Service"]["authorizeBearer"]
+      >[0]["expectedEnvironmentId"];
+      readonly httpBaseUrl: string;
+      readonly wsBaseUrl: string;
+      readonly bearerToken: string;
+      readonly connectionMethod?: ClientConnectionMethod;
+    }) {
+      const descriptor = yield* verifyDirectEndpoint(input);
       const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
         wsBaseUrl: input.wsBaseUrl,
         httpBaseUrl: input.httpBaseUrl,
         bearerToken: input.bearerToken,
       }).pipe(
-        Effect.mapError(mapRemoteEnvironmentError),
+        Effect.mapError((error) => mapRemoteEnvironmentError(error, input.connectionMethod)),
         Effect.provideService(HttpClient.HttpClient, httpClient),
       );
       return {

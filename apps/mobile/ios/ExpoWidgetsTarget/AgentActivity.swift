@@ -10,7 +10,7 @@ struct AgentActivity: Widget {
       WidgetsEntryView(entry: entry)
     }
     .configurationDisplayName("Agent Activity")
-    .description("Shows the current state of active T3 Code agents.")
+    .description("Shows the current state of active d4research agents.")
     .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
   }
 }

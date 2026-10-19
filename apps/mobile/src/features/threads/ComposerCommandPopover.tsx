@@ -1,18 +1,43 @@
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import {
+  resolveProviderSkillSourceKind,
+  type ProviderSkillSourceKind,
+} from "@d4research/client-runtime/providerSkills";
+import type {
+  PullRequestContextMetadata,
+  ScopedThreadRef,
+  ServerProviderSkill,
+  ServerProviderSlashCommand,
+} from "@d4research/contracts";
 import type { ComposerTriggerKind } from "@d4research/shared/composerTrigger";
-import type { ServerProviderSkill, ServerProviderSlashCommand } from "@d4research/contracts";
-import { SymbolView } from "../../components/AppSymbol";
 import { memo } from "react";
 import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { GlassSurface } from "../../components/ui/GlassSurface";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
+import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 export type ComposerCommandItem =
+  | {
+      readonly id: string;
+      readonly type: "pull-request";
+      readonly pullRequest: PullRequestContextMetadata;
+      readonly label: string;
+      readonly description: string;
+    }
   | {
       readonly id: string;
       readonly type: "path";
       readonly path: string;
       readonly kind: "file" | "directory";
+      readonly label: string;
+      readonly description: string;
+    }
+  | {
+      readonly id: string;
+      readonly type: "thread";
+      readonly thread: ScopedThreadRef;
       readonly label: string;
       readonly description: string;
     }
@@ -52,6 +77,7 @@ interface ComposerCommandPopoverProps {
   readonly items: ReadonlyArray<ComposerCommandItem>;
   readonly triggerKind: ComposerTriggerKind | null;
   readonly isLoading: boolean;
+  readonly error?: string | null;
   readonly onSelect: (item: ComposerCommandItem) => void;
 }
 
@@ -98,6 +124,8 @@ function PopoverSurface(props: {
 
 function itemIcon(item: ComposerCommandItem) {
   switch (item.type) {
+    case "pull-request":
+      return pullRequestStatus(item.pullRequest).icon;
     case "slash-command":
     case "provider-slash-command":
       return "terminal" as const;
@@ -105,11 +133,15 @@ function itemIcon(item: ComposerCommandItem) {
       return "cube" as const;
     case "path":
       return null;
+    case "thread":
+      return "text.bubble";
   }
 }
 
 function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
   switch (triggerKind) {
+    case "pull-request":
+      return "Pull requests";
     case "slash-command":
       return "Commands";
     case "skill":
@@ -126,6 +158,8 @@ function emptyText(triggerKind: ComposerTriggerKind | null, isLoading: boolean):
     return triggerKind === "path" ? "Searching files…" : "Loading…";
   }
   switch (triggerKind) {
+    case "pull-request":
+      return "No matching pull requests.";
     case "path":
       return "No matching files or folders.";
     case "skill":
@@ -162,7 +196,16 @@ const CommandRow = memo(function CommandRow(props: {
       {props.item.type === "path" ? (
         <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
       ) : iconName ? (
-        <SymbolView name={iconName} size={14} tintColor={iconColor} type="monochrome" />
+        <SymbolView
+          name={iconName}
+          size={14}
+          tintColorClassName={
+            props.item.type === "pull-request"
+              ? pullRequestStatus(props.item.pullRequest).tint
+              : "accent-icon-subtle"
+          }
+          type="monochrome"
+        />
       ) : null}
       <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
         {props.item.label}
@@ -209,7 +252,7 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
       ) : (
         <View className="px-3.5 py-2.5">
           <Text className="text-xs text-foreground-tertiary">
-            {emptyText(props.triggerKind, props.isLoading)}
+            {props.error ?? emptyText(props.triggerKind, props.isLoading)}
           </Text>
         </View>
       )}

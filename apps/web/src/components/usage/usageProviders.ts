@@ -1,33 +1,60 @@
 import type { UsageProviderKind } from "@d4research/contracts";
 
-import { ClaudeAI, type Icon, OpenAI } from "../Icons";
+import { ProviderDriverKind } from "@d4research/contracts";
 
-/**
- * Series and table order. The chart layers both providers from a shared zero
- * baseline, so this only fixes the reading order of legends, tables and hover
- * rows; it does not decide which series sits above the other.
- */
-export const PROVIDER_ORDER: readonly UsageProviderKind[] = ["codex", "claude"];
-
-export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
+type UsageProviderPresentation = {
+  readonly label: string;
+  readonly color: string;
+  readonly driverKind: ProviderDriverKind;
 };
 
-/** Claude's brand orange against a neutral white for Codex. */
-export const PROVIDER_COLOR: Record<UsageProviderKind, string> = {
-  claude: "#d97757",
-  codex: "#e6e6e6",
-};
+export const PROVIDER_PRESENTATION = {
+  codex: {
+    label: "Codex",
+    color: "var(--contrast-foreground)",
+    driverKind: ProviderDriverKind.make("codex"),
+  },
+  claude: {
+    label: "Claude Code",
+    color: "#d97757",
+    driverKind: ProviderDriverKind.make("claudeAgent"),
+  },
+  grok: {
+    label: "Grok Build",
+    color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
+    driverKind: ProviderDriverKind.make("grok"),
+  },
+  cursor: { label: "Cursor", color: "#8b8b8b", driverKind: ProviderDriverKind.make("cursor") },
+  opencode: {
+    label: "OpenCode",
+    color: "#5b9bbd",
+    driverKind: ProviderDriverKind.make("opencode"),
+  },
+  antigravity: {
+    label: "Antigravity",
+    color: "#8c7bd1",
+    driverKind: ProviderDriverKind.make("antigravity"),
+  },
+  pi: {
+    label: "Pi",
+    color: "#4d9f8a",
+    driverKind: ProviderDriverKind.make("pi"),
+  },
+} satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
-/**
- * Brand marks, reused from the provider picker.
- *
- * These ship their own fills (`#d97757` for Claude, white on dark for OpenAI),
- * which are the same colours as the chart bands, so swapping a colour dot for a
- * mark keeps the series association intact rather than trading it away.
- */
-export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
-  claude: ClaudeAI,
-  codex: OpenAI,
-};
+export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
+
+export function providersWithUsage(
+  totals: readonly {
+    readonly provider: UsageProviderKind;
+    readonly costUsd: number;
+    readonly totalTokens: number;
+  }[],
+): readonly UsageProviderKind[] {
+  const active = new Set(
+    totals
+      .filter((entry) => entry.totalTokens > 0 || entry.costUsd > 0)
+      .map((entry) => entry.provider),
+  );
+  return PROVIDER_ORDER.filter((provider) => active.has(provider));
+}

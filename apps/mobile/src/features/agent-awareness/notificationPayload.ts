@@ -69,6 +69,14 @@ function normalizeThreadDeepLink(value: string): string | null {
   }
 }
 
+export function threadDeepLinkOnScreen(pathname: string): string | null {
+  const match = /^\/threads\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+  return `/threads/${match[1]}/${match[2]}`;
+}
+
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;

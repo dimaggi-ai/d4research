@@ -1,10 +1,7 @@
 // @effect-diagnostics globalDate:off -- Usage windows are calendar days in the viewer's zone, derived from wall-clock "now" via Intl.
-/**
- * Display formatting for the usage page.
- *
- * @module usageFormat
- */
 import { UsageDay, type UsageResolution, type UsageSummaryInput } from "@d4research/contracts";
+
+import type { UsageContractMismatch } from "./usageMerge.ts";
 
 const CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -23,10 +20,6 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
-/**
- * Compacts a token count to three significant figures with a unit suffix, so
- * columns of numbers line up at a glance (`19.9B`, `76.7M`, `804K`).
- */
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e12) return `${trim(value / 1e12)}T`;
@@ -43,10 +36,21 @@ function trim(value: number): string {
 }
 
 export function formatPercent(share: number, digits = 1): string {
-  return `${(share * 100).toFixed(digits)}%`;
+  const percent = share * 100;
+  const smallest = 10 ** -digits;
+  if (percent > 0 && percent < smallest) return `<${smallest.toFixed(digits)}%`;
+  return `${percent.toFixed(digits)}%`;
 }
 
-/** `2026-08-07` to `Aug 7`. */
+export function formatUsageContractMismatch(
+  environmentLabel: string,
+  mismatch: Pick<UsageContractMismatch, "direction">,
+): string {
+  return mismatch.direction === "serverBehind"
+    ? `${environmentLabel} runs an older server version and is excluded from totals.`
+    : `This client is older than the server on ${environmentLabel}; its usage is excluded from totals.`;
+}
+
 export function formatDayShort(day: string): string {
   const [year, month, dayOfMonth] = day.split("-").map((part) => Number(part));
   if (year === undefined || month === undefined || dayOfMonth === undefined) return day;
@@ -67,7 +71,6 @@ export function formatDayShort(day: string): string {
   return `${MONTHS[month - 1] ?? ""} ${dayOfMonth}`;
 }
 
-/** Inclusive day list between two `YYYY-MM-DD` bounds. */
 export function enumerateDays(sinceDay: string, untilDay: string): readonly string[] {
   const days: string[] = [];
   const start = Date.parse(`${sinceDay}T00:00:00Z`);
@@ -82,7 +85,23 @@ export function enumerateDays(sinceDay: string, untilDay: string): readonly stri
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Every fixed-duration bucket start in an hourly rolling window. */
+const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function dateTimeFormatter(
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  if (options.timeZone === undefined) return new Intl.DateTimeFormat(locale, options);
+  const key = JSON.stringify([locale, options]);
+  let formatter = dateTimeFormatters.get(key);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    if (dateTimeFormatters.size >= 16) dateTimeFormatters.clear();
+    dateTimeFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 export function enumerateHourStarts(sinceTime: string, untilTime: string): readonly string[] {
   const starts: string[] = [];
   const start = Date.parse(sinceTime);
@@ -96,20 +115,18 @@ export function enumerateHourStarts(sinceTime: string, untilTime: string): reado
 }
 
 /**
- * A rolling bucket start rendered in the viewer's requested time zone.
- *
- * Repeated wall-clock hours during a fall-back transition include their short
- * zone name so the two distinct buckets remain distinguishable.
+ * Repeated wall-clock hours during a fall-back transition include their short zone name so the
+ * two distinct buckets remain distinguishable.
  */
 export function formatHourShort(hourStart: string, timeZone?: string): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
   const options = timeZone === undefined ? {} : { timeZone };
-  const hourFormat = new Intl.DateTimeFormat("en-US", {
+  const hourFormat = dateTimeFormatter("en-US", {
     ...options,
     hour: "numeric",
   });
-  const wallHourFormat = new Intl.DateTimeFormat("en-CA", {
+  const wallHourFormat = dateTimeFormatter("en-CA", {
     ...options,
     year: "numeric",
     month: "2-digit",
@@ -123,18 +140,17 @@ export function formatHourShort(hourStart: string, timeZone?: string): string {
   );
 
   if (!isRepeatedHour) return hourFormat.format(instant);
-  return new Intl.DateTimeFormat("en-US", {
+  return dateTimeFormatter("en-US", {
     ...(timeZone === undefined ? {} : { timeZone }),
     hour: "numeric",
     timeZoneName: "short",
   }).format(instant);
 }
 
-/** `2026-08-11T14:37:00Z` to `Aug 11, 2 PM` in the requested zone. */
 export function formatDateTimeShort(instant: string, timeZone?: string): string {
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) return instant;
-  return new Intl.DateTimeFormat("en-US", {
+  return dateTimeFormatter("en-US", {
     ...(timeZone === undefined ? {} : { timeZone }),
     month: "short",
     day: "numeric",
@@ -142,7 +158,6 @@ export function formatDateTimeShort(instant: string, timeZone?: string): string 
   }).format(date);
 }
 
-/** An hourly tooltip label relative to the rolling window's end date. */
 export function formatRelativeHourShort(
   hourStart: string,
   relativeTo: string,
@@ -154,7 +169,7 @@ export function formatRelativeHourShort(
     return formatDateTimeShort(hourStart, timeZone);
   }
 
-  const dayFormat = new Intl.DateTimeFormat("en-CA", {
+  const dayFormat = dateTimeFormatter("en-CA", {
     ...(timeZone === undefined ? {} : { timeZone }),
     year: "numeric",
     month: "2-digit",
@@ -170,27 +185,31 @@ export function formatRelativeHourShort(
   return formatDateTimeShort(hourStart, timeZone);
 }
 
-/**
- * The window the page requests, expressed in the viewer's own time zone so days
- * line up with what they actually experienced.
- */
 export function makeWindow(
   days: number,
   now = new Date(),
   resolution: UsageResolution = "day",
 ): UsageSummaryInput {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const format = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  } catch {
+    timeZone = "UTC";
+    format = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }
   const untilDay = format.format(now);
   if (resolution === "hour") {
-    // Minute-aligned bounds keep labels readable while still representing an
-    // exact rolling 24-hour duration. Fixed-duration buckets remain correct
-    // across offset changes and daylight-saving transitions.
     const untilTimeMs = Math.floor(now.getTime() / 60_000) * 60_000;
     const sinceTimeMs = untilTimeMs - 24 * HOUR_MS;
     const sinceTime = new Date(sinceTimeMs);

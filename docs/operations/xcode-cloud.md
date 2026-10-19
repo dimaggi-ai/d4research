@@ -20,9 +20,10 @@ or later. Add an **Archive — iOS — App Store Connect** action and a
 group. A build-only action does not upload a TestFlight build.
 
 Xcode Cloud discovers `ci_scripts` beside the workspace. `ci_post_clone.sh`
-installs Node 24, pnpm 11.10.0, CocoaPods, and Watchman, restores frozen JavaScript and
-native dependencies, and applies `CI_BUILD_NUMBER` to the app and both extensions.
-Signing is automatic. Apple manages the distribution signing credentials.
+installs Node 24, the repository-pinned pnpm version, CocoaPods, and Watchman,
+restores frozen JavaScript and native dependencies, and applies `CI_BUILD_NUMBER` to the app and both extensions.
+React Native is compiled from source because the liquid-glass module requires
+headers missing from its prebuilt framework. Signing is automatic. Apple manages the distribution signing credentials.
 
 The Xcode shell environment raises Metro's soft open-file limit to at most
 65,536 without changing the build service's hard limit. This avoids `EMFILE`
@@ -47,7 +48,7 @@ cp -R ios/ci_scripts "$scripts_backup/ci_scripts"
 APP_VARIANT=production pnpm exec expo prebuild --clean --platform ios --no-install
 cp -R "$scripts_backup/ci_scripts" ios/ci_scripts
 cd ios
-pod install
+RCT_USE_PREBUILT_RNCORE=0 pod install
 GEM_HOME="$(brew --prefix cocoapods)/libexec" "$(brew --prefix ruby)/bin/ruby" ci_scripts/prepare_signing.rb
 ```
 
@@ -57,9 +58,10 @@ the project, native sources, workspace, and `Podfile.lock`. Never commit Pods,
 build output, signing certificates, or `.xcode.env.local`.
 
 The fork does not receive updates from upstream T3's Expo account. OTA updates
-are disabled unless `D4_EXPO_UPDATE_URL` is explicitly configured; optional EAS
-metadata uses `D4_EAS_PROJECT_ID` and `D4_EXPO_OWNER`. Supply these consistently
-when regenerating the native project and building JavaScript.
+are disabled unless `T3CODE_MOBILE_UPDATES_ENABLED=1` and
+`T3CODE_MOBILE_UPDATES_URL` are configured. Optional EAS metadata uses
+`T3CODE_MOBILE_EAS_PROJECT_ID` and `T3CODE_MOBILE_EXPO_OWNER`. Supply these
+consistently when regenerating the native project and building JavaScript.
 
 ## macOS
 

@@ -1,23 +1,45 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  detectComposerTrigger,
-  serializeComposerFileLink,
-  serializeComposerMentionPath,
-} from "./composerTrigger.ts";
+import { detectComposerTrigger, serializeComposerFileLink } from "./composerTrigger.ts";
 
-describe("serializeComposerMentionPath", () => {
-  it("keeps simple mention paths unquoted", () => {
-    expect(serializeComposerMentionPath("src/index.ts")).toBe("src/index.ts");
+describe("detectComposerTrigger", () => {
+  it.each(["Use ", "Use\t", "Use\n  "])("detects inline slash skills after %j", (prefix) => {
+    const text = `${prefix}/skill:review later`;
+    const cursor = `${prefix}/skill:review`.length;
+    expect(detectComposerTrigger(text, cursor)).toEqual({
+      kind: "slash-command",
+      query: "skill:review",
+      rangeStart: prefix.length,
+      rangeEnd: cursor,
+    });
   });
 
-  it("quotes mention paths containing whitespace", () => {
-    expect(serializeComposerMentionPath("docs/My File.md")).toBe('"docs/My File.md"');
+  it.each(["Use /", "Use /review"])("detects the inline slash token in %j", (text) => {
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "slash-command",
+      query: text.slice(5),
+      rangeStart: 4,
+      rangeEnd: text.length,
+    });
   });
 
-  it("escapes quoted mention path content", () => {
-    expect(serializeComposerMentionPath('docs/My "File".md')).toBe('"docs/My \\"File\\".md"');
-  });
+  it.each(["Use/review", "https://example.com/review", "Use /review "])(
+    "does not trigger for %j",
+    (text) => expect(detectComposerTrigger(text, text.length)).toBeNull(),
+  );
+
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
+    "detects %s skill prefixes and their source range",
+    (prefix) => {
+      const text = `Use ${prefix}review`;
+      expect(detectComposerTrigger(text, text.length)).toEqual({
+        kind: "skill",
+        query: "review",
+        rangeStart: 4,
+        rangeEnd: text.length,
+      });
+    },
+  );
 });
 
 describe("serializeComposerFileLink", () => {

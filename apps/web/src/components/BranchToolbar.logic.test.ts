@@ -16,6 +16,7 @@ import {
   resolveLocalCheckoutBranchMismatch,
   resolvePreviousWorktreeLabel,
   resolvePreviousWorktreeSeed,
+  sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
@@ -423,32 +424,71 @@ describe("shouldShowEnvironmentIndicator", () => {
 });
 
 describe("shouldShowComposerContextStrip", () => {
+  it.each([false, true])(
+    "honors the active-thread preference with resting controls %s",
+    (hostsRestingComposerControls) => {
+      const input = {
+        isDraftHeroState: false,
+        hasActiveProject: true,
+        isGitRepo: true,
+        showEnvironmentIndicator: true,
+        hostsRestingComposerControls,
+      };
+      expect(shouldShowComposerContextStrip({ ...input, persistInActiveThreads: false })).toBe(
+        false,
+      );
+      expect(shouldShowComposerContextStrip({ ...input, persistInActiveThreads: true })).toBe(true);
+    },
+  );
+
   it("keeps the environment indicator visible for a non-Git project", () => {
     expect(
       shouldShowComposerContextStrip({
+        isDraftHeroState: true,
+        persistInActiveThreads: false,
         hasActiveProject: true,
         isGitRepo: false,
         showEnvironmentIndicator: true,
+        hostsRestingComposerControls: false,
       }),
     ).toBe(true);
   });
 
-  it("hides the strip when a non-Git project has no environment indicator", () => {
+  it("hides the strip when a non-Git project has nothing to show", () => {
     expect(
       shouldShowComposerContextStrip({
+        isDraftHeroState: true,
+        persistInActiveThreads: false,
         hasActiveProject: true,
         isGitRepo: false,
         showEnvironmentIndicator: false,
+        hostsRestingComposerControls: false,
       }),
     ).toBe(false);
+  });
+
+  it("keeps the strip for visible resting composer controls in a non-Git thread", () => {
+    expect(
+      shouldShowComposerContextStrip({
+        isDraftHeroState: true,
+        persistInActiveThreads: false,
+        hasActiveProject: true,
+        isGitRepo: false,
+        showEnvironmentIndicator: false,
+        hostsRestingComposerControls: true,
+      }),
+    ).toBe(true);
   });
 
   it("shows Git controls without requiring an environment indicator", () => {
     expect(
       shouldShowComposerContextStrip({
+        isDraftHeroState: true,
+        persistInActiveThreads: false,
         hasActiveProject: true,
         isGitRepo: true,
         showEnvironmentIndicator: false,
+        hostsRestingComposerControls: false,
       }),
     ).toBe(true);
   });
@@ -474,6 +514,24 @@ describe("resolveEffectiveEnvMode", () => {
       }),
     ).toBe("worktree");
   });
+
+  it("keeps a server thread in worktree mode while its worktree is still being created", () => {
+    expect(
+      resolveEffectiveEnvMode({
+        activeWorktreePath: null,
+        hasServerThread: true,
+        draftThreadEnvMode: undefined,
+        preparingWorktree: true,
+      }),
+    ).toBe("worktree");
+    expect(
+      resolveEffectiveEnvMode({
+        activeWorktreePath: null,
+        hasServerThread: true,
+        draftThreadEnvMode: undefined,
+      }),
+    ).toBe("local");
+  });
 });
 
 describe("resolveEnvModeLabel", () => {
@@ -495,11 +553,17 @@ describe("resolveCurrentWorkspaceLabel", () => {
 
 describe("resolveLockedWorkspaceLabel", () => {
   it("uses a shorter label for the main repo checkout", () => {
-    expect(resolveLockedWorkspaceLabel(null)).toBe("Local checkout");
+    expect(resolveLockedWorkspaceLabel(null, "local")).toBe("Local checkout");
   });
 
   it("uses a shorter label for an attached worktree", () => {
-    expect(resolveLockedWorkspaceLabel("/repo/.t3/worktrees/feature-a")).toBe("Worktree");
+    expect(resolveLockedWorkspaceLabel("/repo/.t3/worktrees/feature-a", "worktree")).toBe(
+      "Worktree",
+    );
+  });
+
+  it("describes a worktree that is still being created as a new worktree", () => {
+    expect(resolveLockedWorkspaceLabel(null, "worktree")).toBe("New worktree");
   });
 });
 
@@ -728,5 +792,82 @@ describe("shouldIncludeBranchPickerItem", () => {
         checkoutPullRequestItemValue: "__checkout_pull_request__:1359",
       }),
     ).toBe(false);
+  });
+
+  it("surfaces an existing ref matching the sanitized query", () => {
+    expect(
+      shouldIncludeBranchPickerItem({
+        itemValue: "new-branch",
+        normalizedQuery: "new branch",
+        createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("surfaces a ref from a partial query containing a space", () => {
+    expect(
+      shouldIncludeBranchPickerItem({
+        itemValue: "hello-world",
+        normalizedQuery: "hello w",
+        createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("excludes refs matching neither the raw nor the sanitized query", () => {
+    expect(
+      shouldIncludeBranchPickerItem({
+        itemValue: "main",
+        normalizedQuery: "new branch",
+        createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("sanitizeNewRefName", () => {
+  it("replaces a space with a dash", () => {
+    expect(sanitizeNewRefName("new branch")).toBe("new-branch");
+  });
+
+  it("collapses a run of whitespace into a single dash", () => {
+    expect(sanitizeNewRefName("new   branch")).toBe("new-branch");
+  });
+
+  it("trims surrounding whitespace instead of turning it into dashes", () => {
+    expect(sanitizeNewRefName("  new branch  ")).toBe("new-branch");
+  });
+
+  it("replaces tabs, which git rejects just like spaces", () => {
+    expect(sanitizeNewRefName("new\tbranch")).toBe("new-branch");
+  });
+
+  it("preserves whitespace that git accepts", () => {
+    expect(sanitizeNewRefName("new\u00a0branch")).toBe("new\u00a0branch");
+    expect(sanitizeNewRefName("new\u2009branch")).toBe("new\u2009branch");
+  });
+
+  it("keeps slashes so nested ref names survive", () => {
+    expect(sanitizeNewRefName("feature/new thing")).toBe("feature/new-thing");
+  });
+
+  it("preserves case because git ref names are case sensitive", () => {
+    expect(sanitizeNewRefName("Feature/New Thing")).toBe("Feature/New-Thing");
+  });
+
+  it("leaves an already valid ref name untouched", () => {
+    expect(sanitizeNewRefName("feature/login")).toBe("feature/login");
+  });
+
+  it("returns an empty string for whitespace-only input", () => {
+    expect(sanitizeNewRefName("   ")).toBe("");
+  });
+
+  it("does not collapse dashes the user typed", () => {
+    expect(sanitizeNewRefName("new - branch")).toBe("new---branch");
+    expect(sanitizeNewRefName("foo--bar")).toBe("foo--bar");
   });
 });

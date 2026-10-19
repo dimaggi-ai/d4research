@@ -1,5 +1,4 @@
 import {
-  type ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
@@ -10,7 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@d4research/shared/atomicWrite";
 
 // Bump to invalidate every previously written snapshot — e.g. after a model
 // discovery/parsing fix, so caches poisoned by the old code are ignored
@@ -31,7 +30,28 @@ const mergeProviderModels = (
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const fallbackSlugs = new Set(fallbackModels.map((model) => model.slug));
-  return [...fallbackModels, ...cachedModels.filter((model) => !fallbackSlugs.has(model.slug))];
+  // The fallback snapshot is built from current settings and already carries
+  // every custom model, so cached custom rows that are not in it were removed
+  // while the cache was stale and must not come back.
+  return [
+    ...fallbackModels,
+    ...cachedModels.filter((model) => !model.isCustom && !fallbackSlugs.has(model.slug)),
+  ];
+};
+
+const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
+  "codex",
+  "claudeAgent",
+  "cursor",
+  "grok",
+  "opencode",
+  "antigravity",
+  "muse",
+];
+
+const driverRank = (driver: string): number => {
+  const index = BUILT_IN_DRIVER_ORDER.indexOf(driver);
+  return index === -1 ? BUILT_IN_DRIVER_ORDER.length : index;
 };
 
 export const orderProviderSnapshots = (
@@ -39,8 +59,9 @@ export const orderProviderSnapshots = (
 ): ReadonlyArray<ServerProvider> =>
   [...providers].toSorted(
     (left, right) =>
-      (left.displayName ?? "").localeCompare(right.displayName ?? "") ||
+      driverRank(left.driver) - driverRank(right.driver) ||
       left.driver.localeCompare(right.driver) ||
+      (left.displayName ?? "").localeCompare(right.displayName ?? "") ||
       left.instanceId.localeCompare(right.instanceId),
   );
 
@@ -86,16 +107,6 @@ export const hydrateCachedProvider = (input: {
 };
 
 /**
- * Resolve the on-disk cache path for a provider instance snapshot.
- *
- * File naming: `<cacheDir>/<instanceId>.json`. For the default instance of
- * a built-in kind this equals the legacy `<kind>.json` path (because
- * `defaultInstanceIdForDriver(kind).toString() === kind`), so existing
- * cached snapshots remain readable without any rename step.
- *
- * Non-default instances (e.g. `codex_personal`) land in their own files and
- * never collide with other instances.
- *
  * Cache contents must still carry matching `instanceId` + `driver` identity
  * before hydration. The filename alone is not trusted as a routing key.
  */
@@ -108,23 +119,6 @@ export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCa
     return path.join(input.cacheDir, `${input.instanceId}.json`);
   },
 );
-
-/**
- * Legacy kind-keyed path resolver retained for callers that still think in
- * terms of `ProviderDriverKind`. Prefer `resolveProviderStatusCachePath` with an
- * `instanceId`; new code should route through the instance registry.
- *
- * @deprecated use `resolveProviderStatusCachePath` with an instance id.
- */
-export const resolveLegacyProviderStatusCachePath = Effect.fn(
-  "resolveLegacyProviderStatusCachePath",
-)(function* (input: {
-  readonly cacheDir: string;
-  readonly provider: ProviderDriverKind;
-}): Effect.fn.Return<string, never, Path.Path> {
-  const path = yield* Path.Path;
-  return path.join(input.cacheDir, `${input.provider}.json`);
-});
 
 export const readProviderStatusCache = (filePath: string) =>
   Effect.gen(function* () {

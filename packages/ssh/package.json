@@ -25,8 +25,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit",
-    "test": "vp test run"
+    "typecheck": "tsc-rs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
     "@d4research/contracts": "workspace:*",

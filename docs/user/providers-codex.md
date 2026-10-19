@@ -3,12 +3,48 @@
 This guide is for people who want to use more than one Codex account in d4research. For Claude, see
 [Claude](./providers-claude.md). For first-time setup, see [Install T3 Code](./install.md).
 
+Use a ChatGPT plan or an existing Codex CLI login as your provider in d4research.
+
+## Connect with ChatGPT
+
+Connect during onboarding or in **Settings → Providers**. For a remote machine,
+select that environment first. d4research installs Codex when needed. Sign in on
+OpenAI and allow sharing of your ChatGPT plan.
+
+Manage shared usage and credits through **Manage usage** in d4research.
+If a request requires a feature not covered by ChatGPT plan sharing, use another
+provider for that request.
+
+When reconnecting, select the same Codex account you used before, in both d4research
+and on OpenAI's sign-in page. Disconnecting stops running threads but keeps their history.
+You can reconnect later.
+
+If the remote sign-in flow doesn't redirect back to d4research automatically,
+copy the full URL from the localhost page that appears after sign-in and paste it into the sign-in
+panel. If the page fails to load, copy the URL from the browser's address bar instead.
+
+## Use an existing Codex login
+
+d4research can use your installed Codex and its existing login. Run `codex login`
+on the machine where the environment is running. See [Provider setup](./install.md#providers)
+for installation and custom configuration.
+
 Common reasons:
 
 - use a work account for work projects
 - use a personal account for personal projects
 - switch to another account when one account hits limits
 - keep one shared Codex history instead of maintaining two separate Codex setups
+
+Add another ChatGPT account in **Settings → Providers**, then select it
+from the thread's model picker. Accounts that share Codex session state can continue the same thread.
+Connecting accounts through d4research leaves your CLI login unchanged.
+
+### Multiple CLI logins
+
+A shared Codex home with a shadow home lets work and personal accounts continue
+the same threads. They share Codex sessions and configuration while keeping
+their own login and model access.
 
 ## I Only Use One Codex Account
 
@@ -27,6 +63,51 @@ Log in with Codex normally:
 ```bash
 codex login
 ```
+
+## Codex says I hit a usage limit
+
+When Codex stops on a usage limit, the thread names the window that ran out and
+when it resets, when Codex reports them. Send the message again after the reset. On a workspace plan the
+message also says whether your workspace owner needs to add credits or raise the
+spend limit to continue sooner.
+
+## Send feedback to OpenAI
+
+In an existing Codex thread, send `/feedback` or `/feedback` followed by a description of the
+issue. T3 Code uploads the thread and Codex logs to OpenAI and shows a thread ID that you can copy
+and share with OpenAI employees.
+
+## Answer questions while Codex works
+
+Codex can ask questions without stopping its work. Choose a suggested answer or enter your own
+in the question panel. Questions without suggested answers accept text.
+
+Your answers are sent as a new message. They reach the current turn while Codex is working, or
+start a new turn if it has finished. Unanswered questions stay available after you reconnect.
+This works in the web, desktop, and mobile apps. Codex must support async questions.
+
+## Sub-agent models
+
+The web and desktop Agents panel shows each sub-agent's model and reasoning effort when Codex
+reports them. If Codex does not report either value, T3 Code leaves it out instead of using the
+parent agent's settings.
+
+## Browser and computer activity
+
+Browser and Computer Use calls show their user-facing task title when Codex provides one. Expanded
+activity groups show an icon for every call. Website calls use the active page's favicon when it is
+available, and desktop app calls use the app's native icon on macOS when available. Other hosts use
+a generic fallback glyph.
+
+Collapsed activity groups are summarized by source, such as `Used Chrome integration`, instead of
+showing the underlying tool name. Website favicons and native app icons keep their original colors;
+integrations that provide separate light and dark logos use the logo for the current appearance.
+
+## Approve access to other apps
+
+When a Codex tool needs access to an app such as Safari, T3 Code shows the app name and asks for
+approval. You can approve, decline, or cancel the request from the desktop app, web app, or mobile
+app. Some tools also offer approval for the current session or permanent approval.
 
 ## I Want Work And Personal Codex Accounts
 
@@ -80,8 +161,8 @@ CODEX_HOME path: ~/.codex
 Shadow home path: ~/.codex_p
 ```
 
-The important part is that both providers use the same `CODEX_HOME path`, but only the second one
-has a `Shadow home path`.
+Both providers share the same `CODEX_HOME path`, but only the second one has a
+`Shadow home path`.
 
 ## Which Account Am I Using?
 
@@ -91,17 +172,6 @@ d4research shows the authenticated email for providers that report one. Emails a
 click the blurred email to reveal it.
 
 Use display names and accent colors to make accounts easy to tell apart in the model picker.
-
-## Compact A Long Thread
-
-Choose `/compact` from the composer's command menu and send it without attachments. d4research
-starts Codex's native thread compaction instead of sending the text as an ordinary prompt. The
-visible chat history remains authoritative and stays on screen; Codex reduces the context it carries
-forward for later turns.
-
-Codex performs this operation with the thread's active model. Its app-server protocol does not offer
-a separate model field for manual compaction, so selecting Terra only for this operation is not
-currently possible without abandoning the native Codex thread.
 
 ## I Need A Different API Key Or Endpoint
 

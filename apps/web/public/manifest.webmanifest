@@ -1,16 +1,16 @@
 {
-  "name": "d4research",
-  "short_name": "d4research",
+  "name": "d4[Research]",
+  "short_name": "d4[Research]",
   "description": "A local-first workspace for research and coding agents.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#161616",
-  "theme_color": "#161616",
+  "background_color": "#121317",
+  "theme_color": "#121317",
   "icons": [
     {
-      "src": "/apple-touch-icon.png",
+      "src": "/apple-touch-icon.png?v=formula-1",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"

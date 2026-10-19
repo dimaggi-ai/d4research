@@ -1,5 +1,8 @@
-import { type ThreadId } from "@d4research/contracts";
-
+import type { ThreadId } from "@d4research/contracts";
+import {
+  formatComposerContextReference,
+  toKindScopedComposerContextId,
+} from "@d4research/shared/composerContextReferences";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -14,6 +17,88 @@ export interface TerminalContextDraft extends TerminalContextSelection {
   id: string;
   threadId: ThreadId;
   createdAt: string;
+}
+
+export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
+
+export interface TerminalContextReferenceSource {
+  id: string;
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export function formatTerminalContextReference(context: TerminalContextReferenceSource): string {
+  return formatComposerContextReference({
+    kind: "terminal",
+    contextId: toKindScopedComposerContextId("terminal", context.id),
+    label: formatTerminalContextLabel(context),
+  });
+}
+
+export function normalizeTerminalContextText(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+}
+
+export function hasTerminalContextText(context: { text: string }): boolean {
+  return normalizeTerminalContextText(context.text).length > 0;
+}
+
+export function isTerminalContextExpired(context: { text: string }): boolean {
+  return !hasTerminalContextText(context);
+}
+
+export function filterTerminalContextsWithText<T extends { text: string }>(
+  contexts: ReadonlyArray<T>,
+): T[] {
+  return contexts.filter((context) => hasTerminalContextText(context));
+}
+
+function normalizeTerminalContextSelection(
+  selection: TerminalContextSelection,
+): TerminalContextSelection | null {
+  const text = normalizeTerminalContextText(selection.text);
+  const terminalId = selection.terminalId.trim();
+  const terminalLabel = selection.terminalLabel.trim();
+  if (text.length === 0 || terminalId.length === 0 || terminalLabel.length === 0) {
+    return null;
+  }
+  const lineStart = Math.max(1, Math.floor(selection.lineStart));
+  const lineEnd = Math.max(lineStart, Math.floor(selection.lineEnd));
+  return {
+    terminalId,
+    terminalLabel,
+    lineStart,
+    lineEnd,
+    text,
+  };
+}
+
+function formatTerminalContextRange(selection: { lineStart: number; lineEnd: number }): string {
+  return selection.lineStart === selection.lineEnd
+    ? `line ${selection.lineStart}`
+    : `lines ${selection.lineStart}-${selection.lineEnd}`;
+}
+
+export function formatTerminalContextLabel(selection: {
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}): string {
+  return `${selection.terminalLabel} ${formatTerminalContextRange(selection)}`;
+}
+
+export function migrateLegacyTerminalContextPlaceholders(
+  prompt: string,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
+): string {
+  if (!prompt.includes(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)) return prompt;
+  let index = 0;
+  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, () => {
+    const context = contexts[index];
+    index += 1;
+    return context ? formatTerminalContextReference(context) : "";
+  });
 }
 
 export interface ExtractedTerminalContexts {
@@ -42,79 +127,8 @@ export interface ParsedTerminalContextEntry {
   body: string;
 }
 
-export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
-
 const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
   /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
-
-export function normalizeTerminalContextText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
-}
-
-export function hasTerminalContextText(context: { text: string }): boolean {
-  return normalizeTerminalContextText(context.text).length > 0;
-}
-
-export function isTerminalContextExpired(context: { text: string }): boolean {
-  return !hasTerminalContextText(context);
-}
-
-export function filterTerminalContextsWithText<T extends { text: string }>(
-  contexts: ReadonlyArray<T>,
-): T[] {
-  return contexts.filter((context) => hasTerminalContextText(context));
-}
-
-function previewTerminalContextText(text: string): string {
-  const normalized = normalizeTerminalContextText(text);
-  if (normalized.length === 0) {
-    return "";
-  }
-  const lines = normalized.split("\n");
-  const visibleLines = lines.slice(0, 3);
-  if (lines.length > 3) {
-    visibleLines.push("...");
-  }
-  const preview = visibleLines.join("\n");
-  return preview.length > 180 ? `${preview.slice(0, 177)}...` : preview;
-}
-
-export function normalizeTerminalContextSelection(
-  selection: TerminalContextSelection,
-): TerminalContextSelection | null {
-  const text = normalizeTerminalContextText(selection.text);
-  const terminalId = selection.terminalId.trim();
-  const terminalLabel = selection.terminalLabel.trim();
-  if (text.length === 0 || terminalId.length === 0 || terminalLabel.length === 0) {
-    return null;
-  }
-  const lineStart = Math.max(1, Math.floor(selection.lineStart));
-  const lineEnd = Math.max(lineStart, Math.floor(selection.lineEnd));
-  return {
-    terminalId,
-    terminalLabel,
-    lineStart,
-    lineEnd,
-    text,
-  };
-}
-
-export function formatTerminalContextRange(selection: {
-  lineStart: number;
-  lineEnd: number;
-}): string {
-  return selection.lineStart === selection.lineEnd
-    ? `line ${selection.lineStart}`
-    : `lines ${selection.lineStart}-${selection.lineEnd}`;
-}
-
-export function formatTerminalContextLabel(selection: {
-  terminalLabel: string;
-  lineStart: number;
-  lineEnd: number;
-}): string {
-  return `${selection.terminalLabel} ${formatTerminalContextRange(selection)}`;
-}
 
 export function formatInlineTerminalContextLabel(selection: {
   terminalLabel: string;
@@ -127,27 +141,6 @@ export function formatInlineTerminalContextLabel(selection: {
       ? `${selection.lineStart}`
       : `${selection.lineStart}-${selection.lineEnd}`;
   return `@${terminalLabel}:${range}`;
-}
-
-export function buildTerminalContextPreviewTitle(
-  contexts: ReadonlyArray<TerminalContextSelection>,
-): string | null {
-  if (contexts.length === 0) {
-    return null;
-  }
-  const previewParts: string[] = [];
-  for (const context of contexts) {
-    const normalized = normalizeTerminalContextSelection(context);
-    if (!normalized) continue;
-    const preview = previewTerminalContextText(normalized.text);
-    previewParts.push(
-      preview.length > 0
-        ? `${formatTerminalContextLabel(normalized)}\n${preview}`
-        : formatTerminalContextLabel(normalized),
-    );
-  }
-  const previews = previewParts.join("\n\n");
-  return previews.length > 0 ? previews : null;
 }
 
 function buildTerminalContextBodyLines(selection: TerminalContextSelection): string[] {

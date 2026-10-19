@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { HostProcessEnvironment, HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -77,7 +77,7 @@ it.layer(NodeServices.layer)("Tool Guard Core discovery", (it) => {
       const root = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-tool-guard-path-test-")),
       );
-      const environment = yield* HostProcessEnvironment;
+      const environment = yield* HostProcess.Environment;
       const binary = NodePath.join(root, "tg");
       yield* Effect.promise(() => NodeFSP.writeFile(binary, "", { mode: 0o755 }));
       const previousPath = environment.PATH;
@@ -92,8 +92,8 @@ it.layer(NodeServices.layer)("Tool Guard Core discovery", (it) => {
       expect(yield* findToolGuardBinary()).toBe(binary);
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcessPlatform, "linux"),
-      Effect.provideService(HostProcessEnvironment, { ...process.env }),
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Environment, { ...process.env }),
     ),
   );
 });
@@ -101,7 +101,7 @@ it.layer(NodeServices.layer)("Tool Guard Core discovery", (it) => {
 it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {
   it.effect("installs, disables, enables, and uninstalls environment-local resources", () =>
     Effect.gen(function* () {
-      const environment = yield* HostProcessEnvironment;
+      const environment = yield* HostProcess.Environment;
       const root = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d2-tool-guard-test-")),
       );
@@ -177,7 +177,7 @@ it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {
       expect((yield* manageToolGuard("install")).ok).toBe(true);
       const config = yield* ServerConfig.ServerConfig;
       const path = yield* Path.Path;
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const managed = managedToolGuardPaths(config.stateDir, path, platform);
       expect(yield* Effect.promise(() => NodeFSP.readFile(managed.manifest, "utf8"))).toContain(
         '"enabled": true',
@@ -207,8 +207,8 @@ it.layer(NodeServices.layer)("Tool Guard lifecycle", (it) => {
     }).pipe(
       Effect.scoped,
       Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "tg" })),
-      Effect.provideService(HostProcessPlatform, "linux"),
-      Effect.provideService(HostProcessEnvironment, { ...process.env }),
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Environment, { ...process.env }),
     ),
   );
 });

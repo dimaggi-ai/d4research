@@ -6,7 +6,7 @@ d4research has one server-side observability model:
 
 - pretty logs go to stdout for humans
 - completed spans go to a local NDJSON trace file
-- traces and metrics can also be exported over OTLP to a real backend like Grafana LGTM
+- metrics stay in-process; external trace and metric exporters are not included
 
 The local trace file is the persisted source of truth for normal local launches. Those launches do not
 write a separate server log file, but SSH-managed launches also persist the remote process's
@@ -27,10 +27,10 @@ If you want a log message to show up in the trace file, emit it inside an active
 
 ### Traces
 
-Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the
-server starts: production and explicitly configured homes use
+Completed spans are written as NDJSON records to `serverTracePath`. The default path depends on
+how the server starts. Production and explicitly configured homes use
 `<home>/userdata/logs/server.trace.ndjson` (so `~/.t3/userdata/...` by default, or
-`/custom/path/userdata/...` with `--home-dir /custom/path`), a linked worktree dev run uses
+`/custom/path/userdata/...` with `--home-dir /custom/path`). A linked worktree dev run uses
 `<worktree>/.t3/userdata/logs/server.trace.ndjson`, and an implicit dev run outside a linked
 worktree uses `~/.t3/dev/logs/server.trace.ndjson`.
 
@@ -49,15 +49,80 @@ records instead carry OTLP resource, scope, and optional status fields.
 The `TraceRecord`, `EffectTraceRecord`, and `OtlpTraceRecord` schemas live in
 `packages/shared/src/observability.ts`.
 
+SQL statement spans (named `sqlite`) and `sql.transaction` spans carry `db.connection` and
+`db.lock_wait_ms`. `db.connection` is `writer` for the main connection, which runs on the event loop,
+or `reader` for the read-only connection in a worker thread. `db.lock_wait_ms` is the part of the
+span spent waiting for that connection, behind other SQL. That wait does not block the event loop,
+so subtract it before you blame a slow span on the query. Statements inside a transaction use its
+connection and do not carry these attributes.
+
+DPoP proof failures include the safe `environment.dpop.failure_code` span
+attribute. A `time_window` failure means that a signed proof was too old or too
+far in the future for the environment server's allowed window. It can point to
+a date or time problem on either device, but it can also result from a delayed
+request.
+
+#### Summarize the trace file
+
+`d4research trace summary` reads the trace file and its rotated backups directly, so it works while the
+server is stalled or stopped. It prints counts, rates, and latency percentiles per span name. Use
+it to measure background work or to compare two builds.
+
+```bash
+d4research trace summary --since 30m --limit 40
+```
+
+It reads `T3CODE_TRACE_FILE` if set, else `<home>/userdata/logs/server.trace.ndjson` for
+`--base-dir` or `T3CODE_HOME`, plus the `T3CODE_TRACE_MAX_FILES` rotated backups. For a dev run or
+a copied file, set `T3CODE_TRACE_FILE`. `--since 30m` keeps spans that ended in the last 30
+minutes. The rate is per minute between the first and last span end.
+
 ### Metrics
 
 Metrics are not written to a local file.
 
 - local persistence: none
-- remote export: OTLP only, when configured
+- remote export: none
 - current definitions: `apps/server/src/observability/Metrics.ts`
 
-If OTLP is not configured, metrics still exist in-process, but you will not have a local artifact to inspect.
+Metrics exist in-process, but there is no local metrics artifact to inspect.
+
+### Event Loop Stalls
+
+`apps/server/src/observability/EventLoopMonitor.ts` samples the server's event loop every 30 s. When
+the loop stalled for more than 2 s since the previous sample, it records a root
+`server.eventLoop.stall` span with a warning. The span has trace level `Warn`, so it stays when
+`T3CODE_TRACE_MIN_LEVEL` is `Warn`. The warning shows in Settings > Diagnostics. The span time
+is when the sample ran, not when the stall happened.
+
+Each stall is also appended as one NDJSON line to `event-loop-stalls.ndjson`,
+next to the trace file, so the stall record survives trace-file rotation. A line has `time` and the span
+attributes. The file rotates at 256 KiB and keeps one backup
+(`event-loop-stalls.ndjson.1`). Use it to see how often a server stalls over days.
+
+Some delay is not recorded:
+
+- `delayMaxMs` is the longest stall, and can undercount it by up to 1 s. The 2 s threshold applies to
+  this value, so a stall over 3 s is normally recorded, and a shorter one can be missed. A stall
+  that ends just as a sample runs can be missed too.
+- Time the computer spends asleep reads as delay on macOS and Windows. So a sample only counts when
+  the loop was busy, not waiting for events, for at least `delayMaxMs`. Busy time covers the whole
+  window, so a short sleep in an otherwise busy window can still record a false stall. The span then
+  shows CPU time far below `delayMaxMs`.
+- The first sample after launch is skipped. Startup work such as migrations and projection bootstrap
+  can block the loop for seconds on a large database.
+
+CPU times and page faults cover the whole process over the whole window since the previous sample.
+The window is nominally 30 s, but a long stall delays the sample and makes the window longer. Other
+work in the window can hide a wait, so only CPU time far below `delayMaxMs` proves the thread was
+waiting. Read CPU together with page faults:
+
+- High `cpuSystemMs` with many page faults means memory pressure. Major faults are reads from disk or swap.
+  On macOS, reads from compressed memory are minor faults plus system CPU.
+- High `cpuUserMs` with few page faults means JavaScript work or garbage collection.
+- Low CPU with few major page faults points at synchronous disk I/O, such as SQLite reads or trace
+  file writes.
+- Many `involuntaryContextSwitches` mean other processes were competing for the CPU.
 
 ### Related Artifacts
 
@@ -65,21 +130,19 @@ Provider event NDJSON files still exist for provider runtime streams. Those are 
 
 ## Run The Server In Instrumented Mode
 
-There are two useful modes:
+Diagnostics stay on the environment you connect to. Browser spans are sent to that environment's
+local trace collector, not an external analytics service. Legacy `T3CODE_OTLP_*` configuration and
+saved exporter URLs no longer enable exports. Provider CLIs are separate processes; their own
+telemetry settings are outside this guarantee.
 
-- local-only: stdout + local `server.trace.ndjson`
-- full local observability: stdout + local trace file + OTLP export to Grafana/Tempo/Prometheus
-
-The local trace file is always on. OTLP export is opt-in.
-
-### Option 1: Local Traces Only
+### Local Traces
 
 You do not need any extra env vars. Just run the app normally and inspect `server.trace.ndjson`.
 
 Examples:
 
 ```bash
-npx t3
+node apps/server/src/bin.ts
 ```
 
 ```bash
@@ -89,89 +152,6 @@ node --run dev
 ```bash
 node --run dev:desktop
 ```
-
-### Option 2: Run With A Local LGTM Stack
-
-#### 1. Start Grafana LGTM
-
-```bash
-docker run --name lgtm \
-  -p 3000:3000 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  --rm -ti \
-  grafana/otel-lgtm
-```
-
-Then open `http://localhost:3000`.
-
-Default Grafana login:
-
-- username: `admin`
-- password: `admin`
-
-#### 2. Export OTLP env vars
-
-```bash
-export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
-export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics
-export T3CODE_OTLP_SERVICE_NAME=t3-local
-```
-
-Optional:
-
-```bash
-export T3CODE_TRACE_MIN_LEVEL=Info
-export T3CODE_TRACE_TIMING_ENABLED=true
-```
-
-#### 3. Launch the app from that same shell
-
-CLI:
-
-```bash
-npx t3
-```
-
-Monorepo web/server dev:
-
-```bash
-node --run dev
-```
-
-Monorepo desktop dev:
-
-```bash
-node --run dev:desktop
-```
-
-Packaged desktop app:
-
-Launch the actual app executable from the same shell so the desktop app and embedded backend inherit `T3CODE_OTLP_*`.
-
-macOS app bundle example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-"/Applications/T3 Code.app/Contents/MacOS/T3 Code"
-```
-
-Direct binary example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-./path/to/your/desktop-app-binary
-```
-
-Do not rely on launching from Finder, Spotlight, the dock, or the Start menu after setting shell env vars. Those launches usually will not pick them up.
-
-#### 4. Fully restart after changing env
-
-The backend reads observability config at process start. If you change OTLP env vars, stop the app completely and start it again.
 
 ## How To Use Traces And Metrics To Debug The Server
 
@@ -257,11 +237,11 @@ jq -r 'select(.traceId == "TRACE_ID_HERE") | [
 Filter orchestration commands:
 
 ```bash
-jq -c 'select(.attributes["orchestration.command_type"] != null) | {
+jq -c 'select(.attributes["orchestration_v2.command_type"] != null) | {
   name,
   durationMs,
-  commandType: .attributes["orchestration.command_type"],
-  aggregateKind: .attributes["orchestration.aggregate_kind"]
+  commandType: .attributes["orchestration_v2.command_type"],
+  threadId: .attributes["orchestration_v2.thread_id"]
 }' "$TRACE_FILE"
 ```
 
@@ -280,33 +260,6 @@ jq -c 'select(.attributes["git.operation"] != null) | {
 }' "$TRACE_FILE"
 ```
 
-### Use Tempo When You Need A Real Trace Viewer
-
-Tempo is better than raw NDJSON when you want to:
-
-- search across many traces
-- inspect parent/child relationships visually
-- compare many slow traces
-- drill into one failing request without hand-joining by `traceId`
-
-Recommended flow in Grafana:
-
-1. Open `Explore`.
-2. Pick the `Tempo` data source.
-3. Set the time range to something recent like `Last 15 minutes`.
-4. Start broad. Do not begin with a very narrow query.
-5. Look for spans from your configured service name, then narrow by span name or attributes.
-
-Good first searches:
-
-- service name such as `t3-local`, `t3-dev`, or `t3-desktop`
-- span names like `sendTurn` or a Git operation such as `GitVcsDriver.statusDetails.status`
-- Git spans whose `git.operation` attribute identifies the operation
-- orchestration spans with attributes like `orchestration.command_type`
-
-Once you know traces are arriving, narrower TraceQL queries for names such as `sendTurn` or Git
-operation names become useful.
-
 ### Use Metrics To See Systemic Problems
 
 Traces are best for one request. Metrics are best for trends.
@@ -314,17 +267,30 @@ Traces are best for one request. Metrics are best for trends.
 Good metric families to watch:
 
 - `t3_rpc_request_duration`
-- `t3_orchestration_command_duration`
-- `t3_orchestration_command_ack_duration`
-- `t3_provider_turn_duration`
+- `t3_provider_turn_duration` (how long the provider adapter takes to start a turn, not the turn's run time)
 - `t3_git_command_duration`
 
 Counters tell you volume and failure rate:
 
 - `t3_rpc_requests_total`
-- `t3_orchestration_commands_total`
 - `t3_provider_turns_total`
 - `t3_git_commands_total`
+
+Webhooks have their own families:
+
+- `t3_webhook_deliveries_total` by `outcome` for direct deliveries. Beyond what the
+  sender sees, `queue_full` means a task already had its limit of deliveries waiting,
+  `prompt_too_long` means the filled-in prompt passed the provider limit, and `duplicate` means
+  the environment received a request it had already run.
+- `t3_webhook_runs_total` by `outcome` (`started`, `skipped`, `failed`) for the runs those
+  deliveries start, which happen after the sender has its answer.
+
+- `t3_secret_requests_total` by `status` (`saved`, `declined`, `cancelled`, `timed_out`) for secrets
+  agents asked users for, and `t3_secret_refs_consumed_total` by `result` (`used`, `rejected`) for
+  tools redeeming them. Neither ever carries a value.
+
+`ScheduledTaskService.triggerWebhook` spans carry the same outcome per request, and each run
+started from a delivery is its own `ScheduledTaskService.runWebhookDelivery` trace. These spans stay in the environment's local trace file; direct requests do not join a sender's trace.
 
 Use metrics when the question is:
 
@@ -338,21 +304,6 @@ Use traces when the question is:
 - "which child span caused this one slow interaction?"
 - "what logs were emitted inside the failing flow?"
 
-### What The New Ack Metric Means
-
-`t3_orchestration_command_ack_duration` measures:
-
-- start: command dispatch enters the orchestration engine
-- end: the first committed domain event for that command is published by the server
-
-That is a server-side acknowledgment metric. It does not measure:
-
-- websocket transit to the browser
-- client receipt
-- React render time
-
-If you need those later, add client-side instrumentation or a dedicated server fanout metric.
-
 ## Common Workflows
 
 ### "Why did this request fail?"
@@ -361,19 +312,12 @@ If you need those later, add client-side instrumentation or a dedicated server f
 2. Find `effect-span` records where `exit._tag != "Success"`.
 3. Group by `traceId`.
 4. Inspect sibling spans and span events.
-5. If needed, move to Tempo for the full trace tree.
 
 ### "Why is the UI feeling slow?"
 
-1. Search for slow top-level spans in the trace file or Tempo.
+1. Search for slow top-level spans in the trace file.
 2. Check child spans for sqlite, git, provider, or terminal work.
 3. Look at the matching duration metrics to see whether the slowness is systemic.
-
-### "Did this command take too long to acknowledge?"
-
-1. Check `t3_orchestration_command_ack_duration` by `commandType`.
-2. If it is high, inspect the corresponding orchestration trace.
-3. Look at child spans for projection, sqlite, provider, or git work.
 
 ### "Are git hooks causing latency?"
 
@@ -383,14 +327,8 @@ If you need those later, add client-side instrumentation or a dedicated server f
 
 ### "Why do I have spans locally but nothing in Grafana?"
 
-Usually one of these is true:
-
-- `T3CODE_OTLP_TRACES_URL` was not set
-- the app was launched from a different environment than the one where you exported the vars
-- the app was not fully restarted after changing env
-- Grafana is looking at the wrong time range or service name
-
-If the local NDJSON file is updating, local tracing is working. The problem is almost always OTLP export configuration or process startup.
+d4research does not export traces to Grafana or another external collector. Inspect the local
+NDJSON file. Setting legacy `T3CODE_OTLP_*` variables does not enable remote export.
 
 ## How To Think About Adding Tracing To Future Code
 
@@ -494,15 +432,13 @@ const program = doWork().pipe(
 
 ### Runtime Wiring
 
-The server observability layer is assembled in `apps/server/src/observability/Layers/Observability.ts`.
+The server observability layer is assembled in `apps/server/src/observability/Observability.ts`.
 
 It provides:
 
 - pretty stdout logger
 - `Logger.tracerLogger`
 - local NDJSON tracer
-- optional OTLP trace exporter
-- optional OTLP metrics exporter
 - Effect trace-level and timing refs
 
 ### Env Vars
@@ -512,37 +448,64 @@ Local trace file:
 - `T3CODE_TRACE_FILE`: override trace file path
 - `T3CODE_TRACE_MAX_BYTES`: per-file rotation size, default `10485760`
 - `T3CODE_TRACE_MAX_FILES`: rotated file count, default `10`
-- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `200`
+- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `1000`
 - `T3CODE_TRACE_MIN_LEVEL`: minimum trace level, default `Info`
 - `T3CODE_TRACE_TIMING_ENABLED`: enable timing metadata, default `true`
 
-OTLP export:
-
-- `T3CODE_OTLP_TRACES_URL`: OTLP trace endpoint
-- `T3CODE_OTLP_METRICS_URL`: OTLP metric endpoint
-- `T3CODE_OTLP_EXPORT_INTERVAL_MS`: export interval, default `10000`
-- `T3CODE_OTLP_SERVICE_NAME`: service name, default `t3-server`
-
-If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
-
 ### What Is Instrumented Today
 
-Current high-value span and metric boundaries include:
+The current high-value span and metric boundaries are:
 
-- Effect RPC websocket request spans from `effect/rpc`
-- RPC request metrics in `apps/server/src/observability/RpcInstrumentation.ts`
+- WebSocket RPC request spans (`ws.rpc.<method>`) and metrics in
+  `apps/server/src/observability/RpcInstrumentation.ts`
 - startup phases
 - orchestration command processing
-- orchestration command acknowledgment latency
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
-- sqlite query execution
+- sqlite query execution, except the statements inside `orchestrationV2.EventSink.write`, which
+  its `sql.transaction` span times as one
+- event loop stalls (`server.eventLoop.stall`)
 
 ### Current Constraints
 
 - logs outside spans are not persisted in the trace file; SSH-managed launch stdout/stderr is still
   captured in its launcher log
 - metrics are not snapshotted locally
-- the old `serverLogPath` still exists in config for compatibility, but the trace file is the primary
-  structured persisted artifact
+
+## Heap Snapshots
+
+To see what a long-running server holds in memory, send it `SIGUSR2`. The server writes a V8 heap
+snapshot to its logs dir and logs the path. This works for desktop, `npx d4research`, and service installs
+on macOS and Linux. Windows has no `SIGUSR2`.
+
+Send the signal to the server pid in `server-runtime.json`, which sits in the server's state dir
+next to the `logs` dir. For a dev server or a `--home-dir` launch, use that server's state dir from
+[Traces](#traces). Do not send it to the desktop app or the service launcher: a process without the
+handler exits on `SIGUSR2`. After a crash the file can keep a stale pid that now belongs to a
+different process, so check the pid first.
+
+```bash
+pid="$(jq .pid "${T3CODE_HOME:-$HOME/.t3}/userdata/server-runtime.json")"
+ps -p "$pid" -o command=
+```
+
+If `ps` shows the d4research server, send the signal:
+
+```bash
+kill -USR2 "$pid"
+```
+
+The file is `<logsDir>/server-<pid>-<timestamp>.heapsnapshot`, next to `server.trace.ndjson`. To
+open it, use the Memory tab in Chrome DevTools and select Load.
+
+Before you take one:
+
+- The server stops while it writes the file. For a large heap this can take a minute or more.
+  Connected clients can reconnect during the pause, and an event loop monitor, if the server has
+  one, records the pause as a stall. Send the signal once. A second signal sent during a write
+  takes another snapshot after the first one finishes.
+- The write needs about as much free memory as the heap uses. On a machine that is already
+  swapping, it can make the problem worse or crash the server.
+- The file contains everything in server memory, including tokens, secrets, and thread content. Do
+  not share it publicly. Delete it when you are done, because storage cleanup does not remove it.

@@ -1,0 +1,42 @@
+import type { EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
+import type { AssetUrlState as SharedAssetUrlState } from "@d4research/client-runtime/state/assets";
+
+export type AssetUrlFailureReason = "disconnected" | "failed" | "missing-file-access";
+
+export type AssetUrlState =
+  | { readonly _tag: "Loading" }
+  | { readonly _tag: "Failure"; readonly reason: AssetUrlFailureReason }
+  | Extract<SharedAssetUrlState, { readonly _tag: "Success" }>;
+
+export function deriveAssetUrlState(input: {
+  readonly connectionPhase: EnvironmentConnectionPhase;
+  readonly shared: SharedAssetUrlState;
+}): AssetUrlState {
+  if (
+    input.connectionPhase === "offline" ||
+    input.connectionPhase === "reconnecting" ||
+    input.connectionPhase === "error" ||
+    input.connectionPhase === "unsupported"
+  ) {
+    return { _tag: "Failure", reason: "disconnected" };
+  }
+  if (input.shared._tag === "Success") {
+    return input.shared;
+  }
+  switch (input.connectionPhase) {
+    // "available" is the idle, not yet dialled state. A pending query there is
+    // still on its way, but the query atom fails at once while idle, so a
+    // failure means the environment is not connected rather than the file is
+    // missing.
+    case "available":
+      return input.shared._tag === "Failure"
+        ? { _tag: "Failure", reason: "disconnected" }
+        : { _tag: "Loading" };
+    case "connecting":
+      return { _tag: "Loading" };
+    case "connected":
+      return input.shared._tag === "Failure"
+        ? { _tag: "Failure", reason: input.shared.reason ?? "failed" }
+        : { _tag: "Loading" };
+  }
+}

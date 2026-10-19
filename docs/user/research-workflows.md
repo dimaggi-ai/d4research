@@ -6,6 +6,11 @@ d4research is a research workspace for evidence-heavy work across models and pro
 mode structures an investigation, while provider handoff preserves one continuous chat when the
 active model changes.
 
+Research advisers require a read-only provider session. Agy, Muse, and Junie currently cannot
+enforce that requirement, so delegation to them fails before launch. They remain available for
+normal chat. Choose another provider for advisory steps; a listed model is not proof that a
+delegate ran.
+
 ## Configure the pipeline
 
 Research runs **named scenarios** you author in **Settings → Research** — each scenario is a
@@ -30,12 +35,12 @@ Inside the pipeline, reference models with directives:
 
 Provider matches by name (`claude`, `codex`, `junie`, …); the model fragment can be partial as long
 as it is unambiguous (`fable` → `claude-fable-5`). The settings screen validates every directive
-live and shows what it resolved to — or exactly why it did not.
+live and shows what it resolved to, or exactly why it did not.
 
-The composer's **Workflows** menu keeps Chat/Plan, named development pipelines, named research
-scenarios, and delegation target policy in one place. **Use labeled fallback** permits only a
-fallback written into the active pipeline; **Exact targets only** stops the step when its requested
-model is unavailable.
+The composer's **Workflows** menu groups Chat/Plan, named development pipelines, named research
+scenarios, and delegation target policy together. **Use labeled fallback** allows only a fallback
+defined in the active pipeline; **Exact targets only** halts the step if its requested model is
+unavailable.
 
 Label a fallback on its own pipeline line so the server can verify it:
 
@@ -78,7 +83,7 @@ a strict execution protocol. Scenario text therefore does not appear in message 
 or another client's transcript.
 
 The orchestrator must use a provider adapter that exposes d4research MCP tools: Claude, Codex,
-Cursor, Grok, or OpenCode. Junie and Agy can still be delegation targets inside the pipeline, but
+Cursor, Grok, Muse, or OpenCode. Junie and Agy can still be delegation targets inside the pipeline, but
 cannot orchestrate it themselves.
 
 1. **Trace** — the orchestrator keeps one plan entry per step, marks exactly one in progress, and

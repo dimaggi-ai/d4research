@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import { buildJunieAcpSpawnInput } from "./JunieAcpSupport.ts";
-import { resolveAcpAuthMethodId } from "./AcpSessionRuntime.ts";
+import { resolveAcpAuthMethodId } from "@d4research/provider-acp/server/AcpSessionRuntime";
 
 describe("buildJunieAcpSpawnInput", () => {
   it("starts the default Junie CLI in ACP mode", () => {

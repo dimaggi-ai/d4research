@@ -1,16 +1,22 @@
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as SharedObservability from "@d4research/shared/observability";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
-import * as Layer from "effect/Layer";
 
-import { ServerConfig } from "./config.ts";
+import * as ServerConfig from "./config.ts";
 
-export const ServerLoggerLive = Effect.gen(function* () {
-  const config = yield* ServerConfig;
-  const minimumLogLevelLayer = Layer.succeed(References.MinimumLogLevel, config.logLevel);
-  const loggerLayer = Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
+export const layer = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  const hostName = yield* HostProcess.Hostname;
+  const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
+
+  // Historical exporter settings do not opt this local-first fork into network export.
+  // Logger.layer replaces the logger set, so name every local logger here.
+  const layerLogger = Logger.layer([Logger.consolePretty(), Logger.tracerLogger], {
     mergeWithExisting: false,
   });
 
-  return Layer.mergeAll(loggerLayer, minimumLogLevelLayer);
+  return Layer.mergeAll(layerLogger, layerMinimumLogLevel);
 }).pipe(Layer.unwrap);

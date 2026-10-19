@@ -6,63 +6,98 @@ import type {
   ScopedThreadRef,
   ThreadId,
 } from "@d4research/contracts";
-import { useEffect, useRef } from "react";
+import * as Option from "effect/Option";
+import { useEffect, useEffectEvent, useRef } from "react";
 
+import {
+  flushPendingFaviconsForThread,
+  recordFaviconForThread,
+  useFaviconProjectRefForThread,
+} from "~/browserFaviconStore";
 import { useBrowserPointerStore } from "~/browser/browserPointerStore";
 import { applyPreviewDesktopState, type DesktopPreviewOverlay } from "~/previewStateStore";
 import { previewEnvironment } from "~/state/preview";
+import { usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { previewBridge } from "./previewBridge";
 
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Mirrors low-latency desktop state into the store and reflects navigation
- * events back to the server. Webview lifetime is owned by ElectronBrowserHost.
+ * Webview lifetime is owned by ElectronBrowserHost.
  */
 export function usePreviewBridge(input: {
   threadRef: ScopedThreadRef;
   tabId: string;
   runtimeTabId: string;
+  serverDriven?: boolean;
 }): void {
-  const { threadRef, tabId, runtimeTabId } = input;
+  const { threadRef, tabId, runtimeTabId, serverDriven = false } = input;
   const clearBrowserPointer = useBrowserPointerStore((state) => state.clear);
   const reportStatus = useAtomCommand(previewEnvironment.reportStatus, "preview status report");
-  const bridge = previewBridge;
+  // Callers pass a fresh threadRef each render; rebuilding it from its ids keeps the ref
+  // stable for the effects.
+  const { environmentId, threadId } = threadRef;
+  const stableThreadRef: ScopedThreadRef = { environmentId, threadId };
+  const projectRef = useFaviconProjectRefForThread(stableThreadRef);
+  const preparedConnection = usePreparedConnection(stableThreadRef.environmentId);
+  const environmentHostname = Option.isSome(preparedConnection)
+    ? new URL(preparedConnection.value.httpBaseUrl).hostname
+    : undefined;
 
-  // One bridge subscription does both jobs (mirror state + forward to
-  // server) so the desktop bridge keeps a single listener entry per tab.
   const lastReportedUrl = useRef<string | null>(null);
   const lastReportedKind = useRef<DesktopPreviewTabState["navStatus"]["kind"] | null>(null);
   const lastDesktopNavStatus = useRef<DesktopPreviewTabState["navStatus"] | null>(null);
-  useEffect(() => {
-    if (!bridge || typeof window === "undefined") return;
-    lastReportedUrl.current = null;
-    lastReportedKind.current = null;
-    lastDesktopNavStatus.current = null;
-    const unsubscribe = bridge.onStateChange((changedTabId, state) => {
+  const handleStateChange = useEffectEvent(
+    (changedTabId: string, state: DesktopPreviewTabState): void => {
       if (changedTabId !== runtimeTabId) return;
       if (shouldClearBrowserPointer(lastDesktopNavStatus.current, state.navStatus)) {
         clearBrowserPointer(runtimeTabId);
       }
       lastDesktopNavStatus.current = state.navStatus;
-      applyPreviewDesktopState(threadRef, tabId, projectDesktopState(state));
+      applyPreviewDesktopState(stableThreadRef, tabId, projectDesktopState(state));
+      if (state.favicon) {
+        recordFaviconForThread(stableThreadRef, state.favicon, projectRef, environmentHostname);
+      }
       const reported = buildReportInput({
-        threadId: threadRef.threadId,
+        threadId: stableThreadRef.threadId,
         tabId,
         state,
         lastReportedUrl: lastReportedUrl.current,
         lastReportedKind: lastReportedKind.current,
       });
-      if (!reported) return;
+      if (!reported || serverDriven) return;
       lastReportedUrl.current = reported.lastReportedUrl;
       lastReportedKind.current = reported.lastReportedKind;
       void reportStatus({
-        environmentId: threadRef.environmentId,
+        environmentId: stableThreadRef.environmentId,
         input: reported.input,
       });
-    });
-    return unsubscribe;
-  }, [bridge, clearBrowserPointer, reportStatus, runtimeTabId, tabId, threadRef]);
+    },
+  );
+  useEffect(() => {
+    if (!previewBridge || typeof window === "undefined") return;
+    lastReportedUrl.current = null;
+    lastReportedKind.current = null;
+    lastDesktopNavStatus.current = null;
+    return previewBridge.onStateChange(handleStateChange);
+  }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A different tab or thread starts its status reports and pointer tracking from scratch.
+    runtimeTabId,
+    stableThreadRef,
+    tabId,
+  ]);
+  useEffect(() => {
+    if (!projectRef) return;
+    flushPendingFaviconsForThread(stableThreadRef, projectRef, environmentHostname);
+  }, [environmentHostname, projectRef, stableThreadRef]);
 }
 
 function shouldClearBrowserPointer(
@@ -75,7 +110,8 @@ function shouldClearBrowserPointer(
   return current.url !== previous.url;
 }
 
-function projectDesktopState(state: DesktopPreviewTabState): DesktopPreviewOverlay {
+export function projectDesktopState(state: DesktopPreviewTabState): DesktopPreviewOverlay {
+  const navOrigin = state.navStatus.kind === "Idle" ? null : originOf(state.navStatus.url);
   return {
     hasWebContents: state.webContentsId !== null,
     canGoBack: state.canGoBack,
@@ -84,20 +120,13 @@ function projectDesktopState(state: DesktopPreviewTabState): DesktopPreviewOverl
     zoomFactor: state.zoomFactor,
     pictureInPicture: state.pictureInPicture,
     colorScheme: state.colorScheme,
+    audioMuted: state.audioMuted,
+    audible: state.audible,
     controller: state.controller,
+    favicon: state.favicon && originOf(state.favicon.pageUrl) === navOrigin ? state.favicon : null,
   };
 }
 
-/**
- * Decide whether a state change warrants an RPC to the server, and shape
- * the report payload.
- *
- * - Idle never reports — the tab is post-close or pre-load and the server
- *   already knows the canonical state from `open` / `closed`.
- * - We dedupe on (kind, url): consecutive Loading→Loading→Loading for the
- *   same URL collapses to a single RPC, ditto Success.
- * - LoadFailed always reports (the server uses it to emit `failed`).
- */
 function buildReportInput(args: {
   readonly threadId: ThreadId;
   readonly tabId: string;
@@ -113,8 +142,6 @@ function buildReportInput(args: {
   const status = state.navStatus;
   if (status.kind === "Idle") return null;
 
-  // Skip if we've already reported the same kind+url. LoadFailed always
-  // reports (rapid duplicate failures are unusual and worth surfacing).
   const sameAsLast =
     status.kind !== "LoadFailed" &&
     status.kind === lastReportedKind &&

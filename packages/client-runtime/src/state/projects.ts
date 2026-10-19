@@ -9,7 +9,7 @@ import {
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 
-const isWindowsPlatform = (platform: string): boolean => {
+export const isWindowsPlatform = (platform: string): boolean => {
   return /^win(dows)?/i.test(platform);
 };
 
@@ -133,6 +133,15 @@ export function findProjectByPath<T extends { workspaceRoot?: string; cwd?: stri
     const cwd = project.workspaceRoot ?? project.cwd;
     return cwd ? normalizeProjectPathForComparison(cwd) === normalizedCandidate : false;
   });
+}
+
+export function isScratchProject(
+  project: { readonly workspaceRoot: string },
+  scratchWorkspaceRoot: string | null | undefined,
+): boolean {
+  return (
+    scratchWorkspaceRoot != null && findProjectByPath([project], scratchWorkspaceRoot) !== undefined
+  );
 }
 
 export function inferProjectTitleFromPath(value: string): string {

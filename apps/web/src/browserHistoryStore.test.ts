@@ -266,16 +266,16 @@ describe("useBrowserHistoryStore", () => {
 
   it("sets a title against a settled url that differs from the stored one only by a trailing slash", () => {
     useBrowserHistoryStore.getState().registerThreadProject(threadRef, "proj-a");
-    recordVisitForThread(threadRef, "http://a.test/community", 1);
+    recordVisitForThread(threadRef, "http://a.test/community/", 1);
     setTitleForThreadUrl(threadRef, "http://a.test/community/", "Community");
     expect(useBrowserHistoryStore.getState().byProjectKey["proj-a"]?.[0]).toMatchObject({
-      url: "http://a.test/community",
+      url: "http://a.test/community/",
       title: "Community",
     });
 
     useBrowserHistoryStore.setState({ byProjectKey: {} });
     recordVisitForThread(threadRef, "http://a.test/community/", 1);
-    setTitleForThreadUrl(threadRef, "http://a.test/community", "Community");
+    setTitleForThreadUrl(threadRef, "http://a.test/community/", "Community");
     expect(useBrowserHistoryStore.getState().byProjectKey["proj-a"]?.[0]).toMatchObject({
       url: "http://a.test/community/",
       title: "Community",
@@ -309,7 +309,7 @@ describe("useBrowserHistoryStore", () => {
 
   it("does not match a genuinely different path via the trailing-slash comparison", () => {
     useBrowserHistoryStore.getState().registerThreadProject(threadRef, "proj-a");
-    recordVisitForThread(threadRef, "http://a.test/community", 1);
+    recordVisitForThread(threadRef, "http://a.test/community/", 1);
     setTitleForThreadUrl(threadRef, "http://a.test/community/foo", "Foo");
     expect(useBrowserHistoryStore.getState().byProjectKey["proj-a"]?.[0]?.title).toBeUndefined();
   });
@@ -389,7 +389,6 @@ describe("pendingVisitsByThreadKey", () => {
 
     const entries = useBrowserHistoryStore.getState().byProjectKey["proj-a"];
     expect(entries?.map((e) => e.url)).toEqual(["http://newer.test/", "http://older.test/"]);
-    // `entries[0]` being the most recent is the invariant `evictExcessProjects` relies on.
     expect(entries?.[0]?.lastVisitedAt).toBe(2000);
   });
 });

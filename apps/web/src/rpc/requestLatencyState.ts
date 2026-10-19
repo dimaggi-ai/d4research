@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { WS_METHODS } from "@d4research/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
 
@@ -28,7 +28,7 @@ interface PendingRpcAckRequest {
 }
 
 const pendingRpcAckRequests = new Map<string, PendingRpcAckRequest>();
-const untrackedRpcAckMethods = new Set<string>([WS_METHODS.previewAutomationConnect]);
+const untrackedRpcAckMethods = new Set<string>([WS_METHODS.serverGetUsageSummary]);
 const longRunningRpcAckMethods = new Set<string>([
   WS_METHODS.serverUpdateProvider,
   WS_METHODS.serverRefreshProviders,
@@ -49,7 +49,11 @@ function getSlowRpcAckRequestsValue(): ReadonlyArray<SlowRpcAckRequest> {
 }
 
 function shouldTrackRpcAck(method: string): boolean {
-  return !method.includes("subscribe") && !untrackedRpcAckMethods.has(method);
+  return (
+    !method.includes("subscribe") &&
+    !method.startsWith("pullRequests.") &&
+    !untrackedRpcAckMethods.has(method)
+  );
 }
 
 function rpcAckThresholdMs(method: string): number {
@@ -62,11 +66,6 @@ export function getSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {
   return getSlowRpcAckRequestsValue();
 }
 
-/**
- * Starts the slow-request timer for one in-flight unary RPC. `method` is the
- * bare WS method (used to decide whether and how long to wait); `tag` is the
- * human-readable label shown in the toast, which defaults to the method.
- */
 export function trackRpcRequestSent(requestId: string, method: string, tag = method): void {
   if (!shouldTrackRpcAck(method)) {
     return;
@@ -105,7 +104,7 @@ export function acknowledgeRpcRequest(requestId: string): void {
   setSlowRpcAckRequests(slowRequests.filter((request) => request.requestId !== requestId));
 }
 
-export function clearAllTrackedRpcRequests(): void {
+function clearAllTrackedRpcRequests(): void {
   for (const pending of pendingRpcAckRequests.values()) {
     clearTimeout(pending.timeoutId);
   }
@@ -147,10 +146,6 @@ function evictOldestPendingRpcRequestIfNeeded(): void {
 export function resetRequestLatencyStateForTests(): void {
   slowRpcAckThresholdMs = SLOW_RPC_ACK_THRESHOLD_MS;
   clearAllTrackedRpcRequests();
-}
-
-export function setSlowRpcAckThresholdMsForTests(thresholdMs: number): void {
-  slowRpcAckThresholdMs = thresholdMs;
 }
 
 export function useSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {

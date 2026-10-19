@@ -1,3 +1,4 @@
+import { JunieDriver, type JunieDriverEnv } from "./Drivers/JunieDriver.ts";
 /**
  * BUILT_IN_DRIVERS — the static set of `ProviderDriver`s this build ships
  * with.
@@ -20,40 +21,72 @@
  *
  * @module provider/builtInDrivers
  */
+import {
+  AcpRegistryDriver,
+  type AcpRegistryDriverEnv,
+} from "@d4research/provider-acp-registry/server";
+import { AntigravityDriver, type AntigravityDriverEnv } from "./Drivers/AntigravityDriver.ts";
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { AgyDriver, type AgyDriverEnv } from "./Drivers/AgyDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
-import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
-import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
-import { JunieDriver, type JunieDriverEnv } from "./Drivers/JunieDriver.ts";
-import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
-import type { AnyProviderDriver } from "./ProviderDriver.ts";
+import { CursorDriver, type CursorDriverEnv } from "@d4research/provider-cursor/server";
+import { GrokDriver, type GrokDriverEnv } from "@d4research/provider-grok/server";
+import { OpenCodeDriver, type OpenCodeDriverEnv } from "@d4research/provider-opencode/server";
+import { MuseDriver, type MuseDriverEnv } from "@d4research/provider-muse/server";
+import { PiDriver, type PiDriverEnv } from "@d4research/provider-pi/server";
+import type {
+  AnyProviderDriver,
+  ProviderUsageReaderEnv,
+} from "@d4research/provider-core/server/driver";
 
-/**
- * Union of infrastructure services required to construct any built-in
- * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
- * layer must provide every service in this union.
- */
 export type BuiltInDriversEnv =
   | AgyDriverEnv
+  | AcpRegistryDriverEnv
+  | AntigravityDriverEnv
   | ClaudeDriverEnv
   | CodexDriverEnv
   | CursorDriverEnv
+  | MuseDriverEnv
   | GrokDriverEnv
   | JunieDriverEnv
-  | OpenCodeDriverEnv;
+  | OpenCodeDriverEnv
+  | PiDriverEnv;
 
-/**
- * Ordered list of built-in drivers. Order matters only for tie-breaking in
- * UI presentation — the registry itself is keyed by `driverKind`, so
- * iteration order has no functional effect on instance lookup.
- */
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
   AgyDriver,
   CursorDriver,
   GrokDriver,
+  MuseDriver,
   JunieDriver,
   OpenCodeDriver,
+  AntigravityDriver,
+  PiDriver,
+  AcpRegistryDriver,
+];
+
+export type BuiltInUsageReadersEnv =
+  | ProviderUsageReaderEnv<typeof ClaudeDriver>
+  | ProviderUsageReaderEnv<typeof CodexDriver>
+  | ProviderUsageReaderEnv<typeof GrokDriver>
+  | ProviderUsageReaderEnv<typeof OpenCodeDriver>
+  | ProviderUsageReaderEnv<typeof AntigravityDriver>
+  | ProviderUsageReaderEnv<typeof CursorDriver>
+  | ProviderUsageReaderEnv<typeof PiDriver>;
+
+/**
+ * Aggregation keeps the first copy of a duplicate record, so the order is part
+ * of the result.
+ */
+export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
+  AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>
+> = [
+  ClaudeDriver,
+  CodexDriver,
+  GrokDriver,
+  PiDriver,
+  OpenCodeDriver,
+  AntigravityDriver,
+  CursorDriver,
 ];

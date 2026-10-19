@@ -1,9 +1,7 @@
 import {
-  ClientPresentation,
-  EnvironmentOwnedDataCleanup,
+  ClientCapabilities,
   PlatformConnectionSource,
-  PrimaryEnvironmentAuth,
-  SshEnvironmentGateway,
+  Persistence,
 } from "@d4research/client-runtime/platform";
 import {
   ConnectionBlockedError,
@@ -22,10 +20,11 @@ import { AppState } from "react-native";
 
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
-import { clearThreadOutboxEnvironment } from "../state/thread-outbox";
+import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
+import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
-import { connectionStorageLayer } from "./storage";
+import * as ConnectionStorage from "./storage";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
   if (state.isConnected === false) {
@@ -37,7 +36,7 @@ function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "on
   return "unknown";
 }
 
-const connectivityLayer = Connectivity.layer({
+const layerConnectivity = Connectivity.layer({
   status: Effect.tryPromise({
     try: () => Network.getNetworkStateAsync(),
     catch: () => undefined,
@@ -79,7 +78,7 @@ const connectivityLayer = Connectivity.layer({
   ),
 });
 
-const wakeupsLayer = Wakeups.layer({
+const layerWakeups = Wakeups.layer({
   changes: Stream.callback<"application-active-probe" | "application-active-reconnect">((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
@@ -100,22 +99,21 @@ const wakeupsLayer = Wakeups.layer({
   ),
 });
 
-const capabilitiesLayer = Layer.effectContext(
+const layerCapabilities = Layer.effectContext(
   Effect.sync(() =>
     Context.make(
-      PrimaryEnvironmentAuth,
-      PrimaryEnvironmentAuth.of({ bearerToken: Effect.succeed(Option.none()) }),
+      ClientCapabilities.PrimaryEnvironmentAuth,
+      ClientCapabilities.PrimaryEnvironmentAuth.of({ bearerToken: Effect.succeed(Option.none()) }),
     ).pipe(
       Context.add(
-        ClientPresentation,
-        ClientPresentation.of({
+        ClientCapabilities.ClientPresentation,
+        ClientCapabilities.ClientPresentation.of({
           metadata: authClientMetadata(),
-          scopes: AuthStandardClientScopes,
         }),
       ),
       Context.add(
-        SshEnvironmentGateway,
-        SshEnvironmentGateway.of({
+        ClientCapabilities.SshEnvironmentGateway,
+        ClientCapabilities.SshEnvironmentGateway.of({
           provision: () =>
             Effect.fail(
               new ConnectionBlockedError({
@@ -137,28 +135,25 @@ const capabilitiesLayer = Layer.effectContext(
   ),
 );
 
-const platformConnectionSourceLayer = Layer.succeed(
-  PlatformConnectionSource,
-  PlatformConnectionSource.of({
+const layerPlatformConnectionSource = Layer.succeed(
+  PlatformConnectionSource.PlatformConnectionSource,
+  PlatformConnectionSource.PlatformConnectionSource.of({
     registrations: Stream.empty,
   }),
 );
 
-const providedConnectionStorageLayer = connectionStorageLayer.pipe(
-  Layer.provide(Runtime.runtimeContextLayer),
-);
-const providedCapabilitiesLayer = capabilitiesLayer.pipe(
-  Layer.provide(Runtime.runtimeContextLayer),
-);
+const layerProvidedConnectionStorage = ConnectionStorage.layer.pipe(Layer.provide(Runtime.layer));
+const layerProvidedCapabilities = layerCapabilities.pipe(Layer.provide(Runtime.layer));
 
-const environmentOwnedDataCleanupLayer = Layer.succeed(
-  EnvironmentOwnedDataCleanup,
-  EnvironmentOwnedDataCleanup.of({
+const layerEnvironmentOwnedDataCleanup = Layer.succeed(
+  Persistence.EnvironmentOwnedDataCleanup,
+  Persistence.EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) =>
       Effect.all(
         [
           Effect.promise(() => clearThreadOutboxEnvironment(environmentId)),
           Effect.promise(() => clearComposerDraftsEnvironment(environmentId)),
+          Effect.sync(() => clearThreadComposerErrorsForEnvironment(environmentId)),
         ],
         { concurrency: "unbounded", discard: true },
       ).pipe(
@@ -173,24 +168,24 @@ const environmentOwnedDataCleanupLayer = Layer.succeed(
 );
 
 type ConnectionPlatformLayerSource =
-  | typeof providedConnectionStorageLayer
-  | typeof Runtime.runtimeContextLayer
-  | typeof connectivityLayer
-  | typeof wakeupsLayer
-  | typeof providedCapabilitiesLayer
-  | typeof platformConnectionSourceLayer
-  | typeof environmentOwnedDataCleanupLayer;
+  | typeof layerProvidedConnectionStorage
+  | typeof Runtime.layer
+  | typeof layerConnectivity
+  | typeof layerWakeups
+  | typeof layerProvidedCapabilities
+  | typeof layerPlatformConnectionSource
+  | typeof layerEnvironmentOwnedDataCleanup;
 
-export const connectionPlatformLayer: Layer.Layer<
+export const layer: Layer.Layer<
   Layer.Success<ConnectionPlatformLayerSource>,
   Layer.Error<ConnectionPlatformLayerSource>,
   Layer.Services<ConnectionPlatformLayerSource>
 > = Layer.mergeAll(
-  providedConnectionStorageLayer,
-  Runtime.runtimeContextLayer,
-  connectivityLayer,
-  wakeupsLayer,
-  providedCapabilitiesLayer,
-  platformConnectionSourceLayer,
-  environmentOwnedDataCleanupLayer,
+  layerProvidedConnectionStorage,
+  Runtime.layer,
+  layerConnectivity,
+  layerWakeups,
+  layerProvidedCapabilities,
+  layerPlatformConnectionSource,
+  layerEnvironmentOwnedDataCleanup,
 );

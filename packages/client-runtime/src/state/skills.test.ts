@@ -3,7 +3,7 @@ import { EnvironmentId } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 
 import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
-import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { layerRemoteHttpClient as remoteHttpClientLayer } from "../rpc/http.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
   fetchEnvironmentSkillsInventory,
@@ -95,7 +95,11 @@ describe("fetchEnvironmentSkillsInventory", () => {
     const proofInputs: Array<{ readonly method: string; readonly url: string }> = [];
     const dpopPrepared: PreparedConnection = {
       ...prepared,
-      httpAuthorization: { _tag: "Dpop", accessToken: "relay-token" },
+      httpAuthorization: {
+        _tag: "Dpop",
+        accessToken: "relay-token",
+        expiresAtEpochMs: 4_102_444_800_000,
+      },
     };
     return Effect.gen(function* () {
       const auth = yield* preparedEnvironmentFetchAuthorization(
@@ -132,7 +136,11 @@ describe("fetchEnvironmentSkillsInventory", () => {
     const proofInputs: Array<{ readonly method: string; readonly url: string }> = [];
     const dpopPrepared: PreparedConnection = {
       ...prepared,
-      httpAuthorization: { _tag: "Dpop", accessToken: "relay-token" },
+      httpAuthorization: {
+        _tag: "Dpop",
+        accessToken: "relay-token",
+        expiresAtEpochMs: 4_102_444_800_000,
+      },
     };
     const urls = [
       "https://remote.example.test/api/handoff/prepare",

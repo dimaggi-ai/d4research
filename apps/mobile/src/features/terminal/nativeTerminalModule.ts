@@ -24,7 +24,10 @@ interface TerminalResizeEvent {
 export interface NativeTerminalSurfaceProps extends ViewProps {
   readonly appearanceScheme?: "light" | "dark";
   readonly autoFocus?: boolean;
+  readonly readOnly?: boolean;
   readonly focusRequest?: number;
+  readonly captureRequest?: number;
+  readonly onCapture?: (event: NativeSyntheticEvent<{ readonly text: string }>) => void;
   readonly themeConfig?: string;
   readonly backgroundColor?: string;
   readonly foregroundColor?: string;
@@ -76,11 +79,6 @@ export function resolveNativeTerminalSurfaceView(): ComponentType<NativeTerminal
   return cachedNativeTerminalSurfaceView ?? null;
 }
 
-/**
- * Revision of the native hardware-keyboard handling compiled into the installed binary,
- * or `null` when the binary predates the revision constant (or the module is missing).
- * Used in terminal debug logs to detect stale native builds.
- */
 export function getNativeTerminalHardwareKeyRevision(): number | null {
   try {
     if (typeof requireOptionalNativeModule !== "function") {

@@ -1,3 +1,41 @@
+import type { MessageId, RunId } from "@d4research/contracts";
+
+export interface TimelineRunObservation {
+  readonly threadKey: string | null;
+  readonly hydrated: boolean;
+  readonly runId: RunId | null;
+}
+
+export function observeTimelineRun(
+  previous: TimelineRunObservation | null,
+  input: TimelineRunObservation & {
+    readonly queued: boolean;
+    readonly messageId: MessageId | null;
+  },
+): { observation: TimelineRunObservation; anchorMessageId: MessageId | null } {
+  const observation = {
+    threadKey: input.threadKey,
+    hydrated: input.hydrated,
+    runId: input.queued ? null : input.runId,
+  };
+  if (previous?.threadKey !== input.threadKey || !previous.hydrated) {
+    return { observation, anchorMessageId: null };
+  }
+  if (
+    !input.hydrated ||
+    input.runId === null ||
+    input.queued ||
+    previous.runId === input.runId ||
+    input.messageId === null
+  ) {
+    return { observation: previous, anchorMessageId: null };
+  }
+  return { observation, anchorMessageId: input.messageId };
+}
+import type { RunAttemptId } from "@d4research/contracts";
+// Match the titlebar fade inset so draft promotion preserves the first row's position.
+export const CHAT_TIMELINE_ANCHOR_OFFSET = 24;
+
 export type TimelineScrollMode = "following-end" | "anchoring-new-turn" | "free-scrolling";
 
 export interface TimelineListMeasurementState {
@@ -32,6 +70,30 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
   }
 
   return top + Math.max(1, height);
+}
+
+/**
+ * The list's own content length includes the composer inset spacer, so this
+ * measures from the last row instead. Unknown row geometry or an unmeasured
+ * viewport counts as fitting.
+ */
+export function timelineContentOverflowsViewport(
+  state: TimelineListMeasurementState | undefined,
+  input: { readonly composerInset: number; readonly anchorOffset: number },
+): boolean {
+  if (!state || !state.data || state.data.length === 0) {
+    return false;
+  }
+  const scrollLength = state.scrollLength;
+  if (typeof scrollLength !== "number" || !Number.isFinite(scrollLength) || scrollLength <= 0) {
+    return false;
+  }
+  const lastBottom = getRowBottom(state, state.data.length - 1);
+  if (lastBottom === null) {
+    return false;
+  }
+  const visibleScrollLength = Math.max(0, scrollLength - input.composerInset - input.anchorOffset);
+  return lastBottom > visibleScrollLength;
 }
 
 export function getAnchoredTurnMetrics({
@@ -75,4 +137,42 @@ export function getAnchoredTurnMetrics({
     targetScrollToRevealEnd,
     scrollDeltaToRevealEnd,
   };
+}
+
+export interface RememberedTimelinePosition {
+  readonly rowId: string;
+  readonly offsetWithinRow: number;
+  readonly scrollOffset: number;
+  readonly atEnd: boolean;
+  readonly disclosures?: {
+    readonly runs: ReadonlySet<RunId>;
+    readonly workGroups: ReadonlySet<string>;
+    readonly attempts: ReadonlySet<RunAttemptId>;
+    readonly workGroupState: {
+      scrollPositions: Map<string, { readonly entryId: string; readonly offset: number }>;
+      expandedEntries: Set<string>;
+    };
+  };
+}
+
+const rememberedTimelinePositions = new Map<string, RememberedTimelinePosition>();
+
+export function readTimelinePosition(threadKey: string) {
+  return rememberedTimelinePositions.get(threadKey);
+}
+
+export function rememberTimelinePosition(
+  threadKey: string,
+  position: RememberedTimelinePosition,
+  liveFollowEnabled: boolean,
+) {
+  rememberedTimelinePositions.delete(threadKey);
+  rememberedTimelinePositions.set(threadKey, {
+    ...position,
+    atEnd: liveFollowEnabled || position.atEnd,
+  });
+  if (rememberedTimelinePositions.size > 100) {
+    const oldest = rememberedTimelinePositions.keys().next().value;
+    if (oldest !== undefined) rememberedTimelinePositions.delete(oldest);
+  }
 }

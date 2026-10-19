@@ -3,6 +3,7 @@
   "EX_DEV_CLIENT_NETWORK_INSPECTOR": "true",
   "expo.inlineModules.watchedDirectories": "[]",
   "expo.inlineModules.xcodeProjectTargets": "{\"mainTarget\":\"d4research\",\"targets\":[]}",
+  "MOTION_PERMISSION": "false",
   "ios.deploymentTarget": "18.0",
   "ios.forceStaticLinking": "[]",
   "apple.extraPods": "[{\"name\":\"GoogleUtilities\",\"modular_headers\":true},{\"name\":\"RecaptchaInterop\",\"modular_headers\":true}]",

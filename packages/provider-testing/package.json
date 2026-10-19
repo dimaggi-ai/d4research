@@ -1,0 +1,43 @@
+{
+  "name": "@d4research/provider-testing",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./fakeCli": {
+      "types": "./src/fakeCli.ts",
+      "import": "./src/fakeCli.ts"
+    },
+    "./replayGate": {
+      "types": "./src/replayGate.ts",
+      "import": "./src/replayGate.ts"
+    },
+    "./replayTranscript": {
+      "types": "./src/replayTranscript.ts",
+      "import": "./src/replayTranscript.ts"
+    },
+    "./replayWorkspace": {
+      "types": "./src/replayWorkspace.ts",
+      "import": "./src/replayWorkspace.ts"
+    },
+    "./TestProviderHost": {
+      "types": "./src/TestProviderHost.ts",
+      "import": "./src/TestProviderHost.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc-rs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@d4research/contracts": "workspace:*",
+    "@d4research/provider-core": "workspace:*",
+    "@d4research/shared": "workspace:*",
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

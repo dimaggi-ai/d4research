@@ -1,3 +1,9 @@
+import {
+  MOBILE_DEFAULT_THEME_ID,
+  MOBILE_THEME_IDS,
+  type MobileThemeId,
+} from "@d4research/shared/themePalettes";
+
 import { SHOWCASE_SCENES, type ShowcaseScene } from "./mobile-showcase-environment.ts";
 
 export { SHOWCASE_SCENES };
@@ -5,9 +11,12 @@ export type { ShowcaseScene };
 
 export type ShowcaseAppearance = "light" | "dark";
 
+export const SHOWCASE_THEMES = MOBILE_THEME_IDS;
+export const DEFAULT_SHOWCASE_THEME = MOBILE_DEFAULT_THEME_ID;
+export type ShowcaseTheme = MobileThemeId;
+
 export interface ShowcaseStoreAssetSpec {
   readonly store: "apple" | "google-play";
-  /** Device directory relative to ShowcaseConfig.outputDirectory. */
   readonly directory: string;
   readonly width: number;
   readonly height: number;
@@ -19,13 +28,10 @@ export interface ShowcaseStoreAssetSpec {
 export interface ShowcaseIosDevice {
   readonly id: string;
   readonly platform: "ios";
-  /** Exact name from `xcrun simctl list devices available`. */
   readonly simulator: string;
-  /** Device type used to create a disposable simulator when the named one is absent. */
   readonly simulatorDeviceType?: string;
-  /** Appearance used when the CLI does not pass --appearance. */
   readonly appearance: ShowcaseAppearance;
-  /** Orientation applied by the capture harness. Defaults to portrait. */
+  readonly theme: ShowcaseTheme;
   readonly orientation?: "portrait" | "landscape";
   readonly scenes: ReadonlyArray<ShowcaseScene>;
   readonly storeAsset: ShowcaseStoreAssetSpec;
@@ -34,14 +40,11 @@ export interface ShowcaseIosDevice {
 export interface ShowcaseAndroidDevice {
   readonly id: string;
   readonly platform: "android";
-  /** Exact name from `emulator -list-avds`. */
   readonly avd: string;
-  /** Appearance used when the CLI does not pass --appearance. */
   readonly appearance: ShowcaseAppearance;
-  /** Native ABI used by the AVD, from its config.ini `abi.type`. */
+  readonly theme: ShowcaseTheme;
   readonly abi?: "arm64-v8a" | "x86_64" | "x86" | "armeabi-v7a";
   readonly scenes: ReadonlyArray<ShowcaseScene>;
-  /** Optional capture viewport. Omit to use the AVD's native size and density. */
   readonly viewport?: {
     readonly width: number;
     readonly height: number;
@@ -73,12 +76,6 @@ export function resolveShowcaseAndroidAbi(
   );
 }
 
-/**
- * The defaults cover every App Store Connect and Google Play upload slot used
- * by the mobile app. Edit this matrix (or pass --device / --scene) without
- * changing the runner. Every target declares and validates its exact upload
- * dimensions so SDK or emulator changes cannot silently produce invalid files.
- */
 const config: ShowcaseConfig = {
   outputDirectory: "artifacts/app-store/screenshots",
   // Dedicated port so the harness cannot attach to a normal mobile dev server
@@ -89,10 +86,11 @@ const config: ShowcaseConfig = {
     {
       id: "iphone-6.9",
       platform: "ios",
-      simulator: "iPhone 17 Pro Max",
+      simulator: "T3 Showcase iPhone 17 Pro Max",
       simulatorDeviceType: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max",
       appearance: "dark",
-      scenes: ["thread", "terminal", "review", "threads", "environments"],
+      theme: DEFAULT_SHOWCASE_THEME,
+      scenes: ["thread", "terminal", "review", "threads", "environments", "agent-activity"],
       storeAsset: {
         store: "apple",
         directory: "apple/iphone-6.9",
@@ -108,7 +106,8 @@ const config: ShowcaseConfig = {
       simulator: "T3 Showcase iPhone 14 Plus",
       simulatorDeviceType: "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Plus",
       appearance: "dark",
-      scenes: ["thread", "terminal", "review", "threads", "environments"],
+      theme: DEFAULT_SHOWCASE_THEME,
+      scenes: ["thread", "terminal", "review", "threads", "environments", "agent-activity"],
       storeAsset: {
         store: "apple",
         directory: "apple/iphone-6.5",
@@ -124,7 +123,10 @@ const config: ShowcaseConfig = {
       simulator: "iPad Pro 13-inch (M5)",
       simulatorDeviceType: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB",
       appearance: "dark",
+      theme: DEFAULT_SHOWCASE_THEME,
       orientation: "landscape",
+      // The lock screen does not follow the app's self-rotation, so a
+      // headless landscape capture of it would come out sideways.
       scenes: ["thread", "terminal", "review", "threads", "environments"],
       storeAsset: {
         store: "apple",
@@ -143,12 +145,13 @@ const config: ShowcaseConfig = {
       // Blacksmith Linux runner can use KVM acceleration.
       abi: resolveShowcaseAndroidAbi(process.env.T3_SHOWCASE_ANDROID_ABI),
       appearance: "dark",
+      theme: DEFAULT_SHOWCASE_THEME,
       viewport: {
         width: 1080,
         height: 1920,
         density: 420,
       },
-      scenes: ["thread", "terminal", "review", "threads", "environments"],
+      scenes: ["thread", "terminal", "review", "threads", "environments", "agent-activity"],
       storeAsset: {
         store: "google-play",
         directory: "google-play/phone",
@@ -165,12 +168,13 @@ const config: ShowcaseConfig = {
       avd: "Pixel_10_Pro",
       abi: resolveShowcaseAndroidAbi(process.env.T3_SHOWCASE_ANDROID_ABI),
       appearance: "dark",
+      theme: DEFAULT_SHOWCASE_THEME,
       viewport: {
         width: 1080,
         height: 1920,
         density: 288,
       },
-      scenes: ["thread", "terminal", "review", "threads", "environments"],
+      scenes: ["thread", "terminal", "review", "threads", "environments", "agent-activity"],
       storeAsset: {
         store: "google-play",
         directory: "google-play/tablet-7",
@@ -187,12 +191,13 @@ const config: ShowcaseConfig = {
       avd: "Pixel_10_Pro",
       abi: resolveShowcaseAndroidAbi(process.env.T3_SHOWCASE_ANDROID_ABI),
       appearance: "dark",
+      theme: DEFAULT_SHOWCASE_THEME,
       viewport: {
         width: 1440,
         height: 2560,
         density: 288,
       },
-      scenes: ["thread", "terminal", "review", "threads", "environments"],
+      scenes: ["thread", "terminal", "review", "threads", "environments", "agent-activity"],
       storeAsset: {
         store: "google-play",
         directory: "google-play/tablet-10",

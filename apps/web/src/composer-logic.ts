@@ -1,8 +1,20 @@
-import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
-import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
+import type { ClientSettings } from "@d4research/contracts/settings";
+import type { AssistantCitation, ResolvedKeybindingsConfig } from "@d4research/contracts";
+import {
+  serializeAssistantCitation,
+  withAssistantCitationComment,
+} from "@d4research/shared/assistantCitations";
+import {
+  splitPromptIntoComposerSegments,
+  type ComposerPromptSegment,
+} from "./composer-editor-mentions";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "skill" | "directive";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "compact";
+import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
+
+export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill" | "directive";
+export type ComposerSlashCommand = "model" | "plan" | "default";
+
+export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -11,20 +23,55 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
-export function shouldSubmitComposerOnEnter(input: {
-  isMobileViewport: boolean;
-  shiftKey: boolean;
-}): boolean {
-  return !input.isMobileViewport && !input.shiftKey;
+export function formatAssistantCitationForComposer(citation: AssistantCitation, comment = "") {
+  return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-const isInlineTokenSegment = (
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): boolean => segment.type !== "text";
+function composerRequiresModifier(
+  sendShortcut: ClientSettings["sendShortcut"] | undefined,
+  prompt: string,
+) {
+  return (
+    sendShortcut === "mod-enter" ||
+    (sendShortcut === "mod-enter-multiline" && /[\r\n]/.test(prompt))
+  );
+}
+
+export function composerSubmissionIntentForKey(input: {
+  event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
+  keybindings: ResolvedKeybindingsConfig;
+  platform?: string;
+  isMobileViewport: boolean;
+  isDraftThread: boolean;
+  isRunning?: boolean;
+  sendShortcut?: ClientSettings["sendShortcut"];
+  prompt?: string;
+}): ComposerSubmissionIntent | null {
+  const { event } = input;
+  if (input.isMobileViewport || event.isComposing || event.keyCode === 229 || event.repeat)
+    return null;
+  const command = resolveShortcutCommand(event, input.keybindings, {
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+    context: {
+      composerFocus: true,
+      draftThreadRoute: input.isDraftThread,
+      turnRunning: input.isRunning === true,
+    },
+  });
+  if (command === "composer.sendAlternate" && input.isRunning) return "alternate";
+  if (command === "composer.sendBackground" && input.isDraftThread) return "background";
+  if (command === "composer.sendAndNewThread" && !input.isDraftThread) return "background";
+  if (command !== null || event.key !== "Enter" || event.shiftKey || event.altKey) return null;
+  if (
+    composerRequiresModifier(input.sendShortcut, input.prompt ?? "") &&
+    !event.metaKey &&
+    !event.ctrlKey
+  )
+    return null;
+  return "foreground";
+}
+
+const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";
 
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
@@ -32,13 +79,7 @@ function clampCursor(text: string, cursor: number): number {
 }
 
 function isWhitespace(char: string): boolean {
-  return (
-    char === " " ||
-    char === "\n" ||
-    char === "\t" ||
-    char === "\r" ||
-    char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER
-  );
+  return char === " " || char === "\n" || char === "\t" || char === "\r";
 }
 
 function tokenStartForCursor(text: string, cursor: number): number {
@@ -49,7 +90,12 @@ function tokenStartForCursor(text: string, cursor: number): number {
   return index + 1;
 }
 
-export function expandCollapsedComposerCursor(text: string, cursorInput: number): number {
+export function expandCollapsedComposerCursor(
+  text: string,
+  cursorInput: number,
+  literalText = false,
+): number {
+  if (literalText) return clampCursor(text, cursorInput);
   const collapsedCursor = clampCursor(text, cursorInput);
   const segments = splitPromptIntoComposerSegments(text);
   if (segments.length === 0) {
@@ -60,7 +106,11 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   let expandedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (
+      segment.type === "mention" ||
+      segment.type === "citation" ||
+      segment.type === "context-reference"
+    ) {
       const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
@@ -70,20 +120,12 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       continue;
     }
     if (segment.type === "skill") {
-      const expandedLength = segment.name.length + 1;
+      const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
       }
       remaining -= 1;
       expandedCursor += expandedLength;
-      continue;
-    }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return expandedCursor + remaining;
-      }
-      remaining -= 1;
-      expandedCursor += 1;
       continue;
     }
 
@@ -98,13 +140,7 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   return expandedCursor;
 }
 
-function collapsedSegmentLength(
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): number {
+function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
   }
@@ -112,12 +148,7 @@ function collapsedSegmentLength(
 }
 
 function clampCollapsedComposerCursorForSegments(
-  segments: ReadonlyArray<
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" }
-  >,
+  segments: ReadonlyArray<ComposerPromptSegment>,
   cursorInput: number,
 ): number {
   const collapsedLength = segments.reduce(
@@ -130,14 +161,24 @@ function clampCollapsedComposerCursorForSegments(
   return Math.max(0, Math.min(collapsedLength, Math.floor(cursorInput)));
 }
 
-export function clampCollapsedComposerCursor(text: string, cursorInput: number): number {
+export function clampCollapsedComposerCursor(
+  text: string,
+  cursorInput: number,
+  literalText = false,
+): number {
+  if (literalText) return clampCursor(text, cursorInput);
   return clampCollapsedComposerCursorForSegments(
     splitPromptIntoComposerSegments(text),
     cursorInput,
   );
 }
 
-export function collapseExpandedComposerCursor(text: string, cursorInput: number): number {
+export function collapseExpandedComposerCursor(
+  text: string,
+  cursorInput: number,
+  literalText = false,
+): number {
+  if (literalText) return clampCursor(text, cursorInput);
   const expandedCursor = clampCursor(text, cursorInput);
   const segments = splitPromptIntoComposerSegments(text);
   if (segments.length === 0) {
@@ -148,7 +189,11 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
   let collapsedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention") {
+    if (
+      segment.type === "mention" ||
+      segment.type === "citation" ||
+      segment.type === "context-reference"
+    ) {
       const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;
@@ -161,7 +206,7 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
       continue;
     }
     if (segment.type === "skill") {
-      const expandedLength = segment.name.length + 1;
+      const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;
       }
@@ -169,14 +214,6 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
         return collapsedCursor + 1;
       }
       remaining -= expandedLength;
-      collapsedCursor += 1;
-      continue;
-    }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return collapsedCursor + remaining;
-      }
-      remaining -= 1;
       collapsedCursor += 1;
       continue;
     }
@@ -220,45 +257,38 @@ export function isCollapsedCursorAdjacentToInlineToken(
   return false;
 }
 
-export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
-
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
-  const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
-  const linePrefix = text.slice(lineStart, cursor);
-
-  if (linePrefix.startsWith("/")) {
-    const commandMatch = /^\/(\S*)$/.exec(linePrefix);
-    if (commandMatch) {
-      const commandQuery = commandMatch[1] ?? "";
-      return {
-        kind: "slash-command",
-        query: commandQuery,
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
-    }
-  }
-
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
-  if (token.startsWith("$")) {
+  if (token.startsWith("/")) {
     return {
-      kind: "skill",
+      kind: "slash-command",
       query: token.slice(1),
       rangeStart: tokenStart,
       rangeEnd: cursor,
     };
   }
-  // `!provider:model` only delegates when it opens the message, so the menu
-  // only offers targets there. A `!` mid-prose stays prose.
-  if (token.startsWith("!") && tokenStart === 0) {
+  const pullRequestMatch = /^#([\p{L}\p{N}][\p{L}\p{N}_-]*)?$/u.exec(token);
+  if (pullRequestMatch) {
     return {
-      kind: "directive",
-      query: token.slice(1),
+      kind: "pull-request",
+      query: pullRequestMatch[1] ?? "",
       rangeStart: tokenStart,
       rangeEnd: cursor,
     };
+  }
+  const skillPrefix = /^\p{Sc}/u.exec(token);
+  if (skillPrefix) {
+    return {
+      kind: "skill",
+      query: token.slice(skillPrefix[0].length),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
+  if (token.startsWith("!") && tokenStart === 0) {
+    return { kind: "directive", query: token.slice(1), rangeStart: tokenStart, rangeEnd: cursor };
   }
   if (!token.startsWith("@")) {
     return null;
@@ -272,49 +302,35 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
-/**
- * Banner copy for a staged provider handoff. A draft that opens with
- * `!provider:model` will NOT pick the handoff up — the delegation is answered
- * by the model it names and the thread keeps its own — so the banner has to
- * say so rather than promise a switch that this send will not perform.
- */
-export function describeStagedHandoffBanner(input: {
-  readonly displayName: string;
-  readonly currentDisplayName: string;
-  readonly paused: boolean;
-  readonly draftIsInlineDelegate: boolean;
-  /** True while the send is running the context prepare (compression + Memo). */
-  readonly preparing?: boolean;
-}): { readonly title: string; readonly description: string } {
-  // Preparation happens inside the send, after the user pressed Enter but
-  // before their message row appears. Without this state the composer looks
-  // dead for the seconds compression takes, and users press send again.
-  if (input.preparing) {
-    return {
-      title: `Handing off to ${input.displayName} — preparing context…`,
-      description: "Preparing this chat's context. Your message sends right after.",
-    };
-  }
-  if (input.paused) {
-    return {
-      title: `Handoff to ${input.displayName} paused — provider unavailable`,
-      description: `Messages continue on ${input.currentDisplayName} until it returns, or cancel the switch.`,
-    };
-  }
-  if (input.draftIsInlineDelegate) {
-    return {
-      title: `Handoff to ${input.displayName} waits for your next normal message`,
-      description:
-        "Delegations run without switching, so this message keeps the chat on its current model.",
-    };
-  }
+export function pastedPathQueryLength(
+  lineBefore: string,
+  pasted: string,
+  pathQueryActive = true,
+): number {
+  if (!pathQueryActive) return 0;
+  if (detectComposerTrigger(lineBefore, lineBefore.length)?.kind !== "path") return 0;
+  return /^\S*/.exec(pasted)![0].length;
+}
+
+export function composerStateAtPromptEnd(
+  text: string,
+  literalText = false,
+): {
+  cursor: number;
+  trigger: ComposerTrigger | null;
+} {
+  const cursor = collapseExpandedComposerCursor(text, text.length, literalText);
   return {
-    title: `Next message hands off to ${input.displayName}`,
-    description: "This chat's context will be attached to it.",
+    cursor,
+    trigger: literalText
+      ? null
+      : detectComposerTrigger(text, expandCollapsedComposerCursor(text, cursor)),
   };
 }
 
-export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
+export function parseStandaloneComposerSlashCommand(
+  text: string,
+): Exclude<ComposerSlashCommand, "model"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
@@ -334,4 +350,45 @@ export function replaceTextRange(
   const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
   const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
   return { text: nextText, cursor: safeStart + replacement.length };
+}
+
+export function shouldSubmitComposerOnEnter(input: {
+  isMobileViewport: boolean;
+  shiftKey: boolean;
+}): boolean {
+  return !input.isMobileViewport && !input.shiftKey;
+}
+
+export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
+
+/**
+ * Banner copy for a staged provider handoff. A draft that opens with
+ * `!provider:model` will NOT pick the handoff up — the delegation is answered
+ * by the model it names and the thread keeps its own — so the banner has to
+ * say so rather than promise a switch that this send will not perform.
+ */
+export function describeStagedHandoffBanner(input: {
+  readonly displayName: string;
+  readonly currentDisplayName: string;
+  readonly paused: boolean;
+  readonly draftIsInlineDelegate: boolean;
+}): { readonly title: string; readonly description: string } {
+  if (input.paused) {
+    return {
+      title: `Handoff to ${input.displayName} paused — provider unavailable`,
+      description: `Messages continue on ${input.currentDisplayName} until it returns, or cancel the switch.`,
+    };
+  }
+  if (input.draftIsInlineDelegate) {
+    return {
+      title: `Handoff to ${input.displayName} waits for your next normal message`,
+      description:
+        "Delegations run without switching, so this message keeps the chat on its current model.",
+    };
+  }
+  return {
+    title: `Context handoff to ${input.displayName}`,
+    description:
+      "Your next message carries this chat's context and continues on the selected model.",
+  };
 }

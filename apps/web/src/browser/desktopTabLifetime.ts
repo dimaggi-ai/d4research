@@ -1,5 +1,6 @@
 import { previewBridge } from "~/components/preview/previewBridge";
 
+import { browserDefaultTabState, resolveBrowserDefaults } from "./browserDefaults";
 import { stopBrowserRecording } from "./browserRecording";
 
 interface DesktopTabLease {
@@ -30,18 +31,36 @@ const enqueueDesktopTabOperation = (
   return pending;
 };
 
+/**
+ * Runs a call against a desktop tab after the tab's create and earlier calls,
+ * so a setting sent while the tab is being created still lands on it.
+ */
+export function withDesktopTab(tabId: string, operation: () => Promise<void>): void {
+  void enqueueDesktopTabOperation(tabId, operation).catch(() => undefined);
+}
+
 export interface AcquiredDesktopTab {
   readonly ready: Promise<void>;
   readonly release: () => void;
 }
 
-export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
+export function acquireDesktopTab(
+  tabId: string,
+  serverTab?: { readonly threadId: string; readonly tabId: string },
+): AcquiredDesktopTab {
   const current =
     leases.get(tabId) ??
     ({
       references: 0,
       closeTimer: null,
-      ready: enqueueDesktopTabOperation(tabId, () => previewBridge?.createTab(tabId)),
+      // Zoom/appearance defaults travel with creation so the guest never
+      // paints a frame at 100%/system before the preference is applied.
+      ready: enqueueDesktopTabOperation(tabId, async () =>
+        previewBridge?.createTab(tabId, {
+          ...browserDefaultTabState(await resolveBrowserDefaults()),
+          ...(serverTab === undefined ? {} : { serverTab }),
+        }),
+      ),
     } satisfies DesktopTabLease);
   if (current.closeTimer !== null) window.clearTimeout(current.closeTimer);
   current.references += 1;

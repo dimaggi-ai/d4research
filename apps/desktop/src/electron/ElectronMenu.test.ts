@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,8 +27,8 @@ vi.mock("electron", () => ({
 
 import * as ElectronMenu from "./ElectronMenu.ts";
 
-const TestLayer = ElectronMenu.layer.pipe(
-  Layer.provide(Layer.succeed(HostProcessPlatform, "linux")),
+const layerTest = ElectronMenu.layer.pipe(
+  Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
 );
 
 const makeWindow = (zoomFactor = 1): Electron.BrowserWindow =>
@@ -55,7 +55,7 @@ describe("ElectronMenu", () => {
 
       assert.isTrue(Option.isNone(selectedItemId));
       assert.equal(buildFromTemplateMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("resolves with the clicked leaf item id", () =>
@@ -82,7 +82,7 @@ describe("ElectronMenu", () => {
       });
 
       assert.equal(Option.getOrNull(selectedItemId), "copy");
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("resolves with none when the menu closes without a click", () =>
@@ -98,7 +98,10 @@ describe("ElectronMenu", () => {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const selectedItemId = yield* electronMenu.showContextMenu({
         window: makeWindow(2),
-        items: [{ id: "copy", label: "Copy" }],
+        items: [
+          { id: "copy", label: "Copy" },
+          { id: "delete", label: "Delete", destructive: true, separatorBefore: true },
+        ],
         position: Option.some({ x: 10.8, y: 20.2 }),
       });
 
@@ -110,7 +113,39 @@ describe("ElectronMenu", () => {
         enabled: true,
         click: buildFromTemplateMock.mock.calls[0]?.[0][0].click,
       });
-    }).pipe(Effect.provide(TestLayer)),
+      assert.deepEqual(
+        buildFromTemplateMock.mock.calls[0]?.[0].map(
+          (item: Electron.MenuItemConstructorOptions) => item.type ?? item.label,
+        ),
+        ["Copy", "separator", "Delete"],
+      );
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("keeps a preceding non-destructive action in the destructive section", () =>
+    Effect.gen(function* () {
+      buildFromTemplateMock.mockImplementation(() => ({
+        popup: (options: Electron.PopupOptions) => options.callback?.(),
+      }));
+
+      const electronMenu = yield* ElectronMenu.ElectronMenu;
+      yield* electronMenu.showContextMenu({
+        window: makeWindow(),
+        items: [
+          { id: "copy", label: "Copy" },
+          { id: "archive", label: "Archive", separatorBefore: true },
+          { id: "delete", label: "Delete", destructive: true },
+        ],
+        position: Option.none(),
+      });
+
+      assert.deepEqual(
+        buildFromTemplateMock.mock.calls[0]?.[0].map(
+          (item: Electron.MenuItemConstructorOptions) => item.type ?? item.label,
+        ),
+        ["Copy", "separator", "Archive", "Delete"],
+      );
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("defers popupTemplate side effects until the returned Effect runs", () =>
@@ -119,9 +154,11 @@ describe("ElectronMenu", () => {
       buildFromTemplateMock.mockImplementation(() => ({ popup: popupMock }));
 
       const electronMenu = yield* ElectronMenu.ElectronMenu;
+      const frame = { routingId: 7 } as Electron.WebFrameMain;
       const popup = electronMenu.popupTemplate({
         window: {} as Electron.BrowserWindow,
         template: [{ label: "Copy" }],
+        frame,
       });
 
       assert.equal(buildFromTemplateMock.mock.calls.length, 0);
@@ -131,7 +168,8 @@ describe("ElectronMenu", () => {
 
       assert.equal(buildFromTemplateMock.mock.calls.length, 1);
       assert.equal(popupMock.mock.calls.length, 1);
-    }).pipe(Effect.provide(TestLayer)),
+      assert.strictEqual(popupMock.mock.calls[0]?.[0].frame, frame);
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves application-menu failures as structured defects", () =>
@@ -157,7 +195,7 @@ describe("ElectronMenu", () => {
         assert.strictEqual(error.cause, cause);
         assert.notInclude(error.message, cause.message);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves popup-template failures with window context", () =>
@@ -186,7 +224,7 @@ describe("ElectronMenu", () => {
         assert.equal(error.itemCount, 1);
         assert.strictEqual(error.cause, cause);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("preserves context-menu failures with normalized item context", () =>
@@ -214,6 +252,6 @@ describe("ElectronMenu", () => {
         assert.equal(error.itemCount, 1);
         assert.strictEqual(error.cause, cause);
       }
-    }).pipe(Effect.provide(TestLayer)),
+    }).pipe(Effect.provide(layerTest)),
   );
 });

@@ -6,10 +6,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@d4research/shared/Net";
 import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@d4research/shared/devHome";
-import {
-  HostProcessEnvironment,
-  HostProcessWorkingDirectory,
-} from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { resolveSpawnCommand } from "@d4research/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -19,8 +16,8 @@ import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { Argument, Command, Flag } from "effect/unstable/cli";
-import { ChildProcess } from "effect/unstable/process";
+import { Argument, Command, Flag } from "effect/cli";
+import { ChildProcess } from "effect/process";
 
 import { type DevShareError, shareDevServer, unshareDevServer } from "./lib/dev-share.ts";
 import { loadRepoEnv } from "./lib/repo-env.ts";
@@ -44,17 +41,12 @@ const FETCH_BAD_PORTS = new Set([
   6669, 6679, 6697, 10080,
 ]);
 // Dev servers bind loopback, so loopback is the only interface whose
-// availability decides whether we can use a port. Probing wildcards too made
-// the runner walk away from a perfectly free port whenever something else held
-// the same number on another interface — `tailscale serve` does exactly that,
-// which silently moved the ports out from under a URL that had just been shared.
+// availability decides whether we can use a port.
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "::1"] as const;
 
 /**
- * Bind hosts on which a backend still answers `http://localhost:<port>`, which
- * is where single-origin browser dev proxies to. Loopback and the wildcards
- * qualify; a specific interface (e.g. a LAN IP) does not — the OS binds only
- * that address and the proxy target goes dark.
+ * Loopback and the wildcards qualify; a specific interface (e.g. a LAN IP) does
+ * not — the OS binds only that address and the proxy target goes dark.
  */
 export function isProxiableBindHost(host: string): boolean {
   const normalized = host.trim();
@@ -91,8 +83,7 @@ const MODE_ARGS = {
 type DevMode = keyof typeof MODE_ARGS;
 /**
  * `role` matters because only the backend honours `--host`/`T3CODE_HOST`; the
- * web port is always loopback. Passed explicitly rather than inferred from the
- * port number, which stops distinguishing them under a large port offset.
+ * web port is always loopback.
  */
 type PortAvailabilityCheck<R = never> = (
   port: number,
@@ -109,7 +100,7 @@ export function isBrowserAllowedPort(port: number): boolean {
   return !FETCH_BAD_PORTS.has(port);
 }
 
-export class DevRunnerConfigurationError extends Schema.TaggedErrorClass<DevRunnerConfigurationError>()(
+export class DevRunnerConfigurationError extends Schema.TaggedError<DevRunnerConfigurationError>()(
   "DevRunnerConfigurationError",
   {
     configKeys: Schema.Array(Schema.String),
@@ -121,7 +112,7 @@ export class DevRunnerConfigurationError extends Schema.TaggedErrorClass<DevRunn
   }
 }
 
-export class DevRunnerInvalidPortOffsetError extends Schema.TaggedErrorClass<DevRunnerInvalidPortOffsetError>()(
+export class DevRunnerInvalidPortOffsetError extends Schema.TaggedError<DevRunnerInvalidPortOffsetError>()(
   "DevRunnerInvalidPortOffsetError",
   {
     configKey: Schema.Literal("T3CODE_PORT_OFFSET"),
@@ -134,7 +125,7 @@ export class DevRunnerInvalidPortOffsetError extends Schema.TaggedErrorClass<Dev
   }
 }
 
-export class DevRunnerPortExhaustedError extends Schema.TaggedErrorClass<DevRunnerPortExhaustedError>()(
+export class DevRunnerPortExhaustedError extends Schema.TaggedError<DevRunnerPortExhaustedError>()(
   "DevRunnerPortExhaustedError",
   {
     startOffset: Schema.Number,
@@ -150,7 +141,7 @@ export class DevRunnerPortExhaustedError extends Schema.TaggedErrorClass<DevRunn
   }
 }
 
-export class DevRunnerProcessError extends Schema.TaggedErrorClass<DevRunnerProcessError>()(
+export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessError>()(
   "DevRunnerProcessError",
   {
     operation: Schema.Literals(["spawn", "wait-for-exit"]),
@@ -166,7 +157,7 @@ export class DevRunnerProcessError extends Schema.TaggedErrorClass<DevRunnerProc
   }
 }
 
-export class DevRunnerProcessExitError extends Schema.TaggedErrorClass<DevRunnerProcessExitError>()(
+export class DevRunnerProcessExitError extends Schema.TaggedError<DevRunnerProcessExitError>()(
   "DevRunnerProcessExitError",
   {
     mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
@@ -181,7 +172,7 @@ export class DevRunnerProcessExitError extends Schema.TaggedErrorClass<DevRunner
   }
 }
 
-export class DevRunnerHostNotProxiableError extends Schema.TaggedErrorClass<DevRunnerHostNotProxiableError>()(
+export class DevRunnerHostNotProxiableError extends Schema.TaggedError<DevRunnerHostNotProxiableError>()(
   "DevRunnerHostNotProxiableError",
   {
     mode: Schema.Literals(["dev", "dev:web"]),
@@ -193,34 +184,23 @@ export class DevRunnerHostNotProxiableError extends Schema.TaggedErrorClass<DevR
   }
 }
 
-export const DevRunnerError = Schema.Union([
-  DevRunnerConfigurationError,
-  DevRunnerHostNotProxiableError,
-  DevRunnerInvalidPortOffsetError,
-  DevRunnerPortExhaustedError,
-  DevRunnerProcessError,
-  DevRunnerProcessExitError,
-]);
-export type DevRunnerError = typeof DevRunnerError.Type;
-export const isDevRunnerError = Schema.is(DevRunnerError);
-
 const optionalStringConfig = (name: string): Config.Config<string | undefined> =>
-  Config.string(name).pipe(
+  Config.String(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalBooleanConfig = (name: string): Config.Config<boolean | undefined> =>
-  Config.boolean(name).pipe(
+  Config.Boolean(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalPortConfig = (name: string): Config.Config<number | undefined> =>
-  Config.port(name).pipe(
+  Config.Port(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
 const optionalIntegerConfig = (name: string): Config.Config<number | undefined> =>
-  Config.int(name).pipe(
+  Config.Int(name).pipe(
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
@@ -266,11 +246,6 @@ export function resolveOffset(config: {
     return Effect.succeed({ offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` });
   }
 
-  // Worktrees get ports derived from their path so each one is stable across
-  // restarts and distinct from its siblings. Without this every worktree starts
-  // at offset 0 and scan-collides onto whatever happens to be free that minute,
-  // so ports move under you between runs — which breaks any URL you already
-  // shared. The main checkout keeps the documented 5733/13773.
   const worktreePath = config.worktreePath?.trim();
   if (worktreePath) {
     const offset = ((Hash.string(worktreePath) >>> 0) % MAX_HASH_OFFSET) + 1;
@@ -323,8 +298,6 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    // Precedence (--home-dir > worktree .t3 > ambient T3CODE_HOME) is resolved
-    // by the caller; an unset t3Home here genuinely means "use the default".
     const configuredBaseDir = t3Home?.trim() || undefined;
     const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
     const isDesktopMode = mode === "dev:desktop";
@@ -357,24 +330,18 @@ export function createDevRunnerEnv({
       // only place we set it. An inherited one (an exported HOST, a container,
       // a `HOST=0.0.0.0 npm start` habit) would otherwise reach Vite and pin
       // its HMR socket to that address — see the `explicitHost` gate in
-      // apps/web/vite.config.ts. Over a shared origin that is invisible: the
-      // page loads and only HMR quietly dials the wrong machine.
+      // apps/web/vite.config.ts.
       delete output.HOST;
       if (mode === "dev" || mode === "dev:web") {
         // Browser dev is single-origin: everything (including /ws) is proxied
         // through Vite, so the client must resolve its backend from
-        // window.location.origin rather than a baked-in localhost URL. See
-        // resolveConfiguredPrimaryTarget in apps/web/src/environments/primary/target.ts
-        // — it only defers to the origin when both of these are absent. Baking
-        // localhost here is what breaks any non-localhost origin (tailnet, LAN,
-        // phone): the remote browser dials its own machine.
+        // window.location.origin rather than a baked-in localhost URL.
         delete output.VITE_HTTP_URL;
         delete output.VITE_WS_URL;
         // Deleting is not enough on its own: vite.config.ts calls loadRepoEnv,
         // which merges `.env`/`.env.local` *under* this env, so a developer
         // with either URL in their `.env` would get it back and silently lose
-        // single-origin mode. This states the intent positively so Vite can
-        // ignore those values rather than infer from their absence.
+        // single-origin mode.
         output.T3CODE_SINGLE_ORIGIN_DEV = "1";
       } else {
         output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
@@ -391,6 +358,7 @@ export function createDevRunnerEnv({
       delete output.T3CODE_MODE;
       delete output.T3CODE_NO_BROWSER;
       delete output.T3CODE_HOST;
+      delete output.T3CODE_DEV_AUTH_TOKEN;
     }
 
     if (!isDesktopMode && host !== undefined) {
@@ -458,21 +426,6 @@ export function checkPortAvailabilityOnHosts<R>(
   });
 }
 
-/**
- * Hosts to probe for a dev server bound to `configuredHost`.
- *
- * Loopback is always checked because the web server and the desktop renderer
- * target reach it there. When `--host`/`T3CODE_HOST` moves the backend onto
- * another interface, that interface decides whether the bind actually
- * succeeds — probing only loopback would hand back a port that is free here
- * and taken there, and the server would fail to start.
- *
- * `configuredHost` applies to the *backend* only. Vite takes its bind address
- * from `HOST`, which the runner sets for desktop alone, so the web port stays
- * on loopback and must not be judged against the backend's interface —
- * a port free on loopback but busy on that interface would otherwise be
- * rejected for a server that was never going to bind there.
- */
 export function devPortProbeHosts(configuredHost: string | undefined): ReadonlyArray<string> {
   const host = configuredHost?.trim();
   if (!host || DEV_PORT_PROBE_HOSTS.includes(host as (typeof DEV_PORT_PROBE_HOSTS)[number])) {
@@ -645,11 +598,6 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       ),
     );
 
-    // Single-origin browser dev proxies the backend at localhost. A wildcard
-    // bind still answers there; a specific non-loopback interface does not,
-    // which breaks every proxied request in a way that reads as "server is
-    // broken" rather than "flag combination is unsupported". Reject it up
-    // front instead. (dev:server and dev:desktop don't proxy — untouched.)
     if (
       (input.mode === "dev" || input.mode === "dev:web") &&
       input.host !== undefined &&
@@ -658,7 +606,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       return yield* new DevRunnerHostNotProxiableError({ mode: input.mode, host: input.host });
     }
 
-    const worktreePath = yield* resolveGitWorktreePath(yield* HostProcessWorkingDirectory);
+    const worktreePath = yield* resolveGitWorktreePath(yield* HostProcess.WorkingDirectory);
 
     const { offset, source } = yield* resolveOffset({
       portOffset,
@@ -671,16 +619,14 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       startOffset: offset,
       hasExplicitServerPort: input.port !== undefined,
       hasExplicitDevUrl: input.devUrl !== undefined,
-      // A non-loopback bind host decides whether the backend can actually take
-      // the port, so it has to be probed alongside loopback.
       checkPortAvailability: makeDefaultCheckPortAvailability(input.host),
     });
 
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const hostEnvironment = yield* HostProcess.Environment;
     // A dev server started inside a worktree defaults to that worktree's own
     // (gitignored) `.t3` — see @d4research/shared/devHome for why this must
     // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
-    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcessWorkingDirectory);
+    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
     // Trim before choosing: `--home-dir ""` is not a selection, and treating it
     // as one would skip the worktree default and land on the shared home —
     // exactly the outcome this precedence exists to prevent.
@@ -724,12 +670,6 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       if (input.mode === "dev:server") {
         yield* Effect.logInfo("[dev-runner] --share has no effect for dev:server (no web server).");
       } else if (input.mode === "dev:desktop") {
-        // Desktop is not single-origin: the renderer gets VITE_HTTP_URL and
-        // VITE_WS_URL baked to loopback, so a tailnet visitor would load the UI
-        // and then watch it dial its own 127.0.0.1 for the backend. Worse,
-        // sharing would overwrite VITE_DEV_SERVER_URL, which is the origin
-        // Electron itself loads the renderer from. Refuse rather than hand out
-        // a URL that is broken in a way the user cannot see.
         yield* Effect.logWarning(
           "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
         );
@@ -738,20 +678,9 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
         // process (and reboots), so the cleanup has to be registered atomically
         // with creating it. An interrupt landing in between would otherwise
         // leave a mapping pointing at a port nothing is listening on.
-        //
-        // Deliberately no ownership tracking beyond that: if a second runner
-        // takes this port during a fast restart, the first's exit can briefly
-        // tear down the new mapping — visible (the URL stops working) and fixed
-        // by re-running --share. A lease protocol closing that window existed
-        // and was removed as more machinery than a dev convenience warrants.
-        //
-        // A tailnet that isn't up shouldn't stop the dev server from starting —
-        // warn, and carry on serving locally.
         const shared = yield* Effect.acquireRelease(
           shareDevServer({ webPort: sharedWebPort }),
           () =>
-            // Serve config outlives this process, so a cleanup that did not
-            // take leaves a tailnet URL pointing at a port nothing serves.
             unshareDevServer(sharedWebPort).pipe(
               Effect.flatMap((result) =>
                 result.cleared
@@ -785,17 +714,13 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
           ]
             .filter((entry) => entry && entry.length > 0)
             .join(",");
-          // The server builds its pairing URL from this, so the URL printed at
-          // startup is already the shareable one — no rewriting by hand. An
-          // explicit --dev-url still wins.
           if (input.devUrl === undefined) {
             env.VITE_DEV_SERVER_URL = shared.url;
           }
           // A shared origin serves a remote browser, where unbundled dev's
           // per-module requests each pay a tailnet round trip — a cold module
-          // graph takes minutes to first paint. Bundled dev collapses that to
-          // a few chunk requests. Only defaulted, so T3CODE_BUNDLED_DEV=0
-          // still opts a --share run back out.
+          // graph takes minutes to first paint. Bundled dev collapses that to a
+          // few chunk requests.
           if (env.T3CODE_BUNDLED_DEV === undefined) {
             env.T3CODE_BUNDLED_DEV = "1";
           }
@@ -804,15 +729,12 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       }
     }
 
-    const spawnCommand = yield* resolveSpawnCommand(
-      "vp",
-      [...MODE_ARGS[input.mode], ...input.runArgs],
-      { env },
-    );
+    const args = [...MODE_ARGS[input.mode], ...input.runArgs];
+    const spawnCommand = yield* resolveSpawnCommand("vp", args, { env });
     const processContext = {
       mode: input.mode,
       executable: "vp" as const,
-      argumentCount: spawnCommand.args.length,
+      argumentCount: args.length,
       shell: spawnCommand.shell,
     } as const;
     const child = yield* ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -858,40 +780,41 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
 }
 
 const devRunnerCli = Command.make("dev-runner", {
-  mode: Argument.choice("mode", DEV_RUNNER_MODES).pipe(
+  mode: Argument.Literals("mode", DEV_RUNNER_MODES).pipe(
     Argument.withDescription("Development mode to run."),
   ),
-  t3Home: Flag.string("home-dir").pipe(
+  t3Home: Flag.String("home-dir").pipe(
     Flag.withDescription(
       "Explicit T3 Code data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
     ),
     Flag.optional,
     Flag.map(Option.getOrUndefined),
   ),
-  browser: Flag.boolean("browser").pipe(
+  browser: Flag.Boolean("browser").pipe(
     Flag.withDescription("Open a browser automatically (disabled by default for web dev)."),
+    Flag.withDefault(false),
   ),
-  autoBootstrapProjectFromCwd: Flag.boolean("auto-bootstrap-project-from-cwd").pipe(
+  autoBootstrapProjectFromCwd: Flag.Boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(
       "Auto-bootstrap toggle (equivalent to T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD).",
     ),
     Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD")),
   ),
-  logWebSocketEvents: Flag.boolean("log-websocket-events").pipe(
+  logWebSocketEvents: Flag.Boolean("log-websocket-events").pipe(
     Flag.withDescription("WebSocket event logging toggle (equivalent to T3CODE_LOG_WS_EVENTS)."),
     Flag.withAlias("log-ws-events"),
     Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_LOG_WS_EVENTS")),
   ),
-  host: Flag.string("host").pipe(
+  host: Flag.String("host").pipe(
     Flag.withDescription("Server host/interface override (forwards to T3CODE_HOST)."),
     Flag.withFallbackConfig(optionalStringConfig("T3CODE_HOST")),
   ),
-  port: Flag.integer("port").pipe(
+  port: Flag.Int("port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     Flag.withDescription("Server port override (forwards to T3CODE_PORT)."),
     Flag.withFallbackConfig(optionalPortConfig("T3CODE_PORT")),
   ),
-  devUrl: Flag.string("dev-url").pipe(
+  devUrl: Flag.String("dev-url").pipe(
     Flag.withSchema(Schema.URLFromString),
     Flag.withDescription(
       "Explicit web dev URL override (forwards to VITE_DEV_SERVER_URL). Ambient VITE_DEV_SERVER_URL values are ignored so a parent dev app cannot redirect the child runner.",
@@ -899,17 +822,17 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.optional,
     Flag.map(Option.getOrUndefined),
   ),
-  dryRun: Flag.boolean("dry-run").pipe(
+  dryRun: Flag.Boolean("dry-run").pipe(
     Flag.withDescription("Resolve mode/ports/env and print, but do not spawn Vite+."),
     Flag.withDefault(false),
   ),
-  share: Flag.boolean("share").pipe(
+  share: Flag.Boolean("share").pipe(
     Flag.withDescription(
       "Publish the web dev server on this machine's tailnet over HTTPS (via `tailscale serve`) and print the pairing URL for it. Removed again on exit.",
     ),
     Flag.withDefault(false),
   ),
-  runArgs: Argument.string("run-arg").pipe(
+  runArgs: Argument.String("run-arg").pipe(
     Argument.withDescription("Additional Vite+ run args (pass after `--`)."),
     Argument.variadic(),
   ),

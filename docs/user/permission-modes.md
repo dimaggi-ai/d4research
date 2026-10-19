@@ -1,27 +1,36 @@
 # Permission Modes
 
-A permission mode controls how much the agent does on its own and when it stops to ask you.
+A permission mode controls how much the agent acts independently and when it pauses to ask for input.
 
-The mode is set per thread, from the mode control in the message composer. Changing it in one
-thread does not change any other thread. A thread created from inside another thread keeps that
-thread's mode; otherwise new threads start in **Full access** unless you pick something else
-before sending.
+Set the default for new threads in **Settings → General → New threads → Permissions**.
+Projects can override the environment default. New threads use this setting rather than the
+mode of the thread you were viewing. The initial default is **Full access**; existing threads
+and modes you choose in a draft keep their permissions.
 
 ## The Modes
 
 **Supervised**: ask before commands and file changes. The agent pauses and shows you what it
 wants to run or edit, and waits for approval. Work outside the workspace is restricted.
 
-**Auto-accept edits**: auto-approve edits, ask before other actions. File changes go through
-without prompting; commands and anything else still stop for approval.
+**Auto-accept edits**: auto-approve file changes; ask before other actions. Edits go through
+without prompting, while commands and anything else still stop for approval.
 
-**Auto**: routine actions proceed without you; risky ones still ask. How this is enforced depends
-on the provider: Codex delegates routine approvals to an AI reviewer, Claude uses its own auto
-permission mode, and providers without an equivalent (such as OpenCode) fall back to asking, like
-Supervised.
+**Full access**: allow commands and edits without approval prompts.
 
-**Full access**: allow commands and edits without prompts. The default. The agent runs
-unattended until it finishes or asks a question of its own.
+Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
+**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
+to you for approval.
+
+Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
+runs in **Supervised**.
+
+Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
+file-change approvals offer **Allow all edits this session**. Its command approvals have no
+session-wide choice, because Grok would remember that command for the whole project.
+
+ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.
@@ -38,9 +47,9 @@ shell commands.
 
 ## Provider Behavior
 
-Each provider maps these modes onto its own approval and sandbox settings. Codex, for example,
-translates the mode into its approval policy and sandbox level, so **Supervised** runs the CLI
-with prompting enabled and a restricted workspace while **Full access** disables both. The
+Each provider maps these modes to its own approval and sandbox settings. Codex, for example,
+translates the mode into an approval policy and sandbox level: **Supervised** runs the CLI
+with prompting enabled and a restricted workspace, while **Full access** disables both. The
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
 

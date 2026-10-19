@@ -27,9 +27,11 @@ Do not ask contributors to install the OpenAI `build-ios-apps` plugin globally.
 3. Call `session_set_defaults` with the project or workspace, scheme, Debug configuration, simulator ID, and bundle identifier when known.
 4. Keep every subsequent build, launch, screenshot, log capture, and UI action pinned to that same UDID.
 
-Avoid generic Mac window automation for switching among Simulator windows. Explicit device identity is more reliable.
+Avoid generic Mac window automation for switching among Simulator windows; explicit device identity is more reliable.
 
 ## Choose build or launch
+
+For T3 Code Mobile, run `node scripts/mobile-native-client.ts ensure ios <simulator-udid>` from the checkout on the simulator host first. It checks the local Expo native fingerprint against the installed client and builds/installs when stale, missing, or unknown. Then launch with the intended Metro bundle. Authorized verification includes native builds and installs; do not stop because the existing client is old. Use `check` instead of `ensure` only when the user explicitly prohibits rebuilding or requests a read-only check.
 
 - Use `build_run_sim` when native source, native dependencies, entitlements, or project configuration changed.
 - Use `test_sim` for the smallest relevant native test target or test cases; do not run an entire workspace test matrix routinely.
@@ -37,7 +39,7 @@ Avoid generic Mac window automation for switching among Simulator windows. Expli
 - To reuse an existing build artifact, use `get_sim_app_path` or `get_app_bundle_id`, install it with `install_app_sim` when necessary, and then launch it.
 - Do not run a build-only action immediately before `build_run_sim` unless the task requires both artifacts.
 
-After launch, call `snapshot_ui` or `screenshot` before interacting. An open Simulator window alone is not evidence that the intended app launched.
+After launch, call `snapshot_ui` or `screenshot` before interacting. An open Simulator window alone does not prove the intended app launched.
 
 ## Drive the UI semantically
 

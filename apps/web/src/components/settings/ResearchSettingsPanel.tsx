@@ -86,9 +86,9 @@ export function ResearchSettingsPanel() {
     setPipelineDraft((current) =>
       document.activeElement === pipelineRef.current ? current : scenario.pipelinePrompt,
     );
-  }, [scenario.name, scenario.pipelinePrompt]);
+  }, [scenario.pipelinePrompt]);
   const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings, null),
   );
   const candidates = deriveResearchProviderCandidates(instanceEntries);
   const resolutions = resolveResearchDirectives(pipelineDraft, candidates, promptFiles);

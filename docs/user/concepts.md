@@ -23,7 +23,7 @@ it does not create a replacement history.
 ## Provider and Model
 
 A **provider** is the local agent runtime d4research controls, such as Codex, Claude, Cursor, Grok,
-Junie, OpenCode, or Agy. A provider instance can represent a separate account or configuration. A
+Junie, Muse, OpenCode, or Agy. A provider instance can represent a separate account or configuration. A
 model selection always belongs to a provider instance.
 
 Pipelines record the requested target and the target that actually ran. An explicitly authored
@@ -36,8 +36,8 @@ scenario. Research and Dev share target resolution, explicit fallback policy, tr
 server-enforced budgets.
 
 A **delegation** is a real, bounded provider call made by the orchestrator. Delegates cannot
-delegate again. A skipped or failed call remains skipped or failed in the run record; model-written
-prose cannot turn it into a successful call.
+delegate again. A skipped or failed call stays that way in the run record; model-written prose
+cannot turn it into a successful call.
 
 An **inline delegation** is the same bounded call made without a pipeline: open a message with
 `!provider:model` and that one message is answered by the model you named, leaving the chat's own
@@ -50,10 +50,14 @@ authoritative.
 
 Choosing another provider in a chat that has already started only _stages_ the switch — nothing runs
 yet, and the composer tells you the next message will hand off. That next message is the handoff:
-d4research stores recoverable context in local Memo, attaches it to what you wrote, and the new
-provider answers your actual instruction. If Memo is unavailable, d4research attaches the
-size-bounded visible-thread transcript directly so the switch can still happen. The handoff record
-will not be searchable in Memo, but the receiving provider does not lose the carried context.
+d4research attaches a bounded transcript to what you wrote, and the new provider answers your
+instruction. Automatic handoffs do not wait for compression or a Memo write. You can switch chats
+after sending; an accepted turn continues on its original thread. The context travels in the saved
+message, without requiring a separate searchable Memo record.
+
+The attached context keeps the original task and recent messages, up to 60,000 characters, with
+less space available for very long instructions. Omitted history is marked. A failed or disconnected
+send is not a completed handoff; check the original thread for the sent message or error.
 
 In the thread, a handed-off message carries a compact **Handed off to …** row above your normal
 message bubble; expand it to read the context that travelled with it. Handoffs from older versions

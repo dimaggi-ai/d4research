@@ -1,3 +1,6 @@
+import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
+import { canStartProviderTurn } from "@d4research/contracts";
+import * as Equal from "effect/Equal";
 /**
  * Instance-aware view over the wire `ServerProvider[]`.
  *
@@ -13,11 +16,10 @@
  * @module providerInstances
  */
 import {
-  DEFAULT_SERVER_SETTINGS,
-  canStartProviderTurn,
   defaultInstanceIdForDriver,
-  PROVIDER_DISPLAY_NAMES,
+  resolveProjectProviderInstanceEnabled,
   type ModelSelection,
+  type ProjectId,
   type ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
@@ -25,9 +27,13 @@ import {
   type ServerSettings,
   type ServerProviderState,
 } from "@d4research/contracts";
-import * as Equal from "effect/Equal";
+import {
+  normalizeProviderAccentColor,
+  resolveProviderInstanceDisplayName,
+  shouldShowInstanceBadge,
+} from "@d4research/client-runtime/state/provider-instance-display";
 
-import { formatProviderDriverKindLabel } from "./providerModels";
+export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
 /**
  * Local-only placeholder used while a draft has no provider it can safely
@@ -39,125 +45,52 @@ export const NO_PROVIDER_MODEL_SELECTION: ModelSelection = {
   model: "",
 };
 
-/**
- * UI-facing projection of one configured provider instance. Carries the
- * snapshot verbatim for callers that need server-side fields we don't
- * hoist here, plus the precomputed `instanceId` / `driverKind` /
- * `displayName` used by every picker and settings view.
- */
 export interface ProviderInstanceEntry {
   readonly instanceId: ProviderInstanceId;
   readonly driverKind: ProviderDriverKind;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
+  readonly acpRegistryAgentId?: string | undefined;
+  readonly acpRegistryIconUrl?: string | undefined;
   readonly continuationGroupKey?: string | undefined;
   readonly enabled: boolean;
   readonly installed: boolean;
   readonly status: ServerProviderState;
-  /**
-   * True when this entry is the default instance for its driver kind —
-   * i.e. its instance id equals `defaultInstanceIdForDriver(driverKind)`.
-   * The settings panel and picker sort defaults before customs.
-   */
   readonly isDefault: boolean;
-  /** True when `availability === "unavailable"` is absent or "available". */
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
+export type ProviderCatalogAvailability = "loading" | "ready" | "unavailable" | "unconfigured";
+
 /**
- * Whether an instance can currently contribute models to an interactive picker.
- *
- * Disabling an instance updates `enabled` independently, while its previous
- * `ready` probe status can remain in the streamed snapshot until reconciliation.
+ * Environment config streams are reactive: treating their initial `null` as a
+ * final empty list strands otherwise recoverable threads behind a misleading
+ * "no providers" state.
  */
-export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.isAvailable && canStartProviderTurn(entry.snapshot);
+export function resolveProviderCatalogAvailability(input: {
+  readonly catalogLoaded: boolean;
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly selectedEntry: ProviderInstanceEntry | undefined;
+}): ProviderCatalogAvailability {
+  if (!input.catalogLoaded) return "loading";
+  if (input.selectedEntry !== undefined) return "ready";
+  return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
-/** Picker rails contain configured, enabled instances only. */
+/**
+ * Disabling an instance updates `enabled` independently, while its previous `ready` probe
+ * status can remain in the streamed snapshot until reconciliation.
+ */
+export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
+  return entry.enabled && entry.isAvailable && canStartProviderTurn(entry.snapshot);
+}
+
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
   return entry.enabled;
 }
 
-/**
- * Turn an instance id slug into a human-readable label. Splits on `_` / `-`
- * and camelCase boundaries and title-cases each token, so `codex_personal`
- * becomes "Codex Personal" and `myCustomInstance` becomes "My Custom
- * Instance".
- *
- * This is a fallback used only when the wire snapshot's `displayName`
- * doesn't disambiguate a non-default instance from the default one of the
- * same driver (today every built-in driver hard-codes a single presentation
- * label per kind, so two instances of the same kind arrive with identical
- * display names). When a server/driver later plumbs the user's configured
- * `ProviderInstanceConfig.displayName` through to the snapshot, that value
- * will take precedence over this fallback.
- */
-function humanizeInstanceId(instanceId: ProviderInstanceId): string {
-  const words: string[] = [];
-  for (const token of instanceId
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .split(" ")) {
-    if (token.length === 0) continue;
-    words.push(token.charAt(0).toUpperCase() + token.slice(1));
-  }
-  return words.join(" ");
-}
-
-function driverKindLabel(driverKind: ProviderDriverKind): string {
-  return PROVIDER_DISPLAY_NAMES[driverKind] ?? formatProviderDriverKindLabel(driverKind);
-}
-
-export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) return undefined;
-  return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed : undefined;
-}
-
-/**
- * Resolve an entry's displayName with a tiered priority:
- *
- *   1. A snapshot `displayName` that differs from the driver-kind label —
- *      the server has explicitly named this instance, trust it.
- *   2. For non-default instances, a humanized `instanceId` — the server
- *      fell back to the driver-level presentation constant (which is the
- *      same for every instance of that kind), so we differentiate at the
- *      UI layer by slug. This is what keeps "Codex" + "Codex Personal"
- *      distinguishable in tooltips and list labels today.
- *   3. The snapshot's `displayName` (if any) — default instance, trust
- *      whatever label the driver stamped.
- *   4. `driverKindLabel(driverKind)` — nothing else on hand, so use the
- *      canonical brand label from contracts (falling back to a generic
- *      title-case of the kind slug).
- */
-function resolveInstanceDisplayName(
-  snapshot: ServerProvider,
-  instanceId: ProviderInstanceId,
-  driverKind: ProviderDriverKind,
-  isDefault: boolean,
-): string {
-  const trimmedSnapshotName = snapshot.displayName?.trim();
-  const kindLabel = driverKindLabel(driverKind);
-  if (trimmedSnapshotName && trimmedSnapshotName !== kindLabel) {
-    return trimmedSnapshotName;
-  }
-  if (!isDefault) {
-    const humanized = humanizeInstanceId(instanceId);
-    if (humanized.length > 0) return humanized;
-  }
-  return trimmedSnapshotName || kindLabel;
-}
-
-/**
- * Project the wire `ServerProvider[]` into instance entries, one per
- * configured instance. Preserves the server's ordering (which sources
- * from `deriveProviderInstanceConfigMap` — explicit `providerInstances.*`
- * first, synthesized defaults after) so callers that want "default first"
- * should sort with `sortProviderInstanceEntries` below.
- */
 export function deriveProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -166,12 +99,14 @@ export function deriveProviderInstanceEntries(
     const driverKind = snapshot.driver;
     const defaultId = defaultInstanceIdForDriver(driverKind);
     const isDefault = instanceId === defaultId;
-    const displayName = resolveInstanceDisplayName(snapshot, instanceId, driverKind, isDefault);
     return {
       instanceId,
       driverKind,
-      displayName,
+      displayName: resolveProviderInstanceDisplayName(snapshot),
       accentColor: normalizeProviderAccentColor(snapshot.accentColor),
+      ...(driverKind === "acpRegistry" && snapshot.iconUrl
+        ? { acpRegistryIconUrl: snapshot.iconUrl }
+        : {}),
       continuationGroupKey: snapshot.continuation?.groupKey,
       enabled: snapshot.enabled,
       installed: snapshot.installed,
@@ -185,113 +120,99 @@ export function deriveProviderInstanceEntries(
 }
 
 /**
- * Overlay the current settings configuration onto streamed provider snapshots.
- * Provider probes can briefly retain their previous `enabled` value after a
- * settings write, so picker visibility must follow settings rather than waiting
- * for probe reconciliation.
- *
- * Non-default instances only exist through `providerInstances`; if one is
- * absent there, its streamed snapshot is stale (for example immediately after
- * deletion) and is treated as disabled.
+ * Instance ids are per-environment routing keys, and `defaultInstanceIdForDriver` makes the
+ * default id literally the driver slug, so every environment running the same driver reports
+ * the same id. Flattening across environments would clobber entries and mis-resolve accent
+ * colors; lookups must stay scoped to the thread's own environment.
  */
-export function applyProviderInstanceSettings(
-  entries: ReadonlyArray<ProviderInstanceEntry>,
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
-): ReadonlyArray<ProviderInstanceEntry> {
-  const legacyProviders = settings.providers as Readonly<
-    Record<string, { readonly enabled?: boolean } | undefined>
-  >;
-
-  const redundantInstanceIds = getRedundantProviderInstanceIds(settings);
-  return entries.flatMap((entry) => {
-    if (redundantInstanceIds.has(entry.instanceId)) return [];
-    const explicitInstance = settings.providerInstances?.[entry.instanceId];
-    const enabled = explicitInstance
-      ? (explicitInstance.enabled ?? true)
-      : entry.isDefault
-        ? (legacyProviders[entry.driverKind]?.enabled ?? entry.enabled)
-        : false;
-    return [enabled === entry.enabled ? entry : { ...entry, enabled }];
-  });
-}
-
-function configRecord(value: unknown): Readonly<Record<string, unknown>> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Readonly<Record<string, unknown>>)
-    : {};
-}
-
-function effectiveProviderRuntimeConfig(
-  driver: ProviderDriverKind,
-  instance: {
-    readonly config?: unknown;
-    readonly environment?: unknown;
-    readonly enabled?: boolean;
-  },
-) {
-  const defaults = configRecord(
-    (DEFAULT_SERVER_SETTINGS.providers as Readonly<Record<string, unknown>>)[driver],
-  );
-  return {
-    driver,
-    enabled: instance.enabled ?? true,
-    environment: instance.environment ?? [],
-    config: { ...defaults, ...configRecord(instance.config) },
-  };
-}
-
-/** Find custom instances that add only presentation metadata to an existing runtime. */
-export function getRedundantProviderInstanceIds(
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
-): ReadonlySet<ProviderInstanceId> {
-  const redundant = new Set<ProviderInstanceId>();
-  const instances = Object.entries(settings.providerInstances ?? {}).map(
-    ([id, instance]) => [ProviderInstanceId.make(id), instance] as const,
-  );
-  const drivers = new Set<ProviderDriverKind>([
-    ...(Object.keys(settings.providers) as ProviderDriverKind[]),
-    ...instances.map(([, instance]) => instance.driver),
-  ]);
-
-  for (const driver of drivers) {
-    const defaultId = defaultInstanceIdForDriver(driver);
-    const explicitDefault = settings.providerInstances?.[defaultId];
-    const legacyDefault = (settings.providers as Readonly<Record<string, unknown>>)[driver];
-    const defaultInstance = explicitDefault ?? {
-      driver,
-      enabled: (configRecord(legacyDefault).enabled as boolean | undefined) ?? true,
-      config: legacyDefault,
-    };
-    const signatures = [effectiveProviderRuntimeConfig(driver, defaultInstance)];
-
-    for (const [instanceId, instance] of instances) {
-      if (instance.driver !== driver || instanceId === defaultId) continue;
-      const signature = effectiveProviderRuntimeConfig(driver, instance);
-      if (signatures.some((candidate) => Equal.equals(candidate, signature))) {
-        redundant.add(instanceId);
-      } else {
-        signatures.push(signature);
-      }
-    }
+export function deriveProviderEntriesByEnvironment(
+  providersByEnvironment: Iterable<
+    readonly [
+      string,
+      ReadonlyArray<ServerProvider>,
+      Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">?,
+    ]
+  >,
+): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
+  const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
+  for (const [environmentId, providers, settings] of providersByEnvironment) {
+    const derived = deriveProviderInstanceEntries(providers);
+    // One map per environment serves every project with a thread there, so
+    // there is no single project to scope `enabled` to; it stays machine-wide.
+    const entries = settings ? applyProviderInstanceSettings(derived, settings, null) : derived;
+    byEnvironment.set(
+      environmentId,
+      new Map(entries.map((entry) => [entry.instanceId as string, entry] as const)),
+    );
   }
-
-  return redundant;
+  return byEnvironment;
 }
 
 /**
- * Sort instance entries so the default instance of each driver kind appears
- * before any custom instances of the same kind. Within a kind, custom
- * instances keep their settings-author order (which is how the server
- * emits them). Stable across kinds: entries retain the server's
- * cross-driver ordering.
+ * `projectId` folds in that project's `providerInstances[id].enabled` override (enable or
+ * disable in either direction over the machine value); `null` resolves the machine value only.
+ * It has no default: a caller that renders for a single project but forgets to pass it would
+ * silently show the machine's enablement instead of that project's, so passing `null` for a
+ * surface that isn't project-aware must be a deliberate choice, not an omission.
  */
+export function applyProviderInstanceSettings(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides"> & {
+    readonly providers?: Readonly<Record<string, unknown>>;
+  },
+  projectId: ProjectId | null,
+): ReadonlyArray<ProviderInstanceEntry> {
+  const redundantInstanceIds = getRedundantProviderInstanceIds(settings);
+  return entries
+    .filter((entry) => !redundantInstanceIds.has(entry.instanceId))
+    .map((entry) => {
+      const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
+        ? settings.providerInstances[entry.instanceId]
+        : undefined;
+      const legacyProvider =
+        settings.providers && Object.hasOwn(settings.providers, entry.driverKind)
+          ? settings.providers[entry.driverKind]
+          : undefined;
+      const projectOverride =
+        projectId === null
+          ? undefined
+          : settings.projectSettingsOverrides[projectId]?.providerInstances?.[entry.instanceId]
+              ?.enabled;
+      const enabled =
+        projectOverride === undefined &&
+        explicitInstance === undefined &&
+        entry.isDefault &&
+        legacyProvider
+          ? ((configRecord(legacyProvider).enabled as boolean | undefined) ?? entry.enabled)
+          : resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
+      if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
+        return enabled === entry.enabled ? entry : { ...entry, enabled };
+      }
+      const config =
+        explicitInstance.config !== null && typeof explicitInstance.config === "object"
+          ? (explicitInstance.config as Readonly<Record<string, unknown>>)
+          : null;
+      if (config?.source === "local") {
+        return { ...entry, enabled, acpRegistryAgentId: undefined, acpRegistryIconUrl: undefined };
+      }
+      const agentId = config?.agentId;
+      const iconUrl = config?.registryIconUrl;
+      return {
+        ...entry,
+        enabled,
+        ...(typeof agentId === "string" && agentId.trim()
+          ? { acpRegistryAgentId: agentId.trim() }
+          : {}),
+        ...(typeof iconUrl === "string" && iconUrl.trim()
+          ? { acpRegistryIconUrl: iconUrl.trim() }
+          : {}),
+      };
+    });
+}
+
 export function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  // Group by driver kind preserving first-appearance order, then emit
-  // default-first within each kind. Using a Map keeps the "first-seen"
-  // semantics for kinds whose default instance is absent (unusual but
-  // possible during the migration).
   const byKind = new Map<ProviderDriverKind, ProviderInstanceEntry[]>();
   for (const entry of entries) {
     const bucket = byKind.get(entry.driverKind);
@@ -310,10 +231,6 @@ export function sortProviderInstanceEntries(
   return sorted;
 }
 
-/**
- * Look up a single instance entry by exact `instanceId`. Missing snapshots
- * are not inferred from driver kind in UI routing code.
- */
 export function getProviderInstanceEntry(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
@@ -321,24 +238,6 @@ export function getProviderInstanceEntry(
   return deriveProviderInstanceEntries(providers).find((entry) => entry.instanceId === instanceId);
 }
 
-/**
- * Model list for a specific instance. Returns `[]` when the instance isn't
- * present so callers don't have to thread optionality through render code.
- */
-export function getProviderInstanceModels(
-  providers: ReadonlyArray<ServerProvider>,
-  instanceId: ProviderInstanceId,
-): ReadonlyArray<ServerProviderModel> {
-  return getProviderInstanceEntry(providers, instanceId)?.models ?? [];
-}
-
-/**
- * Default model slug for a specific instance: its declared built-in default,
- * then its first built-in model, then any model it reports. Custom
- * instances can serve a different model list than the default instance of
- * the same driver kind, so the lookup must be instance-scoped rather than
- * kind-scoped.
- */
 export function getDefaultProviderInstanceModel(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
@@ -353,15 +252,8 @@ export function getDefaultProviderInstanceModel(
 }
 
 const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolean =>
-  entry.isAvailable && canStartProviderTurn(entry.snapshot);
+  entry.enabled && entry.isAvailable && canStartProviderTurn(entry.snapshot);
 
-/**
- * Resolve an exact stored instance when it remains enabled and available.
- * Otherwise choose a deterministic fallback that can plausibly start now:
- * ready first, then a non-error probe result. An errored provider is retained
- * only when it was explicitly requested; it is never invented as a new-user
- * default.
- */
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   instanceId: ProviderInstanceId | undefined,
@@ -375,12 +267,6 @@ export function resolveSelectableProviderInstanceEntry(
   return entries.find(isProviderInstancePickerReady);
 }
 
-/**
- * Resolve the routing key for a selection that may reference an instance
- * id that no longer exists (e.g. a persisted thread selection after the
- * user deleted the custom instance). Returns a ready or non-error fallback,
- * or `undefined` when no provider can safely become a new selection.
- */
 export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId | undefined,
@@ -389,12 +275,6 @@ export function resolveSelectableProviderInstance(
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
 }
 
-/**
- * Resolve the model selection persisted for a project or new thread. A valid
- * stored selection is preserved byte-for-byte. Falling back to another
- * instance also resets the model to that instance's own default, avoiding
- * cross-provider instance/model pairs.
- */
 export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
@@ -422,4 +302,77 @@ export function resolveProviderDriverKindForInstanceSelection(
     return matchedEntry.driverKind;
   }
   return undefined;
+}
+
+/** Find custom instances that add only presentation metadata to an existing runtime. */
+export function getRedundantProviderInstanceIds(
+  settings: Pick<ServerSettings, "providerInstances"> & {
+    readonly providers?: Readonly<Record<string, unknown>>;
+  },
+): ReadonlySet<ProviderInstanceId> {
+  const redundant = new Set<ProviderInstanceId>();
+  const instances = Object.entries(settings.providerInstances ?? {}).map(
+    ([id, instance]) => [ProviderInstanceId.make(id), instance] as const,
+  );
+  const drivers = new Set<ProviderDriverKind>([
+    ...(Object.keys(settings.providers ?? {}) as ProviderDriverKind[]),
+    ...instances.map(([, instance]) => instance.driver),
+  ]);
+
+  for (const driver of drivers) {
+    const defaultId = defaultInstanceIdForDriver(driver);
+    const explicitDefault = settings.providerInstances?.[defaultId];
+    const legacyDefault = settings.providers?.[driver];
+    const defaultInstance = explicitDefault ?? {
+      driver,
+      enabled: (configRecord(legacyDefault).enabled as boolean | undefined) ?? true,
+      config: legacyDefault,
+    };
+    const signatures = [effectiveProviderRuntimeConfig(driver, defaultInstance)];
+
+    for (const [instanceId, instance] of instances) {
+      if (instance.driver !== driver || instanceId === defaultId) continue;
+      // Managed credentials are keyed by instance id, and redacted values
+      // cannot establish that two CLI accounts have the same credentials.
+      if (
+        (driver === "codex" && configRecord(instance.config).setupMode === "managed") ||
+        instance.environment?.some((variable) => variable.valueRedacted)
+      ) {
+        continue;
+      }
+      const signature = effectiveProviderRuntimeConfig(driver, instance);
+      if (signatures.some((candidate) => Equal.equals(candidate, signature))) {
+        redundant.add(instanceId);
+      } else {
+        signatures.push(signature);
+      }
+    }
+  }
+
+  return redundant;
+}
+
+function configRecord(value: unknown): Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : {};
+}
+
+function effectiveProviderRuntimeConfig(
+  driver: ProviderDriverKind,
+  instance: {
+    readonly config?: unknown;
+    readonly environment?: unknown;
+    readonly enabled?: boolean;
+  },
+) {
+  const defaults = configRecord(
+    (DEFAULT_SERVER_SETTINGS.providers as Readonly<Record<string, unknown>>)[driver],
+  );
+  return {
+    driver,
+    enabled: instance.enabled ?? true,
+    environment: instance.environment ?? [],
+    config: { ...defaults, ...configRecord(instance.config) },
+  };
 }

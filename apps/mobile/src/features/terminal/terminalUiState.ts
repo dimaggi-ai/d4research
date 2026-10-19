@@ -1,5 +1,4 @@
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
-
 import { DEFAULT_TERMINAL_FONT_SIZE, normalizeTerminalFontSize } from "./terminalPreferences";
 
 export interface TerminalGridSize {
@@ -16,10 +15,6 @@ export interface TerminalUiStateTarget {
 const terminalGridSizeCache = new Map<string, TerminalGridSize>();
 let cachedTerminalFontSize: number | null = null;
 
-function terminalUiStateKey(target: TerminalUiStateTarget): string {
-  return `${target.environmentId}:${target.threadId}:${target.terminalId}`;
-}
-
 export function getCachedTerminalFontSize(): number | null {
   return cachedTerminalFontSize;
 }
@@ -28,6 +23,10 @@ export function cacheTerminalFontSize(value: number | null | undefined): number 
   const normalized = normalizeTerminalFontSize(value ?? DEFAULT_TERMINAL_FONT_SIZE);
   cachedTerminalFontSize = normalized;
   return normalized;
+}
+
+function terminalUiStateKey(target: TerminalUiStateTarget): string {
+  return `${target.environmentId}:${target.threadId}:${target.terminalId}`;
 }
 
 export function getCachedTerminalGridSize(target: TerminalUiStateTarget): TerminalGridSize | null {

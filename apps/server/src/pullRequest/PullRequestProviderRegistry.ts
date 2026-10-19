@@ -3,27 +3,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { SourceControlProviderKind } from "@d4research/contracts";
 
-import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
-import * as GitHubCli from "../sourceControl/GitHubCli.ts";
-import * as GitLabCli from "../sourceControl/GitLabCli.ts";
-import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
-import * as AzureDevOpsPullRequestProvider from "./AzureDevOpsPullRequestProvider.ts";
-import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
-import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";
-import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
-import * as GitLabPullRequestProvider from "./GitLabPullRequestProvider.ts";
-import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
+import * as BuiltInDrivers from "../sourceControl/builtInDrivers.ts";
+import type { PullRequestProviderApi } from "@d4research/source-control-core/server/PullRequestProvider";
 
 export class PullRequestProviderRegistry extends Context.Service<
   PullRequestProviderRegistry,
   {
-    /** Null for a host with no implementation, which the service reports as unsupported. */
     readonly get: (kind: SourceControlProviderKind) => PullRequestProviderApi | null;
     readonly kinds: ReadonlyArray<SourceControlProviderKind>;
   }
 >()("d4research/pullRequest/PullRequestProviderRegistry") {}
 
-/** Exported for tests, which stand a registry up from providers they supply themselves. */
 export function fromProviders(
   providers: ReadonlyArray<PullRequestProviderApi>,
 ): PullRequestProviderRegistry["Service"] {
@@ -35,20 +25,17 @@ export function fromProviders(
 }
 
 /**
- * The hosts this build can read change requests from. A host with no entry here still shows up
- * in the provider list as unimplemented, so its projects are explained rather than missing.
+ * @public Service construction is part of the canonical Effect module API.
  */
-export const make = Effect.map(
-  Effect.all([
-    GitHubPullRequestProvider.make,
-    GitLabPullRequestProvider.make,
-    AzureDevOpsPullRequestProvider.make,
-  ]),
-  fromProviders,
-);
+export const make = Effect.gen(function* () {
+  const drivers = yield* Effect.forEach(BuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS, (driver) =>
+    driver.make.pipe(Effect.map((instance) => instance.pullRequests)),
+  );
+  return fromProviders(
+    drivers.filter((provider): provider is PullRequestProviderApi => provider !== null),
+  );
+});
 
 export const layer = Layer.effect(PullRequestProviderRegistry, make).pipe(
-  Layer.provide(GitHubPullRequestCli.layer.pipe(Layer.provide(GitHubCli.layer))),
-  Layer.provide(GitLabPullRequestCli.layer.pipe(Layer.provide(GitLabCli.layer))),
-  Layer.provide(AzureDevOpsPullRequestCli.layer.pipe(Layer.provide(AzureDevOpsCli.layer))),
+  Layer.provide(BuiltInDrivers.layer),
 );

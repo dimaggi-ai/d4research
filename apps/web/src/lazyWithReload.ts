@@ -2,7 +2,6 @@ import { lazy, type ComponentType } from "react";
 
 // React types `lazy` against `ComponentType<any>`; matching that is the only
 // way a wrapper stays assignable to it.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 
 /**

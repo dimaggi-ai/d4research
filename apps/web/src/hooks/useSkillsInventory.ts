@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   SkillsInventoryAgent,
   SkillsInventoryEntry,
@@ -156,23 +156,29 @@ export function useSkillsInventory(
   const preparedConnection = options.preparedConnection ?? null;
   const httpBaseUrl = preparedConnection?.httpBaseUrl ?? null;
   const [entries, setEntries] = useState<ReadonlyArray<SkillsInventoryEntry>>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "error">(enabled ? "loading" : "ready");
   const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [refreshSequence, setRefreshSequence] = useState(0);
-  const refresh = useCallback(() => setRefreshSequence((value) => value + 1), []);
+  const refresh = () => setRefreshSequence((value) => value + 1);
+
+  const [request, setRequest] = useState({ cwd, enabled, preparedConnection, refreshSequence });
+  if (
+    request.cwd !== cwd ||
+    request.enabled !== enabled ||
+    request.preparedConnection !== preparedConnection ||
+    request.refreshSequence !== refreshSequence
+  ) {
+    setRequest({ cwd, enabled, preparedConnection, refreshSequence });
+    setEntries([]);
+    setState(!enabled ? "ready" : "loading");
+    setError(null);
+  }
 
   useEffect(() => {
-    if (!enabled || !preparedConnection) {
-      setEntries([]);
-      setState(enabled ? "loading" : "ready");
-      setError(null);
-      return;
-    }
-    setEntries([]);
-    setState("loading");
-    setError(null);
+    const { cwd, enabled, preparedConnection } = request;
+    if (!enabled || !preparedConnection) return;
     let active = true;
     const load = async () => {
       try {
@@ -199,28 +205,25 @@ export function useSkillsInventory(
       window.clearInterval(interval);
       active = false;
     };
-  }, [cwd, enabled, preparedConnection, refreshSequence]);
+  }, [request]);
 
-  const authorizedFetcher = useCallback<typeof fetch>(
-    async (input, init) => {
-      if (!preparedConnection) throw new Error("Environment is not connected.");
-      const url = String(input);
-      const method = init?.method === "POST" ? "POST" : "GET";
-      const auth = await runtime.runPromise(
-        preparedEnvironmentFetchAuthorization(preparedConnection, method, url),
-      );
-      return fetch(input, {
-        ...init,
-        ...(auth.credentials ? { credentials: auth.credentials } : {}),
-        headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), ...auth.headers },
-      });
-    },
-    [preparedConnection],
-  );
+  const authorizedFetcher: typeof fetch = async (input, init) => {
+    if (!preparedConnection) throw new Error("Environment is not connected.");
+    const url = String(input);
+    const method = init?.method === "POST" ? "POST" : "GET";
+    const auth = await runtime.runPromise(
+      preparedEnvironmentFetchAuthorization(preparedConnection, method, url),
+    );
+    return fetch(input, {
+      ...init,
+      ...(auth.credentials ? { credentials: auth.credentials } : {}),
+      headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), ...auth.headers },
+    });
+  };
 
-  const share = useCallback(
-    async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {
-      setSharing(`${sourcePath}:${targetRoot}`);
+  const share = async (sourcePath: string, targetRoot: SkillsInventoryRoot) => {
+    setSharing(`${sourcePath}:${targetRoot}`);
+    const completeOperation = async () => {
       try {
         // The workspace cwd scopes project roots server-side; without it a
         // project-skill share resolves against the server's own cwd and fails.
@@ -244,16 +247,16 @@ export function useSkillsInventory(
         const message = "Could not share the skill.";
         setError(message);
         return { ok: false, message };
-      } finally {
-        setSharing(null);
       }
-    },
-    [authorizedFetcher, cwd, httpBaseUrl],
-  );
+    };
+    return await completeOperation().finally(() => {
+      setSharing(null);
+    });
+  };
 
-  const install = useCallback(
-    async (url: string, options?: { readonly installAgyPlugin?: boolean }) => {
-      setInstalling(true);
+  const install = async (url: string, options?: { readonly installAgyPlugin?: boolean }) => {
+    setInstalling(true);
+    const completeOperation = async () => {
       try {
         const result = await requestSkillInstall(
           {
@@ -275,12 +278,12 @@ export function useSkillsInventory(
         const message = "Could not install the skill.";
         setError(message);
         return { ok: false, message };
-      } finally {
-        setInstalling(false);
       }
-    },
-    [authorizedFetcher, cwd, httpBaseUrl],
-  );
+    };
+    return await completeOperation().finally(() => {
+      setInstalling(false);
+    });
+  };
 
   return { state, entries, error, sharing, installing, install, share, refresh };
 }

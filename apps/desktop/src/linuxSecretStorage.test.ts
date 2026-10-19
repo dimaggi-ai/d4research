@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   normalizeLinuxPasswordStorePreference,
   resolveLinuxPasswordStoreSwitch,
-  resolveLinuxSecretStorageUnavailableMessage,
 } from "./linuxSecretStorage.ts";
 
 const autoSwitch = (env: NodeJS.ProcessEnv) =>
@@ -27,7 +26,6 @@ describe("linuxSecretStorage", () => {
       expect(
         resolveLinuxPasswordStoreSwitch({ preference, env: { XDG_CURRENT_DESKTOP: "niri" } }),
       ).toBe(preference);
-      // An explicit preference also wins where auto would have stayed out of the way.
       expect(
         resolveLinuxPasswordStoreSwitch({ preference, env: { XDG_CURRENT_DESKTOP: "KDE" } }),
       ).toBe(preference);
@@ -77,9 +75,6 @@ describe("linuxSecretStorage", () => {
   });
 
   it("overrides KDE sessions identified only by legacy variables", () => {
-    // Chromium reaches KWallet4 for some of these, such as DESKTOP_SESSION=kde with a version, and
-    // basic text for the rest. Either way these are the variables a previous session leaves behind,
-    // so they are treated as unproven and forced to a real keyring rather than a guessed wallet.
     expect(autoSwitch({ XDG_CURRENT_DESKTOP: "plasma" })).toBe("gnome-libsecret");
     for (const session of [
       "kde",
@@ -108,7 +103,6 @@ describe("linuxSecretStorage", () => {
     expect(
       autoSwitch({ XDG_CURRENT_DESKTOP: "niri", DESKTOP_SESSION: "gnome", GDMSESSION: "gnome" }),
     ).toBe("gnome-libsecret");
-    // A previous KDE session left these behind; the compositor running now is not KDE.
     expect(autoSwitch({ XDG_CURRENT_DESKTOP: "niri", KDE_SESSION_VERSION: "6" })).toBe(
       "gnome-libsecret",
     );
@@ -123,81 +117,5 @@ describe("linuxSecretStorage", () => {
         KDE_SESSION_VERSION: "6",
       }),
     ).toBe("gnome-libsecret");
-  });
-
-  it("uses GNOME Keyring remediation for libsecret and unknown backends", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "niri" },
-      }),
-    ).toContain("GNOME Keyring");
-  });
-
-  it("prefers explicit libsecret selection over KDE desktop heuristics", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "gnome-libsecret",
-        selectedBackend: "unknown",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("GNOME Keyring");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("GNOME Keyring");
-  });
-
-  it("prefers explicit KWallet preference over selected gnome-libsecret backend", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "kwallet6",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "niri" },
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "kwallet",
-        selectedBackend: "gnome-libsecret",
-        env: {},
-      }),
-    ).toContain("KWallet");
-  });
-
-  it("uses KWallet remediation wording for KDE-looking sessions", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "kwallet6",
-        env: {},
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { DESKTOP_SESSION: "plasmawayland" },
-      }),
-    ).toContain("KWallet");
-    // A desktop name outranks a bare KDE marker when choosing the wording.
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { GDMSESSION: "gnome", KDE_FULL_SESSION: "true" },
-      }),
-    ).toContain("GNOME Keyring");
   });
 });

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ai.dimaggi.d4research</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>d4research</name>
+  <summary>Desktop GUI for coding agents</summary>
+  <developer id="ai.dimaggi">
+    <name>DIMAGGI</name>
+  </developer>
+  <description>
+    <p>
+      d4research is a desktop workspace for coding agents. Work with your
+      existing agent subscriptions, review code changes, and run commands in
+      your projects.
+    </p>
+    <p>
+      Connect from desktop, web, or mobile to continue working remotely.
+    </p>
+  </description>
+  <launchable type="desktop-id">t3code.desktop</launchable>
+  <icon type="stock">t3code</icon>
+  <provides>
+    <binary>t3code</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <url type="homepage">https://github.com/dimaggi-ai/d4research</url>
+  <url type="bugtracker">https://github.com/dimaggi-ai/d4research/issues</url>
+  <url type="vcs-browser">https://github.com/dimaggi-ai/d4research</url>
+</component>

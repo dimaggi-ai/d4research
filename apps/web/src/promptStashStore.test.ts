@@ -114,9 +114,6 @@ describe("promptStashStore", () => {
     expect(entries[0]?.id).toBe("overflow");
   });
 
-  // This test environment has no `localStorage`, so the store runs on its
-  // in-memory fallback — the exact "kept for this session, gone on reload"
-  // case the composer must distinguish from an outright write failure.
   it("distinguishes a memory-only write (written, not durable) from a failed one", () => {
     const store = usePromptStashStore.getState();
     const result = store.stashEntry(makeEntry({ id: "memory-only" }));
@@ -165,7 +162,6 @@ describe("promptStashStore", () => {
   it("finalizeEntryImages reports false when the entry was already taken", () => {
     const store = usePromptStashStore.getState();
     store.stashEntry({ ...makeEntry({ id: "racing" }), pendingImageCount: 1 });
-    // Restored (or deleted) while its images were still encoding.
     store.takeEntry("racing");
 
     const { attached } = store.finalizeEntryImages("racing", {
@@ -187,16 +183,12 @@ describe("promptStashStore", () => {
       }),
     );
 
-    // Hydration must settle the stale count, or the entry would stay stuck
-    // showing "saving…" with images that no longer exist anywhere.
     const entry = usePromptStashStore.getState().entries[0];
     expect(entry?.pendingImageCount).toBe(0);
     expect(entry?.unreadableImageNames).toHaveLength(2);
   });
 
   it("ignores an unreadable v1 payload seeded under the current key", () => {
-    // The v1 shape (per-provider queues) does not decode as v2; hydration
-    // must fall back to an empty stash rather than throw.
     writePromptStashStorageForTest(
       JSON.stringify({
         version: 1,
@@ -204,5 +196,34 @@ describe("promptStashStore", () => {
       }),
     );
     expect(usePromptStashStore.getState().entries).toEqual([]);
+  });
+});
+
+describe("prompt stash context records", () => {
+  it("keeps the records behind a stashed prompt's chips", () => {
+    const store = usePromptStashStore.getState();
+    const records = [
+      {
+        version: 1 as const,
+        contextId: "ctx-1" as never,
+        kind: "terminal" as const,
+        label: "Terminal 1 line 4",
+        terminalId: "default",
+        terminalLabel: "Terminal 1",
+        lineStart: 4,
+        lineEnd: 4,
+        text: "boom",
+      },
+    ];
+    store.stashEntry({
+      id: "entry-records",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      prompt: "see [Terminal 1 line 4](t3-context://v1/terminal/ctx-1)",
+      attachments: [],
+      droppedImageNames: [],
+      records,
+    });
+    const taken = usePromptStashStore.getState().takeEntry("entry-records");
+    expect(taken.entry?.records).toEqual(records);
   });
 });

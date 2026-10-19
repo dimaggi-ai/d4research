@@ -28,6 +28,7 @@ describe("mobile session skills", () => {
 
   it("rejects pipeline orchestration on providers without an MCP session", () => {
     expect(mobileProviderSupportsDelegationPipelines("agy")).toBe(false);
+    expect(mobileProviderSupportsDelegationPipelines("muse")).toBe(true);
     expect(mobileProviderSupportsDelegationPipelines("junie")).toBe(false);
     expect(mobileProviderSupportsDelegationPipelines(undefined)).toBe(false);
     expect(mobileProviderSupportsDelegationPipelines("future-provider")).toBe(false);

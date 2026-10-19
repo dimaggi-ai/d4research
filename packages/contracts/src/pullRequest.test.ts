@@ -1,22 +1,32 @@
+import { SourceControlProviderKind } from "./sourceControl.ts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PullRequestActionInput,
+  PullRequestCapabilities,
+  PullRequestFilesViewedResult,
   PullRequestListInput,
   PullRequestListResult,
   PullRequestReviewerRequestInput,
+  PullRequestSetFilesViewedInput,
+  pullRequestHostOf,
+  resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
 
 const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
+const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
+const decodeSetFilesViewed = Schema.decodeUnknownSync(PullRequestSetFilesViewedInput);
+const decodeFilesViewed = Schema.decodeUnknownSync(PullRequestFilesViewedResult);
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },
   providers: [
     {
       host: "github.com",
-      kind: "github",
+      kind: SourceControlProviderKind.make("github"),
       searchesOnHost: true,
       projectCount: 1,
       configured: true,
@@ -24,7 +34,7 @@ const LIST_RESULT: PullRequestListResult = {
     },
     {
       host: "gitlab.com",
-      kind: "gitlab",
+      kind: SourceControlProviderKind.make("gitlab"),
       searchesOnHost: true,
       projectCount: 1,
       configured: false,
@@ -33,7 +43,7 @@ const LIST_RESULT: PullRequestListResult = {
   ],
   entries: [
     {
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       host: "github.com",
       projectId: "project-1" as PullRequestListResult["entries"][number]["projectId"],
       projectTitle: "t3code",
@@ -61,15 +71,33 @@ const LIST_RESULT: PullRequestListResult = {
 };
 
 describe("PullRequestListResult", () => {
+  it("separates Forgejo HTTP ports while preserving other provider host identities", () => {
+    const identity = {
+      canonicalKey: "forge.example/team/repo",
+      locator: { remoteUrl: "http://forge.example:3000/team/repo.git" },
+    };
+    expect(pullRequestHostOf(identity, SourceControlProviderKind.make("forgejo"))).toBe(
+      "forge.example:3000",
+    );
+    expect(pullRequestHostOf(identity, SourceControlProviderKind.make("gitlab"))).toBe(
+      "forge.example",
+    );
+    expect(
+      pullRequestHostOf(
+        { ...identity, locator: { remoteUrl: "ssh://git@forge.example:2222/team/repo.git" } },
+        SourceControlProviderKind.make("forgejo"),
+      ),
+    ).toBe("forge.example");
+  });
   /**
    * The RPC builds this codec at call time, so a shape it cannot lower — an open-keyed record
    * with an optional value, for one — fails as an interrupted request rather than as a schema
-   * error. Building it here turns that into a test failure instead.
+   * error.
    */
   it("round-trips through the JSON codec the RPC serializes with", () => {
     const codec = Schema.toCodecJson(PullRequestListResult);
 
-    const decoded = Schema.decodeUnknownSync(codec)(Schema.encodeUnknownSync(codec)(LIST_RESULT));
+    const decoded = Schema.decodeSync(codec)(Schema.encodeUnknownSync(codec)(LIST_RESULT));
 
     expect(decoded).toStrictEqual(LIST_RESULT);
   });
@@ -121,8 +149,6 @@ describe("PullRequestReviewerRequestInput", () => {
   const reviewer = { id: "octocat", kind: "user" };
 
   it("carries the same shape whichever direction the request goes", () => {
-    // One operation, turned around: `requested` is the whole difference between asking somebody
-    // for a review and taking the request back.
     for (const requested of [true, false]) {
       expect(decodeReviewerRequest({ ...ref, reviewers: [reviewer], requested }).requested).toBe(
         requested,
@@ -151,5 +177,176 @@ describe("PullRequestReviewerRequestInput", () => {
         requested: true,
       }).reviewers.map((entry) => entry.kind),
     ).toEqual(["user", "team"]);
+  });
+});
+
+describe("updating a branch that has fallen behind its base", () => {
+  const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
+
+  it("carries the way the branch should be brought up to date", () => {
+    expect(decodeAction({ ...ref, action: "update-branch", updateMethod: "rebase" })).toMatchObject(
+      {
+        action: "update-branch",
+        updateMethod: "rebase",
+      },
+    );
+  });
+
+  it("takes the action without a method, which is the host's own default", () => {
+    expect(decodeAction({ ...ref, action: "update-branch" }).updateMethod).toBeUndefined();
+  });
+
+  it("refuses a way no host offers", () => {
+    expect(() =>
+      decodeAction({ ...ref, action: "update-branch", updateMethod: "squash" }),
+    ).toThrow();
+  });
+});
+
+describe("leaving a merge for the host to make once it is ready", () => {
+  const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
+
+  it("carries the strategy the deferred merge should use, as merging now does", () => {
+    expect(
+      decodeAction({ ...ref, action: "enable-auto-merge", mergeMethod: "squash" }),
+    ).toMatchObject({ action: "enable-auto-merge", mergeMethod: "squash" });
+  });
+
+  it("takes the arming back without a strategy, because there is nothing to choose", () => {
+    expect(decodeAction({ ...ref, action: "disable-auto-merge" }).mergeMethod).toBeUndefined();
+  });
+});
+
+describe("reverting a merged pull request", () => {
+  it("carries a standalone branch deletion action", () => {
+    expect(
+      decodeAction({
+        projectId: "project-1",
+        repository: "acme/web",
+        number: 7,
+        action: "delete-branch",
+      }).action,
+    ).toBe("delete-branch");
+  });
+  it("carries the revert action without merge options", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "revert",
+    });
+
+    expect(action.action).toBe("revert");
+    expect(action.mergeMethod).toBeUndefined();
+  });
+});
+
+describe("approving fork workflows", () => {
+  it("carries workflow approval as its own action", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "approve-workflows",
+    });
+
+    expect(action.action).toBe("approve-workflows");
+  });
+});
+
+describe("PullRequestCapabilities", () => {
+  const decodeCapabilities = Schema.decodeUnknownSync(PullRequestCapabilities);
+  const base = {
+    diff: true,
+    comment: true,
+    actions: [],
+    mergeMethods: [],
+    search: true,
+    review: { inlineComment: true, reply: true, resolve: true, verdicts: [] },
+    reviewers: { request: true, listCandidates: true },
+  };
+
+  it("decodes a server that says nothing about reactions as a server with none", () => {
+    expect(decodeCapabilities(base).reactions).toBeUndefined();
+  });
+
+  it("only offers branch deletion when the server advertises it", () => {
+    expect(decodeCapabilities(base).deleteBranch).toBeUndefined();
+    expect(decodeCapabilities({ ...base, deleteBranch: true }).deleteBranch).toBe(true);
+  });
+});
+
+describe("naming the reader as the author to narrow by", () => {
+  it("reads me as whoever is signed in, however it is written", () => {
+    expect(resolvePullRequestAuthorFilter("me", "octocat")).toBe("octocat");
+    expect(resolvePullRequestAuthorFilter("@me", "octocat")).toBe("octocat");
+    expect(resolvePullRequestAuthorFilter("  ME  ", "octocat")).toBe("octocat");
+  });
+
+  it("leaves any other name as it was typed", () => {
+    expect(resolvePullRequestAuthorFilter(" mercedes ", "octocat")).toBe("mercedes");
+    expect(resolvePullRequestAuthorFilter("me-too", "octocat")).toBe("me-too");
+  });
+
+  it("stands as typed where the host has not said who the reader is", () => {
+    expect(resolvePullRequestAuthorFilter("me", null)).toBe("me");
+    expect(resolvePullRequestAuthorFilter("me", "  ")).toBe("me");
+  });
+});
+
+describe("naming the file a tick belongs to", () => {
+  it("keeps the spaces around a path being ticked", () => {
+    expect(
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: "docs/readme.md ", viewed: true }],
+      }).files,
+    ).toEqual([{ path: "docs/readme.md ", viewed: true }]);
+  });
+
+  it("keeps the spaces around a path being reported back", () => {
+    expect(
+      decodeFilesViewed({
+        files: [{ path: " leading.md", state: "viewed" }],
+        truncated: false,
+      }).files,
+    ).toEqual([{ path: " leading.md", state: "viewed" }]);
+  });
+
+  it("still refuses a path that is nothing at all", () => {
+    expect(() =>
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: "", viewed: true }],
+      }),
+    ).toThrow();
+  });
+
+  it("refuses a batch larger than a reader can press", () => {
+    const press = (path: string) => ({ path, viewed: true });
+    const batch = (count: number) => ({
+      projectId: "p1",
+      repository: "group/project",
+      number: 7,
+      files: Array.from({ length: count }, (_, at) => press(`src/f${at}.ts`)),
+    });
+
+    expect(() => decodeSetFilesViewed(batch(500))).not.toThrow();
+    expect(() => decodeSetFilesViewed(batch(501))).toThrow();
+  });
+
+  it("refuses a path far longer than any real one", () => {
+    expect(() =>
+      decodeSetFilesViewed({
+        projectId: "p1",
+        repository: "group/project",
+        number: 7,
+        files: [{ path: `src/${"a".repeat(4096)}.ts`, viewed: true }],
+      }),
+    ).toThrow();
   });
 });

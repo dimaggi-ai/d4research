@@ -28,7 +28,7 @@ describe("DesktopTelemetryReceiver", () => {
     expect(isDesktopTelemetryContactStale(Option.none(), 1_000_000)).toBe(false);
   });
 
-  it("starts the stale deadline as soon as a telemetry descriptor is opened", () => {
+  it("starts the stale deadline as a telemetry descriptor is opened", () => {
     expect(initialDesktopTelemetryContactAt(7, 1_000)).toEqual(Option.some(1_000));
     expect(initialDesktopTelemetryContactAt(undefined, 1_000)).toEqual(Option.none());
   });

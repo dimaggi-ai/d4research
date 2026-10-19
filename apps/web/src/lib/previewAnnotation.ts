@@ -1,6 +1,32 @@
 import type { PreviewAnnotationPayload } from "@d4research/contracts";
 import { buildElementContextBlock, normalizeElementContextSelection } from "./elementContext";
 
+import { dataUrlToFile } from "./imageCompression";
+
+export type PreviewAnnotationCapture =
+  | { readonly status: "captured"; readonly file: File }
+  | { readonly status: "none" }
+  | { readonly status: "failed" };
+
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/** Decode Electron's PNG crop locally; fetching a data URL violates desktop connect-src. */
+export function capturePreviewAnnotationScreenshot(
+  annotation: PreviewAnnotationPayload,
+): PreviewAnnotationCapture {
+  if (!annotation.screenshot) return { status: "none" };
+  try {
+    const { dataUrl } = annotation.screenshot;
+    if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+      return { status: "failed" };
+    }
+    const file = dataUrlToFile(dataUrl, `preview-annotation-${annotation.id}.png`, "image/png");
+    return file.size > 0 ? { status: "captured", file } : { status: "failed" };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
 const TRAILING_PREVIEW_ANNOTATION_BLOCK_PATTERN =
   /\n*<preview_annotation>\n((?:(?!<preview_annotation>)[\s\S])*)\n<\/preview_annotation>\s*$/;
 
@@ -97,15 +123,4 @@ export function extractTrailingPreviewAnnotation(prompt: string): ExtractedPrevi
       hasScreenshot: body.includes("The attached screenshot is the annotated preview crop."),
     },
   };
-}
-
-export async function previewAnnotationScreenshotFile(
-  annotation: PreviewAnnotationPayload,
-): Promise<File | null> {
-  if (!annotation.screenshot) return null;
-  const response = await fetch(annotation.screenshot.dataUrl);
-  const blob = await response.blob();
-  return new File([blob], `preview-annotation-${annotation.id}.png`, {
-    type: blob.type || "image/png",
-  });
 }

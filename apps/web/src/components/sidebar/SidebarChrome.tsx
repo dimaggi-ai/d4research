@@ -1,35 +1,33 @@
-import {
-  ActivityIcon,
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
-  SettingsIcon,
-} from "lucide-react";
-import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
-
+import { ActivityIcon, ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { memo, type ReactNode } from "react";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { usePullRequestsSupported } from "../../state/environments";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
-  resolveSidebarStageFocusRingOffsetClass,
   SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import {
   SidebarFooter,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
+import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { observeResize } from "~/lib/observeResize";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -48,77 +46,88 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       : null;
 
   return (
-    <SidebarHeader
+    <div
+      data-sidebar="header"
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
         isElectron && "drag-region",
       )}
     >
       {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
-      <SidebarTrigger
-        className={cn(
-          "relative z-10 md:hidden",
-          backdropVariant &&
-            "focus-visible:ring-white/90 [&_svg]:stroke-white/90! [&_svg]:opacity-100! [&_svg]:hover:stroke-white! [:hover,[data-pressed]]:bg-white/15",
-          backdropVariant && resolveSidebarStageFocusRingOffsetClass(backdropVariant),
-        )}
-      />
-      <SidebarBrand onBackdrop={backdropVariant !== null} />
-      {pillLabel ? (
-        <Badge
-          className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
-          data-environment-identification="pill"
-          size="sm"
-          variant="secondary"
-        >
-          {pillLabel}
-        </Badge>
-      ) : null}
-    </SidebarHeader>
+      {/* Match the fixed control's inset and border compensation inside the sheet's safe area. */}
+      <div className="relative top-[calc(var(--workspace-fixed-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
+        <SidebarTrigger
+          variant={backdropVariant ? "media-navigation" : "ghost"}
+          className="relative top-auto translate-y-0"
+          aria-label="Toggle main sidebar"
+        />
+      </div>
+      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
+        <SidebarBrand onBackdrop={backdropVariant !== null} />
+        {pillLabel ? (
+          <div className="ml-1 flex h-7 items-center">
+            <Badge data-environment-identification="pill" size="sm" variant="secondary">
+              {pillLabel}
+            </Badge>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 });
+
+export function SidebarBrandWidthProbe({
+  onWidthChange,
+}: {
+  onWidthChange: (width: number) => void;
+}) {
+  const observeWidth = (probe: HTMLDivElement) => {
+    return observeResize(probe, ([entry]) => {
+      if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
+    });
+  };
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none invisible fixed top-0 left-0 flex w-max border-r border-transparent pr-3"
+      ref={observeWidth}
+    >
+      <div className="ml-[var(--workspace-titlebar-content-left)] flex">
+        <SidebarBrandMark onBackdrop={false} />
+      </div>
+    </div>
+  );
+}
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link
       aria-label="Go to threads"
       className={cn(
-        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
+        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <D4ResearchMark />
-      <span
-        className={cn(
-          "truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Research
-      </span>
+      <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>
   );
 }
 
-function D4ResearchMark() {
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <svg
-      aria-label="d4research"
-      className="size-5 shrink-0"
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect width="64" height="64" rx="16" fill="#171717" />
-      <path
-        d="M30 14v36M30 28H20a11 11 0 1 0 0 22h10M49.5 45.5V22L38 38h16"
-        fill="none"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="7"
-      />
-    </svg>
+    <span className="inline-flex min-w-0 items-center gap-1 text-sm font-medium tracking-tight">
+      <img alt="d4" className="size-5 shrink-0" src="/d4-mark.svg" />
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        [Research]
+      </span>
+    </span>
   );
 }
 
@@ -139,43 +148,44 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const primaryEnvironment = usePrimaryEnvironment();
   const pullRequestsSupported =
     primaryEnvironment?.serverConfig?.environment.capabilities.pullRequests === true;
-  const closeMobileSidebar = useCallback(() => {
+  const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
-  }, [isMobile, setOpenMobile]);
-  const handlePullRequestsClick = useCallback(() => {
+  };
+  const handlePullRequestsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
-  }, [closeMobileSidebar, navigate]);
-  const handleSettingsClick = useCallback(() => {
+  };
+  const handleSettingsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
-  }, [closeMobileSidebar, navigate]);
+  };
 
-  const handleUsageClick = useCallback(() => {
+  const handleUsageClick = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
     void navigate({ to: "/usage" });
-  }, [isMobile, navigate, setOpenMobile]);
+  };
 
-  const handleSystemClick = useCallback(() => {
+  const handleSystemClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/system" });
-  }, [closeMobileSidebar, navigate]);
+  };
 
-  const handleBackClick = useCallback(() => {
+  const handleBackClick = () => {
     closeMobileSidebar();
     if (canGoBack) {
       window.history.back();
       return;
     }
     void navigate({ to: "/" });
-  }, [canGoBack, closeMobileSidebar, navigate]);
+  };
 
   return (
-    <SidebarFooter className="p-[var(--sidebar-content-inset)]">
+    <SidebarFooter className="px-[var(--sidebar-content-inset)] py-1">
+      <SidebarThreadUndoNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
@@ -189,7 +199,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         ) : pullRequestsSupported ? (
           <SidebarMenuItem>
             <SidebarMenuButton onClick={handlePullRequestsClick}>
-              <GitPullRequestIcon />
+              <PullRequestGlyph.pullRequest />
               <span>Pull Requests</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -234,3 +244,100 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     </SidebarFooter>
   );
 });
+
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const navigate = useNavigate();
+  const navigateToMainApp = useNavigateToMainApp();
+  const { isMobile, setOpenMobile } = useSidebar();
+  const isOnUtilityPage = useLocation({
+    select: (location) => isSidebarUtilityPage(location.pathname),
+  });
+  const pullRequestsSupported = usePullRequestsSupported();
+  const closeMobileSidebar = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+  const handlePullRequestsClick = () => {
+    closeMobileSidebar();
+    void navigate({
+      to: "/pull-requests",
+      search: readPullRequestListPreferences(),
+    });
+  };
+  const handleSettingsClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/settings" });
+  };
+
+  const handleUsageClick = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: "/usage" });
+  };
+
+  const handleBackClick = () => {
+    closeMobileSidebar();
+    void navigateToMainApp();
+  };
+
+  return (
+    <SidebarMenu className="flex-row items-center">
+      {isOnUtilityPage ? (
+        <SidebarMenuItem className="min-w-0 flex-1">
+          <SidebarMenuButton onClick={handleBackClick}>
+            <ArrowLeftIcon />
+            <span>Back</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ) : (
+        <>
+          <SidebarUtilityItem
+            icon={<SettingsIcon />}
+            label="Settings"
+            onClick={handleSettingsClick}
+          />
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem
+              icon={<PullRequestGlyph.pullRequest />}
+              label="Pull Requests"
+              onClick={handlePullRequestsClick}
+            />
+          ) : null}
+          <SidebarUtilityItem
+            icon={<ChartNoAxesColumnIcon />}
+            label="Usage"
+            onClick={handleUsageClick}
+          />
+        </>
+      )}
+      <SidebarUpdatePill />
+    </SidebarMenu>
+  );
+});
+
+function SidebarUtilityItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <SidebarMenuItem className="shrink-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+              {icon}
+            </SidebarMenuButton>
+          }
+        />
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+    </SidebarMenuItem>
+  );
+}

@@ -1,3 +1,5 @@
+import { AuthFilesystemReadScope } from "@d4research/contracts";
+import { readEnvironmentScope } from "../../state/session";
 import { executeAtomQuery } from "@d4research/client-runtime/state/runtime";
 import type { EnvironmentId } from "@d4research/contracts";
 
@@ -25,7 +27,11 @@ export function preloadWorkspaceFileContents(input: {
   readonly relativePath: string;
   readonly theme: ReviewDiffTheme;
 }): void {
-  if (isBrowserPreviewFile(input.relativePath) || isImagePreviewFile(input.relativePath)) {
+  if (
+    !readEnvironmentScope(input.environmentId, AuthFilesystemReadScope) ||
+    isBrowserPreviewFile(input.relativePath) ||
+    isImagePreviewFile(input.relativePath)
+  ) {
     return;
   }
 

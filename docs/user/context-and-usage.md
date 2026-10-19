@@ -1,8 +1,8 @@
 # Context Window and Usage
 
-d4research keeps consumption data separate from environment health: the active thread shows its
-context window beside the composer, while **Usage** in the lower-left navigation summarizes token
-and cost history.
+d4research separates consumption data from environment health: the active thread displays its
+context window next to the composer, while **Usage** in the lower-left navigation summarizes
+token and cost history.
 
 ## Context window meter
 

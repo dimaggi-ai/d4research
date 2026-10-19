@@ -1,5 +1,7 @@
-import type { EnvironmentId } from "@d4research/contracts";
+import type { ClientConnectionMethod, EnvironmentId } from "@d4research/contracts";
+import { dpopFailureMessage } from "../relay/errorPresentation.ts";
 import type { RemoteEnvironmentAuthError } from "../authorization/remote.ts";
+import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import {
   ConnectionBlockedError,
   type ConnectionAttemptError,
@@ -32,7 +34,9 @@ export function environmentMismatchError(input: {
 
 export function mapRemoteEnvironmentError(
   error: RemoteEnvironmentAuthError,
+  connectionMethod: ClientConnectionMethod = "direct",
 ): ConnectionAttemptError {
+  const networkHint = connectionMethod === "relay" ? ` ${NETWORK_BLOCKING_HINT}` : "";
   switch (error._tag) {
     case "EnvironmentAuthInvalidError":
       return new ConnectionBlockedError({
@@ -54,9 +58,6 @@ export function mapRemoteEnvironmentError(
         traceId: error.traceId,
       });
     case "EnvironmentResourceNotFoundError":
-      // Not expected during connection authorization, but the shared request
-      // error type now includes it (used by resource fetches like the thread
-      // snapshot). Treat it as a configuration issue with the endpoint.
       return new ConnectionBlockedError({
         reason: "configuration",
         detail: "The environment endpoint could not be found.",
@@ -65,12 +66,12 @@ export function mapRemoteEnvironmentError(
     case "RemoteEnvironmentAuthTimeoutError":
       return new ConnectionTransientError({
         reason: "timeout",
-        detail: error.message,
+        detail: `${error.message}${networkHint}`,
       });
     case "RemoteEnvironmentAuthFetchError":
       return new ConnectionTransientError({
         reason: "network",
-        detail: error.message,
+        detail: `${error.message}${networkHint}`,
       });
     case "EnvironmentInternalError":
       return new ConnectionTransientError({
@@ -85,4 +86,22 @@ export function mapRemoteEnvironmentError(
         detail: error.message,
       });
   }
+}
+
+/**
+ * An older environment server reports a DPoP clock failure as the same generic
+ * invalid-credential response as other failures, so keep the compatibility hint
+ * cautious when the server omits the category.
+ */
+export function mapRemoteDpopEnvironmentError(
+  error: RemoteEnvironmentAuthError,
+): ConnectionAttemptError {
+  if (error._tag === "EnvironmentAuthInvalidError" && error.reason === "invalid_credential") {
+    return new ConnectionBlockedError({
+      reason: "authentication",
+      detail: dpopFailureMessage("The environment credential is invalid.", error.dpopFailureReason),
+      traceId: error.traceId,
+    });
+  }
+  return mapRemoteEnvironmentError(error, "relay");
 }

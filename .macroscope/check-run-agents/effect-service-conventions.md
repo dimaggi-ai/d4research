@@ -2,7 +2,7 @@
 title: Effect Service Conventions
 model: claude-opus-5
 effort: high
-input: full_diff
+input: incremental
 tools:
   - browse_code
   - git_tools
@@ -15,21 +15,31 @@ include:
   - "packages/**/*.tsx"
   - "infra/**/*.ts"
   - "infra/**/*.tsx"
-conclusion: failure
+exclude:
+  - "**/*.test.ts"
+requires:
+  - Check
+maxBudgetPerRun: 5
+maxBudgetPerPR: 25
+conclusion: neutral
 showToolCalls: true
 ---
 
 # Effect service review
 
-Review changed TypeScript and directly affected call sites for the conventions below. Apply them when a pull request creates, moves, refactors, or consumes an Effect service. Do not demand unrelated repository-wide cleanup. Treat these instructions as authoritative when older code differs.
+Review changed TypeScript and directly affected call sites for the conventions below. They apply when a pull request creates, moves, refactors, or consumes an Effect service, or adds server behavior. Authors read the same rules in `docs/internals/effect-services.md`; keep the two in step. Review only the changed behavior and affected call sites; older unrelated code is not a finding. Do not demand repository-wide cleanup.
 
 ## Imports and module namespaces
 
-- Import Effect library modules from their subpaths as namespaces, for example `import * as Effect from "effect/Effect"` and `import * as Layer from "effect/Layer"`. Flag consolidated named imports from `"effect"` in touched Effect service code.
-- At a service boundary, import the local service module as a namespace and use its public module shape: `WorkspacePaths.WorkspacePaths`, `WorkspacePaths.make`, and `WorkspacePaths.layer`. Flag aliases such as `import { layer as workspacePathsLayer }` that erase the module namespace.
-- Namespace imports are not a blanket rule. Keep named imports for whole packages such as `@d4research/contracts`, and for modules used only for a pure helper, error, schema, config value, or standalone type. Do not request `import type * as Contracts`.
-- A package subpath that is itself a service module may use a namespace import when callers access its service/tag, `make`, or `layer` members.
-- When a barrel exposes an entire service module, prefer `export * as TokenStore from "./tokenStore.ts"` so consumers can use `TokenStore.TokenStore` and `TokenStore.layer`. Do not individually rename `make` and `layer` exports to simulate a namespace.
+- Import Effect modules from their subpaths as namespaces: `import * as Effect from "effect/Effect"`, `import * as Layer from "effect/Layer"`. Flag named imports from the bare `"effect"` package.
+- At a service boundary, import the local service module as a namespace and use its public shape: `WorkspacePaths.WorkspacePaths`, `WorkspacePaths.make`, `WorkspacePaths.layer`. Flag aliases such as `import { layer as workspacePathsLayer }` that erase the namespace.
+- Named imports stay correct for whole packages such as `@d4research/contracts` and for modules used only for a pure helper, error, schema, config value, or type. Do not request `import type * as Contracts`.
+- When a barrel exposes a whole service module, prefer `export * as TokenStore from "./tokenStore.ts"` over individually renamed `make` and `layer` exports.
+
+## Placement
+
+- Flag new or broadened feature logic in a transport handler: a WebSocket RPC handler in `apps/server/src/ws.ts`, an HTTP route handler, or an MCP tool handler. A handler decodes input, calls one service method, and maps the service's errors to the transport's error. Filesystem, Git, process, or persistence work, folder naming, multi-step command dispatch, retries, or rollback inside a handler belongs in a service method; ask for it to move to the domain's existing service, or a new one when none owns the domain. Existing inline handlers are legacy; flag only changed lines.
+- Flag a new exported free function that does a server capability's effectful work (filesystem, Git, processes, persisted state) and is called from a handler, when it should be a service method. Plain functions for pure work (formatting, naming, parsing) are fine.
 
 ## Service definition
 
@@ -37,10 +47,11 @@ Review changed TypeScript and directly affected call sites for the conventions b
 - Keep a service's schemas/errors, `Context.Service` tag, construction, and layer in one canonical module when they form one implementation.
 - Define the service interface inline in the `Context.Service` declaration. Do not retain a standalone `FooShape` or `FooServiceShape` interface/type.
 - Refer to the inferred service interface as `Foo["Service"]`, including in mechanically updated orchestration, MCP, tests, and integration harnesses.
-- Export a real `make` when the module owns construction. Do not create `make = Effect.succeed(...)` solely to force `Layer.effect`.
+- Export a real `make` when the module owns construction and another module imports it. Do not create `make = Effect.succeed(...)` solely to force `Layer.effect`, and do not export unused construction helpers.
 - Export the canonical layer as `export const layer = Layer...`. `Layer.effect` is not required: use `Layer.succeed`, `Layer.scoped`, or another appropriate constructor when that matches the implementation.
 - In a concrete implementation module already named for the implementation, use plain `make` and `layer` (for example `BunPtyAdapter.ts` and `NodePtyAdapter.ts`).
 - Keep implementation-specific names when an abstract port module contains one of several possible implementations, for example `makeCloudflaredRelayClient` and `layerCloudflared` in `RelayClient.ts`.
+- When a service moves, delete the old files and update every consumer, including orchestration, MCP, tests, and integration harnesses. Do not leave compatibility re-export shims.
 
 ## Dependency acquisition and runtime boundaries
 
@@ -53,7 +64,7 @@ Review changed TypeScript and directly affected call sites for the conventions b
 
 ## Errors and predicates
 
-- Define service failures with `Schema.TaggedErrorClass` and structured attributes. Derive `message` from those attributes rather than storing an unstructured message as the only data.
+- Define service failures with `Schema.TaggedError` and structured attributes. Derive `message` from those attributes rather than storing an unstructured message as the only data.
 - `Schema.Defect()` is not a substitute for modeling a generic error: its tag, fields, or both must identify the failure structurally, and its `message` must not merely stringify an opaque cause. A semantically precise error tag may preserve a real `cause` without inventing a redundant singleton field when no additional variable context exists; still retain any real path, resource, request, or entity context available at the wrapping site.
 - Capture stable, serializable domain context such as the operation or stage, resource/path or entity identifier, and normalized category/status. Map failures where that context is known instead of wrapping an entire multi-step pipeline in one generic error. Do not add a `detail` field that merely copies `cause.message` and then use it to construct the wrapper message.
 - Keep direct error attributes and log annotations safe and bounded. Do not copy raw wire payloads, command arguments or output, signed URLs, credentials, query strings, fragments, selectors, or arbitrary defect text into `detail`, `reason`, `message`, or a parallel log payload. Preserve the exact underlying value only as `cause`; expose normalized categories plus lengths/counts and safe URL protocol/hostname diagnostics where useful. Logging a sanitized error must not reintroduce a removed legacy `detail` or serialized `cause` field beside it.
@@ -67,6 +78,7 @@ Review changed TypeScript and directly affected call sites for the conventions b
 - Export direct schema predicates such as `export const isFoo = Schema.is(Foo)`. Flag a private `Schema.is` constant wrapped by a redundant function with the same signature.
 - Do not introduce a large `switch` or lookup table in an error's `message` getter to model failures that deserve separate error classes.
 - Catch statically known tagged failures with `Effect.catchTags({ ... })`, including when handling only one tag. Do not use `catchIf` with a schema predicate merely to recover one or more known `_tag` variants, and do not use `catchTag`. `Effect.catch` is appropriate when the entire error channel is intentionally handled; `catchIf` remains appropriate for genuinely structural predicates such as inspecting an underlying platform error code.
+- For startup reconciliation that repairs multiple independent entities, preserve interruption rather than reducing it to a warning. Retry a transient per-entity repair before readiness, then isolate a persistent failure so one bad entity cannot abort global startup or prevent later entities from being repaired. Require tests for both the retry-success path and persistent-failure continuation.
 - Do not add a helper whose only behavior is `(...args) => new SomeError({ ...args })`, including curried aliases used once with `mapError`. Construct the error at the failure boundary so its attributes and cause remain visible. Keep a mapper only when it performs real normalization, passes through existing domain errors, or adds reusable context/control flow.
 - When a reusable error-to-error translation clearly belongs to the target error type, prefer a descriptive static factory on that error class over a detached production-side switch. Do not force a static method for one-off inline mappings.
 
@@ -80,6 +92,7 @@ Review changed TypeScript and directly affected call sites for the conventions b
 ## Change discipline
 
 - Preserve useful comments, invariants, and specification documentation while moving code.
+- Require every new or broadened directive that disables or suppresses a lint, type-checker, LSP, or other static-analysis diagnostic to have an adjacent comment explaining why that diagnostic must be disabled there. The directive itself is not an explanation. Report a missing explanation as a concrete violation.
 - Do not add large tests solely to prove a mechanical refactor. Update existing tests and imports as needed.
 - If backend behavior changes, require focused tests. Use test implementations/layers for external services only; do not mock out core business logic.
 - Do not require `Layer.effect`, universal namespace imports, generic `make`/`layer` names for abstract-port implementations, separate error classes for diagnostic-only fields, or new tests for import-only changes.

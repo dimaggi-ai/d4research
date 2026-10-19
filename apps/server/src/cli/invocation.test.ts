@@ -1,62 +1,81 @@
-import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, expect, it } from "@effect/vitest";
+import * as HostProcess from "@d4research/shared/HostProcess";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
-import { detectCliRunner, formatCliCommand, suggestedPackageSpec } from "./invocation.ts";
+import packageJson from "../../package.json" with { type: "json" };
+import {
+  formatCliCommand,
+  resolveHostCliCommand,
+  resolveRootCliCommand,
+  resolveServerInstallation,
+} from "./invocation.ts";
 
-it("detects package runners from their cache entry paths", () => {
-  assert.equal(
-    detectCliRunner("/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs"),
-    "npx",
-  );
-  assert.equal(
-    detectCliRunner(
+it("formats package runner commands from their cache entry paths", () => {
+  for (const [entryPath, expected] of [
+    ["/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs", "npx d4research serve"],
+    [
       "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
-    ),
-    "npx",
-  );
-  assert.equal(
-    detectCliRunner("/home/theo/.cache/pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs"),
-    "pnpm dlx",
-  );
-  assert.equal(
-    detectCliRunner(
+      "npx d4research serve",
+    ],
+    [
+      "/home/theo/.cache/pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs",
+      "pnpm dlx d4research serve",
+    ],
+    [
       "/home/theo/.local/share/pnpm/.pnpm/dlx/abc/node_modules/d4research/dist/bin.mjs",
-    ),
-    "pnpm dlx",
-  );
-  assert.equal(
-    detectCliRunner(
+      "pnpm dlx d4research serve",
+    ],
+    [
       "C:\\Users\\theo\\AppData\\Local\\pnpm-cache\\dlx\\abc\\node_modules\\d4research\\dist\\bin.mjs",
-    ),
-    "pnpm dlx",
-  );
-  assert.equal(
-    detectCliRunner("/home/theo/.bun/install/cache/d4research@0.0.31/dist/bin.mjs"),
-    "bunx",
-  );
-  assert.equal(
-    detectCliRunner("/tmp/bunx-1000-d4research@latest/node_modules/d4research/dist/bin.mjs"),
-    "bunx",
-  );
-  assert.equal(
-    detectCliRunner(
+      "pnpm dlx d4research serve",
+    ],
+    ["/home/theo/.bun/install/cache/d4research@0.0.31/dist/bin.mjs", "bunx d4research serve"],
+    [
+      "/tmp/bunx-1000-d4research@latest/node_modules/d4research/dist/bin.mjs",
+      "bunx d4research serve",
+    ],
+    [
       "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-d4research@latest\\node_modules\\d4research\\dist\\bin.mjs",
-    ),
-    "bunx",
-  );
+      "bunx d4research serve",
+    ],
+  ] as const) {
+    assert.equal(formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }), expected);
+  }
 });
 
 it("treats stable installs as direct invocations", () => {
-  assert.isNull(detectCliRunner("/usr/local/lib/node_modules/d4research/dist/bin.mjs"));
-  assert.isNull(detectCliRunner("/home/theo/Code/work/t3code/apps/server/dist/bin.mjs"));
-  assert.isNull(
-    detectCliRunner("/home/theo/.t3/runtime/0.0.31/node_modules/d4research/dist/bin.mjs"),
-  );
-  assert.isNull(detectCliRunner(""));
+  for (const entryPath of [
+    "/usr/local/lib/node_modules/d4research/dist/bin.mjs",
+    "/home/theo/Code/work/t3code/apps/server/dist/bin.mjs",
+    "/home/theo/.t3/runtime/0.0.31/node_modules/d4research/dist/bin.mjs",
+    "",
+  ]) {
+    assert.equal(
+      formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }),
+      "d4research serve",
+    );
+  }
 });
 
-it("re-suggests the nightly channel only for nightly builds", () => {
-  assert.equal(suggestedPackageSpec("0.0.31-nightly.20260729"), "d4research@nightly");
-  assert.equal(suggestedPackageSpec("0.0.31"), "d4research");
+it("re-suggests the prerelease channel only for prerelease builds", () => {
+  for (const [version, expected] of [
+    ["0.0.31-nightly.20260729", "npx d4research@nightly serve"],
+    ["0.0.31-preview.20260729.1", "npx d4research@preview serve"],
+    ["0.0.31-foo-preview.20260729.1", "npx d4research serve"],
+    ["0.0.31", "npx d4research serve"],
+  ] as const) {
+    assert.equal(
+      formatCliCommand({
+        subcommand: "serve",
+        entryPath: "/home/theo/.npm/_npx/abc123/node_modules/d4research/dist/bin.mjs",
+        version,
+      }),
+      expected,
+    );
+  }
 });
 
 it("formats serve suggestions to match the launching command", () => {
@@ -83,5 +102,267 @@ it("formats serve suggestions to match the launching command", () => {
       version: "0.0.31-nightly.20260729",
     }),
     "d4research serve",
+  );
+});
+
+it.layer(NodeServices.layer)("root CLI commands", (it) => {
+  const rootCommand = (input: {
+    readonly node: string;
+    readonly entry: string;
+    readonly path?: string;
+    readonly env?: Record<string, string>;
+    readonly executable?: boolean;
+  }) =>
+    resolveRootCliCommand("browser setup").pipe(
+      Effect.provideService(HostProcess.ExecutablePath, input.node),
+      Effect.provideService(HostProcess.Arguments, [input.node, input.entry]),
+      Effect.provideService(HostProcess.IsExecutable, input.executable ?? false),
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Environment, { PATH: input.path ?? "", ...input.env }),
+    );
+
+  const pathWithT3 = Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const bin = yield* fs.makeTempDirectoryScoped();
+    yield* fs.writeFileString(path.join(bin, "d4research"), "#!/bin/sh\n", { mode: 0o755 });
+    return bin;
+  });
+
+  it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
+    Effect.gen(function* () {
+      const npx = "/home/theo/.npm/_npx/abc/node_modules/d4research/dist/bin.mjs";
+      // sudo's secure_path already has a system Node.
+      expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
+        "sudo npx d4research browser setup",
+      );
+      // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
+      expect(
+        yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
+      ).toBe('sudo env "PATH=$PATH" npx d4research browser setup');
+      expect(
+        yield* rootCommand({
+          node: "/home/theo/.local/node/bin/node",
+          entry: "/home/theo/.local/lib/node_modules/d4research/dist/bin.mjs",
+          path: yield* pathWithT3,
+        }),
+      ).toBe('sudo env "PATH=$PATH" d4research browser setup');
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("names this install's launcher when d4research is not on PATH", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const shim = path.join(home, ".local bin", "d4research");
+      yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
+      yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
+      const desktop = {
+        node: "/tmp/.mount_T3abc/t3code",
+        entry: "/tmp/.mount_T3abc/resources/app.asar/apps/server/dist/bin.mjs",
+        env: { T3CODE_CLI_PATH: shim },
+      };
+
+      expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
+
+      expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
+        'sudo env "PATH=$PATH" d4research browser setup',
+      );
+
+      expect(
+        yield* rootCommand({
+          node: "/opt/d4research/d4research",
+          entry: "/opt/d4research/d4research",
+          executable: true,
+        }),
+      ).toBe("sudo /opt/d4research/d4research browser setup");
+
+      expect(
+        yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
+      ).toBe('sudo env "PATH=$PATH" d4research browser setup');
+    }).pipe(Effect.scoped),
+  );
+});
+
+it.layer(NodeServices.layer)("host CLI commands", (it) => {
+  it.effect("renders a PowerShell command line on Windows", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const shim = path.join(home, "d4research.cmd");
+      yield* fs.writeFileString(shim, "@echo off\r\n");
+      const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
+        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
+          Effect.provideService(
+            HostProcess.ExecutablePath,
+            "C:\\Program Files\\T3 Code\\d4research.exe",
+          ),
+          Effect.provideService(HostProcess.Arguments, [
+            "C:\\Program Files\\T3 Code\\d4research.exe",
+            "C:\\Program Files\\T3 Code\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
+          ]),
+          Effect.provideService(HostProcess.IsExecutable, false),
+          Effect.provideService(HostProcess.Platform, platform),
+          Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
+        );
+      // The desktop shim is called through `&`, and each argument is quoted
+      // the PowerShell way: no POSIX single quotes anywhere.
+      expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
+        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
+      );
+      // Without a launcher, plain `d4research` with PowerShell-quoted arguments.
+      expect((yield* hostCommand("win32", {})).command).toBe(
+        'd4research doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+      );
+      // Typographic quotes also delimit PowerShell strings; doubling keeps them.
+      expect(
+        (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
+          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Environment, { PATH: "" }),
+          Effect.provideService(HostProcess.ExecutablePath, "C:\\d4research.exe"),
+          Effect.provideService(HostProcess.Arguments, ["C:\\d4research.exe", "C:\\bin.mjs"]),
+          Effect.provideService(HostProcess.IsExecutable, false),
+        )).command,
+      ).toBe('d4research doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
+      // POSIX hosts keep single quotes for the same input. The shim prefix is
+      // a host path, so only the arguments are asserted.
+      expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
+        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
+      );
+    }).pipe(Effect.scoped),
+  );
+});
+
+it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
+  it.effect("recognizes runner caches for script packages and the npm launcher", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const executable = path.join(root, ".t3/runtime/versions/1.0.0/d4research");
+      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+      yield* fs.writeFileString(executable, "");
+      for (const [relative, kind] of [
+        ["npm/_npx/hash/node_modules/d4research/dist/bin.mjs", "npx"],
+        ["npm/_npx/hash/node_modules/d4research/bin/d4research.mjs", "npx"],
+        ["pnpm/dlx/hash/node_modules/d4research/dist/bin.mjs", "pnpm-dlx"],
+        [".bun/install/cache/d4research/dist/bin.mjs", "bunx"],
+      ] as const) {
+        const entry = path.join(root, relative);
+        yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
+        yield* fs.writeFileString(entry, "");
+        yield* fs.writeFileString(
+          path.join(path.dirname(entry), "../package.json"),
+          `{"name":"d4research","version":"${packageJson.version}","bin":{"d4research":"./bin/d4research.mjs"}}`,
+        );
+        const launchedBy = entry.endsWith("d4research.mjs");
+        const installation = yield* resolveServerInstallation.pipe(
+          Effect.provideService(HostProcess.Arguments, [launchedBy ? executable : "node", entry]),
+          Effect.provideService(HostProcess.ExecutablePath, executable),
+          Effect.provideService(HostProcess.IsExecutable, launchedBy),
+          Effect.provideService(
+            HostProcess.Environment,
+            launchedBy ? { T3CODE_NPM_LAUNCHER_PATH: entry } : {},
+          ),
+        );
+        expect(installation).toEqual({ kind });
+      }
+    }),
+  );
+
+  it.effect("requires the npm prefix's bin to point to the running package", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const prefix = path.join(root, "bunx-tools");
+      const packageRoot = path.join(prefix, "lib/node_modules/d4research");
+      const entry = path.join(packageRoot, "dist/bin.mjs");
+      const globalBin = path.join(prefix, "bin/d4research");
+      yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
+      yield* fs.makeDirectory(path.dirname(globalBin), { recursive: true });
+      yield* fs.writeFileString(entry, "");
+      yield* fs.writeFileString(
+        path.join(packageRoot, "package.json"),
+        '{"name":"d4research","version":"0.0.45","bin":{"d4research":"./dist/bin.mjs"}}',
+      );
+      const resolve = resolveServerInstallation.pipe(
+        Effect.provideService(HostProcess.Arguments, ["node", entry]),
+        Effect.provideService(HostProcess.IsExecutable, false),
+        Effect.provideService(HostProcess.Platform, "linux"),
+      );
+      expect(yield* resolve).toBeNull();
+      yield* fs.symlink(entry, globalBin);
+      expect(yield* resolve).toEqual({ kind: "npm-global", prefix });
+      yield* fs.remove(globalBin);
+      yield* fs.writeFileString(globalBin, "an unrelated d4research command");
+      expect(yield* resolve).toBeNull();
+      expect(yield* resolve.pipe(Effect.provideService(HostProcess.Platform, "win32"))).toBeNull();
+    }),
+  );
+
+  it.effect("proves the downloaded executable was started by a global npm launcher", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const prefix = path.join(root, "bunx-tools");
+      const packageRoot = path.join(prefix, "lib/node_modules/d4research");
+      const launcher = path.join(packageRoot, "bin/d4research.mjs");
+      const executable = path.join(root, ".t3/runtime/versions/1.0.0/d4research");
+      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+      yield* fs.makeDirectory(path.join(prefix, "bin"));
+      yield* fs.writeFileString(launcher, "");
+      yield* fs.writeFileString(executable, "");
+      yield* fs.symlink(launcher, path.join(prefix, "bin/d4research"));
+      const resolve = resolveServerInstallation.pipe(
+        Effect.provideService(HostProcess.ExecutablePath, executable),
+        Effect.provideService(HostProcess.Arguments, [executable, executable]),
+        Effect.provideService(HostProcess.IsExecutable, true),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Environment, { T3CODE_NPM_LAUNCHER_PATH: launcher }),
+      );
+      // A launcher for another version is some other `d4research` the server spawned
+      // (the variable is inherited), not the install this executable runs from.
+      for (const [version, expected] of [
+        ["0.0.1", null],
+        [packageJson.version, { kind: "npm-global", prefix }],
+      ] as const) {
+        yield* fs.writeFileString(
+          path.join(packageRoot, "package.json"),
+          `{"name":"d4research","version":"${version}","bin":{"d4research":"./bin/d4research.mjs"}}`,
+        );
+        expect(yield* resolve).toEqual(expected);
+      }
+    }),
+  );
+
+  it.effect("leaves local, standalone, missing and unreadable installs unknown", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      for (const relative of [
+        "project/node_modules/d4research/dist/bin.mjs",
+        "project/apps/server/dist/bin.mjs",
+        ".t3/runtime/0.0.45/d4research",
+        "missing/dist/bin.mjs",
+      ]) {
+        const entry = path.join(root, relative);
+        if (!relative.startsWith("missing")) {
+          yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
+          yield* fs.writeFileString(entry, "");
+        }
+        expect(
+          yield* resolveServerInstallation.pipe(
+            Effect.provideService(HostProcess.Arguments, ["node", entry]),
+            Effect.provideService(HostProcess.IsExecutable, false),
+          ),
+        ).toBeNull();
+      }
+    }),
   );
 });

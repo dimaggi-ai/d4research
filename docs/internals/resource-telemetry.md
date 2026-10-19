@@ -6,6 +6,13 @@ Status: implemented
 
 ## Purpose
 
+The native child owns sampling and bounded in-memory history. It samples on a timer
+only while diagnostics has live subscribers. With none, the server sends a sample
+interval of 0 and the child samples only on request, so an idle server never walks
+the process table. History therefore covers only time with a live subscriber, plus
+on-demand samples. Consuming host power for background scheduling must not retain
+live diagnostics. There is no telemetry database or recurring shell-probe fallback.
+
 Resource telemetry replaces recurring `ps`, PowerShell, `ioreg`, and `pmset`
 subprocess probes with two persistent, direct data sources:
 
@@ -87,9 +94,9 @@ line on stdout:
 - `historyChunk`
 - `error`
 
-The protocol version is defined by
 `RESOURCE_MONITOR_PROTOCOL_VERSION` in
-`packages/contracts/src/resourceTelemetry.ts`.
+`packages/contracts/src/resourceTelemetry.ts`
+defines the protocol version.
 
 ### Collection
 
@@ -103,9 +110,9 @@ power-adaptive interval selected by the server. It collects:
 - resident and virtual memory;
 - cumulative process I/O counters.
 
-On Linux, task/thread enumeration is disabled. Command lines are loaded only
-when first needed. This avoids the expensive default behavior of walking every
-`/proc/<pid>/task/<tid>` directory on each refresh.
+On Linux, task/thread enumeration is disabled. Command lines are refreshed with
+each sample so process replacements remain visible. Disabling task enumeration
+avoids walking every `/proc/<pid>/task/<tid>` directory on each refresh.
 
 ### Process-tree selection
 
@@ -142,7 +149,8 @@ The server adjusts native sampling without restarting the sidecar:
 
 - suspended, locked, low-power, or serious/critical thermal state: 15 seconds;
 - battery: 5 seconds;
-- normal AC: 1 second;
+- normal AC: 5 seconds in the background and 1 second while live diagnostics is
+  open;
 - unknown or stale power: 5 seconds in the background and 1 second while live
   diagnostics is open.
 
@@ -308,9 +316,9 @@ adding diagnostics-specific counters.
 `HostPowerMonitor` consumes `DesktopTelemetryReceiver` directly; observing host
 power does not retain live resource diagnostics or invoke shell probes.
 
-The monitor updates its latest timestamp on every Electron sample but only
-publishes semantic state changes. Increasing idle seconds alone does not cause a
-background-policy broadcast every second.
+The monitor updates its latest timestamp on every Electron sample but publishes
+semantic state changes only. Increasing idle seconds alone does not trigger a
+background-policy broadcast each second.
 
 ## Public API and UI
 

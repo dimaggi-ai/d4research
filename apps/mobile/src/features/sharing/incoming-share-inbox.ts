@@ -20,6 +20,7 @@ export interface IncomingShareInboxDependencies {
   }) => Promise<{
     readonly draft: IncomingShareDraft;
     readonly cleanup: () => Promise<void>;
+    readonly rollback?: () => Promise<void>;
   }>;
   readonly cleanupReplayedPayloads?: (payloads: ReadonlyArray<SharePayload>) => Promise<void>;
   readonly idForPayloads: (payloads: ReadonlyArray<SharePayload>) => Promise<string>;
@@ -44,8 +45,8 @@ export function sortAndDedupeIncomingShares(
 }
 
 /**
- * Serializes every durable inbox mutation. This prevents a stale storage load
- * or a foreground refresh from restoring an item after it has been consumed.
+ * This prevents a stale storage load or a foreground refresh from restoring an
+ * item after it has been consumed.
  */
 export class IncomingShareInbox {
   private readonly operations = new SerializedAsyncQueue();
@@ -104,8 +105,6 @@ export class IncomingShareInbox {
       });
       const { draft } = built;
       if (!hasIncomingShareContent(draft)) {
-        // Unsupported native payloads cannot become actionable on retry and
-        // would otherwise reopen the project picker on every foreground.
         await this.cleanup(built.cleanup);
         this.clearNativePayloads();
         throw new Error(
@@ -116,7 +115,14 @@ export class IncomingShareInbox {
       // The durable inbox write is the transaction boundary. Never clear the
       // native handoff first: a process termination must leave one recoverable
       // copy on one side of the boundary.
-      await this.dependencies.writeDraft(draft);
+      try {
+        await this.dependencies.writeDraft(draft);
+      } catch (error) {
+        if (built.rollback) {
+          await this.cleanup(built.rollback);
+        }
+        throw error;
+      }
       await this.cleanup(built.cleanup);
       this.clearNativePayloads();
       return sortAndDedupeIncomingShares([draft, ...persisted]);
@@ -169,8 +175,6 @@ export class IncomingShareInbox {
       const persisted = await this.dependencies.loadDrafts();
       const target = persisted.find((draft) => draft.id === shareId);
       if (!target) {
-        // Conditional release is idempotent: if another operation already
-        // consumed the share, no reservation remains to clean up.
         return sortAndDedupeIncomingShares(persisted);
       }
       if (!target.destination) {

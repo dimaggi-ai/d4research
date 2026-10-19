@@ -1,4 +1,7 @@
+import { settlePromise } from "@d4research/client-runtime/state/runtime";
 import type { DesktopSshPasswordPromptRequest } from "@d4research/contracts";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Cause from "effect/Cause";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "../ui/button";
@@ -118,19 +121,16 @@ function ActiveSshPasswordPrompt({
     isRespondingRef.current = true;
     setIsResponding(true);
     setResponseError(null);
-    try {
-      await window.desktopBridge?.resolveSshPasswordPrompt(requestId, nextPassword);
+    const result = await settlePromise(async () =>
+      window.desktopBridge?.resolveSshPasswordPrompt(requestId, nextPassword),
+    );
+    if (AsyncResult.isSuccess(result) || nextPassword === null) {
       onRemove(requestId);
-    } catch (error) {
-      if (nextPassword === null) {
-        onRemove(requestId);
-      } else {
-        setResponseError(getPromptErrorMessage(error));
-      }
-    } finally {
-      isRespondingRef.current = false;
-      setIsResponding(false);
+    } else {
+      setResponseError(getPromptErrorMessage(Cause.squash(result.cause)));
     }
+    isRespondingRef.current = false;
+    setIsResponding(false);
   };
 
   const dismissExpiredPrompt = () => {
@@ -164,7 +164,7 @@ function ActiveSshPasswordPrompt({
             to the local SSH process for this connection attempt and is not saved by d4research.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-3" scrollFade={false}>
+        <DialogPanel scrollFade={false}>
           <form
             className="space-y-3"
             id={formId}

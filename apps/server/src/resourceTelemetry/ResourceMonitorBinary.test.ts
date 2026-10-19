@@ -1,15 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import {
-  HostProcessArchitecture,
-  HostProcessEnvironment,
-  HostProcessPlatform,
-} from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import { afterEach, assert, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import { ServerConfig } from "../config.ts";
+import * as ServerConfig from "../config.ts";
 import * as ResourceMonitorBinary from "./ResourceMonitorBinary.ts";
+
+// The override checks POSIX exec bits on a real file under a linux platform
+// mock; NTFS never reports those bits, so the check cannot be satisfied there.
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 describe("ResourceMonitorBinary", () => {
   afterEach(() => {
@@ -30,9 +30,9 @@ describe("ResourceMonitorBinary", () => {
 
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "win32"),
-        Effect.provideService(HostProcessArchitecture, "arm64"),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(HostProcess.Architecture, "arm64"),
+        Effect.provideService(HostProcess.Environment, {
           T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
@@ -42,7 +42,7 @@ describe("ResourceMonitorBinary", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("resolves an executable override", () =>
+  it.effect.skipIf(windowsHost)("resolves an executable override", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -54,10 +54,10 @@ describe("ResourceMonitorBinary", () => {
 
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "linux"),
-        Effect.provideService(HostProcessArchitecture, "x64"),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Architecture, "x64"),
         Effect.provideService(ResourceMonitorBinary.ResourceMonitorHostLinuxLibc, "musl"),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
@@ -66,7 +66,7 @@ describe("ResourceMonitorBinary", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("resolves an executable override on an unsupported platform", () =>
+  it.effect.skipIf(windowsHost)("resolves an executable override on an unsupported platform", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -78,9 +78,9 @@ describe("ResourceMonitorBinary", () => {
 
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "freebsd"),
-        Effect.provideService(HostProcessArchitecture, "ia32"),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Platform, "freebsd"),
+        Effect.provideService(HostProcess.Architecture, "ia32"),
+        Effect.provideService(HostProcess.Environment, {
           T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
@@ -101,10 +101,10 @@ describe("ResourceMonitorBinary", () => {
 
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "linux"),
-        Effect.provideService(HostProcessArchitecture, "x64"),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Architecture, "x64"),
         Effect.provideService(ResourceMonitorBinary.ResourceMonitorHostLinuxLibc, "gnu"),
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
@@ -112,6 +112,28 @@ describe("ResourceMonitorBinary", () => {
 
       assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryNotExecutable);
       assert.equal(error.path, binaryPath);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects a directory override", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-resource-monitor-binary-",
+      });
+
+      const service = yield* ResourceMonitorBinary.make().pipe(
+        Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(HostProcess.Architecture, "arm64"),
+        Effect.provideService(HostProcess.Environment, {
+          T3CODE_RESOURCE_MONITOR_PATH: baseDir,
+        }),
+      );
+      const error = yield* Effect.flip(service.resolve);
+
+      assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryNotExecutable);
+      assert.equal(error.path, baseDir);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
@@ -123,9 +145,9 @@ describe("ResourceMonitorBinary", () => {
       });
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "freebsd"),
-        Effect.provideService(HostProcessArchitecture, "ia32"),
-        Effect.provideService(HostProcessEnvironment, {}),
+        Effect.provideService(HostProcess.Platform, "freebsd"),
+        Effect.provideService(HostProcess.Architecture, "ia32"),
+        Effect.provideService(HostProcess.Environment, {}),
       );
       const error = yield* Effect.flip(service.resolve);
 
@@ -141,10 +163,10 @@ describe("ResourceMonitorBinary", () => {
       });
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcessPlatform, "linux"),
-        Effect.provideService(HostProcessArchitecture, "x64"),
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Architecture, "x64"),
         Effect.provideService(ResourceMonitorBinary.ResourceMonitorHostLinuxLibc, "musl"),
-        Effect.provideService(HostProcessEnvironment, {}),
+        Effect.provideService(HostProcess.Environment, {}),
       );
       const error = yield* Effect.flip(service.resolve);
 

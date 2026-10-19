@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@d4research/client-runtime/environment";
+import type { EnvironmentShellStatus } from "@d4research/client-runtime/state/shell";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@d4research/contracts";
 import type { DraftId } from "./composerDraftStore";
 
@@ -20,23 +21,25 @@ type DraftThreadRouteState = {
 
 export type ThreadRouteRenderState = "loading" | "ready" | "missing";
 
+export function isThreadRouteSnapshotAuthoritative(
+  status: EnvironmentShellStatus | null | undefined,
+): boolean {
+  return status === "live";
+}
+
 export function resolveThreadRouteRenderState(input: {
   bootstrapComplete: boolean;
-  serverThreadShellExists: boolean;
-  serverThreadDetailExists: boolean;
-  serverThreadDetailDeleted: boolean;
+  serverThreadExists: boolean;
+  serverThreadDeleted: boolean;
   draftThreadExists: boolean;
 }): ThreadRouteRenderState {
+  if (input.draftThreadExists || (input.serverThreadExists && !input.serverThreadDeleted)) {
+    return "ready";
+  }
   if (!input.bootstrapComplete) {
     return "loading";
   }
-  if (input.serverThreadDetailExists || input.draftThreadExists) {
-    return "ready";
-  }
-  if (input.serverThreadDetailDeleted) {
-    return "missing";
-  }
-  return input.serverThreadShellExists ? "loading" : "missing";
+  return "missing";
 }
 
 export function buildThreadRouteParams(ref: ScopedThreadRef): {
@@ -85,10 +88,6 @@ export function resolveThreadRouteTarget(
   };
 }
 
-/**
- * Resolves the thread represented by either a canonical thread route or a
- * draft route whose promotion to a server thread has been recorded.
- */
 export function resolveActiveThreadRouteRef(
   target: ThreadRouteTarget | null,
   draftThread: DraftThreadRouteState | null,

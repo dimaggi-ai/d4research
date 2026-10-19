@@ -1,4 +1,5 @@
 import { it as effectIt } from "@effect/vitest";
+import { PreviewAutomationStatus } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -51,4 +52,20 @@ describe("preview IPC methods", () => {
       },
     ),
   );
+
+  it("keeps the public automation status tab id limit", () => {
+    const encode = Schema.encodeUnknownSync(PreviewAutomationStatus);
+    const tabId = "t".repeat(129);
+
+    expect(() =>
+      encode({
+        available: false,
+        visible: true,
+        tabId,
+        url: null,
+        title: null,
+        loading: false,
+      }),
+    ).toThrow();
+  });
 });

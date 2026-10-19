@@ -15,7 +15,44 @@ import {
   isProjectGroupingEnabled,
   projectGroupingModeFromToggle,
   resolveBackgroundActivityProfileOption,
+  getChangedTypographySettingLabels,
+  getChangedBrowserSettingLabels,
 } from "./SettingsPanels.logic";
+
+describe("restore-defaults change labels", () => {
+  it.each([
+    ["fontSizeInterface", "Interface font"],
+    ["fontSizePrompt", "Prompt font"],
+    ["fontSizeCode", "Code font"],
+    ["fontSizeTerminal", "Terminal font"],
+  ] as const)("detects a size-only change to %s", (key, label) => {
+    expect(
+      getChangedTypographySettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        [key]: (DEFAULT_UNIFIED_SETTINGS[key] ?? 14) + 1,
+      }),
+    ).toEqual([label]);
+  });
+
+  it("does not flag an equivalent browser viewport copy", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { ...DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport },
+      }),
+    ).toEqual([]);
+  });
+
+  it("detects a browser-only preference change", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultZoomFactor:
+          DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor === 1.25 ? 1.5 : 1.25,
+      }),
+    ).toEqual(["Browser zoom"]);
+  });
+});
 
 describe("background activity settings restore", () => {
   it("detects legacy interval values even when the structured setting is at its default", () => {
@@ -136,56 +173,68 @@ describe("project grouping toggle", () => {
 });
 
 describe("buildProviderInstanceUpdatePatch", () => {
-  it("promotes an edited default provider into providerInstances and resets the legacy provider", () => {
+  it("replaces one instance and keeps the others", () => {
     const instanceId = ProviderInstanceId.make("codex");
+    const otherId = ProviderInstanceId.make("codex_personal");
+    const other = {
+      driver: ProviderDriverKind.make("codex"),
+      config: { homePath: "/Users/example/.codex-personal" },
+    } satisfies ProviderInstanceConfig;
     const nextInstance = {
       driver: ProviderDriverKind.make("codex"),
       enabled: true,
-      config: {
-        binaryPath: "/opt/t3/codex",
-      },
+      config: { binaryPath: "/opt/t3/codex" },
     } satisfies ProviderInstanceConfig;
 
     const patch = buildProviderInstanceUpdatePatch({
-      settings: {
-        ...DEFAULT_SERVER_SETTINGS,
-        providers: {
-          ...DEFAULT_SERVER_SETTINGS.providers,
-          codex: {
-            ...DEFAULT_SERVER_SETTINGS.providers.codex,
-            binaryPath: "/legacy/codex",
-          },
-        },
-      },
+      settings: { providerInstances: { [otherId]: other } },
       instanceId,
       instance: nextInstance,
-      driver: ProviderDriverKind.make("codex"),
-      isDefault: true,
     });
 
-    expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
-    expect(patch.providers?.codex).toEqual(DEFAULT_SERVER_SETTINGS.providers.codex);
+    expect(patch.providerInstances).toEqual({ [otherId]: other, [instanceId]: nextInstance });
+    expect(patch).not.toHaveProperty("textGenerationModelSelection");
+  });
+});
+
+describe("getChangedBrowserSettingLabels", () => {
+  it("reports nothing for the defaults", () => {
+    expect(getChangedBrowserSettingLabels(DEFAULT_UNIFIED_SETTINGS)).toEqual([]);
   });
 
-  it("updates custom instances without touching legacy provider settings", () => {
-    const instanceId = ProviderInstanceId.make("codex_personal");
-    const nextInstance = {
-      driver: ProviderDriverKind.make("codex"),
-      enabled: true,
-      config: {
-        homePath: "/Users/example/.codex-personal",
-      },
-    } satisfies ProviderInstanceConfig;
+  it("treats a structurally equal viewport as unchanged", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { ...DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport },
+      }),
+    ).toEqual([]);
+  });
 
-    const patch = buildProviderInstanceUpdatePatch({
-      settings: DEFAULT_SERVER_SETTINGS,
-      instanceId,
-      instance: nextInstance,
-      driver: ProviderDriverKind.make("codex"),
-      isDefault: false,
-    });
-
-    expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
-    expect(patch.providers).toBeUndefined();
+  it("labels each browser default that differs", () => {
+    expect(
+      getChangedBrowserSettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        browserDefaultViewport: { _tag: "freeform", width: 900, height: 600 },
+        browserDefaultZoomFactor: 1.5,
+        browserDefaultAppearance: "dark",
+        browserRecordingFrameRate: 60,
+        browserRecordingShowKeyPresses: true,
+        browserRecordingShowMousePresses: true,
+        browserLinkTarget: "app",
+        browserAutoShowFloatingPreview: !DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
+        pullRequestLinksOpenInApp: false,
+      }),
+    ).toEqual([
+      "Browser viewport",
+      "Browser zoom",
+      "Browser appearance",
+      "Recording frame rate",
+      "Recording key presses",
+      "Recording mouse presses",
+      "Open links in",
+      "Floating preview",
+      "Open pull requests in T3 Code",
+    ]);
   });
 });

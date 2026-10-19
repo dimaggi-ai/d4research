@@ -1,3 +1,4 @@
+import { EnvironmentId } from "@d4research/contracts";
 import type { ProjectScript, ResolvedKeybindingsConfig } from "@d4research/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
@@ -16,8 +17,8 @@ const PRIMARY_SCRIPT: ProjectScript = {
 function renderControl(scripts: ReadonlyArray<ProjectScript>) {
   return renderToStaticMarkup(
     <ProjectScriptsControl
+      environmentId={EnvironmentId.make("test-env")}
       scripts={scripts}
-      keybindings={EMPTY_KEYBINDINGS}
       onRunScript={() => {}}
       onAddScript={async () => undefined as never}
       onUpdateScript={async () => undefined as never}
@@ -38,10 +39,10 @@ function expectResponsiveXsControl(markup: string | undefined) {
   expect(markup).toContain("sm:h-6");
   expect(markup).toContain("sm:text-xs");
   expect(markup).toContain("w-7");
-  expect(markup).toContain("px-0");
+  expect(markup).toContain("px-[calc(--spacing(2)-1px)]");
   expect(markup).toContain("sm:w-6");
   expect(markup).toContain("@3xl/header-actions:w-auto!");
-  expect(markup).toContain("@3xl/header-actions:px-[calc(--spacing(2)-1px)]");
+  expect(markup).not.toContain("@3xl/header-actions:px-");
 }
 
 describe("ProjectScriptsControl compact controls", () => {

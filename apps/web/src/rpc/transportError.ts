@@ -1,4 +1,1 @@
-export {
-  isTransportConnectionErrorMessage,
-  sanitizeThreadErrorMessage,
-} from "@d4research/client-runtime/errors";
+export { sanitizeThreadErrorMessage } from "@d4research/client-runtime/errors";

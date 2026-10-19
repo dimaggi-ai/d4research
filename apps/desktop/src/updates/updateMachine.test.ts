@@ -11,6 +11,7 @@ import {
   reduceDesktopUpdateStateOnInstallFailure,
   reduceDesktopUpdateStateOnNoUpdate,
   reduceDesktopUpdateStateOnUpdateAvailable,
+  resolveNotAppliedInstallVersion,
 } from "./updateMachine.ts";
 
 const runtimeInfo = {
@@ -55,6 +56,62 @@ describe("updateMachine", () => {
     expect(state.canRetry).toBe(true);
   });
 
+  it("preserves an already-downloaded update while checking the feed", () => {
+    const downloadedState = {
+      ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+      enabled: true,
+      status: "downloaded" as const,
+      availableVersion: "1.1.0",
+      downloadedVersion: "1.1.0",
+      releaseNotes: [{ version: "1.1.0", items: ["fix: queued update"], totalItems: 1 }],
+      omittedReleaseCount: 2,
+      downloadPercent: 100,
+    };
+    const checking = reduceDesktopUpdateStateOnCheckStart(
+      downloadedState,
+      "2026-03-04T00:00:00.000Z",
+    );
+    const failed = reduceDesktopUpdateStateOnCheckFailure(
+      checking,
+      "network unavailable",
+      "2026-03-04T00:00:01.000Z",
+    );
+
+    expect(checking.status).toBe("checking");
+    expect(checking.downloadedVersion).toBe("1.1.0");
+    expect(checking.releaseNotes).toEqual(downloadedState.releaseNotes);
+    expect(checking.omittedReleaseCount).toBe(2);
+    expect(failed.status).toBe("downloaded");
+    expect(failed.downloadedVersion).toBe("1.1.0");
+    expect(failed.releaseNotes).toEqual(downloadedState.releaseNotes);
+    expect(failed.omittedReleaseCount).toBe(2);
+    expect(failed.message).toBeNull();
+  });
+
+  it("keeps the installer when the feed still offers its version", () => {
+    const releaseNotes = [{ version: "1.1.0", items: ["fix: queued update"], totalItems: 1 }];
+    const state = reduceDesktopUpdateStateOnUpdateAvailable(
+      {
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        enabled: true,
+        status: "downloaded",
+        availableVersion: "1.1.0",
+        downloadedVersion: "1.1.0",
+        releaseNotes,
+        omittedReleaseCount: 2,
+        downloadPercent: 100,
+      },
+      "1.1.0",
+      "2026-03-04T00:00:00.000Z",
+    );
+
+    expect(state.status).toBe("downloaded");
+    expect(state.downloadedVersion).toBe("1.1.0");
+    expect(state.releaseNotes).toEqual(releaseNotes);
+    expect(state.omittedReleaseCount).toBe(2);
+    expect(state.downloadPercent).toBe(100);
+  });
+
   it("preserves available version on download failure for retry", () => {
     const state = reduceDesktopUpdateStateOnDownloadFailure(
       {
@@ -95,7 +152,8 @@ describe("updateMachine", () => {
     expect(failedInstall.canRetry).toBe(true);
   });
 
-  it("clears stale download state when no update is available", () => {
+  it("preserves a downloaded update when no update is available", () => {
+    const releaseNotes = [{ version: "1.1.0", items: ["fix: queued update"], totalItems: 1 }];
     const state = reduceDesktopUpdateStateOnNoUpdate(
       {
         ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
@@ -103,6 +161,35 @@ describe("updateMachine", () => {
         status: "error",
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.0",
+        releaseNotes,
+        omittedReleaseCount: 2,
+        message: "old failure",
+        errorContext: "download",
+        canRetry: true,
+      },
+      "2026-03-04T00:00:00.000Z",
+    );
+
+    expect(state.status).toBe("downloaded");
+    expect(state.availableVersion).toBe("1.1.0");
+    expect(state.downloadedVersion).toBe("1.1.0");
+    expect(state.releaseNotes).toBe(releaseNotes);
+    expect(state.omittedReleaseCount).toBe(2);
+    expect(state.downloadPercent).toBe(100);
+    expect(state.message).toBeNull();
+    expect(state.errorContext).toBeNull();
+    expect(state.canRetry).toBe(true);
+  });
+
+  it("clears stale available state when no update is available", () => {
+    const state = reduceDesktopUpdateStateOnNoUpdate(
+      {
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        enabled: true,
+        status: "error",
+        availableVersion: "1.1.0",
+        releaseNotes: [{ version: "1.1.0", items: ["fix: stale update"], totalItems: 1 }],
+        omittedReleaseCount: 2,
         message: "old failure",
         errorContext: "download",
         canRetry: true,
@@ -113,6 +200,8 @@ describe("updateMachine", () => {
     expect(state.status).toBe("up-to-date");
     expect(state.availableVersion).toBeNull();
     expect(state.downloadedVersion).toBeNull();
+    expect(state.releaseNotes).toEqual([]);
+    expect(state.omittedReleaseCount).toBe(0);
     expect(state.message).toBeNull();
     expect(state.errorContext).toBeNull();
   });
@@ -122,6 +211,7 @@ describe("updateMachine", () => {
       {
         version: "1.1.0",
         items: ["feat: add update release notes"],
+        totalItems: 1,
       },
     ];
     const available = reduceDesktopUpdateStateOnUpdateAvailable(
@@ -133,6 +223,7 @@ describe("updateMachine", () => {
       "1.1.0",
       "2026-03-04T00:00:00.000Z",
       releaseNotes,
+      2,
     );
     const downloading = reduceDesktopUpdateStateOnDownloadStart(available);
     const progress = reduceDesktopUpdateStateOnDownloadProgress(downloading, 55.5);
@@ -140,6 +231,7 @@ describe("updateMachine", () => {
     expect(available.status).toBe("available");
     expect(available.channel).toBe("latest");
     expect(available.releaseNotes).toBe(releaseNotes);
+    expect(available.omittedReleaseCount).toBe(2);
     expect(downloading.releaseNotes).toBe(releaseNotes);
     expect(downloading.status).toBe("downloading");
     expect(downloading.downloadPercent).toBe(0);
@@ -154,11 +246,26 @@ describe("updateMachine", () => {
         enabled: true,
         status: "available",
         availableVersion: "1.1.0-nightly.1",
-        releaseNotes: [{ version: "1.1.0-nightly.1", items: ["feat: old note"] }],
+        releaseNotes: [{ version: "1.1.0-nightly.1", items: ["feat: old note"], totalItems: 1 }],
+        omittedReleaseCount: 2,
       },
       "2026-03-04T00:00:00.000Z",
     );
 
     expect(state.releaseNotes).toEqual([]);
+    expect(state.omittedReleaseCount).toBe(0);
+  });
+});
+
+describe("resolveNotAppliedInstallVersion", () => {
+  const record = { fromVersion: "1.2.3", targetVersion: "1.2.4" };
+
+  it("flags the target when the app came back on the version it installed from", () => {
+    expect(resolveNotAppliedInstallVersion(record, "1.2.3")).toBe("1.2.4");
+  });
+
+  it("stays quiet when the install applied or the app runs another version", () => {
+    expect(resolveNotAppliedInstallVersion(record, "1.2.4")).toBeNull();
+    expect(resolveNotAppliedInstallVersion(record, "1.2.5")).toBeNull();
   });
 });

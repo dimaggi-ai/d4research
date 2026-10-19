@@ -1,16 +1,10 @@
-import {
-  DarkTheme,
-  DefaultTheme,
-  NavigationContainer,
-  NavigationIndependentTree,
-} from "@react-navigation/native";
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationOptions,
-} from "@react-navigation/native-stack";
+import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
+import { NavigationContainer, NavigationIndependentTree } from "@react-navigation/native";
+import { type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import type { ReactNode } from "react";
-import { Platform, useColorScheme } from "react-native";
+import { Platform } from "react-native";
 
+import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
 import { getCompactBrandHeaderOptions } from "../../components/CompactBrandTitle";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
@@ -23,13 +17,6 @@ type SidebarScreenOptions = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor";
 };
 
-/**
- * Static chrome for the sidebar column: a real UINavigationBar with a fixed
- * inline title (no large title — saves vertical space, left-aligned via the
- * editor item style) and the search bar pinned below it, scroll-edge blur
- * sampling the list. Only genuinely dynamic values (search callbacks, header
- * items) are set by the screen content via NativeStackScreenOptions.
- */
 const SIDEBAR_SCREEN_OPTIONS: SidebarScreenOptions = {
   contentStyle: { backgroundColor: "transparent" },
   headerLargeTitle: false,
@@ -44,23 +31,12 @@ const SIDEBAR_SCREEN_OPTIONS: SidebarScreenOptions = {
 
 const SidebarStack = createNativeStackNavigator();
 
-/**
- * Hosts the iPad sidebar pane inside its own single-screen native stack.
- *
- * The stack is navigation-inert — nothing is ever pushed onto it. It exists so
- * the sidebar column owns a real UINavigationBar (large title, native bar
- * button items, UISearchController), mirroring how each column of a
- * UISplitViewController has its own UINavigationController. All real
- * navigation still flows through the root stack via callbacks minted in
- * AdaptiveWorkspaceLayout; NavigationIndependentTree only isolates the
- * navigation hooks used for header configuration inside the pane.
- */
 export function SidebarNavigationShell(props: { readonly children: ReactNode }) {
-  const colorScheme = useColorScheme();
+  const navigationTheme = useMobileNavigationTheme("sidebar");
 
   return (
     <NavigationIndependentTree>
-      <NavigationContainer theme={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+      <NavigationContainer theme={navigationTheme}>
         <SidebarStack.Navigator
           screenOptions={SIDEBAR_SCREEN_OPTIONS}
           initialRouteName="SidebarThreads"

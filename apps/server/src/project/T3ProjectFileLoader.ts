@@ -1,13 +1,3 @@
-/**
- * T3ProjectFileLoader - Effect service that loads the checked-in `t3.json`
- * project file from a workspace root.
- *
- * Loading is best-effort: a missing file resolves to `Option.none`, and
- * unreadable or invalid files are logged and treated as absent so callers
- * can fall back to their defaults.
- *
- * @module T3ProjectFileLoader
- */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,7 +11,7 @@ import { T3ProjectFileFromJson } from "@d4research/shared/t3ProjectFile";
 
 const decodeT3ProjectFileJson = Schema.decodeEffect(T3ProjectFileFromJson);
 
-export class T3ProjectFileLoadError extends Schema.TaggedErrorClass<T3ProjectFileLoadError>()(
+export class T3ProjectFileLoadError extends Schema.TaggedError<T3ProjectFileLoadError>()(
   "T3ProjectFileLoadError",
   {
     operation: Schema.Literals(["read", "decode"]),
@@ -35,15 +25,12 @@ export class T3ProjectFileLoadError extends Schema.TaggedErrorClass<T3ProjectFil
   }
 }
 
-/** Service tag for t3.json project file loading. */
 export class T3ProjectFileLoader extends Context.Service<
   T3ProjectFileLoader,
   {
     /**
-     * Load and decode `t3.json` at the workspace root.
-     *
-     * Never fails: missing, unreadable, or invalid files resolve to
-     * `Option.none` (invalid files are logged as warnings).
+     * Never fails: missing, unreadable, or invalid files resolve to `Option.none` (invalid files
+     * are logged as warnings).
      */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
   }
@@ -59,6 +46,7 @@ const logT3ProjectFileLoadError = (error: T3ProjectFileLoadError) =>
     }),
   );
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -67,7 +55,7 @@ export const make = Effect.gen(function* () {
     function* (workspaceRoot) {
       const filePath = path.join(workspaceRoot, T3_PROJECT_FILE_NAME);
       const raw = yield* fileSystem.readFileString(filePath).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchTags({
           PlatformError: (error) =>
             error.reason._tag === "NotFound"
@@ -86,7 +74,7 @@ export const make = Effect.gen(function* () {
         return Option.none<T3ProjectFile>();
       }
       return yield* decodeT3ProjectFileJson(raw.value).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchTags({
           SchemaError: (error) =>
             logT3ProjectFileLoadError(

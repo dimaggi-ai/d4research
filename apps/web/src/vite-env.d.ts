@@ -1,3 +1,4 @@
+/// <reference types="vite-plus/test/matchers" />
 /// <reference types="vite-plus/client" />
 
 import type { DesktopBridge } from "@d4research/contracts";

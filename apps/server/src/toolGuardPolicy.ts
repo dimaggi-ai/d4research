@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import YAML from "yaml";
 
 import type {
@@ -136,7 +136,7 @@ export const readToolGuardPolicy = Effect.fn("readToolGuardPolicy")(function* ()
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const candidates: ReadonlyArray<{
     readonly dir: string;
@@ -161,7 +161,7 @@ export const writeToolGuardPolicy = Effect.fn("writeToolGuardPolicy")(function* 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const managed = managedToolGuardPaths(config.stateDir, path, platform);
   const profileDir = resolveActiveProfileDir(managed.profiles, path);
   const policyPath = path.join(profileDir, "policy.yaml");

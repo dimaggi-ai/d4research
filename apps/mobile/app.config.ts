@@ -10,9 +10,13 @@ const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
+// Lets a paid team that does not own the variant's identifier (for example an Xcode Cloud
+// workflow on a personal account) sign the full app, extensions included.
+const teamBundleIdentifier = repoEnv.T3CODE_IOS_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -24,12 +28,18 @@ if (
   );
 }
 
+if (teamBundleIdentifier && !IOS_BUNDLE_IDENTIFIER_PATTERN.test(teamBundleIdentifier)) {
+  throw new Error("T3CODE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as com.example.d4.");
+}
+
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
   androidAdaptiveBackgroundColor: "#00639B",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#00639B",
@@ -41,6 +51,8 @@ const PREVIEW_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
   androidAdaptiveBackgroundColor: "#111533",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#7565C7",
@@ -52,6 +64,8 @@ const RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#000000",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#FFFFFF",
@@ -63,6 +77,7 @@ const VARIANT_CONFIG = {
     scheme: "t3code-dev",
     iosBundleIdentifier: "ai.dimaggi.d4research.dev",
     androidPackage: "ai.dimaggi.d4research.dev",
+    relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
@@ -70,6 +85,7 @@ const VARIANT_CONFIG = {
     scheme: "t3code-preview",
     iosBundleIdentifier: "ai.dimaggi.d4research.preview",
     androidPackage: "ai.dimaggi.d4research.preview",
+    relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
@@ -77,6 +93,7 @@ const VARIANT_CONFIG = {
     scheme: "t3code",
     iosBundleIdentifier: "ai.dimaggi.d4research",
     androidPackage: "ai.dimaggi.d4research",
+    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -95,7 +112,7 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+  : teamBundleIdentifier || variant.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -112,12 +129,66 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
     // Agent activity can update many times an hour; without the
     // frequent-updates entitlement iOS throttles the update budget sooner.
     frequentUpdates: true,
+    enableAndroid: true,
     widgets: [
+      {
+        name: "SubscriptionUsage",
+        displayName: "Subscription usage",
+        description: "Subscription quotas from your connected d4research environments.",
+        ios: {
+          configuration: {
+            title: "Subscription usage",
+            description:
+              "Both shows Session and Weekly when available. The Lock Screen shows the tightest selected limit.",
+            parameters: {
+              codexPeriod: {
+                title: "Codex limits",
+                type: "enum",
+                default: "auto",
+                values: [
+                  { name: "Both", value: "auto" },
+                  { name: "Session", value: "session" },
+                  { name: "Weekly", value: "weekly" },
+                ],
+              },
+              claudePeriod: {
+                title: "Claude limits",
+                type: "enum",
+                default: "auto",
+                values: [
+                  { name: "Both", value: "auto" },
+                  { name: "Session", value: "session" },
+                  { name: "Weekly", value: "weekly" },
+                ],
+              },
+            },
+          },
+          supportedFamilies: [
+            "systemSmall",
+            "systemMedium",
+            "systemLarge",
+            "systemExtraLarge",
+            "accessoryRectangular",
+          ],
+        },
+        android: {
+          minWidth: 250,
+          minHeight: 180,
+          targetCellWidth: 4,
+          targetCellHeight: 3,
+          resizeMode: "both",
+          // Embeds the layout in the APK so the widget renders before the app
+          // has run once; the app replaces it with stored props on publish.
+          initialLayout: "./src/widgets/SubscriptionUsage.android.tsx",
+        },
+      },
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
-        supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
+        description: "Shows the current state of active d4research agents.",
+        // Live Activity companion; there is no Android presentation for it.
+        android: null,
+        ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
       },
     ],
   },
@@ -156,7 +227,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.0.3",
+  version: repoEnv.T3CODE_MOBILE_VERSION ?? "0.2.0",
   runtimeVersion: {
     // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
     // project — native deps, config plugins, AND patches/ — matches the update.
@@ -168,26 +239,33 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: Boolean(repoEnv.D4_EXPO_UPDATE_URL),
-    ...(repoEnv.D4_EXPO_UPDATE_URL ? { url: repoEnv.D4_EXPO_UPDATE_URL } : {}),
+    enabled:
+      repoEnv.T3CODE_MOBILE_UPDATES_ENABLED === "1" && Boolean(repoEnv.T3CODE_MOBILE_UPDATES_URL),
+    ...(repoEnv.T3CODE_MOBILE_UPDATES_URL ? { url: repoEnv.T3CODE_MOBILE_UPDATES_URL } : {}),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
-    // Multitasking-capable iPad apps cannot rotate programmatically, so the
-    // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // The d4 Apple Developer team owns the app and its extension identifiers.
     appleTeamId: repoEnv.T3CODE_IOS_APPLE_TEAM_ID ?? "CR2PTQ345T",
     infoPlist: {
+      UISupportedInterfaceOrientations: [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationLandscapeLeft",
+        "UIInterfaceOrientationLandscapeRight",
+      ],
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+        "Allow d4research to connect to d4research servers on your local network or tailnet.",
+      NSPhotoLibraryAddUsageDescription: "Allow d4research to save images to your photo library.",
+      // "Audio, AirPlay, and Picture in Picture": the browser screen's system
+      // picture in picture needs it to start and to stay up outside the app.
+      UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -209,8 +287,14 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
+      ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
+      : {}),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+      ...(variant.assets.androidAdaptiveBackgroundImage
+        ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+        : {}),
       foregroundImage: variant.assets.androidAdaptiveForeground,
       monochromeImage: variant.assets.androidMonochromeIcon,
     },
@@ -218,11 +302,14 @@ const config: ExpoConfig = {
     // JS back handling survives it via react-native's Android 16 shim plus
     // withAndroidPredictiveBackCompat on Android 13-15.
     predictiveBackGestureEnabled: true,
+    // expo-sensors declares this for its pedometer, which the app does not use.
+    blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
   },
   web: {
     favicon: variant.assets.appIcon,
   },
   plugins: [
+    ["llama.rn", { enableEntitlements: false, enableOpenCLAndHexagon: false }],
     "expo-asset",
     [
       "expo-font",
@@ -271,6 +358,9 @@ const config: ExpoConfig = {
           shortcut_icon: {
             foregroundImage: variant.assets.androidAdaptiveForeground,
             backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+            ...(variant.assets.androidAdaptiveBackgroundImage
+              ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+              : {}),
           },
         },
       },
@@ -278,7 +368,8 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission:
+          "Allow d4research to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -296,11 +387,33 @@ const config: ExpoConfig = {
           image: variant.assets.splashIcon,
           backgroundColor: "#0a0a0a",
         },
+        android: {
+          // Android 12+ masks the splash icon to a circle over the central two thirds of
+          // its 288dp canvas, so the iOS export's corners get cut. A full-canvas image of
+          // the composed adaptive layers puts the wordmark in the same frame the launcher
+          // icon uses.
+          image: variant.assets.androidSplashIcon,
+          imageWidth: 288,
+          dark: { image: variant.assets.androidSplashIcon },
+        },
       },
     ],
     [
       "expo-build-properties",
       {
+        android: {
+          minSdkVersion: 24,
+          // kotlinx-io uses Kotlin 2.3's return-value checker annotation, while
+          // SDK 58 builds with Kotlin 2.2. It has no runtime behavior.
+          // WorkManager 2.9 keeps InputMerger classes but not their constructors,
+          // and R8 full mode no longer keeps a default constructor implicitly.
+          // Without it no work request can start, so the Glance session behind
+          // the widget never renders and it stays on "Loading widget".
+          extraProguardRules: [
+            "-dontwarn kotlin.MustUseReturnValues",
+            "-keep class * extends androidx.work.InputMerger { <init>(); }",
+          ].join("\n"),
+        },
         ios: {
           deploymentTarget: "18.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
@@ -313,15 +426,18 @@ const config: ExpoConfig = {
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
     "./plugins/withIosPodDeploymentTarget.cjs",
+    // Only the accelerometer is used (device viewer shake). Compile out the
+    // pedometer so iOS needs no motion purpose string.
+    ["expo-sensors", { motionPermission: false }],
     // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
     // first, so registering earlier makes this plugin's mods run AFTER
     // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
     // would delete the asset catalog) and its xcodeproj mod creates the widget
     // target (which must exist before the compile phase can be attached).
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
-    "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
@@ -331,9 +447,12 @@ const config: ExpoConfig = {
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
-    ...(repoEnv.D4_EAS_PROJECT_ID ? { eas: { projectId: repoEnv.D4_EAS_PROJECT_ID } } : {}),
+    ...(repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID
+      ? { eas: { projectId: repoEnv.T3CODE_MOBILE_EAS_PROJECT_ID } }
+      : {}),
   },
-  ...(repoEnv.D4_EXPO_OWNER ? { owner: repoEnv.D4_EXPO_OWNER } : {}),
+  ...(repoEnv.T3CODE_MOBILE_EXPO_OWNER ? { owner: repoEnv.T3CODE_MOBILE_EXPO_OWNER } : {}),
+  experiments: { reactCompiler: true },
 };
 
 export default config;

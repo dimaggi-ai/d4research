@@ -17,8 +17,8 @@ const MAX_DETAIL_BYTES = 256 * 1024;
 const MAX_MANIFEST_BYTES = 256 * 1024;
 const SEARCH_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_THEME_BYTES = 256 * 1024;
-const MAX_ZIP_ENTRIES = 2_000;
-const MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 5_000;
+const MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO = 200;
 const MAX_THEMES_PER_EXTENSION = 40;
 const MAX_INCLUDE_DEPTH = 8;
@@ -49,6 +49,10 @@ const USED_WORKBENCH_COLORS = new Set([
   "dropdown.border",
   "editor.background",
   "editor.foreground",
+  "editor.findMatchBackground",
+  "editor.findMatchForeground",
+  "editor.findMatchHighlightBackground",
+  "editor.findMatchHighlightForeground",
   "editor.selectionBackground",
   "editorCursor.foreground",
   "editorError.foreground",
@@ -244,8 +248,6 @@ export async function searchOpenVsxThemes(
   url.searchParams.set("category", "Themes");
   url.searchParams.set("sortBy", sortBy);
   url.searchParams.set("sortOrder", "desc");
-  // Ask for a few extras because results without a supported SPDX license
-  // are intentionally omitted.
   url.searchParams.set("size", "16");
   const value = await withSearchTimeout(async (requestSignal) => {
     const response = await fetch(url, { signal: requestSignal });

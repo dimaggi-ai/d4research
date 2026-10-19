@@ -1,7 +1,7 @@
 import { EnvironmentId, ProjectId } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
-export class ProjectThreadTaskRequiredError extends Schema.TaggedErrorClass<ProjectThreadTaskRequiredError>()(
+export class ProjectThreadTaskRequiredError extends Schema.TaggedError<ProjectThreadTaskRequiredError>()(
   "ProjectThreadTaskRequiredError",
   {
     environmentId: EnvironmentId,
@@ -14,7 +14,7 @@ export class ProjectThreadTaskRequiredError extends Schema.TaggedErrorClass<Proj
   }
 }
 
-export class ProjectThreadBaseBranchRequiredError extends Schema.TaggedErrorClass<ProjectThreadBaseBranchRequiredError>()(
+export class ProjectThreadBaseBranchRequiredError extends Schema.TaggedError<ProjectThreadBaseBranchRequiredError>()(
   "ProjectThreadBaseBranchRequiredError",
   {
     environmentId: EnvironmentId,
@@ -31,6 +31,17 @@ export const ProjectThreadCreationValidationError = Schema.Union([
   ProjectThreadBaseBranchRequiredError,
 ]);
 export type ProjectThreadCreationValidationError = typeof ProjectThreadCreationValidationError.Type;
+
+export function resolveProjectThreadCreationBranch(input: {
+  readonly workspaceMode: "local" | "worktree";
+  readonly selectedBranch: string | null;
+  readonly currentCheckoutBranch: string | null;
+}): string | null {
+  if (input.selectedBranch !== null) {
+    return input.selectedBranch;
+  }
+  return input.workspaceMode === "local" ? input.currentCheckoutBranch : null;
+}
 
 export function validateProjectThreadCreation(input: {
   readonly environmentId: EnvironmentId;

@@ -1,9 +1,12 @@
+import { compareSemverVersions, parseSemver } from "@d4research/shared/semver";
 import type {
   EnvironmentId,
   ServerConfig,
+  ServerInstallation,
   ServerSelfUpdateCapability,
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
+import type { ServerUpdateState } from "@d4research/client-runtime/state/server";
 
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
@@ -14,7 +17,17 @@ export interface VersionMismatch {
   readonly hint: string;
 }
 
-export const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
+const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
+
+const dismissedServerUpdateFailures = new WeakSet<ServerUpdateState>();
+
+export function isServerUpdateFailureDismissed(state: ServerUpdateState): boolean {
+  return state.status === "failed" && dismissedServerUpdateFailures.has(state);
+}
+
+export function dismissServerUpdateFailure(state: ServerUpdateState): void {
+  if (state.status === "failed") dismissedServerUpdateFailures.add(state);
+}
 
 const VersionMismatchDismissalsSchema = Schema.Struct({
   keys: Schema.Array(Schema.String),
@@ -27,16 +40,33 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+function versionCore(version: string): string {
+  return version.replace(/[-+].*$/, "");
+}
+
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
+  clientVersion: string = APP_VERSION,
 ): VersionMismatch | null {
-  const normalizedClientVersion = normalizeVersion(APP_VERSION);
+  const normalizedClientVersion = normalizeVersion(clientVersion);
   const normalizedServerVersion = normalizeVersion(serverVersion);
-  if (
-    !normalizedClientVersion ||
-    !normalizedServerVersion ||
-    normalizedClientVersion === normalizedServerVersion
-  ) {
+  if (!normalizedClientVersion || !normalizedServerVersion) {
+    return null;
+  }
+
+  const clientCore = versionCore(normalizedClientVersion);
+  const serverCore = versionCore(normalizedServerVersion);
+  const compareNightlyBuilds =
+    parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
+    parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly";
+  const serverIsBehind =
+    parseSemver(clientCore) && parseSemver(serverCore)
+      ? compareSemverVersions(
+          compareNightlyBuilds ? normalizedServerVersion : serverCore,
+          compareNightlyBuilds ? normalizedClientVersion : clientCore,
+        ) < 0
+      : normalizedServerVersion !== normalizedClientVersion;
+  if (!serverIsBehind) {
     return null;
   }
 
@@ -53,17 +83,35 @@ export function resolveServerConfigVersionMismatch(
   return resolveVersionMismatch(serverConfig?.environment.serverVersion);
 }
 
-/** The update path the connected server offers, or null when it only
-    supports a manual relaunch (older servers, dev checkouts, Windows). */
 export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): ServerSelfUpdateCapability | null {
   return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
 }
 
-/** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx d4research@${targetVersion}`;
+export function supportsDesktopAppUpdate(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.desktopAppUpdate === true;
+}
+
+export function supportsServerUpdateThreadContinuation(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
+}
+
+export function manualServerUpdateCommand(
+  targetVersion: string,
+  installation?: ServerInstallation,
+): string {
+  if (installation?.kind === "npm-global") {
+    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
+    return `npm install --global --prefix ${prefix} d4research@${targetVersion}`;
+  }
+  const runner =
+    installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
+  return `${runner} d4research@${targetVersion}`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,

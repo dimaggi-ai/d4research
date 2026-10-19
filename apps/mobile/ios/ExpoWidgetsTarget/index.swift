@@ -5,6 +5,9 @@ internal import ExpoWidgets
 @main
 struct ExportWidgets0: WidgetBundle {
   var body: some Widget {
+    if #available(iOS 17.0, *) {
+      SubscriptionUsage()
+    }
     AgentActivity()
     WidgetLiveActivity()
   }

@@ -1,5 +1,4 @@
 import { EnvironmentId } from "@d4research/contracts";
-import { stripPairingTokenFromUrl } from "@d4research/shared/remote";
 import { type EnvironmentConnectionPhase } from "@d4research/client-runtime/connection";
 
 export { authClientMetadata } from "./authClientMetadata";
@@ -18,15 +17,6 @@ export interface SavedRemoteConnection {
 }
 
 export type RemoteClientConnectionState = EnvironmentConnectionPhase;
-
-export function redactPairingCredential(pairingUrl: string): string {
-  const trimmed = pairingUrl.trim();
-  try {
-    return stripPairingTokenFromUrl(new URL(trimmed)).toString();
-  } catch {
-    return trimmed;
-  }
-}
 
 export function isRelayManagedConnection(
   connection: Pick<SavedRemoteConnection, "authenticationMethod" | "relayManaged">,

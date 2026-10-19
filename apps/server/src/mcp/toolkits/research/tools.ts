@@ -2,16 +2,16 @@ import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
-import { HttpClient } from "effect/unstable/http";
+import { Tool, Toolkit } from "effect/ai";
+import { HttpClient } from "effect/http";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
-import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { ProviderAdapterRegistry } from "../../../provider/Services/ProviderAdapterRegistry.ts";
-import { ProviderRegistry } from "../../../provider/Services/ProviderRegistry.ts";
-import { ProviderService } from "../../../provider/Services/ProviderService.ts";
+import { ProjectionStoreV2 } from "../../../orchestration-v2/ProjectionStore.ts";
+import { ProjectStoreV2 } from "../../../orchestration-v2/ProjectStore.ts";
+import { ProviderAdapterRegistryV2 } from "../../../orchestration-v2/ProviderAdapterRegistry.ts";
+import { ProviderRegistry } from "../../../provider/ProviderRegistry.ts";
 import { ResearchDelegationBudget } from "./budget.ts";
 
 /**
@@ -29,7 +29,7 @@ export const ResearchDelegateFailureKind = Schema.Literals([
 ]);
 export type ResearchDelegateFailureKind = typeof ResearchDelegateFailureKind.Type;
 
-export class ResearchDelegateError extends Schema.TaggedErrorClass<ResearchDelegateError>()(
+export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateError>()(
   "ResearchDelegateError",
   {
     detail: Schema.String,
@@ -42,10 +42,11 @@ export class ResearchDelegateError extends Schema.TaggedErrorClass<ResearchDeleg
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   ServerSettingsService,
-  ProviderAdapterRegistry,
+  ProviderAdapterRegistryV2,
   ProviderRegistry,
-  ProviderService,
-  ProjectionSnapshotQuery,
+
+  ProjectionStoreV2,
+  ProjectStoreV2,
   ServerConfig.ServerConfig,
   ResearchDelegationBudget,
   Path.Path,

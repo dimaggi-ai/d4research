@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isEditableFocused } from "./lib/editableFocus";
 
 export interface ShortcutModifierState {
   metaKey: boolean;
@@ -26,30 +27,48 @@ export function areShortcutModifierStatesEqual(
   );
 }
 
-export function useShortcutModifierState(): ShortcutModifierState {
+export function useShortcutModifierState(ignoreEditable = false): ShortcutModifierState {
   const [state, setState] = useState(EMPTY_SHORTCUT_MODIFIER_STATE);
+  const stateRef = useRef(EMPTY_SHORTCUT_MODIFIER_STATE);
 
   useEffect(() => {
-    const onKeyboardEvent = (event: KeyboardEvent) => {
-      setState((current) => shortcutModifierStateAfterKeyboardEvent(current, event));
+    const updateState = (next: ShortcutModifierState) => {
+      // Even a no-op state dispatch can cost work in the sidebar's large tree.
+      // Ordinary typing must return before dispatching a React update.
+      if (areShortcutModifierStatesEqual(stateRef.current, next)) return;
+      stateRef.current = next;
+      setState(next);
     };
-    const onWindowBlur = () => {
-      setState((current) =>
-        areShortcutModifierStatesEqual(current, EMPTY_SHORTCUT_MODIFIER_STATE)
-          ? current
-          : EMPTY_SHORTCUT_MODIFIER_STATE,
+    const onKeyboardEvent = (event: KeyboardEvent) => {
+      updateState(
+        ignoreEditable && isEditableFocused(event.target)
+          ? EMPTY_SHORTCUT_MODIFIER_STATE
+          : shortcutModifierStateAfterKeyboardEvent(stateRef.current, event),
       );
     };
+    // Dictation tools (Wispr Flow) paste with a synthetic ⌘V whose Meta keyup
+    // never reaches the page, so the tracked state stays "⌘ held" forever and
+    // the thread jump hints stick on screen.
+    const onResetEvent = () => {
+      updateState(EMPTY_SHORTCUT_MODIFIER_STATE);
+    };
 
+    const onFocus = (event: FocusEvent) => {
+      if (ignoreEditable && isEditableFocused(event.target)) onResetEvent();
+    };
+    window.addEventListener("focusin", onFocus);
     window.addEventListener("keydown", onKeyboardEvent, true);
     window.addEventListener("keyup", onKeyboardEvent, true);
-    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("paste", onResetEvent, true);
+    window.addEventListener("blur", onResetEvent);
     return () => {
+      window.removeEventListener("focusin", onFocus);
       window.removeEventListener("keydown", onKeyboardEvent, true);
       window.removeEventListener("keyup", onKeyboardEvent, true);
-      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("paste", onResetEvent, true);
+      window.removeEventListener("blur", onResetEvent);
     };
-  }, []);
+  }, [ignoreEditable]);
 
   return state;
 }
@@ -84,11 +103,15 @@ export function shortcutModifierStateAfterKeyboardEvent(
       [normalizedModifierKey]: event.type === "keydown",
     };
   } else {
+    // After a dictation tool's synthetic ⌘V (Wispr Flow), the browser can keep
+    // reporting metaKey=true on real key events (Enter to submit) until the
+    // user physically taps ⌘. Trusting that flag would mark ⌘ as held and stick
+    // the thread jump hints.
     nextState = {
-      metaKey: event.metaKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      shiftKey: event.shiftKey,
+      metaKey: currentState.metaKey && event.metaKey,
+      ctrlKey: currentState.ctrlKey && event.ctrlKey,
+      altKey: currentState.altKey && event.altKey,
+      shiftKey: currentState.shiftKey && event.shiftKey,
     };
   }
 

@@ -1,55 +1,22 @@
+import type {
+  PickedElementPayload,
+  PickedElementStackFrame,
+  PreviewAnnotationPayload,
+} from "@d4research/contracts";
 import { type ThreadId } from "@d4research/contracts";
-import type { PickedElementPayload, PickedElementStackFrame } from "@d4research/contracts";
 
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
-const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
 
-const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
-  /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
-
-/**
- * Stable, persistable element selection captured from the in-app preview
- * browser. We deliberately keep the shape JSON-serializable so it can ride
- * through `localStorage` persistence, draft restoration, and transcript
- * snapshots without bespoke marshalling.
- */
 export interface ElementContextSelection {
-  /** Page URL where the element was picked. */
   pageUrl: string;
-  /** Best-effort `<title>`. */
   pageTitle: string | null;
-  /** Lowercase tag, e.g. `"button"`. */
   tagName: string;
-  /** CSS selector — may be null when react-grab can't compute one. */
   selector: string | null;
-  /** Truncated outer-HTML preview. */
   htmlPreview: string;
-  /** Nearest React component display name, or null. */
   componentName: string | null;
-  /** Source frame (file + line) — null when unavailable. */
   source: PickedElementStackFrame | null;
-  /** Author CSS (no UA defaults). May be empty. */
   styles: string;
-}
-
-export interface ElementContextDraft extends ElementContextSelection {
-  /** Stable composer-side id used for keyed rendering + dedupe. */
-  id: string;
-  threadId: ThreadId;
-  /** ISO-8601 wall clock pick time. */
-  pickedAt: string;
-}
-
-export interface ParsedElementContextEntry {
-  header: string;
-  body: string;
-}
-
-export interface ExtractedElementContexts {
-  promptText: string;
-  contextCount: number;
-  contexts: ParsedElementContextEntry[];
 }
 
 function truncateString(value: string, limit: number): string {
@@ -62,9 +29,8 @@ function normalizeText(value: string): string {
 }
 
 /**
- * Sanitize a payload coming back from the desktop bridge before it lands in
- * the composer draft. Trims/clamps every string field so we never persist a
- * 5MB outerHTML blob and silently break `localStorage`.
+ * Trims/clamps every string field so we never persist a 5MB outerHTML blob and
+ * silently break `localStorage`.
  */
 export function normalizeElementContextSelection(
   raw: PickedElementPayload,
@@ -92,6 +58,55 @@ export function normalizeElementContextSelection(
       : null,
     styles: truncateString(normalizeText(raw.styles), ELEMENT_CONTEXT_STYLES_LIMIT),
   };
+}
+
+export function elementContextToPreviewAnnotation(
+  element: ElementContextSelection,
+  id: string,
+  pickedAt: string,
+): PreviewAnnotationPayload {
+  return {
+    id,
+    pageUrl: element.pageUrl,
+    pageTitle: element.pageTitle,
+    comment: "",
+    elements: [
+      {
+        id,
+        element: { ...element, stack: [], pickedAt },
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+      },
+    ],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: pickedAt,
+  };
+}
+
+const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
+
+const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
+  /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
+
+export interface ElementContextDraft extends ElementContextSelection {
+  /** Stable composer-side id used for keyed rendering + dedupe. */
+  id: string;
+  threadId: ThreadId;
+  /** ISO-8601 wall clock pick time. */
+  pickedAt: string;
+}
+
+export interface ParsedElementContextEntry {
+  header: string;
+  body: string;
+}
+
+export interface ExtractedElementContexts {
+  promptText: string;
+  contextCount: number;
+  contexts: ParsedElementContextEntry[];
 }
 
 /**
@@ -198,6 +213,7 @@ export function appendElementContextsToPrompt(
 }
 
 const ELEMENT_CONTEXT_ID_PREFIX = "el_";
+
 let nextElementContextSequence = 0;
 
 export function newElementContextId(): string {

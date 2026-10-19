@@ -6,7 +6,7 @@ import {
 } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 export interface EnvironmentThreadSearchMatch extends OrchestrationThreadSearchMatch {
   readonly environmentId: EnvironmentId;
@@ -17,11 +17,10 @@ export interface ThreadSearchResultsState {
   readonly isLoading: boolean;
 }
 
-const ThreadSearchKey = Schema.Tuple([
-  Schema.Array(EnvironmentId),
-  OrchestrationSearchThreadsInput.fields.query,
-]);
-const decodeThreadSearchKey = Schema.decodeUnknownSync(ThreadSearchKey);
+const ThreadSearchKey = Schema.fromJsonString(
+  Schema.Tuple([Schema.Array(EnvironmentId), OrchestrationSearchThreadsInput.fields.query]),
+);
+const decodeThreadSearchKey = Schema.decodeUnknownOption(ThreadSearchKey);
 
 export function makeThreadSearchKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
@@ -34,7 +33,7 @@ export function makeThreadSearchKey(
 }
 
 function parseThreadSearchKey(key: string) {
-  return decodeThreadSearchKey(JSON.parse(key));
+  return decodeThreadSearchKey(key);
 }
 
 export function threadSearchMatchKey(
@@ -43,11 +42,6 @@ export function threadSearchMatchKey(
   return JSON.stringify([match.environmentId, match.threadId]);
 }
 
-/**
- * Combines one search query atom per environment. Failed and disconnected
- * environments contribute no content matches, preserving local title search
- * as the compatibility fallback.
- */
 export function createThreadSearchResultsAtomFamily<E>(options: {
   readonly getSearchAtom: (
     environmentId: EnvironmentId,
@@ -57,7 +51,12 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
 }) {
   return Atom.family((key: string) =>
     Atom.make((get): ThreadSearchResultsState => {
-      const [environmentIds, query] = parseThreadSearchKey(key);
+      const parsedKey = parseThreadSearchKey(key);
+      if (Option.isNone(parsedKey)) {
+        return { matches: [], isLoading: false };
+      }
+
+      const [environmentIds, query] = parsedKey.value;
       const matches: EnvironmentThreadSearchMatch[] = [];
       let isLoading = false;
 

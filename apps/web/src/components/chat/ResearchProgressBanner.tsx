@@ -1,4 +1,5 @@
-import { memo, useEffect, useState } from "react";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
+import { memo, useState, useSyncExternalStore } from "react";
 import {
   BotIcon,
   CheckIcon,
@@ -282,15 +283,31 @@ export function formatDelegationElapsed(durationMs: number): string {
   return `${seconds}s`;
 }
 
+function createDelegationClock() {
+  let nowMs = Date.now();
+  return {
+    getSnapshot: () => nowMs,
+    subscribe: (listener: () => void) => {
+      const tick = () => {
+        nowMs = Date.now();
+        listener();
+      };
+      tick();
+      const interval = window.setInterval(tick, 5_000);
+      return () => window.clearInterval(interval);
+    },
+  };
+}
+
+const subscribeIdleClock = () => () => {};
+
 function useDelegationClock(enabled: boolean): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    setNowMs(Date.now());
-    const interval = window.setInterval(() => setNowMs(Date.now()), 5_000);
-    return () => window.clearInterval(interval);
-  }, [enabled]);
-  return nowMs;
+  const [clock] = useState(createDelegationClock);
+  return useSyncExternalStore(
+    enabled ? clock.subscribe : subscribeIdleClock,
+    clock.getSnapshot,
+    clock.getSnapshot,
+  );
 }
 
 /**
@@ -408,12 +425,16 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
             </span>
           ) : null}
           {contextTokens != null && contextTokens > 0 ? (
-            <span
-              className="shrink-0 text-xs tabular-nums text-muted-foreground"
-              title={`${isDev ? "Dev pipeline" : "Research"} context size`}
-            >
-              · {formatContextWindowTokens(contextTokens)} ctx
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    · {formatContextWindowTokens(contextTokens)} ctx
+                  </span>
+                }
+              />
+              <TooltipPopup>{`${isDev ? "Dev pipeline" : "Research"} context size`}</TooltipPopup>
+            </Tooltip>
           ) : null}
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {current ?? (isRunning ? "Working…" : "All stages complete")}
@@ -432,7 +453,7 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
           <button
             type="button"
             aria-label="Dismiss research progress"
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={onDismiss}
           >
             <XIcon aria-hidden className="size-3.5" />
@@ -476,13 +497,28 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
                 </span>
               ) : null}
               {signalAgeMs !== null ? (
-                <span
-                  className={cn("shrink-0 tabular-nums", signalAgeMs >= 60_000 && "text-amber-500")}
-                  title="Time since the latest observable provider event; hidden model reasoning is not visible"
-                >
-                  · signal{" "}
-                  {signalAgeMs < 10_000 ? "now" : `${formatDelegationElapsed(signalAgeMs)} ago`}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className={cn(
+                          "shrink-0 tabular-nums",
+                          signalAgeMs >= 60_000 && "text-amber-500",
+                        )}
+                      >
+                        · signal{" "}
+                        {signalAgeMs < 10_000
+                          ? "now"
+                          : `${formatDelegationElapsed(signalAgeMs)} ago`}
+                      </span>
+                    }
+                  />
+                  <TooltipPopup>
+                    {
+                      "Time since the latest observable provider event; hidden model reasoning is not visible"
+                    }
+                  </TooltipPopup>
+                </Tooltip>
               ) : null}
             </>
           ) : (
@@ -490,12 +526,21 @@ export const ResearchProgressBanner = memo(function ResearchProgressBanner({
           )}
           <span className="shrink-0 tabular-nums">· {used} sent</span>
           {remainingBudget !== null ? (
-            <span
-              className={cn("shrink-0 tabular-nums", remainingBudget <= 4 && "text-amber-500")}
-              title="Delegations left in this run's budget"
-            >
-              · {remainingBudget} left
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className={cn(
+                      "shrink-0 tabular-nums",
+                      remainingBudget <= 4 && "text-amber-500",
+                    )}
+                  >
+                    · {remainingBudget} left
+                  </span>
+                }
+              />
+              <TooltipPopup>{"Delegations left in this run's budget"}</TooltipPopup>
+            </Tooltip>
           ) : null}
           {failures > 0 ? (
             <span className="shrink-0 tabular-nums text-destructive">· {failures} failed</span>

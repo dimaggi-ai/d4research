@@ -2,17 +2,20 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import type {
   CommandId,
   EnvironmentId,
-  OrchestrationCommand,
+  ProjectMutation,
   ProjectId,
+  ServerConfig,
   SourceControlDiscoveryResult,
-  SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@d4research/contracts";
+import { SourceControlProviderKind } from "@d4research/contracts";
+import { newProjectFolderName } from "@d4research/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 
 import {
+  appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
   findProjectByPath,
   inferProjectTitleFromPath,
@@ -21,12 +24,10 @@ import {
   resolveProjectPathForDispatch,
 } from "../state/projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
+import { sourceControlClients } from "../sourceControlClients.ts";
+import type { SourceControlClientDefinition } from "../sourceControlClients.ts";
 
-export type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "azure-devops"
->;
-export type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
+export type AddProjectRemoteSource = SourceControlProviderKind | "url";
 
 export function canCreateProjectInEnvironment(
   connectionPhase: EnvironmentConnectionPhase | null | undefined,
@@ -34,10 +35,23 @@ export function canCreateProjectInEnvironment(
   return connectionPhase === "connected";
 }
 
-export type AddProjectRemoteSourceReadiness = Record<
-  AddProjectRemoteSource,
-  { readonly ready: boolean; readonly hint: string | null }
->;
+export function availableScratchWorkspaceRoot(
+  connectionPhase: EnvironmentConnectionPhase | null | undefined,
+  serverConfig: Pick<ServerConfig, "scratchWorkspaceRoot"> | null | undefined,
+): string | null {
+  return canCreateProjectInEnvironment(connectionPhase)
+    ? (serverConfig?.scratchWorkspaceRoot ?? null)
+    : null;
+}
+
+export interface AddProjectRemoteSourceReadinessEntry {
+  readonly ready: boolean;
+  readonly hint: string | null;
+}
+
+export type AddProjectRemoteSourceReadiness = (
+  source: AddProjectRemoteSource,
+) => AddProjectRemoteSourceReadinessEntry;
 
 export type AddProjectCloneFlow =
   | {
@@ -54,54 +68,50 @@ export type AddProjectCloneFlow =
       readonly remoteUrl: string;
     };
 
-const ADD_PROJECT_REMOTE_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
-  "url",
-  "github",
-  "gitlab",
-  "azure-devops",
-];
-
-const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
-  "github",
-  "gitlab",
-  "azure-devops",
-];
+const ADD_PROJECT_REMOTE_PROVIDER_SOURCES: ReadonlyArray<SourceControlProviderKind> =
+  sourceControlClients.definitions.map((definition) => definition.kind);
 
 export function addProjectRemoteSourceLabel(source: AddProjectRemoteSource): string {
-  switch (source) {
-    case "github":
-      return "GitHub";
-    case "gitlab":
-      return "GitLab";
-    case "azure-devops":
-      return "Azure DevOps";
-    case "url":
-      return "Git URL";
-  }
+  return source === "url" ? "Git URL" : sourceControlClients.get(source).pickerLabel;
 }
 
 export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): string {
-  switch (source) {
-    case "github":
-      return "owner/repo";
-    case "gitlab":
-      return "group/project";
-    case "azure-devops":
-      return "project/repository";
-    case "url":
-      return "URL";
-  }
+  return source === "url" ? "URL" : sourceControlClients.get(source).repositoryPathHint;
 }
 
 export function addProjectRemoteSourceProvider(
   source: AddProjectRemoteSource,
-): AddProjectRemoteProviderKind | null {
+): SourceControlProviderKind | null {
   return source === "url" ? null : source;
 }
 
+export function parseAddProjectRemoteSource(
+  value: string | null | undefined,
+): AddProjectRemoteSource {
+  return (value ? sourceControlClients.find(value)?.kind : undefined) ?? "url";
+}
+
+const GITHUB_REPOSITORY_SHORTHAND =
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]+(?:\.git)?$/;
+
+export function normalizePastedCloneUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!GITHUB_REPOSITORY_SHORTHAND.test(trimmed)) return trimmed;
+  const repository = trimmed.endsWith(".git") ? trimmed : `${trimmed}.git`;
+  return `https://github.com/${repository}`;
+}
+
+export function getDefaultCloneUrl(
+  repository: Pick<SourceControlRepositoryInfo, "provider" | "url" | "sshUrl">,
+): string {
+  return sourceControlClients.get(repository.provider).defaultCloneTransport === "https"
+    ? repository.url
+    : repository.sshUrl;
+}
+
 export function sortAddProjectProviderSources(
-  readinessBySource: AddProjectRemoteSourceReadiness,
-): ReadonlyArray<AddProjectRemoteProviderKind> {
+  readiness: AddProjectRemoteSourceReadiness,
+): ReadonlyArray<SourceControlProviderKind> {
   return Arr.sort(
     ADD_PROJECT_REMOTE_PROVIDER_SOURCES,
     Order.mapInput(
@@ -109,64 +119,132 @@ export function sortAddProjectProviderSources(
         ready: Order.flip(Order.Boolean),
         label: Order.String,
       }),
-      (source: AddProjectRemoteProviderKind) => ({
-        ready: readinessBySource[source].ready,
+      (source: SourceControlProviderKind) => ({
+        ready: readiness(source).ready,
         label: addProjectRemoteSourceLabel(source),
       }),
     ),
   );
 }
 
+const READY: AddProjectRemoteSourceReadinessEntry = { ready: true, hint: null };
+const UNAVAILABLE: AddProjectRemoteSourceReadinessEntry = {
+  ready: false,
+  hint: "Provider status unavailable. Open Source Control settings and rescan.",
+};
+
 export function buildAddProjectRemoteSourceReadiness(
   discovery: SourceControlDiscoveryResult | null,
 ): AddProjectRemoteSourceReadiness {
-  const unavailable = {
-    ready: false,
-    hint: "Provider status unavailable. Open Source Control settings and rescan.",
-  } as const;
-  const readiness: AddProjectRemoteSourceReadiness = {
-    url: { ready: true, hint: null },
-    github: unavailable,
-    gitlab: unavailable,
-    "azure-devops": unavailable,
-  };
-
-  if (!discovery) {
-    return readiness;
-  }
-
   const providerByKind = new Map(
-    discovery.sourceControlProviders.map((provider) => [provider.kind, provider]),
+    (discovery?.sourceControlProviders ?? []).map((provider) => [provider.kind, provider]),
   );
-  for (const source of ADD_PROJECT_REMOTE_SOURCES) {
-    const kind = addProjectRemoteSourceProvider(source);
-    if (!kind) continue;
-    const provider = providerByKind.get(kind);
-    if (!provider) {
-      readiness[source] = unavailable;
-      continue;
-    }
-    if (provider.status !== "available") {
-      readiness[source] = { ready: false, hint: provider.installHint };
-      continue;
-    }
+  return (source) => {
+    if (source === "url") return READY;
+    const provider = providerByKind.get(source);
+    if (!provider) return UNAVAILABLE;
+    if (provider.status !== "available") return { ready: false, hint: provider.installHint };
     if (provider.auth.status === "unauthenticated") {
-      readiness[source] = {
+      return {
         ready: false,
         hint:
           Option.getOrNull(provider.auth.detail) ??
           `${provider.label} is not authenticated. Open Source Control settings for setup guidance.`,
       };
-      continue;
     }
-    readiness[source] = { ready: true, hint: null };
-  }
-  return readiness;
+    return READY;
+  };
 }
 
 export function getAddProjectInitialQuery(baseDirectory: string | null | undefined): string {
   const trimmed = baseDirectory?.trim() ?? "";
   return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
+}
+
+export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
+  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(/[?#]/)[0]?.trim() ?? "";
+  const schemeIndex = withoutQuery.indexOf("://");
+  const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
+  const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
+  const segments = pathPart.split(/[/\\:]+/).filter((segment) => segment.trim().length > 0);
+  if (hasHost && segments.length < 2) {
+    return "";
+  }
+
+  const lastSegment = segments.at(-1)?.trim() ?? "";
+  if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
+    return "";
+  }
+  return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
+}
+
+export function getCloneDestinationPath(
+  directoryPath: string,
+  directoryName: string | null | undefined,
+): string {
+  const name = directoryName?.trim() ?? "";
+  if (name.length === 0) {
+    return directoryPath;
+  }
+  return `${ensureBrowseDirectoryPath(directoryPath)}${name}`;
+}
+
+export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
+  return getCloneDestinationPath(newProjectsRoot, newProjectFolderName(name));
+}
+
+export interface NewProjectPublishTarget {
+  readonly definition: SourceControlClientDefinition;
+  readonly owner: string | null;
+}
+
+export function getNewProjectPublishTargets(
+  discovery: SourceControlDiscoveryResult | null,
+): ReadonlyArray<NewProjectPublishTarget> {
+  const readiness = buildAddProjectRemoteSourceReadiness(discovery);
+  return sourceControlClients.definitions.flatMap((definition) => {
+    if (!readiness(definition.kind).ready) return [];
+    const provider = discovery?.sourceControlProviders.find(
+      (candidate) => candidate.kind === definition.kind,
+    );
+    const placement = definition.newRepositoryOwner(
+      provider ? Option.getOrNull(provider.auth.account) : null,
+    );
+    return placement === null ? [] : [{ definition, owner: placement.owner }];
+  });
+}
+
+export function getNewProjectPublishTarget(
+  targets: ReadonlyArray<NewProjectPublishTarget>,
+  kind: SourceControlProviderKind | null,
+): NewProjectPublishTarget | null {
+  return targets.find((target) => target.definition.kind === kind) ?? targets[0] ?? null;
+}
+
+export function getNewProjectRepository(
+  target: Pick<NewProjectPublishTarget, "owner">,
+  workspaceRoot: string,
+): string {
+  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  return target.owner ? `${target.owner}/${folderName}` : folderName;
+}
+
+export function getCloneDestinationBrowsePath(input: {
+  readonly browseDirectoryPath: string;
+  readonly selectedDirectoryName: string;
+  readonly cloneDirectoryName: string;
+  readonly caseSensitive: boolean;
+}): string {
+  const selectedDirectoryPath = appendBrowsePathSegment(
+    input.browseDirectoryPath,
+    input.selectedDirectoryName,
+  );
+  const selectedDirectoryMatches = input.caseSensitive
+    ? input.selectedDirectoryName === input.cloneDirectoryName
+    : input.selectedDirectoryName.toLowerCase() === input.cloneDirectoryName.toLowerCase();
+  return selectedDirectoryMatches
+    ? selectedDirectoryPath
+    : getCloneDestinationPath(selectedDirectoryPath, input.cloneDirectoryName);
 }
 
 export function resolveAddProjectPath(input: {
@@ -205,8 +283,7 @@ export function buildProjectCreateCommand(input: {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
-  readonly createdAt: string;
-}): Extract<OrchestrationCommand, { type: "project.create" }> {
+}): Extract<ProjectMutation, { type: "project.create" }> {
   return {
     type: "project.create",
     commandId: input.commandId,
@@ -215,6 +292,5 @@ export function buildProjectCreateCommand(input: {
     workspaceRoot: input.workspaceRoot,
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,
-    createdAt: input.createdAt,
   };
 }

@@ -9,8 +9,7 @@ export interface WslConfig {
 }
 
 // Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
-// Trailing char must also be \w so hand-edited config like "Ubuntu " / "Ubuntu-" / "Ubuntu." rejects.
-export const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
+const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
 
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   const hasUtf16Bom = stdout.length >= 2 && stdout[0] === 0xff && stdout[1] === 0xfe;
@@ -61,10 +60,7 @@ export function wslUncPathToLinuxPath(windowsPath: string): string | null {
   return `/${rest.split("\\").filter(Boolean).join("/")}`;
 }
 
-export function resolveWslHomeUncPath(
-  config: WslConfig,
-  distros: readonly WslDistro[],
-): string | null {
+function resolveWslHomeUncPath(config: WslConfig, distros: readonly WslDistro[]): string | null {
   const distroName = config.distro ?? distros.find((distro) => distro.isDefault)?.name ?? null;
   return distroName ? `\\\\wsl.localhost\\${distroName}\\home` : null;
 }
@@ -73,10 +69,6 @@ export function resolveWslPickFolderDefaultPath(
   rawOptions: unknown,
   config: WslConfig,
   distros: readonly WslDistro[],
-  // Absolute Linux path of the user's home dir inside the chosen distro
-  // (e.g. "/home/josh"). When known, `~` and `~/...` expand against this so
-  // we don't open the picker at a non-existent `/home/<rest>`. When null we
-  // fall back to the `/home` parent — wrong directory but at least it exists.
   userHome: string | null = null,
 ): string | null {
   const homePath = resolveWslHomeUncPath(config, distros);

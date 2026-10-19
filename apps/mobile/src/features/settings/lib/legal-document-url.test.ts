@@ -4,7 +4,7 @@ import { isLegalDocumentUrl } from "./legal-document-url";
 
 describe("isLegalDocumentUrl", () => {
   it.each([
-    "https://t3.codes/legal",
+    "https://t3.codes/legal/",
     "https://t3.codes/legal/",
     "https://t3.codes/privacy-policy?source=app",
     "https://t3.codes/terms-of-service#updates",

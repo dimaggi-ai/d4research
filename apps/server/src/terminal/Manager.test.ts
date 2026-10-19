@@ -7,12 +7,18 @@ import {
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
   type TerminalRestartInput,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ServerSettingsError,
+  TerminalProviderInstanceNotFoundError,
 } from "@d4research/contracts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Data from "effect/Data";
+import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -20,15 +26,32 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as TestClock from "effect/testing/TestClock";
-import { expect } from "vite-plus/test";
+import { ChildProcessSpawner } from "effect/process";
+import { expect, vi } from "vite-plus/test";
 
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "./Manager.ts";
-import * as PtyAdapter from "./PtyAdapter.ts";
+import * as PtyAdapter from "@d4research/shared/PtyAdapter";
+
+vi.mock("effect/SynchronizedRef", async (importOriginal) => {
+  const original = await importOriginal<typeof SynchronizedRef>();
+  return { ...original, make: vi.fn(original.make) };
+});
+
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
   readonly message: string;
@@ -44,6 +67,8 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   killed = false;
+  exitOnSubscribe: PtyAdapter.PtyExitEvent | undefined;
+  onKill: ((signal?: string) => void) | undefined;
 
   constructor(pid: number) {
     this.pid = pid;
@@ -66,6 +91,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   kill(signal?: string): void {
     this.killed = true;
     this.killSignals.push(signal);
+    this.onKill?.(signal);
   }
 
   onData(callback: (data: string) => void): () => void {
@@ -76,6 +102,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   }
 
   onExit(callback: (event: PtyAdapter.PtyExitEvent) => void): () => void {
+    if (this.exitOnSubscribe) callback(this.exitOnSubscribe);
     this.exitListeners.add(callback);
     return () => {
       this.exitListeners.delete(callback);
@@ -86,6 +113,10 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
     for (const listener of this.dataListeners) {
       listener(data);
     }
+  }
+
+  get exitListenerCount(): number {
+    return this.exitListeners.size;
   }
 
   emitExit(event: PtyAdapter.PtyExitEvent): void {
@@ -101,6 +132,7 @@ class FakePtyAdapter {
   readonly spawnFailures: Error[] = [];
   private readonly mode: "sync" | "async";
   private nextPid = 9000;
+  exitOnSubscribe: PtyAdapter.PtyExitEvent | undefined;
 
   constructor(mode: "sync" | "async" = "sync") {
     this.mode = mode;
@@ -121,6 +153,7 @@ class FakePtyAdapter {
       );
     }
     const process = new FakePtyProcess(this.nextPid++);
+    process.exitOnSubscribe = this.exitOnSubscribe;
     this.processes.push(process);
     if (this.mode === "async") {
       return Effect.tryPromise({
@@ -181,7 +214,7 @@ function restartInput(overrides: Partial<TerminalRestartInput> = {}): TerminalRe
 
 const historyLogPath = (logsDir: string, threadId = "thread-1") =>
   Effect.service(Path.Path).pipe(
-    Effect.map(({ join }) => join(logsDir, `terminal_${Encoding.encodeBase64Url(threadId)}.log`)),
+    Effect.map(({ join }) => join(logsDir, `terminal_${Base64Url.encode(threadId)}.log`)),
   );
 
 const multiTerminalHistoryLogPath = (
@@ -191,12 +224,12 @@ const multiTerminalHistoryLogPath = (
 ) =>
   Effect.service(Path.Path).pipe(
     Effect.map(({ join }) => {
-      const threadPart = `terminal_${Encoding.encodeBase64Url(threadId)}`;
+      const threadPart = `terminal_${Base64Url.encode(threadId)}`;
       return join(
         logsDir,
         terminalId === DEFAULT_TERMINAL_ID
           ? `${threadPart}.log`
-          : `${threadPart}_${Encoding.encodeBase64Url(terminalId)}.log`,
+          : `${threadPart}_${Base64Url.encode(terminalId)}.log`,
       );
     }),
   );
@@ -209,10 +242,20 @@ interface CreateManagerOptions {
     readonly childCommand: string | null;
     readonly processIds: ReadonlyArray<number>;
   }>;
+  processTable?: Effect.Effect<
+    ReadonlyArray<{ readonly pid: number; readonly ppid: number; readonly name: string }>,
+    never
+  >;
   subprocessPollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
+  historyByteLimit?: number;
   ptyAdapter?: FakePtyAdapter;
+  resolveProviderInstanceEnvironment?: Parameters<
+    typeof TerminalManager.makeWithOptions
+  >[0]["resolveProviderInstanceEnvironment"];
+  managedBinaryCacheDir?: string;
+  managedBinaryToolsDir?: string;
 }
 
 interface ManagerFixture {
@@ -242,11 +285,15 @@ const createManager = (
         logsDir,
         historyLineLimit,
         ptyAdapter,
+        ...(options.historyByteLimit !== undefined
+          ? { historyByteLimit: options.historyByteLimit }
+          : {}),
         ...(options.shellResolver !== undefined ? { shellResolver: options.shellResolver } : {}),
         ...(options.env !== undefined ? { env: options.env } : {}),
         ...(options.subprocessInspector !== undefined
           ? { subprocessInspector: options.subprocessInspector }
           : {}),
+        ...(options.processTable !== undefined ? { processTable: options.processTable } : {}),
         ...(options.subprocessPollIntervalMs !== undefined
           ? { subprocessPollIntervalMs: options.subprocessPollIntervalMs }
           : {}),
@@ -254,6 +301,15 @@ const createManager = (
         ...(options.maxRetainedInactiveSessions !== undefined
           ? { maxRetainedInactiveSessions: options.maxRetainedInactiveSessions }
           : {}),
+        ...(options.resolveProviderInstanceEnvironment !== undefined
+          ? { resolveProviderInstanceEnvironment: options.resolveProviderInstanceEnvironment }
+          : {}),
+        ...(options.managedBinaryCacheDir === undefined
+          ? {}
+          : {
+              managedBinaryCacheDir: options.managedBinaryCacheDir,
+              managedBinaryToolsDir: options.managedBinaryToolsDir,
+            }),
       });
       const eventsRef = yield* Ref.make<ReadonlyArray<TerminalEvent>>([]);
       const unsubscribe = yield* manager.subscribe((event) =>
@@ -272,8 +328,106 @@ const createManager = (
     }),
   );
 
-const withHostPlatform = (platform: NodeJS.Platform) =>
-  Layer.succeed(HostProcessPlatform, platform);
+const layerWithHostPlatform = (platform: NodeJS.Platform) =>
+  Layer.succeed(HostProcess.Platform, platform);
+
+function retainedHistory(text: string, maxLines: number, maxBytes = Infinity): string {
+  const terminated = text.endsWith("\n");
+  const lines = text.split("\n");
+  if (terminated) lines.pop();
+  const retained = lines.slice(Math.max(0, lines.length - maxLines)).join("\n");
+  const capped = terminated ? `${retained}\n` : retained;
+  if (Buffer.byteLength(capped) <= maxBytes) return capped;
+  const points = Array.from(capped);
+  let start = points.length;
+  let bytes = 0;
+  while (start > 0) {
+    const next = Buffer.byteLength(points[start - 1]!);
+    if (bytes + next > maxBytes) break;
+    bytes += next;
+    start -= 1;
+  }
+  return points.slice(start).join("");
+}
+
+it("preserves line and byte limits across arbitrary chunks, Unicode, ANSI sequences, and clear", () => {
+  let randomSeed = 0x20260904;
+  const fragments = [
+    "",
+    "a",
+    "\n",
+    "\n\n",
+    "\r",
+    "\r\n",
+    "café",
+    "名",
+    "🚀",
+    "\u001b[31m",
+    "\u001b[0m",
+    "\u001b]8;;url\u0007",
+    "\ud83d",
+    "\ude80",
+  ];
+  const nextFragment = () => {
+    randomSeed = (Math.imul(randomSeed, 1_664_525) + 1_013_904_223) >>> 0;
+    return fragments[randomSeed % fragments.length]!;
+  };
+
+  for (const maxBytes of [0, 3, 8, 64, Infinity]) {
+    for (const maxLines of [0, 1, 3, 5, 5_000]) {
+      let expected = retainedHistory("before\ninitial\n", maxLines, maxBytes);
+      const history = new TerminalManager.BoundedTerminalHistory(
+        maxLines,
+        "before\ninitial\n",
+        maxBytes,
+      );
+      expect(history.value()).toBe(expected);
+
+      for (let step = 0; step < 300; step += 1) {
+        if (step % 73 === 0) {
+          history.clear();
+          expected = "";
+          expect(history.value()).toBe(expected);
+        }
+        const chunk = nextFragment() + nextFragment();
+        history.append(chunk);
+        expected = retainedHistory(expected + chunk, maxLines, maxBytes);
+        expect(history.value()).toBe(expected);
+      }
+    }
+  }
+});
+
+it("bounds long partial lines and joins surrogate pairs across chunk boundaries", () => {
+  const maxBytes = 65_539;
+  let expected = "";
+  const history = new TerminalManager.BoundedTerminalHistory(5_000, "", maxBytes);
+  const writes = [
+    "a".repeat(16_383) + "😀" + "b".repeat(70_000),
+    "\r" + "c".repeat(70_000) + "\ud83d",
+    "\ude80" + "d".repeat(100),
+    "\uFEFF" + "名".repeat(30_000),
+  ];
+  for (const text of writes) {
+    history.append(text);
+    expected = retainedHistory(expected + text, 5_000, maxBytes);
+    expect(history.value()).toBe(expected);
+    expect(Buffer.byteLength(history.value())).toBeLessThanOrEqual(maxBytes);
+  }
+});
+
+it("preserves retained lines as older storage is compacted", () => {
+  for (const maxLines of [3, 5_000]) {
+    let expected = "";
+    const history = new TerminalManager.BoundedTerminalHistory(maxLines, expected);
+    for (let batch = 0; batch < 40; batch += 1) {
+      const chunk = Array.from({ length: 300 }, (_, line) => `${batch}:${line}\n`).join("");
+      history.append(chunk);
+      expected = retainedHistory(expected + chunk, maxLines);
+      expect(history.value()).toBe(expected);
+    }
+  }
+});
 
 it.layer(
   Layer.merge(NodeServices.layer, ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer))),
@@ -478,7 +632,7 @@ it.layer(
 
   it.effect("preserves non-notFound cwd stat failures", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) === "win32") return;
+      if ((yield* HostProcess.Platform) === "win32") return;
 
       const path = yield* Path.Path;
 
@@ -498,6 +652,36 @@ it.layer(
         cause: {
           _tag: "PlatformError",
         },
+      });
+    }),
+  );
+
+  it.effect("handles an exit replayed during subscription after publishing startup", () =>
+    Effect.gen(function* () {
+      const ptyAdapter = new FakePtyAdapter();
+      ptyAdapter.exitOnSubscribe = { exitCode: 7, signal: null };
+      const { manager, getEvents } = yield* createManager(5, { ptyAdapter });
+      const exited = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      yield* manager.open(openInput());
+      yield* Deferred.await(exited);
+      const events = yield* getEvents;
+      expect(events.map((event) => event.type)).toEqual(["started", "exited"]);
+      expect(events[1]).toMatchObject({ exitCode: 7 });
+      const attached: TerminalAttachStreamEvent[] = [];
+      const stopAttach = yield* manager.attachStream(openInput(), (event) =>
+        Effect.sync(() => {
+          attached.push(event);
+        }),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(stopAttach));
+      expect(attached.find((event) => event.type === "snapshot")).toMatchObject({
+        snapshot: { status: "exited", exitCode: 7 },
       });
     }),
   );
@@ -953,6 +1137,313 @@ it.layer(
     }),
   );
 
+  it.effect("derives subprocess activity for every terminal from one shared process snapshot", () =>
+    Effect.gen(function* () {
+      const runCalls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+      const psStdout = ["  100  9000 vim", "  101   100 git", "  200  9001 /usr/bin/python3"].join(
+        "\n",
+      );
+      const processRunner: ProcessRunner.ProcessRunner["Service"] = {
+        run: (input) =>
+          Effect.sync(() => {
+            runCalls.push({ command: input.command, args: input.args });
+            return {
+              stdout: psStdout,
+              stderr: "",
+              code: ChildProcessSpawner.ExitCode(0),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            };
+          }),
+      };
+
+      const { manager, getEvents } = yield* createManager(5, {
+        subprocessPollIntervalMs: 20,
+      }).pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+        Effect.provide(layerWithHostPlatform("linux")),
+      );
+
+      yield* manager.open(openInput());
+      yield* manager.open(openInput({ threadId: "thread-2" }));
+
+      yield* waitFor(
+        Effect.map(
+          getEvents,
+          (events) =>
+            events.some(
+              (event) =>
+                event.type === "activity" &&
+                event.hasRunningSubprocess === true &&
+                event.label === "vim",
+            ) &&
+            events.some(
+              (event) =>
+                event.type === "activity" &&
+                event.hasRunningSubprocess === true &&
+                event.label === "python3",
+            ),
+        ),
+        "1200 millis",
+      );
+      yield* waitFor(
+        Effect.sync(() => runCalls.length >= 3),
+        "1200 millis",
+      );
+
+      expect(runCalls.every((call) => call.args.join(" ") === "-eo pid=,ppid=,comm=")).toBe(true);
+    }),
+  );
+
+  it.effect("keeps last known subprocess state when the process snapshot fails", () =>
+    Effect.gen(function* () {
+      let failSnapshots = false;
+      let failedCalls = 0;
+      const processRunner: ProcessRunner.ProcessRunner["Service"] = {
+        run: () =>
+          Effect.sync(() => {
+            if (failSnapshots) failedCalls += 1;
+            return {
+              stdout: failSnapshots ? "" : "  100  9000 vim",
+              stderr: "",
+              code: ChildProcessSpawner.ExitCode(failSnapshots ? 1 : 0),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            };
+          }),
+      };
+
+      const { manager, getEvents } = yield* createManager(5, {
+        subprocessPollIntervalMs: 20,
+      }).pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+        Effect.provide(layerWithHostPlatform("linux")),
+      );
+
+      yield* manager.open(openInput());
+      yield* waitFor(
+        Effect.map(getEvents, (events) =>
+          events.some(
+            (event) =>
+              event.type === "activity" &&
+              event.hasRunningSubprocess === true &&
+              event.label === "vim",
+          ),
+        ),
+        "1200 millis",
+      );
+
+      failSnapshots = true;
+      yield* waitFor(
+        Effect.sync(() => failedCalls >= 3),
+        "1200 millis",
+      );
+
+      const activityEvents = (yield* getEvents).filter((event) => event.type === "activity");
+      expect(activityEvents.length).toBeGreaterThan(0);
+      expect(activityEvents.every((event) => event.hasRunningSubprocess === true)).toBe(true);
+    }),
+  );
+
+  it("calculates snapshot failure backoff and success reset delays", () => {
+    assert.equal(TerminalManager.subprocessSnapshotPollDelayMs(1_000, 0), 1_000);
+    assert.equal(TerminalManager.subprocessSnapshotPollDelayMs(1_000, 1), 2_000);
+    assert.equal(TerminalManager.subprocessSnapshotPollDelayMs(1_000, 2), 4_000);
+    assert.equal(TerminalManager.subprocessSnapshotPollDelayMs(1_000, 30), 60_000);
+  });
+
+  it.effect("uses process snapshots from the resource monitor", () =>
+    Effect.gen(function* () {
+      let snapshotCalls = 0;
+      const { manager, getEvents } = yield* createManager(5, {
+        subprocessPollIntervalMs: 20,
+        processTable: Effect.sync(() => {
+          snapshotCalls += 1;
+          return [{ pid: 100, ppid: 9000, name: "ping.exe" }];
+        }),
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
+
+      yield* manager.open(openInput());
+      yield* waitFor(
+        Effect.map(getEvents, (events) =>
+          events.some(
+            (event) =>
+              event.type === "activity" && event.hasRunningSubprocess && event.label === "ping",
+          ),
+        ),
+        "1200 millis",
+      );
+      expect(snapshotCalls).toBeGreaterThan(0);
+    }),
+  );
+
+  it.effect("closes only a thread's idle shells, ignoring a helper forked from the shell", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processTable: Effect.succeed([
+          { pid: 9000, ppid: 1, name: "zsh" },
+          { pid: 100, ppid: 9000, name: "zsh" },
+          { pid: 9001, ppid: 1, name: "zsh" },
+          { pid: 200, ppid: 9001, name: "node" },
+          { pid: 9002, ppid: 1, name: "zsh" },
+          { pid: 300, ppid: 9002, name: "zsh" },
+          { pid: 301, ppid: 300, name: "sleep" },
+          { pid: 9003, ppid: 1, name: "zsh" },
+        ]),
+      }).pipe(Effect.provide(layerWithHostPlatform("linux")));
+      yield* manager.open(openInput({ terminalId: "idle" }));
+      yield* manager.open(openInput({ terminalId: "dev-server" }));
+      yield* manager.open(openInput({ terminalId: "subshell" }));
+      yield* manager.open(openInput({ threadId: "thread-2" }));
+
+      yield* manager.closeIdle({ threadId: "thread-1" });
+
+      expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([
+        true,
+        false,
+        false,
+        false,
+      ]);
+    }),
+  );
+
+  it.effect("keeps terminals that get input or output while closeIdle checks them", () =>
+    Effect.gen(function* () {
+      const ptyAdapter = new FakePtyAdapter();
+      let duringCheck: (pid: number) => Effect.Effect<void> = () => Effect.void;
+      const { manager, getEvents } = yield* createManager(5, {
+        ptyAdapter,
+        subprocessPollIntervalMs: 60_000,
+        subprocessInspector: (pid) =>
+          duringCheck(pid).pipe(
+            Effect.as({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
+          ),
+      });
+      yield* manager.open(openInput({ terminalId: "typed" }));
+      yield* manager.open(openInput({ terminalId: "echoed" }));
+      const [typed, echoed] = ptyAdapter.processes;
+      duringCheck = (pid) =>
+        pid === typed!.pid
+          ? manager
+              .write({ threadId: "thread-1", terminalId: "typed", data: "make build\r" })
+              .pipe(Effect.orDie)
+          : Effect.gen(function* () {
+              echoed!.emitData("make build\r\n");
+              yield* waitFor(
+                Effect.map(getEvents, (events) => events.some((event) => event.type === "output")),
+              );
+            }).pipe(Effect.orDie);
+
+      yield* manager.closeIdle({ threadId: "thread-1" });
+
+      expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([false, false]);
+    }),
+  );
+
+  it.effect("backs off the spawned fallback when the resource monitor snapshot fails", () =>
+    Effect.gen(function* () {
+      const fallbackCalls: Array<number> = [];
+      const processRunner: ProcessRunner.ProcessRunner["Service"] = {
+        run: () =>
+          Clock.currentTimeMillis.pipe(
+            Effect.map((now) => {
+              fallbackCalls.push(now);
+              return {
+                stdout: "  100  9000 vim",
+                stderr: "",
+                code: ChildProcessSpawner.ExitCode(0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrInvalidUtf8: false,
+                stdoutInvalidUtf8: false,
+                stderrTruncated: false,
+              };
+            }),
+          ),
+      };
+
+      const { manager, getEvents } = yield* createManager(5, {
+        subprocessPollIntervalMs: 20,
+        processTable: Effect.fail("sidecar unavailable").pipe(
+          Effect.mapError((cause) => cause as never),
+        ),
+      }).pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+        Effect.provide(layerWithHostPlatform("linux")),
+      );
+
+      yield* manager.open(openInput());
+      yield* waitFor(
+        Effect.map(getEvents, (events) =>
+          events.some(
+            (event) =>
+              event.type === "activity" &&
+              event.hasRunningSubprocess === true &&
+              event.label === "vim",
+          ),
+        ),
+        "1200 millis",
+      );
+
+      yield* waitFor(
+        Effect.sync(() => fallbackCalls.length >= 4),
+        "2000 millis",
+      );
+      const spanMs = fallbackCalls[3]! - fallbackCalls[0]!;
+      expect(spanMs).toBeGreaterThan(150);
+    }),
+  );
+
+  it.effect("coalesces live history writes while retaining the latest output on close", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const writes = yield* Queue.unbounded<string>();
+      const output = yield* Queue.unbounded<string>();
+      const trackedFileSystem = FileSystem.FileSystem.of({
+        ...fs,
+        writeFileString: (filePath, contents, options) =>
+          fs
+            .writeFileString(filePath, contents, options)
+            .pipe(
+              Effect.tap(() => (contents.length > 0 ? Queue.offer(writes, contents) : Effect.void)),
+            ),
+      });
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 0 }).pipe(
+        Effect.provideService(FileSystem.FileSystem, trackedFileSystem),
+      );
+      yield* manager.open(openInput());
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "output" ? Queue.offer(output, event.data).pipe(Effect.asVoid) : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      const process = ptyAdapter.processes[0]!;
+
+      process.emitData("first");
+      yield* Queue.take(output);
+      yield* TestClock.adjust("200 millis");
+      expect(yield* Queue.size(writes)).toBe(0);
+
+      process.emitData(" second");
+      yield* Queue.take(output);
+      yield* TestClock.adjust("50 millis");
+      expect(yield* Queue.take(writes)).toBe("first second");
+
+      process.emitData(" third");
+      yield* Queue.take(output);
+      const close = yield* manager.close({ threadId: "thread-1" }).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("250 millis");
+      yield* Fiber.join(close);
+      expect((yield* manager.open(openInput())).history).toBe("first second third");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("caps persisted history to configured line limit", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager(3);
@@ -967,6 +1458,122 @@ it.layer(
       const reopened = yield* manager.open(openInput());
       const nonEmptyLines = reopened.history.split("\n").filter((line) => line.length > 0);
       expect(nonEmptyLines).toEqual(["line2", "line3", "line4"]);
+    }),
+  );
+
+  it.effect("caps incrementally appended history without losing partial or empty lines", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(3);
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitData("line1\n");
+      process.emitData("\n");
+      process.emitData("line3");
+      process.emitData("-continued\nline4");
+      yield* manager.close({ threadId: "thread-1" });
+
+      const reopened = yield* manager.open(openInput());
+      expect(reopened.history).toBe("\nline3-continued\nline4");
+    }),
+  );
+
+  it.effect("bounds persisted and attached history without truncating live output", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, logsDir } = yield* createManager(5, { historyByteLimit: 10 });
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(openInput(), (event) =>
+        Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      const writes = ["a".repeat(32), "😀\rEND"];
+      const process = ptyAdapter.processes[0]!;
+      for (const text of writes) process.emitData(text);
+      yield* manager.close({ threadId: "thread-1" });
+      expect(yield* readFileString(yield* historyLogPath(logsDir))).toBe("aa😀\rEND");
+
+      const reopened = yield* manager.open(openInput());
+      const events = yield* Ref.get(attachEvents);
+      expect(events.filter((event) => event.type === "output").map((event) => event.data)).toEqual(
+        writes,
+      );
+      const snapshot = events.filter((event) => event.type === "snapshot").at(-1)?.snapshot;
+      expect(snapshot?.history).toBe("aa😀\rEND");
+      expect(snapshot?.sequence).toBe(reopened.sequence);
+    }),
+  );
+
+  it.effect.each(["current", "legacy"] as const)(
+    "reads only a Unicode-safe tail from oversized %s history",
+    (source) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        let sourcePath: string | undefined;
+        let closedReads = 0;
+        const readRequests: number[] = [];
+        const trackedFileSystem = FileSystem.FileSystem.of({
+          ...fs,
+          readFileString: (candidate, encoding) =>
+            candidate === sourcePath
+              ? Effect.die("History restoration must not read the whole file")
+              : fs.readFileString(candidate, encoding),
+          open: (candidate, options) =>
+            Effect.gen(function* () {
+              if (candidate !== sourcePath) return yield* fs.open(candidate, options);
+              yield* Effect.addFinalizer(() =>
+                Effect.sync(() => {
+                  closedReads += 1;
+                }),
+              );
+              const file = yield* fs.open(candidate, options);
+              return new Proxy(file, {
+                get(target, key) {
+                  if (key === "read") {
+                    return (buffer: Uint8Array) => {
+                      readRequests.push(buffer.byteLength);
+                      return target.read(buffer.subarray(0, 5));
+                    };
+                  }
+                  return Reflect.get(target, key, target);
+                },
+              });
+            }),
+        });
+        const { manager, logsDir } = yield* createManager(5, { historyByteLimit: 15 }).pipe(
+          Effect.provideService(FileSystem.FileSystem, trackedFileSystem),
+        );
+        const nextPath = yield* historyLogPath(logsDir);
+        sourcePath = source === "current" ? nextPath : path.join(logsDir, "thread-1.log");
+        yield* fs.writeFileString(sourcePath, "old".repeat(32_768) + "😀\uFEFFnewest\ré");
+
+        const snapshot = yield* manager.open(openInput());
+        expect(snapshot.history).toBe("\uFEFFnewest\ré");
+        expect(readRequests).toEqual([15, 10, 5]);
+        expect(closedReads).toBe(1);
+        expect(Buffer.from(yield* fs.readFile(nextPath)).toString()).toBe("\uFEFFnewest\ré");
+        if (source === "legacy") expect(yield* fs.exists(sourcePath)).toBe(false);
+        yield* manager.close({ threadId: "thread-1" });
+        expect((yield* manager.open(openInput())).history).toBe("\uFEFFnewest\ré");
+      }),
+  );
+
+  it.effect("retains plain Unicode and control characters around a split query", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0]!;
+      const before = "café\t界🙂\u0007\u009c\u0085";
+      const after = "e\u0301\r\n";
+
+      process.emitData(before);
+      process.emitData("\u001b[5");
+      process.emitData(`n${after}`);
+      yield* manager.close({ threadId: "thread-1" });
+
+      expect((yield* manager.open(openInput())).history).toBe(before + after);
     }),
   );
 
@@ -1000,16 +1607,11 @@ it.layer(
       if (!process) return;
 
       process.emitData("prompt ");
-      // DECRQM/DECRPM, XTVERSION, and kitty-keyboard CSI query/reply traffic.
       process.emitData("\u001b[?2026$p\u001b[?2026;2$y\u001b[>q\u001b[?u\u001b[?31u");
-      // DECRQSS and XTGETTCAP query/reply traffic in 7-bit DCS form.
       process.emitData("\u001bP$q m\u001b\\\u001bP1$r0m\u001b\\");
       process.emitData("\u001bP+q544e\u001b\\\u001bP1+r544e=1b\u001b\\");
-      // The same DCS traffic in 8-bit form.
       process.emitData("\u0090$q m\u009c\u00901$r0m\u009c");
       process.emitData("\u0090+q544e\u009c\u00901+r544e=1b\u009c");
-      // Setters and cursor movement share final bytes with query families but
-      // have visible terminal-state value and must survive replay.
       process.emitData('\u001b[!p\u001b["p\u001b[4 q\u001b[u');
       process.emitData("done\n");
 
@@ -1203,6 +1805,94 @@ it.layer(
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("skips SIGKILL when the process exits during the grace period", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10_000 });
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      process.emitExit({ exitCode: 0, signal: 15 });
+      yield* TestClock.adjust("10 seconds");
+
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("does not retain a kill fiber that finishes before registration", () =>
+    Effect.gen(function* () {
+      let managerState:
+        | SynchronizedRef.SynchronizedRef<{
+            killFibers: Map<PtyAdapter.PtyProcess, Fiber.Fiber<void, never>>;
+          }>
+        | undefined;
+      const originalMake = <A>(value: A) => Effect.sync(() => SynchronizedRef.makeUnsafe(value));
+      const makeSpy = vi.spyOn(SynchronizedRef, "make").mockImplementation((value) =>
+        originalMake(value).pipe(
+          Effect.map((ref) => {
+            if (typeof value === "object" && value !== null && "killFibers" in value) {
+              managerState = ref as typeof managerState;
+            }
+            return ref;
+          }),
+        ),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => makeSpy.mockRestore()));
+      for (const budget of [10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 500]) {
+        const { manager, ptyAdapter } = yield* createManager();
+        yield* manager.open(openInput());
+        const process = ptyAdapter.processes[0]!;
+        process.onKill = () => process.emitExit({ exitCode: 0, signal: 15 });
+        // Vary the caller's operation budget to cover child completion before
+        // and after the parent resumes its registration step.
+        yield* manager
+          .close({ threadId: "thread-1" })
+          .pipe(Effect.provideService(References.MaxOpsBeforeYield, budget));
+        yield* Effect.yieldNow;
+        expect(managerState).toBeDefined();
+        yield* Fiber.awaitAll(SynchronizedRef.getUnsafe(managerState!).killFibers.values());
+        expect(SynchronizedRef.getUnsafe(managerState!).killFibers.size, `budget ${budget}`).toBe(
+          0,
+        );
+        expect(process.killSignals).toEqual(["SIGTERM"]);
+      }
+    }),
+  );
+
+  it.effect("releases the exit listener when kill escalation is interrupted", () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make("sequential");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processKillGraceMs: 10_000,
+      }).pipe(Effect.provideService(Scope.Scope, scope));
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      assert.isAbove(process.exitListenerCount, 0);
+
+      yield* Scope.close(scope, Exit.void);
+
+      assert.equal(process.exitListenerCount, 0);
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("publishes closed events when terminals are explicitly closed", () =>
     Effect.gen(function* () {
       const { manager, getEvents } = yield* createManager();
@@ -1280,7 +1970,7 @@ it.layer(
 
   it.effect("retries with fallback shells when preferred shell spawn fails", () =>
     Effect.gen(function* () {
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const missingShell =
         platform === "win32" ? "C:\\definitely\\missing-shell.exe" : "/definitely/missing-shell -l";
       const { manager, ptyAdapter } = yield* createManager(5, {
@@ -1323,7 +2013,7 @@ it.layer(
           PATH: "C:\\Windows\\System32",
           SystemRoot: "C:\\Windows",
         },
-      }).pipe(Effect.provide(withHostPlatform("win32")));
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
 
       yield* manager.open(openInput());
 
@@ -1333,6 +2023,70 @@ it.layer(
           args: ["-NoLogo"],
         }),
       );
+    }),
+  );
+
+  it.effect("preserves Windows Path casing when appending managed ACP binaries", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-terminal-acp-path-",
+      });
+      const installBin = path.join(
+        cacheDir,
+        "tools",
+        "example-agent",
+        "1.2.3",
+        "windows-x86_64",
+        "bin",
+      );
+      yield* fileSystem.makeDirectory(installBin, { recursive: true });
+      yield* fileSystem.makeDirectory(path.join(cacheDir, "acp-registry"), { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(cacheDir, "acp-registry", "registry.json"),
+        encodeUnknownJson({
+          version: "1.0.0",
+          agents: [
+            {
+              id: "example-agent",
+              name: "Example Agent",
+              version: "1.2.3",
+              description: "ACP Registry test agent",
+              distribution: {
+                binary: {
+                  "windows-x86_64": {
+                    archive: "https://registry.test/example-agent.zip",
+                    cmd: "bin/example-agent.exe",
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      );
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        managedBinaryCacheDir: cacheDir,
+        managedBinaryToolsDir: path.join(cacheDir, "tools"),
+        env: {
+          ComSpec: "C:\\Windows\\System32\\cmd.exe",
+          Path: "C:\\Windows\\System32",
+          SystemRoot: "C:\\Windows",
+        },
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            layerWithHostPlatform("win32"),
+            Layer.succeed(HostProcess.Architecture, "x64"),
+          ),
+        ),
+      );
+
+      yield* manager.open(openInput());
+
+      const spawnEnv = ptyAdapter.spawnInputs[0]?.env;
+      expect(spawnEnv?.PATH).toBeUndefined();
+      expect(spawnEnv?.Path).toBe(`C:\\Windows\\System32;${installBin}`);
     }),
   );
 
@@ -1347,7 +2101,7 @@ it.layer(
           PATH: "C:\\Windows\\System32",
           SystemRoot: "C:\\Windows",
         },
-      }).pipe(Effect.provide(withHostPlatform("win32")));
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
       ptyAdapter.spawnFailures.push(
         new Error("spawn custom-shell.exe ENOENT"),
         new Error("spawn pwsh.exe ENOENT"),
@@ -1363,6 +2117,32 @@ it.layer(
       expect(ptyAdapter.spawnInputs[1]?.args).toEqual(["-NoLogo"]);
       expect(ptyAdapter.spawnInputs[2]?.args).toEqual(["-NoLogo"]);
     }),
+  );
+
+  it.effect.each(["linux", "darwin", "win32"] as const)(
+    "advertises truecolor before the PTY backend on %s without replacing explicit values",
+    (platform) =>
+      Effect.gen(function* () {
+        for (const [parentColor, runtimeColor, expected] of [
+          [undefined, undefined, "truecolor"],
+          ["", undefined, "truecolor"],
+          ["24bit", undefined, "24bit"],
+          ["24bit", "", ""],
+          [undefined, "", ""],
+          ["24bit", "custom", "custom"],
+        ] as const) {
+          const env = Object.freeze({ COLORTERM: parentColor });
+          const { manager, ptyAdapter } = yield* createManager(5, {
+            shellResolver: () => "/bin/sh",
+            env,
+          }).pipe(Effect.provide(layerWithHostPlatform(platform)));
+          yield* manager.open(
+            openInput({ env: runtimeColor === undefined ? {} : { COLORTERM: runtimeColor } }),
+          );
+          expect(ptyAdapter.spawnInputs[0]?.env.COLORTERM).toBe(expected);
+          expect(env.COLORTERM).toBe(parentColor);
+        }
+      }),
   );
 
   it.effect("filters app runtime env variables from terminal sessions", () =>
@@ -1383,9 +2163,27 @@ it.layer(
       expect(spawnInput.env.PORT).toBeUndefined();
       expect(spawnInput.env.T3CODE_PORT).toBeUndefined();
       expect(spawnInput.env.VITE_DEV_SERVER_URL).toBeUndefined();
-      // Arbitrary host env vars must pass through — terminals inherit the
-      // user's environment apart from the explicit blocklist.
       expect(spawnInput.env.TEST_TERMINAL_KEEP).toBe("keep-me");
+    }),
+  );
+
+  it.effect("expands provider home paths passed to setup terminals", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5);
+
+      yield* manager.open({
+        ...openInput(),
+        env: {
+          CODEX_HOME: "~/.codex-work",
+          CLAUDE_CONFIG_DIR: "~/.claude-work",
+          CUSTOM_ACCOUNT: "~/leave-this-value-alone",
+        },
+      });
+
+      const environment = ptyAdapter.spawnInputs[0]?.env;
+      expect(environment?.CODEX_HOME).toMatch(/[\\/][.]codex-work$/);
+      expect(environment?.CLAUDE_CONFIG_DIR).toMatch(/[\\/][.]claude-work$/);
+      expect(environment?.CUSTOM_ACCOUNT).toBe("~/leave-this-value-alone");
     }),
   );
 
@@ -1410,23 +2208,14 @@ it.layer(
       expect(spawnInput).toBeDefined();
       if (!spawnInput) return;
 
-      // AppImage runtime markers must never reach the PTY — tools inside the
-      // terminal otherwise resolve against the AppImage mount (e.g. PHP_BINARY
-      // reporting the AppImage path instead of the real binary).
       expect(spawnInput.env.APPIMAGE).toBeUndefined();
       expect(spawnInput.env.APPDIR).toBeUndefined();
       expect(spawnInput.env.ARGV0).toBeUndefined();
       expect(spawnInput.env.OWD).toBeUndefined();
-      // PATH/LD_LIBRARY_PATH keep the user's real entries but drop the AppImage
-      // mount segments that the runtime prepended.
       expect(spawnInput.env.PATH).toBe("/usr/local/bin:/usr/bin:/bin");
       expect(spawnInput.env.LD_LIBRARY_PATH).toBe("/home/user/.local/lib");
-      // XDG_DATA_DIRS keeps the host entries but drops the AppImage share dir.
       expect(spawnInput.env.XDG_DATA_DIRS).toBe("/usr/local/share:/usr/share");
-      // GSETTINGS_SCHEMA_DIR pointed only at the mount, so it is removed and
-      // gsettings falls back to the host schema location.
       expect(spawnInput.env.GSETTINGS_SCHEMA_DIR).toBeUndefined();
-      // Unrelated host vars still pass through untouched.
       expect(spawnInput.env.TEST_TERMINAL_KEEP).toBe("keep-me");
     }),
   );
@@ -1437,8 +2226,6 @@ it.layer(
         env: {
           PATH: "/usr/local/bin:/usr/bin:/bin",
           LD_LIBRARY_PATH: "/home/user/.local/lib",
-          // Without APPIMAGE/APPDIR set, OWD is an ordinary variable and must
-          // not be stripped — only an AppImage launch gives it special meaning.
           OWD: "/home/user/keep-this",
         },
       });
@@ -1455,13 +2242,15 @@ it.layer(
 
   it.effect("injects runtime env overrides into spawned terminals", () =>
     Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager();
+      const { manager, ptyAdapter } = yield* createManager(5, { env: { FORCE_COLOR: "3" } });
       yield* manager.open(
         openInput({
           env: {
             T3CODE_PROJECT_ROOT: "/repo",
             T3CODE_WORKTREE_PATH: "/repo/worktree-a",
             CUSTOM_FLAG: "1",
+            NO_COLOR: "1",
+            FORCE_COLOR: "0",
           },
         }),
       );
@@ -1472,12 +2261,390 @@ it.layer(
       assert.equal(spawnInput.env.T3CODE_PROJECT_ROOT, "/repo");
       assert.equal(spawnInput.env.T3CODE_WORKTREE_PATH, "/repo/worktree-a");
       assert.equal(spawnInput.env.CUSTOM_FLAG, "1");
+      assert.equal(spawnInput.env.NO_COLOR, "1");
+      assert.equal(spawnInput.env.FORCE_COLOR, "0");
+    }),
+  );
+
+  it.effect("resolves a provider instance environment before spawning", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: { T3CODE_SECRET: "server-only" },
+        resolveProviderInstanceEnvironment: (requestedId, env) =>
+          Effect.succeed({
+            ...env,
+            PROVIDER_SECRET: requestedId === providerInstanceId ? "secret-value" : "wrong",
+            CODEX_HOME: "/accounts/codex-work",
+          }),
+      });
+
+      const snapshot = yield* manager.open(
+        openInput({ providerInstanceId, env: { CLIENT_FLAG: "1" } }),
+      );
+
+      expect(ptyAdapter.spawnInputs[0]?.env.PROVIDER_SECRET).toBe("secret-value");
+      expect(ptyAdapter.spawnInputs[0]?.env.CODEX_HOME).toBe("/accounts/codex-work");
+      expect(ptyAdapter.spawnInputs[0]?.env.CLIENT_FLAG).toBe("1");
+      expect(ptyAdapter.spawnInputs[0]?.env.T3CODE_SECRET).toBeUndefined();
+      expect(snapshot).not.toHaveProperty("env");
+      expect(snapshot).not.toHaveProperty("providerInstanceId");
+    }),
+  );
+
+  it.effect("fails closed when a provider instance is missing", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("deleted_instance");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: (requestedId) =>
+          Effect.fail(
+            new TerminalProviderInstanceNotFoundError({
+              providerInstanceId: ProviderInstanceId.make(requestedId),
+            }),
+          ),
+      });
+
+      const error = yield* manager.open(openInput({ providerInstanceId })).pipe(Effect.flip);
+
+      assert.deepStrictEqual(
+        error,
+        new TerminalProviderInstanceNotFoundError({ providerInstanceId }),
+      );
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
+    }),
+  );
+
+  it.effect("preserves the settings failure when provider environment resolution fails", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+      const settingsCause = new Error("secret store read failed");
+      const settingsError = new ServerSettingsError({
+        settingsPath: "/test/settings.json",
+        operation: "read-secret",
+        providerInstanceId,
+        environmentVariable: "OPENROUTER_API_KEY",
+        cause: settingsCause,
+      });
+      const serverSettings = ServerSettings.ServerSettingsService.of({
+        start: Effect.void,
+        ready: Effect.void,
+        getSettings: Effect.fail(settingsError),
+        updateSettings: () => Effect.fail(settingsError),
+        updateProviderInstance: () => Effect.fail(settingsError),
+        withSettingsSnapshot: () => Effect.fail(settingsError),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.succeed(Stream.empty),
+      });
+
+      const error = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: providerInstanceId,
+        env: undefined,
+      }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "TerminalProviderEnvironmentError",
+        providerInstanceId,
+      });
+      expect(error.cause).toBe(settingsError);
+      expect(error.message).not.toContain(settingsError.message);
+      expect(error.message).not.toContain("OPENROUTER_API_KEY");
+    }),
+  );
+
+  it.effect.each([
+    {
+      name: "Codex home",
+      driver: "codex",
+      variable: "CODEX_HOME",
+      config: { homePath: "/configured/codex" },
+      expectedHome: "/configured/codex",
+    },
+    {
+      name: "Codex shadow home",
+      driver: "codex",
+      variable: "CODEX_HOME",
+      config: { homePath: "/configured/codex", shadowHomePath: "/configured/codex-shadow" },
+      expectedHome: "/configured/codex-shadow",
+    },
+    {
+      name: "Claude home",
+      driver: "claudeAgent",
+      variable: "CLAUDE_CONFIG_DIR",
+      config: { homePath: "/configured/claude" },
+      expectedHome: "/configured/claude",
+    },
+  ])("prefers $name over the instance environment", ({ driver, variable, config, expectedHome }) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const environment = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: "configured_home",
+        env: undefined,
+      });
+
+      expect(environment[variable]).toBe(path.resolve(expectedHome));
+    }).pipe(
+      Effect.provide(
+        ServerSettings.layerTest({
+          providerInstances: {
+            [ProviderInstanceId.make("configured_home")]: {
+              driver: ProviderDriverKind.make(driver),
+              environment: [{ name: variable, value: "~/.environment-account", sensitive: false }],
+              config,
+            },
+          },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("resolves the Codex default slot", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const environment = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: "codex",
+        env: undefined,
+      });
+
+      expect(environment.CODEX_HOME).toMatch(/[\\/][.]codex-default$/);
+    }).pipe(
+      Effect.provide(
+        ServerSettings.ServerSettingsService.layerTest({
+          providerInstances: {
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: { homePath: "~/.codex-default" },
+            },
+          },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("resolves the Claude default slot", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const environment = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: "claudeAgent",
+        env: undefined,
+      });
+
+      expect(environment.CLAUDE_CONFIG_DIR).toMatch(/[\\/][.]claude-default$/);
+    }).pipe(
+      Effect.provide(
+        ServerSettings.ServerSettingsService.layerTest({
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              config: { homePath: "~/.claude-default" },
+            },
+          },
+        }),
+      ),
+    ),
+  );
+
+  it.effect("resolves an empty Codex default slot with default config", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const environment = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: "codex",
+        env: { CODEX_HOME: "/inherited/codex-home" },
+      });
+
+      expect(environment.CODEX_HOME).toBe("/inherited/codex-home");
+    }).pipe(
+      Effect.provide(ServerSettings.ServerSettingsService.layerTest({ providerInstances: {} })),
+    ),
+  );
+
+  it.effect("keeps unknown provider instance ids unavailable after default-slot hydration", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const error = yield* TerminalManager.resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: "codex_unknown",
+        env: undefined,
+      }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "TerminalProviderInstanceNotFoundError",
+        providerInstanceId: "codex_unknown",
+      });
+    }).pipe(Effect.provide(ServerSettings.ServerSettingsService.layerTest())),
+  );
+
+  it.effect("restarts a running terminal when the resolved provider environment changes", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+      let providerSecret = "first-secret";
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: () =>
+          Effect.succeed({ PROVIDER_SECRET: providerSecret }),
+      });
+
+      yield* manager.open(openInput({ providerInstanceId }));
+      providerSecret = "second-secret";
+      yield* manager.open(openInput({ providerInstanceId }));
+
+      expect(ptyAdapter.processes[0]?.killed).toBe(true);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      expect(ptyAdapter.spawnInputs[1]?.env.PROVIDER_SECRET).toBe("second-secret");
+    }),
+  );
+
+  it.effect("restarts with current provider secrets and clears bounded history", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const path = yield* Path.Path;
+      const providerInstanceId = ProviderInstanceId.make("codex_restart");
+      const { manager, ptyAdapter, logsDir } = yield* createManager(2, {
+        historyByteLimit: 8,
+        resolveProviderInstanceEnvironment: (rawProviderInstanceId, env) =>
+          TerminalManager.resolveProviderInstanceTerminalEnvironment({
+            serverSettings,
+            path,
+            rawProviderInstanceId,
+            env,
+          }),
+      });
+      const homePath = path.join(logsDir, "codex");
+      const updateSecret = (value: string) =>
+        serverSettings.updateSettings({
+          providerInstances: {
+            [providerInstanceId]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: { homePath },
+              environment: [{ name: "PROVIDER_SECRET", value, sensitive: true }],
+            },
+          },
+        });
+      const input = {
+        providerInstanceId,
+        env: { CLIENT_FLAG: "1", PROVIDER_SECRET: "client-value" },
+      };
+      const outputProcessed = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "output"
+          ? Deferred.succeed(outputProcessed, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      yield* updateSecret("first-secret");
+      yield* manager.restart(restartInput(input));
+      const firstProcess = ptyAdapter.processes[0]!;
+      expect(ptyAdapter.spawnInputs[0]?.env.PROVIDER_SECRET).toBe("first-secret");
+      firstProcess.emitData("discarded\nold-one\nold-two\n");
+      yield* Deferred.await(outputProcessed);
+      expect((yield* manager.open(openInput(input))).history).toBe("old-two\n");
+
+      yield* updateSecret("second-secret");
+      const restarted = yield* manager.restart(restartInput(input));
+
+      expect(firstProcess.killed).toBe(true);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      expect(ptyAdapter.spawnInputs[1]?.env).toMatchObject({
+        PROVIDER_SECRET: "second-secret",
+        CODEX_HOME: homePath,
+        CLIENT_FLAG: "1",
+      });
+      expect(restarted.history).toBe("");
+      expect(restarted.status).toBe("running");
+      expect(restarted).not.toHaveProperty("env");
+      expect(restarted).not.toHaveProperty("providerInstanceId");
+      const logPath = yield* historyLogPath(logsDir);
+      expect(yield* readFileString(logPath)).toBe("");
+
+      ptyAdapter.processes[1]!.emitData("discarded again\nnew-one\nnew-two\n");
+      yield* manager.close({ threadId: "thread-1" });
+      expect(yield* readFileString(logPath)).toBe("new-two\n");
+    }).pipe(
+      Effect.provide(
+        ServerSettings.layer.pipe(
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provide(SqlitePersistence.layerMemory),
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), { prefix: "t3code-terminal-provider-restart-" }),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("attaches to a running provider terminal without resolving the provider again", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+      let providerAvailable = true;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: (requestedId) =>
+          providerAvailable
+            ? Effect.succeed({ PROVIDER_SECRET: "secret-value" })
+            : Effect.fail(
+                new TerminalProviderInstanceNotFoundError({
+                  providerInstanceId: ProviderInstanceId.make(requestedId),
+                }),
+              ),
+      });
+      yield* manager.open(openInput({ providerInstanceId }));
+      providerAvailable = false;
+      const events: TerminalAttachStreamEvent[] = [];
+
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput({ providerInstanceId }), restartIfNotRunning: true },
+        (event) => Effect.sync(() => events.push(event)),
+      );
+      unsubscribe();
+
+      expect(events[0]?.type).toBe("snapshot");
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+    }),
+  );
+
+  it.effect("fails closed when attaching would create a missing provider terminal", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("deleted_instance");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        resolveProviderInstanceEnvironment: (requestedId) =>
+          Effect.fail(
+            new TerminalProviderInstanceNotFoundError({
+              providerInstanceId: ProviderInstanceId.make(requestedId),
+            }),
+          ),
+      });
+
+      const error = yield* manager
+        .attachStream(openInput({ providerInstanceId }), () => Effect.void)
+        .pipe(Effect.flip);
+
+      assert.deepStrictEqual(
+        error,
+        new TerminalProviderInstanceNotFoundError({ providerInstanceId }),
+      );
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
     }),
   );
 
   it.effect("starts zsh with prompt spacer disabled to avoid `%` end markers", () =>
     Effect.gen(function* () {
-      if ((yield* HostProcessPlatform) === "win32") return;
+      if ((yield* HostProcess.Platform) === "win32") return;
       const { manager, ptyAdapter } = yield* createManager(5, {
         shellResolver: () => "/bin/zsh",
       });
@@ -1653,6 +2820,104 @@ it.layer(
         const events = yield* Ref.get(attachEvents);
         expect(events.filter((event) => event.type === "snapshot")).toHaveLength(1);
       }),
+  );
+
+  it.effect("observes terminal history and live output without changing the process", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const opened = yield* manager.open(openInput({ env: { OBSERVER_TEST: "original" } }));
+      const process = ptyAdapter.processes[0]!;
+      const historyReceived = yield* Deferred.make<void>();
+      const unsubscribeHistory = yield* manager.subscribe((event) =>
+        event.type === "output"
+          ? Deferred.succeed(historyReceived, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      process.emitData("existing history\n");
+      yield* Deferred.await(historyReceived);
+      unsubscribeHistory();
+
+      const observed = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const liveReceived = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.observeStream(
+        { threadId: opened.threadId, terminalId: opened.terminalId },
+        (event) =>
+          Ref.update(observed, (events) => [...events, event]).pipe(
+            Effect.andThen(
+              event.type === "output"
+                ? Deferred.succeed(liveReceived, undefined).pipe(Effect.asVoid)
+                : Effect.void,
+            ),
+          ),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      process.emitData("live output\n");
+      yield* Deferred.await(liveReceived);
+
+      expect(yield* Ref.get(observed)).toMatchObject([
+        {
+          type: "snapshot",
+          snapshot: {
+            cwd: opened.cwd,
+            worktreePath: opened.worktreePath,
+            pid: opened.pid,
+            history: "existing history\n",
+          },
+        },
+        { type: "output", data: "live output\n" },
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.spawnInputs[0]?.env.OBSERVER_TEST).toBe("original");
+      expect(process.resizeCalls).toEqual([]);
+      expect(process.writes).toEqual([]);
+      expect(process.killSignals).toEqual([]);
+    }),
+  );
+
+  it.effect("observes exited terminals without restarting and rejects missing sessions", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const missingEvents: TerminalAttachStreamEvent[] = [];
+      const missing = yield* manager
+        .observeStream({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }, (event) =>
+          Effect.sync(() => {
+            missingEvents.push(event);
+          }),
+        )
+        .pipe(Effect.flip);
+      expect(missing._tag).toBe("TerminalSessionLookupError");
+      expect(ptyAdapter.spawnInputs).toEqual([]);
+
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0]!;
+      const exited = yield* Deferred.make<void>();
+      const unsubscribeExit = yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      process.emitExit({ exitCode: 7, signal: 0 });
+      yield* Deferred.await(exited);
+      unsubscribeExit();
+
+      const events: TerminalAttachStreamEvent[] = [];
+      const unsubscribe = yield* manager.observeStream(
+        { threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID },
+        (event) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+      );
+      unsubscribe();
+      expect(events).toMatchObject([
+        { type: "snapshot", snapshot: { status: "exited", exitCode: 7, pid: null } },
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(process.resizeCalls).toEqual([]);
+      expect(process.writes).toEqual([]);
+      expect(process.killSignals).toEqual([]);
+      expect(missingEvents).toEqual([]);
+    }),
   );
 
   it.effect("buffers attach output delivered during the initial snapshot callback", () =>

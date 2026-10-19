@@ -3,7 +3,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@d4research/contracts";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { shouldExitPlanForDevPipelineSelection } from "../../devPipeline";
@@ -45,6 +45,10 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   disabled?: boolean;
   pipelineTargetPolicy: PipelineTargetPolicy;
   isResearchMode: boolean;
+  runtimeModeOptions: ReadonlyArray<{
+    readonly mode: RuntimeMode;
+    readonly label: string;
+  }>;
   showInteractionModeToggle: boolean;
   canStartResearch: boolean;
   researchScenarios: ReadonlyArray<string>;
@@ -59,9 +63,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onSelectDevPipeline: (scenarioName: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (props.disabled && open) setOpen(false);
-  }, [open, props.disabled]);
+  if (props.disabled && open) setOpen(false);
   return (
     <Menu
       open={open}
@@ -76,6 +78,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             variant="ghost"
             className="shrink-0 gap-1.5 px-2 text-muted-foreground/70 hover:text-foreground/80"
             aria-label="Workflows and agent controls"
+            data-composer-shortcut={
+              props.traitsMenuContent ? "composer.mode composer.effort" : "composer.mode"
+            }
             disabled={props.disabled}
           />
         }
@@ -198,18 +203,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          <MenuRadioItem disabled={props.disabled} value="approval-required">
-            Supervised
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="auto-accept-edits">
-            Auto-accept edits
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="auto">
-            Auto
-          </MenuRadioItem>
-          <MenuRadioItem disabled={props.disabled} value="full-access">
-            Full access
-          </MenuRadioItem>
+          {props.runtimeModeOptions.map((option) => (
+            <MenuRadioItem disabled={props.disabled} key={option.mode} value={option.mode}>
+              {option.label}
+            </MenuRadioItem>
+          ))}
         </MenuRadioGroup>
       </MenuPopup>
     </Menu>

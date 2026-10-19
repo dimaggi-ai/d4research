@@ -1,34 +1,7 @@
 # Install and First Run
 
-d4research `v0.2.0` is distributed as the fork-owned `d4research` npm CLI and as desktop installers
-on the [d4research GitHub Releases](https://github.com/dimaggi-ai/d4research/releases) page. The
-upstream `npx t3` command and T3 Code store apps install T3 Code, not d4research.
-
-## Install the server CLI
-
-Run without a permanent global installation:
-
-```bash
-npx d4research@0.2.0
-```
-
-Or install the exact release globally:
-
-```bash
-npm install --global d4research@0.2.0
-d4research
-```
-
-The server prints a one-time pairing URL. Open the complete URL, including its token. Provider CLIs,
-projects, credentials, and local Memo data stay on the server machine.
-
-## Install the desktop client
-
-Download the artifact for macOS, Windows, or Linux from the GitHub Release. Version 0.2.0 installers
-are unsigned early-access artifacts. Use `SHA256SUMS` on the release page to verify a manual
-download.
-
-## Build from source
+d4research `v0.2.0` is currently a source distribution. The upstream `npx t3`, T3 Code desktop
+downloads, and mobile-store apps install T3 Code, not d4research.
 
 ## Requirements
 
@@ -36,7 +9,7 @@ download.
 - Node.js `^22.16 || ^23.11 || >=24.10`
 - At least one supported provider CLI installed and authenticated on the server machine
 
-### Start from a checkout
+## Start d4research
 
 ```bash
 git clone git@github.com:dimaggi-ai/d4research.git
@@ -83,11 +56,37 @@ that server does not supply provider credentials.
 | Grok Build | `grok`         | `grok login`                   |
 | OpenCode   | `opencode`     | `opencode auth login`          |
 | Junie      | `junie`        | Run `junie` and sign in        |
+| Muse       | `muse`         | `muse login`                   |
 | Agy        | `agy`          | Follow the CLI's login flow    |
 
 If a CLI is outside the server process's `PATH`, set its absolute **Binary path** on the provider
 instance in Settings. A binary being present is not enough: d4research separately reports
-authentication, reachability, and model readiness before allowing a turn to start.
+authentication, reachability, and model readiness where the provider exposes them.
+Muse cannot verify login during its status check; a signed-out instance fails when sending a message.
+
+d4research warns when a provider version has known compatibility problems with your
+release. Check **Settings → Providers** on that environment for the recommended
+version or range. When its package manager supports installing a specific version,
+you can install the recommendation there. Otherwise use the provider's installer
+on the environment's machine. An unlisted version is unverified.
+
+When a provider CLI is behind its latest release, its provider card shows the
+available version. **Update now** runs the installer that owns the CLI
+(Homebrew, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or the
+CLI's own update command when d4research cannot tell. Update a CLI installed with
+mise through mise. Cursor and Antigravity update with d4research. Homebrew installs
+compare against the version Homebrew offers, which can trail the npm release by
+a few hours.
+
+Add another provider instance for a separate account or configuration. Each
+instance can have its own environment variables, such as API keys or a custom
+base URL. Mark secret values as sensitive; after saving, d4research does not display
+their original values.
+
+For provider-specific setup and accounts, see [Codex](./providers-codex.md),
+[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
+[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
+[Muse Code](./providers-muse.md).
 
 ## Target Selection Is Literal
 
@@ -104,7 +103,7 @@ Opus is unavailable, the result says Codex ran; it never claims Opus ran.
 ## Local Data
 
 The built-in Memo database lives at `memory.sqlite` inside the environment's d4research state
-directory. Normal source development uses the repository-local `.t3/dev` state unless an explicit
+directory. Linked-worktree development uses the repository-local `.t3/userdata` state unless an explicit
 home directory is provided; a production server uses the `userdata` directory under its configured
 T3 home. Choosing the external `memo-rest` backend sends Memo records to the configured REST
 service instead of the built-in database.
@@ -126,9 +125,9 @@ deployment updater, not a clean-machine installer.
 
 ## What Is Supported Today
 
-- Web through the released CLI or source runner is the primary first-run path.
-- GitHub Releases provide desktop artifacts for macOS, Windows, and Linux. Signing is optional and
-  the release notes identify whether a particular artifact was signed.
+- Web from the source runner is the primary first-run path.
+- Desktop can be built from source and wraps the web client, but no signed d4research installers
+  are published yet.
 - Mobile can connect to a compatible d4research server, but a d4research-branded store build is not
   part of the current source distribution.
 - Remote browsers connect to the server environment; provider CLIs, projects, Memo, and credentials

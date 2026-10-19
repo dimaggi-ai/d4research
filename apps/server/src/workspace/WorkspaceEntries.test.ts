@@ -11,7 +11,7 @@ import * as PlatformError from "effect/PlatformError";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -21,7 +21,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, readdir: vi.fn(actual.readdir) };
 });
 
-const TestLayer = Layer.empty.pipe(
+const layerTest = Layer.empty.pipe(
   Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(VcsProcess.layer),
@@ -84,18 +84,244 @@ const searchWorkspaceEntries = (input: {
   });
 
 const appendSeparator = (input: string) =>
-  Effect.map(HostProcessPlatform, (platform) =>
+  Effect.map(HostProcess.Platform, (platform) =>
     input.endsWith("/") || input.endsWith("\\")
       ? input
       : `${input}${platform === "win32" ? "\\" : "/"}`,
   );
 
-it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
+it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   describe("list", () => {
+    it.effect("lists immediate children including ignored and empty directories", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ git: true });
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* writeTextFile(cwd, "tracked.txt");
+        yield* git(cwd, ["add", "tracked.txt"]);
+        yield* writeTextFile(cwd, ".gitignore", "node_modules/\n.env\ntracked.txt\n");
+        yield* writeTextFile(cwd, ".env", "secret=value");
+        yield* writeTextFile(cwd, "node_modules/pkg/index.js");
+        yield* writeTextFile(cwd, "src/index.ts");
+        yield* fileSystem.makeDirectory(path.join(cwd, "empty"));
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
+        expect(root.entries).toEqual(
+          expect.arrayContaining([
+            { path: ".env", kind: "file", ignored: true },
+            { path: "node_modules", kind: "directory", ignored: true },
+            { path: "src", kind: "directory" },
+            { path: "empty", kind: "directory" },
+            { path: "tracked.txt", kind: "file" },
+          ]),
+        );
+        expect(root.entries.some((entry) => entry.path.includes("/"))).toBe(false);
+        expect(root.entries.some((entry) => entry.path === ".git")).toBe(false);
+        expect(root.truncated).toBe(false);
+        expect(yield* workspaceEntries.list({ cwd, directoryPath: "node_modules/pkg" })).toEqual({
+          entries: [{ path: "node_modules/pkg/index.js", kind: "file", ignored: true }],
+          truncated: false,
+        });
+        expect(yield* workspaceEntries.list({ cwd, directoryPath: "empty" })).toEqual({
+          entries: [],
+          truncated: false,
+        });
+      }),
+    );
+
+    it.effect("labels the children of wide folders exactly as git does for each child", () =>
+      Effect.gen(function* () {
+        // Above 1,000 children, listing first asks whether the whole folder is ignored.
+        const cwd = yield* makeTempDir({ git: true });
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const platform = yield* HostProcess.Platform;
+        yield* writeTextFile(
+          cwd,
+          ".gitignore",
+          "node_modules/\ndist/\n\\[id\\]/\n*.map\nfoo\n!foo/\n",
+        );
+        yield* Effect.forEach(
+          [
+            "node_modules",
+            "dist",
+            "[id]",
+            "src",
+            ...(platform !== "win32" ? [":foo"] : []),
+          ].flatMap((directory) =>
+            Array.from({ length: 1001 }, (_, index) => `${directory}/pkg-${index}.js`),
+          ),
+          (relativePath) => writeTextFile(cwd, relativePath),
+          { concurrency: 32, discard: true },
+        );
+        for (const relativePath of [
+          "dist/kept.js",
+          "dist/vendored/index.js",
+          "i/page.tsx",
+          "[id]/page.tsx",
+          "src/bundle.map",
+        ]) {
+          yield* writeTextFile(cwd, relativePath);
+        }
+        yield* git(cwd, ["add", "-f", "dist/kept.js", "dist/vendored/index.js", "i/page.tsx"]);
+        if (platform !== "win32") {
+          yield* fileSystem.symlink(path.join(cwd, "src"), path.join(cwd, "node_modules/link"));
+        }
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        for (const { directoryPath, ignored, except } of [
+          { directoryPath: "node_modules", ignored: true, except: [] },
+          // A force-tracked file and a folder holding tracked files stay unignored.
+          { directoryPath: "dist", ignored: true, except: ["dist/kept.js", "dist/vendored"] },
+          // git reads `[id]/page.tsx` as a pathspec, which matches the tracked `i/page.tsx`.
+          { directoryPath: "[id]", ignored: true, except: ["[id]/page.tsx"] },
+          { directoryPath: "src", ignored: false, except: ["src/bundle.map"] },
+          ...(platform !== "win32"
+            ? [
+                // git refuses to classify paths beyond a symlink, so nothing there is labelled.
+                { directoryPath: "node_modules/link", ignored: false, except: [] },
+                // A leading `:` is pathspec magic, so git reads `:foo/pkg-0.js` as `foo/pkg-0.js`,
+                // which `!foo/` keeps unignored.
+                { directoryPath: ":foo", ignored: false, except: [] },
+              ]
+            : []),
+        ]) {
+          const { entries } = yield* workspaceEntries.list({ cwd, directoryPath });
+          expect(entries.length, directoryPath).toBeGreaterThan(1000);
+          expect(
+            entries
+              .filter((entry) => (entry.ignored === true) !== ignored)
+              .map((entry) => entry.path)
+              .toSorted(),
+            directoryPath,
+          ).toEqual(except);
+        }
+      }),
+    );
+
+    it.effect("lists a host folder and its parent, each from its own root", () =>
+      // Folder links outside the workspace browse by passing the host folder as
+      // `cwd`; walking up passes the parent. Each stays bounded by its own root.
+      Effect.gen(function* () {
+        const parent = yield* makeTempDir();
+        const path = yield* Path.Path;
+        yield* writeTextFile(parent, "linked/notes.md");
+        yield* writeTextFile(parent, "sibling/readme.md");
+        const linked = path.join(parent, "linked");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        expect(yield* workspaceEntries.list({ cwd: linked, directoryPath: "" })).toEqual({
+          entries: [{ path: "notes.md", kind: "file" }],
+          truncated: false,
+        });
+        const up = yield* workspaceEntries.list({ cwd: parent, directoryPath: "" });
+        expect(up.entries.map((entry) => entry.path).toSorted()).toEqual(["linked", "sibling"]);
+        const escape = yield* workspaceEntries
+          .list({ cwd: linked, directoryPath: "../sibling" })
+          .pipe(Effect.flip);
+        expect(escape._tag).toBe("WorkspaceEntriesReadDirectoryError");
+      }),
+    );
+
+    it.effect(
+      "rejects directory traversal, git internals, and symlinks outside the workspace",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir();
+          const outside = yield* makeTempDir();
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* writeTextFile(cwd, ".git/HEAD");
+          const platform = yield* HostProcess.Platform;
+          if (platform !== "win32") yield* fileSystem.symlink(outside, path.join(cwd, "external"));
+          const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+          for (const directoryPath of [
+            "../",
+            outside,
+            ".git",
+            "missing",
+            ...(platform !== "win32" ? ["external"] : []),
+          ]) {
+            const error = yield* workspaceEntries.list({ cwd, directoryPath }).pipe(Effect.flip);
+            expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");
+          }
+        }),
+    );
+
+    it.effect(
+      "browses a workspace with more than 25,000 entries without truncation",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir();
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          for (let directory = 0; directory < 26; directory++) {
+            const directoryPath = path.join(cwd, `folder-${directory}`);
+            yield* fileSystem.makeDirectory(directoryPath);
+            yield* Effect.forEach(
+              Array.from({ length: 1000 }, (_, i) => i),
+              (i) => fileSystem.writeFileString(path.join(directoryPath, `file-${i}.txt`), ""),
+              { concurrency: 32, discard: true },
+            );
+          }
+          const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+          const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
+          expect(root.entries).toHaveLength(26);
+          expect(root.truncated).toBe(false);
+          for (const directory of root.entries) {
+            const result = yield* workspaceEntries.list({ cwd, directoryPath: directory.path });
+            expect(result.entries).toHaveLength(1000);
+            expect(result.truncated).toBe(false);
+            expect(result.entries).toContainEqual({
+              path: `${directory.path}/file-999.txt`,
+              kind: "file",
+            });
+          }
+        }),
+      60_000,
+    );
+
+    it.effect("includes images and other binary files in non-git workspace indexes", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        const imagePaths = ["photo.png", "photo.jpg", "photo.jpeg"];
+        const binaryPaths = [...imagePaths, "document.pdf", "archive.zip", "data.bin"];
+        for (const filePath of binaryPaths) {
+          yield* writeTextFile(cwd, filePath, "\0binary contents\n");
+        }
+        yield* writeTextFile(cwd, "notes.txt", "plain text\n");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const expectedPaths = [...binaryPaths, "notes.txt"].toSorted();
+        const listed = yield* workspaceEntries.list({ cwd });
+        expect(listed.entries.map((entry) => entry.path).toSorted()).toEqual(expectedPaths);
+        expect(listed.truncated).toBe(false);
+
+        const searched = yield* workspaceEntries.search({
+          cwd,
+          query: "",
+          limit: 100,
+          kind: "file",
+        });
+        expect(searched.entries.map((entry) => entry.path).toSorted()).toEqual(expectedPaths);
+        expect(searched.truncated).toBe(false);
+
+        const images = yield* workspaceEntries.search({
+          cwd,
+          query: "",
+          limit: 100,
+          imageOnly: true,
+        });
+        expect(images.entries.map((entry) => entry.path).toSorted()).toEqual(imagePaths.toSorted());
+        expect(images.truncated).toBe(false);
+      }),
+    );
+
     it.effect("returns the complete cached workspace index", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir();
@@ -218,7 +444,10 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           kind: "file",
         });
 
-        expect(result.entries).toEqual([{ path: "src/index.ts", kind: "file" }]);
+        // Native ranking can put either matching file first.
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0]?.kind).toBe("file");
+        expect(["src/index.ts", "src/internal.ts"]).toContain(result.entries[0]?.path);
         expect(result.truncated).toBe(true);
       }),
     );
@@ -420,8 +649,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           useRegex: false,
         });
 
-        // "notes", "denote", and "footnote" are word-adjacent and excluded;
-        // ranges cover exactly the query, never boundary characters.
         expect(result.matches).toEqual([
           expect.objectContaining({
             path: "src/words.ts",
@@ -502,8 +729,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           useRegex: false,
         });
 
-        // Consuming-boundary regex would swallow the separating spaces and
-        // drop the middle occurrence; boundary post-filtering keeps all three.
         expect(result.matches).toHaveLength(1);
         expect(result.matches[0]).toMatchObject({
           path: "src/words.ts",
@@ -532,9 +757,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           useRegex: true,
         });
 
-        // wholeWord + useRegex must not silently drop non-word-edged patterns
-        // like "foo-", and "afoo-" is excluded because 'a'/'f' are both word
-        // characters at the match's left edge.
         expect(result.matches).toHaveLength(1);
         expect(result.matches[0]).toMatchObject({
           path: "src/words.ts",

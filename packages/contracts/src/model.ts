@@ -52,41 +52,18 @@ export const ProviderOptionSelection = Schema.Struct({
 });
 export type ProviderOptionSelection = typeof ProviderOptionSelection.Type;
 
-/**
- * Legacy on-disk shape for provider option selections, kept readable by the
- * decoder so we can tolerate stored data written before the v3 array shape.
- *
- * Persisted historically as `{ effort: "max", fastMode: true, ... }` inside
- * `modelSelection.options`. Migration 026 rewrites stored rows to the
- * canonical array shape, but we still see the legacy form in:
- *   - `settings.json` files from older client builds,
- *   - SQLite databases that have not yet run migration 026,
- *   - any future regression that re-introduces the legacy shape.
- */
 const LegacyProviderOptionSelectionsObject = Schema.Record(Schema.String, Schema.Unknown);
 
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
   Schema.decodeTo(
     Schema.Array(ProviderOptionSelection),
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (record) => Effect.succeed(coerceLegacyOptionsObjectToArray(record)),
       encode: (selections) => Effect.succeed(canonicalSelectionsToLegacyObject(selections)),
     }),
   ),
 );
 
-/**
- * Schema for the `options` field of every `ModelSelection` variant.
- *
- * Accepts both:
- *   - the canonical array shape `Array<{ id, value }>` (preferred), and
- *   - the legacy object shape `Record<string, string | boolean | …>` from
- *     pre-migration data.
- *
- * Always normalizes to the canonical array on decode and re-encodes as the
- * canonical array, so any legacy storage gets cleaned up the next time the
- * containing record is written back.
- */
 export const ProviderOptionSelections = Schema.Union([
   Schema.Array(ProviderOptionSelection),
   ProviderOptionSelectionsFromLegacyObject,
@@ -127,11 +104,24 @@ export const ModelCapabilities = Schema.Struct({
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
+export const CustomModelEntry = Schema.Struct({
+  slug: TrimmedNonEmptyString,
+  name: Schema.optional(TrimmedNonEmptyString),
+  capabilities: Schema.optional(ModelCapabilities),
+});
+export type CustomModelEntry = typeof CustomModelEntry.Type;
+
+export const CustomModelSetting = Schema.Union([Schema.String, CustomModelEntry]);
+export type CustomModelSetting = typeof CustomModelSetting.Type;
+
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
+const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const JUNIE_DRIVER_KIND = ProviderDriverKind.make("junie");
+const PI_DRIVER_KIND = ProviderDriverKind.make("pi");
+const ACP_REGISTRY_DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 
@@ -147,35 +137,44 @@ const AGY_DRIVER_KIND = ProviderDriverKind.make("agy");
 export const DEFAULT_MODEL = "gpt-5.6-terra";
 
 /**
- * Codex default-model preference, most preferred first. The provider snapshot
- * marks the first of these present in the live `model/list` response as
- * default; when none are available, Codex's own `isDefault` flag wins. Listing
- * a slug here is safe even when the account cannot use it, because absent
- * models never match.
+ * The provider snapshot marks the first of these present in the live
+ * `model/list` response as default; when none are available, Codex's own
+ * `isDefault` flag wins.
  */
 export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
+  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ];
-export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
+export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
+/** Keep the official Antigravity session's current model. Never send this ID to ACP. */
+export const ANTIGRAVITY_DEFAULT_MODEL = "antigravity-default";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
+
+/** Let Muse pick the account's default model. Never send this ID to Muse. */
+export const MUSE_DEFAULT_MODEL = "default";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
+  [CLAUDE_DRIVER_KIND]: "claude-fable-5-1",
   [CURSOR_DRIVER_KIND]: "auto",
-  [GROK_DRIVER_KIND]: "grok-4.6",
+  // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
+  [GROK_DRIVER_KIND]: "grok-build",
+  [MUSE_DRIVER_KIND]: MUSE_DEFAULT_MODEL,
   [JUNIE_DRIVER_KIND]: "default",
+  [ACP_REGISTRY_DRIVER_KIND]: "default",
+  // "default" defers to the user's own Pi settings.json model selection.
+  [PI_DRIVER_KIND]: "default",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
   [AGY_DRIVER_KIND]: "gemini-3.6-flash-medium",
 };
 
-/** Per-provider text generation model defaults. */
 export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, string>
 > = {
   [CODEX_DRIVER_KIND]: DEFAULT_TEXT_GENERATION_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
+  [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
+  [CLAUDE_DRIVER_KIND]: "claude-haiku-5-5",
   [CURSOR_DRIVER_KIND]: "composer-2",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
@@ -229,16 +228,18 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   [OPENCODE_DRIVER_KIND]: {},
   [AGY_DRIVER_KIND]: {},
   [JUNIE_DRIVER_KIND]: {},
+  [MUSE_DRIVER_KIND]: {},
 };
-
-// ── Provider display names ────────────────────────────────────────────
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: "Codex",
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
+  [MUSE_DRIVER_KIND]: "Muse Code",
   [JUNIE_DRIVER_KIND]: "Junie",
+  [ACP_REGISTRY_DRIVER_KIND]: "ACP Registry",
+  [PI_DRIVER_KIND]: "Pi",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
   [AGY_DRIVER_KIND]: "Agy",
 };

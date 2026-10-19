@@ -1,7 +1,11 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as HttpMethod from "effect/unstable/http/HttpMethod";
+import * as SynchronizedRef from "effect/SynchronizedRef";
+import * as HttpClientError from "effect/http/HttpClientError";
+import type * as HttpMethod from "effect/http/HttpMethod";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
+import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 
 export interface ManagedRelayDpopProofInput {
   readonly method: HttpMethod.HttpMethod;
@@ -9,7 +13,7 @@ export interface ManagedRelayDpopProofInput {
   readonly accessToken?: string;
 }
 
-export class ManagedRelayDpopKeyLoadError extends Schema.TaggedErrorClass<ManagedRelayDpopKeyLoadError>()(
+export class ManagedRelayDpopKeyLoadError extends Schema.TaggedError<ManagedRelayDpopKeyLoadError>()(
   "ManagedRelayDpopKeyLoadError",
   {
     keyStore: Schema.Literals(["expo-secure-store", "indexed-db"]),
@@ -21,7 +25,7 @@ export class ManagedRelayDpopKeyLoadError extends Schema.TaggedErrorClass<Manage
   }
 }
 
-export class ManagedRelayDpopProofCreationError extends Schema.TaggedErrorClass<ManagedRelayDpopProofCreationError>()(
+export class ManagedRelayDpopProofCreationError extends Schema.TaggedError<ManagedRelayDpopProofCreationError>()(
   "ManagedRelayDpopProofCreationError",
   {
     method: Schema.String,

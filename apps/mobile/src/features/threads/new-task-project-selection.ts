@@ -1,4 +1,5 @@
 import type { EnvironmentProject } from "@d4research/client-runtime/state/shell";
+import { repositoryGroupingKeyOf, type EnvironmentId } from "@d4research/contracts";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import type { HomeProjectScope } from "../home/homeThreadList";
@@ -8,11 +9,83 @@ export type DraftProjectSelectionResolution =
   | { readonly kind: "select"; readonly project: EnvironmentProject }
   | { readonly kind: "pick" };
 
+export function getProjectScopeSelectionTarget(
+  scope: HomeProjectScope,
+  preferredEnvironmentId: EnvironmentId | null,
+): EnvironmentProject {
+  return (
+    scope.projects.find((project) => project.environmentId === preferredEnvironmentId) ??
+    scope.representative
+  );
+}
+
+export function filterProjectScopes(
+  scopes: ReadonlyArray<HomeProjectScope>,
+  searchText: string,
+): ReadonlyArray<HomeProjectScope> {
+  const query = searchText.trim().toLowerCase();
+  if (!query) return scopes;
+  return scopes.filter(
+    (scope) =>
+      scope.title.toLowerCase().includes(query) ||
+      scope.projects.some(
+        (project) =>
+          project.title.toLowerCase().includes(query) ||
+          project.workspaceRoot.toLowerCase().includes(query),
+      ),
+  );
+}
+
 export function getOnlySelectableProject(
   projectScopes: ReadonlyArray<HomeProjectScope>,
 ): EnvironmentProject | null {
   const onlyScope = projectScopes.length === 1 ? projectScopes[0] : null;
   return onlyScope?.projects.length === 1 ? (onlyScope.projects[0] ?? null) : null;
+}
+
+export function resolveEnvironmentProjectMatch(
+  projectsOnTarget: ReadonlyArray<EnvironmentProject>,
+  selectedProject: EnvironmentProject | null,
+): EnvironmentProject | null {
+  const repositoryKey = selectedProject?.repositoryIdentity
+    ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
+    : null;
+  // `|| null` (not `??`): a pending-task placeholder project can have an empty
+  // workspaceRoot, and an "" basename would match nothing meaningful.
+  const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
+  // The weaker signals only apply where identity is unknown on at least one
+  // side; two known, different repositories never match on a shared basename
+  // or title (mirrors the environment list filter in the new-task flow).
+  const isKnownMismatch = (project: EnvironmentProject) => {
+    const projectKey = project.repositoryIdentity
+      ? repositoryGroupingKeyOf(project.repositoryIdentity)
+      : null;
+    return repositoryKey !== null && projectKey !== null && projectKey !== repositoryKey;
+  };
+  return (
+    (repositoryKey !== null
+      ? projectsOnTarget.find(
+          (project) =>
+            (project.repositoryIdentity
+              ? repositoryGroupingKeyOf(project.repositoryIdentity)
+              : null) === repositoryKey,
+        )
+      : undefined) ??
+    (workspaceBasename !== null
+      ? projectsOnTarget.find(
+          (project) =>
+            !isKnownMismatch(project) &&
+            project.workspaceRoot.split("/").at(-1) === workspaceBasename,
+        )
+      : undefined) ??
+    (selectedProject !== null
+      ? projectsOnTarget.find(
+          (project) => !isKnownMismatch(project) && project.title === selectedProject.title,
+        )
+      : undefined) ??
+    projectsOnTarget[0] ??
+    null
+  );
 }
 
 export function resolveDraftProjectSelection(

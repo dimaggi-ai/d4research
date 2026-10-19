@@ -40,4 +40,4 @@ Mobile renders the result and run state but does not currently offer the Markdow
 
 Open **Settings → Research**, select `starter`, and edit its pipeline. Safe customizations include the question, source boundary, output headings, and the number of non-recursive evidence passes. Add delegation only through explicit `!provider:model` directives shown as resolved in the editor.
 
-Keep the stopping condition and `RUN STATE` requirement. A missing or ambiguous provider directive is an error to report, not permission to silently choose another model.
+Keep the stopping condition and `RUN STATE` requirement. Treat a missing or ambiguous provider directive as an error to report; it does not grant permission to silently pick another model.

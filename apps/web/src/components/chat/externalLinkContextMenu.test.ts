@@ -1,12 +1,25 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveExternalWebLinkHost, showExternalLinkContextMenu } from "./externalLinkContextMenu";
+import {
+  resolveExternalWebLinkHost,
+  resolveExternalWebLinkHref,
+  showExternalLinkContextMenu,
+} from "./externalLinkContextMenu";
 
-function createHarness(selection: "open-in-preview" | "open-external" | "copy-link" | null) {
+function createHarness(
+  selection:
+    | "open-in-preview"
+    | "open-external"
+    | "copy-link"
+    | "link-to-thread"
+    | "unlink-from-thread"
+    | null,
+) {
   const showContextMenu = vi.fn().mockResolvedValue(selection);
   const openInPreview = vi.fn().mockResolvedValue(undefined);
   const openExternal = vi.fn().mockResolvedValue(undefined);
   const copyLink = vi.fn().mockResolvedValue(undefined);
+  const updateThreadLink = vi.fn().mockResolvedValue(undefined);
   const reportFailure = vi.fn();
 
   return {
@@ -14,6 +27,7 @@ function createHarness(selection: "open-in-preview" | "open-external" | "copy-li
     openInPreview,
     openExternal,
     copyLink,
+    updateThreadLink,
     reportFailure,
   };
 }
@@ -41,6 +55,25 @@ describe("external chat link context menu", () => {
     expect(harness.copyLink).not.toHaveBeenCalled();
   });
 
+  it("still offers the link's own actions where the integrated browser cannot be opened", async () => {
+    const harness = createHarness(null);
+
+    await showExternalLinkContextMenu({
+      href: "https://github.com/pingdotgg/t3code/pull/6169",
+      canOpenInPreview: false,
+      position: { x: 4, y: 8 },
+      ...harness,
+    });
+
+    expect(harness.showContextMenu).toHaveBeenCalledWith(
+      [
+        { id: "open-external", label: "Open in system browser" },
+        { id: "copy-link", label: "Copy Link" },
+      ],
+      { x: 4, y: 8 },
+    );
+  });
+
   it("copies the exact destination without opening it", async () => {
     const harness = createHarness("copy-link");
     const href = "https://example.com/docs?topic=menus#copy";
@@ -50,6 +83,27 @@ describe("external chat link context menu", () => {
     expect(harness.copyLink).toHaveBeenCalledWith(href);
     expect(harness.openInPreview).not.toHaveBeenCalled();
     expect(harness.openExternal).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["link-to-thread", "Link to thread", true],
+    ["unlink-from-thread", "Unlink from thread", false],
+  ] as const)("offers and runs the %s action", async (action, label, linked) => {
+    const harness = createHarness(action);
+    const href = "https://github.com/pingdotgg/t3code/pull/42";
+
+    await showExternalLinkContextMenu({
+      href,
+      threadLinkAction: action,
+      position: { x: 1, y: 2 },
+      ...harness,
+    });
+
+    expect(harness.showContextMenu).toHaveBeenCalledWith(
+      expect.arrayContaining([{ id: action, label }]),
+      { x: 1, y: 2 },
+    );
+    expect(harness.updateThreadLink).toHaveBeenCalledWith(href, linked);
   });
 
   it.each([
@@ -113,9 +167,26 @@ describe("external chat link context menu", () => {
     expect(harness.reportFailure).toHaveBeenCalledWith(operation, cause);
   });
 
+  it("reports a failed thread link action", async () => {
+    const harness = createHarness("link-to-thread");
+    const cause = new Error("thread update failed");
+    harness.updateThreadLink.mockRejectedValue(cause);
+
+    await showExternalLinkContextMenu({
+      href: "https://github.com/pingdotgg/t3code/pull/42",
+      threadLinkAction: "link-to-thread",
+      position: { x: 1, y: 2 },
+      ...harness,
+    });
+
+    expect(harness.reportFailure).toHaveBeenCalledWith("link-pull-request-to-thread", cause);
+  });
+
   it.each([
     ["https://example.com", "example.com"],
     ["http://localhost:3000/path", "localhost"],
+    ["//cdn.example.com/clip.mp4?signature=abc#t=2", "cdn.example.com"],
+    ["//", null],
     ["#details", null],
     ["mailto:hello@example.com", null],
     ["file:///tmp/example.txt", null],
@@ -124,5 +195,29 @@ describe("external chat link context menu", () => {
     [undefined, null],
   ])("resolves the external web-link host for %s as %s", (href, expected) => {
     expect(resolveExternalWebLinkHost(href)).toBe(expected);
+  });
+
+  it.each([
+    [
+      "https://example.com/docs?topic=security#links",
+      "https://example.com/docs?topic=security#links",
+    ],
+    ["HTTP://EXAMPLE.COM", "http://example.com/"],
+    ["//example.com/path", "https://example.com/path"],
+  ])("resolves the safe external web-link href for %s as %s", (href, expected) => {
+    expect(resolveExternalWebLinkHref(href)).toBe(expected);
+  });
+
+  it.each([
+    "javascript:alert(document.domain)",
+    " \nJaVaScRiPt:alert(document.domain)",
+    "data:text/html,<script>alert(document.domain)</script>",
+    "file:///tmp/example.txt",
+    "mailto:hello@example.com",
+    "/relative/path",
+    "not a URL",
+    "",
+  ])("rejects unsafe external web-link href %s", (href) => {
+    expect(resolveExternalWebLinkHref(href)).toBeNull();
   });
 });

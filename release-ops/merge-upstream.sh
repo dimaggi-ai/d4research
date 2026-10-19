@@ -40,7 +40,12 @@ apps/marketing/src/lib/site.ts
 apps/server/package.json
 apps/web/src/components/desktopUpdate.logic.ts
 apps/web/src/components/desktopUpdate.logic.test.ts
-apps/web/src/components/desktopUpdate.toast.test.tsx"
+apps/web/src/components/desktopUpdate.toast.test.tsx
+packages/shared/src/cliRelease.ts
+packages/shared/src/cliRelease.test.ts
+packages/ssh/src/tunnel.test.ts
+scripts/build-npm-platform-packages.ts
+scripts/build-npm-platform-packages.test.ts"
 
 # ---------------------------------------------------------------------------
 # The rename map. These patterns deliberately do NOT touch the kept
@@ -104,6 +109,8 @@ list_text_files() { # args: [pathspec...]
   git grep -Il '' -- "${@:-.}" \
     ':(exclude).repos' ':(exclude)pnpm-lock.yaml' ':(exclude)patches' \
     ':(exclude).plans' ':(exclude)apps/server/scripts/acp-mock-agent.ts' \
+    ':(exclude)release-ops/merge-upstream.sh' \
+    ':(exclude)docs/operations/upstream-merge.md' \
     2>/dev/null || true
 }
 

@@ -1,11 +1,31 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildDayColumns, niceScale } from "./UsageProviderChart";
+import { buildPeriodColumns, chartScale, niceScale } from "./UsageProviderChart";
+import { providersWithUsage } from "./usageProviders";
+
+describe("chartScale", () => {
+  const column = (codex: number) => ({
+    total: codex,
+    bands: [{ provider: "codex" as const, value: codex }],
+  });
+
+  it("holds unlabeled placeholder gridlines while loading providers have nothing to show", () => {
+    const scale = chartScale([column(0)], new Set(["codex" as const]));
+
+    expect(scale.labeled).toBe(false);
+    expect(scale.ticks.length).toBeGreaterThan(1);
+  });
+
+  it("scales to what is on screen, loading or not", () => {
+    expect(chartScale([column(40)], new Set(["codex" as const]))).toMatchObject({
+      max: 40,
+      labeled: true,
+    });
+  });
+});
 
 describe("niceScale", () => {
   it("never puts the peak above the top of the scale", () => {
-    // Regression: an earlier version stopped at the last step below the peak,
-    // so the tallest day was drawn past the plot and clipped.
     for (const peak of [1122.71, 999, 1, 0.04, 1_400_000_000, 37.5, 5000, 100.001]) {
       const { max } = niceScale(peak, 4);
       expect(max, `peak ${peak}`).toBeGreaterThanOrEqual(peak);
@@ -40,22 +60,22 @@ describe("niceScale", () => {
   });
 });
 
-describe("buildDayColumns", () => {
+describe("buildPeriodColumns", () => {
   const days = ["2026-08-01", "2026-08-02", "2026-08-03"];
   const byDay = new Map([
     [
       "2026-08-01",
       {
         day: "2026-08-01",
-        costUsd: 30,
-        totalTokens: 300,
+        costUsd: 35,
+        totalTokens: 350,
         byProvider: new Map([
           ["codex" as const, { costUsd: 10, totalTokens: 100 }],
           ["claude" as const, { costUsd: 20, totalTokens: 200 }],
+          ["pi" as const, { costUsd: 5, totalTokens: 50 }],
         ]),
       },
     ],
-    // 2026-08-02 is deliberately absent: a day with no activity.
     [
       "2026-08-03",
       {
@@ -68,31 +88,61 @@ describe("buildDayColumns", () => {
   ]);
 
   it("plots each day on its own", () => {
-    expect(buildDayColumns(days, byDay, "cost").map((column) => column.total)).toEqual([30, 0, 5]);
+    expect(buildPeriodColumns(days, byDay, "cost").map((column) => column.total)).toEqual([
+      35, 0, 5,
+    ]);
   });
 
   it("reads the requested metric", () => {
-    expect(buildDayColumns(days, byDay, "tokens").map((column) => column.total)).toEqual([
-      300, 0, 50,
+    expect(buildPeriodColumns(days, byDay, "tokens").map((column) => column.total)).toEqual([
+      350, 0, 50,
     ]);
   });
 
   it("keeps band values absolute rather than cumulative", () => {
-    // Regression: the bands were once stack offsets, which drew Claude Code
-    // permanently above Codex regardless of which provider spent more.
-    const [first] = buildDayColumns(days, byDay, "cost");
+    const [first] = buildPeriodColumns(days, byDay, "cost");
 
     expect(first?.bands).toEqual([
       { provider: "codex", value: 10 },
       { provider: "claude", value: 20 },
+      { provider: "grok", value: 0 },
+      { provider: "cursor", value: 0 },
+      { provider: "opencode", value: 0 },
+      { provider: "antigravity", value: 0 },
+      { provider: "pi", value: 5 },
     ]);
   });
 
   it("reports the total as the sum of its bands", () => {
-    for (const column of buildDayColumns(days, byDay, "cost")) {
+    for (const column of buildPeriodColumns(days, byDay, "cost")) {
       const sum = column.bands.reduce((running, band) => running + band.value, 0);
       expect(column.total).toBeCloseTo(sum, 9);
     }
+  });
+
+  it("filters plotted bands and tooltip totals to selected providers", () => {
+    expect(buildPeriodColumns(days, byDay, "cost", ["claude"])).toEqual([
+      { bands: [{ provider: "claude", value: 20 }], total: 20 },
+      { bands: [{ provider: "claude", value: 0 }], total: 0 },
+      { bands: [{ provider: "claude", value: 5 }], total: 5 },
+    ]);
+  });
+
+  it("does not plot unselected data when no providers are selected", () => {
+    expect(buildPeriodColumns(days, byDay, "tokens", [])).toEqual(
+      days.map(() => ({ bands: [], total: 0 })),
+    );
+  });
+});
+
+describe("providersWithUsage", () => {
+  it("omits providers with no cost or tokens", () => {
+    expect(
+      providersWithUsage([
+        { provider: "codex", costUsd: 0, totalTokens: 0 },
+        { provider: "claude", costUsd: 0, totalTokens: 200 },
+      ]),
+    ).toEqual(["claude"]);
   });
 });
 
@@ -112,7 +162,7 @@ describe("hourly chart columns", () => {
     ]);
 
     expect(
-      buildDayColumns(
+      buildPeriodColumns(
         ["2026-08-11T08:37:00.000Z", "2026-08-11T09:37:00.000Z", "2026-08-11T10:37:00.000Z"],
         byHour,
         "cost",

@@ -1,11 +1,5 @@
 import { useSyncExternalStore } from "react";
 
-/** Minute-quantized clock ("YYYY-MM-DDTHH:MM") for settled-state resolution.
-    One module-level timer feeds every consumer through useSyncExternalStore,
-    so all surfaces resolving effectiveSettled against it (sidebar partition,
-    composer banner) share a single value by construction and tick on UTC
-    minute boundaries together. */
-
 function currentMinute(): string {
   return new Date().toISOString().slice(0, 16);
 }
@@ -24,8 +18,6 @@ function tick(): void {
 }
 
 function startTimer(): void {
-  // Align to the next UTC minute boundary, then tick every 60s. Ticks re-read
-  // the clock, so a throttled or late timer self-corrects when it fires.
   timerIsInterval = false;
   timerId = window.setTimeout(
     () => {
@@ -53,9 +45,6 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): string {
-  // With no timer running (no subscribers yet — e.g. the first render after
-  // a full unmount), the stored minute may be stale; re-read it so a fresh
-  // mount renders the current minute instead of waiting for the first tick.
   // While the timer runs the cached value is returned untouched, as
   // useSyncExternalStore requires between change notifications.
   if (timerId === null) {

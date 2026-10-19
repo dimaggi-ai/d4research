@@ -1,0 +1,43 @@
+import { useAtomValue } from "@effect/atom-react";
+import { parseScopedProjectKey, scopedProjectKey } from "@d4research/client-runtime/environment";
+import type { EnvironmentId, ProjectCloneSnapshot, ScopedProjectRef } from "@d4research/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/reactivity";
+
+import { environmentServerConfigsAtom } from "./server";
+import { sourceControlEnvironment } from "./sourceControl";
+
+const EMPTY_CLONES: ReadonlyArray<ProjectCloneSnapshot> = [];
+const EMPTY_CLONE_ATOM = Atom.make<ProjectCloneSnapshot | null>(null).pipe(
+  Atom.withLabel("web-project-clone:empty"),
+);
+
+export const environmentProjectClonesAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ReadonlyArray<ProjectCloneSnapshot> => {
+    const supported =
+      get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+        .projectCloneTracking === true;
+    if (!supported) return EMPTY_CLONES;
+    const result = get(sourceControlEnvironment.projectClones({ environmentId, input: {} }));
+    return Option.getOrElse(AsyncResult.value(result), () => EMPTY_CLONES);
+  }).pipe(Atom.withLabel(`web-project-clones:${environmentId}`)),
+);
+
+const projectCloneAtom = Atom.family((key: string) => {
+  const ref = parseScopedProjectKey(key);
+  return Atom.make((get): ProjectCloneSnapshot | null => {
+    if (ref === null) return null;
+    const clones = get(environmentProjectClonesAtom(ref.environmentId));
+    return clones.find((clone) => clone.projectId === ref.projectId) ?? null;
+  }).pipe(Atom.withLabel(`web-project-clone:${key}`));
+});
+
+export function useProjectClone(ref: ScopedProjectRef | null): ProjectCloneSnapshot | null {
+  return useAtomValue(ref === null ? EMPTY_CLONE_ATOM : projectCloneAtom(scopedProjectKey(ref)));
+}
+
+export function useEnvironmentProjectClones(
+  environmentId: EnvironmentId,
+): ReadonlyArray<ProjectCloneSnapshot> {
+  return useAtomValue(environmentProjectClonesAtom(environmentId));
+}

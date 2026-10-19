@@ -11,7 +11,7 @@ import * as Stream from "effect/Stream";
 
 import { makeJunieAcpRuntime } from "../acp/JunieAcpSupport.ts";
 import type { JunieAdapterShape } from "../Services/JunieAdapter.ts";
-import { makeGrokAdapter, type GrokAdapterLiveOptions } from "./GrokAdapter.ts";
+import { makeGrokAdapter, type GrokAdapterLiveOptions } from "./LegacyAcpAdapter.ts";
 
 const JUNIE = ProviderDriverKind.make("junie");
 
@@ -49,6 +49,7 @@ export const makeJunieAdapter = (settings: JunieSettings, options?: JunieAdapter
     makeRuntime: (input) =>
       makeJunieAcpRuntime({
         ...input,
+        authenticateEagerly: true,
         junieSettings: settings,
       }),
   }).pipe(

@@ -1,8 +1,9 @@
+import * as Dialog from "../../components/ui/Dialog";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback } from "react";
-import { Alert } from "react-native";
 
-import { removeThreadOutboxMessage } from "../../state/thread-outbox";
+import { removeThreadOutboxMessage } from "../../state/thread-outbox-removal";
+import { clearComposerDraftContent } from "../../state/use-composer-drafts";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { releaseEditingQueuedMessage } from "../../state/use-thread-outbox";
 
@@ -17,9 +18,11 @@ export function usePendingTaskListActions(): {
       navigation.navigate("NewTaskSheet", {
         screen: "NewTaskDraft",
         params: {
-          environmentId: String(pendingTask.message.environmentId),
-          projectId: String(pendingTask.creation.projectId),
-          pendingTaskId: String(pendingTask.message.messageId),
+          environmentId: String(pendingTask.environmentId),
+          projectId: String(pendingTask.projectId),
+          ...(pendingTask.kind === "pending"
+            ? { pendingTaskId: String(pendingTask.message.messageId) }
+            : { draftId: pendingTask.draftKey }),
         },
       });
     },
@@ -27,7 +30,23 @@ export function usePendingTaskListActions(): {
   );
 
   const confirmDeletePendingTask = useCallback((pendingTask: PendingNewTask) => {
-    Alert.alert(
+    if (pendingTask.kind === "draft") {
+      Dialog.alert("Discard draft?", `“${pendingTask.title}” will be removed.`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            clearComposerDraftContent(pendingTask.draftKey, {
+              clearModelSelection: true,
+              clearWorkspaceSelection: true,
+            });
+          },
+        },
+      ]);
+      return;
+    }
+    Dialog.alert(
       "Delete pending task?",
       `“${pendingTask.title}” has not been sent yet and will be removed from the outbox.`,
       [
@@ -42,7 +61,7 @@ export function usePendingTaskListActions(): {
             void removeThreadOutboxMessage(pendingTask.message)
               .then(() => releaseEditingQueuedMessage(pendingTask.message.messageId))
               .catch((error) => {
-                Alert.alert(
+                Dialog.alert(
                   "Could not delete pending task",
                   error instanceof Error ? error.message : "The pending task could not be removed.",
                 );

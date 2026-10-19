@@ -39,12 +39,21 @@ map in `release-ops/merge-upstream.sh` before merging.
 - **`pnpm-lock.yaml`**: take ours (`git checkout --ours pnpm-lock.yaml`), then
   `vp i` after the merge to fold in upstream's dependency changes.
 - **Deleted-by-us clusters**: `git rm` anything upstream modified or added
-  under the removed integrations — `infra/relay/`, `apps/server/src/{relay,
-telemetry,cloud (except bootService/pinnedRuntime/selfUpdate),pullRequest,
-sourceControl}/`, `apps/web/src/cloud/`, `apps/web/src/components/{clerk,
-cloud}/`, `apps/mobile/src/features/{cloud,observability,agent-awareness}/`,
-  Clerk/vercel/web-preview workflow files. Reconsider only if upstream's
-  change reveals functionality we actually depend on.
+  under the removed integrations: `infra/relay/`, `apps/server/src/{relay,
+telemetry}/`, `apps/server/src/cloud/` except the service-launcher files the
+  fork keeps (`bootService`, `pinnedRuntime`, `selfUpdate`, `serviceLauncherClient`,
+  `servicePreflight`, `serviceProtocol`, `traceRelayRequest`), `apps/web/src/cloud/`,
+  `apps/web/src/components/{clerk,cloud}/`, `apps/mobile/src/features/{cloud
+(except cloudDebugLog.ts),observability}/`, Clerk/vercel/web-preview workflow
+  files. Reconsider only if upstream's change reveals functionality we
+  actually depend on.
+- **Clusters the fork keeps** (they are live and wired; never `git rm` them
+  wholesale): `apps/server/src/{pullRequest,sourceControl}/` and
+  `apps/mobile/src/features/agent-awareness/` (local notifications). Merge
+  them three-way like any other code. Before deleting any directory, confirm
+  it is absent from `HEAD` (`git ls-tree -r --name-only HEAD -- <dir>`). A
+  directory that upstream still has and the fork still has is a merge, not a
+  removal.
 - **Heavily hand-edited files** (real semantic conflicts; read both sides):
   `apps/server/src/server.ts` and its tests, `packages/client-runtime/src/
 {authorization,connection}/`, `packages/shared/src/connectAuth.ts`,

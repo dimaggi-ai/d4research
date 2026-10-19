@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 export type MemoryConnector = "local";
 
-export class MemoryConnectorError extends Schema.TaggedErrorClass<MemoryConnectorError>()(
+export class MemoryConnectorError extends Schema.TaggedError<MemoryConnectorError>()(
   "MemoryConnectorError",
   {
     connector: Schema.Literal("local"),

@@ -1,10 +1,9 @@
 import type { DiscoveredLocalServer } from "@d4research/contracts";
 import { isLoopbackHost } from "@d4research/shared/preview";
-import { useMemo } from "react";
 
 import type { EnvironmentId } from "@d4research/contracts";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
-import { useDiscoveredPorts } from "~/portDiscoveryState";
+import { useDiscoveredPortsState } from "~/portDiscoveryState";
 
 export interface PreviewableServer extends DiscoveredLocalServer {
   source: "scanner" | "configured" | "recent";
@@ -26,28 +25,20 @@ interface UseDiscoveredLocalServersInput {
   recentlySeenUrls?: ReadonlyArray<string> | undefined;
 }
 
-/**
- * Merge the environment-level port snapshot with configured / recently-seen
- * URLs and return a stable sorted list.
- */
 export function useDiscoveredLocalServers(
   input: UseDiscoveredLocalServersInput,
 ): ReadonlyArray<PreviewableServer> {
-  const scannerSnapshot = useDiscoveredPorts(input.environmentId);
+  const scannerState = useDiscoveredPortsState(input.environmentId, input.configuredUrls);
 
-  return useMemo(
-    () =>
-      mergeServers({
-        scanner: scannerSnapshot.map((server) => ({
-          ...server,
-          url: resolveDiscoveredServerUrl(input.environmentId, server.url),
-          requestedUrl: server.url,
-        })),
-        configuredUrls: input.configuredUrls ?? [],
-        recentlySeenUrls: input.recentlySeenUrls ?? [],
-      }),
-    [input.environmentId, scannerSnapshot, input.configuredUrls, input.recentlySeenUrls],
-  );
+  return mergeServers({
+    scanner: scannerState.servers.map((server) => ({
+      ...server,
+      url: resolveDiscoveredServerUrl(input.environmentId, server.url),
+      requestedUrl: server.url,
+    })),
+    configuredUrls: input.configuredUrls ?? [],
+    recentlySeenUrls: input.recentlySeenUrls ?? [],
+  });
 }
 
 export function mergeServers(input: {

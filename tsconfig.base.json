@@ -23,12 +23,15 @@
         "name": "@effect/language-service",
         "namespaceImportPackages": ["@effect/platform-node", "effect"],
         "diagnosticSeverity": {
-          "importFromBarrel": "error",
           "anyUnknownInErrorContext": "error",
           "unsafeEffectTypeAssertion": "error",
           "instanceOfSchema": "error",
           "deterministicKeys": "error",
           "strictEffectProvide": "off",
+          // We use Effect's unstable modules (http, sql) on purpose. These rules
+          // also make effect-tsgo 0.47+ report false TS2790 errors on `delete`.
+          "unstableApiUsage": "off",
+          "experimentalApiUsage": "off",
           "missingEffectServiceDependency": "error",
           "leakingRequirements": "error",
           "globalErrorInEffectCatch": "error",
@@ -50,7 +53,27 @@
           "globalTimers": "error",
           "globalTimersInEffect": "error",
           "globalFetch": "error",
-          "globalFetchInEffect": "error"
+          "globalFetchInEffect": "error",
+          "abortControllerInEffect": "off",
+          "allOfMapToForEach": "off",
+          "catchUnfailableEffect": "off",
+          "catchConditionalRefailToCatchIf": "off",
+          "catchToIgnore": "off",
+          "catchToOrElseSucceed": "off",
+          "effectSucceedWithVoid": "off",
+          "flatMapConditionalToFilterOrFail": "off",
+          "layerMergeAllWithDependencies": "off",
+          "mapSomeToAsSome": "off",
+          "optionMatchToFromOption": "off",
+          "preferTypedSchemaDecoder": "off",
+          "preferSucceedSomeOrNone": "off",
+          "raceFirstWithSleepToTimeout": "off",
+          "runEffectInsideEffect": "off",
+          "schemaNumber": "off",
+          "syncToSucceed": "off",
+          "tryCatchInEffectGen": "off",
+          "unnecessaryFailYieldableError": "off",
+          "unnecessaryPipeChain": "off"
         }
       }
     ]

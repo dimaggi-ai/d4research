@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="864" viewBox="0 0 640 432">
+  <defs>
+    <linearGradient id="veil" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#B7B7B7" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#A5A5A5" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#D1D1D1" stop-opacity=".4"/>
+    </linearGradient>
+    <linearGradient id="silk" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#C8C8C8"/>
+      <stop offset=".5" stop-color="#DBDBDB"/>
+      <stop offset="1" stop-color="#B5B5B5"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="432" fill="#E9E9EB"/>
+  <path d="M-60 293C95 220 214 304 362 256S559 191 707 257" stroke="url(#veil)" stroke-width="146" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-60 306C113 252 223 298 367 272S553 242 707 280" stroke="url(#silk)" stroke-width="86" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-60 266C113 212 223 258 367 232S553 202 707 240" stroke="#F5F5F5" stroke-width="0.8" fill="none" opacity="0.42" stroke-linecap="round" stroke-linejoin="round"/>
+  <svg x="28" y="16" width="32" height="32" viewBox="0 0 64 64">
+  <!-- Latin Modern Roman: italic d, upright 4. License: ../../apps/web/public/licenses/latin-modern.txt -->
+  <rect width="64" height="64" rx="16" fill="#171717"/>
+  <g fill="#fff" transform="translate(9.758 46) scale(0.044 -0.044)">
+    <path d="M535 143C535 153 527 153 520 153C508 153 507 152 501 130C487 74 468 11 434 11C408 11 408 38 408 52C408 59 408 74 414 98L557 669C558 672 560 682 560 682C560 691 554 694 546 694C543 694 533 693 530 692L431 684C419 683 408 682 408 663C408 652 418 652 432 652C480 652 482 645 482 635C482 632 479 618 479 618L421 384C406 415 379 442 337 442C226 442 108 290 108 144C108 59 154 -11 229 -11C265 -11 309 10 349 59C360 10 397 -11 432 -11C469 -11 490 14 505 45C523 83 535 143 535 143ZM355 122C347 91 286 11 231 11C184 11 176 70 176 100C176 150 207 267 225 309C250 370 296 420 337 420C345 420 368 419 386 391C396 375 406 346 406 327C406 324 405 320 403 314Z"/>
+    <path transform="translate(511 0)" d="M471 165V196H371V651C371 671 371 677 355 677C346 677 343 677 335 665L28 196V165H294V78C294 42 292 31 218 31H197V0C238 3 290 3 332 3C374 3 427 3 468 0V31H447C373 31 371 42 371 78V165ZM300 196H56L300 569Z"/>
+  </g>
+</svg>
+  <text x="320" y="104" fill="#303034" font-family="Helvetica" font-size="23" font-weight="700" text-anchor="middle">Drag d4research into Applications.</text>
+  <path d="M270 204Q320 179 370 204M358 190L370 204L351 209" stroke="#505057" stroke-width="2.2" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="320" y="367" fill="#626269" font-family="Helvetica" font-size="12" font-weight="400" text-anchor="middle">Once copied, open it from Applications.</text>
+</svg>

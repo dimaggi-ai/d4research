@@ -1,6 +1,6 @@
 import * as NodeOS from "node:os";
 
-import { HostProcessPlatform } from "@d4research/shared/hostProcess";
+import * as HostProcess from "@d4research/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,7 +20,7 @@ export type NetworkInterfaces = Readonly<
   Record<string, readonly DesktopNetworkInterfaceInfo[] | undefined>
 >;
 
-export class DesktopNetworkInterfacesReadError extends Schema.TaggedErrorClass<DesktopNetworkInterfacesReadError>()(
+export class DesktopNetworkInterfacesReadError extends Schema.TaggedError<DesktopNetworkInterfacesReadError>()(
   "DesktopNetworkInterfacesReadError",
   {
     platform: Schema.String,
@@ -39,8 +39,9 @@ export class DesktopNetworkInterfaces extends Context.Service<
   }
 >()("@d4research/desktop/backend/DesktopNetworkInterfaces") {}
 
+/** @public */
 export const make = Effect.gen(function* () {
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   return DesktopNetworkInterfaces.of({
     read: Effect.try({
       try: () => NodeOS.networkInterfaces(),

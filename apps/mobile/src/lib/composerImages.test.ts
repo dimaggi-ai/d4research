@@ -1,14 +1,56 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@d4research/contracts";
 
-const files = new Map<string, { base64: string; deleted: boolean }>();
+const files = new Map<string, { base64: string; deleted: boolean; text?: string }>();
+
+const clipboard = vi.hoisted(() => ({
+  hasImageAsync: vi.fn(),
+  getImageAsync: vi.fn(),
+  hasStringAsync: vi.fn(),
+  getStringAsync: vi.fn(),
+}));
+
+vi.mock("expo-clipboard", () => clipboard);
+
+const manipulator = vi.hoisted(() => {
+  const state = { sourceSize: { width: 0, height: 0 } };
+  const manipulate = vi.fn((source: string | { width: number; height: number }) => {
+    let size = typeof source === "string" ? state.sourceSize : source;
+    const context = {
+      resize: vi.fn((next: { width: number; height: number }) => {
+        size = next;
+        return context;
+      }),
+      renderAsync: vi.fn(async () => ({
+        ...size,
+        release: vi.fn(),
+        saveAsync: vi.fn(async (options: { format: string }) => ({
+          uri: `file:///cache/rendered.${options.format}`,
+          base64: `cmVuZGVyZWQ=`,
+        })),
+      })),
+    };
+    return context;
+  });
+  return { state, manipulate };
+});
+
+vi.mock("expo-image-manipulator", () => ({
+  ImageManipulator: { manipulate: manipulator.manipulate },
+  SaveFormat: { JPEG: "jpeg", PNG: "png" },
+}));
 
 vi.mock("expo-file-system", () => ({
   File: class {
     readonly uri: string;
+    readonly name: string;
+    readonly parentDirectory: { readonly uri: string };
 
-    constructor(uri: string) {
-      this.uri = uri;
+    constructor(parent: string | { readonly uri: string }, name?: string) {
+      const parentUri = typeof parent === "string" ? parent : parent.uri;
+      this.uri = name ? `${parentUri}/${name}` : parentUri;
+      this.name = name ?? this.uri.split("/").at(-1) ?? "file";
+      this.parentDirectory = { uri: this.uri.slice(0, -(this.name.length + 1)) };
     }
 
     get exists(): boolean {
@@ -29,7 +71,32 @@ vi.mock("expo-file-system", () => ({
         entry.deleted = true;
       }
     }
+
+    create(): void {
+      files.set(this.uri, { base64: "", deleted: false });
+    }
+
+    write(text: string): void {
+      files.set(this.uri, { base64: "", deleted: false, text });
+    }
+
+    moveSync(destination: { readonly uri: string }): void {
+      const entry = files.get(this.uri);
+      if (!entry) throw new Error("missing staged file");
+      files.set(destination.uri, entry);
+      files.delete(this.uri);
+    }
   },
+  Directory: class {
+    readonly uri: string;
+
+    constructor(parent: string, name: string) {
+      this.uri = `${parent}/${name}`;
+    }
+
+    create(): void {}
+  },
+  Paths: { document: "file:///documents" },
 }));
 
 vi.mock("./uuid", () => ({
@@ -38,33 +105,115 @@ vi.mock("./uuid", () => ({
 
 import {
   convertPastedImagesToAttachments,
+  createPastedTextComposerAttachment,
   isOwnedPastedImageUri,
-  toUploadChatImageAttachments,
+  pasteComposerClipboard,
 } from "./composerImages";
 
-describe("toUploadChatImageAttachments", () => {
-  it("strips client draft id and previewUri for the startTurn wire shape", () => {
+describe("composer clipboard paste", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clipboard.hasImageAsync.mockResolvedValue(false);
+    clipboard.hasStringAsync.mockResolvedValue(true);
+    clipboard.getStringAsync.mockResolvedValue("clipboard text");
+    clipboard.getImageAsync.mockResolvedValue({ data: "data:image/png;base64,aGVsbG8=" });
+  });
+
+  it("returns only the image when the clipboard contains both image and text", async () => {
+    clipboard.hasImageAsync.mockResolvedValue(true);
+    const result = await pasteComposerClipboard({ existingCount: 0 });
+    expect(result).toEqual({
+      images: [expect.objectContaining({ type: "image", name: "pasted-image.png" })],
+      text: null,
+      error: null,
+    });
+    expect(clipboard.getStringAsync).not.toHaveBeenCalled();
+  });
+
+  it("does not paste alternate text when the image cannot fit", async () => {
+    clipboard.hasImageAsync.mockResolvedValue(true);
     expect(
-      toUploadChatImageAttachments([
-        {
-          id: "client-draft-id",
-          type: "image",
-          name: "pasted-image.png",
-          mimeType: "image/png",
-          sizeBytes: 12,
-          dataUrl: "data:image/png;base64,AA==",
-          previewUri: "file:///tmp/preview.png",
-        },
-      ]),
-    ).toEqual([
-      {
-        type: "image",
-        name: "pasted-image.png",
+      await pasteComposerClipboard({ existingCount: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }),
+    ).toEqual({ images: [], text: null, error: expect.stringContaining("up to") });
+    expect(clipboard.getStringAsync).not.toHaveBeenCalled();
+  });
+
+  it("returns plain text without image chips", async () => {
+    expect(await pasteComposerClipboard({ existingCount: 0 })).toEqual({
+      images: [],
+      text: "clipboard text",
+      error: null,
+    });
+  });
+
+  it("reports an empty text clipboard", async () => {
+    clipboard.getStringAsync.mockResolvedValue("");
+    expect(await pasteComposerClipboard({ existingCount: 0 })).toEqual({
+      images: [],
+      text: null,
+      error: "Clipboard is empty.",
+    });
+  });
+});
+
+describe("oversized pasted images", () => {
+  const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  const pngDataUrl = (width: number, height: number) =>
+    `data:image/png;base64,${Buffer.from([
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a,
+      ...u32(13),
+      0x49,
+      0x48,
+      0x44,
+      0x52,
+      ...u32(width),
+      ...u32(height),
+      8,
+      6,
+      0,
+      0,
+      0,
+    ]).toString("base64")}`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clipboard.hasImageAsync.mockResolvedValue(true);
+  });
+
+  it("scales a clipboard screenshot over 2000px to 2000px and keeps it a PNG", async () => {
+    manipulator.state.sourceSize = { width: 3024, height: 1964 };
+    const pasted = pngDataUrl(3024, 1964);
+    clipboard.getImageAsync.mockResolvedValue({ data: pasted });
+
+    const result = await pasteComposerClipboard({ existingCount: 0 });
+
+    expect(manipulator.manipulate).toHaveBeenCalledWith(pasted);
+    const resize = manipulator.manipulate.mock.results.at(-1)?.value.resize;
+    expect(resize).toHaveBeenCalledWith({ width: 2000, height: 1299 });
+    expect(result.images).toEqual([
+      expect.objectContaining({
         mimeType: "image/png",
-        sizeBytes: 12,
-        dataUrl: "data:image/png;base64,AA==",
-      },
+        dataUrl: "data:image/png;base64,cmVuZGVyZWQ=",
+        previewUri: "data:image/png;base64,cmVuZGVyZWQ=",
+      }),
     ]);
+  });
+
+  it("keeps a 2000px clipboard image byte for byte without rendering it", async () => {
+    const pasted = pngDataUrl(2000, 1200);
+    clipboard.getImageAsync.mockResolvedValue({ data: pasted });
+
+    const result = await pasteComposerClipboard({ existingCount: 0 });
+
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
+    expect(result.images).toEqual([expect.objectContaining({ dataUrl: pasted })]);
   });
 });
 
@@ -120,5 +269,145 @@ describe("native pasted image cleanup", () => {
     expect(files.get(rejected)?.deleted).toBe(true);
     expect(files.get(overflow)?.deleted).toBe(true);
     expect(files.get(userOwned)?.deleted).toBe(false);
+  });
+
+  it("persists folded text unchanged in the app-owned attachment directory", async () => {
+    const text = "first line\nUnicode: 🙂\n";
+    const attachment = await createPastedTextComposerAttachment({
+      text,
+      name: "pasted-text.txt",
+      maxBytes: 1024,
+    });
+
+    expect(attachment).toEqual({
+      id: "attachment-id",
+      type: "file",
+      name: "pasted-text.txt",
+      mimeType: "text/plain;charset=utf-8",
+      sizeBytes: new TextEncoder().encode(text).byteLength,
+      fileUri: "file:///documents/t3-composer-attachments/attachment-id-pasted-text.txt",
+      source: { _tag: "pasted-text" },
+    });
+    expect(files.get(attachment.fileUri)?.text).toBe(text);
+  });
+});
+
+describe("composerStripAttachments", () => {
+  const image = {
+    id: "img-1",
+    type: "image" as const,
+    name: "shot.jpg",
+    mimeType: "image/jpeg",
+    sizeBytes: 10,
+    dataUrl: "",
+  };
+  const video = {
+    id: "vid-1",
+    type: "file" as const,
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    sizeBytes: 20,
+    fileUri: "file:///clip.mp4",
+  };
+  const doc = {
+    id: "doc-1",
+    type: "file" as const,
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 5,
+    fileUri: "file:///notes.txt",
+  };
+
+  it("keeps media, because a thumbnail is the only way to see it", async () => {
+    const { composerStripAttachments } = await import("./composerImages");
+    const kept = composerStripAttachments([image, video] as never);
+    expect(kept.map((a) => a.id)).toEqual(["img-1", "vid-1"]);
+  });
+
+  it("never shows a non-media file above the composer", async () => {
+    const { composerStripAttachments } = await import("./composerImages");
+    expect(composerStripAttachments([doc] as never)).toEqual([]);
+  });
+
+  it("keeps media beside a document rather than dropping the whole strip", async () => {
+    const { composerStripAttachments } = await import("./composerImages");
+    expect(composerStripAttachments([doc, image, video] as never).map((a) => a.id)).toEqual([
+      "img-1",
+      "vid-1",
+    ]);
+  });
+
+  it("treats a picture picked through the document picker as media", async () => {
+    const { composerStripAttachments } = await import("./composerImages");
+    const pickedImage = {
+      id: "pick-1",
+      type: "file" as const,
+      name: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 30,
+      fileUri: "file:///photo.png",
+    };
+    expect(composerStripAttachments([pickedImage] as never).map((a) => a.id)).toEqual(["pick-1"]);
+  });
+});
+
+describe("composerAttachmentInlineUri", () => {
+  it("offers the inline bytes of a picture that owns no file", async () => {
+    const { composerAttachmentInlineUri } = await import("./composerImages");
+    expect(
+      composerAttachmentInlineUri({
+        id: "img-1",
+        type: "image",
+        name: "IMG_0111.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 9_100_000,
+        dataUrl: "data:image/jpeg;base64,AAAA",
+        previewUri: "ph://asset",
+      } as never),
+    ).toBe("data:image/jpeg;base64,AAAA");
+  });
+
+  it("falls back to the preview when a picture kept only its asset uri", async () => {
+    const { composerAttachmentInlineUri } = await import("./composerImages");
+    expect(
+      composerAttachmentInlineUri({
+        id: "img-2",
+        type: "image",
+        name: "IMG_0112.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 10,
+        previewUri: "ph://asset",
+      } as never),
+    ).toBe("ph://asset");
+  });
+
+  it("leaves a file-backed attachment to the retain-lease path", async () => {
+    const { composerAttachmentInlineUri } = await import("./composerImages");
+    expect(
+      composerAttachmentInlineUri({
+        id: "img-3",
+        type: "image",
+        name: "IMG_0113.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 10,
+        fileUri: "file:///owned.jpg",
+        previewUri: "file:///owned.jpg",
+      } as never),
+    ).toBeUndefined();
+  });
+
+  it("has nothing to offer for a plain file or a missing attachment", async () => {
+    const { composerAttachmentInlineUri } = await import("./composerImages");
+    expect(composerAttachmentInlineUri(undefined)).toBeUndefined();
+    expect(
+      composerAttachmentInlineUri({
+        id: "doc-1",
+        type: "file",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 4,
+        fileUri: "file:///notes.txt",
+      } as never),
+    ).toBeUndefined();
   });
 });

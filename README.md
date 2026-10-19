@@ -1,19 +1,14 @@
 # d4research
 
-A multi-provider coding agent workspace for structured research, built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run coding agents from Codex, Claude, Cursor, Grok, Junie, OpenCode, and Agy side by side, hand off context between them mid-conversation without leaving the thread, replay authored pipelines that delegate steps across models under server-enforced budgets, and layer optional tool-safety policies on top.
+A multi-provider coding agent workspace for structured research built on the [T3 Code](https://github.com/pingdotgg/t3code) foundation. Run Codex, Claude, Cursor, Grok, Junie, Muse, OpenCode, and Agy agents side by side. Hand off context between them mid-conversation without leaving the thread. Replay authored pipelines that delegate steps across models under server-enforced budgets. Layer optional tool-safety policies on top.
 
 ## Installation
 
-Run the released server directly:
+**Run this fork from source** — see [Setup](#setup) below. The `v0.1.0` GitHub release is
+source-only; no d4research binaries, npm package, or Docker image are published yet. The upstream
+`npx t3` and T3 Code desktop/mobile releases install the original T3 Code, not this fork.
 
-```bash
-npx d4research@0.2.0
-```
-
-Desktop artifacts for macOS, Windows, and Linux are available from
-[d4research Releases](https://github.com/dimaggi-ai/d4research/releases). Version 0.2.0 is an
-unsigned early-access release; verify manual downloads with the published `SHA256SUMS`. The upstream
-`npx t3` and T3 Code store releases install the original T3 Code, not this fork.
+Desktop artifacts are cut on a maintainer machine rather than in CI, so when they do land the platform set tracks whatever that machine can build — a Linux `x86_64` AppImage via `vp run dist:desktop:linux` — and the binaries are unsigned. macOS and Windows installers are not published; build them from source with the matching `dist:desktop:*` script, or run from source on any platform.
 
 ### Requirements
 
@@ -22,8 +17,6 @@ unsigned early-access release; verify manual downloads with the published `SHA25
 - At least one provider CLI installed and authenticated (see [Providers](#supported-providers))
 
 ### Setup
-
-To develop or run from source:
 
 ```bash
 git clone git@github.com:dimaggi-ai/d4research.git
@@ -68,13 +61,7 @@ authenticate. Connect from any browser, including remote devices via
 
 ### Updating
 
-Update a released global CLI to the exact client version:
-
-```bash
-npm install --global d4research@0.2.0
-```
-
-For a source checkout, pull and reinstall:
+Pull the latest source and reinstall:
 
 ```bash
 git pull
@@ -82,7 +69,7 @@ vp i
 vp run dev
 ```
 
-`scripts/deploy-local.sh` rebuilds an existing local deployment with systemd restart. It is not a fresh-machine installer.
+`scripts/deploy-local.sh` rebuilds an existing local deployment using a systemd restart; it does not install on a fresh machine.
 
 ---
 
@@ -91,7 +78,7 @@ vp run dev
 Everything from the upstream T3 Code platform is available:
 
 - **Multi-surface clients** -- Web app, Electron desktop (macOS/Windows/Linux), and React Native mobile (iOS/Android)
-- **7 provider adapters** -- Codex, Claude, Cursor, Grok, Junie, OpenCode, Agy. Each runs in its own process with native auth
+- **8 provider adapters** -- Codex, Claude, Cursor, Grok, Junie, Muse, OpenCode, Agy. Each runs in its own process with native auth
 - **Integrated terminals** -- Full PTY terminals alongside the chat, with provider tool access
 - **Source control** -- Git integration, diffs, checkpoints, branch management, commit message generation
 - **File previews** -- Syntax-highlighted code, images, PDFs, and Jupyter notebooks
@@ -119,7 +106,7 @@ Both are configured as **named scenarios** — create one per kind of work (`blo
 
 Dev pipelines ship with a working default — a plan → build → review + verify chain that picks distinct model families for each role from whatever providers you have ready, so the reviewer is never the author.
 
-**Directives.** Inside a pipeline, `!provider:model` names a delegation target and `!provider:model:file.md` also hands that delegate one of your attached prompt files. The provider matches by name and the model fragment can be partial as long as it is unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then their models, then your attached files; live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
+**Directives.** Inside a pipeline, `!provider:model` names a delegation target, while `!provider:model:file.md` hands that delegate one of your attached prompt files. The provider matches by name; the model fragment can be partial if unambiguous (`fable` → `claude-fable-5`). Typing `!` in the pipeline editor completes providers, then models, then attached files. Live validation shows what each directive resolved to, or exactly why it did not, before you run anything.
 
 The composer's **Workflows** menu combines Chat/Plan, named Dev and Research scenarios, and one
 shared target policy. **Exact targets only** fails an unavailable step. **Use labeled fallback**
@@ -127,13 +114,13 @@ accepts only a `FALLBACK directive: !provider:model` authored in that scenario. 
 always record the requested and actual target, so a fallback never impersonates the unavailable
 model.
 
-**Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. Contents are inlined server-side into the delegated request, so the orchestrator's own context never carries the file bodies — and a file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
+**Prompt files.** Attach Markdown role prompts to a scenario and reference them by name. The server inlines their contents into the delegated request, so the orchestrator's own context never carries the file bodies. A file is readable only by the scenario it is attached to, so an `audit` role prompt cannot reach a `blog` run.
 
 **Budgets, enforced by the server rather than requested of the model.** A step may delegate to the same target at most 3 times, and a run has a hard ceiling of 24 delegations. Loops are allowed and provably terminate: when a guard trips, the orchestrator must say which loop was cut and synthesize from what it has. Delegates cannot delegate further.
 
 **Tracing and honesty.** Every message is prefixed `[step N | visit K]`, the banner above the composer shows the step ledger, and delegations appear in the thread as ordinary tool calls with their step and visit numbers. Each run ends with a `RUN STATE` report naming every step's targets, visits used, and outcome. A delegate that timed out, refused, or returned empty is reported as failed — never paraphrased into a result, and never claimed to have run at all.
 
-Research pipelines can orchestrate from Claude, Codex, Cursor, Grok, or OpenCode (the adapters that expose d4research MCP tools). Junie and Agy can be delegation targets inside any pipeline but cannot orchestrate one.
+Research pipelines can orchestrate from Claude, Codex, Cursor, Grok, Muse, or OpenCode (the adapters that expose d4research MCP tools). Junie and Agy can be delegation targets inside any pipeline but cannot orchestrate one.
 
 ### Same-Thread Provider Handoff
 
@@ -141,11 +128,11 @@ Switch models mid-conversation without losing context or leaving the thread. Thi
 
 The client summarizes a bounded transcript and must prove the handoff context reached local Memo **before** anything else changes. Only then does it stop the old session, update the thread's model selection, and start the receiving provider on the same thread. If both memory writes fail, the switch is abandoned with the original provider still selected — the receiving model never starts against a visible history it cannot recover. The receiving turn is explicitly context-synchronization only: acknowledge and wait, do not resume prior work.
 
-**Context compression** — optionally route the transcript through a separate provider (a local Ollama model, say) before handing off. Configure the compression model, input/output character caps, and a custom compression prompt in **Settings → General → Handoff**. The compressed summary goes in the prompt to save tokens while the full transcript goes to Memo to preserve accuracy. Compression never hard-fails a handoff; unavailable local memory does. Research handoffs skip compression by default so evidence crosses verbatim.
+**Context compression** optionally compacts the transcript before handing off. The local backend uses the resident bonsai2 model as a judge: messages the next agent needs verbatim (decisions, paths, errors, open tasks) are kept as written, background is summarized, and filler is dropped. Configure the model, input/output character caps, and a custom summary prompt in **Settings → General → Handoff**. The compressed summary goes in the prompt to save tokens while the full transcript goes to Memo to preserve accuracy. Compression never hard-fails a handoff; unavailable local memory does. Research handoffs skip compression by default so evidence crosses verbatim.
 
 ### Skills
 
-Portable `SKILL.md` instruction files, inventoried across every root your agents already read — the shared `~/.agents/skills` user root, Claude's and Codex's own locations, Agy's registry, and the current project — deduplicated when roots alias each other through a symlink, with every root that reaches an entry reported.
+Portable `SKILL.md` instruction files are inventoried in every root your agents already read: the shared `~/.agents/skills` user root, Claude's and Codex's own locations, Agy's registry, and the current project. The system deduplicates entries when roots alias each other through a symlink and reports every root that reaches an entry.
 
 Select skills at two scopes: **global** in **Settings → Skills** (every turn in every chat) or **chat** from the composer's Skills control (that chat only, surviving reloads and provider handoffs). The two share a 12-skill ceiling, duplicates are charged once, and message bubbles badge which scope applied. Attaching a skill hands the agent a short reference and asks it to read the file — it costs a few lines rather than the whole text, and it never executes anything.
 
@@ -212,6 +199,7 @@ Install and authenticate each CLI before starting sessions. See [provider setup 
 | Cursor                                    | `cursor-agent` | Cursor agent mode       |
 | Grok                                      | `grok`         | xAI Grok CLI            |
 | [Junie](./docs/user/providers-junie.md)   | `junie`        | JetBrains Junie CLI     |
+| [Muse](./docs/user/providers-muse.md)     | `muse`         | Meta Muse Code CLI      |
 | OpenCode                                  | `opencode`     | OpenCode CLI            |
 | Agy                                       | `agy`          | Google Agy (Gemini) CLI |
 
@@ -254,6 +242,7 @@ docs/           User guides, internals, and runbooks
 - [Keyboard shortcuts](./docs/user/keybindings.md)
 - [Customize a project icon](./docs/user/project-settings.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
+- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
 - [Keeping app and server in sync](./docs/user/updating.md)
 - [Source control integrations](./docs/user/source-control.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)

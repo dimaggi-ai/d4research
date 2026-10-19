@@ -1,32 +1,35 @@
 import * as Effect from "effect/Effect";
-
-import {
-  readSecondBrainFile,
-  readSecondBrainMap,
-  resolveSecondBrainRoot,
-  searchSecondBrain,
-  writeSecondBrainFile,
-} from "../../../secondBrain.ts";
+import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { BrainToolkit } from "./tools.ts";
 
-// The root is re-read per call so a Settings change applies to the next tool call.
-const handlers = {
-  brain_map: () => Effect.flatMap(resolveSecondBrainRoot(), readSecondBrainMap),
-  brain_read: (input) =>
-    Effect.flatMap(resolveSecondBrainRoot(), (root) => readSecondBrainFile(root, input.path)),
-  brain_search: (input) =>
-    Effect.gen(function* () {
-      const results = yield* searchSecondBrain(
-        yield* resolveSecondBrainRoot(),
-        input.query,
-        input.limit,
-      );
-      return { results, count: results.length };
-    }),
-  brain_write: (input) =>
-    Effect.flatMap(resolveSecondBrainRoot(), (root) =>
-      writeSecondBrainFile(root, input.path, input.content, input.mode),
-    ),
-} satisfies Parameters<typeof BrainToolkit.toLayer>[0];
-
-export const BrainToolkitHandlersLive = BrainToolkit.toLayer(handlers);
+const actor = McpInvocationContext.McpInvocationContext.pipe(
+  Effect.map(
+    (scope) => scope.thread?.threadId ?? scope.client?.sessionId ?? scope.requestNamespace,
+  ),
+);
+export const BrainToolkitHandlersLive = McpToolAccess.toLayer(
+  BrainToolkit,
+  Effect.gen(function* () {
+    const service = yield* SecondBrainService.SecondBrainService;
+    return {
+      brain_status: McpToolAccess.reads(() => service.status()),
+      brain_map: McpToolAccess.reads(() => service.map()),
+      brain_read: McpToolAccess.reads((input) => service.read(input)),
+      brain_search: McpToolAccess.reads((input) => service.search(input)),
+      brain_backlinks: McpToolAccess.reads((input) => service.backlinks(input.path)),
+      brain_propose: McpToolAccess.writesWithCapability((input) =>
+        Effect.flatMap(actor, (id) => service.propose(input, id)),
+      ),
+      brain_proposals: McpToolAccess.reads((input) =>
+        Effect.flatMap(actor, (id) => service.listProposals(input, id)),
+      ),
+      brain_write: McpToolAccess.writesWithCapability((input) =>
+        Effect.flatMap(actor, (id) => service.write(input, id)),
+      ),
+      brain_lint: McpToolAccess.reads(() => service.lint()),
+      brain_reindex: McpToolAccess.writesWithCapability(() => service.reindex()),
+    } satisfies McpToolAccess.Handlers<typeof BrainToolkit.tools>;
+  }),
+);

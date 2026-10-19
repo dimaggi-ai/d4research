@@ -1,3 +1,9 @@
+import * as Scheduler from "./scheduling/Scheduler.ts";
+import * as SecondBrainService from "./second-brain/SecondBrainService.ts";
+import * as SecondBrainFiles from "./second-brain/SecondBrainFiles.ts";
+import * as SecondBrainIndex from "./second-brain/SecondBrainIndex.ts";
+import * as SecondBrainEmbeddings from "./second-brain/SecondBrainEmbeddings.ts";
+import * as SecondBrainMaintenance from "./second-brain/SecondBrainMaintenance.ts";
 import * as ProviderEventLoggers from "@d4research/provider-core/server/ProviderEventLoggers";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -12,10 +18,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import * as Schedule from "effect/Schedule";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
@@ -44,7 +48,6 @@ import {
   layerStaticAndDevRoute as staticAndDevRouteLayer,
   layerBrowserApiCors as browserApiCorsLayer,
   layerHttpCompression as httpCompressionLayer,
-  layerUntracedRequests as untracedRequestsLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { PortableSkillsInventoryLive, reconcileUserSkills } from "./skillsInventory.ts";
@@ -85,7 +88,6 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
-import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -224,6 +226,13 @@ const layerPtyAdapter = NodePtyAdapter.layer;
 const layerServerSettings = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
+);
+
+const layerSecondBrain = SecondBrainService.layer.pipe(
+  Layer.provide(SecondBrainFiles.layer),
+  Layer.provide(SecondBrainIndex.layer),
+  Layer.provide(SecondBrainEmbeddings.layer),
+  Layer.provide(layerServerSettings),
 );
 
 const layerNativeTelemetry = NativeTelemetryClient.layer.pipe(
@@ -512,6 +521,7 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
+  SecondBrainMaintenance.layer.pipe(Layer.provide(Scheduler.layer)),
   Layer.effectDiscard(ResearchIntegrityReactor.use((reactor) => reactor.start())).pipe(
     Layer.provide(ResearchIntegrityReactorLive),
     Layer.provide(
@@ -558,6 +568,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
+  Layer.provideMerge(layerSecondBrain),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerProjectService),
   // HTTP/MCP handlers resolve adapters when a request arrives, not only while

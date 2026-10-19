@@ -1425,8 +1425,37 @@ export type PipelineTargetPolicy = typeof PipelineTargetPolicy.Type;
  * A plain-Markdown knowledge folder (AGENTS.md map plus one file per topic)
  * that every provider reaches through the `brain_*` MCP tools. Empty = off.
  */
+const BrainBudget = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(262144),
+);
+const BrainResultLimit = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(50));
+const BrainInterval = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(86400));
+export const SecondBrainInjectionSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  coreBudgetChars: BrainBudget.pipe(Schema.withDecodingDefault(Effect.succeed(8000))),
+  retrievalBudgetChars: BrainBudget.pipe(Schema.withDecodingDefault(Effect.succeed(6000))),
+  retrievalResults: BrainResultLimit.pipe(Schema.withDecodingDefault(Effect.succeed(4))),
+});
+export const SecondBrainEmbeddingSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  model: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("nomic-embed-text"))),
+  baseUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:11434"))),
+});
 export const SecondBrainSettings = Schema.Struct({
   path: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  injection: SecondBrainInjectionSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  capture: Schema.Literals(["off", "proposals"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("off")),
+  ),
+  captureModel: Schema.optionalKey(TrimmedString),
+  writeMode: Schema.Literals(["review", "direct"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("review")),
+  ),
+  embeddings: SecondBrainEmbeddingSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  generateIndex: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  staleProjectDays: BrainInterval.pipe(Schema.withDecodingDefault(Effect.succeed(30))),
+  reconcileIntervalSeconds: BrainInterval.pipe(Schema.withDecodingDefault(Effect.succeed(300))),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type SecondBrainSettings = typeof SecondBrainSettings.Type;
 
@@ -2212,6 +2241,27 @@ export const ServerSettingsPatch = Schema.Struct({
   secondBrain: Schema.optionalKey(
     Schema.Struct({
       path: Schema.optionalKey(TrimmedString),
+      injection: Schema.optionalKey(
+        Schema.Struct({
+          enabled: Schema.optionalKey(Schema.Boolean),
+          coreBudgetChars: Schema.optionalKey(BrainBudget),
+          retrievalBudgetChars: Schema.optionalKey(BrainBudget),
+          retrievalResults: Schema.optionalKey(BrainResultLimit),
+        }),
+      ),
+      capture: Schema.optionalKey(Schema.Literals(["off", "proposals"])),
+      captureModel: Schema.optionalKey(TrimmedString),
+      writeMode: Schema.optionalKey(Schema.Literals(["review", "direct"])),
+      embeddings: Schema.optionalKey(
+        Schema.Struct({
+          enabled: Schema.optionalKey(Schema.Boolean),
+          model: Schema.optionalKey(TrimmedString),
+          baseUrl: Schema.optionalKey(TrimmedString),
+        }),
+      ),
+      generateIndex: Schema.optionalKey(Schema.Boolean),
+      staleProjectDays: Schema.optionalKey(BrainInterval),
+      reconcileIntervalSeconds: Schema.optionalKey(BrainInterval),
     }),
   ),
   handoff: Schema.optionalKey(

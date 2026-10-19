@@ -776,9 +776,7 @@ const MemoryToolkitRegistrationLive = requestContextToolkitRegistration(MemoryTo
   Layer.provide(MemoryToolkitHandlersLive),
 );
 
-const BrainToolkitRegistrationLive = requestContextToolkitRegistration(BrainToolkit).pipe(
-  Layer.provide(BrainToolkitHandlersLive),
-);
+const BrainToolkitRegistrationLive = toolkitRegistration(BrainToolkit, BrainToolkitHandlersLive);
 
 const SkillsToolkitRegistrationLive = requestContextToolkitRegistration(SkillsToolkit).pipe(
   Layer.provide(SkillsToolkitHandlersLive),

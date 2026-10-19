@@ -1,4 +1,4 @@
-import { BrainSearchResponse } from "@d4research/contracts";
+import { BrainSearchResponse, BrainReadResult } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { it, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -10,6 +10,7 @@ import * as Index from "./SecondBrainIndex.ts";
 import { withBrain } from "./testkit.ts";
 import { contentHash, noteTemplate, INDEX_MARKER } from "./noteDocument.ts";
 
+const encodeReadResult = Schema.encodeSync(Schema.fromJsonString(BrainReadResult));
 const encodeSearchResponse = Schema.encodeSync(Schema.fromJsonString(BrainSearchResponse));
 const proposal = {
   path: "notes/alpha.md",
@@ -144,7 +145,9 @@ it.effect("changes roots without mixing proposals and reconciles when stale", ()
       yield* settings.updateSettings({ secondBrain: { path: other } });
       expect((yield* service.getProposal(p.id).pipe(Effect.result))._tag).toBe("Failure");
       expect((yield* service.status()).notes).toBe(0);
+      yield* fs.writeFileString(`${root}/changed-while-away.md`, "# Updated");
       yield* settings.updateSettings({ secondBrain: { path: root } });
+      expect((yield* service.status()).notes).toBe(2);
       expect((yield* service.getProposal(p.id)).id).toBe(p.id);
     }),
   ),
@@ -252,6 +255,7 @@ it.effect("bounds read responses and validates line ranges", () =>
       const read = yield* service.read({ path: "a.md" });
       expect(read.truncated).toBe(true);
       expect(Buffer.byteLength(read.content)).toBeLessThanOrEqual(262144);
+      expect(Buffer.byteLength(encodeReadResult(read))).toBeLessThanOrEqual(262144);
       expect(
         (yield* service.read({ path: "a.md", startLine: 3, endLine: 2 }).pipe(Effect.result))._tag,
       ).toBe("Failure");

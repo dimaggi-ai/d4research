@@ -45,6 +45,7 @@ import {
   type NoteDocument,
 } from "./noteDocument.ts";
 
+const encodeJsonText = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 const encodeSearchResult = Schema.encodeSync(Schema.fromJsonString(BrainSearchResult));
 const isBrainError = Schema.is(SecondBrainError);
 
@@ -124,11 +125,12 @@ function boundedRead(
   if (startLine > lines.length || (endLine !== undefined && endLine < startLine))
     throw new SecondBrainError({ code: "malformed" });
   const selected: string[] = [];
-  let bytes = 0;
+  // Reserve space for the citation excerpt and JSON envelope, including escaping.
+  let bytes = 32768;
   const end = Math.min(endLine ?? lines.length, lines.length);
   for (let i = startLine - 1; i < end; i++) {
     const line = lines[i]!;
-    const cost = Buffer.byteLength(line) + 1;
+    const cost = Buffer.byteLength(encodeJsonText(line));
     if (bytes + cost > RESPONSE_BYTES) break;
     selected.push(line);
     bytes += cost;
@@ -143,7 +145,7 @@ function boundedRead(
       startLine,
       endLine: startLine + Math.max(0, selected.length - 1),
       hash: snapshot.hash,
-      excerpt: content,
+      excerpt: content.slice(0, 4096),
     },
     truncated: selected.length < end - startLine + 1,
   };
@@ -156,6 +158,7 @@ const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   let configuredPath: string | undefined;
   let root: string | undefined;
+  let resetVault = true;
   let semanticStatus: BrainSemanticStatus = "disabled";
   let scanIssues: BrainLintIssue[] = [];
   const settings = settingsService.getSettings.pipe(
@@ -172,6 +175,7 @@ const make = Effect.gen(function* () {
     if (config.path !== configuredPath || !root) {
       root = yield* files.root(config.path);
       configuredPath = config.path;
+      resetVault = true;
       scanIssues = [];
       semanticStatus = config.embeddings.enabled ? "unavailable" : "disabled";
     }
@@ -206,6 +210,7 @@ const make = Effect.gen(function* () {
   const sync = (vault: string, config: SecondBrainSettings, force = false, rebuild = false) =>
     Effect.gen(function* () {
       yield* recovery(vault);
+      force = force || resetVault;
       const previous = yield* index.snapshot(vault);
       const now = yield* Clock.currentTimeMillis;
       if (
@@ -262,6 +267,7 @@ const make = Effect.gen(function* () {
         truncated,
         rebuild,
       );
+      resetVault = false;
       return yield* index.snapshot(vault);
     });
   const ready = (force = false) =>

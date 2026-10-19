@@ -1,3 +1,4 @@
+import { LocalAssistantPanel } from "./LocalAssistantPanel";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
@@ -1767,6 +1768,14 @@ export function NewTaskDraftScreen(props: {
           </ComposerDictationToolbar>
         </Animated.View>
       </ComposerSurface>
+      <LocalAssistantPanel
+        key={flow.draftKey}
+        disabled={isComposerInteractionLocked}
+        draft={flow.prompt}
+        onChange={flow.setPrompt}
+        environmentId={selectedProject?.environmentId ?? null}
+        threadId={null}
+      />
       <VideoPreviewModal source={previewVideo} onRequestClose={closeMediaPreview} />
       <FilePreviewModal source={previewFile} onRequestClose={closeMediaPreview} />
     </View>

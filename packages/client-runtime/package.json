@@ -434,6 +434,10 @@
     "./state/second-brain": {
       "types": "./src/state/secondBrain.ts",
       "default": "./src/state/secondBrain.ts"
+    },
+    "./local-assistant": {
+      "types": "./src/localAssistant.ts",
+      "default": "./src/localAssistant.ts"
     }
   },
   "scripts": {

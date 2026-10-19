@@ -1,3 +1,4 @@
+import { LocalAssistantPanel } from "./LocalAssistantPanel";
 import { formatProviderSkillDisplayName } from "@d4research/shared/inlineSkills";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -6823,6 +6824,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ) : null}
       </ComposerBanner.Dock>
       <div className="relative">
+        <LocalAssistantPanel
+          key={composerTargetKey(composerDraftTarget)}
+          draft={prompt}
+          onChange={setPrompt}
+          threadRef={routeKind === "server" ? routeThreadRef : null}
+        />
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls={restingControlsHost === null ? "true" : undefined}

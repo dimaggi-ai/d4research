@@ -27,7 +27,7 @@ export async function appleModelAvailable() {
     return false;
   }
 }
-async function appleGenerate(messages: Messages, signal: AbortSignal) {
+export async function appleGenerate(messages: Messages, signal: AbortSignal) {
   const native = getAppleModel();
   if (!native?.isAvailable())
     throw new Error(

@@ -1,3 +1,8 @@
+import {
+  localAssistantStatus,
+  localAssistantGenerate,
+  localAssistantCancel,
+} from "./methods/localAssistant.ts";
 import * as Effect from "effect/Effect";
 
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
@@ -141,6 +146,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
+  yield* ipc.handle(localAssistantStatus);
+  yield* ipc.handle(localAssistantGenerate);
+  yield* ipc.handle(localAssistantCancel);
   yield* ipc.handle(receiveProviderAuthCallback);
   yield* ipc.handle(cancelProviderAuthCallback);
   yield* ipc.handle(openSystemSettings);

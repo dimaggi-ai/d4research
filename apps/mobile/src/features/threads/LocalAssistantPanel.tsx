@@ -1,6 +1,6 @@
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import type { EnvironmentId, ThreadId } from "@d4research/contracts";
@@ -35,12 +35,34 @@ export function LocalAssistantPanel(props: {
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [selection, setSelection] = useState<"clean" | "shorten" | "tools" | null>(null);
   if (Platform.OS !== "ios") return null;
   return (
     <>
-      <Action disabled={props.disabled} label="On-device assistant" onPress={() => setOpen(true)} />
-      {open ? <Assistant {...props} close={() => setOpen(false)} /> : null}
+      <View className="flex-row flex-wrap gap-2">
+        {props.draft.trim() ? (
+          <>
+            <Action
+              disabled={props.disabled}
+              label="Fix typos"
+              onPress={() => setSelection("clean")}
+            />
+            <Action
+              disabled={props.disabled}
+              label="Shorten"
+              onPress={() => setSelection("shorten")}
+            />
+          </>
+        ) : null}
+        <Action
+          disabled={props.disabled}
+          label="More text tools"
+          onPress={() => setSelection("tools")}
+        />
+      </View>
+      {selection ? (
+        <Assistant {...props} initialTask={selection} close={() => setSelection(null)} />
+      ) : null}
     </>
   );
 }
@@ -49,9 +71,12 @@ function Assistant(props: {
   onChange: (value: string) => void;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
+  initialTask: "clean" | "shorten" | "tools";
   close: () => void;
 }) {
   const thread = useThreadProjection(props);
+  const [showTools, setShowTools] = useState(props.initialTask === "tools");
+  const started = useRef(false);
   const [source, setSource] = useState(props.draft);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [result, setResult] = useState("");
@@ -70,9 +95,13 @@ function Assistant(props: {
         setBusy(false);
       }
     });
-    void appleModelAvailable().then((value) => {
-      if (mounted) setAvailable(value);
-    });
+    void appleModelAvailable()
+      .then((value) => {
+        if (mounted) setAvailable(value);
+      })
+      .catch(() => {
+        if (mounted) setAvailable(false);
+      });
     return () => {
       background.remove();
       mounted = false;
@@ -83,37 +112,46 @@ function Assistant(props: {
     abort.current?.abort();
     props.close();
   };
-  const run = async (next: LocalAssistantTask) => {
-    if (busy) return;
-    const controller = new AbortController();
-    abort.current = controller;
-    setBusy(true);
-    setResult("");
-    setError("");
-    setTask(next);
-    setBaseline(props.draft);
-    try {
-      const output = await runLocalAssistant(
-        next,
-        source,
-        (instructions, input, signal) =>
-          appleGenerate(
-            [
-              { role: "system", content: instructions },
-              { role: "user", content: input },
-            ],
-            signal,
-          ),
-        controller.signal,
-      );
-      if (!controller.signal.aborted) setResult(output);
-    } catch (cause) {
-      if (!controller.signal.aborted)
-        setError(cause instanceof Error ? cause.message : "Local generation failed.");
-    } finally {
-      if (abort.current === controller) setBusy(false);
+  const run = useCallback(
+    async (next: LocalAssistantTask) => {
+      if (busy) return;
+      const controller = new AbortController();
+      abort.current = controller;
+      setBusy(true);
+      setResult("");
+      setError("");
+      setTask(next);
+      setBaseline(props.draft);
+      try {
+        const output = await runLocalAssistant(
+          next,
+          source,
+          (instructions, input, signal) =>
+            appleGenerate(
+              [
+                { role: "system", content: instructions },
+                { role: "user", content: input },
+              ],
+              signal,
+            ),
+          controller.signal,
+        );
+        if (!controller.signal.aborted) setResult(output);
+      } catch (cause) {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "Local generation failed.");
+      } finally {
+        if (abort.current === controller) setBusy(false);
+      }
+    },
+    [busy, source, props.draft],
+  );
+  useEffect(() => {
+    if (available && props.initialTask !== "tools" && !started.current) {
+      started.current = true;
+      void run(props.initialTask);
     }
-  };
+  }, [available, props.initialTask, run]);
   const apply = () => {
     if (props.draft !== baseline) {
       setError("Your draft changed. Copy the result or run the action again.");
@@ -136,12 +174,15 @@ function Assistant(props: {
         className="bg-background"
       >
         <View className="flex-row items-center justify-between">
-          <Text className="text-lg text-foreground">On-device assistant</Text>
+          <Text className="text-lg text-foreground">
+            {showTools
+              ? "Text tools"
+              : localAssistantTasks[props.initialTask === "shorten" ? "shorten" : "clean"]}
+          </Text>
           <Action label="Close" onPress={close} />
         </View>
         <Text className="text-sm text-foreground-muted">
-          Runs on this device. Review the result before changing your draft. Nothing is sent
-          automatically.
+          Uses Apple Intelligence on this device. Review changes before applying.
         </Text>
         {available === false ? (
           <Text className="text-sm text-foreground-muted">
@@ -149,104 +190,112 @@ function Assistant(props: {
             still works locally.
           </Text>
         ) : null}
-        <View className="flex-row flex-wrap gap-2">
-          <Action
-            label="Use draft"
-            disabled={busy}
-            onPress={() => {
-              setSource(props.draft);
-              setResult("");
-            }}
-          />
-          <Action
-            label="Use loaded chat"
-            disabled={busy || !thread}
-            onPress={() => {
-              setSource(
-                thread?.projection.messages
-                  .map((message) => `${message.role}: ${message.text}`)
-                  .join("\n\n") ?? "",
-              );
-              setResult("");
-            }}
-          />
-        </View>
-        <Text className="text-xs text-foreground-muted">
-          Loaded chat includes only messages currently cached here. You can also paste a document or
-          log excerpt below.
-        </Text>
-        <Action
-          label="Open text file"
-          disabled={busy}
-          onPress={() => {
-            void (async () => {
-              try {
-                const picked = await DocumentPicker.getDocumentAsync({
-                  type: ["text/*", "application/json"],
-                  copyToCacheDirectory: true,
-                });
-                if (picked.canceled) return;
-                const asset = picked.assets[0];
-                if (!asset) return;
-                const file = new File(asset.uri);
-                try {
-                  if (file.size > 48_000) throw new Error("Choose a text file up to 48 KB.");
-                  setSource(await file.text());
+        {showTools ? (
+          <>
+            <View className="flex-row flex-wrap gap-2">
+              <Action
+                label="Use draft"
+                disabled={busy}
+                onPress={() => {
+                  setSource(props.draft);
                   setResult("");
-                  setError("");
-                } finally {
-                  file.delete();
-                }
-              } catch (cause) {
-                setError(cause instanceof Error ? cause.message : "Could not read the text file.");
-              }
-            })();
-          }}
-        />
-        <TextInput
-          accessibilityLabel="Source text"
-          multiline
-          editable={!busy}
-          value={source}
-          onChangeText={(value) => {
-            setSource(value);
-            setResult("");
-          }}
-          className="min-h-40 rounded-lg border border-border p-3 text-foreground"
-        />
-        <View className="flex-row flex-wrap gap-2">
-          {Object.entries(localAssistantTasks).map(([key, label]) => (
+                }}
+              />
+              <Action
+                label="Use loaded chat"
+                disabled={busy || !thread}
+                onPress={() => {
+                  setSource(
+                    thread?.projection.messages
+                      .map((message) => `${message.role}: ${message.text}`)
+                      .join("\n\n") ?? "",
+                  );
+                  setResult("");
+                }}
+              />
+            </View>
+            <Text className="text-xs text-foreground-muted">
+              Loaded chat includes only messages currently cached here. You can also paste a
+              document or log excerpt below.
+            </Text>
             <Action
-              key={key}
-              label={label}
-              disabled={busy || available !== true || !source.trim()}
-              onPress={() => void run(key as LocalAssistantTask)}
+              label="Open text file"
+              disabled={busy}
+              onPress={() => {
+                void (async () => {
+                  try {
+                    const picked = await DocumentPicker.getDocumentAsync({
+                      type: ["text/*", "application/json"],
+                      copyToCacheDirectory: true,
+                    });
+                    if (picked.canceled) return;
+                    const asset = picked.assets[0];
+                    if (!asset) return;
+                    const file = new File(asset.uri);
+                    try {
+                      if (file.size > 48_000) throw new Error("Choose a text file up to 48 KB.");
+                      setSource(await file.text());
+                      setResult("");
+                      setError("");
+                    } finally {
+                      file.delete();
+                    }
+                  } catch (cause) {
+                    setError(
+                      cause instanceof Error ? cause.message : "Could not read the text file.",
+                    );
+                  }
+                })();
+              }}
             />
-          ))}
-        </View>
-        <TextInput
-          accessibilityLabel="Find relevant context"
-          placeholder="What context do you need?"
-          value={query}
-          onChangeText={setQuery}
-          editable={!busy}
-          className="rounded-lg border border-border p-3 text-foreground"
-        />
-        <Action
-          label="Find excerpts locally"
-          disabled={busy || !query.trim()}
-          onPress={() => {
-            setTask("context");
-            setBaseline(props.draft);
-            setError("");
-            const excerpts = selectLocalExcerpts(query, [
-              { label: "Selected source", text: source },
-            ]);
-            setResult(excerpts.map((item) => `[${item.label}]\n${item.text}`).join("\n\n"));
-            if (!excerpts.length)
-              setError("No matching excerpts fit. Try a more specific query or a smaller source.");
-          }}
-        />
+            <TextInput
+              accessibilityLabel="Source text"
+              multiline
+              editable={!busy}
+              value={source}
+              onChangeText={(value) => {
+                setSource(value);
+                setResult("");
+              }}
+              className="min-h-40 rounded-lg border border-border p-3 text-foreground"
+            />
+            <View className="flex-row flex-wrap gap-2">
+              {Object.entries(localAssistantTasks).map(([key, label]) => (
+                <Action
+                  key={key}
+                  label={label}
+                  disabled={busy || available !== true || !source.trim()}
+                  onPress={() => void run(key as LocalAssistantTask)}
+                />
+              ))}
+            </View>
+            <TextInput
+              accessibilityLabel="Find relevant context"
+              placeholder="What context do you need?"
+              value={query}
+              onChangeText={setQuery}
+              editable={!busy}
+              className="rounded-lg border border-border p-3 text-foreground"
+            />
+            <Action
+              label="Find excerpts locally"
+              disabled={busy || !query.trim()}
+              onPress={() => {
+                setTask("context");
+                setBaseline(props.draft);
+                setError("");
+                const excerpts = selectLocalExcerpts(query, [
+                  { label: "Selected source", text: source },
+                ]);
+                setResult(excerpts.map((item) => `[${item.label}]\n${item.text}`).join("\n\n"));
+                if (!excerpts.length)
+                  setError(
+                    "No matching excerpts fit. Try a more specific query or a smaller source.",
+                  );
+              }}
+            />
+          </>
+        ) : null}
         {busy ? (
           <Action
             label="Cancel generation"
@@ -284,6 +333,7 @@ function Assistant(props: {
             </View>
           </>
         ) : null}
+        {!showTools ? <Action label="More text tools" onPress={() => setShowTools(true)} /> : null}
         {undo ? (
           <Action
             label="Undo draft change"

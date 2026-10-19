@@ -18,15 +18,29 @@ export function LocalAssistantPanel(props: {
   onChange: (value: string) => void;
   threadRef: ScopedThreadRef | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const [selection, setSelection] = useState<"clean" | "shorten" | "tools" | null>(null);
   if (!window.desktopBridge?.localAssistantGenerate || !navigator.userAgent.includes("Mac"))
     return null;
   return (
     <>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        On-device assistant
-      </Button>
-      {open ? <Assistant {...props} close={() => setOpen(false)} /> : null}
+      <div className="flex flex-wrap gap-2">
+        {props.draft.trim() ? (
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelection("clean")}>
+              Fix typos
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelection("shorten")}>
+              Shorten
+            </Button>
+          </>
+        ) : null}
+        <Button type="button" variant="ghost" size="sm" onClick={() => setSelection("tools")}>
+          More text tools
+        </Button>
+      </div>
+      {selection ? (
+        <Assistant {...props} initialTask={selection} close={() => setSelection(null)} />
+      ) : null}
     </>
   );
 }
@@ -34,12 +48,15 @@ function Assistant(props: {
   draft: string;
   onChange: (value: string) => void;
   threadRef: ScopedThreadRef | null;
+  initialTask: "clean" | "shorten" | "tools";
   close: () => void;
 }) {
   const thread = useEnvironmentThread(
     props.threadRef?.environmentId ?? null,
     props.threadRef?.threadId ?? null,
   );
+  const [showTools, setShowTools] = useState(props.initialTask === "tools");
+  const started = useRef(false);
   const [source, setSource] = useState(props.draft);
   const [available, setAvailable] = useState(false);
   const [result, setResult] = useState("");
@@ -57,7 +74,10 @@ function Assistant(props: {
       .then((status) => {
         if (mounted) {
           setAvailable(status.available);
-          if (status.error) setError(status.error);
+          if (!status.available)
+            setError(
+              status.error ?? "Apple Intelligence is unavailable. Enable it on a supported Mac.",
+            );
         }
       })
       .catch(() => {
@@ -117,6 +137,12 @@ function Assistant(props: {
       if (abort.current === controller) setBusy(false);
     }
   };
+  useEffect(() => {
+    if (available && props.initialTask !== "tools" && !started.current) {
+      started.current = true;
+      void run(props.initialTask);
+    }
+  }, [available, props.initialTask, run]);
   const apply = () => {
     if (props.draft !== baseline) {
       setError("Your draft changed. Copy the result or run the action again.");
@@ -139,121 +165,129 @@ function Assistant(props: {
       }}
     >
       <DialogPopup>
-        <DialogTitle>On-device assistant</DialogTitle>
+        <DialogTitle>
+          {showTools
+            ? "Text tools"
+            : localAssistantTasks[props.initialTask === "shorten" ? "shorten" : "clean"]}
+        </DialogTitle>
         <div className="flex max-h-[75vh] flex-col gap-3 overflow-y-auto py-3">
           <p className="text-sm text-muted-foreground">
-            Runs on this Mac. Review before applying. Nothing is sent automatically.
+            Uses Apple Intelligence on this Mac. Review changes before applying.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setSource(props.draft);
-                setResult("");
-              }}
-            >
-              Use draft
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy || Option.isNone(thread.data)}
-              onClick={() => {
-                setSource(
-                  Option.isSome(thread.data)
-                    ? thread.data.value.messages
-                        .map((message) => `${message.role}: ${message.text}`)
-                        .join("\n\n")
-                    : "",
-                );
-                setResult("");
-              }}
-            >
-              Use loaded chat
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Only loaded messages are included. You can also paste a document or log excerpt.
-          </p>
-          <label className="text-sm text-muted-foreground">
-            Open a text file (up to 48 KB)
-            <input
-              type="file"
-              accept="text/*,.md,.log,.json"
-              disabled={busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                if (file.size > 48_000) {
-                  setError("Choose a text file up to 48 KB.");
-                  return;
-                }
-                void file
-                  .text()
-                  .then((text) => {
-                    setSource(text);
+          {showTools ? (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setSource(props.draft);
                     setResult("");
-                    setError("");
-                  })
-                  .catch(() => setError("Could not read the text file."));
-                event.target.value = "";
-              }}
-            />
-          </label>
-          <Textarea
-            aria-label="Source text"
-            rows={8}
-            disabled={busy}
-            value={source}
-            onChange={(event) => {
-              setSource(event.target.value);
-              setResult("");
-            }}
-          />
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(localAssistantTasks).map(([key, label]) => (
+                  }}
+                >
+                  Use draft
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || Option.isNone(thread.data)}
+                  onClick={() => {
+                    setSource(
+                      Option.isSome(thread.data)
+                        ? thread.data.value.messages
+                            .map((message) => `${message.role}: ${message.text}`)
+                            .join("\n\n")
+                        : "",
+                    );
+                    setResult("");
+                  }}
+                >
+                  Use loaded chat
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Only loaded messages are included. You can also paste a document or log excerpt.
+              </p>
+              <label className="text-sm text-muted-foreground">
+                Open a text file (up to 48 KB)
+                <input
+                  type="file"
+                  accept="text/*,.md,.log,.json"
+                  disabled={busy}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 48_000) {
+                      setError("Choose a text file up to 48 KB.");
+                      return;
+                    }
+                    void file
+                      .text()
+                      .then((text) => {
+                        setSource(text);
+                        setResult("");
+                        setError("");
+                      })
+                      .catch(() => setError("Could not read the text file."));
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <Textarea
+                aria-label="Source text"
+                rows={8}
+                disabled={busy}
+                value={source}
+                onChange={(event) => {
+                  setSource(event.target.value);
+                  setResult("");
+                }}
+              />
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(localAssistantTasks).map(([key, label]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || !available || !source.trim()}
+                    onClick={() => void run(key as LocalAssistantTask)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <Textarea
+                aria-label="Find relevant context"
+                rows={2}
+                placeholder="What context do you need?"
+                value={query}
+                disabled={busy}
+                onChange={(event) => setQuery(event.target.value)}
+              />
               <Button
-                key={key}
                 type="button"
                 variant="outline"
-                size="sm"
-                disabled={busy || !available || !source.trim()}
-                onClick={() => void run(key as LocalAssistantTask)}
+                disabled={busy || !query.trim()}
+                onClick={() => {
+                  setTask("context");
+                  setBaseline(props.draft);
+                  setError("");
+                  const excerpts = selectLocalExcerpts(query, [
+                    { label: "Selected source", text: source },
+                  ]);
+                  setResult(excerpts.map((item) => `[${item.label}]\n${item.text}`).join("\n\n"));
+                  if (!excerpts.length)
+                    setError(
+                      "No matching excerpts fit. Try a more specific query or a smaller source.",
+                    );
+                }}
               >
-                {label}
+                Find excerpts locally
               </Button>
-            ))}
-          </div>
-          <Textarea
-            aria-label="Find relevant context"
-            rows={2}
-            placeholder="What context do you need?"
-            value={query}
-            disabled={busy}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy || !query.trim()}
-            onClick={() => {
-              setTask("context");
-              setBaseline(props.draft);
-              setError("");
-              const excerpts = selectLocalExcerpts(query, [
-                { label: "Selected source", text: source },
-              ]);
-              setResult(excerpts.map((item) => `[${item.label}]\n${item.text}`).join("\n\n"));
-              if (!excerpts.length)
-                setError(
-                  "No matching excerpts fit. Try a more specific query or a smaller source.",
-                );
-            }}
-          >
-            Find excerpts locally
-          </Button>
+            </>
+          ) : null}
           {busy ? <p role="status">Working on this device…</p> : null}
           {error ? (
             <p role="alert" className="text-sm text-destructive">
@@ -291,6 +325,11 @@ function Assistant(props: {
                 </Button>
               </div>
             </>
+          ) : null}
+          {!showTools ? (
+            <Button type="button" variant="ghost" onClick={() => setShowTools(true)}>
+              More text tools
+            </Button>
           ) : null}
           {undo ? (
             <Button

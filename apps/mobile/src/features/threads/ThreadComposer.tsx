@@ -1118,11 +1118,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
         {props.activeThreadBusy && queuedEdit === null ? (
           <View className="flex-row flex-wrap items-center gap-2 pt-2">
-            {!hasContent ? (
-              <Text className="w-full text-xs text-foreground-muted">
-                Type a follow-up, then choose how to send it.
-              </Text>
-            ) : null}
             {[sendPresentation.action, sendPresentation.alternate]
               .filter((action): action is ActiveTurnComposerAction => action !== null)
               .map((action) => (

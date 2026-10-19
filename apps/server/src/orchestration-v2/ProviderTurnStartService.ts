@@ -1252,7 +1252,8 @@ export const layer: Layer.Layer<
               );
               return yield* brain.buildTurnContext({
                 userText: message.text,
-                includeCore: !nativeThreadHasTurns || effectiveHandoffs.length > 0,
+                includeCore:
+                  !nativeThreadHasTurns || effectiveHandoffs.length > 0 || missedItems.length > 0,
                 providerThreadId: providerThread.id,
                 ...(brainProject
                   ? { projectTitle: brainProject.title, workspacePath: brainProject.workspaceRoot }

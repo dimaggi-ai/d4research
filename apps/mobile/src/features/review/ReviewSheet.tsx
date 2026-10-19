@@ -439,6 +439,7 @@ function ReviewFileNavigator({
 }
 
 type ReviewSheetProps = StaticScreenProps<{
+  readonly checkpointTurnCount?: number;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }>;
@@ -451,7 +452,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const insets = useSafeAreaInsets();
   const { themeAppearance: selectedTheme, themeId: selectedThemeId } = useAppearancePreferences();
   const headerIcon = String(useUniwindTheme()["--color-icon"]);
-  const { environmentId, threadId } = props.route.params;
+  const { environmentId, threadId, checkpointTurnCount } = props.route.params;
   const environment = useEnvironmentPresentation(environmentId);
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const isEnvironmentReady = environment.presentation?.connection.phase === "connected";
@@ -480,7 +481,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
     environmentId,
     threadId,
     reviewCache,
+    initialCheckpointTurnCount: checkpointTurnCount,
   });
+  useEffect(() => {
+    if (
+      checkpointTurnCount !== undefined &&
+      reviewCache.selectedSectionId === `turn:${checkpointTurnCount}`
+    ) {
+      navigation.setParams({ checkpointTurnCount: undefined });
+    }
+  }, [checkpointTurnCount, navigation, reviewCache.selectedSectionId]);
   useReviewDiffPrewarming({
     threadKey: reviewCache.threadKey,
     sections: reviewSections,
@@ -511,11 +521,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullToRefresh = useCallback(async () => {
     setIsPullRefreshing(true);
-    try {
-      await refreshSelectedSection();
-    } finally {
-      setIsPullRefreshing(false);
-    }
+    await refreshSelectedSection().finally(() => setIsPullRefreshing(false));
   }, [refreshSelectedSection]);
   const reviewFileNavigatorRef = useRef<ReviewFileNavigatorHandle>(null);
   const reviewFiles = parsedDiff.kind === "files" ? parsedDiff.files : [];

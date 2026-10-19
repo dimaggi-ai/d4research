@@ -1,3 +1,7 @@
+import { useAtomValue } from "@effect/atom-react";
+import { environmentThreadDetails } from "../../state/threads";
+import { deriveTurnDiffCards } from "./turn-diff-summary";
+import { TurnDiffCard } from "./TurnDiffCard";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
@@ -1646,6 +1650,12 @@ function ThreadFeedPlaceholder(props: {
 }
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
+  const checkpoints = useAtomValue(
+    environmentThreadDetails.checkpointSummariesAtom({
+      environmentId: props.environmentId,
+      threadId: props.threadId,
+    }),
+  );
   const deviceType = useDeviceType();
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
@@ -2146,6 +2156,20 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.latestRun,
     ],
   );
+  const turnDiffCards = useMemo(
+    () => deriveTurnDiffCards(presentedFeed, checkpoints, props.latestRun),
+    [presentedFeed, checkpoints, props.latestRun],
+  );
+  const openTurnDiff = useCallback(
+    (checkpointTurnCount: number) => {
+      navigation.navigate("ThreadReview", {
+        environmentId: props.environmentId,
+        threadId: props.threadId,
+        checkpointTurnCount,
+      });
+    },
+    [navigation, props.environmentId, props.threadId],
+  );
   const focusedMessageRef = useRef<string | null>(null);
   useEffect(() => {
     const messageId = props.focusMessageId;
@@ -2416,6 +2440,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // corrects each row's height as it mounts — the feed visibly jumps.
   const getFixedItemSize = useCallback(
     (entry: ThreadFeedEntry) => {
+      if (turnDiffCards.has(entry.id)) return undefined;
       if (entry.type === "html-render") {
         return htmlRenderRowHeight(htmlRenderFrameHeight(entry.render, contentWidth));
       }
@@ -2451,7 +2476,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           return undefined;
       }
     },
-    [contentWidth, expandedWorkRows, workRowSizing.fixedRowHeight],
+    [contentWidth, expandedWorkRows, workRowSizing.fixedRowHeight, turnDiffCards],
   );
   const hasHtmlRenders = useMemo(
     () => presentedFeed.some((entry) => entry.type === "html-render"),
@@ -2515,6 +2540,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               skills: props.skills,
               workspaceRoot: props.workspaceRoot,
             })}
+            {turnDiffCards.has(info.item.id) ? (
+              <TurnDiffCard summary={turnDiffCards.get(info.item.id)!} onOpen={openTurnDiff} />
+            ) : null}
             {props.worktreeSetup && info.index === setupAnchorIndex ? (
               <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
             ) : props.setupWorkingStartedAt && info.index === setupAnchorIndex ? (
@@ -2525,6 +2553,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       </Animated.View>
     ),
     [
+      turnDiffCards,
+      openTurnDiff,
       props.worktreeSetup,
       props.setupWorkingStartedAt,
       props.threadId,

@@ -786,7 +786,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadReview: createNativeStackScreen({
       screen: ReviewSheet,
-      linking: `${THREAD_LINKING_PREFIX}/review`,
+      linking: {
+        path: `${THREAD_LINKING_PREFIX}/review`,
+        parse: { checkpointTurnCount: Number },
+      },
       options: GLASS_HEADER_OPTIONS,
     }),
     ThreadReviewComment: createNativeStackScreen({

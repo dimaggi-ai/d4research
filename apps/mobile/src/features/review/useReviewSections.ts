@@ -18,6 +18,7 @@ import { useSelectedThreadWorktree } from "../../state/use-selected-thread-workt
 import {
   buildReviewSectionItems,
   getDefaultReviewSectionId,
+  getRequestedReviewSectionId,
   getReadyReviewCheckpoints,
   getReviewSectionIdForCheckpoint,
 } from "./reviewModel";
@@ -32,6 +33,7 @@ import {
 
 export function useReviewSections(input: {
   readonly enabled?: boolean;
+  readonly initialCheckpointTurnCount?: number;
   readonly environmentId?: EnvironmentId;
   readonly threadId?: ThreadId;
   readonly reviewCache: ReviewCacheForThread;
@@ -111,12 +113,18 @@ export function useReviewSections(input: {
     reviewCache.gitSections,
     reviewCache.turnDiffById,
   ]);
+  const requestedSectionId = getRequestedReviewSectionId(
+    reviewSections,
+    input.initialCheckpointTurnCount,
+  );
   const selectedSection = useMemo(
     () =>
-      reviewSections.find((section) => section.id === reviewCache.selectedSectionId) ??
+      reviewSections.find(
+        (section) => section.id === (requestedSectionId ?? reviewCache.selectedSectionId),
+      ) ??
       reviewSections[0] ??
       null,
-    [reviewCache.selectedSectionId, reviewSections],
+    [requestedSectionId, reviewCache.selectedSectionId, reviewSections],
   );
   const fallbackSectionId = useMemo(
     () => getDefaultReviewSectionId(reviewSections),
@@ -134,12 +142,15 @@ export function useReviewSections(input: {
     if (
       reviewSections.length > 0 &&
       reviewCache.threadKey &&
-      (!reviewCache.selectedSectionId || !selectedSectionIdExists)
+      (requestedSectionId !== null
+        ? reviewCache.selectedSectionId !== requestedSectionId
+        : !reviewCache.selectedSectionId || !selectedSectionIdExists)
     ) {
-      setReviewSelectedSectionId(reviewCache.threadKey, fallbackSectionId);
+      setReviewSelectedSectionId(reviewCache.threadKey, requestedSectionId ?? fallbackSectionId);
     }
   }, [
     fallbackSectionId,
+    requestedSectionId,
     reviewCache.selectedSectionId,
     reviewCache.threadKey,
     reviewSections.length,

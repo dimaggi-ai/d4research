@@ -77,3 +77,15 @@ or restored. It is separate from the conversation transcript and provider-native
 
 Next: [Install and First Run](./install.md), [Starter Research](./starter-research.md), and
 [Troubleshooting](./troubleshooting.md).
+
+## Optional Meko handoff storage
+
+In **Settings → General → Handoff**, select **Meko MCP** to save a copy of handoff context to an MCP server you configure. This integration is off by default and has no preset server URL or destination IDs. Enabling it sends checkpoint text and its project and thread identifiers to that server. The visible thread remains authoritative; recalled checkpoints only add context.
+
+Enter an HTTPS MCP URL, datapack ID, agent ID, and the name of a server environment variable containing your credential. HTTP is accepted only for loopback addresses. Enter the variable name, such as `MEKO_API_KEY`, rather than its value. The credential is not stored in settings. The server reads it from its environment and sends it to your MCP endpoint. **Inspect API** checks tool compatibility without writing data.
+
+Automatic saves run in the background, allow at most two concurrent operations, and have a 12-second deadline. A save is verified only after Meko returns the same bytes and content hash. Failures appear in the thread; **Recent operations** shows receipts from the current server process. Agents can use `handoff_status` and `handoff_read` to inspect and retrieve checkpoints scoped to their current project and thread.
+
+Select **Local Memo** or **No memory copy** to disable Meko saves and recall. Changing the configuration cancels in-flight requests but cannot undo data already sent. Disabling the integration does not delete checkpoints stored on your MCP server.
+
+Provider icons and model display names can be changed in the web or desktop provider settings. These preferences are local to that client and do not change model identifiers or provider routing. Clear a display name or use **Reset icons and model names** to restore defaults. The native mobile client keeps its own preferences and does not expose these appearance controls.

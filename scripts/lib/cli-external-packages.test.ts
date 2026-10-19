@@ -13,6 +13,7 @@ import { findEsmImportsOfExternalPackages } from "./cli-executable-imports.ts";
 
 import {
   isRuntimeExternalCliDependency,
+  isExternalCliDependency,
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
   shouldBundleCliDependency,
@@ -307,5 +308,13 @@ describe("findEsmImportsOfExternalPackages", () => {
   it("does not mistake createRequire calls for imports", () => {
     const source = 'const { FileFinder } = createRequire(import.meta.url)("@ff-labs/fff-node");';
     assert.deepStrictEqual(findEsmImportsOfExternalPackages(source), []);
+  });
+});
+
+describe("MCP dependency bundling", () => {
+  it("bundles the MCP client while keeping native runtime dependencies external", () => {
+    assert.equal(shouldBundleCliDependency("@modelcontextprotocol/sdk/client/index.js"), true);
+    assert.equal(isExternalCliDependency("node-pty"), true);
+    assert.equal(isExternalCliDependency("node-gyp-build"), true);
   });
 });

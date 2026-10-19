@@ -126,6 +126,7 @@ export function SubagentTooltipContent(props: {
       <div className="flex min-w-0 items-center gap-2">
         {driver ? (
           <ProviderInstanceIcon
+            instanceId={props.provider?.instanceId}
             driverKind={driver}
             displayName={entry?.displayName ?? props.provider?.displayName ?? driver}
             accentColor={entry?.accentColor}

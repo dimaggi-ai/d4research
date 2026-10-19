@@ -58,6 +58,7 @@ export function ThreadRelationshipIcon({
     <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
       {driver ? (
         <ProviderInstanceIcon
+          instanceId={provider?.instanceId}
           driverKind={driver}
           displayName={provider?.displayName ?? driver}
           acpRegistryIconUrl={provider?.iconUrl}

@@ -292,7 +292,18 @@ export type ModelPreferences = {
   readonly providerModelPreferences: typeof ProviderModelPreferences.Type;
 };
 
+const ProviderAppearance = Schema.Struct({
+  icon: Schema.optionalKey(TrimmedNonEmptyString),
+  badgeIcon: Schema.optionalKey(TrimmedNonEmptyString),
+  modelNames: Schema.Record(Schema.String, TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+});
+
 export const ClientSettingsSchema = Schema.Struct({
+  providerAppearance: Schema.Record(ProviderInstanceId, ProviderAppearance).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -1258,12 +1269,75 @@ export const HandoffContextCompressionSettings = Schema.Struct({
 });
 export type HandoffContextCompressionSettings = typeof HandoffContextCompressionSettings.Type;
 
+const MekoTokenEnvironmentName = TrimmedString.check(
+  Schema.isPattern(/^(?:[A-Za-z_][A-Za-z0-9_]*)?$/),
+);
+const MekoEndpoint = TrimmedString.check(
+  Schema.makeFilter((value) => {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return (
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        (url.protocol === "https:" ||
+          (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+      );
+    } catch {
+      return false;
+    }
+  }),
+);
+
 export const HandoffSettings = Schema.Struct({
+  memoryBackend: Schema.Literals(["local", "meko", "none"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("local" as const)),
+  ),
+  meko: Schema.Struct({
+    url: MekoEndpoint.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+    tokenEnv: MekoTokenEnvironmentName.pipe(
+      Schema.withDecodingDefault(Effect.succeed("MEKO_API_KEY")),
+    ),
+    datapackId: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+    agentId: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+
   contextCompression: HandoffContextCompressionSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type HandoffSettings = typeof HandoffSettings.Type;
+export const MekoReceipt = Schema.Struct({
+  status: Schema.Literals([
+    "SUCCESS_WITH_EVIDENCE",
+    "ERROR_TOOL_FAILURE",
+    "ERROR_AUTH_RESTRICTED",
+    "ERROR_TIMEOUT",
+    "ERROR_CONFIGURATION",
+    "ERROR_BUSY",
+  ]),
+  message: Schema.String,
+  timestamp: Schema.String,
+  contentHash: Schema.optionalKey(Schema.String),
+  conversationId: Schema.optionalKey(Schema.String),
+  size: Schema.optionalKey(Schema.Int),
+  threadId: Schema.optionalKey(Schema.String),
+  project: Schema.optionalKey(Schema.String),
+});
+export type MekoReceipt = typeof MekoReceipt.Type;
+export const MekoStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  recent: Schema.Array(MekoReceipt),
+  message: Schema.optionalKey(Schema.String),
+});
+export const MekoReadInput = Schema.Struct({
+  contentHash: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  conversationId: TrimmedNonEmptyString,
+  threadId: TrimmedNonEmptyString,
+  project: TrimmedNonEmptyString,
+});
 
 // ── Skills settings ────────────────────────────────────────────────────
 /** Bound the per-turn context tax and keep a malformed settings file finite. */
@@ -2266,6 +2340,16 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   handoff: Schema.optionalKey(
     Schema.Struct({
+      memoryBackend: Schema.optionalKey(Schema.Literals(["local", "meko", "none"])),
+      meko: Schema.optionalKey(
+        Schema.Struct({
+          url: Schema.optionalKey(MekoEndpoint),
+          tokenEnv: Schema.optionalKey(MekoTokenEnvironmentName),
+          datapackId: Schema.optionalKey(TrimmedString),
+          agentId: Schema.optionalKey(TrimmedString),
+        }),
+      ),
+
       contextCompression: Schema.optionalKey(
         Schema.Struct({
           mode: Schema.optionalKey(Schema.Literals(["bounded", "direct", "smart"])),
@@ -2430,6 +2514,7 @@ export function requiredScopesForProjectMutation(
 }
 
 export const ClientSettingsPatch = Schema.Struct({
+  providerAppearance: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderAppearance)),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),

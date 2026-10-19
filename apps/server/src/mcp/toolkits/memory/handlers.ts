@@ -1,3 +1,5 @@
+import * as HandoffMemory from "../../../handoffMemory.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Effect from "effect/Effect";
 
 import { searchMemoAttachment } from "../../../memoAttachment.ts";
@@ -7,6 +9,17 @@ import { MemoryToolkit } from "./tools.ts";
 const getLocalConnector = makeConfiguredMemoryConnector;
 
 const handlers = {
+  handoff_status: () =>
+    Effect.gen(function* () {
+      const caller = yield* McpInvocationContext.McpInvocationContext;
+      const service = yield* HandoffMemory.HandoffMemory;
+      return yield* service.status(caller.thread?.threadId ?? "");
+    }),
+  handoff_read: (input) =>
+    Effect.gen(function* () {
+      const caller = yield* McpInvocationContext.McpInvocationContext;
+      return yield* (yield* HandoffMemory.HandoffMemory).read(input, caller.thread?.threadId ?? "");
+    }),
   memory_search: (input) =>
     Effect.gen(function* () {
       const result = yield* (yield* getLocalConnector()).search(

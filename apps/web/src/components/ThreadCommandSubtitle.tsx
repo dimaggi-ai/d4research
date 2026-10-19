@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "@d4research/contracts";
+import type { ProviderDriverKind, ProviderInstanceId } from "@d4research/contracts";
 import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
@@ -36,6 +36,7 @@ export function ThreadCommandSubtitle(props: {
   branch: string | null;
   worktreePath: string | null;
   isCurrent: boolean;
+  providerInstanceId?: ProviderInstanceId | undefined;
   driverKind?: ProviderDriverKind | null;
   providerDisplayName?: string | null;
   acpRegistryAgentId?: string | undefined;
@@ -91,6 +92,7 @@ export function ThreadCommandSubtitle(props: {
         <>
           {projectLabel || branchLabel ? <CommandPaletteMetaDot /> : null}
           <ProviderInstanceIcon
+            instanceId={props.providerInstanceId}
             driverKind={props.driverKind}
             displayName={props.providerDisplayName ?? props.driverKind}
             acpRegistryAgentId={props.acpRegistryAgentId}

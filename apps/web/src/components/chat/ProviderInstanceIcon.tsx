@@ -1,3 +1,5 @@
+import { useClientSettings } from "../../hooks/useSettings";
+import type { ProviderInstanceId } from "@d4research/contracts";
 import { type CSSProperties, memo } from "react";
 
 import { providerInstanceInitials } from "@d4research/client-runtime/state/provider-instance-display";
@@ -54,6 +56,7 @@ export function resolveProviderInstanceAcpRegistryIconUrl(input: {
 }
 
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
+  instanceId?: ProviderInstanceId | undefined;
   driverKind: ProviderDriverKind;
   displayName: string;
   accentColor?: string | undefined;
@@ -67,14 +70,25 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   statusDotClassName?: string;
   indicatorBackground?: string;
 }) {
-  const Icon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
-  const packageIcon = providerClients.get(props.driverKind)?.icon;
+  const appearance = useClientSettings((settings) =>
+    props.instanceId ? settings.providerAppearance[props.instanceId] : undefined,
+  );
+  const driverKind = appearance?.icon ? ProviderDriverKind.make(appearance.icon) : props.driverKind;
+  const badgeKind = appearance?.badgeIcon;
+  const BadgeIcon = badgeKind
+    ? PROVIDER_ICON_BY_PROVIDER[ProviderDriverKind.make(badgeKind)]
+    : undefined;
+  const badgePackage = badgeKind
+    ? providerClients.get(ProviderDriverKind.make(badgeKind))?.icon
+    : undefined;
+  const Icon = PROVIDER_ICON_BY_PROVIDER[driverKind] ?? null;
+  const packageIcon = providerClients.get(driverKind)?.icon;
   const indicatorBackground = props.indicatorBackground ?? "var(--card)";
   const accentStyle = props.accentColor
     ? ({ "--provider-accent": props.accentColor } as CSSProperties)
     : undefined;
   const badgeContent = props.badgeContent ?? "initials";
-  const isAcpRegistry = props.driverKind === "acpRegistry";
+  const isAcpRegistry = driverKind === "acpRegistry";
   const acpRegistryIconUrl = resolveProviderInstanceAcpRegistryIconUrl({
     driverKind: props.driverKind,
     agentId: props.acpRegistryAgentId,
@@ -119,7 +133,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           aria-hidden
         />
       ) : null}
-      {props.showBadge ? (
+      {props.showBadge && badgeKind !== "none" ? (
         <span
           className={cn(
             "pointer-events-none absolute right-0 bottom-0 z-10 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border px-0.5 text-4xs font-semibold leading-none shadow-sm",
@@ -131,7 +145,13 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           style={{ borderColor: indicatorBackground }}
           aria-hidden
         >
-          {badgeContent === "initials" ? providerInstanceInitials(props.displayName) : null}
+          {badgePackage ? (
+            <ProviderPackageIcon icon={badgePackage} className="size-2.5" />
+          ) : BadgeIcon ? (
+            <BadgeIcon className="size-2.5" />
+          ) : badgeContent === "initials" ? (
+            providerInstanceInitials(props.displayName)
+          ) : null}
         </span>
       ) : null}
     </span>

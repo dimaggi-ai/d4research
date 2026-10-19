@@ -50,6 +50,7 @@ function ProviderUpdateToastIcon({ provider }: { provider: ServerProvider }) {
   return (
     <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
       <ProviderInstanceIcon
+        instanceId={provider.instanceId}
         driverKind={provider.driver}
         displayName={provider.displayName ?? provider.driver}
         acpRegistryIconUrl={provider.iconUrl}

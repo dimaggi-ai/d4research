@@ -1,3 +1,5 @@
+import * as HandoffMemory from "../../../handoffMemory.ts";
+import { MekoReadInput, MekoReceipt, MekoStatus } from "@d4research/contracts/settings";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -10,6 +12,7 @@ import { ServerSettingsService } from "../../../serverSettings.ts";
 import { MemoryConnectorError, MemoryEntry } from "./connectors.ts";
 
 const dependencies = [
+  HandoffMemory.HandoffMemory,
   McpInvocationContext.McpInvocationContext,
   HttpClient.HttpClient,
   ServerSettingsService,
@@ -157,6 +160,23 @@ const MemoryAttachmentSearchTool = readonlyMemoryTool(
 );
 
 export const MemoryToolkit = Toolkit.make(
+  readonlyMemoryTool(
+    Tool.make("handoff_status", {
+      description: "Inspect optional Meko checkpoint receipts for the current thread.",
+      parameters: Tool.EmptyParams,
+      success: MekoStatus,
+      dependencies,
+    }),
+  ),
+  readonlyMemoryTool(
+    Tool.make("handoff_read", {
+      description:
+        "Retrieve a verified checkpoint for the current thread. Recall supplements the visible conversation.",
+      parameters: MekoReadInput,
+      success: Schema.Struct({ receipt: MekoReceipt, text: Schema.optionalKey(Schema.String) }),
+      dependencies,
+    }),
+  ),
   MemorySearchTool,
   MemoryRememberTool,
   MemoryStatusTool,

@@ -1,3 +1,4 @@
+import { MekoHandoffSettings } from "./MekoHandoffSettings";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -3422,6 +3423,7 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection title="Handoff" id="handoff">
+        <MekoHandoffSettings />
         <SettingsRow
           id="handoff-mode"
           title="Automatic handoff"

@@ -438,6 +438,10 @@
     "./local-assistant": {
       "types": "./src/localAssistant.ts",
       "default": "./src/localAssistant.ts"
+    },
+    "./provider-appearance": {
+      "types": "./src/providerAppearance.ts",
+      "default": "./src/providerAppearance.ts"
     }
   },
   "scripts": {

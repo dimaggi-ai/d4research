@@ -1,5 +1,9 @@
 "use client";
 
+import { useProviderAppearance } from "../../hooks/useProviderAppearance";
+import { setModelDisplayName } from "../../providerAppearance";
+import { DraftInput } from "../ui/draft-input";
+
 import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, StarIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -130,6 +134,7 @@ export function ProviderModelsSection({
   onToggleFavorite,
   onModelOrderChange,
 }: ProviderModelsSectionProps) {
+  const { appearance } = useProviderAppearance(instanceId);
   const [input, setInput] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [filter, setFilter] = useState("");
@@ -154,6 +159,7 @@ export function ProviderModelsSection({
   const visibleModels = isFiltering
     ? displayModels.filter(
         (model) =>
+          (appearance.modelNames[model.slug]?.toLowerCase().includes(normalizedFilter) ?? false) ||
           model.name.toLowerCase().includes(normalizedFilter) ||
           model.slug.toLowerCase().includes(normalizedFilter),
       )
@@ -275,6 +281,7 @@ export function ProviderModelsSection({
     const nextModel = displayModels[index + 1];
     return (
       <ProviderModelRow
+        instanceId={instanceId}
         key={`${instanceId}:${model.slug}`}
         model={model}
         isHidden={!model.isCustom && hiddenModelSet.has(model.slug)}
@@ -297,6 +304,9 @@ export function ProviderModelsSection({
 
   return (
     <div className="lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <p className="mb-2 text-xs text-muted-foreground">
+        Edit display names below. Clear a name to restore its default; model IDs stay unchanged.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         {showFilter ? (
           <Input
@@ -436,6 +446,7 @@ export function ProviderModelsSection({
 // A row gets its flags as primitives and handlers that never change, so toggling,
 // starring or moving one model re-renders that row and leaves the others cached.
 function ProviderModelRow({
+  instanceId,
   model,
   isHidden,
   isFavorite,
@@ -450,6 +461,7 @@ function ProviderModelRow({
   onToggleEdit,
   onRemove,
 }: {
+  readonly instanceId: ProviderInstanceId;
   readonly model: ServerProviderModel;
   readonly isHidden: boolean;
   readonly isFavorite: boolean;
@@ -464,8 +476,8 @@ function ProviderModelRow({
   readonly onToggleEdit: (slug: string) => void;
   readonly onRemove: (slug: string) => void;
 }) {
+  const { appearance, update: updateAppearance } = useProviderAppearance(instanceId);
   const capLabels = describeModelCapabilities(model);
-  const nameClassName = cn("text-xs", isHidden ? "text-muted-foreground" : "text-foreground/90");
   const pickerTooltip = model.isCustom
     ? "Custom models are always shown in the picker"
     : isHidden
@@ -501,7 +513,14 @@ function ProviderModelRow({
         </TooltipPopup>
       </Tooltip>
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className={cn(nameClassName, "truncate")}>{model.name}</span>
+        <DraftInput
+          aria-label={`Display name for ${model.slug}`}
+          value={appearance.modelNames[model.slug] ?? ""}
+          placeholder={model.name}
+          onCommit={(value) =>
+            updateAppearance((current) => setModelDisplayName(current, model.slug, value))
+          }
+        />
         {model.name !== model.slug ? (
           <code className="truncate font-mono text-2xs text-muted-foreground/70">{model.slug}</code>
         ) : null}

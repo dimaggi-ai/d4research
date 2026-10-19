@@ -47,6 +47,7 @@ export function ProviderSubagentBar(props: {
       <span className="flex min-w-0 items-center gap-2">
         {props.provider ? (
           <ProviderInstanceIcon
+            instanceId={props.provider.instanceId}
             driverKind={props.provider.driverKind}
             displayName={props.provider.displayName}
             accentColor={props.provider.accentColor}

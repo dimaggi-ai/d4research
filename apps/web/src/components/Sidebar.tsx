@@ -1,4 +1,8 @@
-import { type EnvironmentId, type ScopedProjectRef } from "@d4research/contracts";
+import {
+  ProviderInstanceId,
+  type EnvironmentId,
+  type ScopedProjectRef,
+} from "@d4research/contracts";
 import type { EnvironmentServerConfig } from "@d4research/client-runtime/connection";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
 import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
@@ -879,6 +883,7 @@ function SidebarProviderStack(props: {
   );
   const current = (
     <ProviderInstanceIcon
+      instanceId={currentEntry.instanceId}
       driverKind={currentEntry.driverKind}
       displayName={currentEntry.displayName}
       accentColor={currentEntry.accentColor}
@@ -899,6 +904,7 @@ function SidebarProviderStack(props: {
         if (entry === undefined) return null;
         return (
           <ProviderInstanceIcon
+            instanceId={entry.instanceId}
             key={instanceId}
             driverKind={entry.driverKind}
             displayName={entry.displayName}
@@ -994,6 +1000,7 @@ function SidebarThreadTooltip({
         {driverKind ? (
           <div className="flex min-w-0 items-center gap-2">
             <ProviderInstanceIcon
+              instanceId={ProviderInstanceId.make(modelInstanceId)}
               driverKind={driverKind}
               displayName={
                 providerEntry?.displayName ?? thread.runtime?.providerName ?? modelInstanceId

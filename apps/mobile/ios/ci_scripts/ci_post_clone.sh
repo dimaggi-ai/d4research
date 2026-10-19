@@ -45,7 +45,9 @@ if [ -n "$BUNDLE_ID" ]; then
     expo-sharing-extension/Info.plist expo-sharing-extension/expo-sharing-extension.entitlements
 fi
 
-pod install --deployment
+# ExpoWidgets embeds the checkout path in its podspec script phases, so its
+# checksum changes on Cloud. Keep locked pod versions while refreshing metadata.
+pod install
 
 GEM_HOME="$(brew --prefix cocoapods)/libexec" "$(brew --prefix ruby)/bin/ruby" ci_scripts/prepare_signing.rb
 

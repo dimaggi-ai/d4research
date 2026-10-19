@@ -11,7 +11,8 @@ import * as Schema from "effect/Schema";
 import type { HandoffSettings, MekoReceipt } from "@d4research/contracts/settings";
 
 type Config = HandoffSettings["meko"];
-const hash = (text: string) => NodeCrypto.createHash("sha256").update(text).digest("hex");
+const hash = (text: string | Uint8Array) =>
+  NodeCrypto.createHash("sha256").update(text).digest("hex");
 const ObjectResult = Schema.Record(Schema.String, Schema.Unknown);
 const Created = Schema.Struct({ id: Schema.String });
 const Artifact = Schema.Struct({ content_hash: Schema.String, content_base64: Schema.String });
@@ -379,7 +380,7 @@ export class MekoHandoffClient {
           );
           if (
             readback.content_hash !== contentHash ||
-            Buffer.from(readback.content_base64, "base64").toString("utf8") !== packet
+            !Buffer.from(readback.content_base64, "base64").equals(Buffer.from(packet))
           )
             throw new MekoError(
               "ERROR_TOOL_FAILURE",
@@ -423,8 +424,9 @@ export class MekoHandoffClient {
               conversation_id: input.conversationId,
             }),
           );
-          const raw = Buffer.from(artifact.content_base64, "base64").toString("utf8");
-          if (hash(raw) !== input.contentHash || artifact.content_hash !== input.contentHash)
+          const bytes = Buffer.from(artifact.content_base64, "base64");
+          const raw = bytes.toString("utf8");
+          if (hash(bytes) !== input.contentHash || artifact.content_hash !== input.contentHash)
             throw new MekoError("ERROR_TOOL_FAILURE", "Meko handoff content hash did not match.");
           const packet = decodePacket(JSON.parse(raw));
           if (packet.project !== input.project || packet.threadId !== input.threadId)

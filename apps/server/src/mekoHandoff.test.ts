@@ -46,10 +46,21 @@ const tools = Object.entries({
   },
 }));
 
+function corruptUtf8(encoded: string) {
+  const bytes = Buffer.from(encoded, "base64");
+  const index = bytes.indexOf(Buffer.from("\uFFFD"));
+  return Buffer.concat([
+    bytes.subarray(0, index),
+    Buffer.from([0xff]),
+    bytes.subarray(index + 3),
+  ]).toString("base64");
+}
+
 function fakeMcp(
   options: {
     beforeWrite?: () => Promise<void>;
     mismatch?: boolean;
+    malformedUtf8?: boolean;
     denied?: boolean;
     missingTool?: boolean;
     toolError?: boolean;
@@ -90,7 +101,9 @@ function fakeMcp(
           content_hash: contentHash,
           content_base64: options.mismatch
             ? Buffer.from("wrong packet").toString("base64")
-            : stored,
+            : options.malformedUtf8
+              ? corruptUtf8(stored)
+              : stored,
         };
       result = {
         content: [
@@ -359,4 +372,23 @@ it("bounds a stalled MCP connection with a timeout receipt", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("rejects different bytes that decode to the same Unicode text on save and recall", async () => {
+  const corruption = { malformedUtf8: true };
+  fakeMcp(corruption);
+  const client = new MekoHandoffClient();
+  const unicodeInput = { ...input, text: "A replacement character: \uFFFD" };
+  expect((await client.save(config, unicodeInput)).status).toBe("ERROR_TOOL_FAILURE");
+  corruption.malformedUtf8 = false;
+  const saved = await client.save(config, unicodeInput);
+  expect(saved.status).toBe("SUCCESS_WITH_EVIDENCE");
+  corruption.malformedUtf8 = true;
+  const recalled = await client.read(config, {
+    ...input,
+    contentHash: saved.contentHash!,
+    conversationId: saved.conversationId!,
+  });
+  expect(recalled.receipt.status).toBe("ERROR_TOOL_FAILURE");
+  expect(recalled.text).toBeUndefined();
 });

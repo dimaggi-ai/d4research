@@ -2,6 +2,7 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  RunId,
   ORCHESTRATION_V2_WS_METHODS,
   ThreadId,
   TurnItemId,
@@ -723,6 +724,55 @@ describe("EnvironmentThreads", () => {
       expect((yield* Ref.get(harness.savedThreads)).map((saved) => saved.snapshotSequence)).toEqual(
         [1, 10, 11],
       );
+    }),
+  );
+
+  it.effect("checkpoints an active chat and resumes from disk using deltas", () =>
+    Effect.gen(function* () {
+      const active: OrchestrationV2ThreadProjection = {
+        ...BASE_PROJECTION,
+        runs: [
+          {
+            id: RunId.make("active-run"),
+            threadId: THREAD_ID,
+            ordinal: 1,
+            providerInstanceId: BASE_PROJECTION.thread.providerInstanceId,
+            modelSelection: BASE_PROJECTION.thread.modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("user-message"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "running",
+            requestedAt: DateTime.makeUnsafe("2026-06-20T00:00:00.000Z"),
+            startedAt: DateTime.makeUnsafe("2026-06-20T00:00:00.000Z"),
+            completedAt: null,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        ],
+      };
+      const first = yield* makeHarness();
+      yield* Queue.offer(first.inputs, snapshot(active));
+      yield* awaitThreadState(first.observed, (state) => state.status === "live");
+      yield* TestClock.adjust("500 millis");
+      const saved = (yield* Ref.get(first.savedThreads)).at(-1);
+      expect(saved?.projection.runs[0]?.status).toBe("running");
+      expect(saved?.snapshotSequence).toBe(1);
+
+      // A fresh instance has no retained memory, just the durable checkpoint.
+      const reopened = yield* makeHarness({ loadCached: Effect.succeed(Option.some(saved!)) });
+      const cached = yield* awaitThreadState(reopened.observed, (state) =>
+        Option.isSome(state.data),
+      );
+      expect(Option.getOrThrow(cached.data)).toEqual(active);
+      yield* Queue.offer(reopened.inputs, titleUpdated("Updated while away", 2));
+      yield* awaitThreadState(
+        reopened.observed,
+        (state) =>
+          Option.isSome(state.data) && state.data.value.thread.title === "Updated while away",
+      );
+      expect(yield* Ref.get(reopened.loaderCalls)).toBe(0);
+      expect(yield* Ref.get(reopened.lastSubscribeAfterSequence)).toBe(1);
     }),
   );
 

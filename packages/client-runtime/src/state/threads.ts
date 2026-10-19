@@ -106,18 +106,13 @@ function snapshotToPersist(
   return { snapshotSequence, projection };
 }
 
-function shouldPersistThread(
-  thread: OrchestrationV2ThreadProjection,
-  history: ThreadHistoryMeta,
-): boolean {
+function shouldPersistThread(history: ThreadHistoryMeta): boolean {
   // After the user loads older pages the in-memory timeline can grow large.
   // Keep those expanded projections out of the monolithic cache.
   if (history.expanded) {
     return false;
   }
-  return !thread.runs.some(
-    (run) => run.status === "preparing" || run.status === "starting" || run.status === "running",
-  );
+  return true;
 }
 
 interface ThreadResumeSnapshot {
@@ -293,7 +288,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       return Option.match(current.data, {
         onNone: () => Effect.void,
         onSome: (projection) =>
-          shouldPersistThread(projection, current.history)
+          shouldPersistThread(current.history)
             ? persist(
                 snapshotToPersist(
                   snapshotSequence,
@@ -376,10 +371,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         history,
       };
     });
-    // Active projections can update many times per second and retain large tool
-    // payloads. Persist once the run settles so cache encoding stays off the
-    // streaming path. Progressive meta rides along when the window is incomplete.
-    if (shouldPersistThread(thread, next.history)) {
+    // Queue references only; the persistence worker coalesces updates before encoding.
+    // Active runs need checkpoints too, since mobile can exit before a run settles.
+    if (shouldPersistThread(next.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
       yield* Queue.offer(
         persistence,
@@ -534,7 +528,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       yield* setDeleted();
       return;
     }
-    if (result._tag === "applied" && shouldPersistThread(result.projection, result.history)) {
+    if (result._tag === "applied" && shouldPersistThread(result.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
       yield* Queue.offer(
         persistence,

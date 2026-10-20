@@ -228,16 +228,39 @@ export const make = Effect.gen(function* () {
         }
         runs.push(run);
       }
+      // Message questions in ordinary chats survive process loss. Questions owned by
+      // already-finished workers cannot be answered there and must be repaired on boot.
+      const staleWorkerRequests = projection.runtimeRequests.filter((request) => {
+        if (
+          request.status !== "pending" ||
+          request.kind !== "user_input" ||
+          request.responseCapability.type !== "message" ||
+          projection.thread.lineage?.relationshipToParent !== "subagent"
+        )
+          return false;
+        const node = projection.nodes.find((candidate) => candidate.id === request.nodeId);
+        const run = projection.runs.find((candidate) => candidate.id === node?.runId);
+        return (
+          run !== undefined &&
+          ["completed", "interrupted", "failed", "cancelled", "rolled_back"].includes(run.status)
+        );
+      });
+      const staleWorkerRequestIds = new Set(staleWorkerRequests.map((request) => request.id));
+      const staleWorkerNodeIds = new Set(staleWorkerRequests.map((request) => request.nodeId));
       const messageRequestNodeIds = new Set(
         projection.runtimeRequests
           .filter(
             (request) =>
-              request.status === "pending" && request.responseCapability.type === "message",
+              request.status === "pending" &&
+              request.responseCapability.type === "message" &&
+              !staleWorkerRequestIds.has(request.id),
           )
           .map((request) => request.nodeId),
       );
       const requests = projection.runtimeRequests.filter(
-        (request) => request.status === "pending" && request.responseCapability.type !== "message",
+        (request) =>
+          request.status === "pending" &&
+          (request.responseCapability.type !== "message" || staleWorkerRequestIds.has(request.id)),
       );
       // Delegated task rows, items and nodes stay open: the child settles them.
       const delegatedTaskNodeIds = new Set<string>([
@@ -350,6 +373,30 @@ export const make = Effect.gen(function* () {
             },
             resolvedAt: now,
           },
+        });
+      }
+      for (const node of projection.nodes.filter((node) => staleWorkerNodeIds.has(node.id))) {
+        events.push({
+          id: yield* allocateEventId(),
+          type: "node.updated",
+          threadId: projection.thread.id,
+          ...(node.runId === null ? {} : { runId: node.runId }),
+          nodeId: node.id,
+          occurredAt: now,
+          payload: { ...node, status: "cancelled", completedAt: now },
+        });
+      }
+      for (const item of (projection.turnItems ?? []).filter(
+        (item) => item.type === "user_input_request" && staleWorkerRequestIds.has(item.requestId),
+      )) {
+        events.push({
+          id: yield* allocateEventId(),
+          type: "turn-item.updated",
+          threadId: projection.thread.id,
+          ...(item.runId === null ? {} : { runId: item.runId }),
+          ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+          occurredAt: now,
+          payload: cancelledItem(item, now),
         });
       }
       for (const run of runs) {

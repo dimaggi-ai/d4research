@@ -4126,6 +4126,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                         ELSE 0 END
                   )
                   OR run.run_id IN (
+                    SELECT node.run_id FROM orchestration_v2_projection_runtime_requests request
+                    JOIN orchestration_v2_projection_nodes node ON node.node_id = request.node_id
+                    WHERE request.thread_id = ${threadId} AND request.status = 'pending'
+                  )
+                  OR run.run_id IN (
                     SELECT item.run_id FROM orchestration_v2_projection_turn_items AS item
                     WHERE item.thread_id = ${threadId}
                       AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
@@ -4149,13 +4154,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           sql<PayloadRow>`
               SELECT node.payload_json FROM orchestration_v2_projection_nodes AS node
               WHERE node.thread_id = ${threadId}
-                AND node.status IN ('pending', 'starting', 'running', 'waiting')
+                AND (node.status IN ('pending', 'starting', 'running', 'waiting')
+                  OR node.node_id IN (
+                    SELECT node_id FROM orchestration_v2_projection_runtime_requests
+                    WHERE thread_id = ${threadId} AND status = 'pending'
+                  ))
                 AND (
                   (node.run_id IS NULL AND node.kind = 'root_turn')
                   OR node.run_id IN (
                     SELECT run_id FROM orchestration_v2_projection_runs
                     WHERE thread_id = ${threadId}
                       AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+                  )
+                  OR node.node_id IN (
+                    SELECT node_id FROM orchestration_v2_projection_runtime_requests
+                    WHERE thread_id = ${threadId} AND status = 'pending'
                   )
                   OR node.node_id IN (
                     SELECT item.node_id FROM orchestration_v2_projection_turn_items AS item
@@ -4318,6 +4331,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       AND status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
                   )
                   OR item.type IN ('command_execution', 'dynamic_tool', 'subagent')
+                  OR (item.type = 'user_input_request' AND json_extract(item.payload_json, '$.requestId') IN (
+                    SELECT runtime_request_id FROM orchestration_v2_projection_runtime_requests
+                    WHERE thread_id = ${threadId} AND status = 'pending'
+                  ))
                   OR (
                     item.run_id IS NULL
                     AND item.node_id IN (
@@ -4414,14 +4431,18 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         .withTransaction(
           Effect.gen(function* () {
             const rows = yield* sql<PayloadRow>`
-          SELECT payload_json FROM orchestration_v2_projection_runtime_requests
-          WHERE thread_id = ${threadId} AND provider_turn_id = ${providerTurnId}
-            AND kind = 'user_input' AND status = 'pending'
+          SELECT request.payload_json FROM orchestration_v2_projection_runtime_requests request
+          JOIN orchestration_v2_projection_threads thread ON thread.thread_id = request.thread_id
+          WHERE request.thread_id = ${threadId} AND request.provider_turn_id = ${providerTurnId}
+            AND request.kind = 'user_input' AND request.status = 'pending'
+            AND (
+              json_extract(request.payload_json, '$.responseCapability.type') <> 'message'
+              OR json_extract(thread.payload_json, '$.lineage.relationshipToParent') = 'subagent'
+            )
         `;
-            const runtimeRequests = (yield* decodeRows(
-              decodeRuntimeRequestPayload,
-              threadId,
-            )(rows)).filter((request) => request.responseCapability.type !== "message");
+            // Message questions survive an ordinary turn so the user can answer later.
+            // A terminal delegated worker no longer owns an actionable question.
+            const runtimeRequests = yield* decodeRows(decodeRuntimeRequestPayload, threadId)(rows);
             if (runtimeRequests.length === 0) return { runtimeRequests, nodes: [], turnItems: [] };
             const nodeRows = yield* sql<PayloadRow>`
           SELECT payload_json FROM orchestration_v2_projection_nodes
@@ -6339,7 +6360,8 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
               request.providerTurnId === providerTurnId &&
               request.kind === "user_input" &&
               request.status === "pending" &&
-              request.responseCapability.type !== "message",
+              (request.responseCapability.type !== "message" ||
+                projection.thread.lineage.relationshipToParent === "subagent"),
           );
           const requestIds = new Set(runtimeRequests.map((request) => request.id));
           const nodeIds = new Set(runtimeRequests.map((request) => request.nodeId));

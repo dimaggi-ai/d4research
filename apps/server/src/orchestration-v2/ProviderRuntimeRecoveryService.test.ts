@@ -229,6 +229,92 @@ it.effect("preserves async questions across startup and shutdown", () => {
   }).pipe(Effect.provide(layer));
 });
 
+it.effect.each([
+  { subagent: true, status: "completed" as const, closed: true },
+  { subagent: true, status: "interrupted" as const, closed: true },
+  { subagent: true, status: "failed" as const, closed: true },
+  { subagent: true, status: "cancelled" as const, closed: true },
+  { subagent: true, status: "rolled_back" as const, closed: true },
+  { subagent: false, status: "completed" as const, closed: false },
+])("repairs old worker questions on startup: $subagent/$status", ({ subagent, status, closed }) => {
+  const threadId = ThreadId.make("old-worker-question");
+  const nodeId = NodeId.make("old-worker-question-node");
+  const requestId = RuntimeRequestId.make("old-worker-question-request");
+  const runId = RunId.make("old-worker-question-run");
+  let projection = {
+    thread: { id: threadId, lineage: { relationshipToParent: subagent ? "subagent" : null } },
+    runtimeRequests: [
+      {
+        id: requestId,
+        nodeId,
+        kind: "user_input",
+        status: "pending",
+        responseCapability: { type: "message" },
+      },
+    ],
+    runs: [{ id: runId, status }],
+    nodes: [{ id: nodeId, runId, status: "waiting", kind: "user_input_request" }],
+    turnItems: [
+      {
+        id: TurnItemId.make("old-worker-question-item"),
+        requestId,
+        nodeId,
+        runId,
+        type: "user_input_request",
+        status: "waiting",
+      },
+    ],
+    providerSessions: [],
+    providerThreads: [],
+    attempts: [],
+    subagents: [],
+  } as unknown as OrchestrationV2ThreadProjection;
+  const committed: Array<Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0]> = [];
+  const layer = ProviderRuntimeRecovery.layer.pipe(
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getRecoveryThreadIds: () => Effect.succeed([threadId]),
+          getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+        }),
+        Layer.mock(EventSink.EventSinkV2)({
+          commitCommand: (input) =>
+            Effect.sync(() => {
+              committed.push(input);
+              for (const event of input.events) {
+                if (event.type === "runtime-request.updated")
+                  projection = { ...projection, runtimeRequests: [event.payload] };
+                if (event.type === "node.updated")
+                  projection = { ...projection, nodes: [event.payload] };
+                if (event.type === "turn-item.updated")
+                  projection = { ...projection, turnItems: [event.payload] };
+              }
+              return { committed: true, cancelledEffectCount: 0 } as never;
+            }),
+        }),
+        IdAllocator.layer,
+        Layer.mock(EffectOutbox.EffectOutboxV2)({
+          reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+          cancelUnsettled: () => Effect.succeed([]),
+          signalCancellations: () => Effect.void,
+        }),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+    assert.equal((yield* recovery.reconcile("startup")).closedRequests, closed ? 1 : 0);
+    assert.equal((yield* recovery.reconcile("startup")).closedRequests, 0);
+    assert.equal(committed.length, closed ? 1 : 0);
+    if (closed) {
+      assert.equal(projection.runtimeRequests[0]?.status, "expired");
+      assert.equal(projection.nodes[0]?.status, "cancelled");
+      assert.equal(projection.turnItems[0]?.status, "cancelled");
+    } else assert.equal(projection.runtimeRequests[0]?.status, "pending");
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("uses the same reconciliation path to cancel runtime requests during shutdown", () => {
   const threadId = ThreadId.make("thread_shutdown_requests");
   let committedInput: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | null =

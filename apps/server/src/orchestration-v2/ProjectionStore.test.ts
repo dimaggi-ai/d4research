@@ -872,6 +872,116 @@ it.effect("memory shell snapshots scope to one project", () =>
 );
 
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
+  it.effect.each(["waiting", "cancelled"] as const)(
+    "loads old pending questions and their terminal owners for startup recovery (%s)",
+    (nodeStatus) =>
+      Effect.gen(function* () {
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const threadId = yield* addRolledBackRecoveryCandidate("old-worker-question");
+        const original = yield* store.getThreadProjection(threadId);
+        const oldRun = original.runs[0]!;
+        const nodeId = NodeId.make("old-worker-question-node");
+        const requestId = RuntimeRequestId.make("old-worker-question-request");
+        const itemId = TurnItemId.make("old-worker-question-item");
+        yield* store.apply({
+          id: EventId.make("old-worker-question-newer-run"),
+          type: "run.created",
+          threadId,
+          occurredAt: now,
+          payload: {
+            ...oldRun,
+            id: RunId.make("newer-completed-run"),
+            ordinal: 2,
+            status: "completed",
+            rootNodeId: null,
+            completedAt: now,
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("old-worker-question-node-event"),
+          type: "node.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: nodeId,
+            threadId,
+            runId: oldRun.id,
+            parentNodeId: null,
+            rootNodeId: nodeId,
+            kind: "user_input_request",
+            status: nodeStatus,
+            countsForRun: false,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            runtimeRequestId: requestId,
+            checkpointScopeId: null,
+            startedAt: now,
+            completedAt: null,
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("old-worker-question-request-event"),
+          type: "runtime-request.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: requestId,
+            nodeId,
+            providerTurnId: null,
+            nativeRequestRef: null,
+            kind: "user_input",
+            status: "pending",
+            responseCapability: { type: "message" },
+            createdAt: now,
+            resolvedAt: null,
+          },
+        });
+        yield* store.apply({
+          id: EventId.make("old-worker-question-item-event"),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: itemId,
+            threadId,
+            runId: oldRun.id,
+            nodeId,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 1,
+            status: "waiting",
+            title: "Question",
+            startedAt: now,
+            completedAt: null,
+            updatedAt: now,
+            type: "user_input_request",
+            requestId,
+            questions: [],
+            responseMode: "message",
+          },
+        });
+        assert.include(yield* store.getRecoveryThreadIds("runtime"), threadId);
+        const recovery = yield* store.getRuntimeRecoveryProjection(threadId);
+        assert.include(
+          recovery.runs.map((run) => run.id),
+          oldRun.id,
+        );
+        assert.include(
+          recovery.nodes.map((node) => node.id),
+          nodeId,
+        );
+        assert.include(
+          recovery.turnItems.map((item) => item.id),
+          itemId,
+        );
+        assert.equal(recovery.runtimeRequests[0]?.id, requestId);
+      }),
+  );
+
   it.effect(
     "SQL recovery selects unfinished runless native subagents",
     () => runlessNativeSubagentNeedsRecovery,

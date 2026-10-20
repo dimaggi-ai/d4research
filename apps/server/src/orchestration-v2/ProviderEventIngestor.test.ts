@@ -25,6 +25,7 @@ import {
   RunAttemptId,
   RunId,
   RuntimeRequestId,
+  ThreadId,
   TurnItemId,
 } from "@d4research/contracts";
 import * as DateTime from "effect/DateTime";
@@ -1083,192 +1084,214 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  it.effect.each(["completed", "interrupted", "failed", "cancelled", "control"] as const)(
-    "dismisses only native questions when a provider turn ends with %s",
-    (terminal) =>
-      Effect.gen(function* () {
-        const now = yield* DateTime.now;
-        const eventSink = yield* EventSink.EventSinkV2;
-        const eventStore = yield* EventStore.EventStoreV2;
-        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-        const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
-        const idAllocator = yield* IdAllocator.IdAllocatorV2;
-        const threadEvent = yield* threadCreatedEvent(now);
-        const threadId = threadEvent.threadId;
-        const providerSessionId = yield* idAllocator.allocate.providerSession({
-          providerInstanceId: modelSelection.instanceId,
-          threadId,
-        });
-        const providerThreadId = idAllocator.derive.providerThread({
-          driver: CODEX_DRIVER,
-          nativeThreadId: `${threadId}:questions`,
-        });
-        const providerTurnId = idAllocator.derive.providerTurn({
-          driver: CODEX_DRIVER,
-          nativeTurnId: `${threadId}:questions`,
-        });
-        const otherTurnId = idAllocator.derive.providerTurn({
-          driver: CODEX_DRIVER,
-          nativeTurnId: `${threadId}:other-turn`,
-        });
-        const specs = [
-          { key: "native", responseCapability: { type: "live", providerSessionId } },
-          {
-            key: "unavailable",
-            responseCapability: { type: "not_resumable", reason: "Turn ended" },
-          },
-          { key: "message", responseCapability: { type: "message" } },
-          { key: "answered", responseCapability: { type: "live", providerSessionId } },
-          { key: "other-turn", responseCapability: { type: "live", providerSessionId } },
-          { key: "approval", responseCapability: { type: "live", providerSessionId } },
-        ] as const;
-        const fixtures = specs.map((spec, ordinal) => {
-          const nodeId = NodeId.make(`${threadId}:${spec.key}`);
-          const resolved = spec.key === "answered";
-          const request: OrchestrationV2RuntimeRequest = {
-            id: RuntimeRequestId.make(`${threadId}:${spec.key}`),
-            nodeId,
-            providerTurnId: spec.key === "other-turn" ? otherTurnId : providerTurnId,
-            nativeRequestRef: null,
-            kind: spec.key === "approval" ? "command" : "user_input",
-            status: resolved ? "resolved" : "pending",
-            responseCapability: spec.responseCapability,
-            createdAt: now,
-            resolvedAt: resolved ? now : null,
-          };
-          const node: OrchestrationV2ExecutionNode = {
-            id: nodeId,
-            threadId,
-            runId: null,
-            parentNodeId: null,
-            rootNodeId: nodeId,
-            kind: spec.key === "approval" ? "approval_request" : "user_input_request",
-            status: resolved ? "completed" : "waiting",
-            countsForRun: false,
-            providerThreadId,
-            providerTurnId: request.providerTurnId,
-            nativeItemRef: null,
-            runtimeRequestId: request.id,
-            checkpointScopeId: null,
-            startedAt: now,
-            completedAt: resolved ? now : null,
-          };
-          const item: OrchestrationV2TurnItem = {
-            id: TurnItemId.make(`${threadId}:${spec.key}`),
-            threadId,
-            runId: null,
-            nodeId,
-            providerThreadId,
-            providerTurnId: request.providerTurnId,
-            nativeItemRef: null,
-            parentItemId: null,
-            ordinal,
-            status: resolved ? "completed" : "waiting",
-            title: "Which option?",
-            startedAt: now,
-            completedAt: resolved ? now : null,
-            updatedAt: now,
-            ...(spec.key === "approval"
-              ? { type: "approval_request", requestId: request.id, requestKind: "command" }
-              : {
-                  type: "user_input_request",
-                  requestId: request.id,
-                  questions: [],
-                  ...(spec.key === "message" ? { responseMode: "message" as const } : {}),
-                }),
-          };
-          return { key: spec.key, request, node, item };
-        });
-        const seedEvents: Array<OrchestrationV2DomainEvent> = [threadEvent];
-        for (const fixture of fixtures) {
-          for (const payload of [
-            { type: "runtime-request.updated" as const, payload: fixture.request },
-            { type: "node.updated" as const, payload: fixture.node },
-            { type: "turn-item.updated" as const, payload: fixture.item },
-          ]) {
-            seedEvents.push({
-              id: yield* idAllocator.allocate.event({ threadId }),
-              threadId,
-              occurredAt: now,
-              ...payload,
-            });
+  it.effect.each(
+    (["completed", "interrupted", "failed", "cancelled", "control"] as const).flatMap(
+      (terminal) =>
+        [
+          [terminal, false],
+          [terminal, true],
+        ] as const,
+    ),
+  )("dismisses terminal questions for %s (delegated worker: %s)", ([terminal, subagent]) =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const eventStore = yield* EventStore.EventStoreV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const baseThreadEvent = yield* threadCreatedEvent(now);
+      if (baseThreadEvent.type !== "thread.created")
+        return yield* Effect.die("Missing thread fixture");
+      const threadEvent = subagent
+        ? {
+            ...baseThreadEvent,
+            payload: {
+              ...baseThreadEvent.payload,
+              lineage: {
+                rootThreadId: ThreadId.make("parent-question-thread"),
+                parentThreadId: ThreadId.make("parent-question-thread"),
+                relationshipToParent: "subagent" as const,
+              },
+            },
           }
-        }
-        yield* eventSink.write({ events: seedEvents });
-        const input = {
-          providerSessionId,
-          providerInstanceId: modelSelection.instanceId,
-          threadId,
-          event:
-            terminal === "control"
-              ? {
-                  type: "turn.terminal" as const,
-                  driver: CODEX_DRIVER,
-                  providerThreadId,
-                  providerTurnId,
-                  runOrdinal: 1,
-                  status: "completed" as const,
-                  failure: null,
-                  threadDisposition: "reusable" as const,
-                }
-              : {
-                  type: "provider_turn.updated" as const,
-                  driver: CODEX_DRIVER,
-                  providerTurn: {
-                    id: providerTurnId,
-                    providerThreadId,
-                    nodeId: NodeId.make(`${threadId}:root`),
-                    runAttemptId: null,
-                    nativeTurnRef: null,
-                    ordinal: 1,
-                    status: terminal,
-                    startedAt: now,
-                    completedAt: now,
-                  },
-                },
+        : baseThreadEvent;
+      const threadId = threadEvent.threadId;
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      const providerThreadId = idAllocator.derive.providerThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: `${threadId}:questions`,
+      });
+      const providerTurnId = idAllocator.derive.providerTurn({
+        driver: CODEX_DRIVER,
+        nativeTurnId: `${threadId}:questions`,
+      });
+      const otherTurnId = idAllocator.derive.providerTurn({
+        driver: CODEX_DRIVER,
+        nativeTurnId: `${threadId}:other-turn`,
+      });
+      const specs = [
+        { key: "native", responseCapability: { type: "live", providerSessionId } },
+        {
+          key: "unavailable",
+          responseCapability: { type: "not_resumable", reason: "Turn ended" },
+        },
+        { key: "message", responseCapability: { type: "message" } },
+        { key: "answered", responseCapability: { type: "live", providerSessionId } },
+        { key: "other-turn", responseCapability: { type: "live", providerSessionId } },
+        { key: "approval", responseCapability: { type: "live", providerSessionId } },
+      ] as const;
+      const fixtures = specs.map((spec, ordinal) => {
+        const nodeId = NodeId.make(`${threadId}:${spec.key}`);
+        const resolved = spec.key === "answered";
+        const request: OrchestrationV2RuntimeRequest = {
+          id: RuntimeRequestId.make(`${threadId}:${spec.key}`),
+          nodeId,
+          providerTurnId: spec.key === "other-turn" ? otherTurnId : providerTurnId,
+          nativeRequestRef: null,
+          kind: spec.key === "approval" ? "command" : "user_input",
+          status: resolved ? "resolved" : "pending",
+          responseCapability: spec.responseCapability,
+          createdAt: now,
+          resolvedAt: resolved ? now : null,
         };
-        const stored = yield* ingestor.ingestNormalized(input);
-        const projection = yield* projectionStore.getThreadProjection(threadId);
-        for (const fixture of fixtures) {
-          const closed = fixture.key === "native" || fixture.key === "unavailable";
-          const request = projection.runtimeRequests.find(
-            (item) => item.id === fixture.request.id,
-          )!;
-          const node = projection.nodes.find((item) => item.id === fixture.node.id)!;
-          const item = projection.turnItems.find((item) => item.id === fixture.item.id)!;
-          if (closed) {
-            assert.equal(request.status, "cancelled");
-            assert.isNotNull(request.resolvedAt);
-            assert.equal(node.status, "cancelled");
-            assert.isNotNull(node.completedAt);
-            assert.equal(item.status, "cancelled");
-            assert.isNotNull(item.completedAt);
-          } else {
-            assert.equal(request.status, fixture.request.status);
-            assert.equal(node.status, fixture.node.status);
-            assert.equal(item.status, fixture.item.status);
-          }
+        const node: OrchestrationV2ExecutionNode = {
+          id: nodeId,
+          threadId,
+          runId: null,
+          parentNodeId: null,
+          rootNodeId: nodeId,
+          kind: spec.key === "approval" ? "approval_request" : "user_input_request",
+          status: resolved ? "completed" : "waiting",
+          countsForRun: false,
+          providerThreadId,
+          providerTurnId: request.providerTurnId,
+          nativeItemRef: null,
+          runtimeRequestId: request.id,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: resolved ? now : null,
+        };
+        const item: OrchestrationV2TurnItem = {
+          id: TurnItemId.make(`${threadId}:${spec.key}`),
+          threadId,
+          runId: null,
+          nodeId,
+          providerThreadId,
+          providerTurnId: request.providerTurnId,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal,
+          status: resolved ? "completed" : "waiting",
+          title: "Which option?",
+          startedAt: now,
+          completedAt: resolved ? now : null,
+          updatedAt: now,
+          ...(spec.key === "approval"
+            ? { type: "approval_request", requestId: request.id, requestKind: "command" }
+            : {
+                type: "user_input_request",
+                requestId: request.id,
+                questions: [],
+                ...(spec.key === "message" ? { responseMode: "message" as const } : {}),
+              }),
+        };
+        return { key: spec.key, request, node, item };
+      });
+      const seedEvents: Array<OrchestrationV2DomainEvent> = [threadEvent];
+      for (const fixture of fixtures) {
+        for (const payload of [
+          { type: "runtime-request.updated" as const, payload: fixture.request },
+          { type: "node.updated" as const, payload: fixture.node },
+          { type: "turn-item.updated" as const, payload: fixture.item },
+        ]) {
+          seedEvents.push({
+            id: yield* idAllocator.allocate.event({ threadId }),
+            threadId,
+            occurredAt: now,
+            ...payload,
+          });
         }
-        assert.equal(
-          stored.filter((entry) => entry.event.type === "runtime-request.updated").length,
-          2,
-        );
-        assert.isEmpty(
-          (yield* projectionStore.getPendingNativeUserInputs(threadId, providerTurnId))
-            .runtimeRequests,
-        );
-        const replayed = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
-        assert.equal(
-          replayed.filter(
-            (entry) =>
-              entry.event.type === "runtime-request.updated" &&
-              entry.event.payload.status === "cancelled",
-          ).length,
-          2,
-        );
-        const repeated = yield* ingestor.ingestNormalized(input);
-        assert.isFalse(repeated.some((entry) => entry.event.type === "runtime-request.updated"));
-      }),
+      }
+      yield* eventSink.write({ events: seedEvents });
+      const input = {
+        providerSessionId,
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+        event:
+          terminal === "control"
+            ? {
+                type: "turn.terminal" as const,
+                driver: CODEX_DRIVER,
+                providerThreadId,
+                providerTurnId,
+                runOrdinal: 1,
+                status: "completed" as const,
+                failure: null,
+                threadDisposition: "reusable" as const,
+              }
+            : {
+                type: "provider_turn.updated" as const,
+                driver: CODEX_DRIVER,
+                providerTurn: {
+                  id: providerTurnId,
+                  providerThreadId,
+                  nodeId: NodeId.make(`${threadId}:root`),
+                  runAttemptId: null,
+                  nativeTurnRef: null,
+                  ordinal: 1,
+                  status: terminal,
+                  startedAt: now,
+                  completedAt: now,
+                },
+              },
+      };
+      const stored = yield* ingestor.ingestNormalized(input);
+      const projection = yield* projectionStore.getThreadProjection(threadId);
+      for (const fixture of fixtures) {
+        const closed =
+          fixture.key === "native" ||
+          fixture.key === "unavailable" ||
+          (subagent && fixture.key === "message");
+        const request = projection.runtimeRequests.find((item) => item.id === fixture.request.id)!;
+        const node = projection.nodes.find((item) => item.id === fixture.node.id)!;
+        const item = projection.turnItems.find((item) => item.id === fixture.item.id)!;
+        if (closed) {
+          assert.equal(request.status, "cancelled");
+          assert.isNotNull(request.resolvedAt);
+          assert.equal(node.status, "cancelled");
+          assert.isNotNull(node.completedAt);
+          assert.equal(item.status, "cancelled");
+          assert.isNotNull(item.completedAt);
+        } else {
+          assert.equal(request.status, fixture.request.status);
+          assert.equal(node.status, fixture.node.status);
+          assert.equal(item.status, fixture.item.status);
+        }
+      }
+      assert.equal(
+        stored.filter((entry) => entry.event.type === "runtime-request.updated").length,
+        subagent ? 3 : 2,
+      );
+      assert.isEmpty(
+        (yield* projectionStore.getPendingNativeUserInputs(threadId, providerTurnId))
+          .runtimeRequests,
+      );
+      const replayed = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
+      assert.equal(
+        replayed.filter(
+          (entry) =>
+            entry.event.type === "runtime-request.updated" &&
+            entry.event.payload.status === "cancelled",
+        ).length,
+        subagent ? 3 : 2,
+      );
+      const repeated = yield* ingestor.ingestNormalized(input);
+      assert.isFalse(repeated.some((entry) => entry.event.type === "runtime-request.updated"));
+    }),
   );
 
   it.effect(

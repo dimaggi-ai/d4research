@@ -281,7 +281,9 @@ const layerBase: Layer.Layer<
             current?.status !== "pending" ||
             current.kind !== "user_input" ||
             current.providerTurnId !== event.payload.providerTurnId ||
-            current.responseCapability.type === "message"
+            (current.responseCapability.type === "message" &&
+              (yield* projectionStore.getThread(event.threadId)).lineage.relationshipToParent !==
+                "subagent")
           ) {
             staleRequests.add(event.payload.id);
             staleNodes.add(event.payload.nodeId);

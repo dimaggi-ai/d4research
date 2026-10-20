@@ -1,3 +1,5 @@
+import * as NodeModule from "node:module";
+import { type ConfigPlugin, type ExportedConfig, withEntitlementsPlist } from "expo/config-plugins";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 afterEach(() => {
@@ -49,5 +51,54 @@ describe("d4 native release isolation", () => {
     expect(config.ios?.bundleIdentifier).toBe("com.example.d4");
     expect(JSON.stringify(config.plugins)).toContain('"com.example.d4.sharing"');
     expect(JSON.stringify(config.plugins)).toContain('"group.com.example.d4"');
+  });
+});
+
+describe("Personal Team entitlement cleanup", () => {
+  it("removes capabilities added by later plugins while preserving the signing identity", async () => {
+    vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM", "1");
+    vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID", "com.example.personal");
+    vi.stubEnv("T3CODE_IOS_APPLE_TEAM_ID", "TESTTEAM01");
+    const config = await loadConfig();
+    const cleanupPath = "./plugins/withoutIosPersonalTeamCapabilities.cjs";
+    expect(config.plugins?.[0]).toBe(cleanupPath);
+    expect(config.ios?.appleTeamId).toBe("TESTTEAM01");
+    expect(config.ios?.bundleIdentifier).toBe("com.example.personal");
+    const cleanup = NodeModule.createRequire(import.meta.url)(cleanupPath) as ConfigPlugin;
+    const configured = withEntitlementsPlist(cleanup(config), (modConfig) => {
+      Object.assign(modConfig.modResults, {
+        "aps-environment": "development",
+        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.developer.associated-domains": ["applinks:example.test"],
+        "com.apple.security.application-groups": ["group.com.example.personal"],
+        "com.apple.developer.team-identifier": "TESTTEAM01",
+      });
+      return modConfig;
+    });
+    const run = (configured as ExportedConfig).mods?.ios?.entitlements;
+    expect(run).toBeDefined();
+    if (!run) throw new Error("Missing entitlement mod");
+    const result = await run({
+      ...configured,
+      modResults: {},
+      modRawConfig: config,
+      modRequest: {
+        projectRoot: "/test/project",
+        platformProjectRoot: "/test/project/ios",
+        platform: "ios",
+        modName: "entitlements",
+        introspect: true,
+      },
+    });
+    expect(result.modResults).toEqual({
+      "com.apple.developer.team-identifier": "TESTTEAM01",
+    });
+  });
+
+  it("does not register capability cleanup for paid-team builds", async () => {
+    vi.stubEnv("T3CODE_IOS_PERSONAL_TEAM", "");
+    expect((await loadConfig()).plugins).not.toContain(
+      "./plugins/withoutIosPersonalTeamCapabilities.cjs",
+    );
   });
 });

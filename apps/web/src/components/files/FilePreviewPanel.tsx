@@ -118,6 +118,7 @@ import {
 } from "./projectFilesQueryState";
 
 interface FilePreviewPanelProps {
+  active?: boolean;
   environmentId: EnvironmentId;
   cwd: string;
   projectName: string;
@@ -982,6 +983,7 @@ export default function FilePreviewPanel({
   onPendingChange,
   selectedFilePending,
   workspaceMutationId,
+  active = true,
 }: FilePreviewPanelProps) {
   const relativePath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
@@ -1015,6 +1017,9 @@ export default function FilePreviewPanel({
     cwd,
     relativePath,
     attachment === undefined && relativePath !== null,
+    true,
+    selectedFilePending,
+    active,
   );
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
   // A chat link cannot tell a folder from a file, so a folder arrives here as
@@ -1218,7 +1223,7 @@ export default function FilePreviewPanel({
                 projectName={projectName}
                 relativePath={breadcrumbPath}
                 trail={breadcrumbTrail}
-                workspaceMutationId={workspaceMutationId}
+                workspaceMutationId={file.data?.revision ?? workspaceMutationId}
               />
             </div>
           </ScrollArea>
@@ -1314,7 +1319,7 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               name={relativePath}
-              workspaceMutationId={workspaceMutationId}
+              workspaceMutationId={file.data?.revision ?? workspaceMutationId}
             />
           ) : relativePath && isAudio && absolutePath ? (
             <WorkspaceAudioPreview
@@ -1325,7 +1330,7 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               name={relativePath}
-              workspaceMutationId={workspaceMutationId}
+              workspaceMutationId={file.data?.revision ?? workspaceMutationId}
             />
           ) : relativePath && isImage && absolutePath ? (
             <WorkspaceImagePreview
@@ -1336,7 +1341,7 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               alt={relativePath}
-              workspaceMutationId={workspaceMutationId}
+              workspaceMutationId={file.data?.revision ?? workspaceMutationId}
             />
           ) : relativePath && renderBrowserFile && absolutePath ? (
             <WorkspaceBrowserPreview
@@ -1347,7 +1352,7 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               title={relativePath}
-              workspaceMutationId={workspaceMutationId}
+              workspaceMutationId={file.data?.revision ?? workspaceMutationId}
             />
           ) : relativePath && file.error && file.data === null ? (
             <div
@@ -1448,7 +1453,7 @@ export default function FilePreviewPanel({
               }
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
-              workspaceMutationId={workspaceMutationId}
+              workspaceMutationId={file.data?.revision ?? workspaceMutationId}
               {...(previewPath && !isMedia && !isPdf
                 ? { onRefreshSelectedFile: file.refresh }
                 : {})}

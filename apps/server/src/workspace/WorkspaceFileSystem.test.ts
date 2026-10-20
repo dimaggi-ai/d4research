@@ -158,6 +158,36 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
   });
 
   describe("readFile", () => {
+    it.effect("checks disk identity without transferring text, including atomic replacement", () =>
+      Effect.gen(function* () {
+        const workspace = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "note.md", "before\n");
+        const input = { cwd, relativePath: "note.md" };
+        const before = yield* workspace.readFile(input);
+        const metadata = yield* workspace.readFile({ ...input, metadataOnly: true });
+        expect(metadata).toEqual({
+          relativePath: "note.md",
+          contents: "",
+          byteLength: 7,
+          truncated: false,
+          revision: before.revision,
+          metadataOnly: true,
+        });
+        yield* writeTextFile(cwd, "replacement.md", "after!\n");
+        yield* fs.rename(path.join(cwd, "replacement.md"), path.join(cwd, "note.md"));
+        const changed = yield* workspace.readFile({ ...input, metadataOnly: true });
+        expect(changed.revision).not.toBe(before.revision);
+        expect(changed.contents).toBe("");
+        expect(changed.byteLength).toBe(before.byteLength);
+        const reopened = yield* workspace.readFile(input);
+        expect(reopened.revision).toBe(changed.revision);
+        expect(reopened.contents).toBe("after!\n");
+      }),
+    );
+
     it.effect("reads UTF-8 files relative to the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -174,6 +204,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents: "export const answer = 42;\n",
           byteLength: 26,
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );
@@ -197,6 +228,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents: "# Report\n",
           byteLength: 9,
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );

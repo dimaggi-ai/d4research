@@ -1,3 +1,6 @@
+import { useEffect, useRef } from "react";
+import { useStableCallback } from "~/hooks/useStableCallback";
+import { filePreviewKind } from "@d4research/shared/filePreview";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   type EnvironmentId,
@@ -17,6 +20,7 @@ import { useProjectPathSearch } from "~/state/queries";
 import { executeAtomQuery } from "@d4research/client-runtime/state/runtime";
 
 const EMPTY_PROJECT_FILE_PATH = "";
+const FILE_REVISION_CHECK_INTERVAL_MS = 10_000;
 
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
@@ -246,19 +250,122 @@ export function useProjectFileQuery(
   cwd: string,
   relativePath: string | null,
   enabled = true,
+  validateWhileVisible = false,
+  preserveOptimistic = false,
+  active = true,
 ): ProjectFileQueryState {
   // A media path is not skipped here: a folder named `assets.png` is only
   // knowable as a folder from the read failure.
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const isQueryEnabled = enabled;
+  const kind = relativePath === null ? null : filePreviewKind({ name: relativePath });
+  const metadataOnly = kind === "image" || kind === "video" || kind === "audio" || kind === "pdf";
   const atom =
-    enabled && canReadFiles
-      ? getProjectFileQueryAtom(environmentId, cwd, relativePath)
+    enabled && canReadFiles && relativePath !== null
+      ? metadataOnly
+        ? projectEnvironment.readFile({
+            environmentId,
+            input: { cwd, relativePath, metadataOnly: true },
+          })
+        : getProjectFileQueryAtom(environmentId, cwd, relativePath)
       : EMPTY_PROJECT_FILE_QUERY_ATOM;
   const result = useAtomValue(atom);
-  const refreshAtom = useAtomRefresh(atom);
-  const refresh = () => refreshAtom();
+  const shouldValidate = enabled && canReadFiles && active && relativePath !== null;
+  const shouldPoll = shouldValidate && validateWhileVisible;
+  const targetKey = shouldValidate ? `${environmentId}\u0000${cwd}\u0000${relativePath}` : null;
+  const checkState = useRef({
+    generation: 0,
+    running: false,
+    again: false,
+    targetKey,
+    preserveOptimistic,
+  });
+  useEffect(() => {
+    const state = checkState.current;
+    state.targetKey = targetKey;
+    state.preserveOptimistic = preserveOptimistic;
+    return () => {
+      state.generation++;
+      state.running = false;
+      state.again = false;
+    };
+  }, [targetKey, preserveOptimistic]);
+  const refresh = useStableCallback(() => {
+    if (!enabled || !canReadFiles || relativePath === null || !active || preserveOptimistic) return;
+    const state = checkState.current;
+    if (state.targetKey !== targetKey || state.preserveOptimistic) return;
+    if (state.running) {
+      state.again = true;
+      return;
+    }
+    const generation = state.generation;
+    state.running = true;
+    const metadataAtom = projectEnvironment.readFile({
+      environmentId,
+      input: { cwd, relativePath, metadataOnly: true },
+    });
+    void (async () => {
+      try {
+        do {
+          state.again = false;
+          // Finish an initial read before checking, avoiding two full reads on first open.
+          await executeAtomQuery(appAtomRegistry, atom, {
+            reportDefect: false,
+            reportFailure: false,
+          });
+          if (state.generation !== generation) return;
+          const metadata = await executeAtomQuery(appAtomRegistry, metadataAtom, {
+            reportDefect: false,
+            reportFailure: false,
+            refresh: true,
+          });
+          if (state.generation !== generation) return;
+          const currentResult = appAtomRegistry.get(atom);
+          const current = Option.getOrNull(AsyncResult.value(currentResult));
+          if (
+            currentResult._tag === "Failure" ||
+            metadata._tag !== "Success" ||
+            !current?.revision ||
+            metadata.value.revision !== current.revision
+          ) {
+            clearProjectFileQueryData(environmentId, cwd, relativePath);
+            await executeAtomQuery(appAtomRegistry, atom, {
+              reportDefect: false,
+              reportFailure: false,
+              refresh: true,
+            });
+          }
+        } while (state.again && state.generation === generation);
+      } finally {
+        if (state.generation === generation) state.running = false;
+      }
+    })();
+  });
+  useEffect(() => {
+    if (targetKey !== null && !preserveOptimistic) refresh();
+  }, [refresh, targetKey, preserveOptimistic]);
+  useEffect(() => {
+    if (!shouldPoll || preserveOptimistic) return;
+    // Workspace mutations do not cover every external write. Metadata checks
+    // keep unchanged cached objects without retransmitting contents or resetting edits.
+    const validateVisibleFile = () => {
+      if (typeof document === "undefined" || document.visibilityState !== "hidden") refresh();
+    };
+    const interval = setInterval(validateVisibleFile, FILE_REVISION_CHECK_INTERVAL_MS);
+    if (typeof document !== "undefined")
+      document.addEventListener("visibilitychange", validateVisibleFile);
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", validateVisibleFile);
+    };
+  }, [preserveOptimistic, refresh, shouldPoll]);
+  useEffect(() => {
+    if (targetKey === null || typeof window === "undefined") return;
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh, targetKey]);
   const data = Option.getOrNull(AsyncResult.value(result));
   const optimisticResult = useAtomValue(
     optimisticFileAtom(environmentId, cwd, relativePath ?? EMPTY_PROJECT_FILE_PATH),
@@ -268,7 +375,7 @@ export function useProjectFileQuery(
   const readError = isProjectReadFileError(cause) ? cause : null;
 
   return {
-    data: canReadFiles ? (optimisticFile?.data ?? data) : null,
+    data: canReadFiles ? (optimisticFile?.data ?? (result._tag === "Failure" ? null : data)) : null,
     error:
       !isQueryEnabled || fileAccess.isPending
         ? null

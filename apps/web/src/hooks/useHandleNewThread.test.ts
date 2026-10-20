@@ -196,7 +196,10 @@ vi.mock("../uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "remote-project",
   useUiStateStore: () => [],
 }));
-vi.mock("./useSettings", () => ({ useClientSettings: () => ({}) }));
+vi.mock("./useSettings", () => ({
+  getClientSettings: () => ({}),
+  useClientSettings: () => ({}),
+}));
 
 import { useNewThreadHandler } from "./useHandleNewThread";
 

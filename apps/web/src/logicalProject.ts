@@ -8,6 +8,7 @@ export {
   getProjectOrderKey,
   resolveProjectGroupingMode,
   selectProjectGroupingSettings,
+  withProjectLink,
   type ProjectGroupingMode,
   type ProjectGroupingSettings,
   type ProjectGroup,

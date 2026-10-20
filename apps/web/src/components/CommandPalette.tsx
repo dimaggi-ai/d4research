@@ -137,6 +137,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../state/environments";
+import { linkProjects } from "../projectLinks";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
@@ -839,6 +840,10 @@ function OpenCommandPaletteDialog(props: {
   const [addProjectEnvironmentId, setAddProjectEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
+  const [addProjectAttachTarget, setAddProjectAttachTarget] = useState<{
+    readonly projectKey: string;
+    readonly label: string;
+  } | null>(null);
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [newProjectFlow, setNewProjectFlow] = useState<{
@@ -1312,6 +1317,7 @@ function OpenCommandPaletteDialog(props: {
     setNewProjectFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
+      setAddProjectAttachTarget(null);
     } else if (newProjectFlow?.sourcesEnvironmentId) {
       setAddProjectEnvironmentId(newProjectFlow.sourcesEnvironmentId);
     }
@@ -1519,6 +1525,71 @@ function OpenCommandPaletteDialog(props: {
     });
   };
 
+  const startAddProjectTargetSelection = (environmentId: EnvironmentId): void => {
+    const attachable = projectGroups.filter((group) => !group.isScratch);
+    if (attachable.length === 0) {
+      setAddProjectAttachTarget(null);
+      startAddProjectSourceSelection(environmentId);
+      return;
+    }
+    const chevron = (
+      <ChevronRightIcon className="-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70" />
+    );
+    pushPaletteView({
+      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: `add-project-target:${environmentId}`,
+          label: "Add as",
+          items: [
+            {
+              kind: "action",
+              value: `action:add-project:${environmentId}:separate`,
+              searchTerms: ["new", "separate", "own", "project"],
+              title: "Use automatic grouping",
+              description: "Group this folder using this device’s project settings.",
+              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+              titleTrailingContent: chevron,
+              keepOpen: true,
+              run: async () => {
+                setAddProjectAttachTarget(null);
+                startAddProjectSourceSelection(environmentId);
+              },
+            },
+          ],
+        },
+        {
+          value: `add-project-attach:${environmentId}`,
+          label: "Part of an existing project",
+          items: attachable.map((group) => ({
+            kind: "action" as const,
+            value: `action:add-project:${environmentId}:attach:${group.projectKey}`,
+            searchTerms: [
+              group.displayName,
+              ...group.memberProjects.map((member) => member.workspaceRoot),
+            ],
+            title: group.displayName,
+            description: group.memberProjects
+              .map(
+                (member) => `${member.environmentLabel ?? "Environment"} · ${member.workspaceRoot}`,
+              )
+              .join(", "),
+            icon: projectFaviconIcon(group),
+            titleTrailingContent: chevron,
+            keepOpen: true,
+            run: async () => {
+              setAddProjectAttachTarget({
+                projectKey: group.projectKey,
+                label: group.displayName,
+              });
+              startAddProjectSourceSelection(environmentId);
+            },
+          })),
+        },
+      ],
+    });
+  };
+
   const buildEnvironmentItem = (
     option: AddProjectEnvironmentOption,
     value: string,
@@ -1544,7 +1615,7 @@ function OpenCommandPaletteDialog(props: {
     buildEnvironmentItem(
       option,
       `action:add-project:environment:${option.environmentId}`,
-      startAddProjectSourceSelection,
+      startAddProjectTargetSelection,
     ),
   );
   const newProjectEnvironmentOptions = addProjectEnvironmentOptions.filter(
@@ -1574,10 +1645,11 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    void startAddProjectSourceSelection(defaultAddProjectEnvironmentId);
+    startAddProjectTargetSelection(defaultAddProjectEnvironmentId);
   };
 
   const openNewProjectFlow = () => {
+    setAddProjectAttachTarget(null);
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
@@ -2190,6 +2262,9 @@ function OpenCommandPaletteDialog(props: {
       cwd,
     );
     if (existing) {
+      if (addProjectAttachTarget !== null) {
+        await linkProjects([existing], addProjectAttachTarget.projectKey);
+      }
       const latestThread = getLatestThreadForProject(
         threads.filter((thread) => thread.environmentId === existing.environmentId),
         existing.id,
@@ -2257,9 +2332,15 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const navigationResult = await settlePromise(() =>
-      handleNewThread(scopeProjectRef(input.environmentId, projectId)),
-    );
+    const createdRef = scopeProjectRef(input.environmentId, projectId);
+    const navigationResult = await settlePromise(async () => {
+      if (addProjectAttachTarget !== null) {
+        // The link has to exist before the draft opens, which keys off the logical project.
+        const created = await waitForProject(createdRef, 5_000);
+        await linkProjects([created], addProjectAttachTarget.projectKey);
+      }
+      return handleNewThread(createdRef);
+    });
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(
@@ -2308,6 +2389,7 @@ function OpenCommandPaletteDialog(props: {
         environmentId: newProjectFlow.environmentId,
         name: newProjectName,
         publishTo: newProjectPublishes ? newProjectPublishTarget : null,
+        attachToProjectKey: addProjectAttachTarget?.projectKey ?? null,
       }),
     );
     newProjectSubmittingRef.current = false;
@@ -2497,10 +2579,14 @@ function OpenCommandPaletteDialog(props: {
       }
       return;
     }
-    setOpen(false);
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
-    await waitForProject(projectRef, 3_000).catch(() => null);
-    const navigationResult = await settlePromise(() => handleNewThread(projectRef));
+    const navigationResult = await settlePromise(async () => {
+      const cloned = await waitForProject(projectRef, 3_000);
+      if (addProjectAttachTarget !== null) {
+        await linkProjects([cloned], addProjectAttachTarget.projectKey);
+      }
+      return handleNewThread(projectRef);
+    });
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(
@@ -2510,7 +2596,9 @@ function OpenCommandPaletteDialog(props: {
           description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
+      return;
     }
+    setOpen(false);
   }
 
   const browseTo = async (name: string): Promise<void> => {
@@ -2593,7 +2681,7 @@ function OpenCommandPaletteDialog(props: {
       setViewStack((previousViews) => previousViews.slice(0, -1));
     }
     popView();
-    startAddProjectSourceSelection(environmentId);
+    startAddProjectTargetSelection(environmentId);
   };
   const switchNewProjectEnvironment = (environmentId: EnvironmentId) => {
     setNewProjectFlow((flow) => (flow === null ? flow : { ...flow, environmentId }));

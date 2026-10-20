@@ -46,6 +46,16 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Attach folders to a project
+
+On web or desktop, use **Add project** in the command palette and choose an existing
+project before selecting the folder. For a folder already added, open its project
+settings and choose **Grouping → Show under another project**.
+
+This grouping is saved on this device. Files, threads, and agent working directories
+stay in place. To undo an attachment, open the combined project's settings and choose
+**Detach** for that folder. Scratch projects cannot be attached.
+
 ## Worktree branch names
 
 In **Settings → Source Control → Worktree branch naming**, choose a static prefix,

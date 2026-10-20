@@ -8,6 +8,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   resolveScratchProjectScopeKey,
+  withProjectLink,
   sortProjectsByGroupOrder,
   type ProjectGroupingSettings,
 } from "./projectGrouping.ts";
@@ -444,6 +445,59 @@ describe("buildProjectGroups", () => {
     });
     expect(groups).toHaveLength(1);
     expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["winner", "sibling"]);
+  });
+});
+
+describe("hand-made project links", () => {
+  const laptop = makeProject("laptop", "/Users/a/notes", { repositoryIdentity: null });
+  const mini = makeProject("mini", "/Users/b/work/notes", {
+    environmentId: EnvironmentId.make("mini"),
+    repositoryIdentity: null,
+  });
+  const base = settings("repository");
+
+  it("groups folders without a Git remote once one is attached to the other", () => {
+    expect(buildProjectGroups({ projects: [laptop, mini], settings: base })).toHaveLength(2);
+
+    const laptopKey = deriveLogicalProjectKeyFromSettings(laptop, base);
+    const linked = { ...base, sidebarProjectLinks: withProjectLink(mini, laptopKey, base) };
+    const groups = buildProjectGroups({ projects: [laptop, mini], settings: linked });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe(laptopKey);
+    expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["laptop", "mini"]);
+    expect(deriveLogicalProjectKeyFromSettings(mini, linked)).toBe(laptopKey);
+  });
+
+  it("moves a checkout out of its repository group, and back when detached", () => {
+    const clone = makeProject("clone", "/work/t3code");
+    const other = makeProject("other", "/work/other", {
+      repositoryIdentity: { ...repositoryIdentity, canonicalKey: "github.com/me/other" },
+    });
+    const linked = {
+      ...base,
+      sidebarProjectLinks: withProjectLink(clone, "github.com/me/other", base),
+    };
+    expect(buildProjectGroups({ projects: [clone, other], settings: linked })).toHaveLength(1);
+
+    const detached = { ...linked, sidebarProjectLinks: withProjectLink(clone, null, linked) };
+    expect(detached.sidebarProjectLinks).toEqual({});
+    expect(buildProjectGroups({ projects: [clone, other], settings: detached })).toHaveLength(2);
+  });
+
+  it("never links scratch folders, including stale persisted links", () => {
+    const scratch = makeProject("scratch", "/scratch", { isScratch: true });
+    const key = derivePhysicalProjectKey(scratch);
+    const stale = { ...base, sidebarProjectLinks: { [key]: "another-project" } };
+    expect(withProjectLink(scratch, "another-project", stale)).toEqual({});
+    expect(deriveLogicalProjectKeyFromSettings(scratch, stale)).toBe(
+      deriveLogicalProjectKeyFromSettings(scratch, base),
+    );
+    expect(buildProjectGroups({ projects: [scratch, laptop], settings: stale })).toHaveLength(2);
+  });
+
+  it("stores no link for a checkout that already belongs to the project", () => {
+    const first = makeProject("first", "/work/t3code");
+    expect(withProjectLink(first, repositoryIdentity.canonicalKey, base)).toEqual({});
   });
 });
 

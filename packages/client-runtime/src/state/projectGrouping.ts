@@ -16,6 +16,8 @@ const SCRATCH_PROJECT_SCOPE_KEY = "\0no-project";
 export interface ProjectGroupingSettings {
   readonly sidebarProjectGroupingMode: SidebarProjectGroupingMode;
   readonly sidebarProjectGroupingOverrides: Record<string, SidebarProjectGroupingMode>;
+  /** Physical project key to the logical project its checkout was attached to by hand. */
+  readonly sidebarProjectLinks?: Record<string, string>;
 }
 
 export type ProjectGroupingMode = SidebarProjectGroupingMode;
@@ -24,6 +26,7 @@ export function selectProjectGroupingSettings(settings: ClientSettings): Project
   return {
     sidebarProjectGroupingMode: settings.sidebarProjectGroupingMode,
     sidebarProjectGroupingOverrides: settings.sidebarProjectGroupingOverrides,
+    sidebarProjectLinks: settings.sidebarProjectLinks,
   };
 }
 
@@ -149,6 +152,16 @@ export function deriveLogicalProjectKey(
   );
 }
 
+/** A hand-made link outranks repository matching. The "No project" folders are never linked. */
+function linkedLogicalProjectKey(
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "isScratch">,
+  settings: ProjectGroupingSettings,
+): string | undefined {
+  return project.isScratch
+    ? undefined
+    : settings.sidebarProjectLinks?.[derivePhysicalProjectKey(project)];
+}
+
 export function deriveLogicalProjectKeyFromSettings(
   project: Pick<
     EnvironmentProject,
@@ -157,10 +170,37 @@ export function deriveLogicalProjectKeyFromSettings(
   settings: ProjectGroupingSettings,
   options?: { readonly groupScratchProjects?: boolean },
 ): string {
-  return deriveLogicalProjectKey(project, {
-    groupingMode: resolveProjectGroupingMode(project, settings),
-    groupScratchProjects: options?.groupScratchProjects ?? false,
+  return (
+    linkedLogicalProjectKey(project, settings) ??
+    deriveLogicalProjectKey(project, {
+      groupingMode: resolveProjectGroupingMode(project, settings),
+      groupScratchProjects: options?.groupScratchProjects ?? false,
+    })
+  );
+}
+
+/**
+ * The link map after attaching `project` to `logicalProjectKey`. Attaching a
+ * checkout to the project it already belongs to without help removes its link.
+ */
+export function withProjectLink(
+  project: Pick<
+    EnvironmentProject,
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
+  >,
+  logicalProjectKey: string | null,
+  settings: ProjectGroupingSettings,
+): Record<string, string> {
+  const physicalProjectKey = derivePhysicalProjectKey(project);
+  const { [physicalProjectKey]: _previous, ...links } = settings.sidebarProjectLinks ?? {};
+  if (logicalProjectKey === null || project.isScratch) return links;
+  const unaided = deriveLogicalProjectKeyFromSettings(project, {
+    ...settings,
+    sidebarProjectLinks: links,
   });
+  return unaided === logicalProjectKey
+    ? links
+    : { ...links, [physicalProjectKey]: logicalProjectKey };
 }
 
 export function resolveScratchProjectScopeKey(
@@ -308,10 +348,12 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
       shouldReplacePhysicalProjectWinner(current, candidate) ? candidate : current,
     );
     const identitySource = selectProjectIdentitySource(physicalProjects, winner);
-    const logicalKey = deriveLogicalProjectKey(identitySource, {
-      groupingMode: resolveProjectGroupingMode(winner, input.settings),
-      groupScratchProjects: input.groupScratchProjects ?? false,
-    });
+    const logicalKey =
+      linkedLogicalProjectKey(winner, input.settings) ??
+      deriveLogicalProjectKey(identitySource, {
+        groupingMode: resolveProjectGroupingMode(winner, input.settings),
+        groupScratchProjects: input.groupScratchProjects ?? false,
+      });
     logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);
     const member = { physicalProjectKey, project: winner };
     const existing = groupedMembers.get(logicalKey);

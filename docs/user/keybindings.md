@@ -44,6 +44,17 @@ on macOS and Ctrl on Windows and Linux, including GNOME, KDE Plasma, Niri, and
 Hyprland. If a custom desktop shortcut takes the same keys, choose another binding
 in Settings.
 
+## Project slots
+
+On web or desktop, open the sidebar's project selector, highlight a project, and
+press `Ctrl+Alt+1` through `Ctrl+Alt+9` to save it in a slot. Repeating the same
+assignment clears the slot. Assigning another project replaces its previous occupant.
+Slots are saved on this device and follow logical project grouping.
+
+In the desktop app, `mod+1` through `mod+9` select the saved project in the sidebar.
+Customize `project.jump.1` through `project.jump.9` and `project.assign.1` through
+`project.assign.9` in **Settings → Keybindings**. Mobile shortcuts are unchanged.
+
 ## Copy pull request references
 
 With a PR open in the right panel or on the Pull Requests page, use `mod+shift+c`
@@ -115,11 +126,10 @@ Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
 the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
 desktop app. Unknown keys evaluate to `false`.
 
-`mod+1` through `mod+9` jump to the first nine threads, and to models while the
-model picker is open. The thread jumps do not run while the model picker is open.
-Those defaults use `isDesktop` so they do not steal the
-browser's tab-switch shortcuts. Remove that condition in Settings if you want
-the same jumps in a browser.
+`mod+1` through `mod+9` jump to saved project slots, and to models while the
+model picker is open. Project jumps do not run while the model picker is open.
+These defaults use `isDesktop` to preserve the browser's tab-switch shortcuts.
+Remove that condition in Settings to enable project jumps in a browser.
 
 Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
 

@@ -1,3 +1,5 @@
+import { PROJECT_JUMP_KEYBINDING_COMMANDS } from "@d4research/contracts";
+import { projectSlotNumber, useProjectSlotStore } from "../projectSlotStore";
 import {
   ProviderInstanceId,
   type EnvironmentId,
@@ -119,6 +121,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
   shouldShowThreadJumpHintsForModifiers,
+  projectAssignIndexFromCommand,
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
@@ -2796,6 +2799,23 @@ export default function Sidebar() {
   );
   const environmentMachineById = useEnvironmentMachines();
   const projectGroupsRef = useRef(projectGroups);
+  const persistedProjectSlots = useProjectSlotStore((state) => state.slots);
+  const assignProjectSlot = useProjectSlotStore((state) => state.assignSlot);
+  const clearProjectSlot = useProjectSlotStore((state) => state.clearSlot);
+  const projectSlots = Object.fromEntries(
+    Object.entries(persistedProjectSlots).map(([slot, key]) => [
+      slot,
+      resolveSidebarProjectScopeKey({
+        groups: projectGroups,
+        key,
+        settings: projectGroupingSettings,
+      }) ?? key,
+    ]),
+  );
+  const projectSlotLabels = PROJECT_JUMP_KEYBINDING_COMMANDS.map((command) =>
+    shortcutLabelForCommand(keybindings, command),
+  );
+  const projectAssignHintLabel = shortcutLabelForCommand(keybindings, "project.assign.1");
   const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setPersistedProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
@@ -4469,6 +4489,33 @@ export default function Sidebar() {
         navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
         return true;
       };
+      const assignIndex = projectAssignIndexFromCommand(command ?? "");
+      if (assignIndex !== null) {
+        const highlighted = highlightedProjectScopeKeyRef.current;
+        if (!projectScopeMenuState.open || !highlighted || highlighted === "all") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const assigned = resolveSidebarProjectScopeKey({
+          groups: projectGroupsRef.current,
+          key: useProjectSlotStore.getState().slots[assignIndex] ?? null,
+          settings: projectGroupingSettings,
+        });
+        if (assigned === highlighted) clearProjectSlot(assignIndex);
+        else {
+          for (const [slot, savedKey] of Object.entries(useProjectSlotStore.getState().slots)) {
+            if (
+              resolveSidebarProjectScopeKey({
+                groups: projectGroupsRef.current,
+                key: savedKey,
+                settings: projectGroupingSettings,
+              }) === highlighted
+            )
+              clearProjectSlot(Number(slot));
+          }
+          assignProjectSlot(assignIndex, highlighted);
+        }
+        return;
+      }
       const traversalDirection = threadTraversalDirectionFromCommand(command);
       if (traversalDirection !== null) {
         navigateToThreadKey(
@@ -4487,6 +4534,10 @@ export default function Sidebar() {
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
   }, [
+    assignProjectSlot,
+    clearProjectSlot,
+    projectGroupingSettings,
+    projectScopeMenuState.open,
     keybindings,
     navigateToThread,
     orderedThreadKeys,
@@ -4553,6 +4604,7 @@ export default function Sidebar() {
                   open={projectScopeMenuState.open}
                   onOpenChange={(open) => {
                     if (open) suppressNextScopeChangeRef.current = false;
+                    else highlightedProjectScopeKeyRef.current = null;
                     dispatchProjectScopeMenu({ type: "open-changed", open });
                   }}
                   onItemHighlighted={(item) => {
@@ -4637,6 +4689,14 @@ export default function Sidebar() {
                               <FolderIcon className="size-4 shrink-0" />
                             )}
                             <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+                            {project &&
+                            projectSlotNumber(projectSlots, project.projectKey) !== null ? (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {projectSlotLabels[
+                                  projectSlotNumber(projectSlots, project.projectKey)! - 1
+                                ] ?? projectSlotNumber(projectSlots, project.projectKey)}
+                              </span>
+                            ) : null}
                             {project && showProjectEnvironments ? (
                               <ProjectEnvironmentBadge
                                 group={project}
@@ -4664,6 +4724,12 @@ export default function Sidebar() {
                         );
                       }}
                     </ComboboxList>
+                    {projectAssignHintLabel ? (
+                      <p className="px-2 py-1 text-xs text-muted-foreground">
+                        {projectAssignHintLabel} assigns the selected project to slot 1. Repeat to
+                        clear.
+                      </p>
+                    ) : null}
                   </ComboboxPopup>
                 </Combobox>
               }

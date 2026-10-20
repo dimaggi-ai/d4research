@@ -5,11 +5,13 @@ import {
   KeybindingShortcut,
   KeybindingWhenNode,
   MAX_KEYBINDINGS_COUNT,
+  PROJECT_JUMP_KEYBINDING_COMMANDS,
   ResolvedKeybindingRule,
   ResolvedKeybindingsConfig,
   type ServerRemoveKeybindingInput,
   type ServerUpsertKeybindingInput,
   type ServerConfigIssue,
+  THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@d4research/contracts";
 import * as Array from "effect/Array";
 import * as Cache from "effect/Cache";
@@ -203,6 +205,34 @@ function malformedConfigIssue(detail: string): ServerConfigIssue {
     kind: "keybindings.malformed-config",
     message: trimIssueMessage(detail),
   };
+}
+
+const THREAD_JUMP_TO_PROJECT_JUMP = new Map(
+  THREAD_JUMP_KEYBINDING_COMMANDS.map(
+    (command, index) => [command, PROJECT_JUMP_KEYBINDING_COMMANDS[index]!] as const,
+  ),
+);
+
+// Replace the old default numbered thread jumps without changing custom thread shortcuts.
+export function migrateKeybindingsToProjectSlots(
+  custom: ReadonlyArray<KeybindingRule>,
+): KeybindingRule[] | null {
+  let changed = false;
+  const migrated = custom.map((rule) => {
+    const projectJump = THREAD_JUMP_TO_PROJECT_JUMP.get(
+      rule.command as (typeof THREAD_JUMP_KEYBINDING_COMMANDS)[number],
+    );
+    if (
+      projectJump !== undefined &&
+      rule.key.toLowerCase() ===
+        `mod+${THREAD_JUMP_KEYBINDING_COMMANDS.indexOf(rule.command as (typeof THREAD_JUMP_KEYBINDING_COMMANDS)[number]) + 1}`
+    ) {
+      changed = true;
+      return { ...rule, command: projectJump } satisfies KeybindingRule;
+    }
+    return rule;
+  });
+  return changed ? migrated : null;
 }
 
 function invalidEntryIssue(index: number, detail: string): ServerConfigIssue {
@@ -483,7 +513,14 @@ const make = Effect.gen(function* () {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
-      const customConfig = runtimeConfig.keybindings;
+      const migrated = migrateKeybindingsToProjectSlots(runtimeConfig.keybindings);
+      if (migrated !== null) {
+        yield* Effect.logInfo("migrated keybindings to numbered project slots", {
+          path: keybindingsConfigPath,
+        });
+        yield* writeConfigAtomically(migrated);
+      }
+      const customConfig = migrated ?? runtimeConfig.keybindings;
       const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{

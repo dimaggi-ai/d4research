@@ -34,6 +34,40 @@ export const MODEL_PICKER_JUMP_KEYBINDING_COMMANDS = [
 export type ModelPickerJumpKeybindingCommand =
   (typeof MODEL_PICKER_JUMP_KEYBINDING_COMMANDS)[number];
 
+/** Recall a project into the sidebar's scope. Numbered slots, assigned by the user. */
+export const PROJECT_JUMP_KEYBINDING_COMMANDS = [
+  "project.jump.1",
+  "project.jump.2",
+  "project.jump.3",
+  "project.jump.4",
+  "project.jump.5",
+  "project.jump.6",
+  "project.jump.7",
+  "project.jump.8",
+  "project.jump.9",
+] as const;
+export type ProjectJumpKeybindingCommand = (typeof PROJECT_JUMP_KEYBINDING_COMMANDS)[number];
+
+/** Put the project under the pointer into a numbered slot, from the project scope menu. */
+export const PROJECT_ASSIGN_KEYBINDING_COMMANDS = [
+  "project.assign.1",
+  "project.assign.2",
+  "project.assign.3",
+  "project.assign.4",
+  "project.assign.5",
+  "project.assign.6",
+  "project.assign.7",
+  "project.assign.8",
+  "project.assign.9",
+] as const;
+export type ProjectAssignKeybindingCommand = (typeof PROJECT_ASSIGN_KEYBINDING_COMMANDS)[number];
+
+export const PROJECT_KEYBINDING_COMMANDS = [
+  ...PROJECT_JUMP_KEYBINDING_COMMANDS,
+  ...PROJECT_ASSIGN_KEYBINDING_COMMANDS,
+] as const;
+export type ProjectKeybindingCommand = (typeof PROJECT_KEYBINDING_COMMANDS)[number];
+
 const THREAD_KEYBINDING_COMMANDS = [
   "thread.stop",
   "thread.steerQueuedMessage",
@@ -113,6 +147,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
+  ...PROJECT_KEYBINDING_COMMANDS,
 ] as const;
 
 export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([

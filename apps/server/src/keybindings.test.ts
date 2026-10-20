@@ -685,3 +685,22 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 });
+
+it.effect("migrates default numbered shortcuts without changing custom bindings", () =>
+  Effect.sync(() => {
+    assert.deepEqual(
+      Keybindings.migrateKeybindingsToProjectSlots([
+        { key: "mod+1", command: "thread.jump.1" },
+        { key: "alt+2", command: "thread.jump.2" },
+      ]),
+      [
+        { key: "mod+1", command: "project.jump.1" },
+        { key: "alt+2", command: "thread.jump.2" },
+      ],
+    );
+    assert.equal(
+      Keybindings.migrateKeybindingsToProjectSlots([{ key: "mod+1", command: "project.jump.1" }]),
+      null,
+    );
+  }),
+);

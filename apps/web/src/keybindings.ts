@@ -3,6 +3,10 @@ import {
   type KeybindingShortcut,
   type KeybindingWhenNode,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
+  PROJECT_ASSIGN_KEYBINDING_COMMANDS,
+  PROJECT_JUMP_KEYBINDING_COMMANDS,
+  type ProjectAssignKeybindingCommand,
+  type ProjectJumpKeybindingCommand,
   type ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
   type ModelPickerJumpKeybindingCommand,
@@ -233,6 +237,18 @@ export function shortcutLabelForCommand(
   const platform = resolvePlatform(resolvedOptions);
   const shortcut = findEffectiveShortcutForCommand(keybindings, command, resolvedOptions);
   return shortcut ? formatShortcutLabel(shortcut, platform) : null;
+}
+
+export function projectJumpIndexFromCommand(command: string): number | null {
+  const index = PROJECT_JUMP_KEYBINDING_COMMANDS.indexOf(command as ProjectJumpKeybindingCommand);
+  return index === -1 ? null : index;
+}
+
+export function projectAssignIndexFromCommand(command: string): number | null {
+  const index = PROJECT_ASSIGN_KEYBINDING_COMMANDS.indexOf(
+    command as ProjectAssignKeybindingCommand,
+  );
+  return index === -1 ? null : index;
 }
 
 export function threadJumpCommandForIndex(index: number): ThreadJumpKeybindingCommand | null {

@@ -75,6 +75,13 @@ export function resolveSidebarProjectScopeKey(input: {
   if (input.key === null) return null;
   const group =
     input.groups.find((candidate) => candidate.projectKey === input.key) ??
+    input.groups.find((candidate) =>
+      candidate.memberProjects.some(
+        (member) =>
+          member.physicalProjectKey === input.key ||
+          `${member.environmentId}:${member.id}` === input.key,
+      ),
+    ) ??
     input.groups.find(
       (candidate) =>
         candidate.isScratch &&

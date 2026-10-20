@@ -607,7 +607,7 @@ describe("thread navigation helpers", () => {
     );
   });
 
-  it("keeps default thread jumps off the web so the browser can switch tabs", () => {
+  it("keeps default project jumps off the web so the browser can switch tabs", () => {
     const input = event({ key: "1", metaKey: true });
     assert.isNull(
       resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
@@ -620,7 +620,7 @@ describe("thread navigation helpers", () => {
         platform: "MacIntel",
         context: { isDesktop: true },
       }),
-      "thread.jump.1",
+      "project.jump.1",
     );
     assert.isFalse(
       shouldShowThreadJumpHintsForModifiers(
@@ -632,7 +632,7 @@ describe("thread navigation helpers", () => {
         },
       ),
     );
-    assert.isTrue(
+    assert.isFalse(
       shouldShowThreadJumpHintsForModifiers(
         event({ metaKey: true }),
         DEFAULT_RESOLVED_KEYBINDINGS,
@@ -675,7 +675,7 @@ describe("model picker navigation helpers", () => {
         platform: "MacIntel",
         context: { isDesktop: true, modelPickerOpen: false },
       }),
-      "thread.jump.3",
+      "project.jump.3",
     );
   });
 });
@@ -1649,7 +1649,7 @@ describe("Usage shortcuts", () => {
   });
 
   it.each(["Linux", "MacIntel"])(
-    "preserves desktop numbered thread shortcuts on Usage on %s",
+    "preserves desktop numbered project shortcuts on Usage on %s",
     (platform) => {
       const shortcut = event({
         key: "2",
@@ -1661,10 +1661,10 @@ describe("Usage shortcuts", () => {
           platform,
           context: { usagePageOpen: true, isDesktop: true },
         }),
-        "thread.jump.2",
+        "project.jump.2",
       );
       assert.isNotNull(
-        shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "thread.jump.2", {
+        shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "project.jump.2", {
           platform,
           context: { usagePageOpen: true, isDesktop: true },
         }),
@@ -1688,3 +1688,25 @@ describe("Usage shortcuts", () => {
     );
   });
 });
+
+it.each(["Linux", "MacIntel"])(
+  "keeps project assignment distinct from recall on %s",
+  (platform) => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "1", ctrlKey: true, altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform, context: { isDesktop: true } },
+      ),
+      "project.assign.1",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "1", ctrlKey: platform === "Linux", metaKey: platform === "MacIntel" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform, context: { isDesktop: true } },
+      ),
+      "project.jump.1",
+    );
+  },
+);

@@ -18,6 +18,7 @@ import { isWorkspaceImagePreviewPath } from "@d4research/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
 import {
   type CanUseTool,
+  type HookCallback,
   forkSession as forkClaudeSession,
   type EffortLevel,
   type ForkSessionOptions,
@@ -1072,6 +1073,7 @@ export function makeClaudeQueryOptions(input: {
   readonly disallowedTools?: ReadonlyArray<string>;
   readonly permissionMode?: PermissionMode;
   readonly canUseTool?: CanUseTool;
+  readonly hooks?: ClaudeQueryOptions["hooks"];
   readonly onUserDialog?: ClaudeQueryOptions["onUserDialog"];
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
@@ -1128,6 +1130,7 @@ export function makeClaudeQueryOptions(input: {
     ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
     ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
+    ...(input.hooks === undefined ? {} : { hooks: input.hooks }),
     ...(input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
       : {}),
@@ -3070,7 +3073,6 @@ interface ActiveClaudeToolCall {
 
 interface PendingClaudeSubagentLaunch {
   readonly model?: string;
-  readonly effort?: string;
   readonly ownerToolUseId?: string;
 }
 
@@ -3131,17 +3133,11 @@ function rememberClaudeSubagentLaunch(
       : ownerToolUseId === null
         ? context.input.modelSelection.model
         : undefined;
-  const effort = firstStringInputField(input, ["effort"]);
   const launch: PendingClaudeSubagentLaunch = {
     ...(model === undefined || pending.get(toolUseId)?.model !== undefined ? {} : { model }),
-    ...(effort === undefined ? {} : { effort }),
     ...(ownerToolUseId === null ? {} : { ownerToolUseId }),
   };
-  if (
-    launch.model !== undefined ||
-    launch.effort !== undefined ||
-    launch.ownerToolUseId !== undefined
-  ) {
+  if (launch.model !== undefined || launch.ownerToolUseId !== undefined) {
     rememberPendingClaudeSubagentLaunch(pending, toolUseId, launch);
   }
 }
@@ -3484,6 +3480,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         );
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
         const goalCheckedTurns = new Set<string>();
+        const pendingTaskEfforts = new Map<string, string>();
         // Subagent registry that survives turn settle: a background subagent
         // (Agent with run_in_background) can complete after the root turn
         // ended, and its task_notification must both count as wake evidence
@@ -4787,7 +4784,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly prompt?: string;
           readonly title?: string;
           readonly model?: string;
-          readonly effort?: string;
           readonly owner?: ActiveClaudeSubagent;
           readonly progress?: string;
           readonly workflowFrame?: unknown;
@@ -4889,12 +4885,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             workflow === undefined
               ? undefined
               : withWorkflowMemberThreadIds(workflow, childThreadId);
-          const effort =
-            existingSubagent === undefined
-              ? (input.effort ??
-                input.owner?.effort ??
-                compileClaudeModelSelection(input.context.input.modelSelection).effort)
-              : existingSubagent.effort;
+          const effort = pendingTaskEfforts.get(input.taskId) ?? existingSubagent?.effort;
           const model = input.model ?? priorTask?.model ?? null;
           const task = {
             ...(priorTask ?? {
@@ -7040,7 +7031,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
                 ...(message.prompt === undefined ? {} : { prompt: message.prompt }),
                 ...(model === undefined ? {} : { model }),
-                ...(launch?.effort === undefined ? {} : { effort: launch.effort }),
                 ...(owner === undefined ? {} : { owner }),
                 ...(isWorkflow
                   ? {
@@ -7929,6 +7919,50 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           });
         });
 
+        // Claude reports the effective worker effort after definition/environment/model handling.
+        // Buffer hooks arriving before task_started; background tasks retain the same registry.
+        const observeSubagentEffort: HookCallback = (hookInput) =>
+          runPromise(
+            Effect.gen(function* () {
+              const agentId = hookInput.agent_id?.trim();
+              const effort = hookInput.effort?.level?.trim();
+              if (!agentId || !effort) return {};
+              pendingTaskEfforts.delete(agentId);
+              pendingTaskEfforts.set(agentId, effort);
+              if (pendingTaskEfforts.size > PENDING_CLAUDE_SUBAGENT_CAP)
+                pendingTaskEfforts.delete(pendingTaskEfforts.keys().next().value!);
+              const now = yield* DateTime.now;
+              const updated = yield* Ref.modify(sessionSubagentsByTaskId, (tasks) => {
+                const existing = tasks.get(agentId);
+                if (!existing || existing.effort === effort) return [undefined, tasks] as const;
+                const task = {
+                  ...existing.task,
+                  modelSelection: claudeSubagentModelSelection(
+                    subagentModelCatalog,
+                    existing.task.providerInstanceId,
+                    existing.task.model ??
+                      existing.task.modelSelection?.model ??
+                      input.modelSelection.model,
+                    effort,
+                  ),
+                  updatedAt: now,
+                };
+                const updated = { ...existing, effort, task };
+                return [updated, new Map(tasks).set(agentId, updated)] as const;
+              });
+              if (updated === undefined) return {};
+              const context = yield* Ref.get(activeTurn);
+              if (context?.subagentsByTaskId.has(agentId))
+                context.subagentsByTaskId.set(agentId, updated);
+              yield* emitProviderEvent({
+                type: "subagent.updated",
+                driver: CLAUDE_PROVIDER,
+                subagent: updated.task,
+              });
+              return {};
+            }).pipe(Effect.catchCause(() => Effect.succeed({}))),
+          );
+
         const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
           runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
@@ -8156,6 +8190,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : {
                   allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions,
                 }),
+            hooks: {
+              PreToolUse: [{ hooks: [observeSubagentEffort] }],
+              SubagentStop: [{ hooks: [observeSubagentEffort] }],
+            },
             canUseTool,
             onUserDialog,
             supportedDialogKinds: ["resume_return"],

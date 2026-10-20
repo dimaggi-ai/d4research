@@ -9508,12 +9508,164 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  const reportWorkerEffort = Effect.fnUntraced(function* (
+    harness: {
+      readonly getOpenedOptions: () => ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+    },
+    agentId: string,
+    effort: string,
+    event: "PreToolUse" | "SubagentStop" = "PreToolUse",
+  ) {
+    const hook = harness.getOpenedOptions()?.hooks?.[event]?.[0]?.hooks[0];
+    assert.ok(hook);
+    const base = {
+      session_id: WAKE_NATIVE_SESSION,
+      transcript_path: "/tmp/test-transcript",
+      cwd: "/repo",
+      agent_id: agentId,
+      effort: { level: effort },
+    };
+    const input =
+      event === "PreToolUse"
+        ? {
+            ...base,
+            hook_event_name: "PreToolUse" as const,
+            tool_name: "Bash",
+            tool_input: {},
+            tool_use_id: "effort-tool",
+          }
+        : {
+            ...base,
+            hook_event_name: "SubagentStop" as const,
+            stop_hook_active: false,
+            agent_type: "general-purpose",
+            agent_transcript_path: "/tmp/test-agent-transcript",
+            last_assistant_message: "Done",
+          };
+    yield* Effect.promise(() =>
+      hook(input, "effort-tool", { signal: new AbortController().signal }),
+    );
+  });
+
+  it.effect("updates applied effort once while preserving worker state after turn settlement", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("observed-effort-attempt"),
+            text: "Audit",
+            attachments: [],
+          }),
+        );
+        yield* reportWorkerEffort(harness, "observed-effort-task", "high");
+        yield* harness.offerAndWait(
+          makeSubagentTaskStartedFrame({
+            taskId: "observed-effort-task",
+            toolUseId: "observed-effort-tool",
+            uuid: "observed-effort-start",
+          }),
+        );
+        let first = yield* Queue.take(harness.subagentReceipts);
+        while (
+          getModelSelectionStringOptionValue(first.subagent.modelSelection, "effort") !== "high"
+        )
+          first = yield* Queue.take(harness.subagentReceipts);
+        assert.equal(
+          getModelSelectionStringOptionValue(first.subagent.modelSelection, "effort"),
+          "high",
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "observed-effort-root-result", result: "Spawned worker." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        yield* reportWorkerEffort(harness, "observed-effort-task", "max", "SubagentStop");
+        const updated = yield* Queue.take(harness.subagentReceipts);
+        assert.equal(
+          getModelSelectionStringOptionValue(updated.subagent.modelSelection, "effort"),
+          "max",
+        );
+        const {
+          modelSelection: _firstSelection,
+          updatedAt: _firstAt,
+          ...originalState
+        } = first.subagent;
+        const {
+          modelSelection: _updatedSelection,
+          updatedAt: _updatedAt,
+          ...updatedState
+        } = updated.subagent;
+        assert.deepEqual(updatedState, originalState);
+        yield* reportWorkerEffort(harness, "observed-effort-task", "max");
+        yield* reportWorkerEffort(harness, "observed-effort-task", "low");
+        const next = yield* Queue.take(harness.subagentReceipts);
+        assert.equal(
+          getModelSelectionStringOptionValue(next.subagent.modelSelection, "effort"),
+          "low",
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("bounds buffered effort metadata to the latest 64 workers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("bounded-effort-attempt"),
+            text: "Audit",
+            attachments: [],
+          }),
+        );
+        for (let index = 0; index < 65; index++) {
+          yield* reportWorkerEffort(harness, `bounded-effort-${index}`, "high");
+        }
+        for (const index of [0, 64]) {
+          yield* harness.offerAndWait(
+            makeSubagentTaskStartedFrame({
+              taskId: `bounded-effort-${index}`,
+              toolUseId: `bounded-effort-tool-${index}`,
+              uuid: `bounded-effort-start-${index}`,
+            }),
+          );
+          let receipt = yield* Queue.take(harness.subagentReceipts);
+          if (index === 64) {
+            while (
+              getModelSelectionStringOptionValue(receipt.subagent.modelSelection, "effort") !==
+              "high"
+            )
+              receipt = yield* Queue.take(harness.subagentReceipts);
+          }
+          assert.equal(
+            getModelSelectionStringOptionValue(receipt.subagent.modelSelection, "effort"),
+            index === 0 ? undefined : "high",
+          );
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect.each([
-    { agentModel: "opus", slug: "claude-opus-5-5", requested: undefined, expected: "max" },
-    { agentModel: "opus", slug: "claude-opus-5-5", requested: "low", expected: "low" },
+    { agentModel: "opus", slug: "claude-opus-5-5", requested: undefined, expected: "high" },
+    { agentModel: "opus", slug: "claude-opus-5-5", requested: "low", expected: "max" },
     { agentModel: "haiku-4.5", slug: "claude-haiku-4-5", requested: undefined, expected: null },
   ])(
-    "records the effort a $agentModel subagent runs at (Agent effort $requested)",
+    "records runtime effort for $agentModel despite Agent effort $requested",
     ({ agentModel, slug, requested, expected }) =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -9539,6 +9691,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               modelSelection: parentSelection,
             }),
           );
+          if (expected !== null) {
+            yield* reportWorkerEffort(harness, "task-subagent-effort", expected);
+          }
           for (const frame of [
             claudeSdkFrame({
               type: "assistant",
@@ -9637,6 +9792,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             attachments: [],
           }),
         );
+        yield* reportWorkerEffort(harness, `task-${TUNED_TOOL_USE_ID}`, "brutal");
         for (const frame of [
           claudeSdkFrame({
             type: "assistant",
@@ -9720,7 +9876,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
-  it.effect("gives a nested subagent its own effort, else the one its owner runs at", () =>
+  it.effect("records each nested subagent effort independently from its owner", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const OUTER_TOOL_USE_ID = "toolu-effort-outer";
@@ -9766,6 +9922,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             uuid,
             session_id: WAKE_NATIVE_SESSION,
           });
+        yield* reportWorkerEffort(harness, `task-${OUTER_TOOL_USE_ID}`, "low");
+        yield* reportWorkerEffort(harness, `task-${INHERITING_TOOL_USE_ID}`, "medium");
+        yield* reportWorkerEffort(harness, `task-${OVERRIDING_TOOL_USE_ID}`, "high");
         for (const frame of [
           claudeSdkFrame({
             type: "assistant",
@@ -9822,15 +9981,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         assert.deepEqual(Object.fromEntries(efforts), {
           [`task-${OUTER_TOOL_USE_ID}`]: "low",
-          [`task-${INHERITING_TOOL_USE_ID}`]: "low",
-          [`task-${OVERRIDING_TOOL_USE_ID}`]: "max",
+          [`task-${INHERITING_TOOL_USE_ID}`]: "medium",
+          [`task-${OVERRIDING_TOOL_USE_ID}`]: "high",
         });
         const childEfforts = harness.events.flatMap((event) =>
           event.type === "app_thread.created" && event.appThread.id !== harness.threadId
             ? [getModelSelectionStringOptionValue(event.appThread.modelSelection, "effort")]
             : [],
         );
-        assert.deepEqual(childEfforts, ["low", "low", "max"]);
+        assert.deepEqual(childEfforts, ["low", "medium", "high"]);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

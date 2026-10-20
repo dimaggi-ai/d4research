@@ -978,7 +978,26 @@ describe("resolveSidebarThreadStatus", () => {
         ...idle,
         runtime: { ...runtime, status: "idle" as const, lastError: "persisted" },
       }),
-    ).toBe("waiting");
+    ).toBe("ready");
+  });
+
+  it("preserves approval, input and failure priority while a background roster remains", () => {
+    const thread = {
+      ...idle,
+      runtime: { ...runtime, status: "idle" as const },
+      pendingBackgroundTasks: [{ taskId: "verification", kind: "command" as const }],
+    };
+    expect(resolveSidebarThreadStatus({ ...thread, hasPendingApprovals: true })).toBe("approval");
+    expect(resolveSidebarThreadStatus({ ...thread, hasPendingUserInput: true })).toBe("input");
+    expect(
+      resolveSidebarThreadStatus({ ...thread, runtime: { ...runtime, status: "failed" } }),
+    ).toBe("failed");
+    expect(
+      resolveSidebarThreadStatus({
+        ...thread,
+        runtime: { ...runtime, status: "failed", lastErrorClass: "usage_limit" },
+      }),
+    ).toBe("limited");
   });
 
   it("defaults to ready with no runtime", () => {
@@ -1275,7 +1294,7 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Working", pulse: true });
   });
 
-  it("shows waiting for an idle thread with pending background tasks", () => {
+  it("shows monitoring without a pulse for an idle thread with pending background tasks", () => {
     expect(
       resolveThreadStatusPill({
         thread: {
@@ -1289,9 +1308,9 @@ describe("resolveThreadStatusPill", () => {
         },
       }),
     ).toMatchObject({
-      label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
+      label: "Monitoring",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: false,
     });
   });
@@ -1424,9 +1443,9 @@ describe("resolveProjectStatusIndicator", () => {
     ).toMatchObject({ label: "Plan Ready", dotClass: "bg-violet-500" });
   });
 
-  it("ranks waiting below active work and above plan-ready", () => {
+  it("ranks monitoring below active work and above plan-ready", () => {
     const waiting = {
-      label: "Waiting" as const,
+      label: "Monitoring" as const,
       colorClass: "text-sidebar-muted-foreground",
       dotClass: "bg-sidebar-muted-foreground",
       pulse: false,
@@ -1453,7 +1472,7 @@ describe("resolveProjectStatusIndicator", () => {
         },
         waiting,
       ]),
-    ).toMatchObject({ label: "Waiting" });
+    ).toMatchObject({ label: "Monitoring" });
   });
 });
 
@@ -2089,8 +2108,22 @@ describe("navigation after parking a thread", () => {
 
 describe("unseen completion with background work", () => {
   it.each([
-    { kind: "command", status: "ready", topStatus: "done", receded: false, pill: "Completed" },
-    { kind: "monitor", status: "waiting", topStatus: "waiting", receded: true, pill: "Waiting" },
+    { kind: "command", status: "waiting", topStatus: "waiting", receded: true, pill: "Monitoring" },
+    { kind: "monitor", status: "waiting", topStatus: "waiting", receded: true, pill: "Monitoring" },
+    {
+      kind: "subagent",
+      status: "waiting",
+      topStatus: "waiting",
+      receded: true,
+      pill: "Monitoring",
+    },
+    {
+      kind: "background_task",
+      status: "waiting",
+      topStatus: "waiting",
+      receded: true,
+      pill: "Monitoring",
+    },
   ] as const)("presents a completed thread with a $kind roster", (expected) => {
     const thread = presentThreadShell(localEnvironmentId, {
       ...makeThreadFixture().source,

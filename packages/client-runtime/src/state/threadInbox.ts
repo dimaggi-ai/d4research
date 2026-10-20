@@ -10,12 +10,19 @@ type WorkingThreadInput = Pick<
   | "interactionMode"
   | "latestRun"
   | "runtime"
->;
+> &
+  Partial<Pick<EnvironmentThreadShell, "pendingBackgroundTasks">>;
 
+/** Threads busy with work that does not need the user fold into the Working
+    section: a running run, or one with pending background operations. Approvals,
+    questions (its own or a subagent’s), plan prompts, and failures stay in the inbox. */
 export function isThreadWorking(thread: WorkingThreadInput): boolean {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
   if (thread.pendingSubagentRequest != null) return false;
-  if (!threadRuntimeIsActive(thread.runtime) && thread.runtime?.status !== "idle") return false;
+  if (thread.runtime?.status === "failed") return false;
+  if (!threadRuntimeIsActive(thread.runtime) && (thread.pendingBackgroundTasks?.length ?? 0) === 0)
+    return false;
+  // A plan prompt outranks lingering background work: the user has to act on it.
   const run = thread.latestRun;
   const runSettled =
     run !== null &&

@@ -1,5 +1,5 @@
+import { resolveThreadWorkPhase } from "@d4research/client-runtime/state/thread-execution";
 import { resolveThreadWorkingStartedAt } from "@d4research/client-runtime/state/models";
-import { backgroundWorkHoldsCompletion } from "@d4research/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@d4research/shared/threadPullRequests";
 import * as React from "react";
 import {
@@ -578,7 +578,7 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
-    | "Waiting"
+    | "Monitoring"
     | "Plan Ready";
   colorClass: string;
   dotClass: string;
@@ -590,7 +590,7 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Awaiting Input": 4,
   Working: 3,
   Connecting: 3,
-  Waiting: 2.5,
+  Monitoring: 2.5,
   "Plan Ready": 2,
   Completed: 1,
 };
@@ -903,8 +903,9 @@ export function shouldRecedeSidebarThread(input: {
 
 type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
-  "hasPendingApprovals" | "hasPendingUserInput" | "pendingSubagentRequest" | "runtime"
->;
+  "hasPendingApprovals" | "hasPendingUserInput" | "runtime"
+> &
+  Partial<Pick<SidebarThreadSummary, "pendingBackgroundTasks" | "pendingSubagentRequest">>;
 
 export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -913,15 +914,8 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
   }
-  if (
-    thread.runtime !== null &&
-    ["preparing", "queued", "starting", "running", "waiting"].includes(thread.runtime.status)
-  ) {
-    return "working";
-  }
-  if (thread.runtime?.status === "idle") {
-    return "waiting";
-  }
+  const workPhase = resolveThreadWorkPhase(thread);
+  if (workPhase !== null) return workPhase;
   if (thread.runtime?.status === "failed") {
     return thread.runtime.lastErrorClass === "usage_limit" ? "limited" : "failed";
   }
@@ -1105,6 +1099,15 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  if (resolveThreadWorkPhase(thread) === "waiting") {
+    return {
+      label: "Monitoring",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: false,
+    };
+  }
+
   if (thread.runtime?.status === "running" || thread.runtime?.status === "waiting") {
     return {
       label: "Working",
@@ -1124,15 +1127,6 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
-    };
-  }
-
-  if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) {
-    return {
-      label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
     };
   }
 

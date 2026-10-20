@@ -1676,7 +1676,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         }
       : status === "waiting"
         ? {
-            label: "Waiting",
+            label: "Monitoring",
             icon: "waiting" as const,
             className: "text-muted-foreground",
           }

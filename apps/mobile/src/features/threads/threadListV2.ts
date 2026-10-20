@@ -1,3 +1,4 @@
+import { resolveThreadWorkPhase } from "@d4research/client-runtime/state/thread-execution";
 import { threadPullRequestSearchTerms } from "@d4research/shared/threadPullRequests";
 import {
   canSnooze,
@@ -152,10 +153,8 @@ export function threadHasUnseenCompletion(
 }
 
 export function resolveThreadListV2Status(
-  thread: Pick<
-    EnvironmentThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "pendingSubagentRequest" | "runtime"
-  >,
+  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "runtime"> &
+    Partial<Pick<EnvironmentThreadShell, "pendingBackgroundTasks" | "pendingSubagentRequest">>,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
     return "approval";
@@ -163,15 +162,8 @@ export function resolveThreadListV2Status(
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
   }
-  if (
-    thread.runtime !== null &&
-    ["preparing", "queued", "starting", "running", "waiting"].includes(thread.runtime.status)
-  ) {
-    return "working";
-  }
-  if (thread.runtime?.status === "idle") {
-    return "waiting";
-  }
+  const workPhase = resolveThreadWorkPhase(thread);
+  if (workPhase !== null) return workPhase;
   if (thread.runtime?.status === "failed") {
     return thread.runtime.lastErrorClass === "usage_limit" ? "limited" : "failed";
   }

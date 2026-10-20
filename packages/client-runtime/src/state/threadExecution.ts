@@ -251,6 +251,25 @@ export function deriveThreadRuntime(
   };
 }
 
+/** Presentation only: background work stays pending without implying the model is running. */
+export function resolveThreadWorkPhase(thread: {
+  readonly runtime: Pick<ThreadRuntimeSummary, "status"> | null;
+  readonly pendingBackgroundTasks?: ReadonlyArray<OrchestrationV2PendingBackgroundTask> | undefined;
+}): "working" | "waiting" | null {
+  const status = thread.runtime?.status;
+  if (status === "failed") return null;
+  if (
+    status === "preparing" ||
+    status === "queued" ||
+    status === "starting" ||
+    status === "running"
+  )
+    return "working";
+  // A checkpoint can keep the completed turn at waiting while its background roster appears.
+  if ((thread.pendingBackgroundTasks?.length ?? 0) > 0) return "waiting";
+  return status === "waiting" ? "working" : null;
+}
+
 export function threadRuntimeHasInterruptibleRun(
   runtime: ThreadRuntimeSummary | null | undefined,
 ): boolean {

@@ -28,6 +28,7 @@ import {
   deriveThreadActivityRun,
   deriveThreadRuntime,
   threadRuntimeHasInterruptibleRun,
+  resolveThreadWorkPhase,
 } from "./threadExecution.ts";
 import { threadRuntimeCanArchive, type ThreadRuntimeSummary } from "./models.ts";
 
@@ -712,5 +713,44 @@ describe("presentProviderGoal", () => {
     expect(
       presentProviderGoal({ objective: "All tests pass", status: "active" }, false).title,
     ).toBe("Goal set");
+  });
+});
+
+describe("resolveThreadWorkPhase", () => {
+  const tasks = [{ taskId: "verification", kind: "command" as const }];
+  it.each(["preparing", "queued", "starting", "running"] as const)(
+    "keeps a foreground %s turn Working even if an older background roster remains",
+    (status) => {
+      expect(resolveThreadWorkPhase({ runtime: { status }, pendingBackgroundTasks: tasks })).toBe(
+        "working",
+      );
+    },
+  );
+  it.each(["idle", "completed", "waiting", "interrupted", "cancelled"] as const)(
+    "shows Monitoring after the model responds with status %s and only background work remains",
+    (status) => {
+      expect(resolveThreadWorkPhase({ runtime: { status }, pendingBackgroundTasks: tasks })).toBe(
+        "waiting",
+      );
+    },
+  );
+  it("retains runless watches and returns to Ready after the background roster clears", () => {
+    expect(resolveThreadWorkPhase({ runtime: null, pendingBackgroundTasks: tasks })).toBe(
+      "waiting",
+    );
+    expect(
+      resolveThreadWorkPhase({ runtime: { status: "completed" }, pendingBackgroundTasks: [] }),
+    ).toBeNull();
+    expect(resolveThreadWorkPhase({ runtime: { status: "idle" } })).toBeNull();
+  });
+  it("does not claim Monitoring for failed or limited turns with a lingering roster", () => {
+    expect(
+      resolveThreadWorkPhase({ runtime: { status: "failed" }, pendingBackgroundTasks: tasks }),
+    ).toBeNull();
+  });
+  it("keeps checkpoint-only waiting separate from background monitoring", () => {
+    expect(
+      resolveThreadWorkPhase({ runtime: { status: "waiting" }, pendingBackgroundTasks: [] }),
+    ).toBe("working");
   });
 });

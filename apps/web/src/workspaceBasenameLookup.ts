@@ -46,3 +46,26 @@ export function pickWorkspaceBasenameMatch(
   );
   return foldedMatches.length === 1 ? (foldedMatches[0]?.path ?? null) : null;
 }
+
+function normalizedWorkspaceEntryPath(path: string): string {
+  return path.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+export function pickWorkspacePathMatch(
+  path: string,
+  entries: ReadonlyArray<WorkspaceEntryCandidate>,
+): string | null {
+  const target = normalizedWorkspaceEntryPath(path);
+  if (!target) return null;
+  if (!target.includes("/")) return pickWorkspaceBasenameMatch(target, entries);
+
+  const files = entries.filter((entry) => entry.kind === "file");
+  const exact = files.find((entry) => normalizedWorkspaceEntryPath(entry.path) === target);
+  if (exact) return exact.path;
+
+  const folded = target.toLowerCase();
+  const foldedMatches = files.filter(
+    (entry) => normalizedWorkspaceEntryPath(entry.path).toLowerCase() === folded,
+  );
+  return foldedMatches.length === 1 ? (foldedMatches[0]?.path ?? null) : null;
+}

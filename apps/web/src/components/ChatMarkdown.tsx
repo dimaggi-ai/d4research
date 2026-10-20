@@ -11,7 +11,11 @@ import {
   extractMarkdownLinkHrefs,
   inlineCodeFilePathCandidate,
 } from "@d4research/shared/markdownLinks";
-import { isAbsolutePath } from "@d4research/shared/path";
+import {
+  isAbsolutePath,
+  normalizeProjectPathForComparison,
+  resolveWorkspaceFilePath,
+} from "@d4research/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@d4research/contracts";
 import {
@@ -168,6 +172,9 @@ import {
 } from "../markdown-clipboard";
 import {
   resolveInlineCodeFileLinkMeta,
+  resolveMarkdownFilePanelTarget,
+  type MarkdownFilePanelTarget,
+  type MarkdownWorkspaceRootCandidate,
   resolveMarkdownFileLinkMeta,
   rewriteMarkdownFileUriHref,
   shouldOpenMarkdownFileLinkInBrowserByDefault,
@@ -182,6 +189,10 @@ import { cn } from "../lib/utils";
 import { useRemoteOpenResolution, type RemoteOpenMode } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects } from "../state/entities";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
 import { serverEnvironment } from "../state/server";
 import { shellEnvironment } from "../state/shell";
 import { assetEnvironment } from "../state/assets";
@@ -198,6 +209,7 @@ import {
   claimWorkspaceBasenameLookup,
   needsWorkspaceBasenameLookup,
   pickWorkspaceBasenameMatch,
+  pickWorkspacePathMatch,
   WORKSPACE_BASENAME_LOOKUP_LIMIT,
 } from "../workspaceBasenameLookup";
 import {
@@ -2407,6 +2419,37 @@ function useChatMarkdownState({
     markdownServerConfigFieldsAtom(environmentId),
   );
   const projects = useProjects();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const markdownWorkspaceRoots = (() => {
+    const thread = threadRef ? readThreadShell(threadRef) : null;
+    const project =
+      thread &&
+      projects.find(
+        (candidate) =>
+          candidate.environmentId === threadRef?.environmentId && candidate.id === thread.projectId,
+      );
+    const logicalKey = project
+      ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+      : null;
+    const candidates: MarkdownWorkspaceRootCandidate[] = [
+      ...(cwd ? [{ path: cwd }] : []),
+      ...projects
+        .filter(
+          (candidate) =>
+            logicalKey !== null &&
+            candidate.environmentId === environmentId &&
+            deriveLogicalProjectKeyFromSettings(candidate, projectGroupingSettings) === logicalKey,
+        )
+        .map((candidate) => ({ path: candidate.workspaceRoot, label: candidate.title })),
+    ];
+    const seen = new Set<string>();
+    return candidates.filter((candidate) => {
+      const key = normalizeProjectPathForComparison(candidate.path);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor);
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors);
@@ -2592,20 +2635,68 @@ function useChatMarkdownState({
       ? pickWorkspaceBasenameMatch(workspaceRelativePath, result.value.entries)
       : null;
   };
-  const openFileInPanel = (panelPath: string, line: number | undefined) => {
+  const openFileInPanel = (
+    fileLinkMeta: MarkdownFileLinkMeta,
+    panelPath: string,
+    line: number | undefined,
+  ) => {
     if (!threadRef) return;
-    // Claimed on every open so a synchronous one supersedes a lookup already
-    // in flight.
     const isLatestLookup = claimWorkspaceBasenameLookup();
-    const openAt = (path: string) => useRightPanelStore.getState().openFile(threadRef, path, line);
-    if (!cwd || !needsWorkspaceBasenameLookup(panelPath)) {
-      openAt(panelPath);
+    const fallbackTarget = resolveMarkdownFilePanelTarget({
+      filePath: fileLinkMeta.filePath,
+      panelPath: fileLinkMeta.absoluteReference ? fileLinkMeta.filePath : panelPath,
+      preferredWorkspaceRoot: cwd,
+      workspaceRoots: markdownWorkspaceRoots,
+    });
+    // Absolute panel targets keep a document's checkout independent of the agent's checkout.
+    const openAt = (target: MarkdownFilePanelTarget) =>
+      useRightPanelStore
+        .getState()
+        .openFile(
+          threadRef,
+          target.workspaceRoot
+            ? resolveWorkspaceFilePath(target.path, target.workspaceRoot)
+            : target.path,
+          line,
+        );
+    const searchAcrossRoots =
+      !fileLinkMeta.absoluteReference &&
+      readEnvironmentScope(threadRef.environmentId, AuthFilesystemReadScope) &&
+      markdownWorkspaceRoots.length > 0 &&
+      (needsWorkspaceBasenameLookup(panelPath) ||
+        (!isAbsolutePath(panelPath) && markdownWorkspaceRoots.length > 1));
+    if (!searchAcrossRoots) {
+      openAt(fallbackTarget);
       return;
     }
     void (async () => {
-      const match = await findWorkspaceBasenameMatch(panelPath);
-      if (!isLatestLookup()) return;
-      openAt(match ?? panelPath);
+      // Stop after the preferred root matches; old relative links have no root identity.
+      for (const root of markdownWorkspaceRoots) {
+        const sameAsFallbackRoot =
+          fallbackTarget.workspaceRoot !== undefined &&
+          normalizeProjectPathForComparison(root.path) ===
+            normalizeProjectPathForComparison(fallbackTarget.workspaceRoot);
+        const lookupPath = sameAsFallbackRoot ? fallbackTarget.path : panelPath;
+        const result = await searchProjectEntries({
+          environmentId: threadRef.environmentId,
+          input: {
+            cwd: root.path,
+            query: lookupPath,
+            limit: WORKSPACE_BASENAME_LOOKUP_LIMIT,
+            kind: "file",
+          },
+        });
+        if (!isLatestLookup()) return;
+        const path =
+          result._tag === "Success"
+            ? pickWorkspacePathMatch(lookupPath, result.value.entries)
+            : null;
+        if (path) {
+          openAt({ path, workspaceRoot: root.path });
+          return;
+        }
+      }
+      if (isLatestLookup()) openAt(fallbackTarget);
     })();
   };
   const revealMarkdownFileInFileManager = async (fileLinkMeta: MarkdownFileLinkMeta) => {
@@ -2651,7 +2742,7 @@ function useChatMarkdownState({
         theme={resolvedTheme}
         threadRef={threadRef}
         {...(canUseShellActions ? { onOpen: openInPreferredEditor } : {})}
-        onOpenInPanel={openFileInPanel}
+        onOpenInPanel={(path, line) => openFileInPanel(fileLinkMeta, path, line)}
         onOpenMedia={
           threadRef && canPreviewMedia
             ? () => openMarkdownMedia(mediaPath, fileLinkMeta.filePath)

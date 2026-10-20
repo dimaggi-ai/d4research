@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   markdownFilePrimaryOpenAction,
+  resolveMarkdownFilePanelTarget,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   rewriteMarkdownFileUriHref,
@@ -175,9 +176,9 @@ describe("resolveMarkdownFileLinkTarget", () => {
     });
     expect(
       resolveInlineCodeFileLinkMeta("./src/index.ts", "/repo", "/repo/packages/a"),
-    ).toMatchObject({ filePath: "/repo/packages/a/./src/index.ts" });
+    ).toMatchObject({ filePath: "/repo/packages/a/src/index.ts" });
     expect(resolveInlineCodeFileLinkMeta("../b/notes.md", "/repo", "/repo/docs/a")).toMatchObject({
-      filePath: "/repo/docs/a/../b/notes.md",
+      filePath: "/repo/docs/b/notes.md",
     });
   });
 
@@ -408,9 +409,9 @@ describe("relative links inside a rendered host file", () => {
     });
     expect(
       resolveInlineCodeFileLinkMeta("./src/index.ts", "/repo", "/repo/packages/a"),
-    ).toMatchObject({ filePath: "/repo/packages/a/./src/index.ts" });
+    ).toMatchObject({ filePath: "/repo/packages/a/src/index.ts" });
     expect(resolveInlineCodeFileLinkMeta("../b/notes.md", "/repo", "/repo/docs/a")).toMatchObject({
-      filePath: "/repo/docs/a/../b/notes.md",
+      filePath: "/repo/docs/b/notes.md",
     });
   });
 
@@ -419,5 +420,118 @@ describe("relative links inside a rendered host file", () => {
       filePath: "/tmp/report/src/main.ts",
       workspaceRelativePath: null,
     });
+  });
+});
+
+describe("resolveMarkdownFilePanelTarget", () => {
+  const roots = [
+    { path: "/work/app", label: "Primary directory" },
+    { path: "/work/qa-services", label: "QA" },
+  ];
+
+  it("opens an absolute secondary-directory link against its owning root", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/qa-services/src/check.ts",
+        panelPath: "/work/qa-services/src/check.ts",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: roots,
+      }),
+    ).toEqual({ path: "src/check.ts", workspaceRoot: "/work/qa-services" });
+  });
+
+  it("recognizes a secondary directory name or label at the start of a relative link", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/app/qa-services/src/check.ts",
+        panelPath: "qa-services/src/check.ts",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: roots,
+      }),
+    ).toEqual({ path: "src/check.ts", workspaceRoot: "/work/qa-services" });
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/app/QA/src/check.ts",
+        panelPath: "QA/src/check.ts",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: roots,
+      }),
+    ).toEqual({ path: "src/check.ts", workspaceRoot: "/work/qa-services" });
+  });
+
+  it("keeps ordinary relative links in the active checkout", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/app/src/main.ts",
+        panelPath: "src/main.ts",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: roots,
+      }),
+    ).toEqual({ path: "src/main.ts", workspaceRoot: "/work/app" });
+  });
+
+  it("uses the deepest configured root and leaves external host files absolute", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/app/packages/docs/readme.md",
+        panelPath: "/work/app/packages/docs/readme.md",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: [...roots, { path: "/work/app/packages/docs" }],
+      }),
+    ).toEqual({ path: "readme.md", workspaceRoot: "/work/app/packages/docs" });
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/tmp/report.md",
+        panelPath: "/tmp/report.md",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: roots,
+      }),
+    ).toEqual({ path: "/tmp/report.md" });
+  });
+
+  it("supports Windows project roots", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "D:\\work\\qa-services\\src\\check.ts",
+        panelPath: "D:\\work\\qa-services\\src\\check.ts",
+        preferredWorkspaceRoot: "D:\\work\\app",
+        workspaceRoots: [{ path: "D:\\work\\qa-services" }],
+      }),
+    ).toEqual({ path: "src/check.ts", workspaceRoot: "D:\\work\\qa-services" });
+  });
+});
+
+describe("document checkout identity", () => {
+  it.each(["/work/project", "/work/worktrees/feature"])(
+    "resolves nested document links against %s",
+    (root) => {
+      expect(resolveMarkdownFileLinkMeta("./notes/next.md", root, `${root}/plans`)).toMatchObject({
+        filePath: `${root}/plans/notes/next.md`,
+        workspaceRelativePath: "plans/notes/next.md",
+      });
+    },
+  );
+
+  it("marks absolute references so lookup cannot redirect them to another root", () => {
+    expect(resolveMarkdownFileLinkMeta("/work/project/src/main.ts", "/work/project")).toMatchObject(
+      { absoluteReference: true },
+    );
+    expect(
+      resolveMarkdownFileLinkMeta("file:///work/project/src/main.ts", "/work/project"),
+    ).toMatchObject({ absoluteReference: true });
+    expect(
+      resolveMarkdownFileLinkMeta("src/main.ts", "/work/project")?.absoluteReference,
+    ).toBeUndefined();
+  });
+
+  it("keeps distinct POSIX roots with case-sensitive names", () => {
+    expect(
+      resolveMarkdownFilePanelTarget({
+        filePath: "/work/App/src/main.ts",
+        panelPath: "/work/App/src/main.ts",
+        preferredWorkspaceRoot: "/work/app",
+        workspaceRoots: [{ path: "/work/App" }],
+      }),
+    ).toEqual({ path: "src/main.ts", workspaceRoot: "/work/App" });
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
+import { clientRpcRequiredScopes } from "./clientRpcPermissions.ts";
+import { WS_METHODS } from "./rpc.ts";
 import * as Schema from "effect/Schema";
 
 import {
@@ -14,6 +16,9 @@ import {
 } from "./auth.ts";
 
 describe("authorization grants", () => {
+  it("requires filesystem read for sibling file lookup", () => {
+    expect(clientRpcRequiredScopes(WS_METHODS.projectsLocateFile, {})).toEqual(["filesystem:read"]);
+  });
   it("decodes legacy review credentials without offering them in new grants", () => {
     expect(Schema.decodeUnknownSync(AuthEnvironmentScopes)(["review:write"])).toEqual([
       "review:write",

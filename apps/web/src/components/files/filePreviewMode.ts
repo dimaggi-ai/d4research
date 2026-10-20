@@ -1,9 +1,34 @@
-import type { AssetResource, ProjectReadFileError, ScopedThreadRef } from "@d4research/contracts";
+import { resolveMarkdownFileLinkMeta } from "~/markdown-links";
+import type {
+  AssetResource,
+  ProjectFileLocation,
+  ProjectReadFileError,
+  ScopedThreadRef,
+} from "@d4research/contracts";
 import { isAbsolutePath, workspaceRelativeFilePath } from "@d4research/shared/path";
 
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
   if (path === null) return null;
-  return path === "." || workspaceRelativeFilePath(path, cwd) === "." ? null : path;
+  const target = /^(?:\.{1,2}[\\/]|~[\\/]|file:)/i.test(path)
+    ? (resolveMarkdownFileLinkMeta(path, cwd)?.filePath ?? path)
+    : path;
+  if (target === "." || workspaceRelativeFilePath(target, cwd) === ".") return null;
+  return !isAbsolutePath(path) && isAbsolutePath(target)
+    ? (workspaceRelativeFilePath(target, cwd) ?? target)
+    : target;
+}
+
+export function resolveSiblingLookupRoot(
+  cwd: string,
+  target: string | null,
+  knownRoots: ReadonlyArray<string>,
+): string {
+  if (target === null || !isAbsolutePath(target)) return cwd;
+  return (
+    [cwd, ...knownRoots]
+      .filter((root) => workspaceRelativeFilePath(target, root) !== null)
+      .toSorted((left, right) => right.length - left.length)[0] ?? cwd
+  );
 }
 
 export const isMarkdownPreviewFile = (path: string): boolean => /\.(?:md|mdx)$/i.test(path);
@@ -18,6 +43,8 @@ export function filePreviewReadErrorMessage(error: ProjectReadFileError): string
       return "The requested path is outside the workspace.";
     case "resolved_path_outside_root":
       return "The path resolves to a location outside the workspace.";
+    case "path_not_found":
+      return "This file does not exist in this checkout.";
     case "operation_failed":
       return error.operation === "realpath-workspace-root"
         ? "The workspace folder could not be accessed."
@@ -25,6 +52,11 @@ export function filePreviewReadErrorMessage(error: ProjectReadFileError): string
     default:
       return error.message;
   }
+}
+
+export function siblingWorktreeLabel(location: ProjectFileLocation): string {
+  const folder = location.worktreePath.split(/[\\/]/).findLast(Boolean) ?? location.worktreePath;
+  return location.branch ? `${folder} (${location.branch})` : folder;
 }
 
 export function shouldShowFileExplorer(input: {

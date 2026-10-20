@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthFilesystemWriteScope,
+  AuthFilesystemReadScope,
+  type AuthEnvironmentScope,
   EnvironmentId,
   ProjectId,
   ThreadId,
@@ -40,15 +42,32 @@ const PROJECT = {
   workspaceRoot: "/scratch",
 } as EnvironmentProject;
 
-const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
+const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* (
+  destinationEnvironmentId: EnvironmentId = ENVIRONMENT_ID,
+) {
   const metadataRequests: string[][] = [];
+  const locateRequests: Array<{ cwd: string; relativePath: string }> = [];
   const file = { byteLength: 5 };
   const readResponse = { wait: Effect.void as Effect.Effect<void> };
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
-    target: { environmentId: ENVIRONMENT_ID },
+    target: { environmentId: destinationEnvironmentId },
     session: yield* SubscriptionRef.make(
       Option.some({
         client: {
+          [WS_METHODS.projectsLocateFile]: (input: { cwd: string; relativePath: string }) =>
+            Effect.sync(() => {
+              locateRequests.push(input);
+              return {
+                locations: [
+                  {
+                    absolutePath: "/sibling/foo",
+                    worktreePath: "/sibling",
+                    branch: "feature",
+                    modifiedAt: 1,
+                  },
+                ],
+              };
+            }),
           [WS_METHODS.projectsEnsureScratch]: () => Effect.succeed({ projectId: PROJECT_ID }),
           [WS_METHODS.projectsReadFile]: () =>
             Effect.gen(function* () {
@@ -122,7 +141,93 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
   const openScratch = Effect.promise(() =>
     commands.openScratch.run(registry, { environmentId: ENVIRONMENT_ID, input: {} }),
   );
-  return { registry, storedProject, openScratch, commands, metadataRequests, readResponse };
+  return {
+    registry,
+    storedProject,
+    openScratch,
+    commands,
+    metadataRequests,
+    readResponse,
+    locateRequests,
+  };
+});
+
+const grantScopes = (
+  registry: AtomRegistry.AtomRegistry,
+  environmentId: EnvironmentId,
+  scopes: ReadonlyArray<AuthEnvironmentScope>,
+) =>
+  registry.set(
+    sessions(environmentId),
+    AsyncResult.success({
+      authenticated: true,
+      auth: {
+        policy: "remote-reachable" as const,
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test",
+      },
+      scopes,
+      permissions: scopes,
+    }),
+  );
+
+describe("locateFile authorization", () => {
+  it.effect(
+    "executes the cached lookup with the destination read grant and rechecks a revoked grant",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness();
+        grantScopes(h.registry, ENVIRONMENT_ID, [AuthFilesystemReadScope]);
+        const query = h.commands.locateFile({
+          environmentId: ENVIRONMENT_ID,
+          input: { cwd: "/repo", relativePath: "foo" },
+        });
+        const unmount = h.registry.mount(query);
+        yield* Effect.addFinalizer(() => Effect.sync(unmount));
+        const read = () => AtomRegistry.getResult(h.registry, query, { suspendOnWaiting: true });
+        expect((yield* read()).locations[0]?.absolutePath).toBe("/sibling/foo");
+        expect((yield* read()).locations).toHaveLength(1);
+        expect(h.locateRequests).toEqual([{ cwd: "/repo", relativePath: "foo" }]);
+        grantScopes(h.registry, ENVIRONMENT_ID, []);
+        h.registry.refresh(query);
+        const error = yield* read().pipe(Effect.flip);
+        expect(error).toMatchObject({
+          _tag: "EnvironmentAuthorizationError",
+          requiredPermission: AuthFilesystemReadScope,
+        });
+        expect(h.locateRequests).toHaveLength(1);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.each([false, true])(
+    "denies a destination lookup when only another environment has read permission (routed: %s)",
+    (routed) =>
+      Effect.gen(function* () {
+        const destination = EnvironmentId.make("locator-destination");
+        const h = yield* makeHarness(destination);
+        grantScopes(h.registry, ENVIRONMENT_ID, [AuthFilesystemReadScope]);
+        grantScopes(h.registry, destination, []);
+        const query = h.commands.locateFile({
+          environmentId: routed ? ENVIRONMENT_ID : destination,
+          input: { cwd: "/repo", relativePath: "foo" },
+        });
+        const error = yield* AtomRegistry.getResult(h.registry, query, {
+          suspendOnWaiting: true,
+        }).pipe(Effect.flip);
+        expect(error).toMatchObject({
+          _tag: "EnvironmentAuthorizationError",
+          requiredPermission: AuthFilesystemReadScope,
+        });
+        expect(h.locateRequests).toHaveLength(0);
+        grantScopes(h.registry, destination, [AuthFilesystemReadScope]);
+        h.registry.refresh(query);
+        expect(
+          (yield* AtomRegistry.getResult(h.registry, query, { suspendOnWaiting: true })).locations,
+        ).toHaveLength(1);
+        expect(h.locateRequests).toHaveLength(1);
+      }).pipe(Effect.scoped),
+  );
 });
 
 describe("writeFile metadata", () => {

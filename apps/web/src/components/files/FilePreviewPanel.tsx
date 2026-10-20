@@ -1,3 +1,5 @@
+import { useProjects } from "../../state/entities";
+import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import {
   AuthPreviewOperateScope,
@@ -103,8 +105,10 @@ import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
 import {
   filePreviewReadErrorMessage,
+  siblingWorktreeLabel,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
+  resolveSiblingLookupRoot,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
   workspaceAssetResource,
@@ -115,6 +119,7 @@ import {
   getProjectFileContents,
   setProjectFileQueryData,
   useProjectFileQuery,
+  useProjectFileLocations,
 } from "./projectFilesQueryState";
 
 interface FilePreviewPanelProps {
@@ -985,8 +990,35 @@ export default function FilePreviewPanel({
   workspaceMutationId,
   active = true,
 }: FilePreviewPanelProps) {
-  const relativePath =
+  const resolvedPath =
     attachment === undefined ? resolveFilePreviewPath(requestedPath, cwd) : requestedPath;
+  const missingKey = `${environmentId}\u0000${cwd}\u0000${resolvedPath ?? ""}`;
+  const [missingFile, setMissingFile] = useState<string | null>(null);
+  const [chosenSibling, setChosenSibling] = useState<{ key: string; path: string } | null>(null);
+  const missing = attachment === undefined && resolvedPath !== null && missingFile === missingKey;
+  const projects = useProjects();
+  const lookupRoot = resolveSiblingLookupRoot(
+    cwd,
+    resolvedPath,
+    projects
+      .filter((project) => project.environmentId === environmentId)
+      .map((project) => project.workspaceRoot),
+  );
+  const siblings = useProjectFileLocations(
+    environmentId,
+    lookupRoot,
+    resolvedPath,
+    active && missing,
+  );
+  const sibling = missing
+    ? (siblings.locations.find(
+        (location) =>
+          chosenSibling?.key === missingKey && location.absolutePath === chosenSibling.path,
+      ) ??
+      siblings.locations[0] ??
+      null)
+    : null;
+  const relativePath = sibling?.absolutePath ?? resolvedPath;
   const draft = typeof composerDraftTarget === "string";
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
@@ -1021,6 +1053,13 @@ export default function FilePreviewPanel({
     selectedFilePending,
     active,
   );
+  if (
+    relativePath === resolvedPath &&
+    file.readError?.failure === "path_not_found" &&
+    missingFile !== missingKey
+  ) {
+    setMissingFile(missingKey);
+  }
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
   // A chat link cannot tell a folder from a file, so a folder arrives here as
   // a file surface and the read fails. Keep the breadcrumbs, drop the preview
@@ -1296,6 +1335,23 @@ export default function FilePreviewPanel({
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
       ) : null}
+      {sibling ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-1.5 text-xs">
+          <span>Showing this file from {siblingWorktreeLabel(sibling)}.</span>
+          {siblings.locations
+            .filter((location) => location !== sibling)
+            .map((location) => (
+              <Button
+                key={location.absolutePath}
+                size="xs"
+                variant="outline"
+                onClick={() => setChosenSibling({ key: missingKey, path: location.absolutePath })}
+              >
+                {siblingWorktreeLabel(location)}
+              </Button>
+            ))}
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
@@ -1354,6 +1410,8 @@ export default function FilePreviewPanel({
               title={relativePath}
               workspaceMutationId={file.data?.revision ?? workspaceMutationId}
             />
+          ) : relativePath && missing && siblings.isPending ? (
+            <FileSurfaceLoading />
           ) : relativePath && file.error && file.data === null ? (
             <div
               role="alert"

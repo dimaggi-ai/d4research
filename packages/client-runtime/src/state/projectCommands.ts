@@ -25,6 +25,7 @@ import {
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentQueryAtomFamily,
 } from "./runtime.ts";
 import {
   type CreateProjectInput,
@@ -35,6 +36,7 @@ import {
   updateProject,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { createFileMetadataAtoms } from "./fileMetadata.ts";
 import { resolveWorkspaceFilePath } from "@d4research/shared/path";
 
@@ -86,6 +88,10 @@ export function createProjectEnvironmentAtoms<R, E>(
   },
 ) {
   const fileMetadata = createFileMetadataAtoms(runtime);
+  const locateFileCommand = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:projects:locate-file-request",
+    tag: WS_METHODS.projectsLocateFile,
+  });
   const projectScheduler = createAtomCommandScheduler();
   const fileScheduler = createAtomCommandScheduler();
   const optimisticFileFamily = Atom.family((key: string) =>
@@ -134,6 +140,22 @@ export function createProjectEnvironmentAtoms<R, E>(
           request(WS_METHODS.projectsListEntries, input),
           (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
         ),
+    }),
+    locateFile: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:projects:locate-file",
+      staleTimeMs: 10_000,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.projectsLocateFile>) =>
+        Effect.gen(function* () {
+          const registry = yield* AtomRegistry.AtomRegistry;
+          const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+          const result = yield* Effect.promise(() =>
+            locateFileCommand.run(registry, {
+              environmentId: supervisor.target.environmentId,
+              input,
+            }),
+          );
+          return result._tag === "Success" ? result.value : yield* Effect.failCause(result.cause);
+        }),
     }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",

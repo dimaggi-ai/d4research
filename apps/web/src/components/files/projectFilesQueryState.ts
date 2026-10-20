@@ -4,6 +4,8 @@ import { filePreviewKind } from "@d4research/shared/filePreview";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   type EnvironmentId,
+  type ProjectFileLocation,
+  type ProjectLocateFileResult,
   type ProjectListEntriesResult,
   ProjectReadFileError,
   type ProjectReadFileResult,
@@ -21,6 +23,9 @@ import { executeAtomQuery } from "@d4research/client-runtime/state/runtime";
 
 const EMPTY_PROJECT_FILE_PATH = "";
 const FILE_REVISION_CHECK_INTERVAL_MS = 10_000;
+const EMPTY_PROJECT_FILE_LOCATIONS_ATOM = Atom.make(
+  AsyncResult.initial<ProjectLocateFileResult, never>(false),
+);
 
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
@@ -386,5 +391,26 @@ export function useProjectFileQuery(
     readError,
     isNotFile: readError?.failure === "path_not_file",
     refresh,
+  };
+}
+
+export function useProjectFileLocations(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string | null,
+  enabled: boolean,
+): { readonly locations: ReadonlyArray<ProjectFileLocation>; readonly isPending: boolean } {
+  const { canReadFiles } = useFilesystemReadAccess(environmentId);
+  const result = useAtomValue(
+    enabled && canReadFiles && relativePath !== null
+      ? projectEnvironment.locateFile({ environmentId, input: { cwd, relativePath } })
+      : EMPTY_PROJECT_FILE_LOCATIONS_ATOM,
+  );
+  return {
+    locations:
+      result._tag === "Failure"
+        ? []
+        : (Option.getOrNull(AsyncResult.value(result))?.locations ?? []),
+    isPending: enabled && result._tag === "Initial",
   };
 }

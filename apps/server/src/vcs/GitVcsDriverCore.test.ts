@@ -774,6 +774,57 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
   ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("lists worktree paths and branches without changing checkouts", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const commands: Array<ReadonlyArray<string>> = [];
+      const fixture = [
+        "worktree /repo/main",
+        "HEAD 012345",
+        "branch refs/heads/main",
+        "",
+        "worktree /repo/linked space",
+        "HEAD abcdef",
+        "branch refs/heads/feature/report",
+        "",
+        "worktree /repo/detached",
+        "HEAD fedcba",
+        "detached",
+        "",
+        "worktree /repo/deleted",
+        "HEAD 123456",
+        "branch refs/heads/deleted",
+        "prunable gitdir file points to non-existent location",
+        "",
+        "",
+      ].join("\0");
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (!ChildProcess.isStandardCommand(command))
+          return Effect.die("Expected a standard Git command");
+        commands.push(command.args);
+        return Effect.succeed(makeSuccessfulHandle(fixture));
+      });
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      assert.deepEqual(yield* driver.listWorktrees("/repo/main"), [
+        { path: "/repo/main", branch: "main" },
+        { path: "/repo/linked space", branch: "feature/report" },
+        { path: "/repo/detached", branch: null },
+      ]);
+      assert.deepEqual(yield* driver.listWorktreePaths("/repo/main"), [
+        "/repo/main",
+        "/repo/linked space",
+        "/repo/detached",
+      ]);
+      assert.deepEqual(commands, [
+        ["worktree", "list", "--porcelain", "-z"],
+        ["worktree", "list", "--porcelain", "-z"],
+      ]);
+    }),
+  ).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect("reads worktrees from git that rejects worktree list -z", () =>
   Effect.scoped(
     Effect.gen(function* () {

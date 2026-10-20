@@ -432,10 +432,40 @@ export const ProjectReadFileResult = Schema.Struct({
 });
 export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
 
+export const ProjectLocateFileInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  // Workspace-relative or absolute, as in `ProjectReadFileInput`.
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectLocateFileInput = typeof ProjectLocateFileInput.Type;
+
+export const ProjectFileLocation = Schema.Struct({
+  absolutePath: TrimmedNonEmptyString,
+  worktreePath: TrimmedNonEmptyString,
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  modifiedAt: Schema.Number,
+});
+export type ProjectFileLocation = typeof ProjectFileLocation.Type;
+
+/** Copies of a missing file in the repository's other Git worktrees, newest first. */
+export const ProjectLocateFileResult = Schema.Struct({
+  locations: Schema.Array(ProjectFileLocation),
+});
+export type ProjectLocateFileResult = typeof ProjectLocateFileResult.Type;
+
+export class ProjectLocateFileError extends Schema.TaggedError<ProjectLocateFileError>()(
+  "ProjectLocateFileError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
 export const ProjectFileFailure = Schema.Literals([
   "workspace_path_outside_root",
   "resolved_path_outside_root",
   "path_not_file",
+  "path_not_found",
   "binary_file",
   "operation_failed",
 ]);

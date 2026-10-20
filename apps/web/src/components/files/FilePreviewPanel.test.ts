@@ -12,8 +12,10 @@ import {
   filePreviewReadErrorMessage,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
+  resolveSiblingLookupRoot,
   setMarkdownTaskChecked,
   shouldShowFileExplorer,
+  siblingWorktreeLabel,
   workspaceAssetResource,
 } from "./filePreviewMode";
 
@@ -22,6 +24,7 @@ const decodeReadError = Schema.decodeSync(ProjectReadFileError);
 describe("file preview read errors", () => {
   it.each([
     ["path_not_file", "The path is a directory or special file, not a regular file."],
+    ["path_not_found", "This file does not exist in this checkout."],
     ["binary_file", "The file is binary and cannot be displayed as text."],
     ["workspace_path_outside_root", "The requested path is outside the workspace."],
     ["resolved_path_outside_root", "The path resolves to a location outside the workspace."],
@@ -217,5 +220,74 @@ describe("workspaceAssetResource", () => {
       cwd: "/repo",
       path: "/repo/docs/index.html",
     });
+  });
+});
+
+describe("linked file preview targets", () => {
+  it.each([
+    ["../sibling/note.md", "/work/sibling/note.md"],
+    ["./docs/note.md", "docs/note.md"],
+    ["/external/note.md", "/external/note.md"],
+    ["file:///work/repo/docs/note.md", "docs/note.md"],
+  ])("resolves %s without moving the thread checkout", (input, expected) => {
+    expect(resolveFilePreviewPath(input, "/work/repo")).toBe(expected);
+  });
+  it("labels a sibling by folder and optional branch", () => {
+    const location = {
+      absolutePath: "/work/review/note.md",
+      worktreePath: "/work/review",
+      modifiedAt: 1,
+    };
+    expect(siblingWorktreeLabel({ ...location, branch: "review" })).toBe("review (review)");
+    expect(siblingWorktreeLabel({ ...location, branch: null })).toBe("review");
+  });
+});
+
+describe("sibling lookup workspace", () => {
+  it("searches the owning repository for an absolute link into an attached folder", () => {
+    expect(
+      resolveSiblingLookupRoot("/work/app", "/work/attached/src/missing.ts", [
+        "/work/app",
+        "/work/attached",
+      ]),
+    ).toBe("/work/attached");
+  });
+
+  it("uses the deepest containing checkout, including the thread's worktree", () => {
+    expect(
+      resolveSiblingLookupRoot(
+        "/work/repo/worktrees/topic",
+        "/work/repo/worktrees/topic/src/missing.ts",
+        ["/work/repo"],
+      ),
+    ).toBe("/work/repo/worktrees/topic");
+    expect(
+      resolveSiblingLookupRoot("/work/repo", "/work/repo/packages/other/src/missing.ts", [
+        "/work/repo/packages/other",
+      ]),
+    ).toBe("/work/repo/packages/other");
+  });
+
+  it("keeps relative links and unknown external paths on the current lookup root", () => {
+    expect(resolveSiblingLookupRoot("/work/app", "src/missing.ts", ["/work/attached"])).toBe(
+      "/work/app",
+    );
+    expect(resolveSiblingLookupRoot("/work/app", "/tmp/missing.ts", ["/work/attached"])).toBe(
+      "/work/app",
+    );
+    expect(resolveSiblingLookupRoot("/work/app", null, [])).toBe("/work/app");
+  });
+
+  it("matches Windows paths without treating a sibling prefix as containment", () => {
+    expect(
+      resolveSiblingLookupRoot("C:/work/app", "d:/WORK/attached/src/missing.ts", [
+        "D:/work/attached",
+      ]),
+    ).toBe("D:/work/attached");
+    expect(
+      resolveSiblingLookupRoot("/work/app", "/work/attached-other/src/missing.ts", [
+        "/work/attached",
+      ]),
+    ).toBe("/work/app");
   });
 });

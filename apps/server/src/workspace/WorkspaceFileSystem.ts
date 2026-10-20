@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
@@ -86,6 +87,19 @@ export class WorkspacePathNotFileError extends Schema.TaggedError<WorkspacePathN
   }
 }
 
+export class WorkspacePathNotFoundError extends Schema.TaggedError<WorkspacePathNotFoundError>()(
+  "WorkspacePathNotFoundError",
+  {
+    workspaceRoot: Schema.String,
+    relativePath: Schema.String,
+    resolvedPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Workspace path '${this.relativePath}' in '${this.workspaceRoot}' does not exist: ${this.resolvedPath}`;
+  }
+}
+
 export class WorkspaceBinaryFileError extends Schema.TaggedError<WorkspaceBinaryFileError>()(
   "WorkspaceBinaryFileError",
   {
@@ -103,9 +117,13 @@ export const WorkspaceFileSystemError = Schema.Union([
   WorkspaceFileSystemOperationError,
   WorkspaceFilePathEscapeError,
   WorkspacePathNotFileError,
+  WorkspacePathNotFoundError,
   WorkspaceBinaryFileError,
 ]);
 export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
+
+const isNoEntryError = (cause: unknown): boolean =>
+  Predicate.isObject(cause) && "code" in cause && cause.code === "ENOENT";
 
 export class WorkspaceFileSystem extends Context.Service<
   WorkspaceFileSystem,
@@ -232,14 +250,20 @@ export const make = Effect.gen(function* () {
       const realTargetPath = yield* Effect.tryPromise({
         try: () => NodeFSP.realpath(requestedPath),
         catch: (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: requestedPath,
-            operationPath: requestedPath,
-            operation: "realpath-target",
-            cause,
-          }),
+          isNoEntryError(cause)
+            ? new WorkspacePathNotFoundError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: requestedPath,
+              })
+            : new WorkspaceFileSystemOperationError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: requestedPath,
+                operationPath: requestedPath,
+                operation: "realpath-target",
+                cause,
+              }),
       });
       return { relativePath: requestedPath, realTargetPath };
     }
@@ -264,14 +288,20 @@ export const make = Effect.gen(function* () {
     const realTargetPath = yield* Effect.tryPromise({
       try: () => NodeFSP.realpath(target.absolutePath),
       catch: (cause) =>
-        new WorkspaceFileSystemOperationError({
-          workspaceRoot: input.cwd,
-          relativePath: input.relativePath,
-          resolvedPath: target.absolutePath,
-          operationPath: target.absolutePath,
-          operation: "realpath-target",
-          cause,
-        }),
+        isNoEntryError(cause)
+          ? new WorkspacePathNotFoundError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+            })
+          : new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: target.absolutePath,
+              operation: "realpath-target",
+              cause,
+            }),
     });
     if (!isInsideRealRoot(realWorkspaceRoot, realTargetPath)) {
       return yield* new WorkspaceFilePathEscapeError({

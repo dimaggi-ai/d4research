@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthOrchestrationOperateScope,
+  AuthFilesystemReadScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
@@ -94,6 +95,32 @@ describe("command permissions", () => {
         expect((yield* command.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
           "EnvironmentAuthorizationError",
         );
+      }),
+    ),
+  );
+
+  it.effect("requires destination filesystem read for sibling-file lookup", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const cleanup = createCommandPermissions(runtime, WS_METHODS.projectsLocateFile);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
+        expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(true),
+            scopes: [AuthFilesystemReadScope],
+            permissions: [AuthFilesystemReadScope],
+          }),
+        );
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(true);
+        yield* cleanup.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
       }),
     ),
   );

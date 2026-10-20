@@ -70,6 +70,7 @@ import {
   type ProjectMutation,
   ProjectListEntriesError,
   ProjectReadFileError,
+  ProjectLocateFileError,
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
@@ -198,6 +199,7 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
+import * as SiblingWorktreeFiles from "./workspace/SiblingWorktreeFiles.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
@@ -541,6 +543,8 @@ function projectFileFailureContext(
         resolvedPath: error.resolvedPath,
         resolvedWorkspaceRoot: error.resolvedWorkspaceRoot,
       };
+    case "WorkspacePathNotFoundError":
+      return { failure: "path_not_found", resolvedPath: error.resolvedPath };
     case "WorkspacePathNotFileError":
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
@@ -1209,6 +1213,7 @@ const layerWsRpc = (
       const secondBrain = yield* SecondBrain.SecondBrainService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+      const siblingWorktreeFiles = yield* SiblingWorktreeFiles.SiblingWorktreeFiles;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -2542,6 +2547,16 @@ const layerWsRpc = (
                 new ProjectListEntriesError({
                   ...input,
                   ...projectEntriesFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsLocateFile]: (input) =>
+          siblingWorktreeFiles.locate(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectLocateFileError({
+                  message: "Could not locate the file in sibling worktrees.",
                   cause,
                 }),
             ),

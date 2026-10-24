@@ -6,9 +6,9 @@ import { Platform } from "react-native";
 import { loadOrCreateAgentAwarenessDeviceId } from "../../persistence/imperative";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
-import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { deliverSystemNotification } from "./systemNotificationDelivery";
+import { useD4AgentSystemHealth } from "./useD4AgentState";
 
 export function SystemMonitorNotifications() {
   const { environments } = useEnvironments();
@@ -31,9 +31,7 @@ function EnvironmentSystemNotifications({ environmentId }: { environmentId: Envi
   return enabled ? <EnabledSystemNotifications environmentId={environmentId} /> : null;
 }
 function EnabledSystemNotifications({ environmentId }: { environmentId: EnvironmentId }) {
-  const state = useEnvironmentQuery(
-    serverEnvironment.d4AgentSystemHealth({ environmentId, input: {} }),
-  );
+  const state = useD4AgentSystemHealth(environmentId);
   const allowed = useAtomValue(
     serverEnvironment.claimD4AgentSystemAttention.permissionAtom(environmentId),
   );

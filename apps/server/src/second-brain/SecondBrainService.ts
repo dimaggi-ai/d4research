@@ -230,17 +230,20 @@ const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
   const files = yield* Files.SecondBrainFiles;
   const index = yield* Index.SecondBrainIndex;
-  const owns = yield* AgentAccess.ownership;
-  const isOrdinaryEvidence = (proposal: Pick<BrainProposal, "evidence">) =>
+  const readOwnership = yield* AgentAccess.ownershipSnapshot;
+  const isOrdinaryEvidence = (
+    proposal: Pick<BrainProposal, "evidence">,
+    owns: (threadId: ThreadId) => boolean,
+  ) => !proposal.evidence.some((evidence) => owns(ThreadId.make(evidence.threadId)));
+  const readableProposal = (
+    vault: string,
+    id: string,
+    ownership?: (threadId: ThreadId) => boolean,
+  ) =>
     Effect.gen(function* () {
-      for (const evidence of proposal.evidence)
-        if (yield* owns(ThreadId.make(evidence.threadId))) return false;
-      return true;
-    });
-  const readableProposal = (vault: string, id: string) =>
-    Effect.gen(function* () {
+      const owns = ownership ?? (yield* readOwnership());
       const proposal = yield* index.proposal(vault, id);
-      if (!(yield* isOrdinaryEvidence(proposal)))
+      if (!isOrdinaryEvidence(proposal, owns))
         return yield* new SecondBrainError({ code: "forbidden" });
       return proposal;
     });
@@ -969,7 +972,7 @@ const make = Effect.gen(function* () {
       locked(
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposeInput, input);
-          if (!(yield* isOrdinaryEvidence(valid)))
+          if (!isOrdinaryEvidence(valid, yield* readOwnership()))
             return yield* new SecondBrainError({ code: "forbidden" });
           const { root: vault } = yield* configure;
           yield* pure(() => assertNoSecrets(encodeJson(valid)));
@@ -1001,9 +1004,9 @@ const make = Effect.gen(function* () {
           const valid = yield* validate(BrainProposalQuery, query);
           const { root: vault } = yield* configure;
           if (valid.id) return [yield* readableProposal(vault, valid.id)];
-          return yield* Effect.filter(
-            yield* index.proposals(vault, valid, valid.own ? actor : undefined),
-            isOrdinaryEvidence,
+          const owns = yield* readOwnership();
+          return (yield* index.proposals(vault, valid, valid.own ? actor : undefined)).filter(
+            (proposal) => isOrdinaryEvidence(proposal, owns),
           );
         }),
       ),
@@ -1012,10 +1015,11 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposalQuery, query);
           const { root: vault } = yield* configure;
+          const owns = yield* readOwnership();
           const candidates = valid.id
-            ? [yield* readableProposal(vault, valid.id)]
+            ? [yield* readableProposal(vault, valid.id, owns)]
             : yield* index.proposals(vault, valid, valid.own ? actor : undefined);
-          const proposals = yield* Effect.filter(candidates, isOrdinaryEvidence);
+          const proposals = candidates.filter((proposal) => isOrdinaryEvidence(proposal, owns));
           let bytes = 256;
           const summaries = proposals.map(({ id, path, kind, state, createdAt, evidence }) => ({
             id,
@@ -1096,7 +1100,8 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { root: vault, config } = yield* configure;
           yield* recovery(vault);
-          const proposal = yield* readableProposal(vault, id);
+          const owns = yield* readOwnership();
+          const proposal = yield* readableProposal(vault, id, owns);
           if (proposal.state !== "pending")
             return yield* new SecondBrainError({ code: "forbidden" });
           const validReview =
@@ -1131,7 +1136,7 @@ const make = Effect.gen(function* () {
           }
           yield* recovery(vault);
           yield* sync(vault, config, true);
-          return yield* readableProposal(vault, id);
+          return yield* readableProposal(vault, id, owns);
         }).pipe(Effect.uninterruptible),
       ),
     rejectProposal: (id, reviewer, reason) =>

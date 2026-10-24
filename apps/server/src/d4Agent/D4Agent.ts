@@ -365,15 +365,17 @@ export const layer = Layer.effect(
           return { claimed: true };
         }),
       );
+    let usageSnapshotCursor: string | undefined;
     const captureUsage = usageLock.withPermits(1)(
       Effect.gen(function* () {
         const state = yield* store.get;
-        if (
-          state.threadId === null ||
-          (yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError))) ===
-            null
-        )
-          return;
+        if (state.threadId === null) return;
+        const shell = yield* threads
+          .getThreadShell(state.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (shell === null) return;
+        const snapshotCursor = `${shell.id}:${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId ?? ""}:${shell.activeRunId ?? ""}`;
+        if (snapshotCursor === usageSnapshotCursor) return;
         const { projection: records } = yield* projections
           .getThreadSnapshotWindow(state.threadId, { rowLimit: 100, userTurnLimit: 30 })
           .pipe(Effect.mapError(threadError));
@@ -432,6 +434,7 @@ export const layer = Layer.effect(
               .sort()
               .at(-1)!,
           }));
+        usageSnapshotCursor = snapshotCursor;
       }),
     );
     const getState = Effect.fn("D4Agent.getState")(function* () {

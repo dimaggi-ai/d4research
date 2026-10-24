@@ -1,3 +1,6 @@
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
+import * as Ref from "effect/Ref";
 import * as AgentStore from "../d4Agent/D4AgentStore.ts";
 import { ThreadId } from "@d4research/contracts";
 import * as Layer from "effect/Layer";
@@ -337,4 +340,122 @@ it.effect("legacy owned-agent proposals stay hidden and cannot be accepted into 
       }),
     ),
   ),
+);
+
+it.effect(
+  "proposal calls read ownership once across multiple evidence items and proposals, including acceptance",
+  () =>
+    Effect.gen(function* () {
+      const queries = yield* Ref.make(0);
+      const sql = () => Ref.update(queries, (count) => count + 1).pipe(Effect.as([]));
+      yield* withBrain((root) =>
+        Effect.gen(function* () {
+          const service = yield* Service.SecondBrainService;
+          const evidence = [
+            ...proposal.evidence,
+            { threadId: "another", messageId: "another", quote: "another fact" },
+          ];
+          const first = yield* service.propose({ ...proposal, evidence }, "agent");
+          expect(yield* Ref.get(queries)).toBe(1);
+          yield* service.propose({ ...proposal, path: "notes/beta.md", evidence }, "agent");
+          for (const operation of [
+            service.listProposals({}),
+            service.listProposalSummaries({}),
+            service.listProposalSummaries({ id: first.id }),
+          ]) {
+            yield* Ref.set(queries, 0);
+            expect((yield* operation).length).toBeGreaterThan(0);
+            expect(yield* Ref.get(queries)).toBe(1);
+          }
+          yield* Ref.set(queries, 0);
+          expect((yield* service.acceptProposal(first.id, "human")).state).toBe("accepted");
+          expect(yield* Ref.get(queries)).toBe(1);
+          expect(yield* (yield* FileSystem.FileSystem).exists(`${root}/${proposal.path}`)).toBe(
+            true,
+          );
+        }),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(AgentStore.D4AgentStore)({
+              workspace: "/private-agent",
+              get: Effect.succeed({ threadId: ThreadId.make("owned") } as never),
+            }),
+            Layer.succeed(SqlClient.SqlClient, sql as never),
+          ),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "batched ownership hides quarantined workspace evidence and fails closed on database errors",
+  () =>
+    Effect.gen(function* () {
+      const fail = yield* Ref.make(false);
+      const queries = yield* Ref.make(0);
+      const sql = (strings: TemplateStringsArray, ...values: unknown[]) =>
+        Effect.gen(function* () {
+          yield* Ref.update(queries, (count) => count + 1);
+          expect(strings.join("?")).toContain("projects.workspace_root =");
+          expect(values).toEqual(["/private-agent"]);
+          if (yield* Ref.get(fail))
+            return yield* Effect.fail(
+              new SqlError.ConnectionError({ cause: "database unavailable" }),
+            );
+          return [{ threadId: "quarantined" }];
+        });
+      yield* withBrain((root) =>
+        Effect.gen(function* () {
+          const service = yield* Service.SecondBrainService;
+          const index = yield* Index.SecondBrainIndex;
+          for (const [id, threadId] of [
+            ["private", "quarantined"],
+            ["ordinary", "ordinary"],
+          ]) {
+            yield* index.saveProposal({
+              ...proposal,
+              id: id!,
+              vault: root,
+              actor: "capture",
+              state: "pending",
+              createdAt: "2026-10-24T12:00:00Z",
+              reviewedAt: null,
+              reason: null,
+              possibleDuplicates: [],
+              evidence: [
+                proposal.evidence[0]!,
+                { threadId: threadId!, messageId: "m2", quote: "fact" },
+              ],
+            });
+          }
+          expect((yield* service.listProposals({})).map((p) => p.id)).toEqual(["ordinary"]);
+          expect(yield* Ref.get(queries)).toBe(1);
+          expect((yield* Effect.result(service.acceptProposal("private", "human")))._tag).toBe(
+            "Failure",
+          );
+          yield* Ref.set(fail, true);
+          expect(yield* service.listProposalSummaries({})).toEqual([]);
+          for (const operation of [
+            service.getProposal("ordinary"),
+            service.acceptProposal("ordinary", "human"),
+            service.propose(proposal, "agent"),
+          ])
+            expect((yield* Effect.result(operation))._tag).toBe("Failure");
+          expect(yield* (yield* FileSystem.FileSystem).exists(`${root}/${proposal.path}`)).toBe(
+            false,
+          );
+        }),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(AgentStore.D4AgentStore)({
+              workspace: "/private-agent",
+              get: Effect.succeed({ threadId: null } as never),
+            }),
+            Layer.succeed(SqlClient.SqlClient, sql as never),
+          ),
+        ),
+      );
+    }),
 );

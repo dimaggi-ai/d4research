@@ -5,8 +5,7 @@ import { AppState } from "react-native";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 
-export function useD4AgentState(environmentId: EnvironmentId, enabled = true) {
-  const focused = useIsFocused();
+function useAppActive() {
   const [active, setActive] = useState(() => AppState.currentState === "active");
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
@@ -14,15 +13,34 @@ export function useD4AgentState(environmentId: EnvironmentId, enabled = true) {
     );
     return () => subscription.remove();
   }, []);
-  const visible = enabled && focused && active;
-  const query = useEnvironmentQuery(
-    visible ? serverEnvironment.d4AgentState({ environmentId, input: {} }) : null,
-  );
-  const refresh = useEffectEvent(() => query.refresh());
+  return active;
+}
+
+function useAgentRefresh(refreshQuery: () => void, visible: boolean) {
+  const refresh = useEffectEvent(refreshQuery);
   useEffect(() => {
     if (!visible) return;
     const timer = setInterval(refresh, 15_000);
     return () => clearInterval(timer);
   }, [visible]);
+}
+
+export function useD4AgentState(environmentId: EnvironmentId, enabled = true) {
+  const focused = useIsFocused();
+  const active = useAppActive();
+  const visible = enabled && focused && active;
+  const query = useEnvironmentQuery(
+    visible ? serverEnvironment.d4AgentState({ environmentId, input: {} }) : null,
+  );
+  useAgentRefresh(query.refresh, visible);
+  return query;
+}
+
+export function useD4AgentSystemHealth(environmentId: EnvironmentId) {
+  const active = useAppActive();
+  const query = useEnvironmentQuery(
+    active ? serverEnvironment.d4AgentSystemHealth({ environmentId, input: {} }) : null,
+  );
+  useAgentRefresh(query.refresh, active);
   return query;
 }

@@ -5,7 +5,6 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import { getClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { getStableClientId } from "../../lib/clientInstallationId";
 import { useEnvironmentIds } from "../../state/environments";
-import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -14,6 +13,7 @@ import {
   playNotificationSound,
 } from "../../threadNotifications";
 import { toastManager } from "../ui/toast";
+import { useD4AgentSystemHealth } from "./useD4AgentState";
 
 export function SystemMonitorNotifications() {
   const ids = useEnvironmentIds();
@@ -31,9 +31,7 @@ function EnvironmentSystemNotifications({ environmentId }: { environmentId: Envi
   return enabled ? <EnabledSystemNotifications environmentId={environmentId} /> : null;
 }
 function EnabledSystemNotifications({ environmentId }: { environmentId: EnvironmentId }) {
-  const query = useEnvironmentQuery(
-    serverEnvironment.d4AgentSystemHealth({ environmentId, input: {} }),
-  );
+  const query = useD4AgentSystemHealth(environmentId);
   const claim = useAtomCommand(serverEnvironment.claimD4AgentSystemAttention, {
     reportFailure: false,
   });

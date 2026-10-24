@@ -996,7 +996,6 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:d4-agent-system-health",
       tag: WS_METHODS.d4AgentGetSystemHealth,
       staleTimeMs: 5_000,
-      refreshIntervalMs: 15_000,
       idleTtlMs: 0,
     }),
     d4AgentAction: createEnvironmentRpcQueryAtomFamily(runtime, {

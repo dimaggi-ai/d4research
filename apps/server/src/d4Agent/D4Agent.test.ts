@@ -459,6 +459,44 @@ it.effect.each([
     }),
 );
 
+it.effect("idle heartbeat skips usage snapshots and changed owned thread captures new usage", () =>
+  Effect.gen(function* () {
+    const { service, state, agentShell, projection, reads } = yield* fixture();
+    const id = ThreadId.make("owned");
+    yield* Ref.update(state, (value) => ({ ...value, threadId: id, projectId: target.projectId }));
+    yield* Ref.set(agentShell, { ...target, id });
+    yield* service.tick;
+    assert.equal((yield* Ref.get(reads)).snapshots, 1);
+    yield* service.tick;
+    assert.equal((yield* Ref.get(reads)).snapshots, 1);
+    const completedAt = DateTime.makeUnsafe(2000);
+    const runId = RunId.make("changed-run");
+    const attemptId = RunAttemptId.make("changed-attempt");
+    yield* Ref.update(projection, (value) => ({
+      ...value,
+      runs: [{ id: runId, modelSelection } as (typeof value.runs)[number]],
+      attempts: [{ id: attemptId, runId } as (typeof value.attempts)[number]],
+      providerTurns: [
+        {
+          id: ProviderTurnId.make("changed-turn"),
+          runAttemptId: attemptId,
+          completedAt,
+          startedAt: now,
+          turnTokenUsage: { inputTokens: 17, outputTokens: 3 },
+        } as (typeof value.providerTurns)[number],
+      ],
+    }));
+    yield* Ref.set(agentShell, { ...target, id, updatedAt: completedAt, latestRunId: runId });
+    yield* service.tick;
+    assert.equal((yield* Ref.get(reads)).snapshots, 2);
+    const usage = (yield* service.getState()).usage;
+    assert.equal(usage.length, 1);
+    assert.equal(usage[0]?.attributes["gen_ai.usage.input_tokens"], 17);
+    yield* service.tick;
+    assert.equal((yield* Ref.get(reads)).snapshots, 2);
+  }),
+);
+
 const realProjectLayer = RuntimeLayer.layerProjectService.pipe(
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(

@@ -2,10 +2,15 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { useD4AgentState } from "./useD4AgentState";
+import { useD4AgentState, useD4AgentSystemHealth } from "./useD4AgentState";
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), query: vi.fn(), selected: null as unknown }));
-vi.mock("../../state/server", () => ({ serverEnvironment: { d4AgentState: () => "agent-state" } }));
+vi.mock("../../state/server", () => ({
+  serverEnvironment: {
+    d4AgentState: () => "agent-state",
+    d4AgentSystemHealth: () => "system-health",
+  },
+}));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: unknown) => {
     mocks.query(atom);
@@ -15,6 +20,10 @@ vi.mock("../../state/query", () => ({
 }));
 let visibility: DocumentVisibilityState;
 let root: Root;
+function HealthProbe() {
+  useD4AgentSystemHealth("env" as never);
+  return null;
+}
 function Probe() {
   useD4AgentState("env" as never);
   return null;
@@ -55,4 +64,30 @@ it("does not subscribe or poll when initially hidden", () => {
   act(() => vi.advanceTimersByTime(45_000));
   expect(mocks.selected).toBeNull();
   expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+it("detaches system health while hidden and resumes its polling when visible", () => {
+  visibility = "hidden";
+  act(() => root.render(<HealthProbe />));
+  expect(mocks.selected).toBeNull();
+  act(() => vi.advanceTimersByTime(45_000));
+  expect(mocks.refresh).not.toHaveBeenCalled();
+  visibility = "visible";
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(mocks.selected).toBe("system-health");
+  const resumed = mocks.refresh.mock.calls.length;
+  act(() => vi.advanceTimersByTime(15_000));
+  expect(mocks.refresh).toHaveBeenCalledTimes(resumed + 1);
+  visibility = "hidden";
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(mocks.selected).toBeNull();
+  const hidden = mocks.refresh.mock.calls.length;
+  act(() => vi.advanceTimersByTime(45_000));
+  expect(mocks.refresh).toHaveBeenCalledTimes(hidden);
+  visibility = "visible";
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(mocks.selected).toBe("system-health");
+  const resumedAgain = mocks.refresh.mock.calls.length;
+  act(() => vi.advanceTimersByTime(15_000));
+  expect(mocks.refresh).toHaveBeenCalledTimes(resumedAgain + 1);
 });

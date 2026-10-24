@@ -523,14 +523,12 @@ describe("monitor notifications", () => {
     expect(state.notification).not.toHaveBeenCalled();
   });
 
-  it("notifies for a subagent attention report", async () => {
+  it("does not claim or notify separately for a subagent attention report", async () => {
     enableMonitor();
     state.subagent = true;
     await render();
-    expect(state.claim).toHaveBeenCalledTimes(1);
-    expect(state.add).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Thread needs attention" }),
-    );
+    expect(state.claim).not.toHaveBeenCalled();
+    expect(state.add).not.toHaveBeenCalled();
   });
 
   it.each(["disconnect", "disabled", "unmounted", "ineligible"])(

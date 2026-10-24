@@ -171,3 +171,23 @@ describe("classifyThreadLiveness", () => {
     expect(inputs.map(classifyThreadLiveness)).toEqual(results);
   });
 });
+
+it("separates provider reasons, changed progress, and explicit episodes without clock churn", () => {
+  expect(classify({ providerState: "error" }).reportKey).not.toBe(
+    classify({ providerState: "absent" }).reportKey,
+  );
+  expect(classify({ now: 2_000_000, lastProgressAt: 1_000_000 }).reportKey).not.toBe(
+    classify({ now: 2_000_000, lastProgressAt: 1_100_000 }).reportKey,
+  );
+  expect(classify({ episodeId: 1 }).reportKey).not.toBe(classify({ episodeId: 2 }).reportKey);
+  expect(classify({ episodeId: 1 }).reportKey).toBe(
+    classify({ episodeId: 1, now: 1_010_000 }).reportKey,
+  );
+});
+
+it("uses the configured stale threshold", () => {
+  expect(classify({ now: 1_600_000, staleAfterMs: 900_000 }).classification).toBe("slow");
+  expect(classify({ now: 1_900_000, staleAfterMs: 900_000 }).classification).toBe(
+    "suspected_stuck",
+  );
+});

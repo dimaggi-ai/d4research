@@ -52,6 +52,7 @@ function EnvironmentMonitorNotifications({
       (thread) => thread.id === threadId,
     );
     return (
+      thread?.lineage.relationshipToParent !== "subagent" &&
       thread?.agentMonitor?.notificationEligible === true &&
       thread.agentMonitor.attentionRequired &&
       thread.agentMonitor.reportKey === reportKey &&
@@ -72,6 +73,7 @@ function EnvironmentMonitorNotifications({
     for (const thread of snapshot.threads) {
       const report = thread.agentMonitor;
       if (
+        thread.lineage.relationshipToParent === "subagent" ||
         !report?.notificationEligible ||
         !report.attentionRequired ||
         thread.archivedAt !== null ||
@@ -81,37 +83,41 @@ function EnvironmentMonitorNotifications({
       const key = `${thread.id}:${report.reportKey}`;
       if (pending.current.has(key) || checked.current.get(thread.id) === report.reportKey) continue;
       pending.current.add(key);
-      void (async () => {
-        try {
-          const checkedReport = await deliverMonitorNotification({
+      void deliverMonitorNotification({
+        environmentId,
+        threadId: thread.id,
+        reportKey: report.reportKey,
+        notificationEligible: report.notificationEligible,
+        loadClientId: async () => `mobile-${await loadOrCreateAgentAwarenessDeviceId()}`,
+        isEnabled: () => reportAvailable(thread.id, report.reportKey),
+        hasPermission: async () => {
+          const permission = await Notifications.getPermissionsAsync();
+          return (
+            permission.granted ||
+            permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+          );
+        },
+        claim: async (clientId) => {
+          const result = await claim({
             environmentId,
-            threadId: thread.id,
-            reportKey: report.reportKey,
-            notificationEligible: report.notificationEligible,
-            loadClientId: async () => `mobile-${await loadOrCreateAgentAwarenessDeviceId()}`,
-            isEnabled: () => reportAvailable(thread.id, report.reportKey),
-            hasPermission: async () => (await Notifications.getPermissionsAsync()).granted,
-            claim: async (clientId) => {
-              const result = await claim({
-                environmentId,
-                input: { threadId: thread.id, reportKey: report.reportKey, clientId },
-              });
-              return result._tag === "Success" ? result.value.claimed : null;
-            },
-            notify: (content) =>
-              Notifications.scheduleNotificationAsync({
-                identifier: `monitor:${environmentId}:${key}`,
-                content,
-                trigger: Platform.OS === "android" ? { channelId: "agent-alerts" } : null,
-              }),
+            input: { threadId: thread.id, reportKey: report.reportKey, clientId },
           });
+          return result._tag === "Success" ? result.value.claimed : null;
+        },
+        notify: (content) =>
+          Notifications.scheduleNotificationAsync({
+            identifier: `monitor:${environmentId}:${key}`,
+            content,
+            trigger: Platform.OS === "android" ? { channelId: "agent-alerts" } : null,
+          }),
+      })
+        .then((checkedReport) => {
           if (checkedReport) checked.current.set(thread.id, report.reportKey);
-        } catch {
+        })
+        .catch(() => {
           // Notification delivery must not interrupt shell synchronization.
-        } finally {
-          pending.current.delete(key);
-        }
-      })();
+        })
+        .finally(() => pending.current.delete(key));
     }
   }, [allowed, claim, enabled, environmentId, shell]);
   return null;

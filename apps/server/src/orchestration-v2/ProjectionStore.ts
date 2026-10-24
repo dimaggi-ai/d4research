@@ -734,7 +734,11 @@ export function applyToProjection(
     case "thread.monitor-updated":
       return {
         ...projection,
-        thread: { ...projection.thread, agentMonitor: event.payload.report },
+        thread: {
+          ...projection.thread,
+          agentMonitor: event.payload.report,
+          agentMonitorRevision: (projection.thread.agentMonitorRevision ?? 0) + 1,
+        },
       };
     case "thread.pull-request-link-updated":
       return {
@@ -1881,8 +1885,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           }
           case "thread.monitor-updated": {
             const reportJson = yield* encodeMonitorReport(event.payload.report);
+            const revision = (yield* sql<{ revision: number }>`UPDATE agent_monitor_control
+              SET revision = revision + 1 WHERE id = 1 RETURNING revision`)[0]!.revision;
             yield* sql`UPDATE orchestration_v2_projection_threads
-              SET payload_json = json_set(payload_json, '$.agentMonitor', json(${reportJson}))
+              SET payload_json = json_set(payload_json, '$.agentMonitor', json(${reportJson}), '$.agentMonitorRevision', ${revision})
               WHERE thread_id = ${event.threadId}`;
             break;
           }

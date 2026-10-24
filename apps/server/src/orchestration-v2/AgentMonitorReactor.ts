@@ -3,13 +3,17 @@ import {
   AgentMonitorReport,
   type AgentMonitorPendingRequestKind,
   type AgentMonitorRunStatus,
+  type AgentMonitorSettings,
   type AgentMonitorUpdate,
   RunAttemptId,
   RunId,
   RuntimeRequestId,
   ThreadId,
 } from "@d4research/contracts";
-import { classifyThreadLiveness } from "@d4research/shared/threadLiveness";
+import {
+  THREAD_LIVENESS_SLOW_AFTER_MS,
+  classifyThreadLiveness,
+} from "@d4research/shared/threadLiveness";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -45,7 +49,11 @@ interface Observation {
 const decodeReport = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentMonitorReport));
 const encodeReport = Schema.encodeEffect(Schema.fromJsonString(Schema.NullOr(AgentMonitorReport)));
 
-function reportFor(row: Observation, now: number): AgentMonitorReport {
+function reportFor(
+  row: Observation,
+  now: number,
+  config: AgentMonitorSettings,
+): AgentMonitorReport {
   const classification = classifyThreadLiveness({
     runId: row.run_id,
     attemptId: row.attempt_id,
@@ -69,10 +77,16 @@ function reportFor(row: Observation, now: number): AgentMonitorReport {
     leaseExpired: row.lease_expired === 1,
     leaseRenewalSupported: false,
     failureClass: row.failure_class,
+    staleAfterMs: config.stuckAfterMinutes * 60_000,
   });
   return {
     ...classification,
     notificationEligible: false,
+    attentionRequired:
+      classification.attentionRequired ||
+      (classification.classification === "idle" &&
+        row.run_status === "completed" &&
+        config.notifyClasses.includes("completed")),
     schemaVersion: 1,
     runId: row.run_id === null ? null : RunId.make(row.run_id),
     attemptId: row.attempt_id === null ? null : RunAttemptId.make(row.attempt_id),
@@ -99,12 +113,12 @@ export class AgentMonitorReactor extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const updates = yield* PubSub.unbounded<AgentMonitorUpdate>();
+  const updates = yield* PubSub.bounded<AgentMonitorUpdate>(1_024);
   const sweepLock = yield* Semaphore.make(1);
   const settings = yield* ServerSettings.ServerSettingsService;
 
   // SQL returns an allowlist of scalar evidence, never transcript or tool payloads.
-  const observe = (now: number, threadId?: ThreadId, enabled = true) => sql<Observation>`
+  const observe = (now: number, threadId?: ThreadId) => sql<Observation>`
     SELECT t.thread_id,
       COALESCE((SELECT MAX(sequence) FROM orchestration_events e
         WHERE e.stream_id = t.thread_id AND e.aggregate_kind = 'thread'
@@ -161,17 +175,65 @@ export const make = Effect.gen(function* () {
         AND (item.provider_turn_id IS NULL OR item.provider_turn_id = a.provider_turn_id)
       ORDER BY item.updated_at DESC, item.ordinal DESC LIMIT 1)
     WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
-      AND (${enabled} OR json_extract(t.payload_json, '$.agentMonitor') IS NOT NULL)
-      AND (${threadId ?? null} IS NULL OR t.thread_id = ${threadId ?? null})
+      ${threadId === undefined ? sql`` : sql`AND t.thread_id = ${threadId}`}
   `;
 
   interface Candidate {
     readonly report_key: string;
+    readonly evidence_key: string | null;
+    readonly episode_started_at: number;
     readonly first_seen_at: number;
     readonly last_seen_at: number;
     readonly baseline: number;
     readonly eligible_at: number | null;
   }
+  interface Metadata {
+    readonly thread_id: string;
+    readonly sequence: number;
+    readonly updated_at: string;
+    readonly parent_id: string | null;
+    readonly is_child: number;
+    readonly sessions: string | null;
+    readonly report_json: string | null;
+    readonly revision: number;
+  }
+  interface Cached {
+    fingerprint: string;
+    parentId: string | null;
+    row: Observation;
+    report: AgentMonitorReport | null;
+    candidate: Candidate | undefined;
+    nextCheck: number;
+  }
+  const cache = new Map<string, Cached>();
+  let lastClock = 0;
+  let lastConfig = "";
+  let nextPrune = 0;
+  const metadata = (threadId?: string) => sql<Metadata>`
+    SELECT t.thread_id, t.updated_at,
+      COALESCE(json_extract(t.payload_json, '$.lineage.relationshipToParent') = 'subagent', 0) AS is_child,
+      CASE WHEN json_extract(t.payload_json, '$.lineage.relationshipToParent') = 'subagent'
+        THEN json_extract(t.payload_json, '$.lineage.parentThreadId') ELSE NULL END AS parent_id,
+      COALESCE((SELECT MAX(sequence) FROM orchestration_events e
+        WHERE e.stream_id = t.thread_id AND e.aggregate_kind = 'thread'
+        AND e.application_event_version = 2), 0) AS sequence,
+      (SELECT GROUP_CONCAT(s.provider_session_id || ':' || s.status || ':' || s.updated_at)
+        FROM orchestration_v2_projection_provider_sessions s WHERE s.thread_id = t.thread_id) AS sessions,
+      json_extract(t.payload_json, '$.agentMonitor') AS report_json,
+      COALESCE(json_extract(t.payload_json, '$.agentMonitorRevision'), 0) AS revision
+    FROM orchestration_v2_projection_threads t
+    WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
+      ${threadId === undefined ? sql`` : sql`AND t.thread_id = ${threadId}`}
+  `;
+  const fingerprint = (row: Metadata) =>
+    JSON.stringify([
+      row.sequence,
+      row.updated_at,
+      row.parent_id,
+      row.is_child,
+      row.sessions,
+      row.revision,
+    ]);
   const safeReport = (json: string | null) =>
     json === null
       ? Effect.succeed(null)
@@ -181,120 +243,349 @@ export const make = Effect.gen(function* () {
   const notificationWindowMs = 300_000;
   const persistenceMs = 30_000;
   const maximumObservationGapMs = 60_000;
-
+  const suspicious = (report: AgentMonitorReport) =>
+    report.classification === "wedged" || report.classification === "suspected_stuck";
   const snapshot = Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    const rows = yield* observe(now);
-    return yield* Effect.forEach(rows, (row) =>
-      Effect.gen(function* () {
-        return {
+    if (!(yield* settings.getSettings).agentMonitor.enabled) return [];
+    const rows = yield* sql<Pick<Metadata, "thread_id" | "report_json" | "revision">>`
+      SELECT thread_id, json_extract(payload_json, '$.agentMonitor') AS report_json,
+        COALESCE(json_extract(payload_json, '$.agentMonitorRevision'), 0) AS revision
+      FROM orchestration_v2_projection_threads
+      WHERE deleted_at IS NULL AND archived_at IS NULL
+        AND COALESCE(json_extract(payload_json, '$.lineage.relationshipToParent'), '') != 'subagent'
+        AND json_extract(payload_json, '$.agentMonitor') IS NOT NULL
+      ORDER BY thread_id`;
+    const reports = yield* Effect.forEach(rows, (row) =>
+      safeReport(row.report_json).pipe(
+        Effect.map((report) => ({
           threadId: ThreadId.make(row.thread_id),
-          report: yield* safeReport(row.report_json),
+          report,
           revision: row.revision,
-        };
-      }),
+        })),
+      ),
     );
+    return reports.filter((update) => update.report !== null);
   }).pipe(Effect.mapError(() => new AgentMonitorError({})));
+
+  const rootFor = (row: Metadata, byId: Map<string, Metadata>): string | null => {
+    const seen = new Set<string>();
+    let current = row;
+    while (current.is_child === 1) {
+      if (current.parent_id === null) return null;
+      if (seen.has(current.thread_id)) return null;
+      seen.add(current.thread_id);
+      const parent = byId.get(current.parent_id);
+      if (!parent) return null;
+      current = parent;
+    }
+    return current.thread_id;
+  };
+  const reportPriority = (report: AgentMonitorReport) =>
+    report.classification === "needs_user"
+      ? 4
+      : report.attentionRequired
+        ? 3
+        : report.classification === "waiting_background"
+          ? 2
+          : report.classification === "idle"
+            ? 0
+            : 1;
+  const rollup = (
+    rows: ReadonlyArray<Observation>,
+    root: string,
+    now: number,
+    config: AgentMonitorSettings,
+  ) => {
+    const own = rows.find((row) => row.thread_id === root)!;
+    let report = reportFor(own, now, config);
+    for (const row of rows) {
+      if (row.thread_id === root) continue;
+      const child = reportFor(row, now, config);
+      if (
+        !child.attentionRequired ||
+        child.classification === "idle" ||
+        reportPriority(child) <= reportPriority(report)
+      )
+        continue;
+      report = { ...child, reportKey: JSON.stringify([row.thread_id, child.reportKey]) };
+    }
+    return report;
+  };
+  const notificationsAllowed = (
+    report: AgentMonitorReport,
+    rows: ReadonlyArray<Observation>,
+    config: AgentMonitorSettings,
+  ) =>
+    config.notifyClasses.includes(
+      report.classification === "needs_user"
+        ? rows.find((row) => row.request_id === report.pendingRequestId)?.request_kind ===
+          "auth_refresh"
+          ? "auth"
+          : "waiting"
+        : report.classification === "failed" || report.classification === "limited"
+          ? "failed"
+          : report.classification === "idle" && report.runStatus === "completed"
+            ? "completed"
+            : "stuck",
+    );
+  const candidateFor = (
+    report: AgentMonitorReport,
+    previous: AgentMonitorReport | null,
+    state: Candidate | undefined,
+    now: number,
+    baseline: boolean,
+    revision: number,
+    notificationsAllowed: boolean,
+  ) => {
+    const same =
+      state !== undefined &&
+      (state.evidence_key === report.reportKey ||
+        (state.evidence_key === null &&
+          previous?.classification === report.classification &&
+          previous.reason === report.reason &&
+          previous.runId === report.runId &&
+          previous.attemptId === report.attemptId &&
+          previous.pendingRequestId === report.pendingRequestId));
+    const continuous =
+      same && now >= state.last_seen_at && now - state.last_seen_at <= maximumObservationGapMs;
+    const episodeStartedAt = same ? state.episode_started_at : now;
+    const firstSeenAt = same && (!suspicious(report) || continuous) ? state.first_seen_at : now;
+    const isBaseline = same ? state.baseline === 1 : baseline;
+    const eligibleAt =
+      same && state.eligible_at !== null
+        ? state.eligible_at
+        : !report.attentionRequired ||
+            isBaseline ||
+            (suspicious(report) && now - firstSeenAt < persistenceMs)
+          ? null
+          : now;
+    const reportKey = same
+      ? state.report_key
+      : JSON.stringify([report.reportKey, now, revision + 1]);
+    return {
+      report: {
+        ...report,
+        reportKey,
+        notificationEligible:
+          notificationsAllowed &&
+          report.attentionRequired &&
+          !isBaseline &&
+          eligibleAt !== null &&
+          now >= eligibleAt &&
+          now - eligibleAt <= notificationWindowMs &&
+          now - episodeStartedAt <= notificationWindowMs + persistenceMs &&
+          (!suspicious(report) || (continuous && now - firstSeenAt >= persistenceMs)),
+      },
+      state: {
+        report_key: reportKey,
+        evidence_key: report.reportKey,
+        episode_started_at: episodeStartedAt,
+        first_seen_at: firstSeenAt,
+        last_seen_at: now,
+        baseline: isBaseline ? 1 : 0,
+        eligible_at: eligibleAt,
+      } satisfies Candidate,
+    };
+  };
+  const reportChanged = (previous: AgentMonitorReport | null, report: AgentMonitorReport | null) =>
+    previous?.reportKey !== report?.reportKey ||
+    previous?.reason !== report?.reason ||
+    previous?.runStatus !== report?.runStatus ||
+    previous?.notificationEligible !== report?.notificationEligible ||
+    previous?.attentionRequired !== report?.attentionRequired;
+  const deadline = (
+    rows: ReadonlyArray<Observation>,
+    report: AgentMonitorReport,
+    state: Candidate,
+    now: number,
+    config: AgentMonitorSettings,
+  ) => {
+    let next = Infinity;
+    if (report.notificationEligible && state.eligible_at !== null)
+      next = Math.min(
+        state.eligible_at + notificationWindowMs + 1,
+        state.episode_started_at + notificationWindowMs + persistenceMs + 1,
+      );
+    if (
+      suspicious(report) &&
+      (state.baseline === 1 ||
+        now - state.episode_started_at > notificationWindowMs + persistenceMs)
+    )
+      return Infinity;
+    if (suspicious(report))
+      return Math.min(
+        next,
+        now + 15_000,
+        state.first_seen_at + persistenceMs > now ? state.first_seen_at + persistenceMs : Infinity,
+      );
+    for (const row of rows) {
+      if (row.run_status !== "running" && row.run_status !== "starting") continue;
+      const progress = row.progress_at === null ? NaN : Date.parse(row.progress_at);
+      for (const duration of [THREAD_LIVENESS_SLOW_AFTER_MS, config.stuckAfterMinutes * 60_000]) {
+        if (Number.isFinite(progress) && progress + duration > now)
+          next = Math.min(next, progress + duration);
+      }
+    }
+    return next;
+  };
+  const persist = (
+    root: Metadata,
+    report: AgentMonitorReport | null,
+    state: Candidate | undefined,
+  ) =>
+    Effect.gen(function* () {
+      const revision = (yield* sql<{ revision: number }>`UPDATE agent_monitor_control
+      SET revision = revision + 1 WHERE id = 1 RETURNING revision`)[0]!.revision;
+      const reportJson = yield* encodeReport(report);
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = json_set(payload_json,
+      '$.agentMonitor', json(${reportJson}), '$.agentMonitorRevision', ${revision}) WHERE thread_id = ${root.thread_id}`;
+      yield* sql`DELETE FROM agent_monitor_device_claims WHERE thread_id = ${root.thread_id}
+      AND report_key != ${state?.report_key ?? ""}`;
+      return {
+        threadId: ThreadId.make(root.thread_id),
+        report,
+        revision,
+      } satisfies AgentMonitorUpdate;
+    });
+  const persistCandidate = (threadId: string, state: Candidate) => sql`
+    INSERT INTO agent_monitor_observations(thread_id, report_key, evidence_key, episode_started_at, first_seen_at, last_seen_at, baseline, eligible_at)
+    VALUES (${threadId}, ${state.report_key}, ${state.evidence_key}, ${state.episode_started_at}, ${state.first_seen_at}, ${state.last_seen_at}, ${state.baseline}, ${state.eligible_at})
+    ON CONFLICT(thread_id) DO UPDATE SET report_key=excluded.report_key, evidence_key=excluded.evidence_key,
+      episode_started_at=excluded.episode_started_at, first_seen_at=excluded.first_seen_at,
+      last_seen_at=excluded.last_seen_at, baseline=excluded.baseline, eligible_at=excluded.eligible_at`;
 
   const sweep = Effect.gen(function* () {
     const config = (yield* settings.getSettings).agentMonitor;
-    const baselineSequence = yield* sql.withTransaction(
-      Effect.gen(function* () {
-        const control = (yield* sql<{
-          enabled: number;
-          baseline_sequence: number;
-        }>`SELECT enabled, baseline_sequence FROM agent_monitor_control WHERE id = 1`)[0]!;
-        if (!config.enabled) {
-          yield* sql`UPDATE agent_monitor_control SET enabled = 0 WHERE id = 1`;
-          return control.baseline_sequence;
-        }
-        if (control.enabled === 1) return control.baseline_sequence;
-        const sequence = (yield* sql<{
-          sequence: number;
-        }>`SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events`)[0]!.sequence;
-        yield* sql`UPDATE agent_monitor_control SET enabled = 1, baseline_sequence = ${sequence} WHERE id = 1`;
-        yield* sql`DELETE FROM agent_monitor_observations`;
-        return sequence;
-      }),
-    );
-    const now = yield* Clock.currentTimeMillis;
-    const observations = yield* observe(now, undefined, config.enabled);
-    for (const row of observations) {
-      const update = yield* sql.withTransaction(
+    let control = (yield* sql<{
+      enabled: number;
+      baseline_sequence: number;
+    }>`SELECT enabled, baseline_sequence FROM agent_monitor_control WHERE id=1`)[0]!;
+    if ((control.enabled === 1) !== config.enabled) {
+      control = yield* sql.withTransaction(
         Effect.gen(function* () {
-          // Fence both semantic events and another reactor's derived write in this transaction.
-          const current = (yield* observe(now, ThreadId.make(row.thread_id), config.enabled))[0];
-          if (
-            !current ||
-            current.sequence !== row.sequence ||
-            current.report_json !== row.report_json ||
-            current.revision !== row.revision
-          )
-            return null;
-          const previous = yield* safeReport(row.report_json);
-          let report = config.enabled ? reportFor(row, now) : null;
-          if (report !== null && report.classification === "idle" && row.report_json === null)
-            return null;
-          if (report !== null) {
-            const state = (yield* readCandidate(row.thread_id))[0];
-            const same = state?.report_key === report.reportKey;
-            const baseline = same
-              ? state.baseline === 1
-              : state === undefined && row.sequence <= baselineSequence;
-            const suspicious =
-              report.classification === "wedged" || report.classification === "suspected_stuck";
-            const continuous =
-              same &&
-              now >= state.last_seen_at &&
-              now - state.last_seen_at <= maximumObservationGapMs;
-            const firstSeenAt = continuous ? state.first_seen_at : now;
-            const eligibleAt =
-              !report.attentionRequired ||
-              baseline ||
-              (suspicious && now - firstSeenAt < persistenceMs)
-                ? null
-                : ((same && (!suspicious || continuous) ? state.eligible_at : null) ?? now);
-            report = {
-              ...report,
-              notificationEligible:
-                eligibleAt !== null &&
-                now >= eligibleAt &&
-                now - eligibleAt <= notificationWindowMs,
-            };
-            // Only suspicious candidates need a durable heartbeat between transitions.
-            if (!same || suspicious || state.eligible_at !== eligibleAt) {
-              yield* sql`INSERT INTO agent_monitor_observations(thread_id, report_key, first_seen_at, last_seen_at, baseline, eligible_at)
-              VALUES (${row.thread_id}, ${report.reportKey}, ${firstSeenAt}, ${now}, ${baseline ? 1 : 0}, ${eligibleAt})
-              ON CONFLICT(thread_id) DO UPDATE SET report_key=excluded.report_key, first_seen_at=excluded.first_seen_at,
-                last_seen_at=excluded.last_seen_at, baseline=excluded.baseline, eligible_at=excluded.eligible_at`;
-            }
-            if (
-              previous !== null &&
-              previous.reportKey === report.reportKey &&
-              previous.reason === report.reason &&
-              previous.runStatus === report.runStatus &&
-              previous.notificationEligible === report.notificationEligible
-            )
-              return null;
-          } else if (row.report_json === null) return null;
-          const revision = (yield* sql<{
-            revision: number;
-          }>`UPDATE agent_monitor_control SET revision = revision + 1 WHERE id = 1 RETURNING revision`)[0]!
-            .revision;
-          const reportJson = yield* encodeReport(report);
-          yield* sql`UPDATE orchestration_v2_projection_threads
-          SET payload_json = json_set(payload_json, '$.agentMonitor', json(${reportJson}), '$.agentMonitorRevision', ${revision})
-          WHERE thread_id = ${row.thread_id}`;
-          return {
-            threadId: ThreadId.make(row.thread_id),
-            report,
-            revision,
-          } satisfies AgentMonitorUpdate;
+          const current = (yield* sql<{
+            enabled: number;
+            baseline_sequence: number;
+          }>`SELECT enabled, baseline_sequence FROM agent_monitor_control WHERE id=1`)[0]!;
+          if ((current.enabled === 1) === config.enabled) return current;
+          const sequence = (yield* sql<{
+            sequence: number;
+          }>`SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events`)[0]!.sequence;
+          yield* sql`UPDATE agent_monitor_control SET enabled=${config.enabled ? 1 : 0}, baseline_sequence=${sequence} WHERE id=1`;
+          yield* sql`DELETE FROM agent_monitor_observations`;
+          return { enabled: config.enabled ? 1 : 0, baseline_sequence: sequence };
         }),
       );
-      // Derived state never enters the replay log, command receipts, or effect outbox.
-      if (update !== null) yield* PubSub.publish(updates, update);
+      cache.clear();
     }
+    const now = yield* Clock.currentTimeMillis;
+    const rows = yield* metadata();
+    const byId = new Map(rows.map((row) => [row.thread_id, row]));
+    const groups = new Map<string, Metadata[]>();
+    for (const row of rows) {
+      const root = rootFor(row, byId);
+      if (root !== null) groups.set(root, [...(groups.get(root) ?? []), row]);
+    }
+    const removed = [...cache.keys()].filter((id) => !byId.has(id));
+    for (const id of removed) cache.delete(id);
+    const configKey = [config.enabled, config.stuckAfterMinutes, ...config.notifyClasses].join(":");
+    const changedConfig = lastConfig !== configKey;
+    const changed = rows.filter(
+      (row) =>
+        config.enabled &&
+        (changedConfig || cache.get(row.thread_id)?.fingerprint !== fingerprint(row)),
+    );
+    const lineageChanged = changed.some(
+      (row) => cache.has(row.thread_id) && cache.get(row.thread_id)!.parentId !== row.parent_id,
+    );
+    const loaded =
+      changed.length === rows.length && changed.length > 0
+        ? yield* observe(now)
+        : yield* Effect.forEach(changed, (row) =>
+            observe(now, ThreadId.make(row.thread_id)).pipe(Effect.map((rows) => rows[0]!)),
+          );
+    for (const row of loaded) {
+      const meta = byId.get(row.thread_id)!;
+      cache.set(row.thread_id, {
+        fingerprint: fingerprint(meta),
+        parentId: meta.parent_id,
+        row,
+        report: yield* safeReport(meta.report_json),
+        candidate: (yield* readCandidate(row.thread_id))[0],
+        nextCheck: 0,
+      });
+    }
+    const dirty = new Set(changed.map((row) => rootFor(row, byId)));
+    if (removed.length > 0 || lineageChanged) for (const root of groups.keys()) dirty.add(root);
+    for (const root of rows) {
+      // Old child reports are cleared, but no child report is ever published or claimable.
+      if (root.is_child === 1 || !config.enabled) {
+        if (root.report_json !== null) {
+          const update = yield* sql.withTransaction(persist(root, null, undefined));
+          if (root.is_child === 0) yield* PubSub.publish(updates, update);
+        }
+        continue;
+      }
+      const cached = cache.get(root.thread_id)!;
+      if (!dirty.has(root.thread_id) && now >= lastClock && now < cached.nextCheck) continue;
+      const group = groups.get(root.thread_id)!;
+      const evidence = group.map((row) => cache.get(row.thread_id)!.row);
+      const raw = rollup(evidence, root.thread_id, now, config);
+      if (raw.classification === "idle" && !raw.attentionRequired && root.report_json === null) {
+        cached.nextCheck = Infinity;
+        continue;
+      }
+      const { report, state } = candidateFor(
+        raw,
+        cached.report,
+        cached.candidate,
+        now,
+        cached.candidate === undefined &&
+          group.every((row) => row.sequence <= control.baseline_sequence),
+        root.revision,
+        notificationsAllowed(raw, evidence, config),
+      );
+      const needsReport = reportChanged(cached.report, report);
+      const needsCandidate =
+        !cached.candidate ||
+        cached.candidate.report_key !== state.report_key ||
+        cached.candidate.eligible_at !== state.eligible_at ||
+        suspicious(report);
+      if (needsReport || needsCandidate) {
+        const result = yield* sql.withTransaction(
+          Effect.gen(function* () {
+            for (const member of group) {
+              const current = (yield* metadata(member.thread_id))[0];
+              if (!current || fingerprint(current) !== fingerprint(member)) return null;
+            }
+            if (needsCandidate) yield* persistCandidate(root.thread_id, state);
+            return { update: needsReport ? yield* persist(root, report, state) : null };
+          }),
+        );
+        if (result === null) {
+          cached.nextCheck = 0;
+          continue;
+        }
+        if (result.update !== null) {
+          cached.fingerprint = fingerprint({ ...root, revision: result.update.revision });
+          yield* PubSub.publish(updates, result.update);
+        }
+      }
+      cached.report = report;
+      cached.candidate = state;
+      cached.nextCheck = deadline(evidence, report, state, now, config);
+    }
+    if (now >= nextPrune || now < lastClock) {
+      yield* sql`DELETE FROM agent_monitor_device_claims WHERE claimed_at < ${DateTime.formatIso(DateTime.makeUnsafe(now - notificationWindowMs - persistenceMs))}
+        OR NOT EXISTS(SELECT 1 FROM orchestration_v2_projection_threads t WHERE t.thread_id=agent_monitor_device_claims.thread_id
+          AND t.deleted_at IS NULL AND t.archived_at IS NULL
+          AND json_extract(t.payload_json, '$.agentMonitor.reportKey')=agent_monitor_device_claims.report_key)`;
+      yield* sql`DELETE FROM agent_monitor_observations WHERE NOT EXISTS(SELECT 1 FROM orchestration_v2_projection_threads t
+        WHERE t.thread_id=agent_monitor_observations.thread_id AND t.deleted_at IS NULL AND t.archived_at IS NULL)`;
+      nextPrune = now + notificationWindowMs;
+    }
+    lastConfig = configKey;
+    lastClock = now;
   }).pipe(
     sweepLock.withPermits(1),
     Effect.mapError(() => new AgentMonitorError({})),
@@ -307,10 +598,11 @@ export const make = Effect.gen(function* () {
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
-          const row = (yield* observe(now, input.threadId))[0];
-          if (row === undefined || row.report_json === null) return { claimed: false };
-          const persisted = yield* safeReport(row.report_json);
-          const current = reportFor(row, now);
+          const rows = yield* metadata();
+          const byId = new Map(rows.map((row) => [row.thread_id, row]));
+          const root = byId.get(input.threadId);
+          if (!root || root.is_child === 1 || root.report_json === null) return { claimed: false };
+          const persisted = yield* safeReport(root.report_json);
           const state = (yield* readCandidate(input.threadId))[0];
           if (
             !persisted?.notificationEligible ||
@@ -318,26 +610,32 @@ export const make = Effect.gen(function* () {
             state.eligible_at === null ||
             now < state.eligible_at ||
             now - state.eligible_at > notificationWindowMs ||
-            !current.attentionRequired ||
-            current.reportKey !== input.reportKey ||
+            now - state.episode_started_at > notificationWindowMs + persistenceMs ||
             persisted.reportKey !== input.reportKey ||
             state.report_key !== input.reportKey
           )
             return { claimed: false };
+          const group = rows.filter((row) => rootFor(row, byId) === root.thread_id);
+          const evidence = yield* Effect.forEach(group, (row) =>
+            observe(now, ThreadId.make(row.thread_id)).pipe(Effect.map((rows) => rows[0]!)),
+          );
+          const current = rollup(evidence, root.thread_id, now, config);
           if (
-            (current.classification === "wedged" || current.classification === "suspected_stuck") &&
-            (now < state.last_seen_at || now - state.last_seen_at > maximumObservationGapMs)
+            !current.attentionRequired ||
+            !notificationsAllowed(current, evidence, config) ||
+            current.reportKey !== state.evidence_key ||
+            (suspicious(current) &&
+              (now < state.last_seen_at || now - state.last_seen_at > maximumObservationGapMs))
           )
             return { claimed: false };
           const inserted =
             yield* sql`INSERT INTO agent_monitor_device_claims(thread_id, report_key, client_id, claimed_at)
-            VALUES (${input.threadId}, ${input.reportKey}, ${input.clientId}, ${DateTime.formatIso(DateTime.makeUnsafe(now))})
-            ON CONFLICT(thread_id, report_key, client_id) DO NOTHING RETURNING thread_id`;
+        VALUES (${input.threadId}, ${input.reportKey}, ${input.clientId}, ${DateTime.formatIso(DateTime.makeUnsafe(now))})
+        ON CONFLICT(thread_id, report_key, client_id) DO NOTHING RETURNING thread_id`;
           return { claimed: inserted.length === 1 };
         }),
       );
     }).pipe(Effect.mapError(() => new AgentMonitorError({})));
-
   const start = () =>
     forkParked(
       sweep.pipe(

@@ -1098,6 +1098,13 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
           skipUnknownEventTypes: true,
         }),
       );
+      if (input.includeMonitor !== true) {
+        return composeShellStreamWithEnrichment({
+          initial: initialEnrichmentItems(loaded),
+          tail: Stream.concat(replay, completionThenLive(highWater)),
+          enrichment: enrichmentRefreshes,
+        });
+      }
       return composeShellStreamWithEnrichment({
         initial: Stream.concat(
           initialEnrichmentItems(loaded),

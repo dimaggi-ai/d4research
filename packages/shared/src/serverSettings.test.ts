@@ -1376,6 +1376,7 @@ it("merges Meko connection edits without resetting compression or switching back
 it("replaces monitor sessions without carrying model options across providers", () => {
   const configured = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
     agentMonitor: {
+      ...DEFAULT_SERVER_SETTINGS.agentMonitor,
       enabled: true,
       notificationsEnabled: true,
       modelSelection: {
@@ -1390,16 +1391,27 @@ it("replaces monitor sessions without carrying model options across providers", 
     model: "claude-sonnet-5-5",
   };
   const switched = applyServerSettingsPatch(configured, {
-    agentMonitor: { enabled: true, notificationsEnabled: false, modelSelection: selection },
+    agentMonitor: {
+      ...DEFAULT_SERVER_SETTINGS.agentMonitor,
+      enabled: true,
+      notificationsEnabled: false,
+      modelSelection: selection,
+    },
   });
   expect(switched.agentMonitor).toEqual({
+    ...DEFAULT_SERVER_SETTINGS.agentMonitor,
     enabled: true,
     notificationsEnabled: false,
     modelSelection: selection,
   });
   expect(
     applyServerSettingsPatch(switched, {
-      agentMonitor: { enabled: false, notificationsEnabled: false, modelSelection: null },
+      agentMonitor: {
+        ...DEFAULT_SERVER_SETTINGS.agentMonitor,
+        enabled: false,
+        notificationsEnabled: false,
+        modelSelection: null,
+      },
     }).agentMonitor.modelSelection,
   ).toBeNull();
 });

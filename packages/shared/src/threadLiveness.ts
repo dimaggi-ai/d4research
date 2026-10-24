@@ -19,6 +19,8 @@ export interface ThreadLivenessEvidence {
   readonly leaseRenewalSupported: boolean;
   readonly failureClass?: string | null;
   readonly completed?: boolean;
+  readonly staleAfterMs?: number;
+  readonly episodeId?: string | number;
 }
 
 export interface ThreadLivenessResult {
@@ -45,6 +47,9 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
       input.attemptId ?? null,
       input.pendingRequestId ?? null,
       classification,
+      reason,
+      classification === "suspected_stuck" ? (input.lastProgressAt ?? null) : null,
+      input.episodeId ?? null,
     ]),
   });
 
@@ -92,7 +97,7 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
     return result("working", "observation_unavailable");
   }
   const elapsed = input.now - progressAt;
-  if (elapsed >= THREAD_LIVENESS_STALE_AFTER_MS) {
+  if (elapsed >= (input.staleAfterMs ?? THREAD_LIVENESS_STALE_AFTER_MS)) {
     return result("suspected_stuck", "progress_stale", true);
   }
   if (elapsed >= THREAD_LIVENESS_SLOW_AFTER_MS) return result("slow", "progress_delayed");

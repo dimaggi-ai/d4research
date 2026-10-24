@@ -366,9 +366,7 @@ it.live.each([
         items.map((item) => item.kind),
         scope === "thread"
           ? ["event", "synchronized", "event"]
-          : includeMonitor
-            ? ["project.updated", "monitor.snapshot", "synchronized", "project.updated"]
-            : ["project.updated", "synchronized", "project.updated"],
+          : ["project.updated", "synchronized", "project.updated"],
       );
       assert.deepEqual(
         items.flatMap((item) => (item.sequence === undefined ? [] : [item.sequence])),

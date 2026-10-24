@@ -439,7 +439,23 @@ describe("prepareShellMonitorStream", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const updates = yield* PubSub.unbounded<AgentMonitorUpdate>();
-        const update = { threadId: ThreadId.make("monitor-thread"), report: null, revision: 2 };
+        const update: AgentMonitorUpdate = {
+          threadId: ThreadId.make("monitor-thread"),
+          revision: 2,
+          report: {
+            schemaVersion: 1,
+            runId: null,
+            attemptId: null,
+            pendingRequestId: null,
+            runStatus: null,
+            classification: "working",
+            reason: "recent_progress",
+            attentionRequired: false,
+            notificationEligible: false,
+            observedAt: "2026-10-24T12:00:00.000Z",
+            reportKey: "report",
+          },
+        };
         const monitor = yield* prepareShellMonitorStream({
           changes: Stream.fromPubSub(updates),
           snapshot: Effect.gen(function* () {
@@ -671,3 +687,46 @@ describe("skipUnchangedThreadShells", () => {
     }),
   );
 });
+
+it.effect(
+  "monitor snapshot omits empty rows and retains the newest 128 attention-first reports",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const report: NonNullable<AgentMonitorUpdate["report"]> = {
+          schemaVersion: 1,
+          runId: null,
+          attemptId: null,
+          pendingRequestId: null,
+          runStatus: null,
+          classification: "working",
+          reason: "recent_progress",
+          attentionRequired: false,
+          notificationEligible: false,
+          observedAt: "2026-10-24T12:00:00.000Z",
+          reportKey: "report",
+        };
+        const rows = Array.from({ length: 694 }, (_, i) => ({
+          threadId: ThreadId.make(`bounded:${i}`),
+          report,
+          revision: i,
+        }));
+        rows[0] = { ...rows[0]!, report: { ...report, attentionRequired: true } };
+        const prepared = yield* prepareShellMonitorStream({
+          changes: Stream.never,
+          snapshot: Effect.succeed([
+            ...rows,
+            { threadId: ThreadId.make("empty"), report: null, revision: 0 },
+          ]),
+        });
+        const frames = yield* Stream.runCollect(prepared.snapshot);
+        expect(frames.map((frame) => frame.reports.length)).toEqual([128]);
+        expect(frames[0]!.reports).toEqual([rows[0], ...rows.slice(1).toReversed().slice(0, 127)]);
+        const disabled = yield* prepareShellMonitorStream({
+          changes: Stream.never,
+          snapshot: Effect.succeed([]),
+        });
+        expect(yield* Stream.runCollect(disabled.snapshot)).toEqual([]);
+      }),
+    ),
+);

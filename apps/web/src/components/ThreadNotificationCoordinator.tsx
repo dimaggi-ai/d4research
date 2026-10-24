@@ -158,6 +158,7 @@ function EnvironmentNotifications({
       canClaim &&
       report?.notificationEligible === true &&
       report.attentionRequired &&
+      thread?.lineage.relationshipToParent !== "subagent" &&
       thread?.archivedAt === null &&
       thread.deletedAt === null &&
       report.reportKey === reportKey &&
@@ -257,6 +258,7 @@ function EnvironmentNotifications({
     const next = new Map<ThreadId, NotificationState>();
     const subagentRequests = pendingSubagentRequestsByThread(threads);
     for (const rawThread of threads) {
+      if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const report = rawThread.agentMonitor;
       const focused = document.visibilityState === "visible" && document.hasFocus();
       const canPresent =
@@ -307,7 +309,6 @@ function EnvironmentNotifications({
             .finally(() => pendingMonitorKeys.current.delete(key));
         }
       }
-      if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
       if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {

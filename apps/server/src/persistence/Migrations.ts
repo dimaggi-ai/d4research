@@ -1,3 +1,4 @@
+import Migration0073 from "./Migrations/073_AgentMonitorEpisodes.ts";
 import Migration0072 from "./Migrations/072_AgentMonitorDelivery.ts";
 import Migration0071 from "./Migrations/071_AgentMonitorNotificationClaims.ts";
 import * as Migrator from "effect/sql/Migrator";
@@ -145,6 +146,7 @@ export const migrationEntries = [
   [70, "DropUnusedV1Projections", Migration0070],
   [71, "AgentMonitorNotificationClaims", Migration0071],
   [72, "AgentMonitorDelivery", Migration0072],
+  [73, "AgentMonitorEpisodes", Migration0073],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -11,7 +11,7 @@ import {
   ServerSettings,
   WS_METHODS,
   clientRpcRequiredScopes,
-  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   requiredScopesForServerSettingsPatch,
   AuthSettingsWriteScope,
 } from "./index.ts";
@@ -28,6 +28,8 @@ describe("AgentMonitorSettings", () => {
       enabled: false,
       modelSelection: null,
       notificationsEnabled: false,
+      stuckAfterMinutes: 15,
+      notifyClasses: ["waiting", "stuck", "auth", "failed", "system"],
     });
   });
 
@@ -104,14 +106,33 @@ it("defaults older server settings to an opt-out monitor and guards its delivery
   expect(decodeServerSettings({}).agentMonitor).toEqual({
     enabled: false,
     notificationsEnabled: false,
+    stuckAfterMinutes: 15,
+    notifyClasses: ["waiting", "stuck", "auth", "failed", "system"],
     modelSelection: null,
   });
   expect(clientRpcRequiredScopes(WS_METHODS.agentMonitorClaimAttention, {})).toEqual([
-    AuthOrchestrationOperateScope,
+    AuthOrchestrationReadScope,
   ]);
   expect(
     requiredScopesForServerSettingsPatch({
-      agentMonitor: { enabled: true, notificationsEnabled: false, modelSelection: null },
+      agentMonitor: {
+        enabled: true,
+        notificationsEnabled: false,
+        stuckAfterMinutes: 15,
+        notifyClasses: ["waiting", "stuck", "auth", "failed", "system"],
+        modelSelection: null,
+      },
     }),
   ).toEqual([AuthSettingsWriteScope]);
+});
+
+it("validates notification classes and bounded stuck thresholds", () => {
+  const decode = Schema.decodeUnknownSync(AgentMonitorSettings);
+  expect(decode({ stuckAfterMinutes: 1, notifyClasses: ["completed"] })).toMatchObject({
+    stuckAfterMinutes: 1,
+    notifyClasses: ["completed"],
+  });
+  expect(() => decode({ stuckAfterMinutes: 0 })).toThrow();
+  expect(() => decode({ stuckAfterMinutes: 241 })).toThrow();
+  expect(() => decode({ notifyClasses: ["unknown"] })).toThrow();
 });

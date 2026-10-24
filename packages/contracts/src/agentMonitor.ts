@@ -99,6 +99,16 @@ export const AgentMonitorSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   notificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  stuckAfterMinutes: Schema.Number.check(Schema.isBetween({ minimum: 1, maximum: 240 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(15)),
+  ),
+  notifyClasses: Schema.Array(
+    Schema.Literals(["waiting", "stuck", "auth", "failed", "completed", "system"]),
+  ).pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed(["waiting", "stuck", "auth", "failed", "system"] as const),
+    ),
+  ),
 });
 export type AgentMonitorSettings = typeof AgentMonitorSettings.Type;
 

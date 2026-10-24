@@ -126,3 +126,25 @@ process.stdout.write(
   })}\n`,
 );
 process.exitCode = failed === 0 ? 0 : 1;
+
+if (process.argv.includes("--benchmark")) {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL(
+          "../apps/server/src/orchestration-v2/AgentMonitorReactor.benchmark.ts",
+          import.meta.url,
+        ),
+      ),
+    ],
+    {
+      stdio: "inherit",
+      timeout: 120_000,
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exitCode = result.status ?? 1;
+}

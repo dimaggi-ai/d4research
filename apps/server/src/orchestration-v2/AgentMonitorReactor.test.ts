@@ -85,7 +85,13 @@ const enable = (notificationsEnabled = true) =>
   Effect.gen(function* () {
     const settings = yield* ServerSettings.ServerSettingsService;
     yield* settings.updateSettings({
-      agentMonitor: { enabled: true, notificationsEnabled, modelSelection: null },
+      agentMonitor: {
+        enabled: true,
+        notificationsEnabled,
+        modelSelection: null,
+        stuckAfterMinutes: 10,
+        notifyClasses: ["waiting", "stuck", "auth", "failed", "system"],
+      },
     });
   });
 
@@ -268,7 +274,11 @@ it.effect(
         assert.equal(yield* monitorEventCount, 0);
         const settings = yield* ServerSettings.ServerSettingsService;
         yield* settings.updateSettings({
-          agentMonitor: { enabled: false, notificationsEnabled: false, modelSelection: null },
+          agentMonitor: {
+            ...(yield* settings.getSettings).agentMonitor,
+            enabled: false,
+            notificationsEnabled: false,
+          },
         });
         yield* monitor.sweep;
         assert.isNull((yield* read(fixture.threadId)).agentMonitor);
@@ -976,8 +986,8 @@ it.effect(
         yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = json_set(payload_json, '$.agentMonitor', 'not-json') WHERE thread_id = ${malformed.threadId}`;
         yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = json_set(payload_json, '$.agentMonitor', json('{"schemaVersion":999}')) WHERE thread_id = ${future.threadId}`;
         const before = yield* monitor.snapshot;
-        assert.isNull(before.find((update) => update.threadId === malformed.threadId)!.report);
-        assert.isNull(before.find((update) => update.threadId === future.threadId)!.report);
+        assert.isUndefined(before.find((update) => update.threadId === malformed.threadId));
+        assert.isUndefined(before.find((update) => update.threadId === future.threadId));
         yield* monitor.sweep;
         for (const fixture of [malformed, future, healthy]) {
           assert.equal((yield* read(fixture.threadId)).agentMonitor!.classification, "working");
@@ -1044,6 +1054,403 @@ it.effect("decodes legacy monitor events with notifications disabled by default"
       assert.equal(legacy.type, "thread.monitor-updated");
       if (legacy.type === "thread.monitor-updated")
         assert.isFalse(legacy.payload.report!.notificationEligible);
+    }),
+  ),
+);
+
+it.effect("rolls child attention into its top-level parent without child reports or claims", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const parent = yield* seed("rollup-parent");
+      const child = yield* seed("rollup-child");
+      const nested = yield* seed("rollup-nested");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.parentThreadId', ${parent.threadId}, '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${child.threadId}`;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.parentThreadId', ${child.threadId}, '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${nested.threadId}`;
+      yield* pending(nested);
+      yield* monitor.sweep;
+      const report = (yield* read(parent.threadId)).agentMonitor!;
+      assert.equal(report.classification, "needs_user");
+      assert.equal(report.runId, nested.runId);
+      assert.isUndefined((yield* read(child.threadId)).agentMonitor);
+      assert.isUndefined((yield* read(nested.threadId)).agentMonitor);
+      assert.deepEqual(
+        (yield* monitor.snapshot).map((row) => row.threadId),
+        [parent.threadId],
+      );
+      assert.isFalse(
+        (yield* monitor.claimAttention({
+          threadId: nested.threadId,
+          reportKey: report.reportKey,
+          clientId,
+        })).claimed,
+      );
+      assert.isTrue(
+        (yield* monitor.claimAttention({
+          threadId: parent.threadId,
+          reportKey: report.reportKey,
+          clientId,
+        })).claimed,
+      );
+    }),
+  ),
+);
+
+it.effect(
+  "gives recovered and changed-reason stalls new keys while continuous restart keeps the key",
+  () =>
+    isolated(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(DateTime.toEpochMillis(at));
+        yield* enable();
+        let monitor = yield* AgentMonitor.make;
+        yield* monitor.sweep;
+        const fixture = yield* seed("episodes");
+        const sql = yield* SqlClient.SqlClient;
+        const status = (value: string) =>
+          sql`UPDATE orchestration_v2_projection_provider_sessions SET status=${value} WHERE thread_id=${fixture.threadId}`;
+        yield* status("error");
+        yield* monitor.sweep;
+        const first = (yield* read(fixture.threadId)).agentMonitor!;
+        yield* TestClock.adjust("30 seconds");
+        yield* monitor.sweep;
+        assert.isTrue(
+          (yield* monitor.claimAttention({
+            threadId: fixture.threadId,
+            reportKey: first.reportKey,
+            clientId,
+          })).claimed,
+        );
+        monitor = yield* AgentMonitor.make;
+        yield* monitor.sweep;
+        assert.equal((yield* read(fixture.threadId)).agentMonitor!.reportKey, first.reportKey);
+        yield* status("running");
+        yield* monitor.sweep;
+        yield* status("error");
+        yield* monitor.sweep;
+        const second = (yield* read(fixture.threadId)).agentMonitor!;
+        assert.notEqual(second.reportKey, first.reportKey);
+        yield* TestClock.adjust("30 seconds");
+        yield* monitor.sweep;
+        assert.isTrue(
+          (yield* monitor.claimAttention({
+            threadId: fixture.threadId,
+            reportKey: second.reportKey,
+            clientId,
+          })).claimed,
+        );
+        yield* status("stopped");
+        yield* monitor.sweep;
+        const third = (yield* read(fixture.threadId)).agentMonitor!;
+        assert.equal(third.reason, "provider_absent");
+        assert.notEqual(third.reportKey, second.reportKey);
+        assert.lengthOf(yield* sql`SELECT * FROM agent_monitor_device_claims`, 0);
+      }),
+    ),
+);
+
+it.effect("never revives an expired suspicious episode after restart for a new device", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const first = yield* AgentMonitor.make;
+      yield* first.sweep;
+      const fixture = yield* seed("restart-expired");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_provider_sessions SET status='error' WHERE thread_id=${fixture.threadId}`;
+      yield* first.sweep;
+      yield* TestClock.adjust("30 seconds");
+      yield* first.sweep;
+      const report = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.isTrue(report.notificationEligible);
+      yield* TestClock.adjust("10 minutes");
+      const restarted = yield* AgentMonitor.make;
+      yield* restarted.sweep;
+      yield* TestClock.adjust("30 seconds");
+      yield* restarted.sweep;
+      const persisted = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.equal(persisted.reportKey, report.reportKey);
+      assert.isFalse(persisted.notificationEligible);
+      assert.isFalse(
+        (yield* restarted.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: report.reportKey,
+          clientId: "never-claimed",
+        })).claimed,
+      );
+    }),
+  ),
+);
+
+it.effect("prunes expired claims even when the current report stays unchanged", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const fixture = yield* seed("prune");
+      yield* pending(fixture);
+      yield* monitor.sweep;
+      const report = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.isTrue(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: report.reportKey,
+          clientId,
+        })).claimed,
+      );
+      const sql = yield* SqlClient.SqlClient;
+      assert.lengthOf(yield* sql`SELECT * FROM agent_monitor_device_claims`, 1);
+      yield* TestClock.adjust("6 minutes");
+      yield* monitor.sweep;
+      assert.lengthOf(yield* sql`SELECT * FROM agent_monitor_device_claims`, 0);
+    }),
+  ),
+);
+
+it.effect("legacy monitor replay advances the revision beyond the derived report", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* enable();
+      const fixture = yield* seed("legacy-revision");
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const before = yield* read(fixture.threadId);
+      const sink = yield* EventSink.EventSinkV2;
+      yield* sink.write({
+        events: [
+          {
+            ...fixture,
+            id: EventId.make("legacy-revision:clear"),
+            type: "thread.monitor-updated",
+            payload: { report: null },
+          },
+        ],
+      });
+      const after = yield* read(fixture.threadId);
+      assert.isNull(after.agentMonitor);
+      assert.isAbove(after.agentMonitorRevision!, before.agentMonitorRevision!);
+    }),
+  ),
+);
+
+it.effect(
+  "disabled snapshots have no rows and runless threads do not inflate enabled snapshots",
+  () =>
+    isolated(
+      Effect.gen(function* () {
+        const fixture = yield* seed("snapshot-enabled");
+        const monitor = yield* AgentMonitor.make;
+        assert.deepEqual(yield* monitor.snapshot, []);
+        yield* enable();
+        yield* monitor.sweep;
+        assert.deepEqual(
+          (yield* monitor.snapshot).map((row) => row.threadId),
+          [fixture.threadId],
+        );
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* settings.updateSettings({
+          agentMonitor: { ...(yield* settings.getSettings).agentMonitor, enabled: false },
+        });
+        assert.deepEqual(yield* monitor.snapshot, []);
+      }),
+    ),
+);
+
+it.effect("new progress permits a second stale episode in the same attempt", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const fixture = yield* seed("stale-twice");
+      yield* monitor.sweep;
+      yield* TestClock.adjust("10 minutes");
+      yield* monitor.sweep;
+      yield* TestClock.adjust("30 seconds");
+      yield* monitor.sweep;
+      const first = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.isTrue(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: first.reportKey,
+          clientId,
+        })).claimed,
+      );
+      const sink = yield* EventSink.EventSinkV2;
+      yield* sink.write({
+        events: [
+          {
+            ...fixture,
+            id: EventId.make("stale-twice:progress"),
+            type: "turn-item.updated",
+            payload: {
+              id: TurnItemId.make("stale-twice:item"),
+              threadId: fixture.threadId,
+              runId: fixture.runId,
+              nodeId: fixture.nodeId,
+              providerThreadId: fixture.providerThreadId,
+              providerTurnId: fixture.providerTurnId,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 1,
+              status: "completed",
+              title: null,
+              startedAt: at,
+              completedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
+              updatedAt: DateTime.add(at, { minutes: 10, seconds: 30 }),
+              type: "dynamic_tool",
+              toolName: "test",
+              input: {},
+            },
+          },
+        ],
+      });
+      yield* monitor.sweep;
+      assert.equal((yield* read(fixture.threadId)).agentMonitor!.classification, "working");
+      yield* TestClock.adjust("10 minutes");
+      yield* monitor.sweep;
+      yield* TestClock.adjust("30 seconds");
+      yield* monitor.sweep;
+      const second = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.equal(second.classification, "suspected_stuck");
+      assert.equal(second.attemptId, first.attemptId);
+      assert.notEqual(second.reportKey, first.reportKey);
+      assert.isTrue(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: second.reportKey,
+          clientId,
+        })).claimed,
+      );
+    }),
+  ),
+);
+
+it.effect("notification class controls preserve attention in the digest and gate claims", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const fixture = yield* seed("class-filter");
+      yield* pending(fixture, "auth_refresh");
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({
+        agentMonitor: { ...(yield* settings.getSettings).agentMonitor, notifyClasses: ["waiting"] },
+      });
+      yield* monitor.sweep;
+      const report = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.isTrue(report.attentionRequired);
+      assert.isFalse(report.notificationEligible);
+      assert.isFalse(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: report.reportKey,
+          clientId,
+        })).claimed,
+      );
+      yield* settings.updateSettings({
+        agentMonitor: { ...(yield* settings.getSettings).agentMonitor, notifyClasses: ["auth"] },
+      });
+      yield* monitor.sweep;
+      assert.isTrue((yield* read(fixture.threadId)).agentMonitor!.notificationEligible);
+    }),
+  ),
+);
+
+it.effect("ignores orphan children and removes an archived child's rolled-up attention", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(DateTime.toEpochMillis(at));
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const parent = yield* seed("archive-parent");
+      const child = yield* seed("archive-child");
+      const orphan = yield* seed("orphan-child");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.parentThreadId', ${parent.threadId}, '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${child.threadId}`;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${orphan.threadId}`;
+      yield* pending(child);
+      yield* pending(orphan);
+      yield* monitor.sweep;
+      assert.equal((yield* read(parent.threadId)).agentMonitor!.classification, "needs_user");
+      assert.deepEqual(
+        (yield* monitor.snapshot).map((row) => row.threadId),
+        [parent.threadId],
+      );
+      yield* sql`UPDATE orchestration_v2_projection_threads SET archived_at='2026-10-24T12:00:00.000Z' WHERE thread_id=${child.threadId}`;
+      yield* monitor.sweep;
+      assert.equal((yield* read(parent.threadId)).agentMonitor!.classification, "working");
+      assert.isUndefined((yield* read(orphan.threadId)).agentMonitor);
+    }),
+  ),
+);
+
+it.effect("completed notifications are explicit opt-in and never emitted for runless threads", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* enable();
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({
+        agentMonitor: {
+          ...(yield* settings.getSettings).agentMonitor,
+          notifyClasses: ["completed"],
+        },
+      });
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const fixture = yield* seed("completed-opt-in", "completed");
+      yield* monitor.sweep;
+      const report = (yield* read(fixture.threadId)).agentMonitor!;
+      assert.equal(report.classification, "idle");
+      assert.isTrue(report.notificationEligible);
+      assert.isTrue(
+        (yield* monitor.claimAttention({
+          threadId: fixture.threadId,
+          reportKey: report.reportKey,
+          clientId,
+        })).claimed,
+      );
+    }),
+  ),
+);
+
+it.effect("moves rolled-up attention immediately when a child changes parents", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      yield* monitor.sweep;
+      const first = yield* seed("first-parent");
+      const second = yield* seed("second-parent");
+      const child = yield* seed("moving-child");
+      const sql = yield* SqlClient.SqlClient;
+      const move = (
+        parentId: ThreadId,
+      ) => sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.parentThreadId', ${parentId}, '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${child.threadId}`;
+      yield* move(first.threadId);
+      yield* pending(child);
+      yield* monitor.sweep;
+      assert.equal((yield* read(first.threadId)).agentMonitor!.classification, "needs_user");
+      yield* move(second.threadId);
+      yield* monitor.sweep;
+      assert.equal((yield* read(first.threadId)).agentMonitor!.classification, "working");
+      assert.equal((yield* read(second.threadId)).agentMonitor!.classification, "needs_user");
     }),
   ),
 );

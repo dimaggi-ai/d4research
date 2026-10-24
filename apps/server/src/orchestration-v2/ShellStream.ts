@@ -33,6 +33,18 @@ export const prepareShellMonitorStream = <E, R>(input: {
     let firstPull = true;
     return {
       snapshot: Stream.fromEffect(input.snapshot).pipe(
+        Stream.map((reports) =>
+          reports
+            .filter((update) => update.report !== null)
+            .toSorted(
+              (left, right) =>
+                Number(right.report!.attentionRequired) - Number(left.report!.attentionRequired) ||
+                right.report!.observedAt.localeCompare(left.report!.observedAt) ||
+                right.revision - left.revision,
+            )
+            .slice(0, 128),
+        ),
+        Stream.filter((reports) => reports.length > 0),
         Stream.map((reports) => ({ kind: "monitor.snapshot" as const, reports })),
       ),
       changes: Stream.fromPull(

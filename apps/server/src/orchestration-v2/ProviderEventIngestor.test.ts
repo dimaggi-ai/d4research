@@ -2105,6 +2105,8 @@ layer("ProviderEventIngestorV2", (it) => {
       );
       const saved = {
         ...offered,
+        agentMonitor: null,
+        agentMonitorRevision: 0,
         archivedAt: now,
         deletedAt: now,
         activeProviderThreadId: rootEvent.payload.activeProviderThreadId,

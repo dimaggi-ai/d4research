@@ -83,7 +83,12 @@ upgradeLayer("043_051_D4UpgradeCompatibility", (it) => {
         PRAGMA index_list(projection_turns)
       `;
       assert.ok(turnIndexes.some((index) => index.name === "idx_projection_turns_thread_keyset"));
-      assert.deepStrictEqual(yield* runMigrations(), [[70, "DropUnusedV1Projections"]]);
+      assert.deepStrictEqual(yield* runMigrations(), [
+        [70, "DropUnusedV1Projections"],
+        [71, "AgentMonitorNotificationClaims"],
+        [72, "AgentMonitorDelivery"],
+        [73, "AgentMonitorEpisodes"],
+      ]);
       assert.deepStrictEqual(yield* sql`PRAGMA table_info(projection_turns)`, []);
     }),
   );
@@ -136,6 +141,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [68, "PullRequestReviewGuides"],
           [69, "ThreadFailureLookupIndex"],
           [70, "DropUnusedV1Projections"],
+          [71, "AgentMonitorNotificationClaims"],
+          [72, "AgentMonitorDelivery"],
+          [73, "AgentMonitorEpisodes"],
         ],
       );
 
@@ -179,6 +187,9 @@ partialUpgradeLayer("043_051_D4PartialUpgradeCompatibility", (it) => {
           [68, "PullRequestReviewGuides"],
           [69, "ThreadFailureLookupIndex"],
           [70, "DropUnusedV1Projections"],
+          [71, "AgentMonitorNotificationClaims"],
+          [72, "AgentMonitorDelivery"],
+          [73, "AgentMonitorEpisodes"],
         ],
       );
     }),
@@ -219,7 +230,7 @@ queuedHistoryLayer("D4QueuedMessageUpgradeCompatibility", (it) => {
         executed.map(([id]) => id),
         [
           47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
-          69, 70,
+          69, 70, 71, 72, 73,
         ],
       );
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;

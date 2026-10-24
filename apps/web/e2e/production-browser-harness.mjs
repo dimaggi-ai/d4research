@@ -19,23 +19,32 @@ export async function runProductionBrowserSuite(specs) {
     NodePath.join(baseDir, "userdata", "settings.json"),
     JSON.stringify({ enableProviderUpdateChecks: false }),
   );
-  const port = await new Promise((resolve, reject) => {
-    const listener = NodeNet.createServer();
-    listener.once("error", reject);
-    listener.listen(0, "127.0.0.1", () => {
-      const { port } = listener.address();
-      listener.close(() => resolve(port));
-    });
-  });
+  const port = process.env.T3_UI_TEST_PORT
+    ? Number(process.env.T3_UI_TEST_PORT)
+    : await new Promise((resolve, reject) => {
+        const listener = NodeNet.createServer();
+        listener.once("error", reject);
+        listener.listen(0, "127.0.0.1", () => {
+          const { port } = listener.address();
+          listener.close(() => resolve(port));
+        });
+      });
   const bin = process.env.T3_PWA_TEST_SERVER_BIN ?? NodePath.join(root, "apps/server/dist/bin.mjs");
   await NodeFSP.access(bin);
-  const app = { baseDir, serverPort: port, webUrl: `http://localhost:${port}` };
+  const app = { baseDir, serverPort: port, webUrl: `http://127.0.0.1:${port}` };
   const serverLog = NodeFS.createWriteStream(NodePath.join(artifactDir, "server.log"));
   const server = NodeChildProcess.spawn(
     process.execPath,
     [bin, "--base-dir", baseDir, "--port", String(port), "--host", "127.0.0.1", "--no-browser"],
-    { cwd: baseDir, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: baseDir,
+      env: { ...process.env, T3CODE_HOME: baseDir },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
+  if (process.env.T3_UI_TEST_PID_FILE && server.pid !== undefined) {
+    await NodeFSP.writeFile(process.env.T3_UI_TEST_PID_FILE, `${server.pid}\n`);
+  }
   server.stdout.pipe(serverLog, { end: false });
   server.stderr.pipe(serverLog, { end: false });
   let browser;

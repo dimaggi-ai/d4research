@@ -32,3 +32,16 @@ export function agentMonitorLabel(report: AgentMonitorReport): string {
     ? "Completed"
     : AGENT_MONITOR_LABELS[report.classification];
 }
+
+export function monitorActivityThreads<
+  T extends {
+    readonly source: Pick<OrchestrationV2ThreadShell, "agentMonitor">;
+  },
+>(threads: ReadonlyArray<T>): ReadonlyArray<T> {
+  return threads.filter((thread) => {
+    const report = thread.source.agentMonitor;
+    return report != null && !report.attentionRequired && report.classification !== "idle";
+  });
+}
+
+export const AGENT_MONITOR_LIST_LIMIT = 50;

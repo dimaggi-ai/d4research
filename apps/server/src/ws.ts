@@ -136,6 +136,7 @@ import {
   composeShellStreamWithEnrichment,
   dedupeShellEnrichment,
   loadShellSnapshotParts,
+  prepareShellMonitorStream,
   shellStreamItemFromEnrichmentRefresh,
   shellStreamItemFromThreadShell,
   shellStreamItemsFromInitialSnapshot,
@@ -896,6 +897,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   function* (input: {
     readonly afterSequence?: number;
     readonly requestCompletionMarker?: boolean;
+    readonly includeMonitor?: boolean;
   }) {
     const sql = yield* SqlClient.SqlClient;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
@@ -905,6 +907,10 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
 
     const enrichmentChanges = yield* projectEnrichment.subscribeChanges;
+    const monitor =
+      input.includeMonitor === true
+        ? yield* prepareShellMonitorStream(yield* AgentMonitorReactor.AgentMonitorReactor)
+        : { snapshot: Stream.empty, changes: Stream.empty };
     const loadProjectMetadataSnapshot = Effect.fn("ws.orchestrationV2.loadProjectMetadataSnapshot")(
       function* (snapshotSequence: number) {
         const enriched = yield* enrichProjectShells(yield* projects.listShells());
@@ -1065,9 +1071,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       if (input.afterSequence === undefined) {
         const loaded = yield* loadSnapshot();
         return composeShellStreamWithEnrichment({
-          initial: initialSnapshotItems(loaded),
+          initial: Stream.concat(initialSnapshotItems(loaded), monitor.snapshot),
           tail: completionThenLive(loaded.snapshot.snapshotSequence),
-          enrichment: enrichmentRefreshes,
+          enrichment: Stream.merge(enrichmentRefreshes, monitor.changes),
         });
       }
 
@@ -1075,9 +1081,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       if (!(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))) {
         const loaded = yield* loadSnapshot();
         return composeShellStreamWithEnrichment({
-          initial: initialSnapshotItems(loaded),
+          initial: Stream.concat(initialSnapshotItems(loaded), monitor.snapshot),
           tail: completionThenLive(loaded.snapshot.snapshotSequence),
-          enrichment: enrichmentRefreshes,
+          enrichment: Stream.merge(enrichmentRefreshes, monitor.changes),
         });
       }
 
@@ -1093,9 +1099,12 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         }),
       );
       return composeShellStreamWithEnrichment({
-        initial: initialEnrichmentItems(loaded),
-        tail: Stream.concat(Stream.concat(replay, completionMarker), liveFrom(highWater)),
-        enrichment: enrichmentRefreshes,
+        initial: Stream.concat(
+          initialEnrichmentItems(loaded),
+          Stream.concat(replay, monitor.snapshot),
+        ),
+        tail: completionThenLive(highWater),
+        enrichment: Stream.merge(enrichmentRefreshes, monitor.changes),
       });
     }).pipe(
       Effect.mapError(

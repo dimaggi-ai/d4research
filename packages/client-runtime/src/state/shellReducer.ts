@@ -1,14 +1,18 @@
 import {
   OrchestrationV2ThreadShell,
+  AgentMonitorReport,
   RepositoryIdentity,
   ThreadPullRequestLink,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ShellStreamItem,
+  type AgentMonitorUpdate,
+  type ThreadId,
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 
 const sameThreadShell = Schema.toEquivalence(OrchestrationV2ThreadShell);
+const sameMonitorReport = Schema.toEquivalence(Schema.NullOr(AgentMonitorReport));
 const sameLinks = Schema.toEquivalence(Schema.UndefinedOr(Schema.Array(ThreadPullRequestLink)));
 const sameRepositoryIdentity = Schema.toEquivalence(
   Schema.UndefinedOr(Schema.NullOr(RepositoryIdentity)),
@@ -134,7 +138,46 @@ export function applyShellStreamEvent(
     OrchestrationV2ShellStreamItem,
     { readonly kind: "snapshot" } | { readonly kind: "synchronized" }
   >,
+  pendingMonitorUpdates?: Map<ThreadId, AgentMonitorUpdate>,
 ): OrchestrationV2ShellSnapshot {
+  if (event.kind === "monitor.snapshot" || event.kind === "monitor.updated") {
+    const authoritative = event.kind === "monitor.snapshot";
+    const reports = authoritative ? event.reports : [event];
+    if (authoritative) pendingMonitorUpdates?.clear();
+    const byThread = new Map(reports.map((report) => [report.threadId, report]));
+    let changed = false;
+    const threads = snapshot.threads.map((thread) => {
+      const update = byThread.get(thread.id);
+      byThread.delete(thread.id);
+      if (update === undefined) {
+        if (
+          !authoritative ||
+          (thread.agentMonitor == null && (thread.agentMonitorRevision ?? 0) === 0)
+        )
+          return thread;
+        changed = true;
+        return { ...thread, agentMonitor: null, agentMonitorRevision: 0 };
+      }
+      const revision = thread.agentMonitorRevision ?? 0;
+      if (!authoritative && update.revision <= revision) {
+        return thread;
+      }
+      if (
+        thread.agentMonitorRevision === update.revision &&
+        sameMonitorReport(thread.agentMonitor ?? null, update.report)
+      )
+        return thread;
+      changed = true;
+      return { ...thread, agentMonitor: update.report, agentMonitorRevision: update.revision };
+    });
+    for (const update of byThread.values()) {
+      const previous = pendingMonitorUpdates?.get(update.threadId);
+      if (previous === undefined || previous.revision < update.revision) {
+        pendingMonitorUpdates?.set(update.threadId, update);
+      }
+    }
+    return changed ? { ...snapshot, threads } : snapshot;
+  }
   if (event.sequence <= snapshot.snapshotSequence) return snapshot;
 
   switch (event.kind) {
@@ -162,7 +205,24 @@ export function applyShellStreamEvent(
         event.location === "active"
           ? snapshot.threads.find((thread) => thread.id === event.thread.id)
           : undefined;
-      if (existing !== undefined && sameThreadShell(existing, event.thread)) {
+      let thread = event.thread;
+      if ((existing?.agentMonitorRevision ?? 0) > (thread.agentMonitorRevision ?? 0)) {
+        thread = {
+          ...thread,
+          agentMonitor: existing?.agentMonitor ?? null,
+          agentMonitorRevision: existing!.agentMonitorRevision,
+        };
+      }
+      const pending = pendingMonitorUpdates?.get(thread.id);
+      pendingMonitorUpdates?.delete(thread.id);
+      if (pending !== undefined && pending.revision >= (thread.agentMonitorRevision ?? 0)) {
+        thread = {
+          ...thread,
+          agentMonitor: pending.report,
+          agentMonitorRevision: pending.revision,
+        };
+      }
+      if (existing !== undefined && sameThreadShell(existing, thread)) {
         return { ...snapshot, snapshotSequence: event.sequence };
       }
       const withoutThread = (threads: OrchestrationV2ShellSnapshot["threads"]) =>
@@ -171,7 +231,7 @@ export function applyShellStreamEvent(
         ...snapshot,
         threads:
           event.location === "active"
-            ? upsertById(snapshot.threads, event.thread)
+            ? upsertById(snapshot.threads, thread)
             : withoutThread(snapshot.threads),
         // The archive has its own bounded query/subscription. Older servers may
         // still send archive-located deltas here; remove them from the normal
@@ -181,6 +241,7 @@ export function applyShellStreamEvent(
       };
     }
     case "thread.removed":
+      pendingMonitorUpdates?.delete(event.threadId);
       return {
         ...snapshot,
         threads: snapshot.threads.filter((thread) => thread.id !== event.threadId),
@@ -190,4 +251,24 @@ export function applyShellStreamEvent(
     default:
       return snapshot;
   }
+}
+
+export function createShellStreamEventReducer(maxPendingMonitorUpdates = 1_000) {
+  const pending = new Map<ThreadId, AgentMonitorUpdate>();
+  return {
+    reset: () => pending.clear(),
+    apply: (
+      snapshot: OrchestrationV2ShellSnapshot,
+      event: Exclude<
+        OrchestrationV2ShellStreamItem,
+        { readonly kind: "snapshot" | "synchronized" }
+      >,
+    ) => {
+      const next = applyShellStreamEvent(snapshot, event, pending);
+      // A slow structural stream must resynchronize instead of retaining missing threads forever.
+      const resyncRequired = pending.size > maxPendingMonitorUpdates;
+      if (resyncRequired) pending.clear();
+      return { snapshot: next, resyncRequired };
+    },
+  };
 }

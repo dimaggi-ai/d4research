@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { v2Project, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 import {
   applyShellStreamEvent,
+  createShellStreamEventReducer,
   mergeShellSnapshotProjects,
   reuseUnchangedThreadShells,
 } from "./shellReducer.ts";
@@ -25,6 +26,187 @@ const otherIdentity = {
     remoteUrl: "https://github.com/example/other.git",
   },
 };
+
+describe("monitor shell updates", () => {
+  const report = {
+    schemaVersion: 1 as const,
+    classification: "needs_user" as const,
+    reason: "pending_request" as const,
+    attentionRequired: true,
+    notificationEligible: true,
+    reportKey: "request-1",
+    observedAt: "2026-10-24T00:00:00.000Z",
+    runId: null,
+    attemptId: null,
+    runStatus: null,
+    pendingRequestId: null,
+  };
+  const snapshot = {
+    ...v2ShellSnapshot,
+    snapshotSequence: 42,
+    threads: [{ ...v2ThreadShell, agentMonitor: report, agentMonitorRevision: 1 }],
+  };
+
+  it("clears reports on resume without advancing the application cursor or activity", () => {
+    const next = applyShellStreamEvent(snapshot, {
+      kind: "monitor.snapshot",
+      reports: [{ threadId: v2ThreadShell.id, revision: 2, report: null }],
+    });
+    expect(next.threads[0]?.agentMonitor).toBeNull();
+    expect(next.threads[0]?.agentMonitorRevision).toBe(2);
+    expect(next.threads[0]?.updatedAt).toBe(snapshot.threads[0]?.updatedAt);
+    expect(next.snapshotSequence).toBe(42);
+    expect(next.projects).toBe(snapshot.projects);
+  });
+
+  it("ignores buffered updates older than the resume snapshot, including a cleared report", () => {
+    const cleared = applyShellStreamEvent(snapshot, {
+      kind: "monitor.snapshot",
+      reports: [{ threadId: v2ThreadShell.id, revision: 3, report: null }],
+    });
+    for (const revision of [1, 2, 3]) {
+      expect(
+        applyShellStreamEvent(cleared, {
+          kind: "monitor.updated",
+          threadId: v2ThreadShell.id,
+          revision,
+          report,
+        }),
+      ).toBe(cleared);
+    }
+    const next = applyShellStreamEvent(cleared, {
+      kind: "monitor.updated",
+      threadId: v2ThreadShell.id,
+      revision: 4,
+      report,
+    });
+    expect(next.threads[0]?.agentMonitor).toBe(report);
+    expect(next.snapshotSequence).toBe(42);
+  });
+
+  it("retains a newer report when delayed whole-thread updates arrive", () => {
+    const next = applyShellStreamEvent(snapshot, {
+      kind: "thread.updated",
+      sequence: 43,
+      location: "active",
+      thread: { ...v2ThreadShell, title: "Renamed", agentMonitor: null, agentMonitorRevision: 0 },
+    });
+    expect(next.threads[0]?.title).toBe("Renamed");
+    expect(next.threads[0]?.agentMonitor).toBe(report);
+    expect(next.threads[0]?.agentMonitorRevision).toBe(1);
+    expect(next.snapshotSequence).toBe(43);
+  });
+
+  it("resets cached revisions when an authoritative snapshot comes from a restored database", () => {
+    const cached = {
+      ...snapshot,
+      threads: [{ ...snapshot.threads[0]!, agentMonitorRevision: 100 }],
+    };
+    const restored = applyShellStreamEvent(cached, {
+      kind: "monitor.snapshot",
+      reports: [{ threadId: v2ThreadShell.id, revision: 1, report: null }],
+    });
+    expect(restored.threads[0]?.agentMonitorRevision).toBe(1);
+    expect(restored.threads[0]?.agentMonitor).toBeNull();
+    expect(
+      applyShellStreamEvent(restored, {
+        kind: "monitor.updated",
+        threadId: v2ThreadShell.id,
+        revision: 2,
+        report,
+      }).threads[0]?.agentMonitor,
+    ).toBe(report);
+    const absent = applyShellStreamEvent(cached, { kind: "monitor.snapshot", reports: [] });
+    expect(absent.threads[0]?.agentMonitorRevision).toBe(0);
+    expect(absent.threads[0]?.agentMonitor).toBeNull();
+    expect(absent.snapshotSequence).toBe(cached.snapshotSequence);
+  });
+
+  it("keeps a new thread's latest report until its structural update arrives", () => {
+    const reducer = createShellStreamEventReducer();
+    const empty = { ...snapshot, threads: [] };
+    for (const revision of [3, 2]) {
+      expect(
+        reducer.apply(empty, {
+          kind: "monitor.updated",
+          threadId: v2ThreadShell.id,
+          revision,
+          report,
+        }).snapshot,
+      ).toBe(empty);
+    }
+    const next = reducer.apply(empty, {
+      kind: "thread.updated",
+      sequence: 43,
+      location: "active",
+      thread: v2ThreadShell,
+    });
+    expect(next.snapshot.threads[0]?.agentMonitor).toBe(report);
+    expect(next.snapshot.threads[0]?.agentMonitorRevision).toBe(3);
+    expect(next.resyncRequired).toBe(false);
+  });
+
+  it("replaces pending updates on authoritative monitor snapshots and subscription resets", () => {
+    const reducer = createShellStreamEventReducer();
+    const empty = { ...snapshot, threads: [] };
+    reducer.apply(empty, {
+      kind: "monitor.updated",
+      threadId: v2ThreadShell.id,
+      revision: 3,
+      report,
+    });
+    reducer.apply(empty, {
+      kind: "monitor.snapshot",
+      reports: [{ threadId: v2ThreadShell.id, revision: 4, report: null }],
+    });
+    const next = reducer.apply(empty, {
+      kind: "thread.updated",
+      sequence: 43,
+      location: "active",
+      thread: v2ThreadShell,
+    });
+    expect(next.snapshot.threads[0]?.agentMonitor).toBeNull();
+    expect(next.snapshot.threads[0]?.agentMonitorRevision).toBe(4);
+    reducer.apply(empty, {
+      kind: "monitor.updated",
+      threadId: v2ThreadShell.id,
+      revision: 5,
+      report,
+    });
+    reducer.reset();
+    expect(
+      reducer.apply(empty, {
+        kind: "thread.updated",
+        sequence: 43,
+        location: "active",
+        thread: v2ThreadShell,
+      }).snapshot.threads[0],
+    ).toBe(v2ThreadShell);
+  });
+
+  it("requests resynchronization when unmatched updates exceed the buffer limit", () => {
+    const reducer = createShellStreamEventReducer(2);
+    const empty = { ...snapshot, threads: [] };
+    for (const [index, id] of ["a", "b", "c"].entries()) {
+      expect(
+        reducer.apply(empty, {
+          kind: "monitor.updated",
+          threadId: ThreadId.make(id),
+          revision: index + 1,
+          report,
+        }).resyncRequired,
+      ).toBe(index === 2);
+    }
+    expect(
+      reducer.apply(empty, {
+        kind: "thread.updated",
+        sequence: 43,
+        location: "active",
+        thread: { ...v2ThreadShell, id: ThreadId.make("a") },
+      }).snapshot.threads[0]?.agentMonitor,
+    ).toBeUndefined();
+  });
+});
 
 describe("applyShellStreamEvent", () => {
   it("updates a thread in place without moving its siblings", () => {

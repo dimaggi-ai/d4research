@@ -491,8 +491,8 @@ it.effect("requires settings-write before any second brain mutation handler", ()
   }).pipe(Effect.scoped),
 );
 
-it("allows monitor delivery claims with read access while configuration requires settings access", () => {
+it("requires operate access for durable monitor delivery claims", () => {
   expect(requiredScopeForRpcMethod(WS_METHODS.agentMonitorClaimAttention)).toBe(
-    AuthOrchestrationReadScope,
+    AuthOrchestrationOperateScope,
   );
 });

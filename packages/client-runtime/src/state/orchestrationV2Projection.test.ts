@@ -112,6 +112,7 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
       classification: "idle" as const,
       reason: "no_active_run" as const,
       attentionRequired: false,
+      notificationEligible: false,
       reportKey: "idle",
       observedAt: "2026-10-24T00:00:00.000Z",
       runId: null,

@@ -4,6 +4,8 @@ import type { ModelSelection, ServerSettings } from "@d4research/contracts";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
+  monitorActivityThreads,
+  AGENT_MONITOR_LIST_LIMIT,
 } from "@d4research/client-runtime/state/agent-monitor";
 import { createModelSelection } from "@d4research/shared/model";
 import { useState } from "react";
@@ -79,6 +81,9 @@ function AgentMonitorForm() {
       thread.source.agentMonitor,
   );
   const attention = monitorAttentionThreads(monitored);
+  const activity = monitorActivityThreads(monitored);
+  const listCount = (count: number) =>
+    count > AGENT_MONITOR_LIST_LIMIT ? `${AGENT_MONITOR_LIST_LIMIT}/${count}` : String(count);
   const write = async (patch: Partial<ServerSettings["agentMonitor"]>) => {
     if (!allowed || saving) return;
     setSaving(true);
@@ -141,7 +146,7 @@ function AgentMonitorForm() {
       />
       <SettingsRow
         title="Attention notifications"
-        description="Allow connected clients to notify you when a thread needs attention. Device notification permission is also required."
+        description="Allow connected clients to notify you when a thread needs attention. System alerts require device notification permission."
         control={
           <Switch
             aria-label="Monitor attention notifications"
@@ -153,11 +158,11 @@ function AgentMonitorForm() {
       />
       {monitor.enabled ? (
         <div className="space-y-2 py-3">
-          <p className="text-sm font-medium">Needs attention · {attention.length}</p>
+          <p className="text-sm font-medium">Needs attention · {listCount(attention.length)}</p>
           {attention.length === 0 ? (
             <p className="text-sm text-muted-foreground">No threads need attention.</p>
           ) : (
-            attention.map((thread) => (
+            attention.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
               <Link
                 key={thread.id}
                 to="/$environmentId/$threadId"
@@ -171,25 +176,23 @@ function AgentMonitorForm() {
               </Link>
             ))
           )}
-          <p className="pt-2 text-sm font-medium">Thread activity</p>
-          {monitored.length === 0 ? (
+          <p className="pt-2 text-sm font-medium">Thread activity · {listCount(activity.length)}</p>
+          {activity.length === 0 ? (
             <p className="text-sm text-muted-foreground">Waiting for thread activity.</p>
           ) : (
-            monitored
-              .filter((thread) => !thread.source.agentMonitor?.attentionRequired)
-              .map((thread) => (
-                <Link
-                  key={thread.id}
-                  to="/$environmentId/$threadId"
-                  params={{ environmentId, threadId: thread.id }}
-                  className="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted focus-visible:outline focus-visible:outline-ring"
-                >
-                  <span className="truncate">{thread.title}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {agentMonitorLabel(thread.source.agentMonitor!)}
-                  </span>
-                </Link>
-              ))
+            activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
+              <Link
+                key={thread.id}
+                to="/$environmentId/$threadId"
+                params={{ environmentId, threadId: thread.id }}
+                className="flex items-center justify-between gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted focus-visible:outline focus-visible:outline-ring"
+              >
+                <span className="truncate">{thread.title}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {agentMonitorLabel(thread.source.agentMonitor!)}
+                </span>
+              </Link>
+            ))
           )}
         </div>
       ) : null}

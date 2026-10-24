@@ -31,7 +31,7 @@ import type { RpcSession } from "../rpc/session.ts";
 import * as ShellSnapshotLoader from "./shellSnapshotHttp.ts";
 import type { DeferredShellSnapshot } from "./shellPullRequests.ts";
 import {
-  applyShellStreamEvent,
+  createShellStreamEventReducer,
   mergeShellSnapshotProjects,
   reuseUnchangedThreadShells,
   sameThreadPullRequests,
@@ -103,6 +103,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   // Rows still waiting for their deferred pull request links, which must not be saved:
   // the cache would keep them without links until the next server refresh.
   let pendingLinkRows: ReadonlySet<OrchestrationV2ThreadShell> = new Set();
+  let activeFillRows: Set<OrchestrationV2ThreadShell> | undefined;
   const persistLatest = Effect.fn("EnvironmentShellState.persistLatest")(function* (
     flush: boolean,
   ) {
@@ -177,6 +178,8 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   // Server items and deferred link fills both read the snapshot and write it back; one at a
   // time, so neither can overwrite what the other wrote in between.
   const snapshotWriteLock = yield* Semaphore.make(1);
+  const shellEvents = createShellStreamEventReducer();
+  const monitorResubscriptions = yield* Queue.sliding<void>(1);
 
   const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
     items: ReadonlyArray<OrchestrationV2ShellStreamItem>,
@@ -186,6 +189,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     let waiting = yield* Ref.get(awaitingCompletion);
     let next = initial;
     let receivedSnapshot = false;
+    let monitorResyncRequired = false;
     for (const item of items) {
       if (item.kind === "synchronized") {
         waiting = false;
@@ -207,12 +211,29 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
             )
           : Option.match(next.snapshot, {
               onNone: () => null,
-              onSome: (snapshot) =>
-                item.sequence > snapshot.snapshotSequence
-                  ? applyShellStreamEvent(snapshot, item)
-                  : snapshot,
+              onSome: (snapshot) => {
+                const applied = shellEvents.apply(snapshot, item);
+                monitorResyncRequired ||= applied.resyncRequired;
+                return applied.snapshot;
+              },
             });
       if (nextSnapshot === null) continue;
+      if (
+        activeFillRows !== undefined &&
+        (item.kind === "monitor.snapshot" || item.kind === "monitor.updated") &&
+        Option.isSome(next.snapshot)
+      ) {
+        // Monitor-only copies must still receive the links their original HTTP rows await.
+        const before = new Map(next.snapshot.value.threads.map((thread) => [thread.id, thread]));
+        const pending = new Set(pendingLinkRows);
+        for (const thread of nextSnapshot.threads) {
+          const previous = before.get(thread.id);
+          if (previous === undefined || previous === thread) continue;
+          if (activeFillRows.delete(previous)) activeFillRows.add(thread);
+          if (pending.delete(previous)) pending.add(thread);
+        }
+        pendingLinkRows = pending;
+      }
       receivedSnapshot ||= item.kind === "snapshot";
       next = {
         snapshot: Option.some(nextSnapshot),
@@ -240,6 +261,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     if (next.snapshot !== initial.snapshot && Option.isSome(next.snapshot)) {
       yield* Queue.offer(persistence, next.snapshot.value);
     }
+    if (monitorResyncRequired) {
+      yield* Ref.set(lastAuthoritativeSession, null);
+      yield* Queue.offer(monitorResubscriptions, undefined);
+    }
   }, snapshotWriteLock.withPermit);
 
   const stateScope = yield* Effect.scope;
@@ -250,6 +275,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   const cancelActiveFill = Effect.suspend(() => {
     const fill = activeFill;
     activeFill = undefined;
+    activeFillRows = undefined;
     return fill === undefined ? Effect.void : Fiber.interrupt(fill);
   });
   const fillDeferredPullRequests = Effect.fnUntraced(function* (
@@ -259,6 +285,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     yield* cancelActiveFill;
     if (source.loadPullRequests === undefined) return;
     const arrivedRows = new Set(applied.threads);
+    activeFillRows = arrivedRows;
     const arrivedIds = new Set(source.threads.map((thread) => thread.id));
     pendingLinkRows = new Set(applied.threads.filter((thread) => arrivedIds.has(thread.id)));
     activeFill = yield* source.loadPullRequests.pipe(
@@ -297,6 +324,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         },
       );
       pendingLinkRows = new Set();
+      activeFillRows = undefined;
       const live = yield* Ref.get(latestLiveSnapshot);
       if (Option.isNone(live)) return;
       const latest = Option.isSome(filled) ? filled : live;
@@ -320,6 +348,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     subscribeDynamic(
       ORCHESTRATION_V2_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
+        shellEvents.reset();
         yield* Ref.set(activeSubscriptionSession, session);
         const supportsCompletionMarker = yield* session.initialConfig.pipe(
           Effect.map((config) => config.shellResumeCompletionMarker === true),
@@ -372,7 +401,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
 
         if (!canResume || Option.isNone(current.snapshot)) {
-          return supportsCompletionMarker ? { requestCompletionMarker: true as const } : {};
+          return {
+            includeMonitor: true as const,
+            ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
+          };
         }
         if (!supportsCompletionMarker) {
           yield* SubscriptionRef.update(state, (value) => ({
@@ -382,6 +414,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           }));
         }
         return {
+          includeMonitor: true as const,
           afterSequence: current.snapshot.value.snapshotSequence,
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
@@ -389,7 +422,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       {
         onExpectedFailure: (cause) => setStreamError(Cause.squash(cause)),
         retryExpectedFailureAfter: "250 millis",
-        resubscribe: foregroundResubscriptions,
+        resubscribe: Stream.merge(
+          foregroundResubscriptions,
+          Stream.fromQueue(monitorResubscriptions),
+        ),
       },
     ).pipe(Stream.runForEachArray((items) => applyItems(items))),
   );

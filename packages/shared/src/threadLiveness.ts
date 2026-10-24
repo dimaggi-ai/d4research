@@ -93,7 +93,7 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
   }
   const elapsed = input.now - progressAt;
   if (elapsed >= THREAD_LIVENESS_STALE_AFTER_MS) {
-    return result("suspected_stuck", "progress_stale");
+    return result("suspected_stuck", "progress_stale", true);
   }
   if (elapsed >= THREAD_LIVENESS_SLOW_AFTER_MS) return result("slow", "progress_delayed");
   return result("working", "recent_progress");

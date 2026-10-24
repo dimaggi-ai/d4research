@@ -3,6 +3,8 @@ import type { ServerSettings } from "@d4research/contracts";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
+  monitorActivityThreads,
+  AGENT_MONITOR_LIST_LIMIT,
 } from "@d4research/client-runtime/state/agent-monitor";
 import { useLinkTo } from "@react-navigation/native";
 import { useState } from "react";
@@ -66,6 +68,9 @@ function EnvironmentMonitorSettings({
       thread.source.agentMonitor,
   );
   const attention = monitorAttentionThreads(monitored);
+  const activity = monitorActivityThreads(monitored);
+  const listCount = (count: number) =>
+    count > AGENT_MONITOR_LIST_LIMIT ? `${AGENT_MONITOR_LIST_LIMIT}/${count}` : String(count);
   const write = async (patch: Partial<ServerSettings["agentMonitor"]>) => {
     if (saving || !allowed) return;
     setSaving(true);
@@ -140,44 +145,43 @@ function EnvironmentMonitorSettings({
         </Text>
       ) : null}
       {monitor.enabled ? (
-        <SettingsSection title={`Needs attention · ${attention.length}`}>
+        <SettingsSection title={`Needs attention · ${listCount(attention.length)}`}>
           {attention.length === 0 ? (
             <Text className="p-4 text-sm text-foreground-muted">No threads need attention.</Text>
           ) : (
-            attention.map((thread) => (
-              <SettingsRow
-                key={thread.id}
-                icon="bubble.left"
-                label={thread.title}
-                value={agentMonitorLabel(thread.source.agentMonitor!)}
-                onPress={() =>
-                  linkTo(
-                    `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                  )
-                }
-              />
-            ))
+            attention
+              .slice(0, AGENT_MONITOR_LIST_LIMIT)
+              .map((thread) => (
+                <SettingsRow
+                  key={thread.id}
+                  icon="bubble.left"
+                  label={thread.title}
+                  value={agentMonitorLabel(thread.source.agentMonitor!)}
+                  onPress={() =>
+                    linkTo(
+                      `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
+                    )
+                  }
+                />
+              ))
           )}
         </SettingsSection>
       ) : null}
-      {monitor.enabled &&
-      monitored.some((thread) => !thread.source.agentMonitor?.attentionRequired) ? (
-        <SettingsSection title="Thread activity">
-          {monitored
-            .filter((thread) => !thread.source.agentMonitor?.attentionRequired)
-            .map((thread) => (
-              <SettingsRow
-                key={thread.id}
-                icon="bubble.left"
-                label={thread.title}
-                value={agentMonitorLabel(thread.source.agentMonitor!)}
-                onPress={() =>
-                  linkTo(
-                    `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
-                  )
-                }
-              />
-            ))}
+      {monitor.enabled && activity.length > 0 ? (
+        <SettingsSection title={`Thread activity · ${listCount(activity.length)}`}>
+          {activity.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
+            <SettingsRow
+              key={thread.id}
+              icon="bubble.left"
+              label={thread.title}
+              value={agentMonitorLabel(thread.source.agentMonitor!)}
+              onPress={() =>
+                linkTo(
+                  `/threads/${encodeURIComponent(target.environmentId)}/${encodeURIComponent(thread.id)}`,
+                )
+              }
+            />
+          ))}
         </SettingsSection>
       ) : null}
       <Modal

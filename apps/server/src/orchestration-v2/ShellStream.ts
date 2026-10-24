@@ -1,4 +1,5 @@
 import type {
+  AgentMonitorUpdate,
   ApplicationStoredEvent,
   OrchestrationProjectShell,
   OrchestrationV2ArchivedShellStreamItem,
@@ -15,9 +16,36 @@ import {
 import * as NodeSqliteClient from "@d4research/shared/nodeSqliteClient";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
+import { bufferLiveStream } from "./LiveStreamBudget.ts";
+
+export const prepareShellMonitorStream = <E, R>(input: {
+  readonly changes: Stream.Stream<AgentMonitorUpdate>;
+  readonly snapshot: Effect.Effect<ReadonlyArray<AgentMonitorUpdate>, E, R>;
+}) =>
+  Effect.gen(function* () {
+    // Acquire and drain the subscription before any shell or monitor snapshot is read.
+    const changes = yield* Stream.toPull(bufferLiveStream(input.changes));
+    const first = yield* changes.pipe(Effect.forkScoped({ startImmediately: true }));
+    let firstPull = true;
+    return {
+      snapshot: Stream.fromEffect(input.snapshot).pipe(
+        Stream.map((reports) => ({ kind: "monitor.snapshot" as const, reports })),
+      ),
+      changes: Stream.fromPull(
+        Effect.succeed(
+          Effect.suspend(() => {
+            if (!firstPull) return changes;
+            firstPull = false;
+            return Fiber.join(first);
+          }),
+        ),
+      ).pipe(Stream.map((update) => ({ kind: "monitor.updated" as const, ...update }))),
+    };
+  });
 
 export function buildActiveShellSnapshot(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;

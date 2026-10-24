@@ -7,8 +7,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
+  present: vi.fn(),
+  reuseThread: false,
   configAtom: { type: "config" },
   permissionAtom: { type: "permission" },
+  clientId: "browser-installation" as string | null,
   monitorEnabled: false,
   monitorNotifications: false,
   report: null as AgentMonitorReport | null,
@@ -98,7 +101,11 @@ function mockThreadShell() {
 
 let stableParent: ReturnType<typeof mockThreadShell> | null = null;
 function mockThreads() {
-  if (state.delegatedChild === null) return [mockThreadShell()];
+  if (state.delegatedChild === null) {
+    if (!state.reuseThread) return [mockThreadShell()];
+    stableParent ??= mockThreadShell();
+    return [stableParent];
+  }
   stableParent ??= mockThreadShell();
   const child = {
     ...mockThreadShell(),
@@ -118,6 +125,19 @@ function mockThreads() {
   return [stableParent, child];
 }
 
+vi.mock(import("@d4research/client-runtime/state/models"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    presentThreadShell: (...args: Parameters<typeof actual.presentThreadShell>) => {
+      state.present();
+      return actual.presentThreadShell(...args);
+    },
+  };
+});
+vi.mock(import("../lib/clientInstallationId"), () => ({
+  getStableClientId: () => state.clientId,
+}));
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
   useAtomValue: ((atom: unknown) =>
@@ -202,6 +222,8 @@ async function complete() {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(state, {
+    reuseThread: false,
+    clientId: "browser-installation",
     monitorEnabled: false,
     monitorNotifications: false,
     report: null,
@@ -411,6 +433,7 @@ const attentionReport = {
   classification: "wedged",
   reason: "provider_absent",
   attentionRequired: true,
+  notificationEligible: true,
   reportKey: "run-1:wedged",
   observedAt: "2026-10-24T00:00:00.000Z",
   runId: null,
@@ -433,7 +456,11 @@ describe("monitor notifications", () => {
     await render();
     expect(state.claim).toHaveBeenCalledExactlyOnceWith({
       environmentId: "env-1",
-      input: { threadId: "thread-1", reportKey: attentionReport.reportKey },
+      input: {
+        threadId: "thread-1",
+        reportKey: attentionReport.reportKey,
+        clientId: "browser-installation",
+      },
     });
     expect(state.add).toHaveBeenCalledTimes(1);
     const toast = state.add.mock.calls[0]?.[0];
@@ -459,7 +486,7 @@ describe("monitor notifications", () => {
     expect(state.add).not.toHaveBeenCalled();
   });
 
-  it("suppresses completion alerts while the monitor is enabled", async () => {
+  it("preserves completion alerts while the monitor is enabled", async () => {
     enableMonitor();
     state.report = {
       ...attentionReport,
@@ -470,12 +497,12 @@ describe("monitor notifications", () => {
     await render();
     await complete();
     expect(state.claim).not.toHaveBeenCalled();
-    expect(state.add).not.toHaveBeenCalled();
+    expect(state.add).toHaveBeenCalledWith(expect.objectContaining({ title: "Thread completed" }));
     expect(state.notification).not.toHaveBeenCalled();
-    expect(state.sound).not.toHaveBeenCalled();
+    expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function));
   });
 
-  it("suppresses legacy and monitor alerts when monitor notifications are disabled", async () => {
+  it("preserves legacy alerts when monitor notifications are disabled", async () => {
     enableMonitor();
     state.monitorNotifications = false;
     await render();
@@ -483,11 +510,10 @@ describe("monitor notifications", () => {
     await render();
     await complete();
     expect(state.claim).not.toHaveBeenCalled();
-    expect(state.add).not.toHaveBeenCalled();
-    expect(state.notification).not.toHaveBeenCalled();
+    expect(state.add).toHaveBeenCalledWith(expect.objectContaining({ title: "Input needed" }));
   });
 
-  it("does not notify when another client already claimed the report", async () => {
+  it("does not notify when another tab already claimed the report", async () => {
     enableMonitor();
     state.claim.mockResolvedValue({ _tag: "Success", value: { claimed: false } });
     await render();
@@ -507,7 +533,7 @@ describe("monitor notifications", () => {
     );
   });
 
-  it.each(["disconnect", "disabled", "unmounted"])(
+  it.each(["disconnect", "disabled", "unmounted", "ineligible"])(
     "discards a pending claim after %s",
     async (condition) => {
       enableMonitor();
@@ -520,6 +546,8 @@ describe("monitor notifications", () => {
       );
       await render();
       expect(state.claim).toHaveBeenCalledTimes(1);
+      if (condition === "ineligible")
+        state.report = { ...attentionReport, notificationEligible: false };
       if (condition === "disconnect") state.live = false;
       else if (condition === "disabled") state.monitorNotifications = false;
       if (condition === "unmounted") await act(() => root.render(null));
@@ -531,11 +559,67 @@ describe("monitor notifications", () => {
     },
   );
 
-  it("does not claim monitor attention without OS permission", async () => {
+  it("shows in-app monitor alerts without OS permission", async () => {
     enableMonitor();
+    state.mode = "off";
     vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "denied" }));
     await render();
-    expect(state.claim).not.toHaveBeenCalled();
-    expect(state.add).not.toHaveBeenCalled();
+    expect(state.claim).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["ineligible", "identity", "active", "background"])(
+    "does not consume a claim without a delivery path: %s",
+    async (condition) => {
+      enableMonitor();
+      state.mode = "off";
+      if (condition === "ineligible")
+        state.report = { ...attentionReport, notificationEligible: false };
+      if (condition === "identity") state.clientId = null;
+      if (condition === "active") state.active.threadId = "thread-1";
+      if (condition === "background") state.focused = false;
+      await render();
+      expect(state.claim).not.toHaveBeenCalled();
+      expect(state.add).not.toHaveBeenCalled();
+    },
+  );
+
+  it("can claim an unchanged pending report after notifications are enabled", async () => {
+    enableMonitor();
+    state.monitorNotifications = false;
+    state.reuseThread = true;
+    await render();
+    expect(state.claim).not.toHaveBeenCalled();
+    expect(state.present).toHaveBeenCalledTimes(1);
+    state.monitorNotifications = true;
+    await render();
+    expect(state.claim).toHaveBeenCalledTimes(1);
+    expect(state.present).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves legacy parent aggregation when monitor is enabled", async () => {
+    enableMonitor();
+    state.report = null;
+    state.delegatedChild = "running";
+    await render();
+    state.delegatedChild = "approval";
+    await render();
+    expect(state.add).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ title: "Approval needed" }),
+    );
+    expect(state.claim).not.toHaveBeenCalled();
+  });
+
+  it.each(["needs_user", "limited", "failed"] as const)(
+    "leaves %s alerts to the legacy path",
+    async (classification) => {
+      enableMonitor();
+      state.report = { ...attentionReport, classification };
+      await render();
+      state.input = true;
+      await render();
+      expect(state.claim).not.toHaveBeenCalled();
+      expect(state.add).toHaveBeenCalledTimes(1);
+    },
+  );
 });

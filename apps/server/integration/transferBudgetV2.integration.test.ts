@@ -1,3 +1,5 @@
+import * as AgentMonitor from "../src/orchestration-v2/AgentMonitorReactor.ts";
+import * as ServerSettings from "../src/serverSettings.ts";
 // @effect-diagnostics nodeBuiltinImport:off - Measures real local HTTP/WebSocket sockets.
 import * as NodeHttp from "node:http";
 import { assert, it } from "@effect/vitest";
@@ -118,6 +120,7 @@ const layerServices = layerManagement.pipe(
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(Layer.mock(ProjectService.ProjectService)({})),
   Layer.provideMerge(layerEnrichment),
+  Layer.provideMerge(AgentMonitor.layer.pipe(Layer.provide(ServerSettings.layerTest()))),
   Layer.provideMerge(layerPersistence),
 );
 class TransferApi extends HttpApi.make("environment").add(
@@ -201,6 +204,7 @@ const subscribe = Effect.fn("transfer.subscribe")(function* (
           acceptBoundedSnapshot: true,
         })
       : client.client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({
+          includeMonitor: true,
           afterSequence,
           requestCompletionMarker: true,
         });

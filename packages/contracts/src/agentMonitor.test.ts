@@ -11,7 +11,7 @@ import {
   ServerSettings,
   WS_METHODS,
   clientRpcRequiredScopes,
-  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
   requiredScopesForServerSettingsPatch,
   AuthSettingsWriteScope,
 } from "./index.ts";
@@ -55,6 +55,7 @@ describe("AgentMonitorReport", () => {
     classification: "needs_user",
     reason: "pending_request",
     attentionRequired: true,
+    notificationEligible: false,
     reportKey: "report-1",
     observedAt: "2026-10-24T12:00:00.000Z",
     runStatus: "running",
@@ -106,7 +107,7 @@ it("defaults older server settings to an opt-out monitor and guards its delivery
     modelSelection: null,
   });
   expect(clientRpcRequiredScopes(WS_METHODS.agentMonitorClaimAttention, {})).toEqual([
-    AuthOrchestrationReadScope,
+    AuthOrchestrationOperateScope,
   ]);
   expect(
     requiredScopesForServerSettingsPatch({

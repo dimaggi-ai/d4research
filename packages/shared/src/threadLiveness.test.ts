@@ -17,7 +17,7 @@ const classify = (overrides: Partial<ThreadLivenessEvidence> = {}) =>
   classifyThreadLiveness({ ...baseline, ...overrides });
 
 describe("classifyThreadLiveness", () => {
-  it("uses observed progress for working, slow and suspected states without attention", () => {
+  it("makes suspected stale progress actionable while slow work stays quiet", () => {
     expect(classify().classification).toBe("working");
     expect(classify({ now: 1_120_000 })).toMatchObject({
       classification: "slow",
@@ -25,14 +25,14 @@ describe("classifyThreadLiveness", () => {
     });
     expect(classify({ now: 1_600_000 })).toMatchObject({
       classification: "suspected_stuck",
-      attentionRequired: false,
+      attentionRequired: true,
     });
   });
 
   it("does not infer failure from host sleep or a forward wall clock jump", () => {
     expect(classify({ now: baseline.now + 86_400_000, leaseExpired: true })).toMatchObject({
       classification: "suspected_stuck",
-      attentionRequired: false,
+      attentionRequired: true,
     });
   });
 

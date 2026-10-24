@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import { getStableClientId } from "../lib/clientInstallationId";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { serverEnvironment } from "../state/server";
@@ -136,24 +137,37 @@ function EnvironmentNotifications({
       notificationsMounted.current = false;
     };
   }, []);
-  const monitorNotificationsAllowed = useEffectEvent(
-    () =>
+  const monitorNotificationsAllowed = useEffectEvent((threadId: ThreadId, reportKey: string) => {
+    const focused = document.visibilityState === "visible" && document.hasFocus();
+    const thread = threads?.find((thread) => thread.id === threadId);
+    const report = thread?.agentMonitor;
+    const canPresent =
+      hasNotificationSound(mode) ||
+      (inAppNotificationsEnabled &&
+        focused &&
+        (activeEnvironmentId !== environmentId || activeThreadId !== threadId)) ||
+      (hasDesktopNotifications(mode) &&
+        !focused &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted");
+    return (
       notificationsMounted.current &&
       threads !== null &&
       monitor?.enabled === true &&
       monitor.notificationsEnabled &&
       canClaim &&
-      typeof Notification !== "undefined" &&
-      Notification.permission === "granted",
-  );
+      report?.notificationEligible === true &&
+      report.attentionRequired &&
+      thread?.archivedAt === null &&
+      thread.deletedAt === null &&
+      report.reportKey === reportKey &&
+      canPresent
+    );
+  });
   const previous = useRef(new Map<ThreadId, NotificationState>());
 
-  useEffect(() => {
-    if (threads === null) {
-      previous.current.clear();
-      return;
-    }
-    const showNotification = ({
+  const showNotification = useEffectEvent(
+    ({
       threadId,
       title,
       body,
@@ -232,18 +246,71 @@ function EnvironmentNotifications({
       } catch {
         // Some browsers expose Notification but reject desktop presentation.
       }
-    };
+    },
+  );
+
+  useEffect(() => {
+    if (threads === null) {
+      previous.current.clear();
+      return;
+    }
     const next = new Map<ThreadId, NotificationState>();
     const subagentRequests = pendingSubagentRequestsByThread(threads);
     for (const rawThread of threads) {
-      if (!monitor?.enabled && rawThread.lineage.relationshipToParent === "subagent") continue;
+      const report = rawThread.agentMonitor;
+      const focused = document.visibilityState === "visible" && document.hasFocus();
+      const canPresent =
+        hasNotificationSound(mode) ||
+        (inAppNotificationsEnabled &&
+          focused &&
+          (activeEnvironmentId !== environmentId || activeThreadId !== rawThread.id)) ||
+        (hasDesktopNotifications(mode) &&
+          !focused &&
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted");
+      if (
+        monitor?.enabled &&
+        monitor.notificationsEnabled &&
+        canClaim &&
+        canPresent &&
+        report?.notificationEligible === true &&
+        report.attentionRequired &&
+        (report.classification === "wedged" || report.classification === "suspected_stuck") &&
+        rawThread.archivedAt === null &&
+        rawThread.deletedAt === null &&
+        monitorKeys.current.get(rawThread.id) !== report.reportKey
+      ) {
+        const clientId = getStableClientId();
+        const key = `${rawThread.id}:${report.reportKey}`;
+        if (clientId && !pendingMonitorKeys.current.has(key)) {
+          pendingMonitorKeys.current.add(key);
+          void claimMonitorAttention({
+            environmentId,
+            input: { threadId: rawThread.id, reportKey: report.reportKey, clientId },
+          })
+            .then((result) => {
+              if (result._tag !== "Success") return;
+              monitorKeys.current.set(rawThread.id, report.reportKey);
+              if (
+                result.value.claimed &&
+                monitorNotificationsAllowed(rawThread.id, report.reportKey)
+              ) {
+                showNotification({
+                  threadId: rawThread.id,
+                  title: "Thread needs attention",
+                  body: "Open the thread to review its status.",
+                  kind: "input",
+                  status: "input",
+                });
+              }
+            })
+            .finally(() => pendingMonitorKeys.current.delete(key));
+        }
+      }
+      if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
-      if (
-        !monitor?.enabled &&
-        prior?.raw === rawThread &&
-        prior.subagentRequest === subagentRequest
-      ) {
+      if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
         next.set(rawThread.id, prior);
         continue;
       }
@@ -262,39 +329,6 @@ function EnvironmentNotifications({
           ? completedAt
           : (prior?.completion ?? null);
       next.set(thread.id, { raw: rawThread, subagentRequest, attention, completion });
-      if (monitor?.enabled) {
-        const report = rawThread.agentMonitor;
-        if (
-          !report?.attentionRequired ||
-          thread.archivedAt !== null ||
-          thread.deletedAt !== null ||
-          !monitorNotificationsAllowed() ||
-          monitorKeys.current.get(thread.id) === report.reportKey
-        )
-          continue;
-        const key = `${thread.id}:${report.reportKey}`;
-        if (pendingMonitorKeys.current.has(key)) continue;
-        pendingMonitorKeys.current.add(key);
-        void claimMonitorAttention({
-          environmentId,
-          input: { threadId: thread.id, reportKey: report.reportKey },
-        })
-          .then((result) => {
-            if (result._tag !== "Success") return;
-            monitorKeys.current.set(thread.id, report.reportKey);
-            if (result.value.claimed && monitorNotificationsAllowed()) {
-              showNotification({
-                threadId: thread.id,
-                title: "Thread needs attention",
-                body: "Open the thread to review its status.",
-                kind: "input",
-                status: "input",
-              });
-            }
-          })
-          .finally(() => pendingMonitorKeys.current.delete(key));
-        continue;
-      }
       if (!prior || thread.archivedAt !== null) continue;
       const kind =
         attention && attention !== prior.attention
@@ -320,12 +354,11 @@ function EnvironmentNotifications({
     activeEnvironmentId,
     activeThreadId,
     claimMonitorAttention,
+    canClaim,
     monitor,
     environmentId,
     inAppNotificationsEnabled,
     mode,
-    navigate,
-    onNotification,
     threads,
   ]);
 

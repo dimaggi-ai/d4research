@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import type {
   ApplicationStoredEvent,
+  AgentMonitorUpdate,
   OrchestrationV2ShellSnapshot,
   OrchestrationV2ShellStreamItem,
   OrchestrationV2StoredEvent,
@@ -12,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -24,6 +26,7 @@ import {
   composeShellStreamWithEnrichment,
   dedupeShellEnrichment,
   loadShellSnapshotParts,
+  prepareShellMonitorStream,
   shellStreamItemFromEnrichmentRefresh,
   shellStreamItemFromThreadShell,
   shellStreamItemsFromInitialSnapshot,
@@ -428,6 +431,45 @@ describe("composeShellStreamWithEnrichment", () => {
       expect(items).toContain("tail-b");
       expect(items.indexOf("enrichment")).toBeGreaterThanOrEqual(2);
     }),
+  );
+});
+
+describe("prepareShellMonitorStream", () => {
+  it.effect("subscribes before snapshot reads and sends monitor state after shell replay", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* PubSub.unbounded<AgentMonitorUpdate>();
+        const update = { threadId: ThreadId.make("monitor-thread"), report: null, revision: 2 };
+        const monitor = yield* prepareShellMonitorStream({
+          changes: Stream.fromPubSub(updates),
+          snapshot: Effect.gen(function* () {
+            yield* PubSub.publish(updates, update);
+            return [{ ...update, revision: 3 }];
+          }),
+        });
+        const beforeSnapshot = { ...update, revision: 1 };
+        yield* PubSub.publish(updates, beforeSnapshot);
+        const shell = { kind: "snapshot" as const, snapshot: emptyShellSnapshot };
+        const replay = {
+          kind: "thread.removed" as const,
+          threadId: update.threadId,
+          location: "active" as const,
+          sequence: 5,
+        };
+        const items = yield* composeShellStreamWithEnrichment({
+          initial: Stream.concat(Stream.make(shell, replay), monitor.snapshot),
+          tail: Stream.empty,
+          enrichment: monitor.changes.pipe(Stream.take(2)),
+        }).pipe(Stream.runCollect);
+        expect(items).toEqual([
+          shell,
+          replay,
+          { kind: "monitor.snapshot", reports: [{ ...update, revision: 3 }] },
+          { kind: "monitor.updated", ...beforeSnapshot },
+          { kind: "monitor.updated", ...update },
+        ]);
+      }),
+    ),
   );
 });
 

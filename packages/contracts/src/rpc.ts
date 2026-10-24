@@ -811,7 +811,11 @@ const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStora
 });
 
 const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAttention, {
-  payload: Schema.Struct({ threadId: ThreadId, reportKey: TrimmedNonEmptyString }),
+  payload: Schema.Struct({
+    threadId: ThreadId,
+    reportKey: TrimmedNonEmptyString,
+    clientId: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  }),
   success: Schema.Struct({ claimed: Schema.Boolean }),
   error: Schema.Union([AgentMonitorError, EnvironmentAuthorizationError]),
 });

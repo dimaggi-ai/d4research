@@ -28,27 +28,37 @@ threads**. On iPhone or iPad, use Settings → Thread behavior → Monitor. Each
 environment has one monitor configuration shared by its clients. Disable the same
 switch to stop monitoring.
 
-The monitor checks unarchived threads every 15 seconds. It lists activity and
-attention items with links to their threads. Slow or possibly stuck activity does
-not send an alert. Pending input or approval, a failed run, a usage limit, or a
-recorded provider failure can require attention. Long-running work and expired
-effect leases alone do not prove a run is stuck.
+The monitor checks unarchived threads every 15 seconds. It lists attention items
+and active work, with up to 50 entries in each list. When monitoring starts, existing problems do not trigger monitor alerts, but they
+remain visible in the attention list.
+Slow activity stays quiet. A possibly stuck thread or recorded provider failure
+must persist across observations for at least 30 seconds before a monitor alert
+becomes eligible. A backward clock jump or an observation gap over 60 seconds, including a gap caused
+by sleep, restarts that confirmation period. Long-running work alone does not prove
+a provider has failed.
 
 **Saved model** stores your chosen provider and model for the monitor. This version
 uses deterministic classification and does not invoke that model. Changing the
 selection does not switch an active run's provider or model.
 
-Enable **Attention notifications** to allow alerts. On web and desktop, also enable
-system notifications in the existing notification settings. On iPhone or iPad,
-allow notifications when asked. The first connected client to claim an attention
-item can notify you; other clients still show it in the list. If that client closes
-before displaying its alert, the alert can be lost, but the attention item remains.
+Enable **Attention notifications** to allow monitor alerts. On web and desktop,
+monitor alerts supplement the existing completion, input, approval, failure, and
+usage-limit notifications. In-app alerts do not need OS notification permission;
+system notifications use the existing device notification settings. On iPhone or
+iPad, allow notifications when asked.
 
-The server stores status and notification claims across restarts. Clients refresh
+Each installation has its own durable delivery claim for monitor alerts. Tabs sharing browser storage
+share that claim; a desktop alert does not consume an iPad's claim. A client claims
+only when it has an available notification path. If it closes after claiming but
+before displaying, that installation can lose the alert; the attention item stays
+visible. Monitor alerts expire after five minutes of eligibility to avoid replaying
+old alerts on reconnect. Existing device notifications keep their own preferences.
+
+The server stores monitor status and notification claims across restarts. Clients refresh
 from the server on reconnect. Mobile alerts use reports already received by the
 app; delivery while iOS suspends the app is not guaranteed. No push service is added.
 
-Monitor reports contain status codes, identifiers, and timestamps. Alert text
+Monitor reports contain status codes, identifiers, and timestamps. Monitor alert text
 contains no thread titles or work content. The monitor does not read conversation
 text, alter context prefixes or compaction, retry work, interrupt runs, or perform
 public actions. Open the thread to act through its existing permission and approval

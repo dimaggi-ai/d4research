@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { AgentMonitorReport } from "@d4research/contracts";
-import { agentMonitorLabel, monitorAttentionThreads } from "./agentMonitor.ts";
+import {
+  agentMonitorLabel,
+  monitorAttentionThreads,
+  monitorActivityThreads,
+  AGENT_MONITOR_LIST_LIMIT,
+} from "./agentMonitor.ts";
 
 const report = {
   schemaVersion: 1,
   classification: "wedged",
   reason: "provider_absent",
   attentionRequired: true,
+  notificationEligible: true,
   reportKey: "run:wedged",
   observedAt: "2026-10-24T00:00:00.000Z",
   runId: null,
@@ -39,6 +45,23 @@ describe("monitor attention", () => {
         { ...thread("deleted"), deletedAt: report.observedAt },
       ]),
     ).toEqual([actionable]);
+  });
+
+  it("lists only non-idle activity outside the attention list", () => {
+    const working = thread("working", {
+      ...report,
+      classification: "working",
+      attentionRequired: false,
+    });
+    expect(
+      monitorActivityThreads([
+        thread("attention"),
+        thread("idle", { ...report, classification: "idle", attentionRequired: false }),
+        thread("old", null),
+        working,
+      ]),
+    ).toEqual([working]);
+    expect(AGENT_MONITOR_LIST_LIMIT).toBe(50);
   });
 
   it("shows completed runs separately from idle threads", () => {

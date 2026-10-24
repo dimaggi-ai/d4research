@@ -45,3 +45,19 @@ missing build artifact blocks startup, and the start limiter stops persistent cr
 allows up to 45 seconds for shutdown so provider subprocesses and SQLite checkpoint work can close
 cleanly instead of inheriting a workstation's shorter manager default. Machine-specific Node PATH
 or proxy settings belong in a systemd drop-in rather than an untracked replacement unit.
+
+## Monitor rollback compatibility
+
+The monitor stores derived reports outside the application event log. New report
+updates do not add replay events or command receipts. Additive monitor tables can
+remain in the database when running a pre-monitor build.
+
+An earlier, unshipped monitor implementation wrote version-2
+`thread.monitor-updated` events. This build still reads those events. A pre-monitor
+binary cannot replay them: use a database backup from before that implementation,
+or a binary that understands the event. Do not delete or renumber those events to
+force a downgrade; command receipts and replay cursors may reference their sequences.
+
+Effect leases are currently claimed with a 30-second default duration and are not
+renewed. The monitor does not repair this behavior or treat lease expiry alone as
+proof of provider failure.

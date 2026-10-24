@@ -25,8 +25,8 @@ type FaultCase = readonly [
 const cases: FaultCase[] = [
   [{}, "working", false],
   [{ now: 1_120_000 }, "slow", false],
-  [{ now: 1_600_000 }, "suspected_stuck", false],
-  [{ now: 87_400_000, leaseExpired: true }, "suspected_stuck", false],
+  [{ now: 1_600_000 }, "suspected_stuck", true],
+  [{ now: 87_400_000, leaseExpired: true }, "suspected_stuck", true],
   [{ now: 900_000 }, "working", false],
   [{ lastProgressAt: null }, "working", false],
   [{ lastProgressAt: "invalid" }, "working", false],

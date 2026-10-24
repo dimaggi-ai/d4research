@@ -1,4 +1,4 @@
-import { AgentMonitorReport } from "./agentMonitor.ts";
+import { AgentMonitorReport, AgentMonitorUpdate } from "./agentMonitor.ts";
 import { OrchestrationMessageContext } from "./composerContext.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -356,6 +356,7 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
 
 export const OrchestrationV2AppThread = Schema.Struct({
   agentMonitor: Schema.optional(Schema.NullOr(AgentMonitorReport)),
+  agentMonitorRevision: Schema.optional(NonNegativeInt),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -1803,6 +1804,7 @@ export type OrchestrationV2LatestVisibleMessageSummary =
 
 export const OrchestrationV2ThreadShell = Schema.Struct({
   agentMonitor: Schema.optional(Schema.NullOr(AgentMonitorReport)),
+  agentMonitorRevision: Schema.optional(NonNegativeInt),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -1893,6 +1895,11 @@ export const OrchestrationV2ShellSnapshot = Schema.Struct({
 export type OrchestrationV2ShellSnapshot = typeof OrchestrationV2ShellSnapshot.Type;
 
 export const OrchestrationV2ShellStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("monitor.snapshot"),
+    reports: Schema.Array(AgentMonitorUpdate),
+  }),
+  Schema.Struct({ kind: Schema.Literal("monitor.updated"), ...AgentMonitorUpdate.fields }),
   Schema.Struct({
     kind: Schema.Literal("synchronized"),
   }),
@@ -3199,6 +3206,7 @@ export type OrchestrationV2GetThreadProjectionInput =
   typeof OrchestrationV2GetThreadProjectionInput.Type;
 
 export const OrchestrationV2SubscribeShellInput = Schema.Struct({
+  includeMonitor: Schema.optionalKey(Schema.Boolean),
   afterSequence: Schema.optionalKey(NonNegativeInt),
   requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
 });

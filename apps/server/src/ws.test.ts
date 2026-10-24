@@ -1,3 +1,4 @@
+import * as AgentMonitor from "./orchestration-v2/AgentMonitorReactor.ts";
 import { assert, it } from "@effect/vitest";
 import {
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -248,12 +249,22 @@ it.effect("recovers a reveal kind whose real probe outlasts the config timeout",
 );
 
 const ReplayTestLayer = OrchestrationEventStore.layer.pipe(
+  Layer.provideMerge(
+    Layer.mock(AgentMonitor.AgentMonitorReactor)({
+      snapshot: Effect.succeed([]),
+      changes: Stream.never,
+    }),
+  ),
   Layer.provideMerge(SqlitePersistence.layerMemory),
 );
 
-it.live.each(["thread", "shell"] as const)(
-  "%s resume skips unknown types, synchronizes, and receives the live tail",
-  (scope) =>
+it.live.each([
+  ["thread", false],
+  ["shell", false],
+  ["shell", true],
+] as const)(
+  "%s resume skips unknown types and receives live tail (monitor=%s)",
+  ([scope, includeMonitor]) =>
     Effect.gen(function* () {
       const store = yield* OrchestrationEventStore.OrchestrationEventStore;
       const sql = yield* SqlClient.SqlClient;
@@ -320,6 +331,7 @@ it.live.each(["thread", "shell"] as const)(
               requestCompletionMarker: true,
             }).pipe(Effect.flatMap(consume))
           : yield* subscribeOrchestrationV2Shell({
+              ...(includeMonitor ? { includeMonitor: true } : {}),
               afterSequence: before!.sequence,
               requestCompletionMarker: true,
             }).pipe(Effect.flatMap(consume));
@@ -354,7 +366,9 @@ it.live.each(["thread", "shell"] as const)(
         items.map((item) => item.kind),
         scope === "thread"
           ? ["event", "synchronized", "event"]
-          : ["project.updated", "synchronized", "project.updated"],
+          : includeMonitor
+            ? ["project.updated", "monitor.snapshot", "synchronized", "project.updated"]
+            : ["project.updated", "synchronized", "project.updated"],
       );
       assert.deepEqual(
         items.flatMap((item) => (item.sequence === undefined ? [] : [item.sequence])),

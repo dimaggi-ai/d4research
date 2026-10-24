@@ -763,13 +763,21 @@ export function applyToProjection(
     case "thread.provider-switched":
       return {
         ...base,
-        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
+        thread: {
+          ...event.payload,
+          agentMonitor: projection.thread.agentMonitor ?? null,
+          agentMonitorRevision: projection.thread.agentMonitorRevision ?? 0,
+        },
       };
     case "thread.visited":
     case "thread.marked-unread":
       return {
         ...projection,
-        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
+        thread: {
+          ...event.payload,
+          agentMonitor: projection.thread.agentMonitor ?? null,
+          agentMonitorRevision: projection.thread.agentMonitorRevision ?? 0,
+        },
       };
     case "run.created":
     case "run.updated":
@@ -1512,6 +1520,7 @@ export function threadShellFromProjection(
     modelSelection: projection.thread.modelSelection,
     composerModelSelection: projection.thread.composerModelSelection ?? null,
     agentMonitor: projection.thread.agentMonitor ?? null,
+    agentMonitorRevision: projection.thread.agentMonitorRevision ?? 0,
     runtimeMode: projection.thread.runtimeMode,
     interactionMode: projection.thread.interactionMode,
     branch: projection.thread.branch,
@@ -1771,6 +1780,7 @@ function shellFromState(input: {
     modelSelection: input.state.thread.modelSelection,
     composerModelSelection: input.state.thread.composerModelSelection ?? null,
     agentMonitor: input.state.thread.agentMonitor ?? null,
+    agentMonitorRevision: input.state.thread.agentMonitorRevision ?? 0,
     runtimeMode: input.state.thread.runtimeMode,
     interactionMode: input.state.thread.interactionMode,
     branch: input.state.thread.branch,
@@ -1945,7 +1955,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 archived_at = excluded.archived_at,
                 deleted_at = excluded.deleted_at,
                 payload_json = json_set(excluded.payload_json, '$.agentMonitor',
-                  json_extract(orchestration_v2_projection_threads.payload_json, '$.agentMonitor'))
+                  json_extract(orchestration_v2_projection_threads.payload_json, '$.agentMonitor'),
+                  '$.agentMonitorRevision', COALESCE(json_extract(orchestration_v2_projection_threads.payload_json, '$.agentMonitorRevision'), 0))
             `;
             break;
           }

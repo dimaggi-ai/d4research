@@ -593,7 +593,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   .pipe(
     Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
     Layer.provideMerge(layerSecondBrain),
-    Layer.provideMerge(AgentMonitorReactor.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink))),
+    Layer.provideMerge(AgentMonitorReactor.layer),
     Layer.provideMerge(layerOrchestrationApplication),
     Layer.provideMerge(HandoffMemory.layer),
     Layer.provideMerge(RuntimeLayer.layerProjectService),

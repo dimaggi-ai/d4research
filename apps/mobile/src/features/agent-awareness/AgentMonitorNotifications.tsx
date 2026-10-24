@@ -1,9 +1,10 @@
+import { loadOrCreateAgentAwarenessDeviceId } from "../../persistence/imperative";
 import { deliverMonitorNotification } from "./monitorNotificationDelivery";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@d4research/contracts";
 import * as Option from "effect/Option";
 import * as Notifications from "expo-notifications";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { useEnvironments } from "../../state/environments";
 import { environmentShell } from "../../state/shell";
@@ -45,6 +46,19 @@ function EnvironmentMonitorNotifications({
       available.current = false;
     };
   }, [allowed, enabled, shell.status]);
+  const reportAvailable = useEffectEvent((threadId: string, reportKey: string) => {
+    if (!available.current || shell.status !== "live") return false;
+    const thread = Option.getOrNull(shell.snapshot)?.threads.find(
+      (thread) => thread.id === threadId,
+    );
+    return (
+      thread?.agentMonitor?.notificationEligible === true &&
+      thread.agentMonitor.attentionRequired &&
+      thread.agentMonitor.reportKey === reportKey &&
+      thread.archivedAt === null &&
+      thread.deletedAt === null
+    );
+  });
   useEffect(() => {
     if (
       !enabled ||
@@ -57,7 +71,12 @@ function EnvironmentMonitorNotifications({
     if (!snapshot) return;
     for (const thread of snapshot.threads) {
       const report = thread.agentMonitor;
-      if (!report?.attentionRequired || thread.archivedAt !== null || thread.deletedAt !== null)
+      if (
+        !report?.notificationEligible ||
+        !report.attentionRequired ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null
+      )
         continue;
       const key = `${thread.id}:${report.reportKey}`;
       if (pending.current.has(key) || checked.current.get(thread.id) === report.reportKey) continue;
@@ -68,12 +87,14 @@ function EnvironmentMonitorNotifications({
             environmentId,
             threadId: thread.id,
             reportKey: report.reportKey,
-            isEnabled: () => available.current,
+            notificationEligible: report.notificationEligible,
+            loadClientId: async () => `mobile-${await loadOrCreateAgentAwarenessDeviceId()}`,
+            isEnabled: () => reportAvailable(thread.id, report.reportKey),
             hasPermission: async () => (await Notifications.getPermissionsAsync()).granted,
-            claim: async () => {
+            claim: async (clientId) => {
               const result = await claim({
                 environmentId,
-                input: { threadId: thread.id, reportKey: report.reportKey },
+                input: { threadId: thread.id, reportKey: report.reportKey, clientId },
               });
               return result._tag === "Success" ? result.value.claimed : null;
             },

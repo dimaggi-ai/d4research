@@ -8,6 +8,7 @@ import {
   RunId,
   RuntimeRequestId,
   TrimmedNonEmptyString,
+  ThreadId,
 } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
 
@@ -73,6 +74,7 @@ export const AgentMonitorReport = Schema.Struct({
   classification: AgentMonitorClassification,
   reason: AgentMonitorReason,
   attentionRequired: Schema.Boolean,
+  notificationEligible: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   reportKey: TrimmedNonEmptyString,
   observedAt: IsoDateTime.check(
     Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/),
@@ -82,6 +84,13 @@ export const AgentMonitorReport = Schema.Struct({
   pendingRequestId: Schema.NullOr(RuntimeRequestId),
 });
 export type AgentMonitorReport = typeof AgentMonitorReport.Type;
+
+export const AgentMonitorUpdate = Schema.Struct({
+  threadId: ThreadId,
+  report: Schema.NullOr(AgentMonitorReport),
+  revision: NonNegativeInt,
+});
+export type AgentMonitorUpdate = typeof AgentMonitorUpdate.Type;
 
 export const AgentMonitorSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),

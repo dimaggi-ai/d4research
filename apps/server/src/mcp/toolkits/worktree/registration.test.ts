@@ -1,3 +1,5 @@
+import * as D4Agent from "../../../d4Agent/D4Agent.ts";
+import * as D4AgentContext from "../../../d4Agent/D4AgentContext.ts";
 import * as HandoffMemory from "../../../handoffMemory.ts";
 import * as Capture from "../../../second-brain/SecondBrainCapture.ts";
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
@@ -42,6 +44,8 @@ import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
 
 const layerStubServices = Layer.mergeAll(
+  Layer.mock(D4Agent.D4Agent)({}),
+  Layer.mock(D4AgentContext.D4AgentContext)({ owns: () => Effect.succeed(false) }),
   Layer.mock(SecondBrainService.SecondBrainService)({}),
   Layer.mock(Capture.SecondBrainCapture)({}),
   McpProviderSessions.layer,

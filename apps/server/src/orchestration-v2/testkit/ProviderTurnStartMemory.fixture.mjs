@@ -4,7 +4,8 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeAssert from "node:assert/strict";
 const root = process.argv[2];
 const mode = process.argv[3];
-const withHandoff = mode.startsWith("handoff");
+const owned = mode.startsWith("owned");
+const withHandoff = mode.startsWith("handoff") || mode === "owned-handoff";
 const require = NodeModule.createRequire(root + "/apps/server/package.json");
 const load = (name) => import(NodeURL.pathToFileURL(require.resolve("effect/" + name)));
 const [Effect, Layer, FileSystem, Path, Option] = await Promise.all([
@@ -31,6 +32,13 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     app("project/ProjectService"),
     app("provider/ProviderAuthService"),
   ]);
+const AgentContext = await app("d4Agent/D4AgentContext");
+let outboundCalls = 0;
+if (owned)
+  globalThis.fetch = () => {
+    outboundCalls++;
+    throw new Error("Unexpected external context request");
+  };
 const Brain = await app("second-brain/SecondBrainService");
 let brainCalls = 0;
 let receipts = 0;
@@ -62,6 +70,12 @@ const session = {
   compactThread: () => Effect.void,
 };
 const dependencies = Layer.mergeAll(
+  owned
+    ? Layer.succeed(AgentContext.D4AgentContext, {
+        owns: () => Effect.succeed(true),
+        prepare: () => Effect.succeed("Fixed owned agent prefix"),
+      })
+    : Layer.empty,
   Mcp.layer,
   Research.researchTurnDependenciesTestLayer,
   Layer.mock(Brain.SecondBrainService)({
@@ -94,8 +108,9 @@ const dependencies = Layer.mergeAll(
   Layer.mock(Auth.ProviderAuthService)({ tryHandlePromptCommand: () => Effect.succeed(false) }),
   Layer.mock(Config.ServerConfig)({ worktreesDir: "/synthetic-worktrees" }),
   Settings.layerTest({
+    ...(owned ? { handoff: { memoryBackend: "meko", contextCompression: { mode: "smart" } } } : {}),
     secondBrain: {
-      path: mode.startsWith("brain") && mode !== "brain-empty" ? "/synthetic-brain" : "",
+      path: (owned || mode.startsWith("brain")) && mode !== "brain-empty" ? "/synthetic-brain" : "",
       injection: { enabled: mode !== "brain-disabled" },
     },
   }),
@@ -267,4 +282,4 @@ await Effect.runPromise(
     }
   }).pipe(Effect.provide(Start.layer.pipe(Layer.provide(dependencies)))),
 );
-console.log(JSON.stringify({ checkpoints, brainCalls, receipts, sent }));
+console.log(JSON.stringify({ checkpoints, brainCalls, receipts, sent, outboundCalls }));

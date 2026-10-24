@@ -1,5 +1,13 @@
 import { AgentMonitorError } from "./agentMonitor.ts";
 import {
+  D4AgentError,
+  D4AgentState,
+  D4AgentEnsureThreadResult,
+  D4AgentSendInput,
+  D4AgentResolveActionInput,
+  D4AgentClaimSystemAttentionInput,
+} from "./d4Agent.ts";
+import {
   BrainStatus,
   BrainProposalSummary,
   BrainProposal,
@@ -499,6 +507,11 @@ export const WS_METHODS = {
   secondBrainLint: "secondBrain.lint",
   secondBrainRegenerateIndex: "secondBrain.regenerateIndex",
   agentMonitorClaimAttention: "agentMonitor.claimAttention",
+  d4AgentGetState: "d4Agent.getState",
+  d4AgentEnsureThread: "d4Agent.ensureThread",
+  d4AgentSendMessage: "d4Agent.sendMessage",
+  d4AgentResolveAction: "d4Agent.resolveAction",
+  d4AgentClaimSystemAttention: "d4Agent.claimSystemAttention",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -818,6 +831,32 @@ const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAtt
   }),
   success: Schema.Struct({ claimed: Schema.Boolean }),
   error: Schema.Union([AgentMonitorError, EnvironmentAuthorizationError]),
+});
+
+const WsD4AgentGetStateRpc = Rpc.make(WS_METHODS.d4AgentGetState, {
+  payload: Schema.Struct({}),
+  success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentEnsureThreadRpc = Rpc.make(WS_METHODS.d4AgentEnsureThread, {
+  payload: Schema.Struct({}),
+  success: D4AgentEnsureThreadResult,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentSendMessageRpc = Rpc.make(WS_METHODS.d4AgentSendMessage, {
+  payload: D4AgentSendInput,
+  success: D4AgentEnsureThreadResult,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentResolveActionRpc = Rpc.make(WS_METHODS.d4AgentResolveAction, {
+  payload: D4AgentResolveActionInput,
+  success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentClaimSystemAttentionRpc = Rpc.make(WS_METHODS.d4AgentClaimSystemAttention, {
+  payload: D4AgentClaimSystemAttentionInput,
+  success: Schema.Struct({ claimed: Schema.Boolean }),
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
@@ -1962,6 +2001,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsAgentMonitorClaimAttentionRpc,
+  WsD4AgentGetStateRpc,
+  WsD4AgentEnsureThreadRpc,
+  WsD4AgentSendMessageRpc,
+  WsD4AgentResolveActionRpc,
+  WsD4AgentClaimSystemAttentionRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

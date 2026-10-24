@@ -1,3 +1,4 @@
+import { D4AgentEntries } from "./agent/D4Agent";
 import { PROJECT_JUMP_KEYBINDING_COMMANDS } from "@d4research/contracts";
 import { projectSlotNumber, useProjectSlotStore } from "../projectSlotStore";
 import {
@@ -4591,6 +4592,7 @@ export default function Sidebar() {
         className="min-h-full"
         fixedHeader={
           <SidebarGroup className="z-[1]">
+            <D4AgentEntries />
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}

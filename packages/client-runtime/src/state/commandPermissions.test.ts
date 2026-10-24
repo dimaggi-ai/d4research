@@ -61,6 +61,31 @@ const setup = Effect.gen(function* () {
 
 describe("command permissions", () => {
   it.effect.each([
+    WS_METHODS.d4AgentEnsureThread,
+    WS_METHODS.d4AgentSendMessage,
+    WS_METHODS.d4AgentResolveAction,
+  ])("rechecks destination operate permission for d4 Agent %s", (method) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const command = createCommandPermissions(runtime, method);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(command.permissionAtom(env))).toBe(true);
+        yield* command.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(command.permissionAtom(other))).toBe(false);
+        expect(
+          (yield* command.authorize(registry, other).pipe(Effect.flip)).requiredPermission,
+        ).toBe(AuthOrchestrationOperateScope);
+        registry.set(sessions(env), AsyncResult.success(grant(false)));
+        expect(registry.get(command.permissionAtom(env))).toBe(false);
+        expect((yield* command.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+          AuthOrchestrationOperateScope,
+        );
+      }),
+    ),
+  );
+  it.effect.each([
     WS_METHODS.secondBrainAcceptProposal,
     WS_METHODS.secondBrainRejectProposal,
     WS_METHODS.secondBrainReindex,

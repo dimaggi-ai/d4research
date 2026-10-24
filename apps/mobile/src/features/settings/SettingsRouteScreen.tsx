@@ -130,7 +130,7 @@ function SettingsIndexSections() {
           />
         ) : null}
         <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />
-        <SettingsRow icon="text.bubble" label="Thread behavior" target="SettingsThreads" />
+        <SettingsRow icon="text.bubble" label="d4 Agent and threads" target="SettingsThreads" />
         <SettingsRow icon="arrow.turn.left.up" label="Follow-ups" target="SettingsFollowUp" />
         <SettingsRow icon="archivebox" label="Archived Threads" target="SettingsArchive" />
       </SettingsSection>

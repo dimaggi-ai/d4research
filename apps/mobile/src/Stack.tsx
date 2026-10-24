@@ -1,4 +1,5 @@
 import { AgentMonitorNotifications } from "./features/agent-awareness/AgentMonitorNotifications";
+import { SystemMonitorNotifications } from "./features/agent-awareness/SystemMonitorNotifications";
 import {
   NewTaskEnvironmentPickerRouteScreen,
   NewTaskBranchPickerRouteScreen,
@@ -613,6 +614,7 @@ function RootStackLayout(props: {
     <HardwareKeyboardCommandProvider pathname={pathname}>
       <ThreadOutboxDrainWorker />
       <AgentMonitorNotifications />
+      <SystemMonitorNotifications />
       <ShowcaseCaptureCoordinator pathname={pathname} />
       <ExistingThreadSettingsRouteProvider>
         <AndroidWorkspaceTabsProvider>

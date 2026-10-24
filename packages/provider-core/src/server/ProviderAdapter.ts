@@ -46,6 +46,7 @@ import type {
 } from "./selectionTransition.ts";
 
 export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
+  toolPolicy: Schema.optional(Schema.Literal("d4-agent")),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),

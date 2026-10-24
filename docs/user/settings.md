@@ -21,45 +21,61 @@ track the environment: every client connected to that same server sees the same 
 Sensitive provider environment variables stay as server secrets and never return to clients after
 saving.
 
-## Local thread monitor
+## d4 Agent
 
-In web or desktop Settings → General, select an environment and enable **Monitor
-threads**. On iPhone or iPad, use Settings → Thread behavior → Monitor. Each
-environment has one monitor configuration shared by its clients. Disable the same
-switch to stop monitoring.
+In web or desktop Settings → General, select an environment and open **d4 Agent**.
+On iPhone or iPad, use Settings → d4 Agent and threads. Settings are shared
+by clients connected to that environment.
 
-The monitor checks unarchived threads every 15 seconds. It lists attention items
-and active work, with up to 50 entries in each list. When monitoring starts, existing problems do not trigger monitor alerts, but they
-remain visible in the attention list.
-Slow activity stays quiet. A possibly stuck thread or recorded provider failure
-must persist across observations for at least 30 seconds before a monitor alert
-becomes eligible. A backward clock jump or an observation gap over 60 seconds, including a gap caused
-by sleep, restarts that confirmation period. Long-running work alone does not prove
-a provider has failed.
+Enable **Monitor threads** to see threads that need attention. The server checks
+for changes every 15 seconds and groups child-thread problems under their parent.
+Choose the stuck threshold and which classes can notify you. Long tool calls can
+exceed the threshold while still working; a stuck report is evidence to inspect,
+not proof that the provider has failed. Existing problems are visible when you
+enable monitoring, but do not generate a new alert.
 
-**Saved model** stores your chosen provider and model for the monitor. This version
-uses deterministic classification and does not invoke that model. Changing the
-selection does not switch an active run's provider or model.
+Enable **agent chat**, choose a provider and model, and use the **d4 Agent**
+entry in the sidebar or home screen to open its conversation. Ask what is running,
+what needs you, or ask it to
+read a particular thread. Model options, including reasoning effort when offered,
+come from the environment's provider catalog. The agent stays off if the selected
+model is unavailable or the provider cannot enforce its tool restrictions. The
+monitor continues to use deterministic rules regardless of the chat model. The
+monitor does not read conversation content or take recovery actions.
 
-Enable **Attention notifications** to allow monitor alerts. On web and desktop,
-monitor alerts supplement the existing completion, input, approval, failure, and
-usage-limit notifications. In-app alerts do not need OS notification permission;
-system notifications use the existing device notification settings. On iPhone or
-iPad, allow notifications when asked.
+The conversation persists as a thread. Each model turn receives a compact status
+digest; conversation content is fetched through a read tool when needed. The
+agent's Settings section shows recent provider-reported input, output, and cache
+token counts. Missing counts appear as unavailable. Cache use depends on the
+provider and the request; selecting a model does not guarantee a cache hit.
 
-Each installation has its own durable delivery claim for monitor alerts. Tabs sharing browser storage
-share that claim; a desktop alert does not consume an iPad's claim. A client claims
-only when it has an available notification path. If it closes after claiming but
-before displaying, that installation can lose the alert; the attention item stays
-visible. Monitor alerts expire after five minutes of eligibility to avoid replaying
-old alerts on reconnect. Existing device notifications keep their own preferences.
+The default permission level is **Read-only**. **Ask** queues actions for your
+approval. **Act** can interrupt a run or answer a user-input request; sending a
+message to another thread and starting a thread still require confirmation.
+Provider permission approvals remain manual. Proposed actions and their outcomes
+appear above the agent conversation. These permissions do not grant authority to
+publish, push, or run sudo.
 
-The server stores monitor status and notification claims across restarts. Clients refresh
-from the server on reconnect. Mobile alerts use reports already received by the
-app; delivery while iOS suspends the app is not guaranteed. No push service is added.
+**Heartbeat** is off by default. Choose 15, 30, or 60 minutes to let the selected
+model summarize changed attention items in the conversation. Quiet hours apply to
+these summaries and use the UTC offset saved when you enable them. Deterministic
+notifications are separate from heartbeat summaries.
 
-Monitor reports contain status codes, identifiers, and timestamps. Monitor alert text
-contains no thread titles or work content. The monitor does not read conversation
-text, alter context prefixes or compaction, retry work, interrupt runs, or perform
-public actions. Open the thread to act through its existing permission and approval
-controls.
+Enable **System probes** to check failed user services, disk usage, and server
+health. Choose the disk warning percentage. These checks run on the environment's
+host, including when agent chat is off. A check that the host cannot support shows
+**Not available**.
+
+Enable **Attention notifications** and select the classes you want. On iPhone or
+iPad, the app first requests provisional notification permission where supported;
+Settings shows the current permission state. Lock-screen messages omit thread
+titles and conversation content. Each device claims an alert separately; tabs
+that share browser storage share one claim. If a
+client closes after claiming but before displaying an alert, that device can miss
+it; the attention item remains visible. Alerts expire after five minutes of eligibility so
+reconnecting does not replay old problems. A new attention episode can alert again.
+
+The server persists monitor episodes and delivery claims across restarts. Mobile
+alerts use reports the app has received; delivery while iOS suspends the app is not
+guaranteed. No hosted push service is added. Turn off the corresponding chat,
+monitor, heartbeat, or probe setting to stop that feature.

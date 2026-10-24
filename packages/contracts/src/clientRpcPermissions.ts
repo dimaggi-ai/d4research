@@ -13,6 +13,10 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [WS_METHODS.d4AgentEnsureThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentSendMessage]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentResolveAction]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentClaimSystemAttention]: AuthOrchestrationReadScope,
   [WS_METHODS.agentMonitorClaimAttention]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsLocateFile]: AuthFilesystemReadScope,
   [WS_METHODS.secondBrainAcceptProposal]: AuthSettingsWriteScope,

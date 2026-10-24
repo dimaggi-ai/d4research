@@ -1,3 +1,4 @@
+import { D4AgentControls } from "./D4AgentControls";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerSettings } from "@d4research/contracts";
 import {
@@ -7,8 +8,9 @@ import {
   AGENT_MONITOR_LIST_LIMIT,
 } from "@d4research/client-runtime/state/agent-monitor";
 import { useLinkTo } from "@react-navigation/native";
-import { useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import * as Notifications from "expo-notifications";
+import { useEffect, useState } from "react";
+import { AppState, Modal, Pressable, View } from "react-native";
 import * as Effect from "effect/Effect";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -29,7 +31,7 @@ export function AgentMonitorSettings() {
     <View className="gap-4">
       {selectedProjectKey !== null ? (
         <Text className="px-2 text-sm text-foreground-muted">
-          Choose an environment to configure its monitor.
+          Choose an environment to configure d4 Agent.
         </Text>
       ) : (
         selectedTargets.map((target) => (
@@ -49,17 +51,45 @@ function EnvironmentMonitorSettings({
   const config = useEnvironmentServerConfig(target.environmentId);
   const linkTo = useLinkTo();
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState("Checking notification permission…");
+  useEffect(() => {
+    let active = true;
+    const readPermission = () => {
+      void Notifications.getPermissionsAsync()
+        .then((result) => {
+          if (active)
+            setPermissionState(
+              result.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+                ? "Notifications: provisional"
+                : result.granted
+                  ? "Notifications: allowed"
+                  : "Notifications: not allowed",
+            );
+        })
+        .catch(() => {
+          if (active) setPermissionState("Notification permission unavailable");
+        });
+    };
+    readPermission();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") readPermission();
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
   const allowed = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(target.environmentId),
   );
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   const monitor = target.serverConfig.settings.agentMonitor;
   if (!monitor) return null;
-  const groups = groupByProvider(
-    buildModelOptions(config, monitor.modelSelection, undefined, null),
-  );
+  const agent = target.serverConfig.settings.d4Agent;
+  const groups = groupByProvider(buildModelOptions(config, agent.modelSelection, undefined, null));
   const monitored = threads.filter(
     (thread) =>
       thread.environmentId === target.environmentId &&
@@ -74,14 +104,30 @@ function EnvironmentMonitorSettings({
   const write = async (patch: Partial<ServerSettings["agentMonitor"]>) => {
     if (saving || !allowed) return;
     setSaving(true);
-    try {
-      await updateSettings({
-        environmentId: target.environmentId,
-        input: { patch: { agentMonitor: { ...monitor, ...patch } } },
-      });
-    } finally {
-      setSaving(false);
-    }
+    setSaveError(null);
+    await updateSettings({
+      environmentId: target.environmentId,
+      input: { patch: { agentMonitor: { ...monitor, ...patch } } },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+      })
+      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .finally(() => setSaving(false));
+  };
+  const writeAgent = async (patch: Partial<ServerSettings["d4Agent"]>) => {
+    if (saving || !allowed) return;
+    setSaving(true);
+    setSaveError(null);
+    await updateSettings({
+      environmentId: target.environmentId,
+      input: { patch: { d4Agent: { ...agent, ...patch } } },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+      })
+      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .finally(() => setSaving(false));
   };
   const toggleNotifications = async (enabled: boolean) => {
     if (enabled) {
@@ -96,11 +142,21 @@ function EnvironmentMonitorSettings({
       }
     }
     setPermissionMessage(null);
+    if (enabled) {
+      const current = await Notifications.getPermissionsAsync().catch(() => null);
+      setPermissionState(
+        current?.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+          ? "Notifications: provisional"
+          : current?.granted
+            ? "Notifications: allowed"
+            : "Notifications: not allowed",
+      );
+    }
     await write({ notificationsEnabled: enabled });
   };
   return (
     <View className="gap-3">
-      <SettingsSection title={`Monitor · ${target.label}`}>
+      <SettingsSection title={`d4 Agent · ${target.label}`}>
         <SettingsSwitchRow
           icon="bolt.circle"
           label="Monitor threads"
@@ -108,23 +164,30 @@ function EnvironmentMonitorSettings({
           disabled={!allowed || saving}
           onValueChange={(enabled) => void write({ enabled })}
         />
+        <SettingsSwitchRow
+          icon="bubble.left"
+          label="Enable agent chat"
+          value={agent.enabled}
+          disabled={!allowed || saving}
+          onValueChange={(enabled) => void writeAgent({ enabled })}
+        />
         <SettingsRow
           icon="gearshape"
-          label="Saved model"
+          label="Agent model"
           value={
-            monitor.modelSelection
-              ? `${monitor.modelSelection.instanceId} · ${monitor.modelSelection.model}`
+            agent.modelSelection
+              ? `${agent.modelSelection.instanceId} · ${agent.modelSelection.model}`
               : "Choose model"
           }
           disabled={!allowed || saving}
           onPress={() => setPickerOpen(true)}
         />
-        {monitor.modelSelection ? (
+        {agent.modelSelection ? (
           <SettingsRow
             icon="xmark"
-            label="Clear saved model"
+            label="Clear agent model"
             disabled={!allowed || saving}
-            onPress={() => void write({ modelSelection: null })}
+            onPress={() => void writeAgent({ modelSelection: null })}
           />
         ) : null}
         <SettingsSwitchRow
@@ -136,9 +199,24 @@ function EnvironmentMonitorSettings({
         />
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Classifies thread activity locally. No model calls or automatic recovery actions. The saved
-        model does not change running threads.
+        Thread monitoring uses local rules. Agent chat uses the selected model. Unavailable models
+        keep the agent off.
       </Text>
+      <D4AgentControls
+        environmentId={target.environmentId}
+        agent={agent}
+        monitor={monitor}
+        config={config}
+        disabled={!allowed || saving}
+        writeAgent={writeAgent}
+        writeMonitor={write}
+      />
+      <Text className="px-2 text-sm text-foreground-muted">{permissionState}</Text>
+      {saveError ? (
+        <Text accessibilityRole="alert" className="px-2 text-sm text-foreground-muted">
+          {saveError}
+        </Text>
+      ) : null}
       {permissionMessage ? (
         <Text accessibilityRole="alert" className="px-2 text-sm text-foreground-muted">
           {permissionMessage}
@@ -192,7 +270,7 @@ function EnvironmentMonitorSettings({
       >
         <View className="flex-1 bg-background pt-6">
           <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">Saved monitor model</Text>
+            <Text className="text-lg font-t3-semibold text-foreground">d4 Agent model</Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => setPickerOpen(false)}
@@ -210,11 +288,11 @@ function EnvironmentMonitorSettings({
                     key={option.key}
                     option={option}
                     selected={
-                      option.selection.instanceId === monitor.modelSelection?.instanceId &&
-                      option.selection.model === monitor.modelSelection.model
+                      option.selection.instanceId === agent.modelSelection?.instanceId &&
+                      option.selection.model === agent.modelSelection.model
                     }
                     onPress={() => {
-                      void write({ modelSelection: option.selection });
+                      void writeAgent({ modelSelection: option.selection });
                       setPickerOpen(false);
                     }}
                     isFavorite={false}

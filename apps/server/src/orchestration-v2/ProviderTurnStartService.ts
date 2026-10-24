@@ -1,3 +1,4 @@
+import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 import * as HandoffMemory from "../handoffMemory.ts";
 import { FetchHttpClient } from "effect/http";
@@ -153,6 +154,7 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const providerRegistry = yield* ProviderRegistry;
+    const d4AgentContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
     const researchServices = yield* Effect.context<
       InlineDelegationRunner | OrchestrationEventStore
     >();
@@ -321,6 +323,9 @@ export const layer: Layer.Layer<
           cause: `Run ${runId} is missing its execution projection state.`,
         });
       }
+      const d4AgentPrefix = Option.isSome(d4AgentContext)
+        ? yield* d4AgentContext.value.prepare(projection.thread.id, run.modelSelection)
+        : null;
       const settleRunBeforeStart = Effect.fn("orchestrationV2.providerTurnStart.settleBeforeStart")(
         function* (input: {
           readonly signal: string;
@@ -416,7 +421,8 @@ export const layer: Layer.Layer<
             .map((item) => item.ordinal),
         ) + 1;
       if (
-        yield* tryRunInlineResearchTurn({
+        d4AgentPrefix === null &&
+        (yield* tryRunInlineResearchTurn({
           run,
           attempt,
           rootNode,
@@ -430,7 +436,7 @@ export const layer: Layer.Layer<
           Effect.provideContext(researchServices),
           Effect.provideService(EventSink.EventSinkV2, eventSink),
           Effect.provideService(IdAllocator.IdAllocatorV2, idAllocator),
-        )
+        ))
       )
         return;
       const acceptedPrompt = extractTrailingEnabledSkillsContext(message.text).promptText;
@@ -438,11 +444,13 @@ export const layer: Layer.Layer<
         ? acceptedPrompt.slice("Ultrathink:\n".length)
         : acceptedPrompt;
       const pipelineKind =
-        parseDevTrigger(pipelinePrompt) !== null
-          ? "development"
-          : parseResearchTrigger(pipelinePrompt) !== null
-            ? "research"
-            : null;
+        d4AgentPrefix !== null
+          ? null
+          : parseDevTrigger(pipelinePrompt) !== null
+            ? "development"
+            : parseResearchTrigger(pipelinePrompt) !== null
+              ? "research"
+              : null;
       const selectedProvider = providers.find(
         (provider) => provider.instanceId === run.providerInstanceId,
       );
@@ -469,12 +477,15 @@ export const layer: Layer.Layer<
         return;
       }
       const researchCandidates = deriveResearchProviderCandidatesFromProviders(providers);
-      const manifest = buildResearchRunManifest(
-        pipelinePrompt,
-        settings.research,
-        researchCandidates,
-        settings.pipelineTargetPolicy,
-      );
+      const manifest =
+        d4AgentPrefix !== null
+          ? null
+          : buildResearchRunManifest(
+              pipelinePrompt,
+              settings.research,
+              researchCandidates,
+              settings.pipelineTargetPolicy,
+            );
       if (manifest !== null) {
         const now = yield* DateTime.now;
         const written = yield* eventSink.writeIfRunCurrent({
@@ -518,21 +529,28 @@ export const layer: Layer.Layer<
         });
         if (!written.committed) return;
       }
-      const providerMessageText = withPersistedSkillsContext(
-        expandProviderResearchMessage(
-          expandProviderDevMessage(
-            acceptedPrompt,
-            settings.dev,
-            deriveDevProviderCandidates(providers),
-            settings.pipelineTargetPolicy,
-          ),
-          settings.research,
-          researchCandidates,
-          settings.pipelineTargetPolicy,
-        ),
-        message.text,
-      );
-      if (message.attachments.length === 0 && acceptedPrompt.trimStart().startsWith("/")) {
+      const providerMessageText =
+        d4AgentPrefix !== null
+          ? message.text
+          : withPersistedSkillsContext(
+              expandProviderResearchMessage(
+                expandProviderDevMessage(
+                  acceptedPrompt,
+                  settings.dev,
+                  deriveDevProviderCandidates(providers),
+                  settings.pipelineTargetPolicy,
+                ),
+                settings.research,
+                researchCandidates,
+                settings.pipelineTargetPolicy,
+              ),
+              message.text,
+            );
+      if (
+        d4AgentPrefix === null &&
+        message.attachments.length === 0 &&
+        acceptedPrompt.trimStart().startsWith("/")
+      ) {
         const isEmptyCompaction =
           acceptedPrompt.trim().toLowerCase() === "/compact" && !projection.hasConversation;
         // Preparing a run may already point the thread at a newly selected
@@ -679,10 +697,21 @@ export const layer: Layer.Layer<
       });
       const { isCurrentAttemptInStatus } = runControls;
 
-      const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
+      const baseRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,
       });
+      const resolvedRuntimePolicy =
+        d4AgentPrefix === null
+          ? baseRuntimePolicy
+          : {
+              ...baseRuntimePolicy,
+              runtimeMode: "approval-required" as const,
+              interactionMode: "default" as const,
+              toolPolicy: "d4-agent" as const,
+              approvalPolicy: "never",
+              sandboxPolicy: { type: "readOnly", networkAccess: false },
+            };
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );
@@ -1155,7 +1184,11 @@ export const layer: Layer.Layer<
       const attachedHandoff = extractTrailingProviderHandoffContext(
         extractTrailingEnabledSkillsContext(userText).promptText,
       ).handoff;
-      if (settings.handoff.memoryBackend === "meko" && attachedHandoff !== null)
+      if (
+        d4AgentPrefix === null &&
+        settings.handoff.memoryBackend === "meko" &&
+        attachedHandoff !== null
+      )
         yield* saveHandoff(attachedHandoff.summary);
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
@@ -1301,6 +1334,7 @@ export const layer: Layer.Layer<
           sameNativeThread &&
           !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
       const brainContext =
+        d4AgentPrefix !== null ||
         !settings.secondBrain.path ||
         !settings.secondBrain.injection.enabled ||
         message.text.trimStart().startsWith("/")
@@ -1353,7 +1387,11 @@ export const layer: Layer.Layer<
                     createdAt: yield* DateTime.now,
                   }),
                 ];
-          const compression = settings.handoff.contextCompression;
+          const compression =
+            d4AgentPrefix === null
+              ? settings.handoff.contextCompression
+              : { ...settings.handoff.contextCompression, mode: "bounded" as const };
+          compact = compact && d4AgentPrefix === null;
           let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
           if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
             // Preparation is pure and bounded. Recover intact covered items here,
@@ -1363,7 +1401,11 @@ export const layer: Layer.Layer<
               restoreHandoffHistory(handoff, history, projection.runs),
             );
           }
-          if (settings.handoff.memoryBackend === "meko" && deliveryHandoffs.length > 0) {
+          if (
+            d4AgentPrefix === null &&
+            settings.handoff.memoryBackend === "meko" &&
+            deliveryHandoffs.length > 0
+          ) {
             yield* saveHandoff(
               deliveryHandoffs
                 .map((handoff) => handoff.summaryText)
@@ -1448,7 +1490,12 @@ export const layer: Layer.Layer<
             ...(noteContinuation ? promptedInput : turnInput),
             message: {
               ...turnInput.message,
-              text: context === "" ? userText : `${context}\n\nUser message:\n${userText}`,
+              text:
+                d4AgentPrefix !== null
+                  ? `${d4AgentPrefix}\n\n${context === "" ? "" : `${context}\n\n`}User message:\n${userText}`
+                  : context === ""
+                    ? userText
+                    : `${context}\n\nUser message:\n${userText}`,
             },
           }).pipe(
             // A pending marker would make the next turn abandon this native
@@ -1496,6 +1543,7 @@ export const layer: Layer.Layer<
           ),
         );
       const deliverySession =
+        d4AgentPrefix === null &&
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
         restartNote === "" &&

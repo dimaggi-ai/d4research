@@ -1,3 +1,7 @@
+import * as D4Agent from "./d4Agent/D4Agent.ts";
+import * as D4AgentContext from "./d4Agent/D4AgentContext.ts";
+import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
+import * as D4AgentSystemProbe from "./d4Agent/SystemProbe.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as HandoffMemory from "./handoffMemory.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
@@ -483,9 +487,12 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   ),
 );
 
+const layerD4AgentContext = D4AgentContext.layer.pipe(Layer.provide(AgentMonitorReactor.layer));
+
 const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
   Layer.provideMerge(layerCheckpointStore),
   Layer.provideMerge(layerOrchestrationV2Runtime),
+  Layer.provideMerge(layerD4AgentContext),
 );
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
@@ -544,6 +551,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       Layer.mergeAll(ProjectionStoreV2.layer, IdAllocatorV2.layer, RuntimeLayer.layerEventSink),
     ),
   ),
+  Layer.effectDiscard(D4Agent.D4Agent.use((service) => service.start())),
   layerThreadSettlementWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(
@@ -593,6 +601,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   .pipe(
     Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
     Layer.provideMerge(layerSecondBrain),
+    Layer.provideMerge(D4Agent.layer.pipe(Layer.provide(D4AgentSystemProbe.layer))),
     Layer.provideMerge(AgentMonitorReactor.layer),
     Layer.provideMerge(layerOrchestrationApplication),
     Layer.provideMerge(HandoffMemory.layer),
@@ -607,6 +616,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
   )
   .pipe(
+    Layer.provideMerge(D4AgentStore.layer),
     Layer.provideMerge(layerServerSettings),
     Layer.provideMerge(layerSourceControlProviderRegistry),
     Layer.provideMerge(layerGit),

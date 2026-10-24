@@ -962,9 +962,42 @@ export function createServerEnvironmentAtoms<R, E>(
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });
+  const d4AgentState = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:server:d4-agent-state",
+    tag: WS_METHODS.d4AgentGetState,
+    staleTimeMs: 5_000,
+    refreshIntervalMs: 15_000,
+    idleTtlMs: 0,
+    refreshTrigger: ({ environmentId }) => settingsValueAtom(environmentId),
+  });
 
   return {
     configValueAtom,
+    d4AgentState,
+    claimD4AgentSystemAttention: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:claim-d4-agent-system-attention",
+      tag: WS_METHODS.d4AgentClaimSystemAttention,
+    }),
+    ensureD4AgentThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:ensure-d4-agent-thread",
+      tag: WS_METHODS.d4AgentEnsureThread,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
+    }),
+    sendD4AgentMessage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:send-d4-agent-message",
+      tag: WS_METHODS.d4AgentSendMessage,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
+    }),
+    resolveD4AgentAction: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:resolve-d4-agent-action",
+      tag: WS_METHODS.d4AgentResolveAction,
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
+    }),
     claimMonitorAttention: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:claim-monitor-attention",
       tag: WS_METHODS.agentMonitorClaimAttention,

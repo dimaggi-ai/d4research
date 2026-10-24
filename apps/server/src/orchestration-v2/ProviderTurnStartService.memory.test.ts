@@ -52,3 +52,32 @@ it.each(["brain", "brain-error", "brain-slash", "brain-compact", "brain-disabled
     else if (mode === "brain-slash") expect(result.sent).toEqual(Array(4).fill("/help"));
   },
 );
+
+it.each(["owned", "owned-handoff"])(
+  "owned delivery excludes external context for %s",
+  async (mode) => {
+    const root = NodeURL.fileURLToPath(new URL("../../../../", import.meta.url));
+    const fixture = NodeURL.fileURLToPath(
+      new URL("./testkit/ProviderTurnStartMemory.fixture.mjs", import.meta.url),
+    );
+    const { stdout } = await execFile(process.execPath, ["--expose-gc", fixture, root, mode], {
+      timeout: 30000,
+    });
+    const result = JSON.parse(stdout.trim().split("\n").at(-1)!) as {
+      brainCalls: number;
+      receipts: number;
+      outboundCalls: number;
+      sent: string[];
+    };
+    expect(result.brainCalls).toBe(0);
+    expect(result.receipts).toBe(0);
+    expect(result.outboundCalls).toBe(0);
+    expect(result.sent).toHaveLength(4);
+    for (const text of result.sent) {
+      expect(text.startsWith("Fixed owned agent prefix")).toBe(true);
+      expect(text.endsWith("User message:\nContinue")).toBe(true);
+      expect(text.includes("Synthetic summary")).toBe(mode === "owned-handoff");
+      expect(text.split("Synthetic summary")).toHaveLength(mode === "owned-handoff" ? 2 : 1);
+    }
+  },
+);

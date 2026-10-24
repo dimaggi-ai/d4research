@@ -1,0 +1,99 @@
+import {
+  D4AgentActionRecord,
+  D4AgentError,
+  D4AgentTurnUsage,
+  D4AgentSystemCheck,
+  ProjectId,
+  ThreadId,
+} from "@d4research/contracts";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as ServerConfig from "../config.ts";
+
+export const StoredState = Schema.Struct({
+  threadId: Schema.NullOr(ThreadId),
+  projectId: Schema.NullOr(ProjectId),
+  actions: Schema.Array(D4AgentActionRecord),
+  usage: Schema.Array(D4AgentTurnUsage),
+  usageCursor: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  systemEpisodes: Schema.Array(
+    Schema.Struct({ check: D4AgentSystemCheck, since: Schema.Number, baseline: Schema.Boolean }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  systemClaims: Schema.Array(
+    Schema.Struct({ reportKey: Schema.String, clientId: Schema.String, at: Schema.Number }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  heartbeatAt: Schema.Number,
+  heartbeatKeys: Schema.Array(Schema.String),
+});
+export type StoredState = typeof StoredState.Type;
+const encodeState = Schema.encodeEffect(Schema.fromJsonString(StoredState));
+const empty: StoredState = {
+  threadId: null,
+  projectId: null,
+  actions: [],
+  usage: [],
+  usageCursor: "",
+  heartbeatAt: 0,
+  heartbeatKeys: [],
+  systemEpisodes: [],
+  systemClaims: [],
+};
+export class D4AgentStore extends Context.Service<
+  D4AgentStore,
+  {
+    readonly workspace: string;
+    readonly get: Effect.Effect<StoredState>;
+    readonly update: (
+      change: (state: StoredState) => StoredState,
+    ) => Effect.Effect<StoredState, D4AgentError>;
+  }
+>()("d4research/d4Agent/D4AgentStore") {}
+
+export const layer = Layer.effect(
+  D4AgentStore,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const directory = path.join(config.stateDir, "d4-agent");
+    const statePath = path.join(directory, "state.json");
+    const lock = yield* Semaphore.make(1);
+    const initial = yield* fs.readFileString(statePath).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(StoredState))),
+      Effect.catch((cause) =>
+        cause._tag === "PlatformError" && cause.reason._tag === "NotFound"
+          ? Effect.succeed(empty)
+          : Effect.fail(new D4AgentError({ reason: "storage", cause })),
+      ),
+    );
+    const state = yield* Ref.make<StoredState>({
+      ...initial,
+      actions: initial.actions.map((action) =>
+        action.status === "approved" ? { ...action, status: "pending" } : action,
+      ),
+    });
+    return D4AgentStore.of({
+      workspace: path.join(directory, "workspace"),
+      get: Ref.get(state),
+      update: (change) =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            const next = change(yield* Ref.get(state));
+            yield* fs.makeDirectory(directory, { recursive: true });
+            yield* fs.writeFileString(`${statePath}.tmp`, yield* encodeState(next), {
+              mode: 0o600,
+            });
+            yield* fs.rename(`${statePath}.tmp`, statePath);
+            yield* Ref.set(state, next);
+            return next;
+          }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause }))),
+        ),
+    });
+  }),
+);

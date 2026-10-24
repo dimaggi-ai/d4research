@@ -23,6 +23,7 @@ import {
   resolveAppModelSelectionState,
 } from "../../modelSelection";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { D4AgentControls } from "./D4AgentControls";
 import { Switch } from "../ui/switch";
 import { Button } from "../ui/button";
 import { SettingsRow, SettingsSection, SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
@@ -35,9 +36,9 @@ export function AgentMonitorSettings() {
   return scope.kind === "environment" && environment?.serverConfig ? (
     <AgentMonitorForm key={environment.environmentId} />
   ) : (
-    <SettingsSection title="Monitor">
+    <SettingsSection title="d4 Agent">
       <SettingsScopeNotice target="environment">
-        Choose one environment to configure its monitor.
+        Choose one environment to configure d4 Agent.
       </SettingsScopeNotice>
     </SettingsSection>
   );
@@ -48,6 +49,7 @@ function AgentMonitorForm() {
   const providersByEnvironment = useEnvironmentProviders();
   const threads = useThreadShells();
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const environmentId = environment?.environmentId ?? null;
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
@@ -56,14 +58,13 @@ function AgentMonitorForm() {
   const monitor = settings.agentMonitor;
   if (!monitor)
     return (
-      <SettingsSection title="Monitor">
-        <p className="text-sm text-muted-foreground">
-          This environment does not support the monitor.
-        </p>
+      <SettingsSection title="d4 Agent">
+        <p className="text-sm text-muted-foreground">This environment does not support d4 Agent.</p>
       </SettingsSection>
     );
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
-  const selection = monitor.modelSelection ?? resolveAppModelSelectionState(settings, providers);
+  const agent = settings.d4Agent;
+  const selection = agent.modelSelection ?? resolveAppModelSelectionState(settings, providers);
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
   );
@@ -87,21 +88,39 @@ function AgentMonitorForm() {
   const write = async (patch: Partial<ServerSettings["agentMonitor"]>) => {
     if (!allowed || saving) return;
     setSaving(true);
-    try {
-      await updateSettings({
-        environmentId,
-        input: { patch: { agentMonitor: { ...monitor, ...patch } } },
-      });
-    } finally {
-      setSaving(false);
-    }
+    setSaveError(null);
+    await updateSettings({
+      environmentId,
+      input: { patch: { agentMonitor: { ...monitor, ...patch } } },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+      })
+      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .finally(() => setSaving(false));
   };
-  const saveModel = (modelSelection: ModelSelection | null) => void write({ modelSelection });
+  const writeAgent = async (patch: Partial<ServerSettings["d4Agent"]>) => {
+    if (!allowed || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    await updateSettings({ environmentId, input: { patch: { d4Agent: { ...agent, ...patch } } } })
+      .then((result) => {
+        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+      })
+      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .finally(() => setSaving(false));
+  };
+  const saveModel = (modelSelection: ModelSelection | null) => void writeAgent({ modelSelection });
   return (
-    <SettingsSection title="Monitor" id="agent-monitor">
+    <SettingsSection title="d4 Agent" id="agent-monitor">
+      {saveError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {saveError}
+        </p>
+      ) : null}
       <SettingsRow
         title="Monitor threads"
-        description="Classifies thread activity locally. No model calls or automatic recovery actions."
+        description="Classifies thread activity locally without model calls."
         control={
           <Switch
             aria-label="Monitor threads"
@@ -112,8 +131,20 @@ function AgentMonitorForm() {
         }
       />
       <SettingsRow
-        title="Saved model"
-        description="Stores a provider and model for this environment. The monitor uses deterministic rules; this selection does not start a model or change running threads."
+        title="Enable agent chat"
+        description="Chat with the agent about threads and host health."
+        control={
+          <Switch
+            aria-label="Enable d4 Agent"
+            checked={agent.enabled}
+            disabled={!allowed || saving}
+            onCheckedChange={(enabled) => void writeAgent({ enabled: Boolean(enabled) })}
+          />
+        }
+      />
+      <SettingsRow
+        title="Agent model"
+        description="Uses the live provider catalog. An unavailable model keeps the agent off."
         control={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <ProviderModelPicker
@@ -124,14 +155,14 @@ function AgentMonitorForm() {
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-              triggerAriaLabel="Saved monitor model"
-              {...(monitor.modelSelection ? {} : { triggerLabel: "Choose model" })}
+              triggerAriaLabel="d4 Agent model"
+              {...(agent.modelSelection ? {} : { triggerLabel: "Choose model" })}
               disabled={!allowed || saving}
               onInstanceModelChange={(instanceId, model) =>
                 saveModel(createModelSelection(instanceId, model))
               }
             />
-            {monitor.modelSelection ? (
+            {agent.modelSelection ? (
               <Button
                 size="sm"
                 variant="ghost"
@@ -155,6 +186,14 @@ function AgentMonitorForm() {
             onCheckedChange={(enabled) => void write({ notificationsEnabled: Boolean(enabled) })}
           />
         }
+      />
+      <D4AgentControls
+        agent={agent}
+        monitor={monitor}
+        disabled={!allowed || saving}
+        writeAgent={writeAgent}
+        writeMonitor={write}
+        environmentId={environmentId}
       />
       {monitor.enabled ? (
         <div className="space-y-2 py-3">

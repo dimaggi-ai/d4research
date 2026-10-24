@@ -1,3 +1,7 @@
+import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
+import { isAllowedAgentMcpRequest } from "../d4Agent/policy.ts";
+import { D4AgentToolkit } from "./toolkits/d4Agent/tools.ts";
+import * as D4AgentHandlers from "./toolkits/d4Agent/handlers.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -152,6 +156,7 @@ const looksLikeProviderToken = (token: string) => token.length > 0 && !token.inc
 const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
+  const d4AgentContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
   return Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const authorization = request.headers.authorization;
@@ -173,6 +178,16 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         presentedToken: token.length > 0,
         offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
       });
+    }
+    if (
+      Option.isSome(d4AgentContext) &&
+      invocation.thread !== undefined &&
+      (yield* d4AgentContext.value.owns(invocation.thread.threadId)) &&
+      request.method === "POST"
+    ) {
+      const payload = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null)));
+      if (!isAllowedAgentMcpRequest(payload))
+        return HttpServerResponse.jsonUnsafe({ error: "d4_agent_tool_denied" }, { status: 403 });
     }
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
@@ -879,6 +894,7 @@ export const layer = Layer.mergeAll(
   BrainToolkitRegistrationLive,
   SkillsToolkitRegistrationLive,
   ResearchToolkitRegistrationLive,
+  toolkitRegistration(D4AgentToolkit, D4AgentHandlers.layer),
   PipelinesToolkitRegistrationLive,
   layerOrchestratorToolkit,
   layerThreadToolkit,

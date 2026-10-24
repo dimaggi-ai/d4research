@@ -80,6 +80,7 @@ export function threadDeepLinkOnScreen(pathname: string): string | null {
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;
+  if (deepLink === "/settings/thread-preferences") return deepLink;
   if (typeof deepLink === "string") {
     const normalizedDeepLink = normalizeThreadDeepLink(deepLink);
     if (normalizedDeepLink) {

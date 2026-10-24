@@ -1,3 +1,4 @@
+import { D4_AGENT_PREFIX } from "../../d4Agent/policy.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
@@ -722,7 +723,12 @@ export const layerQueryRunner: Layer.Layer<
         input: ClaudeAgentSdkQueryOpenInput,
       ) {
         const protocolLogger = makeClaudeAgentSdkProtocolLogger({
-          nativeEventLogger,
+          nativeEventLogger:
+            input.options.strictMcpConfig &&
+            Array.isArray(input.options.tools) &&
+            input.options.tools.length === 0
+              ? undefined
+              : nativeEventLogger,
           threadId: input.threadId,
           providerSessionId: input.providerSessionId,
         });
@@ -1071,6 +1077,7 @@ export function makeClaudeQueryOptions(input: {
   readonly tools?: ClaudeAgentSdkQueryTools;
   readonly allowedTools?: ReadonlyArray<string>;
   readonly disallowedTools?: ReadonlyArray<string>;
+  readonly d4AgentOnly?: boolean;
   readonly permissionMode?: PermissionMode;
   readonly canUseTool?: CanUseTool;
   readonly hooks?: ClaudeQueryOptions["hooks"];
@@ -1098,8 +1105,9 @@ export function makeClaudeQueryOptions(input: {
     Object.keys(compiledSelection.settings).length === 0
       ? undefined
       : (compiledSelection.settings as ClaudeSdkSettings);
-  const querySettings =
-    selectionSettings === undefined
+  const querySettings = input.d4AgentOnly
+    ? selectionSettings
+    : selectionSettings === undefined
       ? input.sdkSettings
       : typeof input.sdkSettings === "object" && input.sdkSettings !== null
         ? ({ ...input.sdkSettings, ...selectionSettings } as ClaudeSdkSettings)
@@ -1113,8 +1121,10 @@ export function makeClaudeQueryOptions(input: {
         } as ClaudeSdkSettings);
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
-    tools: claudeAgentSdkQueryToolsForSdk(selectedTools),
+    tools: input.d4AgentOnly ? [] : claudeAgentSdkQueryToolsForSdk(selectedTools),
+    ...(input.d4AgentOnly ? { strictMcpConfig: true, settingSources: [] } : {}),
     permissionMode:
+      (input.d4AgentOnly ? "dontAsk" : undefined) ??
       (launchArgPermissionMode as PermissionMode | null | undefined) ??
       (launchArgSkipPermissions === null || launchArgSkipPermissions === "true"
         ? "bypassPermissions"
@@ -1131,7 +1141,7 @@ export function makeClaudeQueryOptions(input: {
     ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
     ...(input.hooks === undefined ? {} : { hooks: input.hooks }),
-    ...(input.allowDangerouslySkipPermissions === true
+    ...(!input.d4AgentOnly && input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
       : {}),
     ...(requestThinkingSummaries
@@ -1157,14 +1167,16 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
-    systemPrompt: {
-      type: "preset" as const,
-      preset: "claude_code" as const,
-      append:
-        buildRuntimeInstructions({ harness: "Claude Code" }) +
-        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
-    },
-    ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
+    systemPrompt: input.d4AgentOnly
+      ? D4_AGENT_PREFIX
+      : {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+          append:
+            buildRuntimeInstructions({ harness: "Claude Code" }) +
+            (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
+        },
+    ...(input.d4AgentOnly || Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
   const additionalDirectories = [
     ...(input.cwd === null ? [] : [input.cwd]),
@@ -1217,6 +1229,7 @@ export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 export function claudeMcpQueryOverrides(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
+  readonly d4AgentOnly?: boolean;
   readonly allowedTools?: ReadonlyArray<string>;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
@@ -1226,9 +1239,13 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-    : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const mcpAllowedTools = input.d4AgentOnly
+    ? ["d4_agent_list", "d4_agent_read_tail", "d4_agent_system_health", "d4_agent_action"].map(
+        (name) => `mcp__t3-code__${name}`,
+      )
+    : input.readOnlySandbox
+      ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
+      : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
@@ -8079,6 +8096,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             mcpSession: yield* mcpSessions.read(turnInput.threadId),
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
+            d4AgentOnly: turnInput.runtimePolicy.toolPolicy === "d4-agent",
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
@@ -8177,6 +8195,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               adapterOptions.environment,
               turnInput.runtimePolicy.runtimeMode,
             ),
+            d4AgentOnly: turnInput.runtimePolicy.toolPolicy === "d4-agent",
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...(mcpOverrides.allowedTools === undefined
               ? {}

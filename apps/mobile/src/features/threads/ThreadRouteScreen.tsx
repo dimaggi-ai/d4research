@@ -1,3 +1,4 @@
+import { D4AgentPanel } from "../agent-awareness/D4Agent";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
@@ -967,6 +968,7 @@ function ThreadRouteContent(
       />
 
       <ThreadPane>
+        <D4AgentPanel environmentId={selectedThread.environmentId} threadId={selectedThread.id} />
         <ThreadDetailScreen
           canOperateThread={canOperateThread}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}

@@ -52,6 +52,7 @@ import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLa
 import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythingRun";
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
+import { SystemMonitorNotifications } from "../components/agent/SystemMonitorNotifications";
 import { ProjectSlotShortcuts } from "../components/ProjectSlotShortcuts";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
@@ -252,6 +253,7 @@ function RootRouteView() {
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
+          <SystemMonitorNotifications />
           <ReopenClosedViewShortcut />
           <ProjectSlotShortcuts />
           <ConfirmDialogHost />

@@ -53,7 +53,10 @@ export const requestAgentNotificationPermission: Effect.Effect<
     try: () => Notifications.getPermissionsAsync(),
     catch: (cause) => new NotificationPermissionReadError({ cause }),
   });
-  if (existing.granted) {
+  if (
+    existing.granted ||
+    existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  ) {
     return { type: "granted" };
   }
 
@@ -65,6 +68,7 @@ export const requestAgentNotificationPermission: Effect.Effect<
     try: () =>
       Notifications.requestPermissionsAsync({
         ios: {
+          allowProvisional: true,
           allowAlert: true,
           allowBadge: true,
           allowSound: true,
@@ -72,7 +76,8 @@ export const requestAgentNotificationPermission: Effect.Effect<
       }),
     catch: (cause) => new NotificationPermissionRequestError({ cause }),
   });
-  return requested.granted
+  return requested.granted ||
+    requested.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
     ? { type: "granted" }
     : { type: "denied", canAskAgain: requested.canAskAgain };
 });

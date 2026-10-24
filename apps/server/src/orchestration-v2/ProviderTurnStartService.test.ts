@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
+  D4AgentError,
   CheckpointScopeId,
   MessageId,
   NodeId,
@@ -30,6 +31,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -291,6 +293,7 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
+  readonly d4AgentPrepare?: D4AgentContext.D4AgentContext["Service"]["prepare"];
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
   const threadId = ThreadId.make("thread-native-account-command");
@@ -623,6 +626,14 @@ function makeLocalCommandHarness(input: {
     }),
   );
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(
+      input.d4AgentPrepare === undefined
+        ? Layer.empty
+        : Layer.succeed(D4AgentContext.D4AgentContext, {
+            prepare: input.d4AgentPrepare,
+            owns: () => Effect.succeed(true),
+          }),
+    ),
     Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
@@ -1160,3 +1171,43 @@ for (const previousMessages of [[], ["/compact", " /COMPACT "]]) {
   );
 }
 import { researchTurnDependenciesTestLayer } from "./ProviderTurnStartService.testkit.ts";
+
+for (const text of [
+  "!codex:gpt-6-luna task",
+  "/logout",
+  "/compact",
+  "!research investigate",
+  "!dev implement",
+]) {
+  effectIt.effect(`owned agent treats ${text} as a literal native prompt`, () =>
+    Effect.gen(function* () {
+      const prepare = vi.fn(() => Effect.succeed("owned prefix"));
+      const harness = makeLocalCommandHarness({
+        text,
+        d4AgentPrepare: prepare,
+        openFailure: "test native boundary",
+      });
+      yield* harness.start;
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(harness.open).toHaveBeenCalledOnce();
+      expect(harness.tryHandlePromptCommand).not.toHaveBeenCalled();
+      expect(harness.open.mock.calls[0]).toMatchObject([
+        { runtimePolicy: { toolPolicy: "d4-agent", approvalPolicy: "never" } },
+      ]);
+    }),
+  );
+}
+effectIt.effect(
+  "owned agent rejects a model mismatch before inline delegation or native work",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "!codex:gpt-6-luna task",
+        d4AgentPrepare: () => Effect.fail(new D4AgentError({ reason: "model-unavailable" })),
+      });
+      const result = yield* Effect.result(harness.start);
+      expect(result._tag).toBe("Failure");
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.tryHandlePromptCommand).not.toHaveBeenCalled();
+    }),
+);

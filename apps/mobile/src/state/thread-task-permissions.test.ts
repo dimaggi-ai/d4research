@@ -15,6 +15,11 @@ const state = vi.hoisted(() => ({
   answer: vi.fn(),
   feedback: vi.fn(),
   updateSettings: vi.fn(),
+  agentEnabled: false,
+  agentThreadId: null as string | null,
+  sendAgent: vi.fn(async () =>
+    AsyncResult.success({ threadId: "thread", projectId: "agent-project" }),
+  ),
   question: {
     id: "language",
     header: "Language",
@@ -71,6 +76,7 @@ vi.mock("./use-thread-selection", () => ({
     selectedEnvironmentRuntime: {
       connectionState: state.connectionState,
       serverConfig: {
+        settings: { d4Agent: { enabled: state.agentEnabled } },
         providers: [{ instanceId: "codex", driver: "codex" }],
         environment: { capabilities: {} },
       },
@@ -83,6 +89,20 @@ vi.mock("./use-thread-detail", () => ({
   useSelectedThreadPendingRequests: () => state.pendingRequests,
 }));
 vi.mock("./use-atom-command", () => ({ useAtomCommand: <A>(command: A) => command }));
+vi.mock("./server", async () => {
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  return {
+    serverEnvironment: {
+      sendD4AgentMessage: state.sendAgent,
+      d4AgentState: () =>
+        Atom.make(
+          state.agentThreadId === null
+            ? AsyncResult.initial()
+            : AsyncResult.success({ threadId: state.agentThreadId }),
+        ),
+    },
+  };
+});
 vi.mock("./threads", async () => {
   const { Atom } = await import("effect/reactivity");
   return {
@@ -149,6 +169,8 @@ import { useThreadComposerState } from "./use-thread-composer-state";
 import { useSelectedThreadRequests } from "./use-selected-thread-requests";
 
 beforeEach(() => {
+  state.agentEnabled = false;
+  state.agentThreadId = null;
   state.grantedEnvironments = new Set(["primary"]);
   state.connectionState = "connected";
   state.draft = { text: "Keep my draft", attachments: [] };
@@ -170,6 +192,28 @@ beforeEach(() => {
 });
 
 describe("mobile task permissions", () => {
+  it("sends ordinary messages while the optional agent state is unavailable", async () => {
+    state.grantedEnvironments.add("secondary");
+    state.agentEnabled = true;
+    expect(await useThreadComposerState().onSendMessage()).toBe("message");
+    expect(state.enqueue).toHaveBeenCalledOnce();
+    expect(state.sendAgent).not.toHaveBeenCalled();
+  });
+
+  it("routes the agent conversation through its service and rechecks the user's grant", async () => {
+    state.agentEnabled = true;
+    state.agentThreadId = "thread";
+    expect(await useThreadComposerState().onSendMessage()).toBeNull();
+    expect(state.sendAgent).not.toHaveBeenCalled();
+    state.grantedEnvironments.add("secondary");
+    await useThreadComposerState().onSendMessage();
+    expect(state.sendAgent).toHaveBeenCalledWith({
+      environmentId: "secondary",
+      input: { text: "Keep my draft" },
+    });
+    expect(state.enqueue).not.toHaveBeenCalled();
+    expect(state.clearDraft).toHaveBeenCalledOnce();
+  });
   it("keeps a connected read-only task's draft instead of queueing it with another environment's grant", async () => {
     const composer = useThreadComposerState();
     expect(await composer.onSendMessage()).toBeNull();

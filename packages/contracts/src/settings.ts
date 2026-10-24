@@ -1,3 +1,4 @@
+import { D4AgentSettings, DEFAULT_D4_AGENT_SETTINGS } from "./d4Agent.ts";
 import { AgentMonitorSettings } from "./agentMonitor.ts";
 import { SshDeviceHostConfigs } from "./device.ts";
 import {
@@ -1773,6 +1774,9 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  d4Agent: D4AgentSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_D4_AGENT_SETTINGS)),
+  ),
   agentMonitor: AgentMonitorSettings.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({ enabled: false, modelSelection: null, notificationsEnabled: false }),
@@ -2185,6 +2189,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  d4Agent: Schema.optionalKey(D4AgentSettings),
   agentMonitor: Schema.optionalKey(AgentMonitorSettings),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),

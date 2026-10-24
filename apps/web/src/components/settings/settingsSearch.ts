@@ -131,10 +131,12 @@ const SOURCE_CONTROL_HOST_SEARCH_ITEMS = sourceControlClients.definitions.flatMa
 export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "agent-monitor",
-    title: "Monitor",
+    title: "d4 Agent",
     to: "/settings/general",
     targetId: "agent-monitor",
-    searchTerms: ["agent monitor attention stuck liveness model notifications"],
+    searchTerms: [
+      "d4 agent monitor attention stuck liveness model provider reasoning effort notifications permission read-only ask act heartbeat quiet hours system disk usage tokens cache",
+    ],
     scope: "environment",
   },
   {

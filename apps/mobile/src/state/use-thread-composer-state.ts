@@ -1,5 +1,8 @@
 import * as Dialog from "../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@d4research/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import { serverEnvironment } from "./server";
+import * as Option from "effect/Option";
 import { readEnvironmentScope } from "./session";
 import type { ComposerTextPaste } from "../native/T3ComposerEditor.types";
 import { useAtomValue } from "@effect/atom-react";
@@ -188,6 +191,10 @@ export function useThreadComposerState() {
   const selectedThreadProjection = useSelectedThreadProjection();
   const selectedThreadVisibleTurnItems = useSelectedThreadVisibleTurnItems();
   const composerDrafts = useAtomValue(composerDraftsAtom);
+  const sendD4AgentMessage = useAtomCommand(serverEnvironment.sendD4AgentMessage, {
+    reportFailure: false,
+  });
+  const d4AgentSending = useRef(false);
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
@@ -613,6 +620,43 @@ export function useThreadComposerState() {
       if (text.length === 0 && attachments.length === 0) {
         return null;
       }
+      const agentState = selectedEnvironmentRuntime?.serverConfig?.settings.d4Agent.enabled
+        ? Option.getOrNull(
+            AsyncResult.value(
+              appAtomRegistry.get(
+                serverEnvironment.d4AgentState({ environmentId: thread.environmentId, input: {} }),
+              ),
+            ),
+          )
+        : null;
+      if (agentState?.threadId === thread.id) {
+        if (d4AgentSending.current) return null;
+        if (attachments.length > 0 || (draft.context?.records.length ?? 0) > 0) {
+          setThreadComposerError(
+            threadKey,
+            "Send text to d4 Agent. Ask it to read a thread when you need its content.",
+          );
+          return null;
+        }
+        d4AgentSending.current = true;
+        const result = await sendD4AgentMessage({
+          environmentId: thread.environmentId,
+          input: { text },
+        });
+        d4AgentSending.current = false;
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          setThreadComposerError(
+            threadKey,
+            error instanceof Error ? error.message : "Could not send to d4 Agent.",
+          );
+        } else {
+          clearThreadComposerError(threadKey);
+          if (getComposerDraftSnapshot(threadKey).text === draft.text)
+            clearComposerDraftContent(threadKey);
+        }
+        return null;
+      }
       // A send-failure restore appends with allowOverflow so it never drops the
       // user's files, which can leave the draft over the cap. Sending it anyway
       // would enqueue a message that outbox recovery rejects forever, so block
@@ -763,6 +807,7 @@ export function useThreadComposerState() {
       selectedThreadRuntime?.status,
       selectedThreadShell,
       uploadThreadFeedback,
+      sendD4AgentMessage,
     ],
   );
 

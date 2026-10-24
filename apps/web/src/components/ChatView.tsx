@@ -1,3 +1,4 @@
+import { D4AgentPanel } from "./agent/D4Agent";
 import { CHAT_TIMELINE_ANCHOR_OFFSET } from "./chat/timelineScrollAnchoring";
 import { timelineContentOverflowsViewport } from "./chat/timelineScrollAnchoring";
 import { ComposerServerUpdateIcon } from "./chat/ComposerServerUpdateStatus";
@@ -1740,6 +1741,9 @@ function ChatViewContent(props: ChatViewProps) {
     routeThreadKeyRef.current === key;
 
   const currentRouteThreadKeyRef = routeThreadKeyRef;
+  const sendD4AgentMessage = useAtomCommand(serverEnvironment.sendD4AgentMessage, {
+    reportFailure: false,
+  });
   const updateProjectScriptSettings = useAtomCommand(serverEnvironment.updateSettings, {
     reportFailure: false,
   });
@@ -7071,6 +7075,42 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const sendRouteThreadKey = routeThreadKey;
     const sendRouteGeneration = routeGenerationRef.current;
+    const agentState = serverConfig?.settings.d4Agent.enabled
+      ? Option.getOrNull(
+          AsyncResult.value(
+            appAtomRegistry.get(serverEnvironment.d4AgentState({ environmentId, input: {} })),
+          ),
+        )
+      : null;
+    if (agentState?.threadId === activeThread.id) {
+      if (directAnnotation || composerHasNonPromptContent) {
+        setThreadError(
+          activeThread.id,
+          "Send text to d4 Agent. Ask it to read a thread when you need its content.",
+        );
+        return;
+      }
+      const submittedPrompt = promptRef.current;
+      if (!submittedPrompt.trim()) return;
+      sendInFlightRef.current = true;
+      const result = await sendD4AgentMessage({
+        environmentId,
+        input: { text: submittedPrompt.trim() },
+      });
+      sendInFlightRef.current = false;
+      if (!isCurrentRoute(sendRouteGeneration, sendRouteThreadKey)) return;
+      if (result._tag === "Failure") {
+        setThreadError(activeThread.id, chatActionErrorMessage(squashAtomCommandFailure(result)));
+      } else {
+        setThreadError(activeThread.id, null);
+        if (promptRef.current === submittedPrompt) {
+          promptRef.current = "";
+          setComposerDraftPrompt(composerDraftTarget, "");
+          composerRef.current?.resetCursorState();
+        }
+      }
+      return;
+    }
     if (needsLoadBalancing) {
       toastManager.add({
         type: "warning",
@@ -9409,6 +9449,9 @@ function ChatViewContent(props: ChatViewProps) {
               : {})}
           />
         </header>
+        {isServerThread ? (
+          <D4AgentPanel environmentId={activeThread.environmentId} threadId={activeThread.id} />
+        ) : null}
 
         {/* Main content area with optional plan sidebar */}
         <div className="relative flex min-h-0 min-w-0 flex-1">

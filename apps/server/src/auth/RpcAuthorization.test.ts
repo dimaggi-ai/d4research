@@ -30,6 +30,19 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("allows reading d4 Agent state but reserves chat and action decisions for operators", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentGetState)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentClaimSystemAttention)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    for (const method of [
+      WS_METHODS.d4AgentEnsureThread,
+      WS_METHODS.d4AgentSendMessage,
+      WS_METHODS.d4AgentResolveAction,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });
@@ -496,3 +509,71 @@ it("allows read access for durable monitor delivery claims", () => {
     AuthOrchestrationReadScope,
   );
 });
+
+it.effect(
+  "lets a read-only client claim thread and system notifications but rejects agent actions",
+  () =>
+    Effect.gen(function* () {
+      const methods = [
+        WS_METHODS.agentMonitorClaimAttention,
+        WS_METHODS.d4AgentClaimSystemAttention,
+        WS_METHODS.d4AgentSendMessage,
+        WS_METHODS.d4AgentResolveAction,
+      ] as const;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof methods)[number]> =>
+            !methods.includes(tag as (typeof methods)[number]),
+        ),
+      );
+      let claims = 0;
+      let actions = 0;
+      const claim = () =>
+        Effect.sync(() => {
+          claims++;
+          return { claimed: true };
+        });
+      const denied = () =>
+        Effect.sync(() => {
+          actions++;
+          throw new Error("Read-only action handler executed");
+        });
+      const client = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayer({
+              [WS_METHODS.agentMonitorClaimAttention]: claim,
+              [WS_METHODS.d4AgentClaimSystemAttention]: claim,
+              [WS_METHODS.d4AgentSendMessage]: denied,
+              [WS_METHODS.d4AgentResolveAction]: denied,
+            }),
+            RpcAuthorization.layer([AuthOrchestrationReadScope]),
+          ),
+        ),
+      );
+      expect(
+        yield* client[WS_METHODS.agentMonitorClaimAttention]({
+          threadId: ThreadId.make("thread"),
+          reportKey: "episode",
+          clientId: "reader",
+        }),
+      ).toEqual({ claimed: true });
+      expect(
+        yield* client[WS_METHODS.d4AgentClaimSystemAttention]({
+          reportKey: "system-episode",
+          clientId: "reader",
+        }),
+      ).toEqual({ claimed: true });
+      expect(
+        yield* client[WS_METHODS.d4AgentSendMessage]({ text: "what needs me?" }).pipe(Effect.flip),
+      ).toMatchObject({ requiredPermission: AuthOrchestrationOperateScope });
+      expect(
+        yield* client[WS_METHODS.d4AgentResolveAction]({
+          actionId: "action",
+          decision: "approve",
+        }).pipe(Effect.flip),
+      ).toMatchObject({ requiredPermission: AuthOrchestrationOperateScope });
+      expect(claims).toBe(2);
+      expect(actions).toBe(0);
+    }).pipe(Effect.scoped),
+);

@@ -45,6 +45,17 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each([
+    "d4 agent",
+    "heartbeat",
+    "quiet hours",
+    "read-only",
+    "system disk",
+    "tokens cache",
+    "reasoning effort",
+  ])("finds d4 Agent settings for %s", (query) => {
+    expect(searchSettings(query).map((item) => item.id)).toContain("agent-monitor");
+  });
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
     "does not expose removed telemetry settings for %s",
     (query) => {

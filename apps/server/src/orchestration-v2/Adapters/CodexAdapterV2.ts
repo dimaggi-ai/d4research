@@ -1,3 +1,4 @@
+import { D4_AGENT_PREFIX } from "../../d4Agent/policy.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
@@ -746,20 +747,21 @@ export function buildCodexTurnStartParams(input: {
         ? undefined
         : getCodexServiceTierOptionValue(input.modelSelection);
     const developerInstructions =
-      input.hasT3Mcp !== true
-        ? undefined
-        : buildCodexDeveloperInstructions(input.runtimePolicy.interactionMode);
+      input.runtimePolicy.toolPolicy === "d4-agent"
+        ? ""
+        : input.hasT3Mcp !== true
+          ? undefined
+          : buildCodexDeveloperInstructions(input.runtimePolicy.interactionMode);
     // An app's context is text an MCP server wrote, so it goes in as untrusted
     // context: Codex renders it as quoted user-side input, never as developer
     // instructions.
     const appContext = Object.fromEntries(
-      (input.appContext ?? []).map((entry) => [
-        entry.key,
-        { kind: "untrusted" as const, value: entry.text },
-      ]),
+      (input.runtimePolicy.toolPolicy === "d4-agent" ? [] : (input.appContext ?? [])).map(
+        (entry) => [entry.key, { kind: "untrusted" as const, value: entry.text }],
+      ),
     );
     const t3Context =
-      input.hasT3Mcp === true
+      input.hasT3Mcp === true && input.runtimePolicy.toolPolicy !== "d4-agent"
         ? buildCodexAdditionalContext(
             { model: input.modelSelection.model, reasoningEffort: effort ?? "medium" },
             {
@@ -1298,25 +1300,88 @@ export const CODEX_THREAD_CONFIG = {
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
 export function codexThreadRuntimeParams(input: {
+  readonly disabledMcpServers?: ReadonlyArray<string>;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
 }): {
   readonly cwd?: string;
   readonly model?: string;
+  readonly baseInstructions?: string;
+  readonly developerInstructions?: string;
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
   return {
+    ...(input.runtimePolicy?.toolPolicy === "d4-agent"
+      ? { baseInstructions: D4_AGENT_PREFIX, developerInstructions: "" }
+      : {}),
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...(input.runtimePolicy?.toolPolicy === "d4-agent"
+        ? {
+            "features.apps": false,
+            "features.plugins": false,
+            "features.multi_agent": false,
+            "features.shell_tool": false,
+            "features.multi_agent_v2": false,
+            "features.view_image": false,
+            "features.goals": false,
+            "features.default_mode_request_user_input": false,
+            "features.skip_host_skill_discovery": true,
+            "features.skill_search": false,
+            "features.skill_mcp_dependency_install": false,
+            "features.hooks": false,
+            "features.codex_hooks": false,
+            "features.plugin_hooks": false,
+            "features.memory_tool": false,
+            "features.external_agent_memory_import": false,
+            "features.browser_use": false,
+            "features.computer_use": false,
+            "features.image_generation": false,
+            "tools.experimental_request_user_input.enabled": false,
+            "tools.update_plan.enabled": false,
+            project_doc_max_bytes: 0,
+            "agents.enabled": false,
+            "skills.include_instructions": false,
+            "skills.bundled.enabled": false,
+            web_search: "disabled",
+          }
+        : {}),
       ...(mcpSession === undefined
         ? {}
         : {
             mcp_servers: {
+              ...Object.fromEntries(
+                (input.runtimePolicy?.toolPolicy === "d4-agent"
+                  ? (input.disabledMcpServers ?? [])
+                  : []
+                )
+                  .filter((name) => name !== "t3-code")
+                  .map((name) => [name, { enabled: false }]),
+              ),
               "t3-code": {
+                ...(input.runtimePolicy?.toolPolicy === "d4-agent"
+                  ? {
+                      enabled: true,
+                      tools: Object.fromEntries(
+                        [
+                          "d4_agent_list",
+                          "d4_agent_read_tail",
+                          "d4_agent_system_health",
+                          "d4_agent_action",
+                        ].map((name) => [name, { approval_mode: "approve" }]),
+                      ),
+                      enabled_tools: [
+                        "d4_agent_list",
+                        "d4_agent_read_tail",
+                        "d4_agent_system_health",
+                        "d4_agent_action",
+                      ],
+                    }
+                  : {}),
                 url: mcpSession.endpoint,
                 tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
                 http_headers: {
@@ -1535,7 +1600,8 @@ export const layerAppServerClientFactory: Layer.Layer<
             ),
           );
           const protocolLogger = makeCodexAppServerProtocolLogger({
-            nativeEventLogger,
+            nativeEventLogger:
+              input.runtimePolicy.toolPolicy === "d4-agent" ? undefined : nativeEventLogger,
             threadId: input.threadId,
             providerSessionId: input.providerSessionId,
           });
@@ -1791,6 +1857,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             yield* Ref.set(initialized, true);
           }),
         );
+        const disabledMcpServers: ReadonlyArray<string> =
+          input.runtimePolicy.toolPolicy === "d4-agent"
+            ? yield* ensureInitialized.pipe(
+                Effect.andThen(client.request("config/read", { cwd: input.runtimePolicy.cwd })),
+                Effect.map((response) => {
+                  const configured = response.config.mcp_servers;
+                  return typeof configured === "object" &&
+                    configured !== null &&
+                    !Array.isArray(configured)
+                    ? Object.keys(configured)
+                    : [];
+                }),
+              )
+            : [];
         const now = yield* DateTime.now;
         const session = providerSession({
           providerSessionId: input.providerSessionId,
@@ -6477,6 +6557,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 client.request(
                   "thread/start",
                   codexThreadRuntimeParams({
+                    disabledMcpServers,
                     mcpSession,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
@@ -6510,6 +6591,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 threadId: nativeThreadId,
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
+                  disabledMcpServers,
                   mcpSession: yield* readMcpSession(
                     threadInput.threadId ?? threadInput.providerThread.appThreadId,
                   ),
@@ -7229,6 +7311,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   threadId,
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
+                    disabledMcpServers,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
@@ -7278,6 +7361,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
                     ...codexThreadRuntimeParams({
+                      disabledMcpServers,
                       mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
                       ...(threadInput.modelSelection === undefined
                         ? {}

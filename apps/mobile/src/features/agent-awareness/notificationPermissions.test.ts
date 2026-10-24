@@ -8,6 +8,7 @@ const platform = vi.hoisted(() => ({ OS: "android" }));
 vi.mock("react-native", () => ({ Platform: platform }));
 vi.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
+  IosAuthorizationStatus: { PROVISIONAL: 3 },
   setNotificationChannelAsync: vi.fn(() => Promise.resolve(null)),
   getPermissionsAsync: vi.fn(() => Promise.resolve({ granted: false, canAskAgain: true })),
   requestPermissionsAsync: vi.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
@@ -46,13 +47,38 @@ describe("agent notification permission", () => {
     }),
   );
 
+  it.effect("accepts an existing provisional iOS permission without requesting again", () =>
+    Effect.gen(function* () {
+      platform.OS = "ios";
+      vi.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({
+        granted: false,
+        canAskAgain: true,
+        ios: { status: Notifications.IosAuthorizationStatus.PROVISIONAL },
+      } as Notifications.NotificationPermissionsStatus);
+      expect(yield* requestAgentNotificationPermission).toEqual({ type: "granted" });
+      expect(Notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("accepts a newly granted provisional iOS permission", () =>
+    Effect.gen(function* () {
+      platform.OS = "ios";
+      vi.mocked(Notifications.requestPermissionsAsync).mockResolvedValueOnce({
+        granted: false,
+        canAskAgain: true,
+        ios: { status: Notifications.IosAuthorizationStatus.PROVISIONAL },
+      } as Notifications.NotificationPermissionsStatus);
+      expect(yield* requestAgentNotificationPermission).toEqual({ type: "granted" });
+    }),
+  );
+
   it.effect("keeps iOS permission requests free of Android channel setup", () =>
     Effect.gen(function* () {
       platform.OS = "ios";
       expect(yield* requestAgentNotificationPermission).toEqual({ type: "granted" });
       expect(Notifications.setNotificationChannelAsync).not.toHaveBeenCalled();
       expect(Notifications.requestPermissionsAsync).toHaveBeenCalledWith({
-        ios: { allowAlert: true, allowBadge: true, allowSound: true },
+        ios: { allowProvisional: true, allowAlert: true, allowBadge: true, allowSound: true },
       });
     }),
   );

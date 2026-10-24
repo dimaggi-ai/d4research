@@ -1,4 +1,5 @@
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
+import * as D4Agent from "./d4Agent/D4Agent.ts";
 import * as SecondBrain from "./second-brain/SecondBrainService.ts";
 import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
@@ -1228,6 +1229,7 @@ const layerWsRpc = (
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const agentMonitor = yield* AgentMonitorReactor.AgentMonitorReactor;
+      const d4Agent = yield* D4Agent.D4Agent;
       const secondBrain = yield* SecondBrain.SecondBrainService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2336,6 +2338,11 @@ const layerWsRpc = (
         [WS_METHODS.secondBrainLint]: () => secondBrain.lint(),
         [WS_METHODS.secondBrainRegenerateIndex]: () => secondBrain.regenerateIndex(),
         [WS_METHODS.agentMonitorClaimAttention]: (input) => agentMonitor.claimAttention(input),
+        [WS_METHODS.d4AgentGetState]: () => d4Agent.getState(),
+        [WS_METHODS.d4AgentEnsureThread]: () => d4Agent.ensureThread(),
+        [WS_METHODS.d4AgentSendMessage]: (input) => d4Agent.sendMessage(input),
+        [WS_METHODS.d4AgentResolveAction]: (input) => d4Agent.resolveAction(input),
+        [WS_METHODS.d4AgentClaimSystemAttention]: (input) => d4Agent.claimSystemAttention(input),
         [WS_METHODS.serverGetSettings]: (_input) =>
           serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>

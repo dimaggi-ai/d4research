@@ -69,3 +69,5 @@ export * from "./secretRequest.ts";
 export * from "./clientRpcPermissions.ts";
 
 export * from "./secondBrain.ts";
+
+export * from "./d4Agent.ts";

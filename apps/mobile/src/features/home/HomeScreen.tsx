@@ -1,3 +1,4 @@
+import { D4AgentEntry } from "../agent-awareness/D4Agent";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
@@ -915,6 +916,13 @@ export function HomeScreen(props: HomeScreenProps) {
           }}
         >
           <View className="w-full max-w-[430px]">
+            {props.environments.map((environment) => (
+              <D4AgentEntry
+                key={environment.environmentId}
+                environmentId={environment.environmentId}
+                label={props.environments.length > 1 ? environment.label : undefined}
+              />
+            ))}
             <EmptyState
               title={emptyState.title}
               detail={emptyState.detail}
@@ -949,6 +957,19 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
+      {props.environments
+        .filter(
+          (environment) =>
+            props.selectedEnvironmentId === null ||
+            environment.environmentId === props.selectedEnvironmentId,
+        )
+        .map((environment) => (
+          <D4AgentEntry
+            key={environment.environmentId}
+            environmentId={environment.environmentId}
+            label={props.environments.length > 1 ? environment.label : undefined}
+          />
+        ))}
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           environments={props.environments}
@@ -992,6 +1013,7 @@ export function HomeScreen(props: HomeScreenProps) {
   if (Platform.OS === "android" && threadListV2Items.length === 0) {
     return (
       <View className="flex-1 bg-header">
+        {v2ListHeader}
         <View
           className="flex-1 items-center justify-center overflow-hidden rounded-t-[28px] bg-screen px-4"
           style={{ paddingBottom: insets.bottom }}

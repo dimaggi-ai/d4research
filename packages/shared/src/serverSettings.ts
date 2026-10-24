@@ -564,6 +564,7 @@ export function applyServerSettingsPatch(
     : replacedThreadSkills;
   const nextWithReplacementsBase = {
     ...next,
+    ...(patch.d4Agent === undefined ? {} : { d4Agent: patch.d4Agent }),
     ...(patch.agentMonitor === undefined ? {} : { agentMonitor: patch.agentMonitor }),
     favorites,
     providerModelPreferences: nextModelPreferences,

@@ -1,3 +1,5 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
+import { ThreadId } from "@d4research/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous hashing and exclusive temporary names are required inside the filesystem transaction.
 import * as NodeCrypto from "node:crypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Pure path operations also run inside synchronous SQLite and filesystem boundaries.
@@ -228,6 +230,20 @@ const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettingsService;
   const files = yield* Files.SecondBrainFiles;
   const index = yield* Index.SecondBrainIndex;
+  const owns = yield* AgentAccess.ownership;
+  const isOrdinaryEvidence = (proposal: Pick<BrainProposal, "evidence">) =>
+    Effect.gen(function* () {
+      for (const evidence of proposal.evidence)
+        if (yield* owns(ThreadId.make(evidence.threadId))) return false;
+      return true;
+    });
+  const readableProposal = (vault: string, id: string) =>
+    Effect.gen(function* () {
+      const proposal = yield* index.proposal(vault, id);
+      if (!(yield* isOrdinaryEvidence(proposal)))
+        return yield* new SecondBrainError({ code: "forbidden" });
+      return proposal;
+    });
   const embeddings = yield* Embeddings.SecondBrainEmbeddings;
   const lock = yield* Semaphore.make(1);
   let configuredPath: string | undefined;
@@ -953,6 +969,8 @@ const make = Effect.gen(function* () {
       locked(
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposeInput, input);
+          if (!(yield* isOrdinaryEvidence(valid)))
+            return yield* new SecondBrainError({ code: "forbidden" });
           const { root: vault } = yield* configure;
           yield* pure(() => assertNoSecrets(encodeJson(valid)));
           const duplicate = yield* index.duplicate(vault, Index.proposalFingerprint(valid));
@@ -982,8 +1000,11 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposalQuery, query);
           const { root: vault } = yield* configure;
-          if (valid.id) return [yield* index.proposal(vault, valid.id)];
-          return yield* index.proposals(vault, valid, valid.own ? actor : undefined);
+          if (valid.id) return [yield* readableProposal(vault, valid.id)];
+          return yield* Effect.filter(
+            yield* index.proposals(vault, valid, valid.own ? actor : undefined),
+            isOrdinaryEvidence,
+          );
         }),
       ),
     listProposalSummaries: (query, actor) =>
@@ -991,9 +1012,10 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const valid = yield* validate(BrainProposalQuery, query);
           const { root: vault } = yield* configure;
-          const proposals = valid.id
-            ? [yield* index.proposal(vault, valid.id)]
+          const candidates = valid.id
+            ? [yield* readableProposal(vault, valid.id)]
             : yield* index.proposals(vault, valid, valid.own ? actor : undefined);
+          const proposals = yield* Effect.filter(candidates, isOrdinaryEvidence);
           let bytes = 256;
           const summaries = proposals.map(({ id, path, kind, state, createdAt, evidence }) => ({
             id,
@@ -1016,7 +1038,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { root: vault } = yield* configure;
           yield* recovery(vault);
-          return yield* index.proposal(vault, id);
+          return yield* readableProposal(vault, id);
         }),
       ),
     reviewProposal: (id) =>
@@ -1024,7 +1046,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { root: vault } = yield* configure;
           yield* recovery(vault);
-          const proposal = yield* index.proposal(vault, id);
+          const proposal = yield* readableProposal(vault, id);
           const current = yield* optionalRead(files, vault, proposal.path);
           const currentHash = current?.hash ?? null;
           const conflict =
@@ -1074,7 +1096,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { root: vault, config } = yield* configure;
           yield* recovery(vault);
-          const proposal = yield* index.proposal(vault, id);
+          const proposal = yield* readableProposal(vault, id);
           if (proposal.state !== "pending")
             return yield* new SecondBrainError({ code: "forbidden" });
           const validReview =
@@ -1109,7 +1131,7 @@ const make = Effect.gen(function* () {
           }
           yield* recovery(vault);
           yield* sync(vault, config, true);
-          return yield* index.proposal(vault, id);
+          return yield* readableProposal(vault, id);
         }).pipe(Effect.uninterruptible),
       ),
     rejectProposal: (id, reviewer, reason) =>
@@ -1117,7 +1139,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const { root: vault } = yield* configure;
           yield* recovery(vault);
-          const p = yield* index.proposal(vault, id);
+          const p = yield* readableProposal(vault, id);
           if (p.state !== "pending" && p.state !== "conflict")
             return yield* new SecondBrainError({ code: "forbidden" });
           const timestamp = DateTime.formatIso(yield* DateTime.now);

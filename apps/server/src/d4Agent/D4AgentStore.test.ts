@@ -42,3 +42,32 @@ it.effect(
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
 );
+it.effect("corrupt and incompatible state is quarantined without failing startup", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-agent-corrupt-" });
+      const stateDirectory = `${directory}/userdata/d4-agent`;
+      yield* fs.makeDirectory(stateDirectory, { recursive: true });
+      for (const content of ["{broken", JSON.stringify({ threadId: 9 })]) {
+        yield* fs.writeFileString(`${stateDirectory}/state.json`, content);
+        const store = yield* Store.D4AgentStore.pipe(
+          Effect.provide(
+            Store.layer.pipe(Layer.provide(Config.layerTest(process.cwd(), directory))),
+          ),
+        );
+        assert.equal((yield* store.get).threadId, null);
+        assert.isFalse(yield* fs.exists(`${stateDirectory}/state.json`));
+        const quarantined = (yield* fs.readDirectory(stateDirectory)).filter((name) =>
+          name.startsWith("state.json.corrupt-"),
+        );
+        assert.isTrue(quarantined.length > 0);
+        assert.isTrue(
+          (yield* Effect.forEach(quarantined, (name) =>
+            fs.readFileString(`${stateDirectory}/${name}`),
+          )).includes(content),
+        );
+      }
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);

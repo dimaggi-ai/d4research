@@ -1,3 +1,4 @@
+import * as AgentContext from "../d4Agent/D4AgentContext.ts";
 import { it, expect } from "@effect/vitest";
 import { ThreadId, type OrchestrationV2StoredEvent } from "@d4research/contracts";
 import * as TestClock from "effect/testing/TestClock";
@@ -194,4 +195,68 @@ it.effect(
         }),
       { capture: "proposals", reconcileIntervalSeconds: 60 },
     ),
+);
+
+it.effect("owned agent completion and pending capture recovery never export its transcript", () =>
+  withBrain(
+    () =>
+      Effect.gen(function* () {
+        const index = yield* Index.SecondBrainIndex;
+        const owned = ThreadId.make("owned-agent");
+        yield* index.enqueueCapture({
+          id: "legacy-owned",
+          vault: "test",
+          threadId: owned,
+          runFrom: 1,
+          runTo: 1,
+          transcriptHash: "hash",
+          version: "v1",
+          messages: [{ messageId: "private", text: "cross-context private tail" }],
+          state: "pending",
+          proposalIds: [],
+        });
+        const calls: string[] = [];
+        const event = {
+          sequence: 1,
+          commandId: null,
+          event: {
+            type: "run.updated",
+            threadId: owned,
+            payload: { status: "completed", ordinal: 2 },
+          },
+        } as unknown as OrchestrationV2StoredEvent;
+        yield* Effect.gen(function* () {
+          yield* (yield* Reactor.SecondBrainCaptureReactor).drain;
+        }).pipe(
+          Effect.provide(
+            Reactor.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.mock(AgentContext.D4AgentContext)({
+                    owns: (id) => Effect.succeed(id === owned),
+                  }),
+                  Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
+                  Layer.mock(EventStore.EventStoreV2)({
+                    read: (input) => Stream.fromIterable(input?.afterSequence ? [] : [event]),
+                  }),
+                  Layer.mock(Capture.SecondBrainCapture)({
+                    enqueue: () => {
+                      calls.push("enqueue");
+                      return Effect.die("must not capture");
+                    },
+                    process: () => {
+                      calls.push("process");
+                      return Effect.succeed([]);
+                    },
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(calls).toEqual([]);
+        expect(yield* index.captureCursor()).toBe(1);
+      }),
+    { capture: "proposals" },
+  ),
 );

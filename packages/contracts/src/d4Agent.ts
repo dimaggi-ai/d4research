@@ -81,6 +81,20 @@ export const D4AgentActionRecord = Schema.Struct({
   resolvedAt: Schema.NullOr(IsoDateTime),
 });
 export type D4AgentActionRecord = typeof D4AgentActionRecord.Type;
+export const D4AgentActionSummary = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literals(["send", "interrupt", "answer", "start"]),
+  targetId: Schema.String,
+  preview: Schema.String.check(Schema.isMaxLength(256)),
+  status: D4AgentActionRecord.fields.status,
+  createdAt: IsoDateTime,
+  resolvedAt: Schema.NullOr(IsoDateTime),
+});
+export type D4AgentActionSummary = typeof D4AgentActionSummary.Type;
+export const D4AgentGetActionInput = Schema.Struct({
+  actionId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+});
+export type D4AgentGetActionInput = typeof D4AgentGetActionInput.Type;
 export const D4AgentSystemCheck = Schema.Struct({
   notificationEligible: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   id: Schema.Literals(["user-units", "root-disk", "data-disk", "server"]),
@@ -89,6 +103,11 @@ export const D4AgentSystemCheck = Schema.Struct({
   value: Schema.NullOr(Schema.Number),
 });
 export type D4AgentSystemCheck = typeof D4AgentSystemCheck.Type;
+export const D4AgentSystemHealthState = Schema.Struct({
+  threadId: Schema.NullOr(ThreadId),
+  systemHealth: Schema.Array(D4AgentSystemCheck),
+});
+export type D4AgentSystemHealthState = typeof D4AgentSystemHealthState.Type;
 export const D4AgentTurnUsage = Schema.Struct({
   runId: Schema.String,
   recordedAt: IsoDateTime,
@@ -119,8 +138,7 @@ export const D4AgentState = Schema.Struct({
       "sandbox-unavailable",
     ]),
   ),
-  pendingActions: Schema.Array(D4AgentActionRecord),
-  actionLog: Schema.Array(D4AgentActionRecord),
+  actionLog: Schema.Array(D4AgentActionSummary),
   systemHealth: Schema.Array(D4AgentSystemCheck),
   usage: Schema.Array(D4AgentTurnUsage),
 });
@@ -129,6 +147,8 @@ export const D4AgentEnsureThreadResult = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
 });
+export const D4AgentIdentity = Schema.NullOr(D4AgentEnsureThreadResult);
+export type D4AgentIdentity = typeof D4AgentIdentity.Type;
 export const D4AgentSendInput = Schema.Struct({
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
 });

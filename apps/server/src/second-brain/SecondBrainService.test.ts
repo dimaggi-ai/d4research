@@ -1,3 +1,6 @@
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
+import { ThreadId } from "@d4research/contracts";
+import * as Layer from "effect/Layer";
 import { BrainSearchResponse, BrainReadResult } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { it, expect } from "@effect/vitest";
@@ -290,5 +293,48 @@ it.effect("bounds aggregate Unicode search responses", () =>
       expect(result.results.length).toBeGreaterThan(0);
       expect(Buffer.byteLength(encodeSearchResponse(result))).toBeLessThanOrEqual(262144);
     }),
+  ),
+);
+
+it.effect("legacy owned-agent proposals stay hidden and cannot be accepted into memory", () =>
+  withBrain((root) =>
+    Effect.gen(function* () {
+      const service = yield* Service.SecondBrainService;
+      const index = yield* Index.SecondBrainIndex;
+      const ownedProposal = {
+        ...proposal,
+        id: "legacy-private",
+        vault: root,
+        actor: "capture",
+        state: "pending" as const,
+        createdAt: "2026-10-24T12:00:00Z",
+        reviewedAt: null,
+        reason: null,
+        possibleDuplicates: [],
+        evidence: [{ threadId: "owned", messageId: "private", quote: "private cross-thread tail" }],
+      };
+      yield* index.saveProposal(ownedProposal);
+      expect(yield* service.listProposals({})).toEqual([]);
+      expect(yield* service.listProposalSummaries({})).toEqual([]);
+      for (const operation of [
+        service.getProposal(ownedProposal.id).pipe(Effect.asVoid),
+        service.reviewProposal(ownedProposal.id).pipe(Effect.asVoid),
+        service.acceptProposal(ownedProposal.id, "user").pipe(Effect.asVoid),
+      ])
+        expect((yield* Effect.result(operation))._tag).toBe("Failure");
+      expect(
+        (yield* Effect.result(
+          service.propose({ ...proposal, evidence: ownedProposal.evidence }, "agent"),
+        ))._tag,
+      ).toBe("Failure");
+      expect(yield* (yield* FileSystem.FileSystem).exists(`${root}/${proposal.path}`)).toBe(false);
+    }),
+  ).pipe(
+    Effect.provide(
+      Layer.mock(AgentStore.D4AgentStore)({
+        workspace: "/private-agent",
+        get: Effect.succeed({ threadId: ThreadId.make("owned") } as never),
+      }),
+    ),
   ),
 );

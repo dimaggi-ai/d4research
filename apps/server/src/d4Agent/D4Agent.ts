@@ -7,6 +7,10 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
+  type D4AgentIdentity,
+  type D4AgentGetActionInput,
+  type D4AgentActionSummary,
+  type D4AgentSystemHealthState,
   type D4AgentClaimSystemAttentionInput,
   D4AgentAction,
   type D4AgentActionRecord,
@@ -26,6 +30,7 @@ import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
+import * as D4AgentAccess from "./D4AgentAccess.ts";
 import * as D4AgentStore from "./D4AgentStore.ts";
 import * as SystemProbe from "./SystemProbe.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -42,6 +47,9 @@ export class D4Agent extends Context.Service<
     readonly claimSystemAttention: (
       input: D4AgentClaimSystemAttentionInput,
     ) => Effect.Effect<{ readonly claimed: boolean }, D4AgentError>;
+    readonly getIdentity: () => Effect.Effect<D4AgentIdentity>;
+    readonly getAction: (input: D4AgentGetActionInput) => Effect.Effect<D4AgentActionRecord | null>;
+    readonly getSystemHealth: () => Effect.Effect<D4AgentSystemHealthState, D4AgentError>;
     readonly getState: () => Effect.Effect<D4AgentState, D4AgentError>;
     readonly ensureThread: () => Effect.Effect<typeof D4AgentEnsureThreadResult.Type, D4AgentError>;
     readonly sendMessage: (
@@ -88,6 +96,51 @@ export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
   action: D4AgentAction,
 ) => mode === "ask" || action.type === "send" || action.type === "start";
+
+export function actionSummaries(
+  actions: ReadonlyArray<D4AgentActionRecord>,
+): ReadonlyArray<D4AgentActionSummary> {
+  return [
+    ...actions.filter((a) => a.status === "pending"),
+    ...actions.filter((a) => a.status !== "pending").slice(-20),
+  ]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map(({ id, action, status, createdAt, resolvedAt }) => ({
+      id,
+      type: action.type,
+      targetId: action.type === "start" ? action.projectId : action.threadId,
+      preview: (action.type === "send" || action.type === "start"
+        ? action.text
+        : action.type === "answer"
+          ? JSON.stringify(action.answers)
+          : ""
+      ).slice(0, 256),
+      status,
+      createdAt,
+      resolvedAt,
+    }));
+}
+const cachedHealth = (
+  state: D4AgentStore.StoredState,
+  config: {
+    readonly d4Agent: D4AgentSettings;
+    readonly agentMonitor: {
+      readonly enabled: boolean;
+      readonly notificationsEnabled: boolean;
+      readonly notifyClasses: ReadonlyArray<string>;
+    };
+  },
+): ReadonlyArray<D4AgentSystemCheck> =>
+  !config.d4Agent.systemProbeEnabled
+    ? SystemProbe.disabledChecks()
+    : state.systemEpisodes.map(({ check }) => ({
+        ...check,
+        notificationEligible:
+          check.notificationEligible &&
+          config.agentMonitor.enabled &&
+          config.agentMonitor.notificationsEnabled &&
+          config.agentMonitor.notifyClasses.includes("system"),
+      }));
 
 export const layer = Layer.effect(
   D4Agent,
@@ -160,6 +213,7 @@ export const layer = Layer.effect(
       yield* threads
         .dispatch({ type: "thread.pin", commandId: command(`pin:${threadId}`), threadId })
         .pipe(Effect.mapError(threadError));
+      if (!state.identityReady) yield* store.update((value) => ({ ...value, identityReady: true }));
       return { threadId, projectId };
     });
     const send = Effect.fn("D4Agent.sendMessage")(function* (
@@ -381,7 +435,6 @@ export const layer = Layer.effect(
       }),
     );
     const getState = Effect.fn("D4Agent.getState")(function* () {
-      yield* captureUsage;
       const state = yield* store.get;
       const unavailableReason = modelAvailability(yield* settings, yield* providers.getProviders);
       const thread =
@@ -394,9 +447,11 @@ export const layer = Layer.effect(
         projectId: available ? state.projectId : null,
         modelAvailable: unavailableReason === null,
         unavailableReason,
-        pendingActions: state.actions.filter((entry) => entry.status === "pending"),
-        actionLog: state.actions,
-        systemHealth: yield* systemHealth(),
+        actionLog: actionSummaries(state.actions),
+        systemHealth: cachedHealth(
+          state,
+          yield* settingsService.getSettings.pipe(Effect.mapError(storageError)),
+        ),
         usage: state.usage,
       } satisfies D4AgentState;
     });
@@ -541,6 +596,27 @@ export const layer = Layer.effect(
           const state = yield* store.get;
           if (state.actions.filter((entry) => entry.status === "pending").length >= 50)
             return yield* new D4AgentError({ reason: "busy" });
+          const automatic = !requiresActionApproval(config.permissionMode, action);
+          const at = yield* Clock.currentTimeMillis;
+          let automaticBudget: { scope: string; target: string; at: number } | undefined;
+          if (automatic) {
+            const own =
+              state.threadId === null
+                ? null
+                : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
+            const scope = own?.activeRunId;
+            const target = action.type === "start" ? action.projectId : action.threadId;
+            // A persisted reservation is consumed before dispatch, including failed attempts.
+            if (
+              scope == null ||
+              state.automaticActions.filter((entry) => entry.scope === scope).length >= 3 ||
+              state.automaticActions.some(
+                (entry) => entry.target === target && at - entry.at < 600_000,
+              )
+            )
+              return yield* new D4AgentError({ reason: "busy" });
+            automaticBudget = { scope, target, at };
+          }
           const record: D4AgentActionRecord = {
             id: yield* randomUUID,
             action,
@@ -548,8 +624,18 @@ export const layer = Layer.effect(
             createdAt: DateTime.formatIso(yield* DateTime.now),
             resolvedAt: null,
           };
+          const reservation = automaticBudget;
           yield* store.update((value) => ({
             ...value,
+            automaticActions:
+              reservation === undefined
+                ? value.automaticActions
+                : [
+                    ...value.automaticActions.filter(
+                      (entry) => entry.scope === reservation.scope || at - entry.at < 600_000,
+                    ),
+                    reservation,
+                  ],
             actions: [
               ...value.actions.filter((entry) => entry.status === "pending"),
               ...value.actions.filter((entry) => entry.status !== "pending").slice(-199),
@@ -623,7 +709,7 @@ export const layer = Layer.effect(
           },
           true,
           `heartbeat:${sha256Hex(attentionKeys.join("\n"))}`,
-        );
+        ).pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-heartbeat"));
         yield* store.update((value) => ({
           ...value,
           heartbeatAt: now,
@@ -632,6 +718,27 @@ export const layer = Layer.effect(
       }),
     );
     return D4Agent.of({
+      getIdentity: () =>
+        store.get.pipe(
+          Effect.map((state) =>
+            state.identityReady && state.threadId !== null && state.projectId !== null
+              ? { threadId: state.threadId, projectId: state.projectId }
+              : null,
+          ),
+        ),
+      getAction: ({ actionId }) =>
+        store.get.pipe(
+          Effect.map((state) => state.actions.find((entry) => entry.id === actionId) ?? null),
+        ),
+      getSystemHealth: () =>
+        Effect.gen(function* () {
+          const state = yield* store.get;
+          const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+          return {
+            threadId: state.identityReady ? state.threadId : null,
+            systemHealth: cachedHealth(state, config),
+          };
+        }),
       getState,
       claimSystemAttention,
       ensureThread: () => lock.withPermits(1)(ensure()),
@@ -658,7 +765,7 @@ export const layer = Layer.effect(
       start: () =>
         tick.pipe(
           Effect.catch(() => Effect.logWarning("d4 Agent heartbeat unavailable")),
-          Effect.repeat(Schedule.spaced("1 minute")),
+          Effect.repeat(Schedule.spaced("15 seconds")),
           Effect.forkScoped,
           Effect.asVoid,
         ),

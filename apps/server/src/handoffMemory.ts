@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "./d4Agent/D4AgentAccess.ts";
 import * as Path from "effect/Path";
 import { HttpClient } from "effect/http";
 import * as ServerConfig from "./config.ts";
@@ -40,6 +41,7 @@ export class HandoffMemory extends Context.Service<
 >()("d4research/handoffMemory") {}
 
 const make = Effect.gen(function* () {
+  const owns = yield* D4AgentAccess.ownership;
   const settingsService = yield* ServerSettingsService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const scope = yield* Scope.Scope;
@@ -77,6 +79,7 @@ const make = Effect.gen(function* () {
     return selected ? yield* Effect.promise(() => client.check(selected)) : disabled();
   });
   const read = Effect.fn(function* (input: ReadInput, callerThreadId?: string) {
+    if (yield* owns(ThreadId.make(input.threadId))) return { receipt: disabled() };
     const selected = yield* config;
     if (!selected) return { receipt: disabled() };
     if (callerThreadId !== undefined && input.threadId !== callerThreadId)
@@ -91,6 +94,7 @@ const make = Effect.gen(function* () {
     return yield* Effect.promise(() => client.read(latest, input));
   });
   const save = Effect.fn(function* (input: SaveInput) {
+    if (input.threadId && (yield* owns(ThreadId.make(input.threadId)))) return { ok: false };
     const current = yield* settings;
     if (current._tag === "None" || current.value.handoff.memoryBackend === "none")
       return { ok: false };

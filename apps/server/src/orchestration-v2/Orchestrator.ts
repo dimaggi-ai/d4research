@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -142,6 +143,8 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+
+const isPublicCommand = Schema.is(OrchestrationV2Command);
 
 export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
   "OrchestratorDispatchError",
@@ -802,6 +805,7 @@ function lastDeliveredRunForProviderThread(
 }
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
+  const ownsD4Agent = yield* D4AgentAccess.ownership;
   const checkpointService = yield* CheckpointServiceV2;
   const commandPolicy = yield* CommandPolicyV2;
   const contextHandoffService = yield* ContextHandoffServiceV2;
@@ -10984,6 +10988,38 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "orchestration_v2.command_type": command.type,
       "orchestration_v2.thread_id": commandThreadId(command),
     });
+
+    const origin = yield* D4AgentAccess.DispatchOrigin;
+    const protectedIds =
+      command.type === "thread.fork" || command.type === "thread.merge_back"
+        ? [command.sourceThreadId, command.targetThreadId]
+        : command.type === "delegated_task.request"
+          ? [command.parentThreadId]
+          : command.type === "thread.created.record"
+            ? [command.parentThreadId, command.targetThreadId]
+            : command.type === "message.dispatch" && command.sourcePlanRef !== undefined
+              ? [command.sourcePlanRef.threadId]
+              : [];
+    for (const threadId of protectedIds) {
+      if (yield* ownsD4Agent(threadId))
+        return yield* new OrchestratorCommandRejectedError({
+          commandId: command.commandId,
+          commandType: command.type,
+        });
+    }
+    if (
+      isPublicCommand(command) &&
+      command.type !== "thread.create" &&
+      command.type !== "thread.pin" &&
+      command.type !== "thread.unarchive" &&
+      origin !== "authenticated-user" &&
+      origin !== "internal-heartbeat" &&
+      (yield* ownsD4Agent(commandThreadId(command)))
+    )
+      return yield* new OrchestratorCommandRejectedError({
+        commandId: command.commandId,
+        commandType: command.type,
+      });
 
     const existingReceipt = yield* commandReceipts.getByCommandId(command.commandId).pipe(
       Effect.mapError(

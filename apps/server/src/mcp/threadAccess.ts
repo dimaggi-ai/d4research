@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import type { ProjectionRecordField } from "../orchestration-v2/ProjectionStore.ts";
 import {
   CommandId,
@@ -154,6 +155,7 @@ export const readThread = Effect.fn("mcp.readThread")(function* <
 >(threadId?: ThreadId, fields: ReadonlyArray<K> = []) {
   const context = yield* readCaller();
   const targetId = yield* resolveThreadId(context, threadId);
+  if (yield* (yield* D4AgentAccess.ownership)(targetId)) return yield* unavailable();
   const shell = yield* context.threads.getThreadShell(targetId).pipe(Effect.mapError(unavailable));
   if (shell === null || shell.deletedAt !== null) {
     return yield* new OrchestratorMcpFailure({

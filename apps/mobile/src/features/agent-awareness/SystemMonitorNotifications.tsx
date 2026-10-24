@@ -31,7 +31,9 @@ function EnvironmentSystemNotifications({ environmentId }: { environmentId: Envi
   return enabled ? <EnabledSystemNotifications environmentId={environmentId} /> : null;
 }
 function EnabledSystemNotifications({ environmentId }: { environmentId: EnvironmentId }) {
-  const state = useEnvironmentQuery(serverEnvironment.d4AgentState({ environmentId, input: {} }));
+  const state = useEnvironmentQuery(
+    serverEnvironment.d4AgentSystemHealth({ environmentId, input: {} }),
+  );
   const allowed = useAtomValue(
     serverEnvironment.claimD4AgentSystemAttention.permissionAtom(environmentId),
   );

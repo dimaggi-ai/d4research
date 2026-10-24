@@ -1,3 +1,5 @@
+import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
+import * as Option from "effect/Option";
 import {
   IsoDateTime,
   OrchestrationThreadSearchSource,
@@ -26,7 +28,12 @@ export class ThreadSearchError extends Schema.TaggedError<ThreadSearchError>()(
   }
 }
 
-const SearchRequest = Schema.Struct({ pattern: Schema.String, limit: Schema.Int });
+const SearchRequest = Schema.Struct({
+  pattern: Schema.String,
+  limit: Schema.Int,
+  excludedThreadId: Schema.NullOr(ThreadId),
+  excludedWorkspace: Schema.NullOr(Schema.String),
+});
 const SearchRow = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
@@ -71,11 +78,12 @@ export class ThreadSearch extends Context.Service<
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const store = yield* Effect.serviceOption(D4AgentStore.D4AgentStore);
 
   const searchRows = SqlSchema.findAll({
     Request: SearchRequest,
     Result: SearchRow,
-    execute: ({ pattern, limit }) => sql`
+    execute: ({ pattern, limit, excludedThreadId, excludedWorkspace }) => sql`
       WITH candidate AS (
         SELECT
           threads.thread_id,
@@ -91,8 +99,10 @@ export const make = Effect.gen(function* () {
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
         WHERE threads.deleted_at IS NULL
+          AND (${excludedThreadId} IS NULL OR threads.thread_id <> ${excludedThreadId})
           AND threads.archived_at IS NULL
           AND projects.deleted_at IS NULL
+          AND (${excludedWorkspace} IS NULL OR projects.workspace_root <> ${excludedWorkspace})
           AND messages.streaming = 0
           AND messages.role IN ('user', 'assistant')
           AND json_extract(messages.payload_json, '$.text') LIKE ${pattern} ESCAPE '!'
@@ -136,6 +146,8 @@ export const make = Effect.gen(function* () {
         .withTransaction(
           searchRows({
             pattern: `%${escapeLikePattern(input.query)}%`,
+            excludedWorkspace: Option.isSome(store) ? store.value.workspace : null,
+            excludedThreadId: Option.isSome(store) ? (yield* store.value.get).threadId : null,
             limit: input.limit ?? 50,
           }),
         )

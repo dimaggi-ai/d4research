@@ -1,10 +1,11 @@
+import { useD4AgentState } from "./useD4AgentState";
 import {
   systemCheckLabel,
   systemCheckStatus,
   agentUnavailableMessage,
 } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ThreadId } from "@d4research/contracts";
+import type { D4AgentActionSummary, EnvironmentId, ThreadId } from "@d4research/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -18,9 +19,12 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { Button } from "../ui/button";
+import { useSidebarVisibility } from "../ui/sidebar";
 
 export function D4AgentEntries() {
   const { environments } = useEnvironments();
+  const visible = useSidebarVisibility();
+  if (!visible) return null;
   return (
     <div className="space-y-1 px-2 pb-2">
       {environments.map((environment) => (
@@ -41,11 +45,7 @@ export function D4AgentEntry({
   label: string | null;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const state = useEnvironmentQuery(
-    config?.settings.d4Agent.enabled
-      ? serverEnvironment.d4AgentState({ environmentId, input: {} })
-      : null,
-  );
+  const state = useD4AgentState(environmentId, config?.settings.d4Agent.enabled === true);
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
   const navigate = useNavigate();
@@ -107,7 +107,12 @@ export function D4AgentPanel({
   threadId: ThreadId;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  return config?.settings.d4Agent.enabled ? (
+  const identity = useEnvironmentQuery(
+    config?.settings.d4Agent.enabled
+      ? serverEnvironment.d4AgentIdentity({ environmentId, input: {} })
+      : null,
+  );
+  return config?.settings.d4Agent.enabled && identity.data?.threadId === threadId ? (
     <D4AgentPanelContent environmentId={environmentId} threadId={threadId} />
   ) : null;
 }
@@ -118,7 +123,7 @@ function D4AgentPanelContent({
   environmentId: EnvironmentId;
   threadId: ThreadId;
 }) {
-  const query = useEnvironmentQuery(serverEnvironment.d4AgentState({ environmentId, input: {} }));
+  const query = useD4AgentState(environmentId);
   const threads = useThreadShells();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
@@ -179,65 +184,108 @@ function D4AgentPanelContent({
           {systemCheckLabel(check)}: {systemCheckStatus(check)}
         </p>
       ))}
-      {state.pendingActions.slice(0, 20).map((record) => (
-        <div key={record.id} className="flex flex-wrap items-center gap-2 py-1">
-          <div className="min-w-0 flex-1">
-            <p>
-              Approve {record.action.type}
-              {"threadId" in record.action
-                ? ` · ${record.action.threadId}`
-                : ` · ${record.action.projectId}`}
-              ?
-            </p>
-            {"text" in record.action ? (
-              <p className="whitespace-pre-wrap break-words text-muted-foreground">
-                {record.action.text}
-              </p>
-            ) : null}
-            {record.action.type === "answer" ? (
-              <pre className="overflow-auto whitespace-pre-wrap text-xs">
-                {JSON.stringify(record.action.answers, null, 2)}
-              </pre>
-            ) : null}
-          </div>
-          {(["approve", "deny"] as const).map((decision) => (
-            <Button
-              key={decision}
-              size="sm"
-              variant={decision === "deny" ? "ghost" : "outline"}
-              disabled={!allowed || busy !== null}
-              onClick={async () => {
-                setBusy(record.id);
-                setActionError(null);
-                await resolve({ environmentId, input: { actionId: record.id, decision } })
-                  .then((result) => {
-                    if (result._tag === "Failure") setActionError("Could not resolve this action.");
-                    query.refresh();
-                  })
-                  .catch(() => setActionError("Could not resolve this action."))
-                  .finally(() => setBusy(null));
-              }}
-            >
-              {decision === "approve" ? "Approve" : "Deny"}
-            </Button>
-          ))}
-        </div>
-      ))}
+      {state.actionLog
+        .filter((record) => record.status === "pending")
+        .map((record) => (
+          <AgentActionRecord
+            key={record.id}
+            environmentId={environmentId}
+            record={record}
+            allowed={allowed}
+            busy={busy !== null}
+            onResolve={async (decision) => {
+              setBusy(record.id);
+              setActionError(null);
+              await resolve({ environmentId, input: { actionId: record.id, decision } })
+                .then((result) => {
+                  if (result._tag === "Failure") setActionError("Could not resolve this action.");
+                  query.refresh();
+                })
+                .catch(() => setActionError("Could not resolve this action."))
+                .finally(() => setBusy(null));
+            }}
+          />
+        ))}
       {state.actionLog.length > 0 ? (
         <details className="pt-2">
           <summary className="cursor-pointer">Action log · {state.actionLog.length}</summary>
           {state.actionLog
-            .slice(-20)
-            .toReversed()
+            .filter((record) => record.status !== "pending")
+            .slice(0, 20)
             .map((record) => (
-              <p key={record.id} className="py-1 text-xs text-muted-foreground">
-                {record.createdAt} · {record.action.type} · {record.status}
-              </p>
+              <AgentActionRecord
+                key={record.id}
+                environmentId={environmentId}
+                record={record}
+                allowed={allowed}
+                busy={busy !== null}
+                onResolve={async () => undefined}
+              />
             ))}
         </details>
       ) : null}
       {actionError ? <p role="alert">{actionError}</p> : null}
       {query.error ? <p role="alert">{query.error}</p> : null}
     </section>
+  );
+}
+
+function AgentActionRecord({
+  environmentId,
+  record,
+  allowed,
+  busy,
+  onResolve,
+}: {
+  environmentId: EnvironmentId;
+  record: D4AgentActionSummary;
+  allowed: boolean;
+  busy: boolean;
+  onResolve: (decision: "approve" | "deny") => Promise<void>;
+}) {
+  const [reviewing, setReviewing] = useState(false);
+  const detail = useEnvironmentQuery(
+    reviewing
+      ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
+      : null,
+  );
+  const canApprove =
+    allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
+  return (
+    <div className="space-y-2 py-2">
+      <p>
+        {record.type} · {record.targetId}
+      </p>
+      <p className="whitespace-pre-wrap break-words text-muted-foreground">{record.preview}</p>
+      <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
+        {reviewing ? "Hide action details" : "Review action"}
+      </Button>
+      {reviewing && detail.data ? (
+        <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
+          {JSON.stringify(detail.data.action, null, 2)}
+        </pre>
+      ) : null}
+      {detail.error ? <p role="alert">{detail.error}</p> : null}
+      {record.status === "pending" ? (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canApprove}
+            onClick={() => void onResolve("approve")}
+          >
+            Approve
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!allowed || busy}
+            onClick={() => void onResolve("deny")}
+          >
+            Deny
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

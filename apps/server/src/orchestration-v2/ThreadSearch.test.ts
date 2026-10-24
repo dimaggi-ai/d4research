@@ -1,3 +1,5 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -251,4 +253,71 @@ it.effect("searches on the reader worker while the writer is busy", () =>
       );
     }).pipe(Effect.provide(layerFile));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("global search excludes owned agent content before applying the result limit", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const search = yield* ThreadSearch.ThreadSearch;
+    const project = ProjectId.make("project:private-agent");
+    const owned = ThreadId.make("owned");
+    const ordinary = ThreadId.make("ordinary");
+    yield* createProject(project);
+    yield* Effect.forEach(
+      [
+        thread(owned, project),
+        message(owned, "private", "user", "needle private cross-thread tail", { minute: 10 }),
+        thread(ordinary, project),
+        message(ordinary, "public", "user", "needle ordinary"),
+      ],
+      projections.apply,
+      { discard: true },
+    );
+    const result = yield* search.search({ query: "needle", limit: 1 });
+    assert.deepEqual(
+      result.matches.map((match) => match.threadId),
+      [ordinary],
+    );
+  }).pipe(
+    Effect.provide(
+      layerTest.pipe(
+        Layer.provide(
+          Layer.mock(AgentStore.D4AgentStore)({
+            workspace: "/isolated-agent-workspace",
+            get: Effect.succeed({ threadId: ThreadId.make("owned") } as never),
+          }),
+        ),
+      ),
+    ),
+  ),
+);
+
+it.effect("quarantined agent identity still protects its durable project workspace", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const search = yield* ThreadSearch.ThreadSearch;
+    const project = ProjectId.make("project:orphaned-agent");
+    const owned = ThreadId.make("orphaned-owned");
+    yield* createProject(project);
+    yield* Effect.forEach(
+      [thread(owned, project), message(owned, "private", "assistant", "needle private tail")],
+      projections.apply,
+      { discard: true },
+    );
+    const owns = yield* AgentAccess.ownership;
+    assert.isTrue(yield* owns(owned));
+    assert.isFalse(yield* owns(ThreadId.make("ordinary")));
+    assert.deepEqual((yield* search.search({ query: "needle" })).matches, []);
+  }).pipe(
+    Effect.provide(
+      layerTest.pipe(
+        Layer.provideMerge(
+          Layer.mock(AgentStore.D4AgentStore)({
+            workspace: "/work/project:orphaned-agent",
+            get: Effect.succeed({ threadId: null } as never),
+          }),
+        ),
+      ),
+    ),
+  ),
 );

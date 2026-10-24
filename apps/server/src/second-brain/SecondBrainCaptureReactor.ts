@@ -1,3 +1,7 @@
+import * as AgentContext from "../d4Agent/D4AgentContext.ts";
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
+import * as Option from "effect/Option";
+import { ThreadId } from "@d4research/contracts";
 import { type OrchestrationV2DomainEvent } from "@d4research/contracts";
 import { makeDrainableWorker } from "@d4research/shared/DrainableWorker";
 import * as Clock from "effect/Clock";
@@ -25,6 +29,8 @@ export class SecondBrainCaptureReactor extends Context.Service<
 >()("d4research/second-brain/SecondBrainCaptureReactor") {}
 
 const make = Effect.gen(function* () {
+  const context = yield* Effect.serviceOption(AgentContext.D4AgentContext);
+  const owns = Option.isSome(context) ? context.value.owns : yield* AgentAccess.ownership;
   const engine = yield* Orchestrator.OrchestratorV2;
   const events = yield* EventStore.EventStoreV2;
   const settings = yield* Settings.ServerSettingsService;
@@ -45,6 +51,7 @@ const make = Effect.gen(function* () {
   );
   const queue = (job: Index.CaptureJob) =>
     Effect.gen(function* () {
+      if (yield* owns(ThreadId.make(job.threadId))) return;
       if (job.state === "completed" || (job.attempts ?? 0) >= 3 || queued.has(job.id)) return;
       queued.add(job.id);
       yield* worker.enqueue(job);
@@ -79,8 +86,10 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
-      for (const { threadId, ordinal } of threads.values())
+      for (const { threadId, ordinal } of threads.values()) {
+        if (yield* owns(threadId)) continue;
         yield* queue(yield* capture.enqueue(threadId, ordinal));
+      }
       yield* index.setCaptureCursor(last);
       return last > afterSequence;
     }),

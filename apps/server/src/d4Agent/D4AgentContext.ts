@@ -1,3 +1,4 @@
+import * as AgentAccess from "./D4AgentAccess.ts";
 import { D4AgentError, type ModelSelection, type ThreadId } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -8,12 +9,7 @@ import * as D4AgentStore from "./D4AgentStore.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentMonitor from "../orchestration-v2/AgentMonitorReactor.ts";
-import {
-  contentFreeDigest,
-  D4_AGENT_PREFIX,
-  modelAvailability,
-  selectionsEqual,
-} from "./policy.ts";
+import { compactDigest, modelAvailability, selectionsEqual } from "./policy.ts";
 
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -31,14 +27,18 @@ export const layer = Layer.effect(
   D4AgentContext,
   Effect.gen(function* () {
     const store = yield* D4AgentStore.D4AgentStore;
+    const owns = yield* AgentAccess.ownership;
     const settingsService = yield* ServerSettings.ServerSettingsService;
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const monitor = yield* AgentMonitor.AgentMonitorReactor;
     return D4AgentContext.of({
-      owns: (threadId) => store.get.pipe(Effect.map((state) => state.threadId === threadId)),
+      owns,
       prepare: Effect.fn("D4AgentContext.prepare")(function* (threadId, selection) {
         const state = yield* store.get;
-        if (state.threadId !== threadId) return null;
+        if (state.threadId !== threadId) {
+          if (yield* owns(threadId)) return yield* new D4AgentError({ reason: "thread" });
+          return null;
+        }
         const settings = yield* settingsService.getSettings.pipe(
           Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })),
         );
@@ -52,8 +52,8 @@ export const layer = Layer.effect(
         const updates = yield* monitor.snapshot.pipe(
           Effect.mapError((cause) => new D4AgentError({ reason: "thread", cause })),
         );
-        const digest = contentFreeDigest(updates, yield* Clock.currentTimeMillis, threadId);
-        return `${D4_AGENT_PREFIX}\n\nCurrent monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nPermission mode: ${settings.d4Agent.permissionMode}`;
+        const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
+        return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nPermission mode: ${settings.d4Agent.permissionMode}`;
       }),
     });
   }),

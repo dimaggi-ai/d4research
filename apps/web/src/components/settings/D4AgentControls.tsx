@@ -1,3 +1,4 @@
+import { useD4AgentState } from "../agent/useD4AgentState";
 import { withAgentModelOption } from "./D4AgentControls.logic";
 import {
   systemCheckLabel,
@@ -8,7 +9,6 @@ import type { EnvironmentId, ServerSettings } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { getProviderOptionDescriptors } from "@d4research/shared/model";
 import { serverEnvironment } from "../../state/server";
-import { useEnvironmentQuery } from "../../state/query";
 import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
 import { SettingsRow } from "./settingsLayout";
@@ -41,7 +41,7 @@ export function D4AgentControls({
   environmentId: EnvironmentId;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const state = useEnvironmentQuery(serverEnvironment.d4AgentState({ environmentId, input: {} }));
+  const state = useD4AgentState(environmentId);
   const selectedProvider = config?.providers.find(
     (provider) => provider.instanceId === agent.modelSelection?.instanceId,
   );

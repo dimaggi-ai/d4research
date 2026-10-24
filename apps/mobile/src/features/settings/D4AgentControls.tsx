@@ -1,3 +1,4 @@
+import { useD4AgentState } from "../agent-awareness/useD4AgentState";
 import * as Arr from "effect/Array";
 import {
   systemCheckLabel,
@@ -10,8 +11,6 @@ import { getProviderOptionDescriptors } from "@d4research/shared/model";
 import { useState, type ComponentProps } from "react";
 import { View, TextInput, Modal, Pressable, ScrollView } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
-import { serverEnvironment } from "../../state/server";
-import { useEnvironmentQuery } from "../../state/query";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
@@ -44,7 +43,7 @@ export function D4AgentControls({
   writeMonitor: (patch: Partial<Monitor>) => Promise<void>;
   environmentId: EnvironmentId;
 }) {
-  const state = useEnvironmentQuery(serverEnvironment.d4AgentState({ environmentId, input: {} }));
+  const state = useD4AgentState(environmentId);
   const provider = config?.providers.find(
     (item) => item.instanceId === agent.modelSelection?.instanceId,
   );

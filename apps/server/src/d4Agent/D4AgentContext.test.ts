@@ -34,6 +34,8 @@ const layer = Context.layer.pipe(
       Layer.mock(Store.D4AgentStore)({
         workspace: "/isolated",
         get: Effect.succeed({
+          identityReady: true,
+          automaticActions: [],
           threadId: ownId,
           projectId: null,
           actions: [],
@@ -54,7 +56,7 @@ const layer = Context.layer.pipe(
   ),
 );
 it.effect(
-  "normal threads keep their provider path while the owned thread receives the fixed prefix",
+  "normal threads keep their provider path while the owned thread receives only a compact digest",
   () =>
     Effect.gen(function* () {
       const context = yield* Context.D4AgentContext;
@@ -63,7 +65,8 @@ it.effect(
         null,
       );
       const prefix = yield* context.prepare(ownId, model);
-      assert.isTrue(prefix?.startsWith("You are d4 Agent"));
+      assert.isTrue(prefix?.startsWith("Current monitor digest:"));
+      assert.isFalse(prefix?.includes("You are d4 Agent"));
       assert.isTrue(prefix?.includes('"counts":{}'));
     }).pipe(Effect.provide(layer)),
 );

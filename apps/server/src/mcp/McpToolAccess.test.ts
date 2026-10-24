@@ -1,3 +1,5 @@
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
+import { readThread } from "./threadAccess.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -341,6 +343,36 @@ it.effect("refuses a change when the calling thread cannot be read", () =>
           getThreadShell: (threadId) =>
             Effect.fail(new OrchestratorProjectionError({ threadId, cause: "unreadable" })),
         }),
+      ),
+    ),
+  ),
+);
+
+it.effect("other MCP agents cannot mutate or read the owned agent conversation", () =>
+  Effect.gen(function* () {
+    expect(yield* call("writes_threads", fullAccess, { threadId: supervisedThreadId })).toBe(
+      "orchestration_error",
+    );
+    const result = yield* Effect.result(
+      readThread(supervisedThreadId).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, fullAccess),
+      ),
+    );
+    expect(result._tag).toBe("Failure");
+    if (result._tag === "Failure") expect(result.failure.code).toBe("orchestration_error");
+  }).pipe(
+    Effect.provide(
+      probeServer(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (id) => Effect.succeed(shells.get(id) ?? null),
+        }),
+      ).pipe(
+        Layer.provideMerge(
+          Layer.mock(AgentStore.D4AgentStore)({
+            workspace: "/private-agent",
+            get: Effect.succeed({ threadId: supervisedThreadId } as never),
+          }),
+        ),
       ),
     ),
   ),

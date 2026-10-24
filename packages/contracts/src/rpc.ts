@@ -2,6 +2,10 @@ import { AgentMonitorError } from "./agentMonitor.ts";
 import {
   D4AgentError,
   D4AgentState,
+  D4AgentIdentity,
+  D4AgentActionRecord,
+  D4AgentGetActionInput,
+  D4AgentSystemHealthState,
   D4AgentEnsureThreadResult,
   D4AgentSendInput,
   D4AgentResolveActionInput,
@@ -508,6 +512,9 @@ export const WS_METHODS = {
   secondBrainRegenerateIndex: "secondBrain.regenerateIndex",
   agentMonitorClaimAttention: "agentMonitor.claimAttention",
   d4AgentGetState: "d4Agent.getState",
+  d4AgentGetIdentity: "d4Agent.getIdentity",
+  d4AgentGetAction: "d4Agent.getAction",
+  d4AgentGetSystemHealth: "d4Agent.getSystemHealth",
   d4AgentEnsureThread: "d4Agent.ensureThread",
   d4AgentSendMessage: "d4Agent.sendMessage",
   d4AgentResolveAction: "d4Agent.resolveAction",
@@ -836,6 +843,21 @@ const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAtt
 const WsD4AgentGetStateRpc = Rpc.make(WS_METHODS.d4AgentGetState, {
   payload: Schema.Struct({}),
   success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentGetIdentityRpc = Rpc.make(WS_METHODS.d4AgentGetIdentity, {
+  payload: Schema.Struct({}),
+  success: D4AgentIdentity,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentGetActionRpc = Rpc.make(WS_METHODS.d4AgentGetAction, {
+  payload: D4AgentGetActionInput,
+  success: Schema.NullOr(D4AgentActionRecord),
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentGetSystemHealthRpc = Rpc.make(WS_METHODS.d4AgentGetSystemHealth, {
+  payload: Schema.Struct({}),
+  success: D4AgentSystemHealthState,
   error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
 });
 const WsD4AgentEnsureThreadRpc = Rpc.make(WS_METHODS.d4AgentEnsureThread, {
@@ -2002,6 +2024,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetDatabaseStorageRpc,
   WsAgentMonitorClaimAttentionRpc,
   WsD4AgentGetStateRpc,
+  WsD4AgentGetIdentityRpc,
+  WsD4AgentGetActionRpc,
+  WsD4AgentGetSystemHealthRpc,
   WsD4AgentEnsureThreadRpc,
   WsD4AgentSendMessageRpc,
   WsD4AgentResolveActionRpc,

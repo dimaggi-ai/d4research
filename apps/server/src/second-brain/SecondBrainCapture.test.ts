@@ -1,3 +1,4 @@
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
 import { it, expect } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import { ThreadId, SecondBrainError, type OrchestrationV2TurnItem } from "@d4research/contracts";
@@ -280,5 +281,46 @@ it.effect("captures only runs after the last completed capture for the thread an
         ),
       );
     }),
+  ),
+);
+
+it.effect("owned agent manual capture and persisted jobs cannot read or export conversation", () =>
+  withBrain(() =>
+    Effect.gen(function* () {
+      const capture = yield* Capture.SecondBrainCapture;
+      const result = yield* Effect.result(capture.enqueue(ThreadId.make("owned")));
+      expect(result._tag).toBe("Failure");
+      expect(
+        yield* capture.process({
+          id: "legacy",
+          threadId: "owned",
+          vault: "vault",
+          runFrom: 1,
+          runTo: 1,
+          transcriptHash: "hash",
+          version: "v1",
+          messages: [{ messageId: "private", text: "cross-thread private tail" }],
+          state: "pending",
+          proposalIds: [],
+        }),
+      ).toEqual([]);
+      expect(yield* (yield* Index.SecondBrainIndex).pendingCaptures()).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        Capture.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(AgentStore.D4AgentStore)({
+                workspace: "/isolated-agent-workspace",
+                get: Effect.succeed({ threadId: ThreadId.make("owned") } as never),
+              }),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                getThreadRecords: () => Effect.die("owned transcript read"),
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
   ),
 );

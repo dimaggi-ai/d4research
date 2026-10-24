@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "./d4Agent/D4AgentAccess.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as D4Agent from "./d4Agent/D4Agent.ts";
 import * as SecondBrain from "./second-brain/SecondBrainService.ts";
@@ -1794,7 +1795,10 @@ const layerWsRpc = (
                             "creationSource" in command ? command.creationSource : "web",
                         }),
                       )
-                  ).pipe(Effect.provide(intakeContext)),
+                  ).pipe(
+                    Effect.provide(intakeContext),
+                    Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
+                  ),
                 )
                 .pipe(
                   Effect.map((result) => ({ sequence: result.sequence })),
@@ -2339,8 +2343,14 @@ const layerWsRpc = (
         [WS_METHODS.secondBrainRegenerateIndex]: () => secondBrain.regenerateIndex(),
         [WS_METHODS.agentMonitorClaimAttention]: (input) => agentMonitor.claimAttention(input),
         [WS_METHODS.d4AgentGetState]: () => d4Agent.getState(),
+        [WS_METHODS.d4AgentGetIdentity]: () => d4Agent.getIdentity(),
+        [WS_METHODS.d4AgentGetAction]: (input) => d4Agent.getAction(input),
+        [WS_METHODS.d4AgentGetSystemHealth]: () => d4Agent.getSystemHealth(),
         [WS_METHODS.d4AgentEnsureThread]: () => d4Agent.ensureThread(),
-        [WS_METHODS.d4AgentSendMessage]: (input) => d4Agent.sendMessage(input),
+        [WS_METHODS.d4AgentSendMessage]: (input) =>
+          d4Agent
+            .sendMessage(input)
+            .pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user")),
         [WS_METHODS.d4AgentResolveAction]: (input) => d4Agent.resolveAction(input),
         [WS_METHODS.d4AgentClaimSystemAttention]: (input) => d4Agent.claimSystemAttention(input),
         [WS_METHODS.serverGetSettings]: (_input) =>

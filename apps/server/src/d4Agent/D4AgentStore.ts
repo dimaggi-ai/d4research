@@ -6,6 +6,8 @@ import {
   ProjectId,
   ThreadId,
 } from "@d4research/contracts";
+import { randomUuidV4 } from "@d4research/provider-core/server/randomUuid";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -17,6 +19,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 
 export const StoredState = Schema.Struct({
+  identityReady: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  automaticActions: Schema.Array(
+    Schema.Struct({ scope: Schema.String, target: Schema.String, at: Schema.Number }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   threadId: Schema.NullOr(ThreadId),
   projectId: Schema.NullOr(ProjectId),
   actions: Schema.Array(D4AgentActionRecord),
@@ -32,8 +38,11 @@ export const StoredState = Schema.Struct({
   heartbeatKeys: Schema.Array(Schema.String),
 });
 export type StoredState = typeof StoredState.Type;
+const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(StoredState));
 const encodeState = Schema.encodeEffect(Schema.fromJsonString(StoredState));
 const empty: StoredState = {
+  identityReady: false,
+  automaticActions: [],
   threadId: null,
   projectId: null,
   actions: [],
@@ -65,7 +74,20 @@ export const layer = Layer.effect(
     const statePath = path.join(directory, "state.json");
     const lock = yield* Semaphore.make(1);
     const initial = yield* fs.readFileString(statePath).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(StoredState))),
+      Effect.flatMap((content) =>
+        decodeState(content).pipe(
+          Effect.catch(() =>
+            Effect.gen(function* () {
+              const quarantinePath = `${statePath}.corrupt-${yield* Clock.currentTimeMillis}-${yield* randomUuidV4}`;
+              yield* fs.rename(statePath, quarantinePath);
+              yield* Effect.logWarning("d4 Agent state was invalid; quarantined and reset", {
+                quarantinePath,
+              });
+              return empty;
+            }),
+          ),
+        ),
+      ),
       Effect.catch((cause) =>
         cause._tag === "PlatformError" && cause.reason._tag === "NotFound"
           ? Effect.succeed(empty)

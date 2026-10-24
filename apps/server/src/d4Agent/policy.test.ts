@@ -10,6 +10,7 @@ import {
 } from "@d4research/contracts";
 import {
   contentFreeDigest,
+  compactDigest,
   heartbeatDue,
   isAllowedAgentMcpRequest,
   isQuietHour,
@@ -121,6 +122,14 @@ describe("d4 Agent policies", () => {
       { threadId: ThreadId.make("own"), report, revision: 1, title: "OWN", text: "SECRET" },
     ];
     const digest = contentFreeDigest(input, Date.parse("2026-10-24T12:01:00Z"), "own");
+    const many = Array.from({ length: 200 }, (_, index) => ({
+      ...input[0]!,
+      threadId: ThreadId.make(`thread:${index}`),
+    }));
+    const compact = compactDigest(many, Date.parse("2026-10-24T12:01:00Z"), "own");
+    assert.equal(compact.reports.length, 20);
+    assert.equal(compact.omitted, 180);
+    assert.deepEqual(compact.counts, { needs_user: 200 });
     assert.deepEqual(digest.counts, { needs_user: 1 });
     assert.equal(digest.reports[0]?.ageSeconds, 60);
     assert.isFalse(JSON.stringify(digest).includes("SECRET"));

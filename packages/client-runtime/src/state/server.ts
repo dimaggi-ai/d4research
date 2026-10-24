@@ -21,7 +21,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   createAtomCommandScheduler,
@@ -962,11 +962,28 @@ export function createServerEnvironmentAtoms<R, E>(
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });
-  const d4AgentState = createEnvironmentRpcQueryAtomFamily(runtime, {
+  const d4AgentIdentity = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:server:d4-agent-identity",
+    tag: WS_METHODS.d4AgentGetIdentity,
+    staleTimeMs: 30_000,
+    refreshTrigger: ({ environmentId }) => settingsValueAtom(environmentId),
+  });
+  const d4AgentState = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:server:d4-agent-state",
-    tag: WS_METHODS.d4AgentGetState,
+    execute: () =>
+      Effect.gen(function* () {
+        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+        const registry = yield* AtomRegistry.AtomRegistry;
+        const state = yield* request(WS_METHODS.d4AgentGetState, {});
+        const identity = d4AgentIdentity({
+          environmentId: supervisor.target.environmentId,
+          input: {},
+        });
+        const known = Option.getOrNull(AsyncResult.value(registry.get(identity)));
+        if ((known?.threadId ?? null) !== state.threadId) registry.refresh(identity);
+        return state;
+      }),
     staleTimeMs: 5_000,
-    refreshIntervalMs: 15_000,
     idleTtlMs: 0,
     refreshTrigger: ({ environmentId }) => settingsValueAtom(environmentId),
   });
@@ -974,6 +991,20 @@ export function createServerEnvironmentAtoms<R, E>(
   return {
     configValueAtom,
     d4AgentState,
+    d4AgentIdentity,
+    d4AgentSystemHealth: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:d4-agent-system-health",
+      tag: WS_METHODS.d4AgentGetSystemHealth,
+      staleTimeMs: 5_000,
+      refreshIntervalMs: 15_000,
+      idleTtlMs: 0,
+    }),
+    d4AgentAction: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:d4-agent-action",
+      tag: WS_METHODS.d4AgentGetAction,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
     claimD4AgentSystemAttention: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:claim-d4-agent-system-attention",
       tag: WS_METHODS.d4AgentClaimSystemAttention,
@@ -983,7 +1014,10 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.d4AgentEnsureThread,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
       onSuccess: ({ environmentId }, registry) =>
-        Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
+        Effect.sync(() => {
+          registry.refresh(d4AgentState({ environmentId, input: {} }));
+          registry.refresh(d4AgentIdentity({ environmentId, input: {} }));
+        }),
     }),
     sendD4AgentMessage: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:send-d4-agent-message",

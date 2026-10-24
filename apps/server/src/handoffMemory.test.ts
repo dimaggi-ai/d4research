@@ -1,3 +1,5 @@
+import * as AgentStore from "./d4Agent/D4AgentStore.ts";
+import { ThreadId } from "@d4research/contracts";
 import * as Deferred from "effect/Deferred";
 import type { MekoReceipt } from "@d4research/contracts/settings";
 import { expect, it } from "@effect/vitest";
@@ -70,4 +72,44 @@ it.effect("stops checks, saves and recall when Meko is disabled, and isolates ca
     expect((yield* service.save({ text: "checkpoint", threadId: "test-thread" })).ok).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   }).pipe(Effect.scoped, Effect.provide(layer.pipe(Layer.provideMerge(settingsLayer)))),
+);
+
+it.effect("owned agent content never reaches Memo or Meko handoff storage and recall", () =>
+  Effect.gen(function* () {
+    const service = yield* HandoffMemory.HandoffMemory;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const fetcher = vi.spyOn(globalThis, "fetch");
+    yield* Effect.addFinalizer(() => Effect.sync(() => fetcher.mockRestore()));
+    for (const memoryBackend of ["local", "meko"] as const) {
+      yield* settings.updateSettings({
+        handoff: { memoryBackend },
+        memory: { localEnabled: true },
+      });
+      expect(
+        (yield* service.save({ text: "private cross-thread tail", threadId: "owned" })).ok,
+      ).toBe(false);
+      expect(
+        (yield* service.read({
+          threadId: "owned",
+          project: "private",
+          conversationId: "conversation",
+          contentHash: "a".repeat(64),
+        })).text,
+      ).toBeUndefined();
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      layer.pipe(
+        Layer.provideMerge(settingsLayer),
+        Layer.provide(
+          Layer.mock(AgentStore.D4AgentStore)({
+            workspace: "/isolated-agent-workspace",
+            get: Effect.succeed({ threadId: ThreadId.make("owned") } as never),
+          }),
+        ),
+      ),
+    ),
+  ),
 );

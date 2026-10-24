@@ -105,6 +105,8 @@ const fixture = (
       providerAvailable ? [provider] : [],
     );
     const state = yield* Ref.make<Store.StoredState>({
+      identityReady: false,
+      automaticActions: [],
       threadId: null,
       projectId: null,
       actions: [],
@@ -124,6 +126,7 @@ const fixture = (
         notificationEligible: false,
       },
     ]);
+    const agentShell = yield* Ref.make<OrchestrationV2ThreadShell | null>(null);
     const request = yield* Ref.make<OrchestrationV2RuntimeRequest | undefined>(undefined);
     const dispatches = yield* Ref.make<ReadonlyArray<string>>([]);
     const projection = yield* Ref.make<OrchestrationV2ThreadProjection>({
@@ -146,15 +149,24 @@ const fixture = (
       visibleTurnItems: [],
       updatedAt: now,
     });
+    const reads = yield* Ref.make({ updates: 0, snapshots: 0, probes: 0 });
     const layer = Agent.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(Store.D4AgentStore, {
             workspace,
             get: Ref.get(state),
-            update: (f) => Ref.updateAndGet(state, f),
+            update: (f) =>
+              Ref.update(reads, (r) => ({ ...r, updates: r.updates + 1 })).pipe(
+                Effect.andThen(Ref.updateAndGet(state, f)),
+              ),
           }),
-          Layer.succeed(Probe.SystemProbe, { check: () => Ref.get(checks) }),
+          Layer.succeed(Probe.SystemProbe, {
+            check: () =>
+              Ref.update(reads, (r) => ({ ...r, probes: r.probes + 1 })).pipe(
+                Effect.andThen(Ref.get(checks)),
+              ),
+          }),
           Settings.layerTest({
             d4Agent: {
               ...DEFAULT_D4_AGENT_SETTINGS,
@@ -173,7 +185,8 @@ const fixture = (
             getProviders: Ref.get(catalog),
           }),
           Layer.mock(Threads.ThreadManagementService)({
-            getThreadShell: (id) => Effect.succeed(id === targetId ? target : null),
+            getThreadShell: (id) =>
+              id === targetId ? Effect.succeed(target) : Ref.get(agentShell),
             getShellSnapshot: () =>
               Effect.succeed({
                 threads: [target],
@@ -193,7 +206,8 @@ const fixture = (
           Layer.mock(Projections.ProjectionStoreV2)({
             getRuntimeRequest: () => Ref.get(request),
             getThreadSnapshotWindow: () =>
-              Ref.get(projection).pipe(
+              Ref.update(reads, (r) => ({ ...r, snapshots: r.snapshots + 1 })).pipe(
+                Effect.andThen(Ref.get(projection)),
                 Effect.map((value) => ({
                   schemaVersion: 2,
                   snapshotSequence: 1,
@@ -209,7 +223,7 @@ const fixture = (
       ),
     );
     const service = yield* Agent.D4Agent.pipe(Effect.provide(layer));
-    return { service, state, checks, request, dispatches, projection, catalog };
+    return { service, state, checks, request, dispatches, projection, catalog, reads, agentShell };
   });
 
 it.effect("read-only blocks every action before a side effect", () =>
@@ -424,6 +438,7 @@ it.effect.each([
           },
         })),
       }));
+      yield* service.tick;
       const first = yield* service.getState();
       assert.equal(first.usage.length, 100);
       assert.isFalse(first.usage.some((entry) => entry.runId === "turn:0"));
@@ -521,5 +536,113 @@ it.effect("oversized answers are rejected before persistence or dispatch", () =>
     assert.equal(result._tag, "Failure");
     assert.deepEqual((yield* Ref.get(state)).actions, []);
     assert.deepEqual(yield* Ref.get(dispatches), []);
+  }),
+);
+
+it.effect("polling state never writes, probes, or loads conversation snapshots", () =>
+  Effect.gen(function* () {
+    const { service, state, reads } = yield* fixture();
+    yield* Ref.update(state, (s) => ({ ...s, threadId: targetId, projectId: target.projectId }));
+    yield* service.getState();
+    yield* service.getState();
+    assert.deepEqual(yield* Ref.get(reads), { updates: 0, snapshots: 0, probes: 0 });
+  }),
+);
+
+it.effect("state contains bounded unique summaries and full actions require detail fetch", () =>
+  Effect.gen(function* () {
+    const { service, state } = yield* fixture();
+    const actions = Array.from({ length: 249 }, (_, i) => ({
+      id: `action:${i}`,
+      action: { type: "send" as const, threadId: targetId, text: "x".repeat(16000) },
+      status: i < 50 ? ("pending" as const) : ("executed" as const),
+      createdAt: DateTime.formatIso(DateTime.makeUnsafe(i * 1000)),
+      resolvedAt: null,
+    }));
+    yield* Ref.update(state, (s) => ({ ...s, actions }));
+    const snapshot = yield* service.getState();
+    assert.equal(snapshot.actionLog.length, 70);
+    assert.equal(new Set(snapshot.actionLog.map((a) => a.id)).size, 70);
+    assert.equal(snapshot.actionLog.filter((a) => a.status === "pending").length, 50);
+    assert.isFalse("pendingActions" in snapshot);
+    assert.isTrue(snapshot.actionLog.every((a) => "preview" in a && a.preview.length <= 256));
+    assert.isBelow(JSON.stringify(snapshot).length, 40000);
+    const full = yield* service.getAction({ actionId: "action:0" });
+    assert.equal(full?.action.type, "send");
+    if (full?.action.type === "send") assert.equal(full.action.text.length, 16000);
+    assert.equal(yield* service.getAction({ actionId: "missing" }), null);
+  }),
+);
+
+it.effect(
+  "automatic actions serialize, enforce turn and target budgets, and survive service restart",
+  () =>
+    Effect.gen(function* () {
+      const { service, state, agentShell, dispatches } = yield* fixture("act");
+      const agentId = ThreadId.make("agent");
+      const runId = RunId.make("agent-run");
+      yield* Ref.set(agentShell, { ...target, id: agentId, activeRunId: runId });
+      yield* Ref.update(state, (s) => ({
+        ...s,
+        threadId: agentId,
+        projectId: target.projectId,
+        identityReady: true,
+      }));
+      const results = yield* Effect.all(
+        Array.from({ length: 5 }, () =>
+          Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })),
+        ),
+        { concurrency: "unbounded" },
+      );
+      assert.equal(results.filter((r) => r._tag === "Success").length, 1);
+      assert.equal((yield* Ref.get(dispatches)).length, 1);
+      assert.equal((yield* Ref.get(state)).automaticActions.length, 1);
+      const restarted = yield* fixture("act");
+      yield* Ref.set(restarted.state, yield* Ref.get(state));
+      yield* Ref.set(restarted.agentShell, yield* Ref.get(agentShell));
+      assert.equal(
+        (yield* Effect.result(
+          restarted.service.requestAction({ type: "interrupt", threadId: targetId }),
+        ))._tag,
+        "Failure",
+      );
+      assert.deepEqual(yield* Ref.get(restarted.dispatches), []);
+      yield* Ref.update(agentShell, (s) =>
+        s === null ? null : { ...s, activeRunId: RunId.make("another-run") },
+      );
+      assert.equal(
+        (yield* Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })))
+          ._tag,
+        "Failure",
+      );
+      yield* TestClock.adjust("10 minutes");
+      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* TestClock.adjust("10 minutes");
+      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* TestClock.adjust("10 minutes");
+      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* TestClock.adjust("10 minutes");
+      assert.equal(
+        (yield* Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })))
+          ._tag,
+        "Failure",
+      );
+      assert.equal((yield* Ref.get(dispatches)).length, 4);
+    }),
+);
+
+it.effect("identity and notification reads are pure and reserved identity is invisible", () =>
+  Effect.gen(function* () {
+    const { service, state, reads } = yield* fixture();
+    yield* Ref.update(state, (s) => ({ ...s, threadId: targetId, projectId: target.projectId }));
+    assert.equal(yield* service.getIdentity(), null);
+    assert.equal((yield* service.getSystemHealth()).threadId, null);
+    yield* Ref.update(state, (s) => ({ ...s, identityReady: true }));
+    assert.deepEqual(yield* service.getIdentity(), {
+      threadId: targetId,
+      projectId: target.projectId,
+    });
+    assert.equal((yield* service.getSystemHealth()).threadId, targetId);
+    assert.deepEqual(yield* Ref.get(reads), { updates: 0, snapshots: 0, probes: 0 });
   }),
 );

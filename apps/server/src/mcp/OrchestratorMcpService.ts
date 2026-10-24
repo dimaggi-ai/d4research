@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import {
   CommandId,
   type RunId,
@@ -899,6 +900,15 @@ function timelineItem(input: {
 }
 
 const make = Effect.gen(function* () {
+  const ownsD4Agent = yield* D4AgentAccess.ownership;
+  const assertOrdinaryThread = (threadId: ThreadId) =>
+    ownsD4Agent(threadId).pipe(
+      Effect.flatMap((owned) =>
+        owned
+          ? Effect.fail(failure("capability_denied", "The operation could not be completed."))
+          : Effect.void,
+      ),
+    );
   const crypto = yield* Crypto.Crypto;
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -947,29 +957,33 @@ const make = Effect.gen(function* () {
         );
 
   const loadProjection = (threadId: ThreadId) =>
-    threadManagement
-      .getThreadRecords(
-        threadId,
-        [
-          "runs",
-          "messages",
-          "subagents",
-          "providerThreads",
-          "providerTurns",
-          "runtimeRequests",
-          "contextTransfers",
-          "turnItems",
-        ],
-        { turnItemTypes: [], messageRoles: ["user"] },
-      )
-      .pipe(
-        Effect.mapError((error) =>
-          failure(
-            "orchestration_error",
-            `Unable to read thread ${threadId}: ${errorMessage(error)}`,
+    assertOrdinaryThread(threadId).pipe(
+      Effect.andThen(
+        threadManagement
+          .getThreadRecords(
+            threadId,
+            [
+              "runs",
+              "messages",
+              "subagents",
+              "providerThreads",
+              "providerTurns",
+              "runtimeRequests",
+              "contextTransfers",
+              "turnItems",
+            ],
+            { turnItemTypes: [], messageRoles: ["user"] },
+          )
+          .pipe(
+            Effect.mapError((error) =>
+              failure(
+                "orchestration_error",
+                `Unable to read thread ${threadId}: ${errorMessage(error)}`,
+              ),
+            ),
           ),
-        ),
-      );
+      ),
+    );
 
   const loadProjectThread = (
     projectId: OrchestrationV2ThreadProjection["thread"]["projectId"],
@@ -1039,6 +1053,7 @@ const make = Effect.gen(function* () {
 
   const loadTargetThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
+      yield* assertOrdinaryThread(threadId);
       const shell = yield* threadManagement
         .getThreadShell(threadId)
         .pipe(Effect.mapError(threadManagementFailure));
@@ -1109,6 +1124,7 @@ const make = Effect.gen(function* () {
 
   const loadReadableThread = (scope: McpInvocationScope, threadId: ThreadId) =>
     Effect.gen(function* () {
+      yield* assertOrdinaryThread(threadId);
       const { parent } = yield* loadCaller(scope);
       const shell = yield* threadManagement
         .getThreadShell(threadId)

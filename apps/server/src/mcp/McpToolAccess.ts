@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import {
   OrchestratorMcpFailure,
   type ProviderInteractionMode,
@@ -131,7 +132,10 @@ export const writesThreads = <P, A, E, R>(
   declare((params: P) =>
     Effect.gen(function* () {
       const caller = yield* writingCaller;
+      const owns = yield* D4AgentAccess.ownership;
       for (const threadId of threads(params)) {
+        const targetId = threadId ?? caller.scope.thread?.threadId;
+        if (targetId !== undefined && (yield* owns(targetId))) return yield* unavailable();
         if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
         const target = yield* caller.threads
           .getThreadShell(threadId)

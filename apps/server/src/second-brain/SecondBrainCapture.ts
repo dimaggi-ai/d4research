@@ -1,3 +1,4 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { createOrchestrationV2TurnItemVisibility } from "@d4research/shared/orchestrationV2Timeline";
 import { SecondBrainError, BrainNoteKind, ThreadId } from "@d4research/contracts";
 import * as Context from "effect/Context";
@@ -73,6 +74,7 @@ const similarContent = (existing: string, candidate: string) => {
   return wanted.size > 0 && [...wanted].filter((t) => present.has(t)).length / wanted.size >= 0.8;
 };
 const make = Effect.gen(function* () {
+  const owns = yield* AgentAccess.ownership;
   const settings = yield* Settings.ServerSettingsService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const brain = yield* Brain.SecondBrainService;
@@ -80,6 +82,7 @@ const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   const enqueue: SecondBrainCapture["Service"]["enqueue"] = (threadId, throughRun) =>
     Effect.gen(function* () {
+      if (yield* owns(threadId)) return yield* new SecondBrainError({ code: "disabled" });
       const status = yield* brain.status();
       if (!status.vault) return yield* new SecondBrainError({ code: "disabled" });
       const records = yield* projections.getThreadRecords(threadId, ["runs", "attempts"]);
@@ -129,6 +132,7 @@ const make = Effect.gen(function* () {
   const process: SecondBrainCapture["Service"]["process"] = (input) =>
     lock.withPermits(1)(
       Effect.gen(function* () {
+        if (yield* owns(ThreadId.make(input.threadId))) return [];
         const job = yield* index.enqueueCapture(input);
         if (job.state === "completed" || (job.attempts ?? 0) >= 3) return job.proposalIds;
         const ids = [...job.proposalIds];

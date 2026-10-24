@@ -13,10 +13,12 @@ import {
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
+import { serverEnvironment } from "../state/server";
+import { useAtomCommand } from "../state/use-atom-command";
 import { environmentShell } from "../state/shell";
 import {
   hasDesktopNotifications,
@@ -117,6 +119,33 @@ function EnvironmentNotifications({
   const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
     strict: false,
   });
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const monitor = config?.settings.agentMonitor;
+  const canClaim = useAtomValue(
+    serverEnvironment.claimMonitorAttention.permissionAtom(environmentId),
+  );
+  const claimMonitorAttention = useAtomCommand(serverEnvironment.claimMonitorAttention, {
+    reportFailure: false,
+  });
+  const monitorKeys = useRef(new Map<ThreadId, string>());
+  const pendingMonitorKeys = useRef(new Set<string>());
+  const notificationsMounted = useRef(false);
+  useEffect(() => {
+    notificationsMounted.current = true;
+    return () => {
+      notificationsMounted.current = false;
+    };
+  }, []);
+  const monitorNotificationsAllowed = useEffectEvent(
+    () =>
+      notificationsMounted.current &&
+      threads !== null &&
+      monitor?.enabled === true &&
+      monitor.notificationsEnabled &&
+      canClaim &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted",
+  );
   const previous = useRef(new Map<ThreadId, NotificationState>());
 
   useEffect(() => {
@@ -124,49 +153,19 @@ function EnvironmentNotifications({
       previous.current.clear();
       return;
     }
-    const next = new Map<ThreadId, NotificationState>();
-    const subagentRequests = pendingSubagentRequestsByThread(threads);
-    for (const rawThread of threads) {
-      if (rawThread.lineage.relationshipToParent === "subagent") continue;
-      const prior = previous.current.get(rawThread.id);
-      const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
-      if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
-        next.set(rawThread.id, prior);
-        continue;
-      }
-      const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
-      let status = resolveSidebarThreadStatus(thread);
-      if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
-      const attention =
-        status === "input" || status === "approval" || status === "failed" || status === "limited"
-          ? `${thread.latestRun?.runId ?? ""}:${status}`
-          : null;
-      const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-      const completion =
-        status === "ready" &&
-        thread.latestRun?.status === "completed" &&
-        Number.isFinite(completedAt)
-          ? completedAt
-          : (prior?.completion ?? null);
-      next.set(thread.id, { raw: rawThread, subagentRequest, attention, completion });
-      if (!prior || thread.archivedAt !== null) continue;
-      const kind =
-        attention && attention !== prior.attention
-          ? "input"
-          : completion !== null && (prior.completion === null || completion > prior.completion)
-            ? "completion"
-            : null;
-      if (!kind) continue;
-      const title =
-        kind === "completion"
-          ? "Thread completed"
-          : status === "approval"
-            ? "Approval needed"
-            : status === "limited"
-              ? "Usage limit reached"
-              : status === "failed"
-                ? "Thread failed"
-                : "Input needed";
+    const showNotification = ({
+      threadId,
+      title,
+      body,
+      kind,
+      status,
+    }: {
+      threadId: ThreadId;
+      title: string;
+      body: string;
+      kind: "input" | "completion";
+      status: string;
+    }) => {
       if (hasNotificationSound(mode)) {
         void playNotificationSound(kind, () =>
           hasNotificationSound(getClientSettings().notificationMode),
@@ -176,12 +175,12 @@ function EnvironmentNotifications({
         inAppNotificationsEnabled &&
         document.visibilityState === "visible" &&
         document.hasFocus() &&
-        (activeEnvironmentId !== environmentId || activeThreadId !== thread.id)
+        (activeEnvironmentId !== environmentId || activeThreadId !== threadId)
       ) {
         const toastId = toastManager.add({
           type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
           title,
-          description: thread.title,
+          description: body,
           data: {
             hideCopyButton: true,
             leadingIcon:
@@ -201,12 +200,12 @@ function EnvironmentNotifications({
               toastManager.close(toastId);
               void navigate({
                 to: "/$environmentId/$threadId",
-                params: { environmentId, threadId: thread.id },
+                params: { environmentId, threadId: threadId },
               });
             },
           },
         });
-        continue;
+        return;
       }
       if (
         !hasDesktopNotifications(mode) ||
@@ -214,11 +213,11 @@ function EnvironmentNotifications({
         typeof Notification === "undefined" ||
         Notification.permission !== "granted"
       )
-        continue;
+        return;
       try {
         const notification = new Notification(title, {
-          body: thread.title,
-          tag: `${environmentId}:${thread.id}`,
+          body: body,
+          tag: `${environmentId}:${threadId}`,
           silent: true,
         });
         onNotification(environmentId, notification);
@@ -227,17 +226,101 @@ function EnvironmentNotifications({
           window.focus();
           void navigate({
             to: "/$environmentId/$threadId",
-            params: { environmentId, threadId: thread.id },
+            params: { environmentId, threadId: threadId },
           });
         });
       } catch {
         // Some browsers expose Notification but reject desktop presentation.
       }
+    };
+    const next = new Map<ThreadId, NotificationState>();
+    const subagentRequests = pendingSubagentRequestsByThread(threads);
+    for (const rawThread of threads) {
+      if (!monitor?.enabled && rawThread.lineage.relationshipToParent === "subagent") continue;
+      const prior = previous.current.get(rawThread.id);
+      const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
+      if (
+        !monitor?.enabled &&
+        prior?.raw === rawThread &&
+        prior.subagentRequest === subagentRequest
+      ) {
+        next.set(rawThread.id, prior);
+        continue;
+      }
+      const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
+      let status = resolveSidebarThreadStatus(thread);
+      if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
+      const attention =
+        status === "input" || status === "approval" || status === "failed" || status === "limited"
+          ? `${thread.latestRun?.runId ?? ""}:${status}`
+          : null;
+      const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
+      const completion =
+        status === "ready" &&
+        thread.latestRun?.status === "completed" &&
+        Number.isFinite(completedAt)
+          ? completedAt
+          : (prior?.completion ?? null);
+      next.set(thread.id, { raw: rawThread, subagentRequest, attention, completion });
+      if (monitor?.enabled) {
+        const report = rawThread.agentMonitor;
+        if (
+          !report?.attentionRequired ||
+          thread.archivedAt !== null ||
+          thread.deletedAt !== null ||
+          !monitorNotificationsAllowed() ||
+          monitorKeys.current.get(thread.id) === report.reportKey
+        )
+          continue;
+        const key = `${thread.id}:${report.reportKey}`;
+        if (pendingMonitorKeys.current.has(key)) continue;
+        pendingMonitorKeys.current.add(key);
+        void claimMonitorAttention({
+          environmentId,
+          input: { threadId: thread.id, reportKey: report.reportKey },
+        })
+          .then((result) => {
+            if (result._tag !== "Success") return;
+            monitorKeys.current.set(thread.id, report.reportKey);
+            if (result.value.claimed && monitorNotificationsAllowed()) {
+              showNotification({
+                threadId: thread.id,
+                title: "Thread needs attention",
+                body: "Open the thread to review its status.",
+                kind: "input",
+                status: "input",
+              });
+            }
+          })
+          .finally(() => pendingMonitorKeys.current.delete(key));
+        continue;
+      }
+      if (!prior || thread.archivedAt !== null) continue;
+      const kind =
+        attention && attention !== prior.attention
+          ? "input"
+          : completion !== null && (prior.completion === null || completion > prior.completion)
+            ? "completion"
+            : null;
+      if (!kind) continue;
+      const title =
+        kind === "completion"
+          ? "Thread completed"
+          : status === "approval"
+            ? "Approval needed"
+            : status === "limited"
+              ? "Usage limit reached"
+              : status === "failed"
+                ? "Thread failed"
+                : "Input needed";
+      showNotification({ threadId: thread.id, title, body: thread.title, kind, status });
     }
     previous.current = next;
   }, [
     activeEnvironmentId,
     activeThreadId,
+    claimMonitorAttention,
+    monitor,
     environmentId,
     inAppNotificationsEnabled,
     mode,

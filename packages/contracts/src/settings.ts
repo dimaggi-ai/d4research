@@ -1,3 +1,4 @@
+import { AgentMonitorSettings } from "./agentMonitor.ts";
 import { SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
@@ -1772,6 +1773,11 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  agentMonitor: AgentMonitorSettings.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed({ enabled: false, modelSelection: null, notificationsEnabled: false }),
+    ),
+  ),
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoResumeAfterUsageLimit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Null means no client has migrated this preference yet; an empty value is
@@ -2179,6 +2185,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  agentMonitor: Schema.optionalKey(AgentMonitorSettings),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),

@@ -1,3 +1,4 @@
+import { AgentMonitorError } from "./agentMonitor.ts";
 import {
   BrainStatus,
   BrainProposalSummary,
@@ -36,7 +37,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ThreadId, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   CodexAuthCallbackInput,
   CodexAuthCallbackState,
@@ -497,6 +498,7 @@ export const WS_METHODS = {
   secondBrainReindex: "secondBrain.reindex",
   secondBrainLint: "secondBrain.lint",
   secondBrainRegenerateIndex: "secondBrain.regenerateIndex",
+  agentMonitorClaimAttention: "agentMonitor.claimAttention",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -806,6 +808,12 @@ const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStora
   success: Schema.NullOr(DatabaseStorageStatus),
   stream: true,
   error: EnvironmentAuthorizationError,
+});
+
+const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAttention, {
+  payload: Schema.Struct({ threadId: ThreadId, reportKey: TrimmedNonEmptyString }),
+  success: Schema.Struct({ claimed: Schema.Boolean }),
+  error: Schema.Union([AgentMonitorError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
@@ -1949,6 +1957,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
+  WsAgentMonitorClaimAttentionRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

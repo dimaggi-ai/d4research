@@ -106,6 +106,46 @@ const emptyProjection = {
 } as OrchestrationV2ThreadProjection;
 
 describe("applyOrchestrationV2ProjectionEvent", () => {
+  it("updates the monitor without changing activity timestamps or timeline state", () => {
+    const report = {
+      schemaVersion: 1 as const,
+      classification: "idle" as const,
+      reason: "no_active_run" as const,
+      attentionRequired: false,
+      reportKey: "idle",
+      observedAt: "2026-10-24T00:00:00.000Z",
+      runId: null,
+      attemptId: null,
+      runStatus: null,
+      pendingRequestId: null,
+    };
+    const result = applyOrchestrationV2ProjectionEvent(emptyProjection, {
+      type: "thread.monitor-updated",
+      threadId,
+      occurredAt: DateTime.makeUnsafe(report.observedAt),
+      payload: { report },
+    } as OrchestrationV2DomainEvent);
+    expect(result?.thread.agentMonitor).toEqual(report);
+    expect(result?.thread.updatedAt).toBe(emptyProjection.thread.updatedAt);
+    expect(result?.updatedAt).toBe(emptyProjection.updatedAt);
+    expect(result?.visibleTurnItems).toBe(emptyProjection.visibleTurnItems);
+    const metadataUpdated = applyOrchestrationV2ProjectionEvent(result, {
+      type: "thread.metadata-updated",
+      threadId,
+      occurredAt: now,
+      payload: { ...emptyProjection.thread, title: "Renamed", agentMonitor: null },
+    } as OrchestrationV2DomainEvent);
+    expect(metadataUpdated?.thread.title).toBe("Renamed");
+    expect(metadataUpdated?.thread.agentMonitor).toEqual(report);
+    const cleared = applyOrchestrationV2ProjectionEvent(result, {
+      type: "thread.monitor-updated",
+      threadId,
+      occurredAt: now,
+      payload: { report: null },
+    } as OrchestrationV2DomainEvent);
+    expect(cleared?.thread.agentMonitor).toBeNull();
+  });
+
   it("applies a compact PR sync without replacing other links or thread metadata", () => {
     const link = (number: number): ThreadPullRequestLink => ({
       host: "github.com",

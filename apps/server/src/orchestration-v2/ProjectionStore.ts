@@ -52,6 +52,7 @@ import {
   OrchestrationV2ProviderTurnJson as OrchestrationV2ProviderTurnJsonSchema,
   OrchestrationV2RunAttemptJson as OrchestrationV2RunAttemptJsonSchema,
   OrchestrationV2RunJson as OrchestrationV2RunJsonSchema,
+  AgentMonitorReport,
   OrchestrationV2RuntimeRequestJson as OrchestrationV2RuntimeRequestJsonSchema,
   OrchestrationV2SubagentJson as OrchestrationV2SubagentJsonSchema,
   OrchestrationV2TurnItemJson as OrchestrationV2TurnItemJsonSchema,
@@ -730,6 +731,11 @@ export function applyToProjection(
   };
 
   switch (event.type) {
+    case "thread.monitor-updated":
+      return {
+        ...projection,
+        thread: { ...projection.thread, agentMonitor: event.payload.report },
+      };
     case "thread.pull-request-link-updated":
       return {
         ...base,
@@ -757,13 +763,13 @@ export function applyToProjection(
     case "thread.provider-switched":
       return {
         ...base,
-        thread: event.payload,
+        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
       };
     case "thread.visited":
     case "thread.marked-unread":
       return {
         ...projection,
-        thread: event.payload,
+        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
       };
     case "run.created":
     case "run.updated":
@@ -1093,6 +1099,10 @@ export const encodeProviderThreadPayload = Schema.encodeEffect(
 const encodeProviderTurnPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2ProviderTurnJsonSchema),
 );
+const encodeMonitorReport = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.NullOr(AgentMonitorReport)),
+);
+
 const encodeRuntimeRequestPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2RuntimeRequestJsonSchema),
 );
@@ -1501,6 +1511,7 @@ export function threadShellFromProjection(
     providerInstanceId: projection.thread.providerInstanceId,
     modelSelection: projection.thread.modelSelection,
     composerModelSelection: projection.thread.composerModelSelection ?? null,
+    agentMonitor: projection.thread.agentMonitor ?? null,
     runtimeMode: projection.thread.runtimeMode,
     interactionMode: projection.thread.interactionMode,
     branch: projection.thread.branch,
@@ -1759,6 +1770,7 @@ function shellFromState(input: {
     providerInstanceId: input.state.thread.providerInstanceId,
     modelSelection: input.state.thread.modelSelection,
     composerModelSelection: input.state.thread.composerModelSelection ?? null,
+    agentMonitor: input.state.thread.agentMonitor ?? null,
     runtimeMode: input.state.thread.runtimeMode,
     interactionMode: input.state.thread.interactionMode,
     branch: input.state.thread.branch,
@@ -1857,6 +1869,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             });
             break;
           }
+          case "thread.monitor-updated": {
+            const reportJson = yield* encodeMonitorReport(event.payload.report);
+            yield* sql`UPDATE orchestration_v2_projection_threads
+              SET payload_json = json_set(payload_json, '$.agentMonitor', json(${reportJson}))
+              WHERE thread_id = ${event.threadId}`;
+            break;
+          }
           case "thread.created":
           case "thread.archived":
           case "thread.unarchived":
@@ -1925,7 +1944,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 updated_at = excluded.updated_at,
                 archived_at = excluded.archived_at,
                 deleted_at = excluded.deleted_at,
-                payload_json = excluded.payload_json
+                payload_json = json_set(excluded.payload_json, '$.agentMonitor',
+                  json_extract(orchestration_v2_projection_threads.payload_json, '$.agentMonitor'))
             `;
             break;
           }
@@ -2690,6 +2710,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         }
 
         if (
+          event.type !== "thread.monitor-updated" &&
           event.type !== "thread.created" &&
           event.type !== "thread.archived" &&
           event.type !== "thread.unarchived" &&

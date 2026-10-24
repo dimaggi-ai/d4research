@@ -137,6 +137,7 @@ describe("runMigrations", () => {
         [68, "PullRequestReviewGuides"],
         [69, "ThreadFailureLookupIndex"],
         [70, "DropUnusedV1Projections"],
+        [71, "AgentMonitorNotificationClaims"],
       ]);
       assert.deepStrictEqual(yield* history, migrationManifest);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

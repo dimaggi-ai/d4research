@@ -1,3 +1,4 @@
+import { agentMonitorSettings } from "./agent-monitor.spec.mjs";
 import { handoffSettings } from "./handoff-settings.spec.mjs";
 import { createPairingUrl } from "./harness.mjs";
 import { branding, onboardingBranding } from "./branding.spec.mjs";
@@ -26,6 +27,7 @@ function authenticated(run) {
 
 await runProductionBrowserSuite([
   { name: "consistent-branding-and-loading", run: branding },
+  { name: "agent-monitor-settings", run: authenticated(agentMonitorSettings) },
   { name: "handoff-modes-and-local-judges", run: authenticated(handoffSettings) },
   ...pwaRecoverySpecs,
   { name: "missing-thread-redirects-to-draft", run: missingThreadRedirect },

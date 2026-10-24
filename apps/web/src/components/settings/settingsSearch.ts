@@ -130,6 +130,14 @@ const SOURCE_CONTROL_HOST_SEARCH_ITEMS = sourceControlClients.definitions.flatMa
 
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "agent-monitor",
+    title: "Monitor",
+    to: "/settings/general",
+    targetId: "agent-monitor",
+    searchTerms: ["agent monitor attention stuck liveness model notifications"],
+    scope: "environment",
+  },
+  {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
     title: "Keep worktrees with local changes",

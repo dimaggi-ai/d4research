@@ -1,3 +1,4 @@
+import type { AgentMonitorReport } from "@d4research/contracts";
 import type { ClientSettings } from "@d4research/contracts/settings";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -6,6 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
+  configAtom: { type: "config" },
+  permissionAtom: { type: "permission" },
+  monitorEnabled: false,
+  monitorNotifications: false,
+  report: null as AgentMonitorReport | null,
+  claim: vi.fn(async (_input: unknown) => ({ _tag: "Success" as const, value: { claimed: true } })),
   mode: "off" as ClientSettings["notificationMode"],
   inApp: true,
   active: { environmentId: "env-1", threadId: "other-thread" },
@@ -38,6 +45,7 @@ const SHELL_NOW = DateTime.makeUnsafe("2026-09-13T09:00:00.000Z");
 
 function mockThreadShell() {
   return {
+    agentMonitor: state.report,
     id: "thread-1",
     projectId: "project-1",
     title: "Fix the login form",
@@ -112,10 +120,40 @@ function mockThreads() {
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
-  useAtomValue: (() => ({
-    status: state.live ? "live" : "disconnected",
-    snapshot: Option.some({ threads: mockThreads() }),
-  })) as never,
+  useAtomValue: ((atom: unknown) =>
+    atom === state.configAtom
+      ? {
+          settings: {
+            agentMonitor: {
+              enabled: state.monitorEnabled,
+              notificationsEnabled: state.monitorNotifications,
+              modelSelection: null,
+            },
+          },
+        }
+      : atom === state.permissionAtom
+        ? true
+        : {
+            status: state.live ? "live" : "disconnected",
+            snapshot: Option.some({ threads: mockThreads() }),
+          }) as never,
+}));
+vi.mock(import("../state/server"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: (() => state.configAtom) as never,
+      claimMonitorAttention: {
+        ...actual.serverEnvironment.claimMonitorAttention,
+        permissionAtom: (() => state.permissionAtom) as never,
+      },
+    },
+  };
+});
+vi.mock(import("../state/use-atom-command"), () => ({
+  useAtomCommand: (() => state.claim) as never,
 }));
 vi.mock(import("@tanstack/react-router"), async (original) => ({
   ...(await original()),
@@ -164,6 +202,9 @@ async function complete() {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(state, {
+    monitorEnabled: false,
+    monitorNotifications: false,
+    report: null,
     mode: "off",
     inApp: true,
     active: { environmentId: "env-1", threadId: "other-thread" },
@@ -181,6 +222,7 @@ beforeEach(() => {
     background: [],
     delegatedChild: null,
   });
+  state.claim.mockResolvedValue({ _tag: "Success", value: { claimed: true } });
   stableParent = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
@@ -287,12 +329,15 @@ describe("thread notifications", () => {
     });
   });
 
-  it("alerts when only a dev server is left running, not while a monitor can wake the agent", async () => {
+  it("alerts only after all background work clears", async () => {
     await render();
     state.background = [{ taskId: "watch", kind: "monitor" }];
     await complete();
     expect(state.add).not.toHaveBeenCalled();
     state.background = [{ taskId: "dev", kind: "command" }];
+    await render();
+    expect(state.add).not.toHaveBeenCalled();
+    state.background = [];
     await render();
     expect(state.add).toHaveBeenCalledTimes(1);
     expect(state.add).toHaveBeenLastCalledWith(
@@ -358,5 +403,139 @@ describe("thread notifications", () => {
       tag: "env-1:thread-1",
       silent: true,
     });
+  });
+});
+
+const attentionReport = {
+  schemaVersion: 1,
+  classification: "wedged",
+  reason: "provider_absent",
+  attentionRequired: true,
+  reportKey: "run-1:wedged",
+  observedAt: "2026-10-24T00:00:00.000Z",
+  runId: null,
+  attemptId: null,
+  runStatus: "running",
+  pendingRequestId: null,
+} satisfies AgentMonitorReport;
+
+function enableMonitor() {
+  state.mode = "notifications-and-sound";
+  state.monitorEnabled = true;
+  state.monitorNotifications = true;
+  state.report = attentionReport;
+}
+
+describe("monitor notifications", () => {
+  it("shows generic content once and navigates to the reported thread", async () => {
+    enableMonitor();
+    await render();
+    await render();
+    expect(state.claim).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "env-1",
+      input: { threadId: "thread-1", reportKey: attentionReport.reportKey },
+    });
+    expect(state.add).toHaveBeenCalledTimes(1);
+    const toast = state.add.mock.calls[0]?.[0];
+    expect(toast?.title).toBe("Thread needs attention");
+    expect(toast?.description).toBe("Open the thread to review its status.");
+    expect(JSON.stringify(toast)).not.toContain("Fix the login form");
+    toast?.actionProps.onClick();
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: "env-1", threadId: "thread-1" },
+    });
+  });
+
+  it("uses generic content for system notifications", async () => {
+    enableMonitor();
+    state.focused = false;
+    await render();
+    expect(state.notification).toHaveBeenCalledExactlyOnceWith("Thread needs attention", {
+      body: "Open the thread to review its status.",
+      tag: "env-1:thread-1",
+      silent: true,
+    });
+    expect(state.add).not.toHaveBeenCalled();
+  });
+
+  it("suppresses completion alerts while the monitor is enabled", async () => {
+    enableMonitor();
+    state.report = {
+      ...attentionReport,
+      classification: "idle",
+      attentionRequired: false,
+      runStatus: "completed",
+    };
+    await render();
+    await complete();
+    expect(state.claim).not.toHaveBeenCalled();
+    expect(state.add).not.toHaveBeenCalled();
+    expect(state.notification).not.toHaveBeenCalled();
+    expect(state.sound).not.toHaveBeenCalled();
+  });
+
+  it("suppresses legacy and monitor alerts when monitor notifications are disabled", async () => {
+    enableMonitor();
+    state.monitorNotifications = false;
+    await render();
+    state.input = true;
+    await render();
+    await complete();
+    expect(state.claim).not.toHaveBeenCalled();
+    expect(state.add).not.toHaveBeenCalled();
+    expect(state.notification).not.toHaveBeenCalled();
+  });
+
+  it("does not notify when another client already claimed the report", async () => {
+    enableMonitor();
+    state.claim.mockResolvedValue({ _tag: "Success", value: { claimed: false } });
+    await render();
+    await render();
+    expect(state.claim).toHaveBeenCalledTimes(1);
+    expect(state.add).not.toHaveBeenCalled();
+    expect(state.notification).not.toHaveBeenCalled();
+  });
+
+  it("notifies for a subagent attention report", async () => {
+    enableMonitor();
+    state.subagent = true;
+    await render();
+    expect(state.claim).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Thread needs attention" }),
+    );
+  });
+
+  it.each(["disconnect", "disabled", "unmounted"])(
+    "discards a pending claim after %s",
+    async (condition) => {
+      enableMonitor();
+      let resolveClaim!: (value: { _tag: "Success"; value: { claimed: boolean } }) => void;
+      state.claim.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveClaim = resolve;
+          }),
+      );
+      await render();
+      expect(state.claim).toHaveBeenCalledTimes(1);
+      if (condition === "disconnect") state.live = false;
+      else if (condition === "disabled") state.monitorNotifications = false;
+      if (condition === "unmounted") await act(() => root.render(null));
+      else await render();
+      await act(async () => resolveClaim({ _tag: "Success", value: { claimed: true } }));
+      expect(state.add).not.toHaveBeenCalled();
+      expect(state.notification).not.toHaveBeenCalled();
+      expect(state.sound).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not claim monitor attention without OS permission", async () => {
+    enableMonitor();
+    vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "denied" }));
+    await render();
+    expect(state.claim).not.toHaveBeenCalled();
+    expect(state.add).not.toHaveBeenCalled();
   });
 });

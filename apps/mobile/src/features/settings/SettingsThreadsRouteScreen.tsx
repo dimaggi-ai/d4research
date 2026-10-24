@@ -1,3 +1,4 @@
+import { AgentMonitorSettings } from "./AgentMonitorSettings";
 import { AuthSettingsWriteScope } from "@d4research/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
@@ -46,6 +47,7 @@ export function SettingsThreadsRouteScreen() {
           contentContainerClassName="gap-6 px-5 pt-4"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
+          <AgentMonitorSettings />
           <AutoSettleSettingsRows />
           <BetaSettingsSection />
           <LegacySettingsSection />

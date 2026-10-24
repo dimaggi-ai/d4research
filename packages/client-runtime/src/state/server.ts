@@ -965,6 +965,10 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    claimMonitorAttention: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:claim-monitor-attention",
+      tag: WS_METHODS.agentMonitorClaimAttention,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

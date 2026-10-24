@@ -1,3 +1,4 @@
+import Migration0071 from "./Migrations/071_AgentMonitorNotificationClaims.ts";
 import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -141,6 +142,7 @@ export const migrationEntries = [
   [68, "PullRequestReviewGuides", Migration0068],
   [69, "ThreadFailureLookupIndex", Migration0069],
   [70, "DropUnusedV1Projections", Migration0070],
+  [71, "AgentMonitorNotificationClaims", Migration0071],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

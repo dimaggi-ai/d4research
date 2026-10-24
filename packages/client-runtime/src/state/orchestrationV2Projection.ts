@@ -200,6 +200,11 @@ export function applyOrchestrationV2ProjectionEvent(
   const latestLocalTurnOrdinal = options?.latestLocalTurnOrdinal;
   const base = { ...projection, updatedAt: event.occurredAt };
   switch (event.type) {
+    case "thread.monitor-updated":
+      return {
+        ...projection,
+        thread: { ...projection.thread, agentMonitor: event.payload.report },
+      };
     case "thread.pull-request-link-updated":
       return {
         ...base,
@@ -225,11 +230,17 @@ export function applyOrchestrationV2ProjectionEvent(
     case "thread.model-selection-updated":
     case "thread.composer-model-selection-updated":
     case "thread.provider-switched":
-      return { ...base, thread: event.payload };
+      return {
+        ...base,
+        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
+      };
     // Visited tracking is read state, not activity: skip the updatedAt bump.
     case "thread.visited":
     case "thread.marked-unread":
-      return { ...projection, thread: event.payload };
+      return {
+        ...projection,
+        thread: { ...event.payload, agentMonitor: projection.thread.agentMonitor ?? null },
+      };
     case "run.created":
     case "run.updated": {
       const next = { ...base, runs: upsertEntity(base.runs, event.payload) };

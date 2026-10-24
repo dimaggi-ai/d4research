@@ -36,6 +36,30 @@ vi.mock(import("../state/shell"), async (original) => {
     },
   };
 });
+vi.mock(import("../state/server"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const config = Atom.make({
+    settings: {
+      agentMonitor: { enabled: false, notificationsEnabled: false, modelSelection: null },
+    },
+  });
+  const permission = Atom.make(true);
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: (() => config) as never,
+      claimMonitorAttention: {
+        ...actual.serverEnvironment.claimMonitorAttention,
+        permissionAtom: () => permission,
+      },
+    },
+  };
+});
+vi.mock(import("../state/use-atom-command"), () => ({
+  useAtomCommand: (() => async () => ({ _tag: "Success", value: { claimed: false } })) as never,
+}));
 vi.mock(import("../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironmentIds: (() => state.environmentIds) as never,

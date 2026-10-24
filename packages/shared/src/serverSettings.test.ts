@@ -1372,3 +1372,34 @@ it("merges Meko connection edits without resetting compression or switching back
       .memoryBackend,
   ).toBe("local");
 });
+
+it("replaces monitor sessions without carrying model options across providers", () => {
+  const configured = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    agentMonitor: {
+      enabled: true,
+      notificationsEnabled: true,
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-6-luna",
+        options: [{ id: "reasoningEffort", value: "low" }],
+      },
+    },
+  });
+  const selection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-sonnet-5-5",
+  };
+  const switched = applyServerSettingsPatch(configured, {
+    agentMonitor: { enabled: true, notificationsEnabled: false, modelSelection: selection },
+  });
+  expect(switched.agentMonitor).toEqual({
+    enabled: true,
+    notificationsEnabled: false,
+    modelSelection: selection,
+  });
+  expect(
+    applyServerSettingsPatch(switched, {
+      agentMonitor: { enabled: false, notificationsEnabled: false, modelSelection: null },
+    }).agentMonitor.modelSelection,
+  ).toBeNull();
+});

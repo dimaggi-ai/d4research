@@ -1,3 +1,4 @@
+import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as SecondBrain from "./second-brain/SecondBrainService.ts";
 import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
@@ -1210,6 +1211,7 @@ const layerWsRpc = (
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const agentMonitor = yield* AgentMonitorReactor.AgentMonitorReactor;
       const secondBrain = yield* SecondBrain.SecondBrainService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2317,6 +2319,7 @@ const layerWsRpc = (
         [WS_METHODS.secondBrainReindex]: () => secondBrain.reindex(),
         [WS_METHODS.secondBrainLint]: () => secondBrain.lint(),
         [WS_METHODS.secondBrainRegenerateIndex]: () => secondBrain.regenerateIndex(),
+        [WS_METHODS.agentMonitorClaimAttention]: (input) => agentMonitor.claimAttention(input),
         [WS_METHODS.serverGetSettings]: (_input) =>
           serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>

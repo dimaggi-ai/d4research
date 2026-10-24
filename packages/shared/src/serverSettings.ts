@@ -564,6 +564,7 @@ export function applyServerSettingsPatch(
     : replacedThreadSkills;
   const nextWithReplacementsBase = {
     ...next,
+    ...(patch.agentMonitor === undefined ? {} : { agentMonitor: patch.agentMonitor }),
     favorites,
     providerModelPreferences: nextModelPreferences,
     ...(worktreeCleanupPatch === undefined

@@ -1,3 +1,4 @@
+import { AgentMonitorSettings } from "./AgentMonitorSettings";
 import { MekoHandoffSettings } from "./MekoHandoffSettings";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { SettingsGroup } from "./SettingsGroup";
@@ -2285,6 +2286,7 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <ProjectDefaultsSettings category="general" />
+      <AgentMonitorSettings />
       <SettingsSection id="organization" title="Organization">
         <SettingsRow
           {...searchableSetting("project-grouping")}

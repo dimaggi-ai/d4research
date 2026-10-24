@@ -1,3 +1,4 @@
+import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as HandoffMemory from "./handoffMemory.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
 import * as SecondBrainCaptureReactor from "./second-brain/SecondBrainCaptureReactor.ts";
@@ -554,6 +555,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadPullRequestWorker,
   Layer.effectDiscard(
     Effect.gen(function* () {
+      const monitor = yield* AgentMonitorReactor.AgentMonitorReactor;
+      yield* monitor.start();
+    }),
+  ),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       yield* service.start();
     }),
@@ -582,43 +589,47 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerProviderInstallationRefresh,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
-).pipe(
-  Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
-  Layer.provideMerge(layerSecondBrain),
-  Layer.provideMerge(layerOrchestrationApplication),
-  Layer.provideMerge(HandoffMemory.layer),
-  Layer.provideMerge(RuntimeLayer.layerProjectService),
-  // HTTP/MCP handlers resolve adapters when a request arrives, not only while
-  // their route layers are built. Keep the shared facade in the server context.
-  Layer.provideMerge(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
-  Layer.provideMerge(ResearchDelegationBudgetLive),
-  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(
-    Layer.mergeAll(ProjectStore.layer, ProjectionStoreV2.layer, ThreadSearch.layer),
-  ),
-  Layer.provideMerge(layerServerSettings),
-  Layer.provideMerge(layerSourceControlProviderRegistry),
-  Layer.provideMerge(layerGit),
-  Layer.provideMerge(WorktreeSetupTracker.layer),
-  Layer.provideMerge(layerVcs),
-  Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
-  Layer.provideMerge(layerPersistence),
-  Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
-  ),
-  Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistry.layer)),
-  // The instance registry is the new routing keystone — text generation,
-  // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
-  // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
-  // hydration adds their default instances to `providerInstances` on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      AntigravityInstallation.AntigravityInstallation.layer,
-      CodexInstallation.CodexInstallation.layer,
+)
+  .pipe(
+    Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
+    Layer.provideMerge(layerSecondBrain),
+    Layer.provideMerge(AgentMonitorReactor.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink))),
+    Layer.provideMerge(layerOrchestrationApplication),
+    Layer.provideMerge(HandoffMemory.layer),
+    Layer.provideMerge(RuntimeLayer.layerProjectService),
+    // HTTP/MCP handlers resolve adapters when a request arrives, not only while
+    // their route layers are built. Keep the shared facade in the server context.
+    Layer.provideMerge(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+    Layer.provideMerge(ResearchDelegationBudgetLive),
+    Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
+    Layer.provideMerge(
+      Layer.mergeAll(ProjectStore.layer, ProjectionStoreV2.layer, ThreadSearch.layer),
     ),
-  ),
-);
+  )
+  .pipe(
+    Layer.provideMerge(layerServerSettings),
+    Layer.provideMerge(layerSourceControlProviderRegistry),
+    Layer.provideMerge(layerGit),
+    Layer.provideMerge(WorktreeSetupTracker.layer),
+    Layer.provideMerge(layerVcs),
+    Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
+    Layer.provideMerge(layerPersistence),
+    Layer.provideMerge(
+      Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    ),
+    Layer.provideMerge(Layer.mergeAll(PortableSkillsInventoryLive, ProviderRegistry.layer)),
+    // The instance registry is the new routing keystone — text generation,
+    // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
+    // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
+    // hydration adds their default instances to `providerInstances` on boot.
+    Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        AntigravityInstallation.AntigravityInstallation.layer,
+        CodexInstallation.CodexInstallation.layer,
+      ),
+    ),
+  );
 
 const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerPtyAdapter),

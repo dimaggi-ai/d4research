@@ -131,6 +131,8 @@ export interface EventSinkV2Shape {
     EventSinkV2Error
   >;
   readonly commitCommand: (input: {
+    /** Reject stale monitor observations inside the same transaction as the report. */
+    readonly expectedThreadSequence?: number;
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
     readonly commandType: string;
@@ -575,6 +577,28 @@ const layerBase: Layer.Layer<
           if (!reserved) {
             const existing = yield* existingCommandResult(input.commandId);
             return { ...existing, committed: false as const, cancelledEffectIds: [] };
+          }
+
+          if (input.expectedThreadSequence !== undefined) {
+            const sequence = yield* eventStore.latestSequence({ threadId: input.threadId });
+            if (sequence !== input.expectedThreadSequence) {
+              const receipt: CommandReceiptStore.CommandReceiptV2 = {
+                commandId: input.commandId,
+                threadId: input.threadId,
+                commandType: input.commandType,
+                acceptedAt: input.acceptedAt,
+                resultSequence: sequence,
+                status: "accepted",
+                error: null,
+              };
+              yield* commandReceipts.upsert(receipt);
+              return {
+                receipt,
+                storedEvents: [],
+                committed: false as const,
+                cancelledEffectIds: [],
+              };
+            }
           }
 
           const normalized = yield* normalizeEvents(input.events);

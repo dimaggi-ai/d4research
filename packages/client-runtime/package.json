@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./state/agent-monitor": {
+      "types": "./src/state/agentMonitor.ts",
+      "default": "./src/state/agentMonitor.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

@@ -67,6 +67,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.secondBrainReindex]: "secondBrain",
   [WS_METHODS.secondBrainLint]: "secondBrain",
   [WS_METHODS.secondBrainRegenerateIndex]: "secondBrain",
+  [WS_METHODS.agentMonitorClaimAttention]: "orchestration",
   [WS_METHODS.serverGetSettings]: "server",
   [WS_METHODS.serverUpdateSettings]: "server",
   [WS_METHODS.serverSearchAcpRegistry]: "server",

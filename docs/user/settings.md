@@ -49,6 +49,13 @@ agent's Settings section shows recent provider-reported input, output, and cache
 token counts. Missing counts appear as unavailable. Cache use depends on the
 provider and the request; selecting a model does not guarantee a cache hit.
 
+Only authenticated users and the server's heartbeat or continuation services can
+send messages into the d4 Agent conversation. Here, an **authenticated user** is
+any client session with the orchestration-operate scope (`orchestration:operate`).
+Agent MCP calls do not receive that identity. Ownership checks fail closed on
+database errors: if the server cannot verify whether a thread belongs to d4 Agent, it
+blocks access that requires that check.
+
 The default permission level is **Read-only**. **Ask** queues actions for your
 approval. **Act** can interrupt a run or answer a user-input request; sending a
 message to another thread and starting a thread still require confirmation.

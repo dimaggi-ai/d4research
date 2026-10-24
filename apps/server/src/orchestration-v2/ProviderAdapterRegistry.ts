@@ -55,6 +55,8 @@ export interface ProviderAdapterRegistryV2Shape {
       readonly driver: ProviderAdapter.ProviderAdapterV2["Service"]["driver"];
       readonly continuationKey: string;
       readonly enabled: boolean;
+      readonly available?: boolean;
+      readonly models?: ReadonlyArray<string>;
       readonly capabilities: OrchestrationV2ProviderCapabilities;
     },
     ProviderAdapterRegistryV2Error
@@ -149,10 +151,17 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
                 (cause) => new ProviderAdapterRegistryMetadataError({ instanceId, cause }),
               ),
             );
+          const snapshot = yield* instance.snapshot.getSnapshot;
           return {
             driver: instance.driverKind,
             continuationKey: instance.continuationIdentity.continuationKey,
             enabled: instance.enabled,
+            available:
+              snapshot.enabled &&
+              snapshot.installed &&
+              snapshot.status === "ready" &&
+              snapshot.auth.status !== "unauthenticated",
+            models: snapshot.models.map((model) => model.slug),
             capabilities,
           };
         }),

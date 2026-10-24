@@ -1,3 +1,4 @@
+import { deepSeekClient } from "@d4research/provider-deepseek/client";
 import {
   AntigravitySettings,
   ClaudeSettings,
@@ -37,6 +38,7 @@ export const providerClients = makeProviderClientRegistry([
     badgeLabel: "Early Access",
     settingsSchema: JunieSettings,
   },
+  deepSeekClient,
   cursorClient,
   grokClient,
   openCodeClient,

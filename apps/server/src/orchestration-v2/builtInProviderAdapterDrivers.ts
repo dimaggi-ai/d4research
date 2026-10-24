@@ -1,3 +1,7 @@
+import {
+  DeepSeekAdapterV2Driver,
+  type DeepSeekAdapterV2DriverEnv,
+} from "@d4research/provider-deepseek/server";
 import type { ProviderDriverKind } from "@d4research/contracts";
 
 import {
@@ -22,6 +26,7 @@ import { PiAdapterV2Driver, type PiAdapterV2DriverEnv } from "@d4research/provid
 import type { AnyProviderAdapterDriver } from "@d4research/provider-core/server/adapterDriver";
 
 export type BuiltInProviderAdapterDriversV2Env =
+  | DeepSeekAdapterV2DriverEnv
   | AcpRegistryAdapterV2DriverEnv
   | ClaudeAdapterV2DriverEnv
   | CodexAdapterV2DriverEnv
@@ -33,6 +38,7 @@ export type BuiltInProviderAdapterDriversV2Env =
 const BUILT_IN_PROVIDER_ADAPTER_DRIVERS_V2: ReadonlyArray<
   AnyProviderAdapterDriver<BuiltInProviderAdapterDriversV2Env>
 > = [
+  DeepSeekAdapterV2Driver,
   CodexAdapterV2Driver,
   ClaudeAdapterV2Driver,
   CursorAdapterV2Driver,

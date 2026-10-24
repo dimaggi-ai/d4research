@@ -1,3 +1,4 @@
+import { deepSeekClient } from "@d4research/provider-deepseek/client";
 import { isProviderDriverKind } from "@d4research/contracts";
 import { acpRegistryClient } from "@d4research/provider-acp-registry/client";
 import { makeProviderClientRegistry } from "@d4research/provider-core/client";
@@ -8,6 +9,7 @@ import { openCodeClient } from "@d4research/provider-opencode/client";
 import { piClient } from "@d4research/provider-pi/client";
 
 const providerClients = makeProviderClientRegistry([
+  deepSeekClient,
   cursorClient,
   grokClient,
   museClient,

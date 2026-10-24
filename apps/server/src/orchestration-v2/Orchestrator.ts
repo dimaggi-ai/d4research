@@ -1,4 +1,7 @@
 import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
+import type * as SqlClient from "effect/sql/SqlClient";
+import * as SmartRouting from "../provider/SmartRouting.ts";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -838,6 +841,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const providerSessions = yield* ProviderSessionManagerV2;
   const providerSwitchService = yield* ProviderSwitchServiceV2;
+  const smartRouting = yield* SmartRouting.SmartRouting;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const runtimePolicy = yield* RuntimePolicyV2;
   const threadForkService = yield* ThreadForkServiceV2;
@@ -1774,6 +1778,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ...projection.thread,
                     providerInstanceId: queuedRun.providerInstanceId,
                     modelSelection: queuedRun.modelSelection,
+                    providerRoute: queuedRun.providerRoute ?? null,
                     updatedAt: now,
                   },
                 },
@@ -4739,7 +4744,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ]);
         projection = yield* getProjectionWithPendingEvents(command.threadId, events);
       }
-      const modelSelection = command.modelSelection ?? projection.thread.modelSelection;
+      let modelSelection = command.modelSelection ?? projection.thread.modelSelection;
       let dispatchMode = resolveMessageDispatchIntent(
         projection,
         command.dispatchMode,
@@ -4928,6 +4933,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             });
 
       if (dispatchMode.type === "steer_active" || dispatchMode.type === "restart_active") {
+        const active = projection.runs.find((run) => run.id === dispatchMode.targetRunId);
+        // A routed turn keeps its admitted provider even when the composer still
+        // names the local source. Explicit unrelated selections retain native behavior.
+        if (
+          active?.providerRoute &&
+          (modelSelectionsEqual(modelSelection, active.providerRoute.source) ||
+            modelSelectionsEqual(modelSelection, active.providerRoute.selected))
+        )
+          modelSelection = active.modelSelection;
         yield* dispatchSteerIntoRun({
           command,
           events,
@@ -4957,6 +4971,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return;
       }
 
+      const routed = yield* smartRouting
+        .select({
+          selection: modelSelection,
+          projection,
+          text: dispatchText,
+          hasAttachments: command.attachments.length > 0,
+        })
+        .pipe(mapDispatchError(command));
+      modelSelection = routed.selection;
+      const providerRoute = routed.route;
+      if (providerRoute !== null || projection.thread.providerRoute != null) {
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.metadata-updated",
+          threadId: command.threadId,
+          occurredAt: yield* DateTime.now,
+          payload: { ...projection.thread, providerRoute },
+        });
+        projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+      }
       const activeProviderThread = projection.providerThreads.find(
         (candidate) => candidate.id === projection.thread.activeProviderThreadId,
       );
@@ -5078,6 +5114,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ),
               );
         const run: OrchestrationV2Run = {
+          ...(providerRoute === null ? {} : { providerRoute }),
           id: runId,
           threadId: command.threadId,
           ordinal,
@@ -5430,6 +5467,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   mapDispatchError(command),
                 );
         const run: OrchestrationV2Run = {
+          ...(providerRoute === null ? {} : { providerRoute }),
           id: runId,
           threadId: command.threadId,
           ordinal,
@@ -6122,6 +6160,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         );
       const run: OrchestrationV2Run = {
+        ...(providerRoute === null ? {} : { providerRoute }),
         id: runId,
         threadId: command.threadId,
         ordinal,
@@ -11666,6 +11705,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 export const layer: Layer.Layer<
   OrchestratorV2,
   never,
+  | SqlClient.SqlClient
   | CheckpointServiceV2
   | FileSystem.FileSystem
   | Path.Path
@@ -11685,6 +11725,7 @@ export const layer: Layer.Layer<
   | ThreadForkServiceV2
 > = Layer.effect(OrchestratorV2, makeOrchestrator()).pipe(
   Layer.provide(ThreadCommandExecutor.layer),
+  Layer.provide(SmartRouting.layer.pipe(Layer.provide(FetchHttpClient.layer))),
 );
 
 const layerUnavailable: Layer.Layer<OrchestratorV2> = Layer.succeed(

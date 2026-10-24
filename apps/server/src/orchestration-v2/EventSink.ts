@@ -1,3 +1,4 @@
+import * as RouteTelemetry from "../provider/RouteTelemetry.ts";
 import {
   CommandId,
   type OrchestrationV2Run,
@@ -203,10 +204,12 @@ const layerBase: Layer.Layer<
   | ProjectStore.ProjectStoreV2
   | SqlClient.SqlClient
   | TurnItemPositionStore.TurnItemPositionStoreV2
+  | RouteTelemetry.RouteTelemetry
 > = Layer.effect(
   EventSinkV2,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const routeTelemetry = yield* RouteTelemetry.RouteTelemetry;
     const commandReceipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
     const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
     const eventStore = yield* EventStore.EventStoreV2;
@@ -335,6 +338,48 @@ const layerBase: Layer.Layer<
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });
+        // Telemetry commits with the route and run outcome. It cannot observe a
+        // rolled-back dispatch or retain semantic provider payloads.
+        for (const { event } of storedEvents) {
+          if (event.type !== "run.created" && event.type !== "run.updated") continue;
+          const run = event.payload;
+          const route = run.providerRoute;
+          if (!route || run.status === "queued" || run.status === "preparing") continue;
+          yield* routeTelemetry.recordStart({
+            threadId: run.threadId,
+            runId: run.id,
+            driver: route.driver,
+            instanceId: run.modelSelection.instanceId,
+            model: run.modelSelection.model,
+            reason: route.reason,
+            health: route.health,
+            contextTokens: route.contextTokens,
+            startedAt: DateTime.toEpochMillis(run.startedAt ?? event.occurredAt),
+            fallback: route.reason !== "local_healthy",
+          });
+          if (run.status !== "completed" && run.status !== "failed" && run.status !== "interrupted")
+            continue;
+          const records = yield* projectionStore.getThreadRecords(
+            run.threadId,
+            ["providerTurns", "turnItems"],
+            { runIds: [run.id], turnItemRunIds: [run.id], turnItemTypes: ["error"] },
+          );
+          const turn = records.providerTurns
+            .filter((turn) => turn.nodeId === run.rootNodeId)
+            .toSorted((a, b) => b.ordinal - a.ordinal)[0];
+          yield* routeTelemetry.recordEnd(run.id, {
+            endedAt: DateTime.toEpochMillis(
+              turn?.completedAt ?? run.completedAt ?? event.occurredAt,
+            ),
+            outcome: run.status,
+            inputTokens: turn?.tokenUsage?.inputTokens ?? null,
+            outputTokens: turn?.tokenUsage?.outputTokens ?? null,
+            contextTokens: turn?.tokenUsage?.usedTokens ?? null,
+            timeout: records.turnItems.some(
+              (item) => item.type === "error" && item.failure.code === "timeout",
+            ),
+          });
+        }
         const sequence = storedEvents.at(-1)?.sequence;
         if (sequence !== undefined) {
           const now = DateTime.formatIso(yield* DateTime.now);
@@ -920,13 +965,13 @@ const layerBase: Layer.Layer<
  * Keeping the outbox instance shared with the worker is important because enqueue notifications
  * are in-memory wakeups backed by the durable SQL queue.
  */
-export const layerFromStores = layerBase;
+export const layerFromStores = layerBase.pipe(Layer.provide(Layer.orDie(RouteTelemetry.layer)));
 
 export const layer: Layer.Layer<
   EventSinkV2,
   never,
   EventStore.EventStoreV2 | ProjectionStore.ProjectionStoreV2 | SqlClient.SqlClient
-> = layerBase.pipe(
+> = layerFromStores.pipe(
   Layer.provide(
     Layer.mergeAll(
       CommandReceiptStore.layer,

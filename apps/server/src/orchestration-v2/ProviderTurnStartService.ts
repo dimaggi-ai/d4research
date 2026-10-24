@@ -1,5 +1,6 @@
 import { makeTaskScopeValidator } from "../d4Agent/D4AgentTaskScope.ts";
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
+import { selectAppProviderHistory } from "./appProviderHistory.ts";
 import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 import * as HandoffMemory from "../handoffMemory.ts";
 import { FetchHttpClient } from "effect/http";
@@ -1502,6 +1503,20 @@ export const layer: Layer.Layer<
               }),
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
+          if (
+            session.providerSession.capabilities.context.requiresAppHistory &&
+            session.injectHistory
+          ) {
+            yield* session.injectHistory({
+              providerThread: runningProviderThread,
+              messages: selectAppProviderHistory(
+                yield* projectionStore.getTurnStartHistory(input.threadId),
+                projection.runs,
+                run.id,
+              ),
+              context: "",
+            });
+          }
           const start = compact ? session.compactThread! : session.startTurn;
           const context = [delivery.context, restartNote, compact ? "" : brainText]
             .filter((part) => part !== "")
@@ -1565,6 +1580,7 @@ export const layer: Layer.Layer<
         );
       const deliverySession =
         d4AgentPrefix === null &&
+        !session.providerSession.capabilities.context.requiresAppHistory &&
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
         restartNote === "" &&

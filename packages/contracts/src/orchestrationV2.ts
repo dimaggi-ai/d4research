@@ -1,4 +1,5 @@
 import { AgentMonitorReport, AgentMonitorUpdate } from "./agentMonitor.ts";
+import { ProviderRoute } from "./providerRouting.ts";
 import { OrchestrationMessageContext } from "./composerContext.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -275,6 +276,7 @@ export const OrchestrationV2SubagentCapabilities = Schema.Struct({
 export type OrchestrationV2SubagentCapabilities = typeof OrchestrationV2SubagentCapabilities.Type;
 
 export const OrchestrationV2ContextCapabilities = Schema.Struct({
+  requiresAppHistory: Schema.optional(Schema.Boolean),
   acceptsSystemContext: Schema.Boolean,
   acceptsDeveloperContext: Schema.Boolean,
   acceptsSyntheticUserContext: Schema.Boolean,
@@ -357,6 +359,7 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
 export const OrchestrationV2AppThread = Schema.Struct({
   agentMonitor: Schema.optional(Schema.NullOr(AgentMonitorReport)),
   agentMonitorRevision: Schema.optional(NonNegativeInt),
+  providerRoute: Schema.optional(Schema.NullOr(ProviderRoute)),
   ...OrchestrationV2CreationFields,
   id: ThreadId,
   projectId: ProjectId,
@@ -522,6 +525,7 @@ export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
 export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_preparation_failed";
 
 export const OrchestrationV2Run = Schema.Struct({
+  providerRoute: Schema.optional(ProviderRoute),
   id: RunId,
   threadId: ThreadId,
   ordinal: PositiveInt,

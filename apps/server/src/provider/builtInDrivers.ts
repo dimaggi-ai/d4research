@@ -1,3 +1,4 @@
+import { DeepSeekDriver, type DeepSeekDriverEnv } from "@d4research/provider-deepseek/server";
 import { JunieDriver, type JunieDriverEnv } from "./Drivers/JunieDriver.ts";
 /**
  * BUILT_IN_DRIVERS — the static set of `ProviderDriver`s this build ships
@@ -40,6 +41,7 @@ import type {
 } from "@d4research/provider-core/server/driver";
 
 export type BuiltInDriversEnv =
+  | DeepSeekDriverEnv
   | AgyDriverEnv
   | AcpRegistryDriverEnv
   | AntigravityDriverEnv
@@ -53,6 +55,7 @@ export type BuiltInDriversEnv =
   | PiDriverEnv;
 
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
+  DeepSeekDriver,
   CodexDriver,
   ClaudeDriver,
   AgyDriver,

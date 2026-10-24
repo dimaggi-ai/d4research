@@ -1,3 +1,5 @@
+import * as ServerSettings from "../../serverSettings.ts";
+import { DEFAULT_DEEPSEEK_MODEL } from "@d4research/provider-deepseek/settings";
 import { vi } from "vite-plus/test";
 import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import { assert, describe, it } from "@effect/vitest";
@@ -3539,3 +3541,196 @@ describe("orchestration v2 provider switching", () => {
     ),
   );
 });
+
+it.live(
+  "smart routing pins an admitted turn, preserves approval policy, and commits redacted telemetry",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const admittedPolicies = yield* Ref.make<
+          ReadonlyArray<ProviderAdapter.ProviderAdapterV2RuntimePolicy>
+        >([]);
+        const holdFirstTurn = yield* Deferred.make<void>();
+        const releaseFirstTurn = yield* Deferred.make<void>();
+        const localSelection = {
+          instanceId: ProviderInstanceId.make("local-deepseek"),
+          model: DEFAULT_DEEPSEEK_MODEL,
+        };
+        const codex = makeTestAdapter({
+          instanceId: CODEX_MODEL_SELECTION.instanceId,
+          driver: CODEX_DRIVER,
+          capabilities: CodexProviderCapabilitiesV2,
+          modelSelection: CODEX_MODEL_SELECTION,
+          responseByRunOrdinal: { 1: "PRIVATE-RESPONSE" },
+          capturedTurns,
+          holdFirstTurn,
+          releaseFirstTurn,
+        });
+        const wrapped = {
+          ...codex,
+          openSession: (input: Parameters<typeof codex.openSession>[0]) =>
+            Ref.update(admittedPolicies, (values) => [...values, input.runtimePolicy]).pipe(
+              Effect.andThen(codex.openSession(input)),
+            ),
+        };
+        const local = makeTestAdapter({
+          instanceId: localSelection.instanceId,
+          driver: ProviderDriverKind.make("deepseek"),
+          capabilities: CodexProviderCapabilitiesV2,
+          modelSelection: localSelection,
+          responseByRunOrdinal: {},
+          capturedTurns,
+        });
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("smart:create"),
+            threadId,
+            projectId,
+            createdBy: "user",
+            creationSource: "web",
+            title: "Routing test",
+            modelSelection: localSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          });
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("smart:start"),
+            threadId,
+            messageId: MessageId.make("smart:message"),
+            createdBy: "user",
+            creationSource: "web",
+            text: "PRIVATE-PROMPT",
+            attachments: [],
+            modelSelection: localSelection,
+            dispatchMode: { type: "start_immediately" },
+          });
+          yield* Deferred.await(holdFirstTurn);
+          const running = yield* orchestrator.getThreadProjection(threadId);
+          const run = running.runs[0]!;
+          assert.equal(run.providerInstanceId, CODEX_MODEL_SELECTION.instanceId);
+          assert.equal(run.providerRoute?.reason, "task_requires_tools");
+          assert.equal(running.thread.providerRoute?.source.instanceId, localSelection.instanceId);
+          assert.equal(running.thread.runtimeMode, "approval-required");
+          const policy = (yield* Ref.get(admittedPolicies))[0]!;
+          assert.equal(policy.runtimeMode, "approval-required");
+          assert.equal(policy.approvalPolicy, "on-request");
+          assert.deepEqual(policy.sandboxPolicy, { type: "readOnly" });
+          const sink = yield* EventSink.EventSinkV2;
+          const now = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("smart:turn-running"),
+                type: "provider-turn.updated",
+                threadId,
+                runId: run.id,
+                providerInstanceId: run.providerInstanceId,
+                occurredAt: now,
+                payload: {
+                  id: ProviderTurnId.make(`provider-turn:${CODEX_DRIVER}:${threadId}:1`),
+                  providerThreadId: run.providerThreadId!,
+                  nodeId: run.rootNodeId!,
+                  runAttemptId: run.activeAttemptId,
+                  nativeTurnRef: null,
+                  ordinal: 1,
+                  status: "running",
+                  startedAt: now,
+                  completedAt: null,
+                },
+              },
+            ],
+          });
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("smart:steer"),
+            threadId,
+            messageId: MessageId.make("smart:steer-message"),
+            createdBy: "user",
+            creationSource: "web",
+            text: "PRIVATE-STEER",
+            attachments: [],
+            modelSelection: localSelection,
+            dispatchMode: { type: "steer_active", targetRunId: run.id },
+          });
+          const steered = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(steered.runs.length, 1);
+          assert.equal(steered.runs[0]?.providerInstanceId, CODEX_MODEL_SELECTION.instanceId);
+          yield* Deferred.succeed(releaseFirstTurn, undefined);
+          yield* orchestrator.streamStoredEvents.pipe(
+            Stream.filter(
+              ({ event }) =>
+                event.type === "run.updated" &&
+                event.payload.id === run.id &&
+                event.payload.status === "completed",
+            ),
+            Stream.runHead,
+          );
+          yield* worker.drain();
+          const events = yield* sink
+            .readByCommandId({ commandId: CommandId.make("smart:start") })
+            .pipe(Stream.runCollect);
+          assert.isTrue(
+            events.some(
+              ({ event }) =>
+                event.type === "run.created" &&
+                event.payload.providerRoute?.reason === "task_requires_tools",
+            ),
+          );
+          const records = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(records.thread.providerRoute?.fallbackCount, 1);
+          assert.equal((yield* Ref.get(capturedTurns)).length, 1);
+          const sql = yield* SqlClient.SqlClient;
+          const telemetry = yield* sql`SELECT * FROM provider_route_telemetry`;
+          assert.equal(telemetry.length, 1);
+          assert.equal(telemetry[0]?.outcome, "completed");
+          assert.equal(telemetry[0]?.fallbacks, 1);
+          for (const privateValue of [
+            "PRIVATE-PROMPT",
+            "PRIVATE-RESPONSE",
+            "PRIVATE-STEER",
+            threadId,
+            run.id,
+          ]) {
+            assert.notInclude(JSON.stringify(telemetry), privateValue);
+          }
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: "smart-routing-offline",
+                runtimePolicyOverride: {
+                  approvalPolicy: "on-request",
+                  sandboxPolicy: { type: "readOnly" },
+                },
+              },
+              ProviderAdapterRegistry.layerFromAdapters([local, wrapped]),
+              {
+                layerServerSettings: ServerSettings.layerTest({
+                  providerInstances: {
+                    [localSelection.instanceId]: {
+                      driver: ProviderDriverKind.make("deepseek"),
+                      enabled: true,
+                      config: {
+                        enabled: true,
+                        smartRouting: true,
+                        taskMode: "tools",
+                        fallbackInstanceId: CODEX_MODEL_SELECTION.instanceId,
+                        fallbackModel: CODEX_MODEL_SELECTION.model,
+                      },
+                    },
+                  },
+                }).pipe(Layer.orDie),
+              },
+            ).pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+          ),
+        );
+      }),
+    ),
+);

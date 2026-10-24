@@ -33,7 +33,7 @@ d4research is a private workspace for long-running research across models and co
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md) · [Muse](./user/providers-muse.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Agy](./user/providers-agy.md) · [Junie](./user/providers-junie.md) · [Muse](./user/providers-muse.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Local DeepSeek](./user/providers-deepseek.md)
 - [Outside agents (MCP)](./user/outside-agents.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)

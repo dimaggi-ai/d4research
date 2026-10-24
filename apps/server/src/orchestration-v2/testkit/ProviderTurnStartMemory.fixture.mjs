@@ -61,7 +61,7 @@ const count = Number(process.argv[4] ?? 4);
 const bytes = Number(process.argv[5] ?? 32768);
 const session = {
   driver: "codex",
-  providerSession: { id: "session", driver: "codex" },
+  providerSession: { id: "session", driver: "codex", capabilities: { context: {} } },
   resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
   startTurn: (input) => {
     sent.push(input.message.text);

@@ -540,6 +540,7 @@ export function layerWithRegistry<Error>(
           ),
     ),
     Layer.provide(NodeServices.layer),
+    Layer.provide(layerDatabase),
   );
 
   if (options.runEffectWorker === false) {

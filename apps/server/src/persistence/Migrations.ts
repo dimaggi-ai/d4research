@@ -76,6 +76,7 @@ import Migration0067 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import Migration0068 from "./Migrations/061_PullRequestReviewGuides.ts";
 import Migration0069 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 import Migration0070 from "./Migrations/063_DropUnusedV1Projections.ts";
+import Migration0074 from "./Migrations/074_RouteTelemetry.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -147,6 +148,7 @@ export const migrationEntries = [
   [71, "AgentMonitorNotificationClaims", Migration0071],
   [72, "AgentMonitorDelivery", Migration0072],
   [73, "AgentMonitorEpisodes", Migration0073],
+  [74, "RouteTelemetry", Migration0074],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

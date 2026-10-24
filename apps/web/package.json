@@ -18,6 +18,7 @@
     "@d4research/provider-acp-registry": "workspace:*",
     "@d4research/provider-core": "workspace:*",
     "@d4research/provider-cursor": "workspace:*",
+    "@d4research/provider-deepseek": "workspace:*",
     "@d4research/provider-grok": "workspace:*",
     "@d4research/provider-muse": "workspace:*",
     "@d4research/provider-opencode": "workspace:*",

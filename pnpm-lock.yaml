@@ -311,6 +311,9 @@ importers:
       '@d4research/provider-cursor':
         specifier: workspace:*
         version: link:../../packages/provider-cursor
+      '@d4research/provider-deepseek':
+        specifier: workspace:*
+        version: link:../../packages/provider-deepseek
       '@d4research/provider-grok':
         specifier: workspace:*
         version: link:../../packages/provider-grok
@@ -609,6 +612,9 @@ importers:
       '@d4research/provider-cursor':
         specifier: workspace:*
         version: link:../../packages/provider-cursor
+      '@d4research/provider-deepseek':
+        specifier: workspace:*
+        version: link:../../packages/provider-deepseek
       '@d4research/provider-grok':
         specifier: workspace:*
         version: link:../../packages/provider-grok
@@ -760,6 +766,9 @@ importers:
       '@d4research/provider-cursor':
         specifier: workspace:*
         version: link:../../packages/provider-cursor
+      '@d4research/provider-deepseek':
+        specifier: workspace:*
+        version: link:../../packages/provider-deepseek
       '@d4research/provider-grok':
         specifier: workspace:*
         version: link:../../packages/provider-grok
@@ -1229,6 +1238,28 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(redis@6.2.1)
+      '@effect/vitest':
+        specifier: 4.0.5
+        version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.12.11(@types/node@24.12.4)(typescript@7.0.2))(terser@5.51.2)(typescript@7.0.2)(yaml@2.9.0)
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.12.4)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.12.11(@types/node@24.12.4)(typescript@7.0.2))(terser@5.51.2)(typescript@7.0.2)(yaml@2.9.0)
+
+  packages/provider-deepseek:
+    dependencies:
+      '@d4research/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@d4research/provider-core':
+        specifier: workspace:*
+        version: link:../provider-core
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+    devDependencies:
       '@effect/vitest':
         specifier: 4.0.5
         version: 4.0.5(patch_hash=2731c9c3761c595f25ddc625a7d61ca376b389d5b3049ecb837c8940f21cfa02)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.12.11(@types/node@24.12.4)(typescript@7.0.2))(terser@5.51.2)(typescript@7.0.2)(yaml@2.9.0)

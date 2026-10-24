@@ -335,14 +335,16 @@ export const layer = Layer.effect(
           const run = records.runs.find((candidate) => candidate.id === attempt?.runId);
           if (!run) return [];
           const counters = turn.turnTokenUsage;
+          const driver =
+            records.providerThreads.find((entry) => entry.id === turn.providerThreadId)?.driver ??
+            catalog.find((entry) => entry.instanceId === run.modelSelection.instanceId)?.driver ??
+            run.modelSelection.instanceId;
           return [
             {
               runId: turn.id,
               recordedAt: DateTime.formatIso(turn.completedAt),
               attributes: usageAttributes({
-                provider:
-                  catalog.find((entry) => entry.instanceId === run.modelSelection.instanceId)
-                    ?.driver ?? run.modelSelection.instanceId,
+                provider: driver,
                 model: run.modelSelection.model,
                 conversationId: state.threadId!,
                 durationMs:
@@ -359,7 +361,8 @@ export const layer = Layer.effect(
                 ...(counters?.cachedInputTokens === undefined
                   ? {}
                   : { cachedInputTokens: counters.cachedInputTokens }),
-                ...(counters?.cacheCreationTokens === undefined
+                // Codex canonical usage defaults this unreported counter to zero.
+                ...(driver === "codex" || counters?.cacheCreationTokens === undefined
                   ? {}
                   : { cacheCreationTokens: counters.cacheCreationTokens }),
               }),

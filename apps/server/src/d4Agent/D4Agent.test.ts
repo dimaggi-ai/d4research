@@ -101,6 +101,9 @@ const fixture = (
   monitorEnabled = true,
 ) =>
   Effect.gen(function* () {
+    const catalog = yield* Ref.make<ReadonlyArray<ServerProvider>>(
+      providerAvailable ? [provider] : [],
+    );
     const state = yield* Ref.make<Store.StoredState>({
       threadId: null,
       projectId: null,
@@ -167,7 +170,7 @@ const fixture = (
             },
           }),
           Layer.mock(Providers.ProviderRegistry)({
-            getProviders: Effect.succeed(providerAvailable ? [provider] : []),
+            getProviders: Ref.get(catalog),
           }),
           Layer.mock(Threads.ThreadManagementService)({
             getThreadShell: (id) => Effect.succeed(id === targetId ? target : null),
@@ -206,7 +209,7 @@ const fixture = (
       ),
     );
     const service = yield* Agent.D4Agent.pipe(Effect.provide(layer));
-    return { service, state, checks, request, dispatches, projection };
+    return { service, state, checks, request, dispatches, projection, catalog };
   });
 
 it.effect("read-only blocks every action before a side effect", () =>
@@ -345,11 +348,16 @@ it.effect("system baseline is silent and repeated episodes get new durable claim
   }),
 );
 
-it.effect(
-  "101 completed turns retain the newest 100 without re-adding evicted usage on repeated reads",
-  () =>
+it.effect.each([
+  { driver: "codex", cacheCreationTokens: 0 },
+  { driver: "claudeAgent", cacheCreationTokens: 0 },
+  { driver: "claudeAgent", cacheCreationTokens: 19 },
+])(
+  "101 completed turns retain the newest 100 without re-adding evicted usage on repeated reads ($driver cache-write $cacheCreationTokens)",
+  ({ driver, cacheCreationTokens }) =>
     Effect.gen(function* () {
-      const { service, state, projection } = yield* fixture();
+      const { service, state, projection, catalog } = yield* fixture();
+      yield* Ref.set(catalog, [{ ...provider, driver: ProviderDriverKind.make(driver) }]);
       const runId = RunId.make("run"),
         attemptId = RunAttemptId.make("attempt"),
         providerThreadId = ProviderThreadId.make("native"),
@@ -411,7 +419,7 @@ it.effect(
             inputTokens: 50,
             outputTokens: 10,
             cachedInputTokens: index === 0 ? 0 : 30,
-            cacheCreationTokens: 0,
+            cacheCreationTokens,
             hasSubagents: false,
           },
         })),
@@ -420,6 +428,15 @@ it.effect(
       assert.equal(first.usage.length, 100);
       assert.isFalse(first.usage.some((entry) => entry.runId === "turn:0"));
       assert.equal(first.usage[0]?.attributes["gen_ai.usage.cache_read.input_tokens"], 30);
+      for (const usage of first.usage) {
+        if (driver === "codex")
+          assert.isFalse("gen_ai.usage.cache_creation.input_tokens" in usage.attributes);
+        else
+          assert.equal(
+            usage.attributes["gen_ai.usage.cache_creation.input_tokens"],
+            cacheCreationTokens,
+          );
+      }
       const cursor = (yield* Ref.get(state)).usageCursor;
       const second = yield* service.getState();
       assert.deepEqual(second.usage, first.usage);

@@ -1,6 +1,8 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  MessageId,
   NodeId,
   ProviderSessionId,
   ProviderThreadId,
@@ -82,6 +84,7 @@ function layerExecutorFor(input: {
   readonly failFirstStart?: Ref.Ref<boolean>;
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
+  readonly steer?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
 }) {
   const record = (event: string) => Ref.update(input.events, (events) => [...events, event]);
@@ -90,7 +93,7 @@ function layerExecutorFor(input: {
       ProviderTurnControlService.ProviderTurnControlServiceV2,
       ProviderTurnControlService.ProviderTurnControlServiceV2.of({
         interrupt: input.interrupt ?? (() => Effect.void),
-        steer: () => Effect.void,
+        steer: input.steer ?? (() => Effect.void),
         interruptAndAwaitTerminal: (request) =>
           record(
             request.replacementProviderSessionId === undefined
@@ -902,5 +905,81 @@ it.effect.each(["confirmed", "unconfirmed", "failed"] as const)(
         yield* Ref.get(events),
         outcome === "confirmed" ? ["stop-child", "settle-child"] : ["stop-child"],
       );
+    }),
+);
+
+it.effect(
+  "a completed-turn steer resends the accepted user message with scoped internal-server origin",
+  () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const events = yield* Ref.make<ReadonlyArray<string>>([]);
+      const messageId = MessageId.make("message:accepted-user-steer");
+      const dispatched: Array<unknown> = [];
+      const layer = layerExecutorFor({
+        events,
+        steer: () =>
+          Effect.gen(function* () {
+            assert.isUndefined(yield* AgentAccess.DispatchOrigin);
+            return yield* new ProviderTurnControlService.ProviderTurnControlError({
+              threadId,
+              operation: "steer",
+              providerTurnId,
+              turnCompleted: true,
+            });
+          }),
+        threads: {
+          getThreadRecords: () =>
+            Effect.succeed({
+              messages: [
+                {
+                  id: messageId,
+                  runId,
+                  text: "Accepted user steer",
+                  attachments: [],
+                  createdBy: "user",
+                  creationSource: "web",
+                },
+              ],
+              runs: [{ id: runId }],
+            } as never),
+          dispatch: (command) =>
+            Effect.gen(function* () {
+              assert.equal(yield* AgentAccess.DispatchOrigin, "internal-server");
+              dispatched.push(command);
+              return { sequence: 1, storedEvents: [] };
+            }),
+        },
+      });
+      yield* Effect.gen(function* () {
+        const executor = yield* EffectWorker.OrchestrationEffectExecutorV2;
+        const effect = {
+          ...restartEffect(now, { type: "detach" }),
+          request: {
+            type: "provider-turn.steer" as const,
+            providerSessionId: oldSessionId,
+            providerThreadId,
+            providerTurnId,
+            messageId,
+          },
+        };
+        yield* executor.execute(effect);
+        yield* executor.execute(effect);
+      }).pipe(Effect.provide(layer));
+      assert.deepEqual(
+        dispatched,
+        [0, 1].map(() => ({
+          type: "message.dispatch",
+          commandId: CommandId.make("command:steer-follow-up:effect:restart:detach"),
+          threadId,
+          messageId,
+          text: "Accepted user steer",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+          createdBy: "user",
+          creationSource: "web",
+        })),
+      );
+      assert.isUndefined(yield* AgentAccess.DispatchOrigin);
     }),
 );

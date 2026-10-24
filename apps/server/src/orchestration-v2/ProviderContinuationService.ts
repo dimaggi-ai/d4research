@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { CommandId, type OrchestrationV2ThreadProjection } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -134,6 +135,7 @@ export const layer = Layer.effectDiscard(
               },
             })
             .pipe(
+              Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"),
               Effect.catchTags({
                 ThreadManagementProviderInstanceDisabledError: (error) =>
                   Effect.logInfo(
@@ -187,26 +189,28 @@ export const layer = Layer.effectDiscard(
             ordinal: projection.messages.length + 1,
           }));
         const commandId = CommandId.make(`provider-continuation:${messageId}`);
-        const dispatch = threads.dispatch({
-          type: "message.dispatch",
-          commandId,
-          threadId: request.threadId,
-          messageId,
-          text: request.detail ?? CONTINUATION_MESSAGE_TEXT,
-          notification: request.notification ?? {
-            source: { kind: "background_task" },
-            outcome: "updated",
-            summary: "Background activity updated",
-          },
-          attachments: [],
-          dispatchMode: { type: "queue_after_active" },
-          createdBy: "agent",
-          // "provider" marks an adapter-buffered wake, which ClaudeAdapterV2
-          // detects to attach the buffered CLI output and drop this text. A
-          // message_text wake has no buffered output, so it must not carry that
-          // marker or the turn settles immediately having prompted nothing.
-          creationSource: request.delivery === "message_text" ? "server" : "provider",
-        });
+        const dispatch = threads
+          .dispatch({
+            type: "message.dispatch",
+            commandId,
+            threadId: request.threadId,
+            messageId,
+            text: request.detail ?? CONTINUATION_MESSAGE_TEXT,
+            notification: request.notification ?? {
+              source: { kind: "background_task" },
+              outcome: "updated",
+              summary: "Background activity updated",
+            },
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "agent",
+            // "provider" marks an adapter-buffered wake, which ClaudeAdapterV2
+            // detects to attach the buffered CLI output and drop this text. A
+            // message_text wake has no buffered output, so it must not carry that
+            // marker or the turn settles immediately having prompted nothing.
+            creationSource: request.delivery === "message_text" ? "server" : "provider",
+          })
+          .pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"));
         // This catch sits outside dispatchIfCurrent so an adapter that clears
         // its own sticky offer flag on dispatch failure (inside
         // dispatchIfCurrent) observes the raw failure first. Not every adapter

@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { runRanAfter } from "@d4research/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import {
@@ -298,6 +299,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(
+        Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"),
         // The project turned this instance off since the restart. No turn
         // resumes, and the success path below still runs so a delegated
         // child waiting on this run is recovered immediately instead of

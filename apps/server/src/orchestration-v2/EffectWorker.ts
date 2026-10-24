@@ -1,3 +1,4 @@
+import * as D4AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { CommandId } from "@d4research/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -302,6 +303,7 @@ export const layerExecutor: Layer.Layer<
                           : { senderThreadId: message.senderThreadId }),
                       })
                       .pipe(
+                        Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"),
                         // The turn that just completed leaves no further retry
                         // target once the instance is off: the completed turn
                         // stands as the thread's result instead of going

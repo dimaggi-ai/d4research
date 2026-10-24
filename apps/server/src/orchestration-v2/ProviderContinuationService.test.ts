@@ -1,3 +1,4 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
   MessageId,
@@ -1021,3 +1022,65 @@ describe("ProviderContinuationService", () => {
     });
   });
 });
+
+it.effect.each(["adapter_buffered", "message_text", "delegated"] as const)(
+  "provider continuation %s binds internal-server only while dispatching",
+  (delivery) =>
+    Effect.gen(function* () {
+      const observed = yield* Queue.unbounded<{ origin: string | undefined; command: unknown }>();
+      const callbacks = yield* Queue.unbounded<string | undefined>();
+      const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadRecords: () => Effect.succeed(delegatedProjection()),
+        dispatch: (command) =>
+          Effect.gen(function* () {
+            yield* Queue.offer(observed, { origin: yield* AgentAccess.DispatchOrigin, command });
+            return { sequence: 1, storedEvents: [] };
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+        yield* requests.offer({
+          ...request(),
+          ...(delivery === "delegated"
+            ? {
+                delegatedCompletion: { parentRunId, generation: 1, messageId: delegatedMessageId },
+              }
+            : {
+                ...(delivery === "message_text" ? { delivery: "message_text" as const } : {}),
+                dispatchIfCurrent: (effect) =>
+                  Effect.gen(function* () {
+                    yield* Queue.offer(callbacks, yield* AgentAccess.DispatchOrigin);
+                    const result = yield* effect;
+                    yield* Queue.offer(callbacks, yield* AgentAccess.DispatchOrigin);
+                    return Option.some(result);
+                  }),
+              }),
+        });
+        const observedDispatch = yield* Queue.take(observed);
+        assert.equal(observedDispatch.origin, "internal-server");
+        assert.include(observedDispatch.command, {
+          type: "message.dispatch",
+          threadId,
+          createdBy: "agent",
+          creationSource: delivery === "adapter_buffered" ? "provider" : "server",
+        });
+        if (delivery !== "delegated") {
+          assert.isUndefined(yield* Queue.take(callbacks));
+          assert.isUndefined(yield* Queue.take(callbacks));
+        }
+        assert.isUndefined(yield* AgentAccess.DispatchOrigin);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            ProviderContinuationRequests.layer,
+            ProviderContinuationService.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(IdAllocator.layer, ProviderContinuationRequests.layer, layerThreads),
+              ),
+            ),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }),
+);

@@ -7,7 +7,7 @@ import * as Store from "./D4AgentStore.ts";
 
 // Transport identity is an Effect context value, never a client command field.
 export const DispatchOrigin = Context.Reference<
-  "authenticated-user" | "internal-heartbeat" | undefined
+  "authenticated-user" | "internal-heartbeat" | "internal-server" | undefined
 >("d4research/d4Agent/DispatchOrigin", { defaultValue: () => undefined });
 
 // Store ownership is available below the monitor/context layer without a cycle.

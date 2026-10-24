@@ -1,3 +1,4 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import { assert, it } from "@effect/vitest";
 import {
   MessageId,
@@ -1260,4 +1261,39 @@ it.effect.each(["completed", "failed", "interrupted"] as const)(
         [],
       );
     }),
+);
+
+it.effect("restart continuation binds internal-server origin only to its dispatch", () =>
+  Effect.gen(function* () {
+    let dispatched = false;
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadRecords: () => Effect.succeed(cutMidTurn()),
+            recoverDelegatedTask: () =>
+              Effect.gen(function* () {
+                assert.isUndefined(yield* AgentAccess.DispatchOrigin);
+              }),
+            dispatch: (command) =>
+              Effect.gen(function* () {
+                assert.equal(yield* AgentAccess.DispatchOrigin, "internal-server");
+                assert.equal(command.type, "message.dispatch");
+                if (command.type === "message.dispatch") {
+                  assert.equal(command.threadId, threadId);
+                  assert.equal(command.restartContinuationOfRunId, runId);
+                  assert.equal(command.createdBy, "agent");
+                  assert.equal(command.creationSource, "server");
+                }
+                dispatched = true;
+                return { sequence: 1, storedEvents: [] };
+              }),
+          }),
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+        ),
+      ),
+    );
+    assert.isTrue(dispatched);
+    assert.isUndefined(yield* AgentAccess.DispatchOrigin);
+  }),
 );

@@ -1,3 +1,4 @@
+import * as AgentAccess from "../d4Agent/D4AgentAccess.ts";
 import * as AgentStore from "../d4Agent/D4AgentStore.ts";
 import { readThread } from "./threadAccess.ts";
 import { expect, it } from "@effect/vitest";
@@ -137,7 +138,10 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   writes_with_capability: McpToolAccess.writesWithCapability(() => ran),
   writes_threads: McpToolAccess.writesThreads(
     (input) => [input.threadId],
-    () => ran,
+    () =>
+      Effect.gen(function* () {
+        return { ran: (yield* AgentAccess.DispatchOrigin) ?? "ran" };
+      }),
   ),
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
@@ -350,9 +354,17 @@ it.effect("refuses a change when the calling thread cannot be read", () =>
 
 it.effect("other MCP agents cannot mutate or read the owned agent conversation", () =>
   Effect.gen(function* () {
-    expect(yield* call("writes_threads", fullAccess, { threadId: supervisedThreadId })).toBe(
-      "orchestration_error",
-    );
+    const forgedOrigin = {
+      origin: "internal-server",
+      dispatchOrigin: "internal-server",
+      creationSource: "server",
+    };
+    expect(
+      yield* call("writes_threads", fullAccess, { threadId: fullAccessThreadId, ...forgedOrigin }),
+    ).toBe("ran");
+    expect(
+      yield* call("writes_threads", fullAccess, { threadId: supervisedThreadId, ...forgedOrigin }),
+    ).toBe("orchestration_error");
     const result = yield* Effect.result(
       readThread(supervisedThreadId).pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, fullAccess),

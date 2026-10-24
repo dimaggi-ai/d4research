@@ -11014,6 +11014,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type !== "thread.unarchive" &&
       origin !== "authenticated-user" &&
       origin !== "internal-heartbeat" &&
+      !(origin === "internal-server" && command.type === "message.dispatch") &&
       (yield* ownsD4Agent(commandThreadId(command)))
     )
       return yield* new OrchestratorCommandRejectedError({

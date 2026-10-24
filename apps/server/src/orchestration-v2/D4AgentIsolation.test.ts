@@ -45,7 +45,7 @@ const layerTest = Layer.mergeAll(
 ).pipe(Layer.provide(ownershipLayer));
 
 it.effect(
-  "owned agent rejects forged agent/system/user messages before accepting trusted user and heartbeat",
+  "owned agent rejects forged agent/system/user messages before accepting trusted user, heartbeat and server continuations",
   () =>
     Effect.gen(function* () {
       const engine = yield* Orchestrator.OrchestratorV2;
@@ -64,6 +64,11 @@ it.effect(
         createdBy: "system",
         creationSource: "server",
       });
+      const forgedOrigin = {
+        origin: "internal-server",
+        dispatchOrigin: "internal-server",
+        senderThreadId: ThreadId.make("other-agent"),
+      };
       for (const createdBy of ["agent", "system", "user"] as const) {
         const result = yield* Effect.result(
           engine.dispatch({
@@ -76,6 +81,7 @@ it.effect(
             dispatchMode: { type: "defer_start" },
             createdBy,
             creationSource: "server",
+            ...forgedOrigin,
           }),
         );
         assert.equal(result._tag, "Failure");
@@ -83,7 +89,11 @@ it.effect(
           assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
       }
       assert.equal((yield* projections.getThreadRecords(owned, ["messages"])).messages.length, 0);
-      for (const origin of ["authenticated-user", "internal-heartbeat"] as const) {
+      for (const origin of [
+        "authenticated-user",
+        "internal-heartbeat",
+        "internal-server",
+      ] as const) {
         yield* engine
           .dispatch({
             type: "message.dispatch",
@@ -98,7 +108,20 @@ it.effect(
           })
           .pipe(Effect.provideService(AgentAccess.DispatchOrigin, origin));
       }
-      assert.equal((yield* projections.getThreadRecords(owned, ["messages"])).messages.length, 2);
+      assert.equal((yield* projections.getThreadRecords(owned, ["messages"])).messages.length, 3);
+      assert.isUndefined(yield* AgentAccess.DispatchOrigin);
+      const deletion = yield* Effect.result(
+        engine
+          .dispatch({
+            type: "thread.delete",
+            threadId: owned,
+            commandId: CommandId.make("server-origin-does-not-authorize-delete"),
+          })
+          .pipe(Effect.provideService(AgentAccess.DispatchOrigin, "internal-server")),
+      );
+      assert.equal(deletion._tag, "Failure");
+      if (deletion._tag === "Failure")
+        assert.equal(deletion.failure._tag, "OrchestratorCommandRejectedError");
     }).pipe(Effect.provide(layerTest)),
 );
 
@@ -131,17 +154,20 @@ it.effect(
         { type: "thread.created.record", parentThreadId: ordinary, targetThreadId: owned },
         { type: "thread.created.record", parentThreadId: owned, targetThreadId: ordinary },
       ];
-      for (const [index, command] of commands.entries()) {
-        const result = yield* Effect.result(
-          engine
-            .dispatch({ ...command, commandId: CommandId.make(`blocked-${index}`) } as Parameters<
-              typeof engine.dispatch
-            >[0])
-            .pipe(Effect.provideService(AgentAccess.DispatchOrigin, "authenticated-user")),
-        );
-        assert.equal(result._tag, "Failure");
-        if (result._tag === "Failure")
-          assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
+      for (const origin of ["authenticated-user", "internal-server"] as const) {
+        for (const [index, command] of commands.entries()) {
+          const result = yield* Effect.result(
+            engine
+              .dispatch({
+                ...command,
+                commandId: CommandId.make(`blocked-${origin}-${index}`),
+              } as Parameters<typeof engine.dispatch>[0])
+              .pipe(Effect.provideService(AgentAccess.DispatchOrigin, origin)),
+          );
+          assert.equal(result._tag, "Failure");
+          if (result._tag === "Failure")
+            assert.equal(result.failure._tag, "OrchestratorCommandRejectedError");
+        }
       }
     }).pipe(Effect.provide(layerTest)),
 );

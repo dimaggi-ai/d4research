@@ -44,7 +44,6 @@ export const prepareShellMonitorStream = <E, R>(input: {
             )
             .slice(0, 128),
         ),
-        Stream.filter((reports) => reports.length > 0),
         Stream.map((reports) => ({ kind: "monitor.snapshot" as const, reports })),
       ),
       changes: Stream.fromPull(

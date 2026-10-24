@@ -33,52 +33,60 @@ const seedMonitorBenchmark = Effect.gen(function* () {
     SELECT 'event:'||n, 'thread', 'benchmark:'||(n%694), n, 'turn-item.updated', ${now}, 'server', '{}', '{}', 2 FROM ids`;
 });
 
-const runMonitorBenchmark = Effect.gen(function* () {
-  yield* seedMonitorBenchmark;
-  const settings = yield* ServerSettings.ServerSettingsService;
-  yield* settings.updateSettings({
-    agentMonitor: { ...(yield* settings.getSettings).agentMonitor, enabled: true },
-  });
-  const monitor = yield* AgentMonitor.make;
-  const started = performance.now();
-  yield* monitor.sweep;
-  const initialSweepMs = performance.now() - started;
-  // SQLite rejects any unexpected writes during all measured unchanged sweeps.
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`DROP INDEX agent_monitor_progress`;
-  const legacyEvidenceSweepMs = yield* measureLegacyMonitorSweep;
-  yield* sql`CREATE INDEX agent_monitor_progress ON orchestration_v2_projection_turn_items(run_id, provider_turn_id, updated_at DESC)`;
-  yield* sql`CREATE TRIGGER benchmark_no_projection_write BEFORE UPDATE ON orchestration_v2_projection_threads
-    BEGIN SELECT RAISE(ABORT, 'unchanged sweep wrote a projection'); END`;
-  yield* sql`CREATE TRIGGER benchmark_no_observation_write BEFORE INSERT ON agent_monitor_observations
-    BEGIN SELECT RAISE(ABORT, 'unchanged sweep wrote an observation'); END`;
-  const samples: number[] = [];
-  for (let i = 0; i < 20; i++) {
-    const start = performance.now();
+export const runMonitorBenchmark = (includeLegacy = true) =>
+  Effect.gen(function* () {
+    yield* seedMonitorBenchmark;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    yield* settings.updateSettings({
+      agentMonitor: { ...(yield* settings.getSettings).agentMonitor, enabled: true },
+    });
+    const monitor = yield* AgentMonitor.make;
+    const started = performance.now();
     yield* monitor.sweep;
-    samples.push(performance.now() - start);
-  }
-  const sorted = samples.toSorted((a, b) => a - b);
-  const snapshotStart = performance.now();
-  const snapshot = yield* monitor.snapshot;
-  return {
-    threads: 694,
-    turnItems: 140_926,
-    events: 140_926,
-    initialSweepMs,
-    legacyEvidenceSweepMs,
-    idleSweepMedianMs: sorted[10]!,
-    idleSweepP95Ms: sorted[18]!,
-    idleSweepMaxMs: sorted[19]!,
-    snapshotMs: performance.now() - snapshotStart,
-    snapshotReports: snapshot.length,
-    idleSweepTargetMs: 50,
-    passes: sorted[18]! < 50,
-  };
-}).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, ServerSettings.layerTest())));
+    const initialSweepMs = performance.now() - started;
+    // SQLite rejects any unexpected writes during all measured unchanged sweeps.
+    const sql = yield* SqlClient.SqlClient;
+    const legacyEvidenceSweepMs = includeLegacy
+      ? yield* Effect.gen(function* () {
+          yield* sql`DROP INDEX agent_monitor_progress`;
+          const elapsed = yield* measureLegacyMonitorSweep;
+          yield* sql`CREATE INDEX agent_monitor_progress ON orchestration_v2_projection_turn_items(run_id, provider_turn_id, updated_at DESC)`;
+          return elapsed;
+        })
+      : null;
+    yield* sql`CREATE TRIGGER benchmark_no_projection_write BEFORE UPDATE ON orchestration_v2_projection_threads
+    BEGIN SELECT RAISE(ABORT, 'unchanged sweep wrote a projection'); END`;
+    yield* sql`CREATE TRIGGER benchmark_no_observation_write BEFORE INSERT ON agent_monitor_observations
+    BEGIN SELECT RAISE(ABORT, 'unchanged sweep wrote an observation'); END`;
+    const samples: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      const start = performance.now();
+      yield* monitor.sweep;
+      samples.push(performance.now() - start);
+    }
+    const sorted = samples.toSorted((a, b) => a - b);
+    const snapshotStart = performance.now();
+    const snapshot = yield* monitor.snapshot;
+    return {
+      threads: 694,
+      turnItems: 140_926,
+      events: 140_926,
+      initialSweepMs,
+      legacyEvidenceSweepMs,
+      idleSweepMedianMs: sorted[10]!,
+      idleSweepP95Ms: sorted[18]!,
+      idleSweepMaxMs: sorted[19]!,
+      snapshotMs: performance.now() - snapshotStart,
+      snapshotReports: snapshot.length,
+      idleSweepTargetMs: 50,
+      passes: sorted[18]! < 50,
+    };
+  }).pipe(
+    Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, ServerSettings.layerTest())),
+  );
 
 if (import.meta.main) {
-  const benchmark = await Effect.runPromise(runMonitorBenchmark);
+  const benchmark = await Effect.runPromise(runMonitorBenchmark());
   process.stdout.write(`${JSON.stringify({ benchmark })}\n`);
   process.exitCode = benchmark.passes ? 0 : 1;
 }

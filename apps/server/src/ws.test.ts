@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import * as AgentMonitor from "./orchestration-v2/AgentMonitorReactor.ts";
 import { assert, it } from "@effect/vitest";
 import {
@@ -43,6 +44,32 @@ import {
   subscribeOrchestrationV2Thread,
   withLateEditorConfig,
 } from "./ws.ts";
+
+const shellPhases = vi.hoisted((): Array<{ phase: string; kind: string }> => []);
+vi.mock("./orchestration-v2/ShellStream.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./orchestration-v2/ShellStream.ts")>();
+  const Stream = await import("effect/Stream");
+  const Effect = await import("effect/Effect");
+  const observe = <A, E, R>(phase: string, stream: Stream.Stream<A, E, R>) =>
+    stream.pipe(
+      Stream.tap((item) =>
+        Effect.sync(() => {
+          if (typeof item === "object" && item !== null && "kind" in item) {
+            shellPhases.push({ phase, kind: String(item.kind) });
+          }
+        }),
+      ),
+    );
+  return {
+    ...actual,
+    composeShellStreamWithEnrichment: ((input) =>
+      actual.composeShellStreamWithEnrichment({
+        initial: observe("initial", input.initial),
+        tail: observe("tail", input.tail),
+        enrichment: observe("enrichment", input.enrichment),
+      })) as typeof actual.composeShellStreamWithEnrichment,
+  };
+});
 
 it("accepts only the current orchestration protocol before websocket RPC setup", () => {
   assert.isTrue(
@@ -336,6 +363,7 @@ it.live.each([
               requestCompletionMarker: true,
             }).pipe(Effect.flatMap(consume));
       });
+      shellPhases.length = 0;
       const items = yield* subscription.pipe(
         Effect.provideService(ThreadManagement.ThreadManagementService, {
           ensureLegacyTranscript: () => Effect.void,
@@ -366,11 +394,80 @@ it.live.each([
         items.map((item) => item.kind),
         scope === "thread"
           ? ["event", "synchronized", "event"]
-          : ["project.updated", "synchronized", "project.updated"],
+          : includeMonitor
+            ? ["project.updated", "monitor.snapshot", "synchronized", "project.updated"]
+            : ["project.updated", "synchronized", "project.updated"],
       );
+      if (scope === "shell") {
+        assert.deepEqual(
+          shellPhases.filter((entry) => entry.kind === "project.updated"),
+          [
+            { phase: "tail", kind: "project.updated" },
+            { phase: "tail", kind: "project.updated" },
+          ],
+        );
+      }
       assert.deepEqual(
         items.flatMap((item) => (item.sequence === undefined ? [] : [item.sequence])),
         [after!.sequence, liveSequence],
+      );
+    }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
+);
+
+it.effect(
+  "shell resume emits the authoritative monitor snapshot before a buffered newer update",
+  () =>
+    Effect.gen(function* () {
+      const snapshotStarted = yield* Deferred.make<void>();
+      const releaseSnapshot = yield* Deferred.make<void>();
+      const updateBuffered = yield* Deferred.make<void>();
+      const enrichment = yield* PubSub.unbounded();
+      shellPhases.length = 0;
+      const stream = yield* subscribeOrchestrationV2Shell({
+        afterSequence: 0,
+        includeMonitor: true,
+        requestCompletionMarker: true,
+      }).pipe(
+        Effect.provideService(AgentMonitor.AgentMonitorReactor, {
+          snapshot: Deferred.succeed(snapshotStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseSnapshot)),
+            Effect.as([]),
+          ),
+          changes: Stream.fromEffect(
+            Deferred.await(snapshotStarted).pipe(
+              Effect.andThen(Deferred.succeed(updateBuffered, undefined)),
+              Effect.as({
+                threadId: ThreadId.make("newer-monitor-report"),
+                revision: 2,
+                report: null,
+              }),
+            ),
+          ),
+        } as unknown as AgentMonitor.AgentMonitorReactor["Service"]),
+        Effect.provideService(
+          ThreadManagement.ThreadManagementService,
+          {} as ThreadManagement.ThreadManagementService["Service"],
+        ),
+        Effect.provideService(ProjectStore.ProjectStoreV2, {
+          listShells: () => Effect.succeed([]),
+        } as unknown as ProjectStore.ProjectStoreV2["Service"]),
+        Effect.provideService(
+          ProjectService.ProjectService,
+          {} as ProjectService.ProjectService["Service"],
+        ),
+        Effect.provideService(ProjectEnrichment.ProjectEnrichmentService, {
+          subscribeChanges: PubSub.subscribe(enrichment),
+        } as ProjectEnrichment.ProjectEnrichmentService["Service"]),
+      );
+      const consumer = yield* stream.pipe(Stream.take(3), Stream.runCollect, Effect.forkChild);
+      yield* Deferred.await(updateBuffered);
+      // Let runnable stream fibers settle while the snapshot remains held; no time elapses.
+      yield* TestClock.adjust(Duration.millis(0));
+      yield* Deferred.succeed(releaseSnapshot, undefined);
+      const items = yield* Fiber.join(consumer);
+      assert.deepEqual(
+        items.filter((item) => item.kind.startsWith("monitor.")).map((item) => item.kind),
+        ["monitor.snapshot", "monitor.updated"],
       );
     }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );

@@ -726,7 +726,24 @@ it.effect(
           changes: Stream.never,
           snapshot: Effect.succeed([]),
         });
-        expect(yield* Stream.runCollect(disabled.snapshot)).toEqual([]);
+        expect(yield* Stream.runCollect(disabled.snapshot)).toEqual([
+          { kind: "monitor.snapshot", reports: [] },
+        ]);
       }),
     ),
+);
+
+it.effect("sends an authoritative empty monitor snapshot on resume after attention clears", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const monitor = yield* prepareShellMonitorStream({
+        changes: Stream.never,
+        snapshot: Effect.succeed([
+          { threadId: ThreadId.make("stale-attention"), revision: 2, report: null },
+        ]),
+      });
+      const frames = yield* Stream.runCollect(monitor.snapshot);
+      expect(frames).toEqual([{ kind: "monitor.snapshot", reports: [] }]);
+    }),
+  ),
 );

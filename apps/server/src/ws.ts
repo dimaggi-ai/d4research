@@ -1100,20 +1100,16 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
           skipUnknownEventTypes: true,
         }),
       );
-      if (input.includeMonitor !== true) {
-        return composeShellStreamWithEnrichment({
-          initial: initialEnrichmentItems(loaded),
-          tail: Stream.concat(replay, completionThenLive(highWater)),
-          enrichment: enrichmentRefreshes,
-        });
-      }
       return composeShellStreamWithEnrichment({
-        initial: Stream.concat(
-          initialEnrichmentItems(loaded),
-          Stream.concat(replay, monitor.snapshot),
+        initial: initialEnrichmentItems(loaded),
+        tail: Stream.concat(
+          replay,
+          Stream.concat(
+            monitor.snapshot,
+            Stream.merge(completionThenLive(highWater), monitor.changes),
+          ),
         ),
-        tail: completionThenLive(highWater),
-        enrichment: Stream.merge(enrichmentRefreshes, monitor.changes),
+        enrichment: enrichmentRefreshes,
       });
     }).pipe(
       Effect.mapError(

@@ -83,7 +83,7 @@ it("flags a draft only when Nia moved to another context or replaced its session
   expect(
     agentDraftMovedNotice(origin, { brainContext: "Global", threadId: ThreadId.make("second") }),
   ).toEqual({
-    message: "You wrote this draft for an earlier Nia session.",
+    message: "You wrote this draft in an earlier Nia session.",
     reassignLabel: "Use in the current session",
   });
 });

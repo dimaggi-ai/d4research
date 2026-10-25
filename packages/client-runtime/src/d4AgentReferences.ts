@@ -125,7 +125,7 @@ export function agentDraftMovedNotice(
   // Opening or closing a session in the same context is not a move; replacing one is.
   if (origin.threadId !== null && state.threadId !== null && origin.threadId !== state.threadId)
     return {
-      message: "You wrote this draft for an earlier Nia session.",
+      message: "You wrote this draft in an earlier Nia session.",
       reassignLabel: "Use in the current session",
     };
   return null;

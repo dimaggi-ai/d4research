@@ -190,6 +190,36 @@ it.effect(
     ).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("turn preparation skips the project lookup when no thread has a monitor report", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const threadId = yield* f.bindThread("YB", "agent");
+      assert.include((yield* f.service.prepare(threadId, selection, "session"))!, "thread-work-a");
+      // Without reports there is nothing to filter, so a missing projection must not matter.
+      yield* f.sql`DROP TABLE orchestration_v2_projection_threads`;
+      const quiet = yield* AgentContext.D4AgentContext.pipe(
+        Effect.provide(
+          AgentContext.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(Store.D4AgentStore, f.store),
+                Layer.succeed(SqlClient.SqlClient, f.sql),
+                Layer.mock(Providers.ProviderRegistry)({
+                  getProviders: Effect.succeed([provider]),
+                }),
+                Settings.layerTest({ d4Agent: config }),
+                Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
+              ),
+            ),
+          ),
+        ),
+      );
+      assert.isString(yield* quiet.prepare(threadId, selection, "session"));
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("changed scope configuration and failed project lookups refuse provider input", () =>
   Effect.scoped(
     Effect.gen(function* () {

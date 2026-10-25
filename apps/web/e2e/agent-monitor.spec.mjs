@@ -2,6 +2,7 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import { openProject } from "./harness.mjs";
 
 async function savedChange(app, label, change, matches, section = "agentMonitor") {
   const directory = NodePath.join(app.baseDir, "userdata");
@@ -41,13 +42,16 @@ async function savedChange(app, label, change, matches, section = "agentMonitor"
   }
 }
 
-export async function agentMonitorSettings({ page, app, screenshotDir }) {
-  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
-  await page
+const chooseEnvironment = (page) =>
+  page
     .getByText("Choose one environment to configure d4 Agent.", { exact: true })
     .locator("..")
     .getByRole("button")
     .click();
+
+export async function agentMonitorSettings({ page, app, screenshotDir }) {
+  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+  await chooseEnvironment(page);
   const enabled = page.getByRole("switch", { name: "Monitor threads", exact: true });
   await enabled.waitFor();
   NodeAssert.equal(await enabled.getAttribute("aria-checked"), "false");
@@ -85,6 +89,12 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     "d4Agent",
   );
   await page.setViewportSize({ width: 1440, height: 900 });
+  // The project filter renders only when a project exists.
+  const workspace = NodePath.join(app.baseDir, "agent-monitor-workspace");
+  await NodeFSP.mkdir(workspace, { recursive: true });
+  await NodeFSP.writeFile(NodePath.join(workspace, "README.md"), "# fixture\n");
+  await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
+  await openProject(page, workspace);
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
   const sidebar = page.locator('[data-slot="sidebar-inner"]');
   const agent = sidebar.getByRole("button", { name: "d4 Agent", exact: true });
@@ -103,9 +113,12 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await chat.waitFor();
   // The real agent-owned project has the same title as its dedicated entry.
   NodeAssert.equal(await sidebar.getByText("d4 Agent", { exact: true }).count(), 1);
-  await sidebar.getByRole("combobox", { name: "Filter threads by project", exact: true }).click();
+  // The accessible name gains ": <project>" while a project filter is active.
+  await sidebar.getByRole("combobox", { name: /^Filter threads by project/ }).click();
   const projectSearch = page.getByRole("combobox", { name: "Search projects", exact: true });
   await projectSearch.waitFor();
+  await projectSearch.fill("agent-monitor-workspace");
+  await page.getByRole("option", { name: /agent-monitor-workspace/ }).waitFor();
   await projectSearch.fill("d4 Agent");
   await page.getByText("No matching projects.", { exact: true }).waitFor();
   NodeAssert.equal(await page.getByRole("option", { name: "d4 Agent", exact: true }).count(), 0);
@@ -116,6 +129,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     "PASS real Sidebar pins d4 Agent above Search, hides its project, and opens the dedicated route",
   );
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+  await chooseEnvironment(page);
   await agentEnabled.waitFor();
   const probes = page.getByRole("switch", { name: "Agent system probes", exact: true });
   await savedChange(

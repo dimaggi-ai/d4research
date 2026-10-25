@@ -1332,6 +1332,10 @@ export const layer = Layer.effect(
             : { label: link.label, threadId: null, projectId: null };
         }),
       }));
+      const proposalCounts = yield* Effect.tryPromise({
+        try: () => brain.proposalCounts(),
+        catch: storageError,
+      });
       return {
         openSessions: (state.sessions ?? []).map(
           ({
@@ -1360,10 +1364,9 @@ export const layer = Layer.effect(
           try: () => brain.listProposals(state.brainContext),
           catch: storageError,
         }),
-        otherContextProposalCounts: (yield* Effect.tryPromise({
-          try: () => brain.proposalCounts(),
-          catch: storageError,
-        }))
+        memoryProposalCount:
+          proposalCounts.find((entry) => entry.context === state.brainContext)?.pending ?? 0,
+        otherContextProposalCounts: proposalCounts
           .filter((entry) => entry.context !== state.brainContext && entry.pending > 0)
           .map((entry) => ({ context: entry.context, count: entry.pending })),
         brainIndexes: yield* Effect.tryPromise({

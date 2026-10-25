@@ -19,6 +19,9 @@ const decodeProposalStatus = Schema.decodeUnknownSync(
   Schema.Literals(["pending", "approved", "rejected"]),
 );
 const contexts = new Set<string>(["Global", "Personal", "YB", "Dimaggi"]);
+// Agent state is polled; history beyond these pages stays in the database.
+const PENDING_PROPOSAL_PAGE = 50;
+const RESOLVED_PROPOSAL_PAGE = 10;
 type Scope = { root: string; context: D4BrainContext };
 type Approved = { path: string; raw: Buffer; sha256: string };
 type Snapshot = { rows: Approved[]; manifestHash: string; root: string };
@@ -212,6 +215,17 @@ export function createScopedBrain(options: {
           DROP TABLE proposals_legacy;
           COMMIT;`);
       }
+      if (
+        !db
+          .prepare("PRAGMA table_info(proposals)")
+          .all()
+          .some((row) => row.name === "resolved_at")
+      )
+        db.exec("ALTER TABLE proposals ADD COLUMN resolved_at TEXT");
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS proposals_status_idx ON proposals(context,status,created_at);
+        CREATE INDEX IF NOT EXISTS proposals_resolved_idx ON proposals(context,resolved_at);`,
+      );
       return body(db);
     } finally {
       db.close();
@@ -519,18 +533,25 @@ export function createScopedBrain(options: {
       validateContext(context);
       if (!NodeFS.existsSync(NodePath.join(directory, `${context}.sqlite`))) return [];
       return database(context, (db) =>
-        db
-          .prepare(
-            "SELECT id,context,text,status,created_at FROM proposals WHERE context=? ORDER BY created_at,id",
-          )
-          .all(context)
-          .map((row) => ({
-            id: String(row.id),
-            context,
-            text: String(row.text),
-            status: decodeProposalStatus(row.status),
-            createdAt: row.created_at === null ? null : String(row.created_at),
-          })),
+        [
+          ...db
+            .prepare(
+              "SELECT id,context,text,status,created_at FROM proposals WHERE context=? AND status='pending' ORDER BY created_at,rowid LIMIT ?",
+            )
+            .all(context, PENDING_PROPOSAL_PAGE),
+          // Approved text stays listed for a while because the user copies it into the vault.
+          ...db
+            .prepare(
+              "SELECT id,context,text,status,created_at FROM proposals WHERE context=? AND status!='pending' ORDER BY resolved_at DESC,rowid DESC LIMIT ?",
+            )
+            .all(context, RESOLVED_PROPOSAL_PAGE),
+        ].map((row) => ({
+          id: String(row.id),
+          context,
+          text: String(row.text),
+          status: decodeProposalStatus(row.status),
+          createdAt: row.created_at === null ? null : String(row.created_at),
+        })),
       );
     });
   const proposalCounts = async () =>
@@ -557,7 +578,9 @@ export function createScopedBrain(options: {
       return database(context, (db) => {
         const status = approve ? ("approved" as const) : ("rejected" as const);
         const result = db
-          .prepare("UPDATE proposals SET status=? WHERE context=? AND id=?")
+          .prepare(
+            "UPDATE proposals SET status=?,resolved_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE context=? AND id=?",
+          )
           .run(status, context, id);
         if (result.changes !== 1) refuse("proposal");
         return { id, context, status };

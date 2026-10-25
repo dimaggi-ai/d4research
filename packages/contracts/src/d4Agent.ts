@@ -273,6 +273,8 @@ export const D4AgentState = Schema.Struct({
     Schema.NullOr(Schema.Literals(["context", "new-session", "resumed", "size"])),
   ),
   memoryProposals: Schema.optionalKey(Schema.Array(D4MemoryProposal)),
+  /** All pending proposals in the bound context; `memoryProposals` holds only the first page. */
+  memoryProposalCount: Schema.optionalKey(NonNegativeInt),
   otherContextProposalCounts: Schema.optionalKey(
     Schema.Array(Schema.Struct({ context: D4BrainContext, count: NonNegativeInt })),
   ),

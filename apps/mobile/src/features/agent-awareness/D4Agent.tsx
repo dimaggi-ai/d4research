@@ -196,6 +196,10 @@ function D4AgentPanelContent({
   const proposals = (state.memoryProposals ?? []).filter(
     (proposal) => proposal.context === state.brainContext,
   );
+  const shownPendingProposals = proposals.filter(
+    (proposal) => proposal.status === "pending",
+  ).length;
+  const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
   const attention = monitorEnabled
     ? monitorAttentionThreads(
         threads.filter(
@@ -370,8 +374,13 @@ function D4AgentPanelContent({
         {proposals.length > 0 ? (
           <View className="gap-2 py-2">
             <Text className="font-t3-semibold text-foreground">
-              Memory proposals · {proposals.length}
+              Memory proposals · {pendingProposals} pending
             </Text>
+            {pendingProposals > shownPendingProposals ? (
+              <Text className="text-xs text-foreground-muted">
+                Showing the oldest {shownPendingProposals}. Review them to see the rest.
+              </Text>
+            ) : null}
             {proposals.map((proposal) => (
               <View key={proposal.id} className="gap-2 rounded border border-border p-2">
                 <Text className="text-xs text-foreground-muted">

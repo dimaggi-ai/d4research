@@ -429,6 +429,21 @@ describe("context-local index", () => {
     expect((await brain.proposalCounts()).every((row) => row.pending === 0)).toBe(true);
     expect(snapshotVault()).toEqual(before);
   });
+  it("lists a bounded page of pending proposals and the latest resolved ones", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 75; index++)
+      ids.push(
+        (await brain.propose({ context: "YB", text: `candidate ${index}`, sessionId: "session" }))
+          .id,
+      );
+    for (const id of ids.slice(60)) await brain.resolveProposal("YB", id, true);
+    const listed = await brain.listProposals("YB");
+    const pending = listed.filter((proposal) => proposal.status === "pending");
+    const resolved = listed.filter((proposal) => proposal.status !== "pending");
+    expect(pending.map((proposal) => proposal.id)).toEqual(ids.slice(0, 50));
+    expect(resolved.map((proposal) => proposal.id)).toEqual(ids.slice(65).toReversed());
+    expect((await brain.proposalCounts()).find((row) => row.context === "YB")?.pending).toBe(60);
+  });
   it("migrates pending-only proposal stores without dropping proposal content", async () => {
     await brain.propose({ context: "Personal", text: "initialize", sessionId: "session_1" });
     const db = new NodeSqlite.DatabaseSync(

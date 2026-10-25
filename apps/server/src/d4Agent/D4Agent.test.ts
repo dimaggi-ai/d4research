@@ -1727,6 +1727,7 @@ it.effect("proposal review survives session rotation and exposes only current-co
       }
       const proposals = (yield* f.service.getState()).memoryProposals!;
       assert.equal(proposals.length, 2);
+      assert.equal((yield* f.service.getState()).memoryProposalCount, 2);
       yield* f.service.newSession();
       assert.equal((yield* f.service.getState()).memoryProposals?.length, 2);
       yield* f.service.switchContext({ context: "Dimaggi" });
@@ -1746,6 +1747,7 @@ it.effect("proposal review survives session rotation and exposes only current-co
         proposalId: proposals[1]!.id,
         approve: false,
       });
+      assert.equal(reviewed.memoryProposalCount, 0);
       assert.deepEqual(reviewed.memoryProposals?.map((p) => p.status).sort(), [
         "approved",
         "rejected",

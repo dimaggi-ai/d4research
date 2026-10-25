@@ -607,10 +607,13 @@ it("reviews only current-context memory proposals and shows other-context counts
         createdAt: "2026-10-24T12:00:00.000Z",
       },
     ],
+    memoryProposalCount: 60,
     otherContextProposalCounts: [{ context: "Dimaggi", count: 1 }],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(container.textContent).toContain("Keep this scoped note.");
+  expect(container.textContent).toContain("Memory proposals · 60 pending");
+  expect(container.textContent).toContain("Showing the oldest 1. Review them to see the rest.");
   expect(container.textContent).toContain("2026-10-24T12:00:00.000Z");
   expect(container.textContent).toContain("Pending memory proposals · Dimaggi: 1");
   expect(container.textContent).not.toContain("Other context private text");

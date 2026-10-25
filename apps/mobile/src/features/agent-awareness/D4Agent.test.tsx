@@ -1,4 +1,9 @@
-import { D4AgentRoute } from "./D4AgentChat";
+import { environmentProjects } from "../../state/projects";
+import { AtomRegistry } from "effect/reactivity";
+import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
+import { makeThreadShellFixture } from "../../test-fixtures";
+import { HomeScreen } from "../home/HomeScreen";
+import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -32,6 +37,10 @@ const mocks = vi.hoisted(() => ({
   undo: vi.fn(async () => ({ _tag: "Success" })),
   closeSession: vi.fn(async () => ({ _tag: "Success" })),
   resolveProposal: vi.fn(async () => ({ _tag: "Success" })),
+  navigationProjects: [] as Array<{ id: ProjectId; title: string }>,
+  identityAtom: null as unknown,
+  configAtom: null as unknown,
+  projects: [] as Array<{ id: ProjectId; title: string; environmentId: EnvironmentId }>,
   projectContexts: {} as D4AgentSettings["projectContexts"],
   refresh: vi.fn(),
   threadShells: vi.fn(),
@@ -69,33 +78,53 @@ vi.mock("../../state/atom-registry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
-    value === "config"
-      ? mocks.configLoaded
-        ? {
-            settings: {
-              d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
-              agentMonitor: { enabled: mocks.monitorEnabled },
-            },
-          }
-        : null
-      : mocks.allowed,
+    value === "list-environments"
+      ? {
+          providersByEnvironmentId: new Map(),
+          machineByEnvironmentId: new Map(),
+          settlementEnvironmentIds: new Set(),
+          snoozeEnvironmentIds: new Set(),
+          pinningEnvironmentIds: new Set(),
+          autoSettleOptOutEnvironmentIds: new Set(),
+          pinReorderEnvironmentIds: new Set(),
+          activeReorderEnvironmentIds: new Set(),
+          titleRegenerationEnvironmentIds: new Set(),
+        }
+      : value === mocks.configAtom
+        ? mocks.configLoaded
+          ? {
+              settings: {
+                d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
+                agentMonitor: { enabled: mocks.monitorEnabled },
+              },
+            }
+          : null
+        : mocks.allowed,
 }));
-vi.mock("../../state/server", () => ({
-  serverEnvironment: {
-    configValueAtom: () => "config",
-    d4AgentState: () => "state",
-    d4AgentIdentity: () => "identity",
-    d4AgentAction: () => "detail",
-    ensureD4AgentThread: { permissionAtom: () => "permission" },
-    sendD4AgentMessage: { permissionAtom: () => "permission", kind: "send" },
-    undoD4AgentArchive: { permissionAtom: () => "permission", kind: "undo-archive" },
-    closeD4AgentSession: { permissionAtom: () => "permission", kind: "close-session" },
-    newD4AgentSession: { permissionAtom: () => "permission", kind: "new-session" },
-    resolveD4AgentMemoryProposal: { permissionAtom: () => "permission", kind: "proposal" },
-    switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
-    resolveD4AgentAction: { permissionAtom: () => "permission" },
-  },
-}));
+vi.mock("../../state/server", async () => {
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  mocks.identityAtom = Atom.make(
+    AsyncResult.success({ projectId: "agent-project", threadId: "agent-thread" }),
+  );
+  mocks.configAtom = Atom.make(null);
+  return {
+    threadListEnvironmentsAtom: "list-environments",
+    serverEnvironment: {
+      configValueAtom: () => mocks.configAtom,
+      d4AgentState: () => "state",
+      d4AgentIdentity: () => mocks.identityAtom,
+      d4AgentAction: () => "detail",
+      ensureD4AgentThread: { permissionAtom: () => "permission" },
+      sendD4AgentMessage: { permissionAtom: () => "permission", kind: "send" },
+      undoD4AgentArchive: { permissionAtom: () => "permission", kind: "undo-archive" },
+      closeD4AgentSession: { permissionAtom: () => "permission", kind: "close-session" },
+      newD4AgentSession: { permissionAtom: () => "permission", kind: "new-session" },
+      resolveD4AgentMemoryProposal: { permissionAtom: () => "permission", kind: "proposal" },
+      switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
+      resolveD4AgentAction: { permissionAtom: () => "permission" },
+    },
+  };
+});
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
     command.kind === "undo-archive"
@@ -115,7 +144,7 @@ vi.mock("../../state/use-atom-command", () => ({
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
     data:
-      atom === "identity"
+      atom === mocks.identityAtom
         ? mocks.identityMissing
           ? null
           : { threadId: mocks.state?.threadId, projectId: mocks.state?.projectId }
@@ -131,6 +160,7 @@ vi.mock("../../state/query", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useThreadShell: () => (mocks.routeShellMissing ? null : { projectId: mocks.state?.projectId }),
+  useProjects: () => mocks.projects,
   useThreadShells: () => mocks.threads,
   useEnvironmentServerConfig: () => ({
     settings: {
@@ -147,13 +177,17 @@ vi.mock("./useD4AgentState", () => ({
     error: null,
   }),
 }));
-vi.mock("@react-navigation/native", () => ({ useLinkTo: () => mocks.navigate }));
+vi.mock("@react-navigation/native", () => ({
+  useLinkTo: () => mocks.navigate,
+  useFocusEffect: () => undefined,
+}));
 vi.mock("expo-clipboard", () => ({ setStringAsync: (text: string) => mocks.copy(text) }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   TextInput: ({
     value,
@@ -191,6 +225,210 @@ vi.mock("react-native", () => ({
     </button>
   ),
 }));
+
+vi.mock("@legendapp/list/react-native", () => ({
+  LegendList: ({
+    ListHeaderComponent,
+    ListEmptyComponent,
+  }: {
+    ListHeaderComponent: React.ReactNode;
+    ListEmptyComponent: React.ReactNode;
+  }) => (
+    <div>
+      {ListHeaderComponent}
+      {ListEmptyComponent}
+    </div>
+  ),
+}));
+vi.mock("react-native-screens", () => ({ ScrollViewMarker: () => null }));
+vi.mock("react-native-gesture-handler", () => ({
+  GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+  useNativeGesture: () => ({}),
+}));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+vi.mock("../../native/v5-workspace-context", async () => ({
+  NativePrimaryColumnContext: (await import("react")).createContext(null),
+}));
+vi.mock("../../native/scrollEdgeEffects", () => ({ nativeHeaderScrollEdgeEffects: {} }));
+vi.mock("../../native/native-layout-metrics", () => ({
+  useNativeColumnLayoutMetrics: () => null,
+  useNativeLayoutMetrics: () => null,
+}));
+vi.mock("../../native/native-glass", () => ({ NATIVE_LIQUID_GLASS_SUPPORTED: false }));
+vi.mock("../../native/NativeWorkspaceColumns", () => ({
+  useNativeWorkspaceColumnsSupported: () => false,
+}));
+vi.mock("../../state/queries", () => ({
+  useThreadSearch: () => ({ matches: [], isPending: false }),
+}));
+vi.mock("../keyboard/threadKeyboardShortcuts", () => ({ useThreadJumpShortcuts: () => undefined }));
+vi.mock("../../state/thread-order", () => ({ usePendingThreadOrder: () => null }));
+vi.mock("../../state/use-thread-outbox", () => ({ useQueuedThreadKeys: () => new Set() }));
+vi.mock("../threads/thread-list-v2-items", () => ({
+  ThreadListV2PendingRow: () => null,
+  ThreadListV2Row: () => null,
+  ThreadListV2SettledShelfHeader: () => null,
+  ThreadListV2ShowMoreRow: () => null,
+  ThreadListV2SnoozedShelfHeader: () => null,
+  ThreadListV2WorkingShelfHeader: () => null,
+}));
+vi.mock("../threads/thread-provider-instance", () => ({
+  useThreadRowProviderInstanceResolver: () => () => null,
+}));
+vi.mock("../threads/use-open-thread-pull-requests", () => ({
+  useOpenThreadPullRequests: () => () => undefined,
+}));
+vi.mock("../threads/use-thread-list-v2-shelf-preferences", () => ({
+  useThreadListV2ShelfPreferences: () => ({
+    loaded: true,
+    settledShelfExpanded: false,
+    snoozedShelfExpanded: false,
+    workingShelfEnabled: false,
+    workingShelfExpanded: false,
+  }),
+}));
+vi.mock("../home/thread-swipe-actions", () => ({
+  SwipeableScrollGateProvider: ({ children }: { children: React.ReactNode }) => children,
+  useSwipeableScrollGate: () => ({ swipeEnabled: false, scrollGateHandlers: {} }),
+}));
+vi.mock("../home/FabScrollContext", () => ({ useFabScroll: () => null }));
+vi.mock("../workspace/WorkspaceTabsContext", () => ({
+  useWorkspaceTabs: () => ({ getScrollOffset: () => 0, state: { tabs: { threads: {} } } }),
+}));
+vi.mock("../workspace/ListFilterMenu", () => ({
+  ListFilterMenu: ({ label, actions }: { label: string; actions: Array<{ title: string }> }) => (
+    <div>
+      <button>{label}</button>
+      {actions.map((action) => (
+        <span key={action.title}>{action.title}</span>
+      ))}
+    </div>
+  ),
+}));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/EmptyState", () => ({
+  EmptyState: ({ title }: { title: string }) => <span>{title}</span>,
+}));
+vi.mock("../../components/ui/FloatingActionButton", () => ({ FloatingActionButton: () => null }));
+vi.mock("../../components/ui/AppActivityIndicator", () => ({ AppActivityIndicator: () => null }));
+vi.mock("../../components/ui/useAndroidControlSizing", () => ({
+  useAndroidControlSizing: () => ({ fabClearance: 0 }),
+}));
+vi.mock("../../components/ui/Dialog", () => ({}));
+vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: vi.fn() }));
+vi.mock("../../lib/commandMetadata", () => ({ makeTurnCommandMetadata: vi.fn() }));
+vi.mock("../../lib/projectThreadStartTurn", () => ({ buildProjectThreadStartTurnInput: vi.fn() }));
+vi.mock("../threads/use-worktree-setup", () => ({ useWorktreeSetup: vi.fn() }));
+vi.mock("../../components/ui/AppBar", () => ({ AppBar: vi.fn() }));
+vi.mock("../../state/workspace", () => ({
+  useConnectionsReady: () => {
+    mocks.nativeRoute();
+    throw new Error("Agent route reached ordinary native controls");
+  },
+}));
+vi.mock("../../state/shell", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    useEnvironmentShellReadiness: vi.fn(),
+    environmentSnapshotAtom: Atom.family(() =>
+      Atom.make({
+        projects: mocks.navigationProjects.map((project) => ({
+          ...project,
+          workspaceRoot: `/synthetic/${project.id}`,
+          repositoryIdentity: null,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-10-24T00:00:00Z",
+          updatedAt: "2026-10-24T00:00:00Z",
+        })),
+      }),
+    ),
+  };
+});
+vi.mock("../../connection/catalog", async () => ({
+  environmentCatalog: {
+    catalogValueAtom: (await import("effect/reactivity")).Atom.make({
+      isReady: true,
+      entries: new Map([["test-environment", { enabled: true }]]),
+    }),
+  },
+}));
+vi.mock("../../connection/runtime", () => ({ connectionAtomRuntime: {} }));
+vi.mock("@d4research/client-runtime/state/projects", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  createProjectEnvironmentAtoms: () => ({}),
+}));
+vi.mock("../../state/new-task-draft-key", () => ({ restoredNewTaskDraftKey: vi.fn() }));
+vi.mock("../../state/pending-thread-creation", () => ({
+  clearPendingThreadCreationOutcome: vi.fn(),
+}));
+vi.mock("../../state/recover-failed-thread-draft", () => ({ recoverFailedThreadDraft: vi.fn() }));
+vi.mock("../../state/use-vcs-action-state", () => ({
+  dismissGitActionResult: vi.fn(),
+  useGitActionProgress: vi.fn(),
+}));
+vi.mock("../../state/vcs", () => ({ vcsEnvironment: vi.fn() }));
+vi.mock("../../components/LoadingScreen", () => ({ LoadingScreen: vi.fn() }));
+vi.mock("../connection/connectionTone", () => ({ connectionTone: vi.fn() }));
+vi.mock("../../state/use-remote-environment-registry", () => ({
+  useRemoteConnections: vi.fn(),
+  useRemoteConnectionStatus: vi.fn(),
+  useRemoteEnvironmentRuntime: vi.fn(),
+}));
+vi.mock("../../state/use-terminal-session", () => ({ useKnownTerminalSessions: vi.fn() }));
+vi.mock("../../lib/uuid", () => ({ uuidv4: vi.fn() }));
+vi.mock("../../state/session", () => ({
+  readEnvironmentScope: vi.fn(),
+  useEnvironmentScope: vi.fn(),
+}));
+vi.mock("../../state/use-thread-detail", () => ({ useSelectedThreadDetailState: vi.fn() }));
+vi.mock("../../state/use-thread-selection", () => ({ useThreadSelection: vi.fn() }));
+vi.mock("../threads/GitActionProgressOverlay", () => ({ GitActionProgressOverlay: vi.fn() }));
+vi.mock("../terminal/terminalMenu", () => ({
+  buildTerminalMenuSessions: vi.fn(),
+  nextOpenTerminalId: vi.fn(),
+  resolveProjectScriptTerminalId: vi.fn(),
+}));
+vi.mock("../terminal/terminalLaunchContext", () => ({
+  resolvePreferredThreadWorktreePath: vi.fn(),
+  stagePendingTerminalLaunch: vi.fn(),
+}));
+vi.mock("../terminal/terminalDebugLog", () => ({ terminalDebugLog: vi.fn() }));
+vi.mock("../threads/ThreadDetailScreen", () => ({ ThreadDetailScreen: vi.fn() }));
+vi.mock("../threads/git/GitOverviewSheet", () => ({ GitOverviewSheet: vi.fn() }));
+vi.mock("../../state/use-selected-thread-git-actions", () => ({
+  useSelectedThreadGitActions: vi.fn(),
+}));
+vi.mock("../../state/use-selected-thread-git-state", () => ({
+  useSelectedThreadGitState: vi.fn(),
+}));
+vi.mock("../../state/use-selected-thread-requests", () => ({ useSelectedThreadRequests: vi.fn() }));
+vi.mock("../../state/use-selected-thread-worktree", () => ({ useSelectedThreadWorktree: vi.fn() }));
+vi.mock("../../state/use-thread-composer-state", () => ({ useThreadComposerState: vi.fn() }));
+vi.mock("../threads/threadContentPresentation", () => ({
+  projectThreadContentPresentation: vi.fn(),
+}));
+vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
+  useAppearancePreferences: vi.fn(),
+}));
+vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
+  useAdaptiveWorkspaceLayout: vi.fn(),
+  useAdaptiveWorkspacePaneRole: vi.fn(),
+  useRegisterWorkspaceInspector: vi.fn(),
+}));
+vi.mock("../files/thread-file-navigator-pane", () => ({ ThreadFileNavigatorPane: vi.fn() }));
+vi.mock("../threads/thread-inspector-content-stack", () => ({
+  ThreadInspectorContentStack: vi.fn(),
+}));
+vi.mock("../threads/thread-route-hydration", () => ({ threadRouteIsHydrating: vi.fn() }));
+vi.mock("../prompt-links/useThreadPromptLink", () => ({ useThreadPromptLink: vi.fn() }));
+vi.mock("../threads/ThreadHeader", () => ({ ThreadHeader: vi.fn() }));
+vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
+  useAndroidWorkspaceBack: vi.fn(),
+  useWorkspaceListNavigation: vi.fn(),
+}));
 let root: Root;
 let container: HTMLDivElement;
 const environmentId = EnvironmentId.make("test-environment");
@@ -205,6 +443,7 @@ beforeEach(() => {
   mocks.closeSession.mockClear();
   mocks.resolveProposal.mockClear();
   mocks.copy.mockClear();
+  mocks.projects = [];
   mocks.projectContexts = {};
   mocks.refresh.mockClear();
   mocks.threadShells.mockClear();
@@ -753,24 +992,46 @@ it("restores an automatically archived thread only after Undo archive", async ()
   expect(mocks.undo).toHaveBeenCalledWith({ environmentId, input: { actionId: "archived" } });
 });
 
-it("pins one agent entry above mobile home filters and projects and opens its chat", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentHomeHeader
-        environments={[{ environmentId, label: "Local" }]}
-        selectedEnvironmentId={null}
-      >
-        <button>Filter projects</button>
-        <button>Ordinary project</button>
-      </D4AgentHomeHeader>,
-    ),
-  );
+it("pins the agent above filters in the actual mobile HomeScreen", async () => {
+  const noop = vi.fn();
+  mocks.navigationProjects = [
+    { id: ProjectId.make("agent-project"), title: "Owned agent project" },
+    { id: ProjectId.make("ordinary-project"), title: "Ordinary project" },
+  ];
+  const registry = AtomRegistry.make();
+  const projects = registry.get(environmentProjects.normalProjectsAtom);
+  expect(registry.get(environmentProjects.projectsAtom)).toHaveLength(2);
+  const props = {
+    projects,
+    threads: [
+      makeThreadShellFixture({
+        id: ThreadId.make("ordinary"),
+        projectId: ProjectId.make("project"),
+        environmentId,
+        title: "Ordinary thread",
+      }),
+    ],
+    pendingTasks: [],
+    catalogState: { hasConnections: true, hasReadyEnvironment: true },
+    savedConnectionsById: {},
+    environments: [{ environmentId, label: "Local", connectionState: "connected" }],
+    searchQuery: "",
+    selectedEnvironmentId: null,
+    selectedProjectKey: null,
+    projectSortOrder: "name",
+    projectGroupingMode: "none",
+    onSearchQueryChange: noop,
+    onEnvironmentChange: noop,
+    onProjectChange: noop,
+    onAddConnection: noop,
+  } as unknown as React.ComponentProps<typeof HomeScreen>;
+  await act(() => root.render(<HomeScreen {...props} />));
   const buttons = [...container.querySelectorAll("button")];
-  expect(buttons.map((button) => button.textContent)).toEqual([
-    "d4 Agent",
-    "Filter projects",
-    "Ordinary project",
-  ]);
+  expect(buttons[0]?.textContent).toBe("d4 Agent");
+  expect(container.textContent).toContain("Ordinary project");
+  expect(container.textContent).not.toContain("Owned agent project");
+  registry.dispose();
+  expect(buttons.map((button) => button.textContent)).toContain("All projects");
   await act(() => buttons[0]!.click());
   expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/${threadId}`);
 });
@@ -798,14 +1059,9 @@ it("keeps only the selected environment agent entry at the top of mobile home", 
 
 it("removes project-only actions from the dedicated mobile chat", async () => {
   await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <button>Initialize Git</button>
-        <button>Add project script</button>
-        <button>Open in Files</button>
-      </D4AgentRoute>,
-    ),
+    root.render(<ThreadRouteScreen route={{ params: { environmentId, threadId } }} />),
   );
+  expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(container.textContent).toContain("d4 Agent");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
     expect(container.textContent).not.toContain(label);
@@ -820,14 +1076,9 @@ it("keeps a disabled historical agent route on the special chat surface with sen
     chatThreadIds: [threadId],
   };
   await act(() =>
-    root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <button>Initialize Git</button>
-        <button>Add project script</button>
-        <button>Open in Files</button>
-      </D4AgentRoute>,
-    ),
+    root.render(<ThreadRouteScreen route={{ params: { environmentId, threadId } }} />),
   );
+  expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(container.textContent).toContain("d4 Agent");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
     expect(container.textContent).not.toContain(label);
@@ -885,4 +1136,112 @@ it("reloads an idle-closed archived agent chat without mounting the native missi
   expect(container.textContent).not.toContain("Initialize Git");
   expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+it("inserts a scoped stable mention and sends its id after the target is renamed", async () => {
+  const targetProject = ProjectId.make("yb-project");
+  const otherProject = ProjectId.make("other-project");
+  mocks.projectContexts = { [targetProject]: "YB", [otherProject]: "Dimaggi" };
+  mocks.projects = [
+    { id: targetProject, title: "YB work", environmentId },
+    { id: otherProject, title: "Hidden project", environmentId },
+  ];
+  mocks.threads = [
+    {
+      id: ThreadId.make("stable-target"),
+      projectId: targetProject,
+      environmentId,
+      title: "Original title",
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: false, classification: "working" } },
+    },
+    {
+      id: ThreadId.make("secret-target"),
+      projectId: otherProject,
+      environmentId,
+      title: "Hidden title",
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: false, classification: "working" } },
+    },
+  ];
+  mocks.state = { ...mocks.state!, brainContext: "YB" };
+  const renderChat = () =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    );
+  await act(renderChat);
+  const input = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Message d4 Agent"]',
+  )!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(() => {
+    setter.call(input, "@");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("Original title");
+  expect(container.textContent).not.toContain("Hidden title");
+  expect(container.innerHTML).not.toContain("secret-target");
+  expect(container.textContent).not.toContain("Hidden project");
+  await act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "thread · Original title")!
+      .click(),
+  );
+  expect(input.value).toBe("[[thread:stable-target]] ");
+  mocks.threads[0] = { ...mocks.threads[0]!, title: "Renamed target" };
+  await act(renderChat);
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Send")!
+      .click(),
+  );
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: { text: "[[thread:stable-target]]" },
+  });
+});
+
+it("does not invent an original message for a heartbeat action", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "rewrite",
+        type: "send",
+        targetId: "target-thread",
+        preview: "Detailed rewritten request",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "rewrite",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "send",
+      threadId: ThreadId.make("target-thread"),
+      text: "Detailed rewritten request",
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  expect(container.textContent).not.toContain("Original");
+  expect(container.textContent).not.toContain("Send original");
+  expect(container.textContent).toContain("Detailed rewritten request");
+  expect(mocks.resolve).not.toHaveBeenCalled();
 });

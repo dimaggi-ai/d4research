@@ -1,5 +1,10 @@
+import {
+  agentMentionOptions,
+  agentMentionQuery,
+  insertAgentMention,
+} from "@d4research/client-runtime/d4-agent-references";
 import { useEnvironmentQuery } from "../../state/query";
-import { useThreadShell } from "../../state/entities";
+import { useProjects, useThreadShells, useThreadShell } from "../../state/entities";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -66,10 +71,21 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const projects = useProjects();
+  const threads = useThreadShells();
   const enabled = config?.settings.d4Agent.enabled === true;
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const [text, setText] = useState("");
+  const mentions = agentMentionOptions({
+    environmentId,
+    context: state.brainContext,
+    agentProjectId: state.projectId,
+    settings: config?.settings,
+    projects,
+    threads,
+    query: agentMentionQuery(text),
+  });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
   const conversation = useRef<HTMLDivElement>(null);
@@ -174,6 +190,28 @@ export function D4AgentChat({
           setSending(false);
         }}
       >
+        {agentMentionQuery(text) !== null && enabled && allowed ? (
+          <div
+            aria-label="Mention a thread, project, or pipeline"
+            className="max-h-48 space-y-1 overflow-y-auto"
+          >
+            {mentions.map((mention) => (
+              <div key={`${mention.kind}:${mention.id}`}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setText((current) => insertAgentMention(current, mention))}
+                >
+                  {mention.kind} · {mention.title}
+                </Button>
+              </div>
+            ))}
+            {mentions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No matching references.</p>
+            ) : null}
+          </div>
+        ) : null}
         <Textarea
           aria-label="Message d4 Agent"
           value={text}

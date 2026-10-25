@@ -442,6 +442,10 @@
     "./provider-appearance": {
       "types": "./src/providerAppearance.ts",
       "default": "./src/providerAppearance.ts"
+    },
+    "./d4-agent-references": {
+      "types": "./src/d4AgentReferences.ts",
+      "default": "./src/d4AgentReferences.ts"
     }
   },
   "scripts": {

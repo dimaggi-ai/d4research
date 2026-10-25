@@ -84,6 +84,39 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => value.enabled === true,
     "d4Agent",
   );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
+  const sidebar = page.locator('[data-slot="sidebar-inner"]');
+  const agent = sidebar.getByRole("button", { name: "d4 Agent", exact: true });
+  await agent.waitFor();
+  const search = sidebar.getByRole("combobox", { name: "Search threads", exact: true });
+  await search.waitFor();
+  NodeAssert.ok(
+    await agent.evaluate(
+      (entry, searchElement) =>
+        Boolean(entry.compareDocumentPosition(searchElement) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await search.elementHandle(),
+    ),
+  );
+  await agent.click();
+  const chat = page.getByRole("region", { name: "d4 Agent chat", exact: true });
+  await chat.waitFor();
+  // The real agent-owned project has the same title as its dedicated entry.
+  NodeAssert.equal(await sidebar.getByText("d4 Agent", { exact: true }).count(), 1);
+  await sidebar.getByRole("combobox", { name: "Filter threads by project", exact: true }).click();
+  const projectSearch = page.getByRole("combobox", { name: "Search projects", exact: true });
+  await projectSearch.waitFor();
+  await projectSearch.fill("d4 Agent");
+  await page.getByText("No matching projects.", { exact: true }).waitFor();
+  NodeAssert.equal(await page.getByRole("option", { name: "d4 Agent", exact: true }).count(), 0);
+  await projectSearch.press("Escape");
+  for (const name of ["Initialize Git", "Add project script", "Open in Files"])
+    NodeAssert.equal(await chat.getByRole("button", { name, exact: true }).count(), 0);
+  console.log(
+    "PASS real Sidebar pins d4 Agent above Search, hides its project, and opens the dedicated route",
+  );
+  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+  await agentEnabled.waitFor();
   const probes = page.getByRole("switch", { name: "Agent system probes", exact: true });
   await savedChange(
     app,

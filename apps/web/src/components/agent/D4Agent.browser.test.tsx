@@ -1,9 +1,9 @@
 import { ThreadRouteView } from "../ThreadRouteView";
-import { D4AgentRoute } from "./D4AgentChat";
+import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { D4AgentEntries, D4AgentEntry, D4AgentPanel } from "./D4Agent";
+import { D4AgentEntry, D4AgentPanel } from "./D4Agent";
 import {
   EnvironmentId,
   ThreadId,
@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   closeSession: vi.fn(async () => ({ _tag: "Success" })),
   resolveProposal: vi.fn(async () => ({ _tag: "Success" })),
   routeProjectId: undefined as ProjectId | undefined,
+  projects: [] as Array<{ id: ProjectId; title: string; environmentId: EnvironmentId }>,
   projectContexts: {} as D4AgentSettings["projectContexts"],
   refresh: vi.fn(),
   threadShells: vi.fn(),
@@ -135,6 +136,7 @@ vi.mock("../../state/entities", () => ({
   useQuietThreadShell: () => null,
   useThreadShell: () =>
     mocks.routeShellMissing ? null : { projectId: mocks.routeProjectId ?? mocks.state?.projectId },
+  useProjects: () => mocks.projects,
   useThreadShells: () => {
     mocks.threadShells();
     return mocks.threads;
@@ -209,6 +211,7 @@ beforeEach(() => {
   mocks.newSession.mockClear();
   mocks.closeSession.mockClear();
   mocks.resolveProposal.mockClear();
+  mocks.projects = [];
   mocks.projectContexts = {};
   mocks.routeProjectId = undefined;
   mocks.refresh.mockClear();
@@ -1072,37 +1075,10 @@ it("keeps ordinary threads on the native surface without polling full agent stat
   expect(mocks.stateQuery).toHaveBeenLastCalledWith(false);
 });
 
-it("pins the single agent entry before Search and ordinary project navigation", async () => {
-  await act(() =>
-    root.render(
-      <D4AgentEntries>
-        <input aria-label="Search" />
-        <button>Ordinary project</button>
-      </D4AgentEntries>,
-    ),
-  );
-  const buttons = [...container.querySelectorAll("button")];
-  expect(buttons.filter((button) => button.textContent === "d4 Agent")).toHaveLength(1);
-  expect(container.querySelector("button")?.textContent).toBe("d4 Agent");
-  expect(
-    container.querySelector("input")!.compareDocumentPosition(buttons[0]!) &
-      Node.DOCUMENT_POSITION_PRECEDING,
-  ).toBeTruthy();
-  await act(() => buttons[0]!.click());
-  expect(mocks.navigate).toHaveBeenCalledWith({
-    to: "/$environmentId/$threadId",
-    params: { environmentId, threadId },
-  });
-});
-
 it("removes project-only actions when entering the dedicated agent chat", async () => {
   await act(() =>
     root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <button>Initialize Git</button>
-        <button>Add project script</button>
-        <button>Open in Files</button>
-      </D4AgentRoute>,
+      <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
     ),
   );
   expect(container.textContent).toContain("d4 Agent");
@@ -1120,11 +1096,7 @@ it("keeps a disabled historical agent route on the special chat surface with sen
   };
   await act(() =>
     root.render(
-      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
-        <button>Initialize Git</button>
-        <button>Add project script</button>
-        <button>Open in Files</button>
-      </D4AgentRoute>,
+      <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
     ),
   );
   expect(container.textContent).toContain("d4 Agent");
@@ -1214,4 +1186,112 @@ it("keeps the actual web route on an archived idle-closed agent conversation aft
   expect(container.textContent).not.toContain("Initialize Git");
   expect(mocks.nativeRoute).not.toHaveBeenCalled();
   expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+it("inserts a scoped stable mention and sends its id after the target is renamed", async () => {
+  const targetProject = ProjectId.make("yb-project");
+  const otherProject = ProjectId.make("other-project");
+  mocks.projectContexts = { [targetProject]: "YB", [otherProject]: "Dimaggi" };
+  mocks.projects = [
+    { id: targetProject, title: "YB work", environmentId },
+    { id: otherProject, title: "Hidden project", environmentId },
+  ];
+  mocks.threads = [
+    {
+      id: ThreadId.make("stable-target"),
+      projectId: targetProject,
+      environmentId,
+      title: "Original title",
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: false, classification: "working" } },
+    },
+    {
+      id: ThreadId.make("secret-target"),
+      projectId: otherProject,
+      environmentId,
+      title: "Hidden title",
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: false, classification: "working" } },
+    },
+  ];
+  mocks.state = { ...mocks.state!, brainContext: "YB" };
+  const renderChat = () =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    );
+  await act(renderChat);
+  const input = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Message d4 Agent"]',
+  )!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(() => {
+    setter.call(input, "@");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("Original title");
+  expect(container.textContent).not.toContain("Hidden title");
+  expect(container.innerHTML).not.toContain("secret-target");
+  expect(container.textContent).not.toContain("Hidden project");
+  await act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "thread · Original title")!
+      .click(),
+  );
+  expect(input.value).toBe("[[thread:stable-target]] ");
+  mocks.threads[0] = { ...mocks.threads[0]!, title: "Renamed target" };
+  await act(renderChat);
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Send")!
+      .click(),
+  );
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: { text: "[[thread:stable-target]]" },
+  });
+});
+
+it("does not invent an original message for a heartbeat action", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "rewrite",
+        type: "send",
+        targetId: "target-thread",
+        preview: "Detailed rewritten request",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "rewrite",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "send",
+      threadId: ThreadId.make("target-thread"),
+      text: "Detailed rewritten request",
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  expect(container.textContent).not.toContain("Original");
+  expect(container.textContent).not.toContain("Send original");
+  expect(container.textContent).toContain("Detailed rewritten request");
+  expect(mocks.resolve).not.toHaveBeenCalled();
 });

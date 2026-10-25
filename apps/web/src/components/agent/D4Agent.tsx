@@ -528,10 +528,12 @@ function AgentActionRecord({
       ) : null}
       {reviewing && sendAction ? (
         <div className="space-y-2 rounded border p-3">
-          <p className="text-xs text-muted-foreground">Original</p>
-          <p className="whitespace-pre-wrap break-words">
-            {sendAction.originalText ?? sendAction.text}
-          </p>
+          {sendAction.originalText !== undefined ? (
+            <>
+              <p className="text-xs text-muted-foreground">Original</p>
+              <p className="whitespace-pre-wrap break-words">{sendAction.originalText}</p>
+            </>
+          ) : null}
           <p className="text-xs text-muted-foreground">Rewritten prompt</p>
           {editing ? (
             <textarea

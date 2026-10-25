@@ -1,3 +1,8 @@
+import {
+  agentMentionOptions,
+  agentMentionQuery,
+  insertAgentMention,
+} from "@d4research/client-runtime/d4-agent-references";
 import { useEnvironmentQuery } from "../../state/query";
 import type { D4AgentState, EnvironmentId, ThreadId } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
@@ -12,7 +17,12 @@ import {
   View,
 } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
-import { useEnvironmentServerConfig, useThreadShell } from "../../state/entities";
+import {
+  useEnvironmentServerConfig,
+  useProjects,
+  useThreadShells,
+  useThreadShell,
+} from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
@@ -70,11 +80,22 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
+  const projects = useProjects();
+  const threads = useThreadShells();
   const enabled = config?.settings.d4Agent.enabled === true;
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
   const [text, setText] = useState("");
+  const mentions = agentMentionOptions({
+    environmentId,
+    context: state.brainContext,
+    agentProjectId: state.projectId,
+    settings: config?.settings,
+    projects,
+    threads,
+    query: agentMentionQuery(text),
+  });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
   const conversation = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -164,6 +185,28 @@ export function D4AgentChat({
         ) : null}
       </ScrollView>
       <View className="gap-2 border-t border-border p-4">
+        {agentMentionQuery(text) !== null && enabled && allowed ? (
+          <ScrollView
+            accessibilityLabel="Mention a thread, project, or pipeline"
+            className="max-h-48"
+          >
+            {mentions.map((mention) => (
+              <Pressable
+                key={`${mention.kind}:${mention.id}`}
+                accessibilityRole="button"
+                className="px-3 py-3"
+                onPress={() => setText((current) => insertAgentMention(current, mention))}
+              >
+                <Text className="text-accent">
+                  {mention.kind} · {mention.title}
+                </Text>
+              </Pressable>
+            ))}
+            {mentions.length === 0 ? (
+              <Text className="text-sm text-foreground-muted">No matching references.</Text>
+            ) : null}
+          </ScrollView>
+        ) : null}
         <TextInput
           accessibilityLabel="Message d4 Agent"
           multiline

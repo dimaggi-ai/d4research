@@ -589,10 +589,14 @@ function AgentActionRecord({
       ) : null}
       {reviewing && sendAction ? (
         <View className="gap-2 rounded border border-border p-3">
-          <Text className="text-xs text-foreground-muted">Original</Text>
-          <Text selectable className="text-sm text-foreground">
-            {sendAction.originalText ?? sendAction.text}
-          </Text>
+          {sendAction.originalText !== undefined ? (
+            <>
+              <Text className="text-xs text-foreground-muted">Original</Text>
+              <Text selectable className="text-sm text-foreground">
+                {sendAction.originalText}
+              </Text>
+            </>
+          ) : null}
           <Text className="text-xs text-foreground-muted">Rewritten prompt</Text>
           {editing ? (
             <TextInput

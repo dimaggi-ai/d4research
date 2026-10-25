@@ -217,9 +217,8 @@ describe("d4 Agent policies", () => {
     assert.isFalse(
       isAllowedAgentMcpRequest([{ method: "tools/call", params: { name: "d4_agent_action" } }]),
     );
-    assert.isTrue(
-      isAllowedAgentMcpRequest({ method: "tools/call", params: { name: "d4_agent_list" } }),
-    );
+    for (const name of ["d4_agent_list", "d4_agent_environment"])
+      assert.isTrue(isAllowedAgentMcpRequest({ method: "tools/call", params: { name } }));
   });
   it("disk checks use available blocks and explicit unavailable states", () => {
     assert.equal(diskCheck("root-disk", 100, 10, 90).status, "attention");

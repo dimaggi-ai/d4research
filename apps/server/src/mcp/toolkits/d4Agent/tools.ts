@@ -68,6 +68,12 @@ export const D4AgentToolkit = Toolkit.make(
       "List active top-level thread titles and runtime status, with deterministic reports when monitoring is enabled. Does not read messages.",
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
+  Tool.make("d4_agent_environment", {
+    ...shared,
+    description:
+      "Describe this d4research environment: bound context, contexts with their mapped projects, configured providers with models and availability, and the d4 Agent model and permission mode. Returns no thread content.",
+    success: Schema.Unknown,
+  }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_read_tail", {
     ...shared,
     description:

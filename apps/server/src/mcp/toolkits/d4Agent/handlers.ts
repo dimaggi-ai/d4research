@@ -48,6 +48,7 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
     call((service) => service.requestAction({ ...input, type: "pipeline" })),
   ),
   d4_agent_list: McpToolAccess.reads(() => call((service) => service.list())),
+  d4_agent_environment: McpToolAccess.reads(() => call((service) => service.environment())),
   d4_agent_read_tail: McpToolAccess.reads(({ threadId, limit }) =>
     call((service) => service.readTail(threadId, limit ?? 10)),
   ),

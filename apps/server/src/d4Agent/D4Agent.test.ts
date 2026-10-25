@@ -942,6 +942,92 @@ it.effect("thread listing omits opaque report keys that heartbeats still track",
   }),
 );
 
+it.effect(
+  "environment describes contexts, providers and agent settings without thread content",
+  () =>
+    Effect.gen(function* () {
+      const dimaggi = ProjectId.make("dimaggi-project");
+      const unmapped = ProjectId.make("unmapped-project");
+      const projectService = {
+        create: () => Effect.succeed({} as never),
+        listShells: () =>
+          Effect.succeed([
+            { id: dimaggi, title: "CTO d4" },
+            { id: unmapped, title: "Notes" },
+          ] as never),
+      } as unknown as Projects.ProjectService["Service"];
+      const f = yield* fixture("ask", true, projectService, "/isolated/d4-agent", true, {
+        projectContexts: { [dimaggi]: "Dimaggi" },
+      });
+      yield* Ref.set(f.catalog, [
+        provider,
+        {
+          ...provider,
+          instanceId: ProviderInstanceId.make("deepseek"),
+          driver: ProviderDriverKind.make("deepseek"),
+          displayName: "DeepSeek",
+          models: [
+            { slug: "deepseek-local", name: "DeepSeek local", isCustom: false, capabilities: null },
+          ],
+        },
+      ]);
+      yield* f.service.ensureThread();
+      const global = yield* f.service.environment();
+      assert.equal(global.application, "d4research");
+      assert.equal(global.boundContext, "Global");
+      assert.deepEqual(global.contexts, [
+        { context: "Global", projects: [{ projectId: unmapped, title: "Notes" }] },
+        { context: "Personal", projects: [] },
+        { context: "YB", projects: [] },
+        { context: "Dimaggi", projects: [{ projectId: dimaggi, title: "CTO d4" }] },
+      ]);
+      assert.deepEqual(
+        global.providers.map(({ instanceId, driver, available, canRunD4Agent, models }) => ({
+          instanceId,
+          driver,
+          available,
+          canRunD4Agent,
+          models,
+        })),
+        [
+          {
+            instanceId: "codex",
+            driver: "codex",
+            available: true,
+            canRunD4Agent: true,
+            models: [{ slug: "chosen", name: "Chosen" }],
+          },
+          {
+            instanceId: "deepseek",
+            driver: "deepseek",
+            available: true,
+            canRunD4Agent: false,
+            models: [{ slug: "deepseek-local", name: "DeepSeek local" }],
+          },
+        ],
+      );
+      assert.deepEqual(global.d4Agent, {
+        modelSelection,
+        permissionMode: "ask",
+        unavailableReason: null,
+      });
+      assert.notInclude(JSON.stringify(global), target.title);
+      yield* f.service.switchContext({ context: "YB" });
+      const work = yield* f.service.environment();
+      assert.equal(work.boundContext, "YB");
+      assert.deepEqual(
+        work.contexts.map(({ context, projects }) => [context, projects]),
+        [
+          ["Global", null],
+          ["Personal", null],
+          ["YB", []],
+          ["Dimaggi", null],
+        ],
+      );
+      assert.notInclude(JSON.stringify(work), "CTO d4");
+    }),
+);
+
 it.effect("thread listing remains available with monitoring disabled", () =>
   Effect.gen(function* () {
     const { service } = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", false);

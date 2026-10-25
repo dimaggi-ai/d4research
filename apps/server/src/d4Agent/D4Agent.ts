@@ -22,7 +22,10 @@ import {
 import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
 import {
+  canStartProviderTurn,
   CommandId,
+  D4_BRAIN_CONTEXTS,
+  supportsD4AgentDriver,
   D4AgentError,
   D4BrainContext,
   type D4AgentSwitchContextInput,
@@ -146,6 +149,7 @@ export class D4Agent extends Context.Service<
       },
       D4AgentError
     >;
+    readonly environment: () => Effect.Effect<D4AgentEnvironment, D4AgentError>;
     readonly readTail: (
       threadId: ThreadId,
       limit: number,
@@ -158,6 +162,35 @@ export class D4Agent extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("d4research/d4Agent/D4Agent") {}
+
+export interface D4AgentEnvironment {
+  readonly application: "d4research";
+  readonly boundContext: D4BrainContext;
+  readonly contexts: ReadonlyArray<{
+    readonly context: D4BrainContext;
+    // Null when the bound work context may not see another context's project metadata.
+    readonly projects: ReadonlyArray<{
+      readonly projectId: ProjectId;
+      readonly title: string;
+    }> | null;
+  }>;
+  readonly providers: ReadonlyArray<{
+    readonly instanceId: string;
+    readonly driver: string;
+    readonly displayName: string | null;
+    readonly enabled: boolean;
+    readonly status: string;
+    readonly available: boolean;
+    readonly unavailableReason: string | null;
+    readonly canRunD4Agent: boolean;
+    readonly models: ReadonlyArray<{ readonly slug: string; readonly name: string }>;
+  }>;
+  readonly d4Agent: {
+    readonly modelSelection: ModelSelection | null;
+    readonly permissionMode: D4AgentSettings["permissionMode"];
+    readonly unavailableReason: D4AgentState["unavailableReason"];
+  };
+}
 
 const validateAction = Schema.decodeUnknownEffect(D4AgentAction);
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -842,6 +875,46 @@ export const layer = Layer.effect(
         })),
         omittedThreads: Math.max(0, topLevel.length - 200),
       };
+    });
+    const environment = Effect.fn("D4Agent.environment")(function* () {
+      const { state, config } = yield* bound();
+      const catalog = yield* providers.getProviders;
+      const allProjects = (yield* projects.listShells().pipe(Effect.mapError(threadError))).filter(
+        (project) => project.id !== state.projectId,
+      );
+      return {
+        application: "d4research",
+        boundContext: state.brainContext,
+        contexts: D4_BRAIN_CONTEXTS.map((context) => ({
+          context,
+          projects:
+            state.brainContext === "Global" || context === state.brainContext
+              ? allProjects
+                  .filter((project) => (config.projectContexts[project.id] ?? "Global") === context)
+                  .map((project) => ({ projectId: project.id, title: project.title.slice(0, 256) }))
+              : null,
+        })),
+        providers: catalog.map((provider) => ({
+          instanceId: provider.instanceId,
+          driver: provider.driver,
+          displayName: provider.displayName ?? null,
+          enabled: provider.enabled,
+          status: provider.status,
+          available: canStartProviderTurn(provider),
+          unavailableReason: provider.unavailableReason ?? null,
+          canRunD4Agent: supportsD4AgentDriver(provider.driver),
+          models: provider.models
+            .filter(
+              (model) => !provider.updateRequiredModels?.some((entry) => entry.slug === model.slug),
+            )
+            .map((model) => ({ slug: model.slug, name: model.name })),
+        })),
+        d4Agent: {
+          modelSelection: config.modelSelection,
+          permissionMode: config.permissionMode,
+          unavailableReason: modelAvailability(config, catalog),
+        },
+      } satisfies D4AgentEnvironment;
     });
     const systemHealth = () =>
       healthLock.withPermits(1)(
@@ -2195,6 +2268,7 @@ export const layer = Layer.effect(
       resolveAction,
       requestAction,
       list: () => lock.withPermits(1)(list()),
+      environment: () => lock.withPermits(1)(environment()),
       systemHealth: () => bound().pipe(Effect.andThen(systemHealth())),
       tick,
       readTail: (threadId, limit) =>

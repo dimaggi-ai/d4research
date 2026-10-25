@@ -565,6 +565,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       "d4_agent_research",
       "d4_agent_pipeline",
       "d4_agent_list",
+      "d4_agent_environment",
       "d4_agent_read_tail",
       "d4_agent_system_health",
       "d4_agent_action",

@@ -13,6 +13,10 @@ export const D4AgentPermissionMode = Schema.Literals(["read-only", "ask", "act"]
 export const D4_BRAIN_CONTEXTS = ["Global", "Personal", "YB", "Dimaggi"] as const;
 export const D4BrainContext = Schema.Literals(D4_BRAIN_CONTEXTS);
 export type D4BrainContext = typeof D4BrainContext.Type;
+// Only these adapters enforce the d4 Agent's MCP tool allowlist and read-only sandbox.
+export const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = ["codex", "claudeAgent"];
+export const supportsD4AgentDriver = (driver: string): boolean =>
+  D4_AGENT_PROVIDER_DRIVERS.includes(driver);
 export const D4AgentSwitchContextInput = Schema.Struct({ context: D4BrainContext });
 export type D4AgentSwitchContextInput = typeof D4AgentSwitchContextInput.Type;
 export const D4BrainIndexStatus = Schema.Struct({

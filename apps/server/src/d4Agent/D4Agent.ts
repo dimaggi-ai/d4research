@@ -1980,9 +1980,11 @@ export const layer = Layer.effect(
       );
     const taskCursors = new Map<string, string>();
     const archiveCursors = new Map<string, string>();
-    let taskShells:
-      | Awaited<Effect.Success<ReturnType<typeof threads.getShellSnapshot>>>
-      | undefined;
+    // Shells of tracked tasks only; null marks a tracked thread the projection no longer has.
+    const taskShells = new Map<
+      ThreadId,
+      Effect.Success<ReturnType<typeof threads.getThreadShell>>
+    >();
     let taskSequence: number | undefined;
     const tick = lock.withPermits(1)(
       Effect.gen(function* () {
@@ -2003,16 +2005,38 @@ export const layer = Layer.effect(
           const sequence = Option.isSome(events)
             ? yield* events.value.latestApplicationSequence.pipe(Effect.mapError(threadError))
             : undefined;
-          if (taskShells === undefined || sequence === undefined || sequence !== taskSequence) {
-            taskShells = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
-            taskSequence = sequence;
+          const ids = new Set(tracked.map((entry) => entry.threadId));
+          let reload: Iterable<ThreadId> = [];
+          if (
+            Option.isNone(events) ||
+            sequence === undefined ||
+            taskSequence === undefined ||
+            sequence - taskSequence > REFERENCE_SCAN_LIMIT
+          ) {
+            const snapshot = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
+            taskShells.clear();
+            for (const shell of [...snapshot.threads, ...snapshot.archivedThreads])
+              if (ids.has(shell.id)) taskShells.set(shell.id, shell);
+            for (const id of ids) if (!taskShells.has(id)) taskShells.set(id, null);
+          } else if (sequence !== taskSequence) {
+            reload = yield* events.value
+              .changedThreadIds({
+                afterSequence: taskSequence,
+                throughSequence: sequence,
+                threadIds: [...ids],
+              })
+              .pipe(Effect.mapError(threadError));
           }
+          for (const id of new Set([...reload, ...[...ids].filter((id) => !taskShells.has(id))]))
+            taskShells.set(
+              id,
+              yield* threads.getThreadShell(id).pipe(Effect.mapError(threadError)),
+            );
+          for (const id of taskShells.keys()) if (!ids.has(id)) taskShells.delete(id);
+          taskSequence = sequence;
         }
         const shells = new Map(
-          [...(taskShells?.threads ?? []), ...(taskShells?.archivedThreads ?? [])].map((shell) => [
-            shell.id,
-            shell,
-          ]),
+          [...taskShells].flatMap(([id, shell]) => (shell === null ? [] : [[id, shell] as const])),
         );
         const removed = new Set<ThreadId>();
         const settled = new Map<ThreadId, boolean>();

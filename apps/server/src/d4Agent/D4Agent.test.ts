@@ -186,6 +186,8 @@ const fixture = (
       eventChecks: 0,
     });
     const relevantEvents = yield* Ref.make(true);
+    // null reports every tracked thread as changed.
+    const changedThreads = yield* Ref.make<ReadonlyArray<ThreadId> | null>(null);
     let previousShells: ReadonlyArray<OrchestrationV2ThreadShell> | undefined;
     let revision = 0;
     const stateChanges = yield* PubSub.unbounded<Store.StoredState>();
@@ -236,6 +238,8 @@ const fixture = (
               }
               return revision + (yield* Ref.get(eventRevision));
             }),
+            changedThreadIds: ({ threadIds }) =>
+              Ref.get(changedThreads).pipe(Effect.map((changed) => changed ?? threadIds)),
             hasApplicationEvents: () =>
               Ref.update(reads, (r) => ({ ...r, eventChecks: r.eventChecks + 1 })).pipe(
                 Effect.andThen(Ref.get(relevantEvents)),
@@ -375,6 +379,7 @@ const fixture = (
       failSnapshot,
       eventRevision,
       relevantEvents,
+      changedThreads,
       monitorUpdates,
     };
   });
@@ -2647,6 +2652,45 @@ it.effect("settled tasks do not count toward active task capacity", () =>
     const stored = (yield* Ref.get(f.state)).agentThreads ?? [];
     assert.equal(stored.length, 1001);
     assert.equal(stored.at(-1)?.threadId, `d4-action:${card.id}`);
+  }),
+);
+
+it.effect("the task sweep reloads only tracked tasks that changed", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const task = { ...target, id: ThreadId.make("task-tracked"), createdBy: "agent" as const };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId: task.id,
+          projectId: task.projectId,
+          context: "Global" as const,
+          actionId: "tracked",
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* f.service.tick;
+    const first = yield* Ref.get(f.reads);
+    yield* Ref.set(f.changedThreads, []);
+    yield* Ref.update(f.shells, (all) => [...all, { ...target, id: ThreadId.make("unrelated") }]);
+    yield* f.service.tick;
+    const quiet = yield* Ref.get(f.reads);
+    assert.equal(quiet.catalogs, first.catalogs);
+    yield* Ref.set(f.changedThreads, null);
+    yield* Ref.update(f.shells, (all) =>
+      all.map((entry) => (entry.id === task.id ? { ...entry, archivedAt: now } : entry)),
+    );
+    yield* f.service.tick;
+    const changed = yield* Ref.get(f.reads);
+    assert.equal(changed.catalogs, first.catalogs);
+    assert.isAbove(changed.shells, quiet.shells);
+    assert.deepEqual((yield* Ref.get(f.state)).agentThreads, []);
   }),
 );
 

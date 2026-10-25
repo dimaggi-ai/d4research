@@ -80,6 +80,13 @@ export function contentFreeDigest(
   };
 }
 
+type DigestReport = ReturnType<typeof contentFreeDigest>["reports"][number];
+
+// Report keys are server-side dedupe identities that can be kilobytes long; models never need them.
+export function modelFacingReport({ reportKey: _reportKey, ...report }: DigestReport) {
+  return report;
+}
+
 export function compactDigest(
   updates: ReadonlyArray<AgentMonitorUpdate>,
   now: number,
@@ -88,7 +95,7 @@ export function compactDigest(
   const digest = contentFreeDigest(updates, now, ownThreadId);
   return {
     ...digest,
-    reports: digest.reports.slice(0, 20),
+    reports: digest.reports.slice(0, 20).map(modelFacingReport),
     omitted: digest.omitted + Math.max(0, digest.reports.length - 20),
   };
 }

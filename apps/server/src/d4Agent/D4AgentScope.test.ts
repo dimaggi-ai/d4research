@@ -132,10 +132,11 @@ it.effect(
           const threadId = yield* f.bindThread(context, `agent-${context}`);
           const prefix = yield* f.service.prepare(threadId, selection, `session-${context}`);
           assert.isString(prefix);
-          assert.equal(prefix!.includes("marker-work-a"), context !== "Dimaggi");
-          assert.equal(prefix!.includes("marker-work-b"), context !== "YB");
-          assert.equal(prefix!.includes("marker-unmapped"), context === "Global");
+          assert.equal(prefix!.includes("thread-work-a"), context !== "Dimaggi");
+          assert.equal(prefix!.includes("thread-work-b"), context !== "YB");
+          assert.equal(prefix!.includes("thread-unmapped"), context === "Global");
           assert.include(prefix!, `Bound context: ${context}`);
+          assert.notInclude(prefix!, "marker-");
         }
       }),
     ).pipe(Effect.provide(testLayer)),
@@ -156,8 +157,8 @@ it.effect(
         );
         assert.equal((yield* reopened.get).bindings.length, 0);
         const prefix = yield* service.prepare(newThread, selection, "existing-provider-session");
-        assert.include(prefix!, "marker-work-b");
-        assert.notInclude(prefix!, "marker-work-a");
+        assert.include(prefix!, "thread-work-b");
+        assert.notInclude(prefix!, "thread-work-a");
         assert.equal((yield* reopened.get).bindings.length, 1);
         assert.equal((yield* reopened.get).bindings[0]?.threadId, newThread);
         const old = yield* Effect.result(

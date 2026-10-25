@@ -21,6 +21,7 @@ import {
   ProviderInstanceId,
   RuntimeRequestId,
   ThreadId,
+  type AgentMonitorUpdate,
   type D4AgentSettings,
   type D4AgentSystemCheck,
   type OrchestrationV2ThreadProjection,
@@ -143,6 +144,7 @@ const fixture = (
         notificationEligible: false,
       },
     ]);
+    const monitorUpdates = yield* Ref.make<ReadonlyArray<AgentMonitorUpdate>>([]);
     const agentShell = yield* Ref.make<OrchestrationV2ThreadShell | null>(null);
     const shells = yield* Ref.make<ReadonlyArray<OrchestrationV2ThreadShell>>([target]);
     const sends = yield* Ref.make<
@@ -325,7 +327,7 @@ const fixture = (
                 listShells: () => Effect.succeed([]),
               })
             : Layer.succeed(Projects.ProjectService, projectService),
-          Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
+          Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Ref.get(monitorUpdates) }),
         ),
       ),
     );
@@ -352,6 +354,7 @@ const fixture = (
       failSend,
       failSnapshot,
       eventRevision,
+      monitorUpdates,
     };
   });
 
@@ -893,6 +896,50 @@ it.effect(
         assert.include(yield* Ref.get(dispatches), "thread.create");
       }),
     ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+it.effect("thread listing omits opaque report keys that heartbeats still track", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      heartbeatMinutes: 15,
+    });
+    yield* f.service.ensureThread();
+    const reportKey = `dedupe:${'\\"nested\\"'.repeat(200)}`;
+    yield* Ref.set(f.monitorUpdates, [
+      {
+        threadId: targetId,
+        revision: 1,
+        report: {
+          schemaVersion: 1,
+          runId: null,
+          attemptId: null,
+          classification: "needs_user",
+          reason: "pending_request",
+          attentionRequired: true,
+          notificationEligible: true,
+          reportKey,
+          observedAt: "1970-01-01T00:00:00Z",
+          runStatus: null,
+          pendingRequestId: null,
+        },
+      },
+    ]);
+    const listed = yield* f.service.list();
+    assert.deepEqual(listed.reports, [
+      {
+        threadId: targetId,
+        classification: "needs_user",
+        reason: "pending_request",
+        attentionRequired: true,
+        ageSeconds: 0,
+      },
+    ]);
+    assert.deepEqual(listed.threads[0]?.report, listed.reports[0]);
+    assert.notInclude(JSON.stringify(listed), "dedupe:");
+    yield* TestClock.adjust("16 minutes");
+    yield* f.service.tick;
+    assert.deepEqual((yield* Ref.get(f.state)).heartbeatKeys, [reportKey]);
+  }),
 );
 
 it.effect("thread listing remains available with monitoring disabled", () =>

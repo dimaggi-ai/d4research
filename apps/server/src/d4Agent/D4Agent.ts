@@ -67,7 +67,13 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as AgentMonitor from "../orchestration-v2/AgentMonitorReactor.ts";
-import { contentFreeDigest, heartbeatDue, modelAvailability, usageAttributes } from "./policy.ts";
+import {
+  contentFreeDigest,
+  heartbeatDue,
+  modelAvailability,
+  modelFacingReport,
+  usageAttributes,
+} from "./policy.ts";
 
 export class D4Agent extends Context.Service<
   D4Agent,
@@ -125,13 +131,16 @@ export class D4Agent extends Context.Service<
       action: D4AgentAction,
     ) => Effect.Effect<D4AgentActionRecord, D4AgentError>;
     readonly list: () => Effect.Effect<
-      ReturnType<typeof contentFreeDigest> & {
+      {
+        readonly counts: Record<string, number>;
+        readonly reports: ReadonlyArray<ReturnType<typeof modelFacingReport>>;
+        readonly omitted: number;
         readonly monitorEnabled: boolean;
         readonly threads: ReadonlyArray<{
           readonly threadId: ThreadId;
           readonly title: string;
           readonly status: string;
-          readonly report: ReturnType<typeof contentFreeDigest>["reports"][number] | null;
+          readonly report: ReturnType<typeof modelFacingReport> | null;
         }>;
         readonly omittedThreads: number;
       },
@@ -818,9 +827,12 @@ export const layer = Layer.effect(
           thread.lineage.parentThreadId === null &&
           thread.id !== state.threadId,
       );
-      const byThread = new Map(reports.reports.map((report) => [report.threadId, report]));
+      const visibleReports = reports.reports.map(modelFacingReport);
+      const byThread = new Map(visibleReports.map((report) => [report.threadId, report]));
       return {
-        ...reports,
+        counts: reports.counts,
+        reports: visibleReports,
+        omitted: reports.omitted,
         monitorEnabled: config.agentMonitor.enabled,
         threads: topLevel.slice(0, 200).map((thread) => ({
           threadId: thread.id,

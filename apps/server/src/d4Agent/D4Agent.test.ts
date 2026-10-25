@@ -337,12 +337,15 @@ const fixture = (
         ),
       ),
     );
-    const service = Context.get(
-      yield* Layer.buildWithScope(layer, yield* Scope.Scope),
-      Agent.D4Agent,
+    const scope = yield* Scope.Scope;
+    const service = Context.get(yield* Layer.buildWithScope(layer, scope), Agent.D4Agent);
+    // A fresh service instance over the same persisted state and threads, as after a server restart.
+    const restart = Layer.buildWithScope(layer, scope).pipe(
+      Effect.map((built) => Context.get(built, Agent.D4Agent)),
     );
     return {
       service,
+      restart,
       state,
       stateChanges,
       settings,
@@ -2520,4 +2523,75 @@ it.effect("send original keeps the pending user text after a size rotation", () 
     yield* f.service.resolveAction({ actionId: card.id, decision: "approve", sendOriginal: true });
     assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, original);
   }),
+);
+
+it.effect.each(["create", "send"] as const)(
+  "a rotated message survives a failed %s and a restart, then is delivered once",
+  (failure) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      const initial = yield* f.service.ensureThread();
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        sessions: (state.sessions ?? []).map((entry) => ({
+          ...entry,
+          inputTokens: 80,
+          contextWindow: 100,
+        })),
+      }));
+      const original = "Pending request that must survive";
+      yield* f.service.sendMessage({ text: original });
+      const summary = (yield* Ref.get(f.state)).rotation!;
+      const runId = RunId.make("summary-run");
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [
+          { id: runId, userMessageId: summary.messageId, status: "completed" },
+        ] as unknown as typeof value.runs,
+        messages: [
+          {
+            id: MessageId.make("summary-result"),
+            role: "assistant",
+            runId,
+            text: "Scoped summary",
+            createdAt: now,
+          },
+        ] as unknown as typeof value.messages,
+      }));
+      yield* Ref.set(failure === "create" ? f.failCreate : f.failSend, true);
+      yield* f.service.tick;
+      const pending = (yield* Ref.get(f.state)).rotation;
+      assert.equal(pending?.pendingText, original);
+      assert.isDefined(pending?.targetThreadId);
+      assert.equal(pending?.seedSummary, "Scoped summary");
+      assert.isFalse((yield* Ref.get(f.sends)).some((entry) => entry.text === original));
+
+      yield* Ref.set(f.failCreate, false);
+      yield* Ref.set(f.failSend, false);
+      const restarted = yield* f.restart;
+      yield* restarted.tick;
+      yield* restarted.tick;
+      const state = yield* Ref.get(f.state);
+      const deliveries = (yield* Ref.get(f.sends)).filter((entry) => entry.text === original);
+      assert.equal(deliveries.length, 1);
+      assert.equal(deliveries[0]!.threadId, pending!.targetThreadId);
+      assert.notEqual(deliveries[0]!.threadId, initial.threadId);
+      assert.equal(deliveries[0]!.commandId, `d4-agent:message:${pending!.deliveryId}`);
+      // The delivered message keeps the id of the transcript entry the user already sees.
+      assert.equal(
+        state.transcript?.find((entry) => entry.role === "user" && entry.text === original)?.id,
+        deliveries[0]!.messageId,
+      );
+      assert.isNull(state.rotation);
+      assert.equal(state.threadId, pending!.targetThreadId);
+      assert.equal(
+        state.sessions?.find((entry) => entry.threadId === pending!.targetThreadId)?.seedSummary,
+        "Scoped summary",
+      );
+      assert.equal(
+        state.transcript?.filter((entry) => entry.text.startsWith("Session size limit reached"))
+          .length,
+        1,
+      );
+    }),
 );

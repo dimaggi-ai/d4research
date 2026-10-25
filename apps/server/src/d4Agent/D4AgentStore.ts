@@ -71,6 +71,12 @@ export const StoredState = Schema.Struct({
         pendingText: Schema.String,
         requestedAt: IsoDateTime,
         heartbeat: Schema.optionalKey(Schema.Boolean),
+        // Stable identity of the pending message, reused by every delivery retry.
+        deliveryId: Schema.optionalKey(Schema.String),
+        // Set once the summary outcome is decided; the record then stays until delivery is accepted.
+        targetThreadId: Schema.optionalKey(ThreadId),
+        seedSummary: Schema.optionalKey(Schema.String),
+        notice: Schema.optionalKey(Schema.String),
       }),
     ),
   ),

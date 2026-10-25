@@ -410,6 +410,8 @@ export const layer = Layer.effect(
       id?: string,
     ) {
       const state = yield* store.get;
+      // Rotation retries replay their notices; a stable id shows each notice once.
+      if (id !== undefined && state.transcript?.some((entry) => entry.id === id)) return;
       const entry = {
         id: id ?? (yield* randomUUID),
         role,
@@ -451,7 +453,12 @@ export const layer = Layer.effect(
             providerSessionId: null,
           },
         ],
-        rotation: value.rotation?.threadId === session.threadId ? null : (value.rotation ?? null),
+        // A decided rotation outlives its source session; closing its destination abandons it.
+        rotation:
+          value.rotation &&
+          (value.rotation.targetThreadId ?? value.rotation.threadId) === session.threadId
+            ? null
+            : (value.rotation ?? null),
         sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
         bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
         ...(value.threadId === session.threadId ? { threadId: null, identityReady: false } : {}),
@@ -467,6 +474,7 @@ export const layer = Layer.effect(
       context: D4BrainContext,
       reason: "context" | "new-session" | "size" = "context",
       seedSummary?: string,
+      replacementThreadId?: ThreadId,
     ) {
       yield* finishRetirement();
       yield* adoptLegacySession;
@@ -476,7 +484,9 @@ export const layer = Layer.effect(
       const canResume =
         reason === "context" && existing?.scopeHash === contextScopeHash(context, config);
       if (existing && !canResume) yield* close(context);
-      const threadId = canResume ? existing.threadId : ThreadId.make(yield* randomUUID);
+      const threadId = canResume
+        ? existing.threadId
+        : (replacementThreadId ?? ThreadId.make(yield* randomUUID));
       const changedAt = DateTime.formatIso(yield* DateTime.now);
       yield* store.update((value) => ({
         ...value,
@@ -786,7 +796,7 @@ export const layer = Layer.effect(
     ) {
       id ??= yield* randomUUID;
       yield* maintainSessions();
-      if (!heartbeat && (yield* store.get).rotation)
+      if (!heartbeat && !resumedAfterRotation && (yield* store.get).rotation)
         return yield* new D4AgentError({ reason: "busy" });
       if (!heartbeat && resolveReferences) {
         const resolved = resolveAgentReference(input.text, yield* referenceCatalog);
@@ -836,14 +846,14 @@ export const layer = Layer.effect(
         session?.contextWindow != null &&
         session.inputTokens >= (session.contextWindow * budget) / 100
       ) {
-        yield* beginRotation(input.text, heartbeat);
+        yield* beginRotation(input.text, heartbeat, id);
         return identity;
       }
       if (!heartbeat)
         yield* store.update((value) => ({
           ...value,
           userMessages: [
-            ...(value.userMessages ?? []),
+            ...(value.userMessages ?? []).filter((entry) => entry.messageId !== `d4-agent:${id}`),
             {
               threadId: identity.threadId,
               messageId: `d4-agent:${id}`,
@@ -1171,11 +1181,13 @@ export const layer = Layer.effect(
     const beginRotation = Effect.fn("D4Agent.beginRotation")(function* (
       pendingText: string,
       heartbeat: boolean,
+      deliveryId?: string,
     ) {
       const state = yield* store.get;
       if (state.rotation || state.threadId === null || state.projectId === null) return;
       const summaryId = `d4-summary:${yield* randomUUID}`;
       const at = DateTime.formatIso(yield* DateTime.now);
+      const pendingId = deliveryId ?? (yield* randomUUID);
       yield* store.update((value) => ({
         ...value,
         rotation: {
@@ -1185,6 +1197,7 @@ export const layer = Layer.effect(
           pendingText,
           requestedAt: at,
           heartbeat,
+          deliveryId: pendingId,
         },
       }));
       yield* threads
@@ -1212,58 +1225,75 @@ export const layer = Layer.effect(
         yield* send(
           { text: rotation.pendingText },
           rotation.heartbeat ?? false,
-          undefined,
+          rotation.deliveryId,
           true,
         ).pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"));
       else yield* ensure();
     });
+    // The rotation record holds the only copy of the pending message, so it is cleared only after
+    // the replacement session accepted it. Every step reuses persisted ids and is safe to repeat.
     const finishRotation = Effect.fn("D4Agent.finishRotation")(function* () {
       const state = yield* store.get;
-      const rotation = state.rotation;
-      if (!rotation) return;
-      const config = yield* settings;
-      const source = state.sessions?.find(
-        (session) => session.threadId === rotation.threadId && session.context === rotation.context,
-      );
-      if (
-        source?.scopeHash !== contextScopeHash(rotation.context, config) ||
-        state.threadId !== rotation.threadId
-      ) {
-        yield* store.update((value) => ({ ...value, rotation: null }));
-        yield* rotate(rotation.context, "size");
-        yield* appendDisplay(
-          "The context configuration changed. Started a new session without the previous summary.",
-          "system",
+      const pending = state.rotation;
+      if (!pending) return;
+      let rotation = pending;
+      if (rotation.targetThreadId === undefined) {
+        const config = yield* settings;
+        const source = state.sessions?.find(
+          (session) => session.threadId === pending.threadId && session.context === pending.context,
         );
-        yield* deliverRotated(rotation);
-        return;
-      }
-      const projection = yield* projections
-        .getThreadProjection(rotation.threadId)
-        .pipe(Effect.mapError(threadError));
-      const run = projection.runs.find((entry) => entry.userMessageId === rotation.messageId);
-      const response = projection.messages.findLast(
-        (message) => message.role === "assistant" && message.runId === run?.id,
-      );
-      if (run?.status !== "completed" || !response?.text.trim()) {
+        let outcome: { seedSummary: string } | { notice: string };
         if (
-          run?.status === "failed" ||
-          run?.status === "interrupted" ||
-          (yield* Clock.currentTimeMillis) - Date.parse(rotation.requestedAt) > 120_000
-        ) {
-          yield* store.update((value) => ({ ...value, rotation: null }));
-          yield* rotate(rotation.context, "size");
-          yield* appendDisplay(
-            "The previous session could not produce a summary. Started a new session.",
-            "system",
+          source?.scopeHash !== contextScopeHash(pending.context, config) ||
+          state.threadId !== pending.threadId
+        )
+          outcome = {
+            notice:
+              "The context configuration changed. Started a new session without the previous summary.",
+          };
+        else {
+          const projection = yield* projections
+            .getThreadProjection(pending.threadId)
+            .pipe(Effect.mapError(threadError));
+          const run = projection.runs.find((entry) => entry.userMessageId === pending.messageId);
+          const response = projection.messages.findLast(
+            (message) => message.role === "assistant" && message.runId === run?.id,
           );
-          yield* deliverRotated(rotation);
+          if (run?.status === "completed" && response?.text.trim())
+            outcome = { seedSummary: response.text.slice(0, 4000) };
+          else if (
+            run?.status === "failed" ||
+            run?.status === "interrupted" ||
+            (yield* Clock.currentTimeMillis) - Date.parse(pending.requestedAt) > 120_000
+          )
+            outcome = {
+              notice: "The previous session could not produce a summary. Started a new session.",
+            };
+          else return;
         }
-        return;
+        const decided = {
+          ...pending,
+          ...outcome,
+          deliveryId: pending.deliveryId ?? (yield* randomUUID),
+          targetThreadId: ThreadId.make(yield* randomUUID),
+        };
+        yield* store.update((value) => ({
+          ...value,
+          rotation:
+            value.rotation?.messageId === decided.messageId ? decided : (value.rotation ?? null),
+        }));
+        rotation = decided;
       }
-      yield* store.update((value) => ({ ...value, rotation: null }));
-      yield* rotate(rotation.context, "size", response.text.slice(0, 4000));
-      yield* deliverRotated(rotation);
+      const decided = rotation;
+      if ((yield* store.get).threadId !== decided.targetThreadId)
+        yield* rotate(decided.context, "size", decided.seedSummary, decided.targetThreadId);
+      if (decided.notice !== undefined)
+        yield* appendDisplay(decided.notice, "system", `rotation:${decided.messageId}`);
+      yield* deliverRotated(decided);
+      yield* store.update((value) => ({
+        ...value,
+        rotation: value.rotation?.messageId === decided.messageId ? null : (value.rotation ?? null),
+      }));
     });
     const getState = Effect.fn("D4Agent.getState")(function* () {
       yield* captureDisplay();
@@ -1951,7 +1981,10 @@ export const layer = Layer.effect(
         yield* finishRetirement();
         yield* adoptLegacySession;
         yield* captureDisplay();
-        yield* finishRotation();
+        // A delivery that keeps failing must not stall monitoring; the next tick retries it.
+        yield* finishRotation().pipe(
+          Effect.catch(() => Effect.logWarning("Nia rotated message delivery will be retried")),
+        );
         yield* maintainSessions();
         const current = yield* store.get;
         const tracked = config.enabled ? (current.agentThreads ?? []) : [];

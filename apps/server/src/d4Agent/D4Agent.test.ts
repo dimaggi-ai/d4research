@@ -2930,6 +2930,50 @@ it.effect("a failed completion projection read retries the same unchanged task",
   }),
 );
 
+it.effect("task cursors are dropped with their record, also when no task is left", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* f.service.tick;
+    const task = {
+      ...target,
+      id: ThreadId.make("task-evicted"),
+      createdBy: "agent" as const,
+      latestRunId: RunId.make("completed"),
+    };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        { id: task.latestRunId, status: "completed", completedAt: now },
+      ] as unknown as typeof value.runs,
+    }));
+    const record = {
+      threadId: task.id,
+      projectId: task.projectId,
+      context: "Global" as const,
+      actionId: "evicted",
+      reportedAt: null,
+      archivedAt: null,
+      undoDisabled: false,
+    };
+    const reports = Effect.map(
+      Ref.get(f.state),
+      (state) => state.transcript?.filter((entry) => entry.text === "Completed: Private.").length,
+    );
+    yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: [record] }));
+    yield* f.service.tick;
+    assert.equal(yield* reports, 1);
+    // The store evicts the record, leaving no tracked task; its cursor must go with it.
+    yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: [] }));
+    yield* f.service.tick;
+    // A record for the same thread is evaluated afresh, not skipped by a leftover cursor.
+    yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: [record] }));
+    yield* f.service.tick;
+    assert.equal(yield* reports, 2);
+  }),
+);
+
 it.effect("closing the session of a pending rotation tells the user the message was not sent", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");

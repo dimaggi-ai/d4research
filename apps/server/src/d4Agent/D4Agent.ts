@@ -2184,6 +2184,12 @@ export const layer = Layer.effect(
               }),
           }));
         }
+        // Store eviction removes settled records without a visit here, so drop every per-task cache
+        // entry whose record is gone, including when no task is left.
+        retainOpenSessions(
+          [taskCursors, archiveCursors, taskShells],
+          config.enabled ? ((yield* store.get).agentThreads ?? []) : [],
+        );
         const health = yield* systemHealth();
         if (!config.enabled) return;
         const active = (yield* store.get).sessions?.find(

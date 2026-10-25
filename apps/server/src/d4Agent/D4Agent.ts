@@ -1190,13 +1190,22 @@ export const layer = Layer.effect(
       yield* captureUsage;
       const config = yield* settings;
       const now = yield* Clock.currentTimeMillis;
-      for (const session of (yield* store.get).sessions ?? []) {
+      const state = yield* store.get;
+      for (const session of state.sessions ?? []) {
         const shell = yield* threads
           .getThreadShell(session.threadId)
           .pipe(Effect.mapError(threadError));
+        // The rotation record holds the only copy of an undelivered message. Automatic idle
+        // cleanup never closes its source or destination; only an explicit close or disable
+        // abandons it, and that path tells the user the message was not sent.
+        const rotating =
+          state.rotation != null &&
+          (state.rotation.threadId === session.threadId ||
+            state.rotation.targetThreadId === session.threadId);
         if (
           !config.enabled ||
-          (config.sessionIdleMinutes !== null &&
+          (!rotating &&
+            config.sessionIdleMinutes !== null &&
             now - Date.parse(session.lastActivityAt) >= config.sessionIdleMinutes * 60_000 &&
             shell?.activeRunId == null &&
             shell?.pendingRuntimeRequest == null &&

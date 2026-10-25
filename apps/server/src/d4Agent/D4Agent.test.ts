@@ -2928,7 +2928,9 @@ it.effect.each(["create", "send"] as const)(
   "a rotated message survives a failed %s and a restart, then is delivered once",
   (failure) =>
     Effect.gen(function* () {
-      const f = yield* fixture("ask");
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        sessionIdleMinutes: 30,
+      });
       const initial = yield* f.service.ensureThread();
       yield* Ref.update(f.state, (state) => ({
         ...state,
@@ -2964,6 +2966,14 @@ it.effect.each(["create", "send"] as const)(
       assert.isDefined(pending?.targetThreadId);
       assert.equal(pending?.seedSummary, "Scoped summary");
       assert.isFalse((yield* Ref.get(f.sends)).some((entry) => entry.text === original));
+
+      // Idle cleanup must not close the sessions of an undelivered rotation.
+      yield* TestClock.adjust("31 minutes");
+      yield* f.service.tick.pipe(Effect.ignore);
+      const idle = yield* Ref.get(f.state);
+      assert.equal(idle.rotation?.pendingText, original);
+      assert.equal(idle.rotation?.deliveryId, pending!.deliveryId);
+      assert.isFalse(idle.transcript?.some((entry) => entry.id.startsWith("rotation-dropped:")));
 
       yield* Ref.set(f.failCreate, false);
       yield* Ref.set(f.failSend, false);

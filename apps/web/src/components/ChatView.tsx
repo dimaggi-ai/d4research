@@ -7095,7 +7095,11 @@ function ChatViewContent(props: ChatViewProps) {
       sendInFlightRef.current = true;
       const result = await sendD4AgentMessage({
         environmentId,
-        input: { text: submittedPrompt.trim() },
+        input: {
+          text: submittedPrompt.trim(),
+          expectedContext: agentState.brainContext,
+          expectedThreadId: activeThread.id,
+        },
       });
       sendInFlightRef.current = false;
       if (!isCurrentRoute(sendRouteGeneration, sendRouteThreadKey)) return;

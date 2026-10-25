@@ -2394,7 +2394,23 @@ export const layer = Layer.effect(
       getState,
       claimSystemAttention,
       ensureThread: () => lock.withPermits(1)(ensure()),
-      sendMessage: (input) => lock.withPermits(1)(send(input)),
+      sendMessage: (input) =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            // Checked before idle sessions close, so only a change made by another client or a
+            // size rotation counts. A closed session is not stale: the send reopens the same context.
+            const state = yield* store.get;
+            if (
+              (input.expectedContext !== undefined &&
+                input.expectedContext !== state.brainContext) ||
+              (input.expectedThreadId != null &&
+                state.threadId !== null &&
+                input.expectedThreadId !== state.threadId)
+            )
+              return yield* new D4AgentError({ reason: "stale" });
+            return yield* send(input);
+          }),
+        ),
       resolveAction,
       requestAction,
       list: () => lock.withPermits(1)(list()),

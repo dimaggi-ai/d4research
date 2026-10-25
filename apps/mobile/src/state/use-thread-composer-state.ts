@@ -641,7 +641,7 @@ export function useThreadComposerState() {
         d4AgentSending.current = true;
         const result = await sendD4AgentMessage({
           environmentId: thread.environmentId,
-          input: { text },
+          input: { text, expectedContext: agentState.brainContext, expectedThreadId: thread.id },
         });
         d4AgentSending.current = false;
         if (result._tag === "Failure") {

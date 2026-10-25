@@ -8,7 +8,14 @@ import { useProjects, useThreadShells, useThreadShell } from "../../state/entiti
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
-import type { D4AgentState, EnvironmentId, ThreadId } from "@d4research/contracts";
+import {
+  D4AgentError,
+  type D4AgentState,
+  type EnvironmentId,
+  type ThreadId,
+} from "@d4research/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
+import * as Schema from "effect/Schema";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -18,6 +25,8 @@ import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
+
+const isD4AgentError = Schema.is(D4AgentError);
 
 export function D4AgentRoute({
   environmentId,
@@ -87,7 +96,7 @@ export function D4AgentChat({
     query: agentMentionQuery(text),
   });
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"failed" | "stale" | null>(null);
   const conversation = useRef<HTMLDivElement>(null);
   const followConversation = useRef(true);
   useEffect(() => {
@@ -172,16 +181,25 @@ export function D4AgentChat({
           if (sending || !enabled || !allowed || !text.trim()) return;
           const submitted = text;
           setSending(true);
-          setError(false);
+          setError(null);
           try {
-            const result = await send({ environmentId, input: { text: submitted.trim() } });
-            if (result._tag === "Failure") setError(true);
-            else {
+            const result = await send({
+              environmentId,
+              input: {
+                text: submitted.trim(),
+                expectedContext: state.brainContext,
+                expectedThreadId: state.threadId,
+              },
+            });
+            if (result._tag === "Failure") {
+              const failure = squashAtomCommandFailure(result);
+              setError(isD4AgentError(failure) && failure.reason === "stale" ? "stale" : "failed");
+            } else {
               setText((current) => (current === submitted ? "" : current));
               refresh();
             }
           } catch {
-            setError(true);
+            setError("failed");
           }
           setSending(false);
         }}
@@ -226,7 +244,9 @@ export function D4AgentChat({
         </div>
         {error ? (
           <p role="alert" className="text-sm text-destructive">
-            Could not send this message. Your draft is preserved.
+            {error === "stale"
+              ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
+              : "Could not send this message. Your draft is preserved."}
           </p>
         ) : null}
       </form>

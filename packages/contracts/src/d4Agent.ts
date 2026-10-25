@@ -310,6 +310,11 @@ export const D4AgentIdentity = Schema.NullOr(D4AgentEnsureThreadResult);
 export type D4AgentIdentity = typeof D4AgentIdentity.Type;
 export const D4AgentSendInput = Schema.Struct({
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+  // The context and session the client displayed when the user wrote the message. The server
+  // rejects the send as "stale" when another client changed either one in the meantime.
+  // Optional only so older clients keep working.
+  expectedContext: Schema.optionalKey(D4BrainContext),
+  expectedThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
 });
 export const D4AgentResolveActionInput = Schema.Struct({
   actionId: Schema.String,
@@ -333,6 +338,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "storage",
     "thread",
     "busy",
+    "stale",
     "context",
     "memory-unavailable",
     "cto-unreachable",
@@ -344,6 +350,8 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     if (this.reason === "context")
       return "Context operation refused; inspect the selected scope configuration.";
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
+    if (this.reason === "stale")
+      return "Nia's context or session changed after you wrote this message. Check it, then send again.";
     return `Nia: ${this.reason}.`;
   }
 }

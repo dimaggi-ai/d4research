@@ -4,7 +4,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { D4AgentEntry, D4AgentPanel } from "./D4Agent";
+import * as Cause from "effect/Cause";
 import {
+  D4AgentError,
   EnvironmentId,
   ThreadId,
   ProjectId,
@@ -906,7 +908,11 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
-    input: { text: "Research the question" },
+    input: {
+      text: "Research the question",
+      expectedContext: mocks.state!.brainContext,
+      expectedThreadId: mocks.state!.threadId,
+    },
   });
   expect(input.value).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
@@ -1247,8 +1253,42 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
-    input: { text: "[[thread:stable-target]]" },
+    input: {
+      text: "[[thread:stable-target]]",
+      expectedContext: "YB",
+      expectedThreadId: mocks.state!.threadId,
+    },
   });
+});
+
+it("keeps the draft and says why when another client changed Nia's context first", async () => {
+  mocks.send.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(new D4AgentError({ reason: "stale" })),
+  } as never);
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(() => {
+    setter.call(input, "Global-only draft");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Send")!
+      .click(),
+  );
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: { text: "Global-only draft", expectedContext: "Global", expectedThreadId: threadId },
+  });
+  expect(input.value).toBe("Global-only draft");
+  expect(container.textContent).toContain("Nia's context or session changed");
 });
 
 it("does not invent an original message for a heartbeat action", async () => {

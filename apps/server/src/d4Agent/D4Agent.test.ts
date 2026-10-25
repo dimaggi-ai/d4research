@@ -1846,6 +1846,105 @@ it.effect(
     }),
 );
 
+const staleFixture = Effect.gen(function* () {
+  const project = ProjectId.make("dimaggi-project");
+  const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+    projectContexts: { [project]: "Dimaggi" },
+  });
+  yield* Ref.update(f.shells, (all) => [
+    ...all,
+    { ...target, id: ThreadId.make("dimaggi-thread"), projectId: project, title: "Work" },
+  ]);
+  const global = yield* f.service.ensureThread();
+  return { ...f, global };
+});
+
+it.effect("a send written for a context another client left is rejected as stale", () =>
+  Effect.gen(function* () {
+    const f = yield* staleFixture;
+    yield* f.service.switchContext({ context: "Dimaggi" });
+    const sendsBefore = (yield* Ref.get(f.sends)).length;
+    const transcriptBefore = (yield* Ref.get(f.state)).transcript?.length ?? 0;
+    const result = yield* Effect.result(
+      f.service.sendMessage({
+        text: "Global-only draft",
+        expectedContext: "Global",
+        expectedThreadId: f.global.threadId,
+      }),
+    );
+    assert.equal(result._tag === "Failure" && result.failure.reason, "stale");
+    const state = yield* Ref.get(f.state);
+    assert.equal(state.brainContext, "Dimaggi");
+    assert.equal((yield* Ref.get(f.sends)).length, sendsBefore);
+    assert.equal(state.transcript?.length ?? 0, transcriptBefore);
+    assert.isFalse(
+      state.userMessages?.some((entry) => entry.text === "Global-only draft") ?? false,
+    );
+  }),
+);
+
+it.effect("a send written for a session another client replaced is rejected as stale", () =>
+  Effect.gen(function* () {
+    const f = yield* staleFixture;
+    const fresh = yield* f.service.newSession();
+    assert.notEqual(fresh.threadId, f.global.threadId);
+    const stale = yield* Effect.result(
+      f.service.sendMessage({
+        text: "Written for the old session",
+        expectedContext: "Global",
+        expectedThreadId: f.global.threadId,
+      }),
+    );
+    assert.equal(stale._tag === "Failure" && stale.failure.reason, "stale");
+    assert.equal((yield* Ref.get(f.sends)).length, 0);
+    const sent = yield* f.service.sendMessage({
+      text: "Written for the new session",
+      expectedContext: "Global",
+      expectedThreadId: fresh.threadId,
+    });
+    assert.equal(sent.threadId, fresh.threadId);
+    assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Written for the new session");
+  }),
+);
+
+it.effect("an explicit reference still switches when the send matches the displayed context", () =>
+  Effect.gen(function* () {
+    const f = yield* staleFixture;
+    yield* f.service.sendMessage({
+      text: "Read dimaggi-thread",
+      expectedContext: "Global",
+      expectedThreadId: f.global.threadId,
+    });
+    const state = yield* Ref.get(f.state);
+    assert.equal(state.brainContext, "Dimaggi");
+    assert.equal((yield* Ref.get(f.sends)).at(-1)?.threadId, state.threadId);
+  }),
+);
+
+it.effect("of two clients racing, a Global draft never lands in the Dimaggi session", () =>
+  Effect.gen(function* () {
+    const f = yield* staleFixture;
+    const view = { expectedContext: "Global" as const, expectedThreadId: f.global.threadId };
+    const [switched, draft] = yield* Effect.all(
+      [
+        Effect.result(f.service.sendMessage({ text: "Read dimaggi-thread", ...view })),
+        Effect.result(f.service.sendMessage({ text: "Global-only draft", ...view })),
+      ],
+      { concurrency: "unbounded" },
+    );
+    assert.equal(switched._tag, "Success");
+    const state = yield* Ref.get(f.state);
+    assert.equal(state.brainContext, "Dimaggi");
+    const draftSend = (yield* Ref.get(f.sends)).find((entry) => entry.text === "Global-only draft");
+    if (draft._tag === "Success") assert.equal(draftSend?.threadId, f.global.threadId);
+    else {
+      assert.equal(draft.failure.reason, "stale");
+      assert.isUndefined(draftSend);
+    }
+    assert.notEqual(draftSend?.threadId, state.threadId);
+  }),
+);
+
 it.effect.each(["read-only", "ask", "act"] as const)(
   "rewrite-and-send always awaits approval and permits an edited or original send (%s)",
   (mode) =>

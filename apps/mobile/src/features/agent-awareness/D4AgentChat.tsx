@@ -4,9 +4,16 @@ import {
   insertAgentMention,
 } from "@d4research/client-runtime/d4-agent-references";
 import { useEnvironmentQuery } from "../../state/query";
-import type { D4AgentState, EnvironmentId, ThreadId } from "@d4research/contracts";
+import {
+  D4AgentError,
+  type D4AgentState,
+  type EnvironmentId,
+  type ThreadId,
+} from "@d4research/contracts";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
+import * as Schema from "effect/Schema";
 import { useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
   KeyboardAvoidingView,
@@ -27,6 +34,8 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
+
+const isD4AgentError = Schema.is(D4AgentError);
 
 export function D4AgentRoute({
   environmentId,
@@ -97,7 +106,7 @@ export function D4AgentChat({
     query: agentMentionQuery(text),
   });
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"failed" | "stale" | null>(null);
   const conversation = useRef<ComponentRef<typeof ScrollView>>(null);
   const followConversation = useRef(true);
   return (
@@ -221,16 +230,27 @@ export function D4AgentChat({
             if (sending || !enabled || !allowed || !text.trim()) return;
             const submitted = text;
             setSending(true);
-            setError(false);
+            setError(null);
             try {
-              const result = await send({ environmentId, input: { text: submitted.trim() } });
-              if (result._tag === "Failure") setError(true);
-              else {
+              const result = await send({
+                environmentId,
+                input: {
+                  text: submitted.trim(),
+                  expectedContext: state.brainContext,
+                  expectedThreadId: state.threadId,
+                },
+              });
+              if (result._tag === "Failure") {
+                const failure = squashAtomCommandFailure(result);
+                setError(
+                  isD4AgentError(failure) && failure.reason === "stale" ? "stale" : "failed",
+                );
+              } else {
                 setText((current) => (current === submitted ? "" : current));
                 refresh();
               }
             } catch {
-              setError(true);
+              setError("failed");
             }
             setSending(false);
           }}
@@ -239,7 +259,9 @@ export function D4AgentChat({
         </Pressable>
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
-            Could not send this message. Your draft is preserved.
+            {error === "stale"
+              ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
+              : "Could not send this message. Your draft is preserved."}
           </Text>
         ) : null}
       </View>

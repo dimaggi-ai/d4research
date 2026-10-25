@@ -75,8 +75,8 @@ thread, project, or pipeline. Nia switches to the target's mapped context before
 processing your message. Typing a title as plain text keeps the current context. Archived
 threads cannot be referenced. An unmapped project uses **Global**. The picker shows targets
 visible in the selected context. If explicit references are ambiguous, Nia asks which
-target you mean. If a request in Global needs a thread or project from a work context, Nia
-can propose a context switch. The approval card shows the request it will resend in that context; nothing
+target you mean. If a request in Global needs to send to, answer, or start work in a thread
+or project of a work context, Nia can propose a context switch. The approval card shows the request it will resend in that context; nothing
 switches until you approve. Above the conversation, you can also select **Global**, **Personal**, **YB**,
 or **Dimaggi**; **Global** shows all target metadata.
 
@@ -109,10 +109,10 @@ source blocks retrieval until its configuration has been reviewed.
 
 Map each project to a context in the same settings section. A work context's
 agent digest, thread reads, and attention list include only its mapped projects.
-Global monitoring shows metadata for every project. In Global, Nia can read
-messages only from projects with no context mapping. Choose **Unmapped** in a project's context
-setting to remove its mapping. Switch to the mapped context to read a work
-project's messages.
+In Global, Nia can read the messages of every project, so it can monitor and explain all
+work. Global still searches only Global memory and cannot propose memory notes, and it acts
+on a work project only after you approve a switch to that project's context. Choose
+**Unmapped** in a project's context setting to remove its mapping.
 Notifications outside the Nia conversation keep their existing behavior.
 
 **Brain embeddings** are optional. Blank endpoint and model fields use the existing

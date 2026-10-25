@@ -12,7 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Catalog from "./PipelineCatalog.ts";
-import { projectContentInScope } from "./brainScope.ts";
+import { projectActionInScope } from "./brainScope.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 
@@ -74,7 +74,7 @@ const make = Effect.gen(function* () {
       if (
         projectId === null
           ? context !== "Global"
-          : !projectContentInScope(context, config, projectId)
+          : !projectActionInScope(context, config, projectId)
       )
         return [];
       return [{ pipelineId, kind: entry.kind, name: entry.name, active: entry.active, projectId }];
@@ -86,7 +86,7 @@ const make = Effect.gen(function* () {
     context: D4BrainContext,
   ) {
     const config = (yield* settings.getSettings.pipe(Effect.mapError(unavailable))).d4Agent;
-    if (!projectContentInScope(context, config, projectId)) return yield* scopeError();
+    if (!projectActionInScope(context, config, projectId)) return yield* scopeError();
     const available = (yield* list(context)).find((entry) => entry.pipelineId === pipelineId);
     if (
       available === undefined ||

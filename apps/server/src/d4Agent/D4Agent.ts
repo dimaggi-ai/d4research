@@ -18,6 +18,7 @@ import {
   taskScopeHash,
   projectInScope,
   projectContentInScope,
+  projectActionInScope,
 } from "./brainScope.ts";
 import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
@@ -1437,7 +1438,7 @@ export const layer = Layer.effect(
       }
       if (action.type === "start") {
         if (
-          !projectContentInScope(state.brainContext, config, action.projectId) ||
+          !projectActionInScope(state.brainContext, config, action.projectId) ||
           action.projectId === state.projectId
         )
           return yield* new D4AgentError({ reason: "context" });
@@ -1453,7 +1454,7 @@ export const layer = Layer.effect(
         target.deletedAt !== null ||
         target.runtimeMode !== "approval-required" ||
         target.projectId === state.projectId ||
-        !projectContentInScope(state.brainContext, config, target.projectId)
+        !projectActionInScope(state.brainContext, config, target.projectId)
       )
         return yield* new D4AgentError({ reason: "action-unavailable" });
       if (action.type === "answer") {
@@ -2233,7 +2234,7 @@ export const layer = Layer.effect(
                 .filter(
                   (project) =>
                     project.id !== state.projectId &&
-                    projectContentInScope(state.brainContext, config, project.id),
+                    projectActionInScope(state.brainContext, config, project.id),
                 )
                 .map((project) => ({ projectId: project.id, title: project.title })),
             };

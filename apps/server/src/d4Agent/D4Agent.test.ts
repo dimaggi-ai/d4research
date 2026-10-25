@@ -1440,7 +1440,7 @@ it.live.each(["read-only", "ask", "act"] as const)(
 );
 
 it.effect.each(["YB", "Dimaggi", "Global"] as const)(
-  "list and read-tail enforce mapped and unmapped project boundaries in %s",
+  "list and read-tail let Global read every project and keep work contexts apart (%s)",
   (context) =>
     Effect.gen(function* () {
       const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
@@ -1460,11 +1460,67 @@ it.effect.each(["YB", "Dimaggi", "Global"] as const)(
       for (const [index, id] of ids.entries()) {
         const before = (yield* Ref.get(f.reads)).snapshots;
         const result = yield* Effect.result(f.service.readTail(id, 10));
-        const allowed = index === (context === "YB" ? 0 : context === "Dimaggi" ? 1 : 2);
+        // Global reads every project's content; a work context reads only its own projects.
+        const allowed = context === "Global" || index === (context === "YB" ? 0 : 1);
         assert.equal(result._tag, allowed ? "Success" : "Failure");
         assert.equal((yield* Ref.get(f.reads)).snapshots, before + (allowed ? 1 : 0));
       }
     }),
+);
+
+it.effect("Global reads mapped thread content but its memory and actions stay Global-only", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-global-read-" });
+      const vault = `${directory}/vault`;
+      for (const [context, relative] of [
+        ["Global", "Global/method.md"],
+        ["Dimaggi", "Dimaggi/State/current.md"],
+      ] as const) {
+        const text = `shared-query ${context} private-marker`;
+        yield* fs.makeDirectory(`${vault}/${relative.slice(0, relative.lastIndexOf("/"))}`, {
+          recursive: true,
+        });
+        yield* fs.writeFileString(`${vault}/${relative}`, text);
+        yield* fs.writeFileString(
+          `${vault}/${context}/${context === "Global" ? "" : "State/"}sources.json`,
+          JSON.stringify({ files: [{ path: relative, sha256: sha256Hex(text) }] }),
+        );
+      }
+      const dimaggi = ProjectId.make("dimaggi");
+      const dimaggiThread = ThreadId.make("dimaggi-thread");
+      const f = yield* fixture(
+        "ask",
+        true,
+        undefined,
+        `${directory}/state/d4-agent/workspace`,
+        true,
+        {
+          memoryEnabled: true,
+          brainVaultPath: vault,
+          projectContexts: { [dimaggi]: "Dimaggi" },
+        },
+      );
+      yield* Ref.set(f.shells, [target, { ...target, id: dimaggiThread, projectId: dimaggi }]);
+      yield* f.service.ensureThread();
+      yield* f.service.readTail(dimaggiThread, 10);
+      assert.equal((yield* Ref.get(f.reads)).snapshots, 1);
+      const dispatched = (yield* Ref.get(f.dispatches)).length;
+      const search = yield* f.service.memorySearch({ context: "Global", query: "shared-query" });
+      assert.include(JSON.stringify(search), "Global private-marker");
+      assert.notInclude(JSON.stringify(search), "Dimaggi private-marker");
+      for (const denied of [
+        f.service.memorySearch({ context: "Dimaggi", query: "shared-query" }),
+        f.service.memoryRead({ context: "Global", path: "Dimaggi/State/current.md" }),
+        f.service.requestAction({ type: "memory-propose", context: "Global", text: "work note" }),
+        f.service.requestAction({ type: "send", threadId: dimaggiThread, text: "Go" }),
+      ])
+        assert.equal((yield* Effect.result(denied))._tag, "Failure");
+      assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+      assert.equal((yield* Ref.get(f.dispatches)).length, dispatched);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect.each(["ask", "act"] as const)(

@@ -9,7 +9,20 @@ export function projectInScope(
   return context === "Global" || settings.projectContexts[ProjectId.make(projectId)] === context;
 }
 
+// Thread content (messages, tails, links) is readable from Global for every project, so Global can
+// monitor and explain all work. Work contexts read only their own projects. Memory retrieval is
+// scoped separately and never follows this rule.
 export function projectContentInScope(
+  context: D4BrainContext,
+  settings: D4AgentSettings,
+  projectId: string,
+): boolean {
+  return projectInScope(context, settings, projectId);
+}
+
+// Actions (send, answer, start, pipelines, task tools) target only projects of the bound context;
+// Global reaches a mapped project's work through an approved switch-context instead.
+export function projectActionInScope(
   context: D4BrainContext,
   settings: D4AgentSettings,
   projectId: string,

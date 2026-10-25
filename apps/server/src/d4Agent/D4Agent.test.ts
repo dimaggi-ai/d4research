@@ -177,7 +177,15 @@ const fixture = (
       visibleTurnItems: [],
       updatedAt: now,
     });
-    const reads = yield* Ref.make({ updates: 0, snapshots: 0, probes: 0, shells: 0, catalogs: 0 });
+    const reads = yield* Ref.make({
+      updates: 0,
+      snapshots: 0,
+      probes: 0,
+      shells: 0,
+      catalogs: 0,
+      eventChecks: 0,
+    });
+    const relevantEvents = yield* Ref.make(true);
     let previousShells: ReadonlyArray<OrchestrationV2ThreadShell> | undefined;
     let revision = 0;
     const stateChanges = yield* PubSub.unbounded<Store.StoredState>();
@@ -228,7 +236,10 @@ const fixture = (
               }
               return revision + (yield* Ref.get(eventRevision));
             }),
-            readApplicationEvents: () => Stream.make({ type: "project.meta-updated" } as never),
+            hasApplicationEvents: () =>
+              Ref.update(reads, (r) => ({ ...r, eventChecks: r.eventChecks + 1 })).pipe(
+                Effect.andThen(Ref.get(relevantEvents)),
+              ),
           }),
           Layer.mock(Providers.ProviderRegistry)({
             getProviders: Ref.get(catalog),
@@ -363,6 +374,7 @@ const fixture = (
       failSend,
       failSnapshot,
       eventRevision,
+      relevantEvents,
       monitorUpdates,
     };
   });
@@ -1234,6 +1246,7 @@ it.effect("polling state never writes, probes, or loads conversation snapshots",
       probes: 0,
       shells: 2,
       catalogs: 0,
+      eventChecks: 0,
     });
   }),
 );
@@ -1340,6 +1353,7 @@ it.effect("identity and notification reads are pure and reserved identity is inv
       probes: 0,
       shells: 0,
       catalogs: 0,
+      eventChecks: 0,
     });
   }),
 );
@@ -2446,11 +2460,23 @@ it.effect(
       yield* Ref.update(f.eventRevision, (value) => value + 1);
       yield* f.service.getState();
       assert.equal((yield* Ref.get(f.reads)).catalogs, before + 2);
+      // Unrelated events cost one bounded check; a long gap rebuilds without scanning.
+      yield* Ref.set(f.relevantEvents, false);
+      const checks = (yield* Ref.get(f.reads)).eventChecks;
+      yield* Ref.update(f.eventRevision, (value) => value + 1);
+      yield* f.service.getState();
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 2);
+      assert.equal((yield* Ref.get(f.reads)).eventChecks, checks + 1);
+      yield* Ref.update(f.eventRevision, (value) => value + 6000);
+      yield* f.service.getState();
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 3);
+      assert.equal((yield* Ref.get(f.reads)).eventChecks, checks + 1);
+      yield* Ref.set(f.relevantEvents, true);
       yield* f.settings.updateSettings({
         dev: { upsertScenario: { name: "new-pipeline", pipelinePrompt: "Task", promptFiles: [] } },
       });
       yield* f.service.resolveReference("[[pipeline:dev:new-pipeline]]");
-      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 3);
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 4);
     }),
 );
 

@@ -276,6 +276,15 @@ const cachedHealth = (
           config.agentMonitor.notifyClasses.includes("system"),
       }));
 
+const REFERENCE_SCAN_LIMIT = 5000;
+const REFERENCE_EVENT_TYPES = [
+  "thread.created",
+  "thread.metadata-updated",
+  "thread.archived",
+  "thread.unarchived",
+  "thread.deleted",
+] as const;
+
 export const layer = Layer.effect(
   D4Agent,
   Effect.gen(function* () {
@@ -662,27 +671,19 @@ export const layer = Layer.effect(
         const sequence = yield* events.value.latestApplicationSequence.pipe(
           Effect.mapError(threadError),
         );
-        if (!dirty && referenceSequence !== undefined && sequence !== referenceSequence) {
-          dirty = yield* events.value
-            .readApplicationEvents({ afterSequence: referenceSequence, throughSequence: sequence })
-            .pipe(
-              Stream.runFold(
-                () => false,
-                (changed, stored) =>
-                  changed ||
-                  !("event" in stored) ||
-                  (stored.event.threadId !== state.threadId &&
-                    [
-                      "thread.created",
-                      "thread.metadata-updated",
-                      "thread.archived",
-                      "thread.unarchived",
-                      "thread.deleted",
-                    ].includes(stored.event.type)),
-              ),
-              Effect.mapError(threadError),
-            );
-        }
+        // This runs under the agent lock. A long gap rebuilds the catalog from the shell snapshot
+        // instead of scanning every event since the last check.
+        if (!dirty && referenceSequence !== undefined && sequence !== referenceSequence)
+          dirty =
+            sequence - referenceSequence > REFERENCE_SCAN_LIMIT ||
+            (yield* events.value
+              .hasApplicationEvents({
+                afterSequence: referenceSequence,
+                throughSequence: sequence,
+                threadEventTypes: REFERENCE_EVENT_TYPES,
+                excludeThreadId: state.threadId,
+              })
+              .pipe(Effect.mapError(threadError)));
         referenceSequence = sequence;
         if (!dirty) return cachedReferences!;
       }

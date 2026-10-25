@@ -330,3 +330,65 @@ it.effect("replays a command's events through the command index, not the sequenc
     ),
   ),
 );
+
+it.effect("finds relevant reference changes and changed threads without reading payloads", () =>
+  Effect.gen(function* () {
+    const store = yield* OrchestrationEventStore.OrchestrationEventStore;
+    const own = ThreadId.make("own");
+    const other = ThreadId.make("other");
+    const noise = Array.from({ length: 2000 }, (_, index) =>
+      eventRow(index + 1, "thread", 2, index % 2 === 0 ? own : "busy"),
+    );
+    const seeded = yield* seedEvents([
+      ...noise,
+      { ...eventRow(3001, "thread", 2, own), event_type: "thread.metadata-updated" },
+      { ...eventRow(3002, "thread", 1, other), event_type: "thread.metadata-updated" },
+    ]);
+    const through = seeded.at(-1)!.sequence;
+    const check = (afterSequence: number, excludeThreadId: ThreadId | null) =>
+      store.hasApplicationEvents({
+        afterSequence,
+        throughSequence: through,
+        threadEventTypes: ["thread.metadata-updated", "thread.deleted"],
+        excludeThreadId,
+      });
+    // Busy unrelated events, the excluded thread's own rename, and legacy events do not count.
+    assert.isFalse(yield* check(0, own));
+    assert.isTrue(yield* check(0, null));
+    const [renamed] = yield* seedEvents([
+      { ...eventRow(3003, "thread", 2, other), event_type: "thread.metadata-updated" },
+    ]);
+    assert.isTrue(
+      yield* store.hasApplicationEvents({
+        afterSequence: through,
+        throughSequence: renamed!.sequence,
+        threadEventTypes: ["thread.metadata-updated"],
+        excludeThreadId: own,
+      }),
+    );
+    const [project] = yield* seedEvents([eventRow(3004, "project", 2)]);
+    assert.isTrue(
+      yield* store.hasApplicationEvents({
+        afterSequence: renamed!.sequence,
+        throughSequence: project!.sequence,
+        threadEventTypes: [],
+        excludeThreadId: own,
+      }),
+    );
+    // The legacy event of "other" does not count; its later V2 rename does.
+    const changed = yield* store.changedThreadIds({
+      afterSequence: seeded[noise.length - 1]!.sequence,
+      throughSequence: renamed!.sequence,
+      threadIds: [own, other, ThreadId.make("idle")],
+    });
+    assert.deepEqual([...changed].sort(), [other, own]);
+    assert.deepEqual(
+      yield* store.changedThreadIds({
+        afterSequence: seeded[noise.length - 1]!.sequence,
+        throughSequence: seeded.at(-1)!.sequence,
+        threadIds: [other],
+      }),
+      [],
+    );
+  }).pipe(Effect.provide(Layer.fresh(layerEventStore))),
+);

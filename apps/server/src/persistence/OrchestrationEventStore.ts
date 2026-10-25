@@ -97,6 +97,24 @@ export class OrchestrationEventStore extends Context.Service<
     readonly latestApplicationSequence: Effect.Effect<number, OrchestrationEventStoreError>;
 
     /**
+     * Whether the range holds a project event or a V2 thread event of one of the given types
+     * outside `excludeThreadId`. Reads no payloads and stops at the first match.
+     */
+    readonly hasApplicationEvents: (input: {
+      readonly afterSequence: number;
+      readonly throughSequence: number;
+      readonly threadEventTypes: ReadonlyArray<OrchestrationV2DomainEvent["type"]>;
+      readonly excludeThreadId: ThreadId | null;
+    }) => Effect.Effect<boolean, OrchestrationEventStoreError>;
+
+    /** The given threads that have V2 events in the range. Reads no payloads. */
+    readonly changedThreadIds: (input: {
+      readonly afterSequence: number;
+      readonly throughSequence: number;
+      readonly threadIds: ReadonlyArray<ThreadId>;
+    }) => Effect.Effect<ReadonlyArray<ThreadId>, OrchestrationEventStoreError>;
+
+    /**
      * A row whose `event_type` this build does not know fails the read unless
      * `skipUnknownEventTypes` is set, which logs and drops it instead. Only
      * client shell replay opts in; anything that builds server state stays strict.
@@ -676,6 +694,47 @@ const makeEventStore = Effect.gen(function* () {
     ),
   );
 
+  const hasApplicationEvents: OrchestrationEventStore["Service"]["hasApplicationEvents"] = (
+    input,
+  ) =>
+    sql<{ readonly found: number }>`
+      SELECT 1 AS found
+      FROM orchestration_events INDEXED BY idx_orchestration_events_application_high_water
+      WHERE sequence > ${input.afterSequence}
+        AND sequence <= ${input.throughSequence}
+        AND (
+          aggregate_kind = 'project'
+          OR (application_event_version = 2 AND aggregate_kind = 'thread')
+        )
+        AND (
+          aggregate_kind = 'project'
+          OR (
+            ${input.threadEventTypes.length === 0 ? sql`0` : sql.in("event_type", input.threadEventTypes)}
+            ${input.excludeThreadId === null ? sql`` : sql`AND stream_id != ${input.excludeThreadId}`}
+          )
+        )
+      LIMIT 1
+    `.pipe(
+      Effect.map((rows) => rows.length > 0),
+      Effect.mapError(toPersistenceSqlError("OrchestrationEventStore.hasApplicationEvents:query")),
+    );
+
+  const changedThreadIds: OrchestrationEventStore["Service"]["changedThreadIds"] = (input) =>
+    input.threadIds.length === 0
+      ? Effect.succeed([])
+      : sql<{ readonly streamId: string }>`
+          SELECT DISTINCT stream_id AS "streamId"
+          FROM orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
+          WHERE application_event_version = 2
+            AND aggregate_kind = 'thread'
+            AND ${sql.in("stream_id", input.threadIds)}
+            AND sequence > ${input.afterSequence}
+            AND sequence <= ${input.throughSequence}
+        `.pipe(
+          Effect.map((rows) => rows.map((row) => ThreadId.make(row.streamId))),
+          Effect.mapError(toPersistenceSqlError("OrchestrationEventStore.changedThreadIds:query")),
+        );
+
   // Advance over raw rows so even a full page of unknown types cannot end replay early.
   const catchUpApplicationEvents = (input: {
     readonly afterSequence: number;
@@ -746,6 +805,8 @@ const makeEventStore = Effect.gen(function* () {
     getReplayStats,
     latestAgentSequence,
     latestApplicationSequence,
+    hasApplicationEvents,
+    changedThreadIds,
     readApplicationEvents: catchUpApplicationEvents,
     publishCommitted: (events) => PubSub.publishAll(committedEvents, events).pipe(Effect.asVoid),
     streamApplicationEvents,

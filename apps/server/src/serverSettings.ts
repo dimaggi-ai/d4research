@@ -839,13 +839,23 @@ const make = Effect.gen(function* () {
           Option.isSome(value) ? textDecoder.decode(value.value) : "",
         );
       }
-      return mapSettingsSecrets(settings, (secret) => ({
+      const materialized = mapSettingsSecrets(settings, (secret) => ({
         value:
           secret.sensitive && secret.redacted
             ? (storedSecrets.get(secret.secretName) ?? "")
             : secret.value,
         redacted: secret.sensitive && secret.kind === "environment" && secret.redacted,
       }));
+      return {
+        ...materialized,
+        d4Agent: {
+          ...materialized.d4Agent,
+          brainVaultPath:
+            materialized.d4Agent.brainVaultPath ||
+            process.env.D4_AGENT_BRAIN_VAULT_PATH ||
+            "/home/dmitriis/Documents/Shared26/Second Brain",
+        },
+      };
     });
 
   const materializeChanges = (changes: Stream.Stream<ServerSettings>) =>

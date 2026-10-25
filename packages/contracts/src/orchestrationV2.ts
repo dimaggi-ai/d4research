@@ -3017,6 +3017,14 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
  */
 const OrchestrationV2InternalCommand = Schema.Union([
   Schema.Struct({
+    type: Schema.Literal("thread.system-message.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    text: Schema.String,
+    title: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread.pull-request-watch.sync"),
     commandId: CommandId,
     threadId: ThreadId,

@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
 import { environmentThreadShells } from "../../state/threads";
@@ -17,7 +18,7 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, View, ScrollView, Modal } from "react-native";
 import {
   agentMonitorLabel,
@@ -136,6 +137,15 @@ function D4AgentPanelContent({
   const query = useD4AgentState(environmentId);
   const config = useEnvironmentServerConfig(environmentId);
   const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
+  const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
+  const canStartSession = useAtomValue(
+    serverEnvironment.newD4AgentSession.permissionAtom(environmentId),
+  );
+  const resolveProposal = useAtomCommand(serverEnvironment.resolveD4AgentMemoryProposal);
+  const canResolveProposal = useAtomValue(
+    serverEnvironment.resolveD4AgentMemoryProposal.permissionAtom(environmentId),
+  );
+  const [startingSession, setStartingSession] = useState(false);
   const canSwitch = useAtomValue(
     serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
   );
@@ -153,6 +163,9 @@ function D4AgentPanelContent({
   const [expanded, setExpanded] = useState(false);
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
+  const proposals = (state.memoryProposals ?? []).filter(
+    (proposal) => proposal.context === state.brainContext,
+  );
   const attention = monitorEnabled
     ? monitorAttentionThreads(
         threads.filter(
@@ -184,9 +197,9 @@ function D4AgentPanelContent({
               accessibilityRole="radio"
               accessibilityState={{
                 checked: context === state.brainContext,
-                disabled: switching || !canSwitch,
+                disabled: switching || startingSession || !canSwitch,
               }}
-              disabled={switching || !canSwitch}
+              disabled={switching || startingSession || !canSwitch}
               className="rounded-xl bg-surface px-4 py-4"
               onPress={async () => {
                 setChoosingContext(false);
@@ -228,8 +241,8 @@ function D4AgentPanelContent({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Agent context"
-          accessibilityState={{ disabled: !canSwitch || switching }}
-          disabled={!canSwitch || switching}
+          accessibilityState={{ disabled: !canSwitch || switching || startingSession }}
+          disabled={!canSwitch || switching || startingSession}
           className="self-start rounded-full border border-border px-3 py-2"
           onPress={() => setChoosingContext(true)}
         >
@@ -237,12 +250,42 @@ function D4AgentPanelContent({
             {switching ? "Switching context…" : `Context · ${state.brainContext}`}
           </Text>
         </Pressable>
-        {state.contextChangedAt ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canStartSession || switching || startingSession }}
+          disabled={!canStartSession || switching || startingSession}
+          className="self-start rounded-full border border-border px-3 py-2"
+          onPress={async () => {
+            setStartingSession(true);
+            setActionError(null);
+            await newSession({ environmentId, input: {} })
+              .then(async (result) => {
+                if (
+                  result._tag === "Failure" ||
+                  !(await waitForAgentThread(environmentId, result.value.threadId))
+                )
+                  setActionError("Could not start a new session.");
+                else
+                  linkTo(
+                    `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
+                  );
+              })
+              .catch(() => setActionError("Could not start a new session."))
+              .finally(() => setStartingSession(false));
+          }}
+        >
+          <Text className="text-sm text-accent">
+            {startingSession ? "Starting session…" : "New session"}
+          </Text>
+        </Pressable>
+        {state.sessionChangeReason ? (
           <Text
             accessibilityRole="text"
             className="border-b border-border pb-2 text-xs text-foreground-muted"
           >
-            Context changed to {state.brainContext}. New session.
+            {state.sessionChangeReason === "new-session"
+              ? "New session."
+              : `Context changed to ${state.brainContext}. New session.`}
           </Text>
         ) : null}
         <View className="flex-row items-center justify-between">
@@ -280,6 +323,74 @@ function D4AgentPanelContent({
         {state.systemHealth.map((check) => (
           <Text key={check.id} className="text-sm text-foreground-muted">
             {systemCheckLabel(check)}: {systemCheckStatus(check)}
+          </Text>
+        ))}
+        {state.ctoAskInFlight ? (
+          <Text className="text-sm text-foreground-muted">CTO question in progress.</Text>
+        ) : null}
+        {proposals.length > 0 ? (
+          <View className="gap-2 py-2">
+            <Text className="font-t3-semibold text-foreground">
+              Memory proposals · {proposals.length}
+            </Text>
+            {proposals.map((proposal) => (
+              <View key={proposal.id} className="gap-2 rounded border border-border p-2">
+                <Text className="text-xs text-foreground-muted">
+                  {proposal.context} · {proposal.createdAt ?? "Creation time unavailable"} ·{" "}
+                  {proposal.status}
+                </Text>
+                <Text selectable className="text-sm text-foreground">
+                  {proposal.text}
+                </Text>
+                {proposal.status === "pending" ? (
+                  <View className="flex-row gap-4">
+                    {[true, false].map((approve) => (
+                      <Pressable
+                        key={String(approve)}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: !canResolveProposal || busy }}
+                        disabled={!canResolveProposal || busy}
+                        onPress={async () => {
+                          setBusy(true);
+                          setActionError(null);
+                          await resolveProposal({
+                            environmentId,
+                            input: { proposalId: proposal.id, approve },
+                          })
+                            .then((result) => {
+                              if (result._tag === "Failure")
+                                setActionError("Could not review this memory proposal.");
+                              query.refresh();
+                            })
+                            .catch(() => setActionError("Could not review this memory proposal."))
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        <Text className="text-accent">{approve ? "Approve" : "Reject"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : proposal.status === "approved" ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      void Clipboard.setStringAsync(proposal.text).catch(() =>
+                        setActionError(
+                          "Could not copy this memory proposal. Select the text to copy it.",
+                        ),
+                      );
+                    }}
+                  >
+                    <Text className="text-accent">Copy text</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {(state.otherContextProposalCounts ?? []).map(({ context, count }) => (
+          <Text key={context} className="text-xs text-foreground-muted">
+            Pending memory proposals · {context}: {count}
           </Text>
         ))}
         {state.actionLog
@@ -356,6 +467,17 @@ function AgentActionRecord({
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
+  const refreshDetail = useEffectEvent(detail.refresh);
+  const previousResolution = useRef({ status: record.status, resolvedAt: record.resolvedAt });
+  useEffect(() => {
+    if (
+      reviewing &&
+      (previousResolution.current.status !== record.status ||
+        previousResolution.current.resolvedAt !== record.resolvedAt)
+    )
+      refreshDetail();
+    previousResolution.current = { status: record.status, resolvedAt: record.resolvedAt };
+  }, [record.status, record.resolvedAt, reviewing]);
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   return (
@@ -373,11 +495,16 @@ function AgentActionRecord({
             {
               context: detail.data.context,
               action: detail.data.action,
-              result: detail.data.result,
+              ...(typeof detail.data.result === "string" ? {} : { result: detail.data.result }),
             },
             null,
             2,
           )}
+        </Text>
+      ) : null}
+      {reviewing && typeof detail.data?.result === "string" ? (
+        <Text selectable className="text-xs text-foreground-muted">
+          {detail.data.result}
         </Text>
       ) : null}
       {detail.error ? <Text accessibilityRole="alert">{detail.error}</Text> : null}

@@ -31,6 +31,11 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Fiber from "effect/Fiber";
+import * as Context from "effect/Context";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 import * as Agent from "./D4Agent.ts";
 import * as Store from "./D4AgentStore.ts";
@@ -166,6 +171,26 @@ const fixture = (
       updatedAt: now,
     });
     const reads = yield* Ref.make({ updates: 0, snapshots: 0, probes: 0 });
+    const stateChanges = yield* PubSub.unbounded<Store.StoredState>();
+    const settingsLayer = Settings.layerTest({
+      d4Agent: {
+        ...DEFAULT_D4_AGENT_SETTINGS,
+        enabled: true,
+        modelSelection,
+        permissionMode: mode,
+        systemProbeEnabled: true,
+        ...overrides,
+      },
+      agentMonitor: {
+        enabled: monitorEnabled,
+        notificationsEnabled: true,
+        notifyClasses: ["system"],
+      },
+    });
+    const settings = Context.get(
+      yield* Layer.buildWithScope(settingsLayer, yield* Scope.Scope),
+      Settings.ServerSettingsService,
+    );
     const layer = Agent.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -175,6 +200,7 @@ const fixture = (
             update: (f) =>
               Ref.update(reads, (r) => ({ ...r, updates: r.updates + 1 })).pipe(
                 Effect.andThen(Ref.updateAndGet(state, f)),
+                Effect.tap((value) => PubSub.publish(stateChanges, value)),
               ),
           }),
           Layer.succeed(Probe.SystemProbe, {
@@ -183,21 +209,7 @@ const fixture = (
                 Effect.andThen(Ref.get(checks)),
               ),
           }),
-          Settings.layerTest({
-            d4Agent: {
-              ...DEFAULT_D4_AGENT_SETTINGS,
-              enabled: true,
-              modelSelection,
-              permissionMode: mode,
-              systemProbeEnabled: true,
-              ...overrides,
-            },
-            agentMonitor: {
-              enabled: monitorEnabled,
-              notificationsEnabled: true,
-              notifyClasses: ["system"],
-            },
-          }),
+          Layer.succeed(Settings.ServerSettingsService, settings),
           Layer.mock(Providers.ProviderRegistry)({
             getProviders: Ref.get(catalog),
           }),
@@ -259,10 +271,15 @@ const fixture = (
         ),
       ),
     );
-    const service = yield* Agent.D4Agent.pipe(Effect.provide(layer));
+    const service = Context.get(
+      yield* Layer.buildWithScope(layer, yield* Scope.Scope),
+      Agent.D4Agent,
+    );
     return {
       service,
       state,
+      stateChanges,
+      settings,
       checks,
       request,
       dispatches,
@@ -325,7 +342,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
-        projectContexts: { [target.projectId]: "YB" },
+        projectContexts: { [target.projectId]: "YB", [ProjectId.make("other")]: "Dimaggi" },
       });
       yield* Ref.set(f.shells, [
         target,
@@ -383,18 +400,18 @@ it.effect.each(["read-only", "ask", "act"] as const)(
           true,
           { memoryEnabled: true, brainVaultPath: vault },
         );
-        yield* f.service.ensureThread();
+        yield* f.service.switchContext({ context: "YB" });
         yield* Ref.update(f.agentShell, (shell) =>
           shell ? { ...shell, activeRunId: RunId.make("proposal-run") } : shell,
         );
         const result = yield* Effect.result(
           f.service.requestAction({
             type: "memory-propose",
-            context: "Global",
+            context: "YB",
             text: "Review this neutral method",
           }),
         );
-        const database = `${directory}/state/d4-agent/brain/Global.sqlite`;
+        const database = `${directory}/state/d4-agent/brain/YB.sqlite`;
         if (mode === "read-only") {
           assert.equal(result._tag, "Failure");
           assert.isFalse(yield* fs.exists(database));
@@ -407,7 +424,7 @@ it.effect.each(["read-only", "ask", "act"] as const)(
               yield* f.service.resolveAction({ actionId: result.success.id, decision: "approve" });
             }
             const saved = yield* f.service.getAction({ actionId: result.success.id });
-            assert.deepInclude(saved?.result, { context: "Global", status: "pending" });
+            assert.deepInclude(saved?.result, { context: "YB", status: "pending" });
             assert.isTrue(yield* fs.exists(database));
           }
         }
@@ -932,6 +949,7 @@ it.live.each(["read-only", "ask", "act"] as const)(
         );
         yield* f.service.ctoRead({ context: "Dimaggi", operation: "status" });
         assert.deepEqual(requests, ["GET /api/status"]);
+        const changed = yield* PubSub.subscribe(f.stateChanges);
         const action = yield* Effect.result(
           f.service.requestAction({
             type: "cto-ask",
@@ -948,10 +966,23 @@ it.live.each(["read-only", "ask", "act"] as const)(
             assert.deepEqual(requests, ["GET /api/status"]);
             yield* f.service.resolveAction({ actionId: action.success.id, decision: "approve" });
           } else assert.equal(action.success.status, "executed");
+          yield* Stream.fromSubscription(changed).pipe(
+            Stream.filter((value) =>
+              value.actions.some(
+                (entry) =>
+                  entry.id === action.success.id &&
+                  typeof entry.result === "string" &&
+                  entry.result.startsWith("Posted to chat"),
+              ),
+            ),
+            Stream.runHead,
+          );
           assert.deepEqual(requests, ["GET /api/status", "POST /api/chat"]);
-          assert.deepEqual((yield* f.service.getAction({ actionId: action.success.id }))?.result, {
-            answer: "Fixture CTO answer",
-          });
+          assert.include(
+            String((yield* f.service.getAction({ actionId: action.success.id }))?.result),
+            "Fixture CTO answer",
+          );
+          assert.include(yield* Ref.get(f.dispatches), "thread.system-message.record");
         } else assert.fail("Expected authorized CTO action");
         const disabled = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
           ctoBaseUrl,
@@ -967,4 +998,326 @@ it.live.each(["read-only", "ask", "act"] as const)(
         assert.equal(requests.length, count);
       }),
     ),
+);
+
+it.effect.each(["YB", "Dimaggi", "Global"] as const)(
+  "list and read-tail enforce mapped and unmapped project boundaries in %s",
+  (context) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "YB", [ProjectId.make("dimaggi")]: "Dimaggi" },
+      });
+      const ids = [targetId, ThreadId.make("dimaggi-thread"), ThreadId.make("unmapped-thread")];
+      yield* Ref.set(f.shells, [
+        target,
+        { ...target, id: ids[1]!, projectId: ProjectId.make("dimaggi") },
+        { ...target, id: ids[2]!, projectId: ProjectId.make("unmapped") },
+      ]);
+      yield* f.service.switchContext({ context });
+      assert.deepEqual(
+        (yield* f.service.list()).threads.map((thread) => thread.threadId),
+        context === "Global" ? ids : [context === "YB" ? ids[0] : ids[1]],
+      );
+      for (const [index, id] of ids.entries()) {
+        const before = (yield* Ref.get(f.reads)).snapshots;
+        const result = yield* Effect.result(f.service.readTail(id, 10));
+        const allowed = index === (context === "YB" ? 0 : context === "Dimaggi" ? 1 : 2);
+        assert.equal(result._tag, allowed ? "Success" : "Failure");
+        assert.equal((yield* Ref.get(f.reads)).snapshots, before + (allowed ? 1 : 0));
+      }
+    }),
+);
+
+it.effect.each(["ask", "act"] as const)(
+  "Global proposals are refused before and after reading thread text (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
+        memoryEnabled: true,
+      });
+      yield* f.service.ensureThread();
+      for (const read of [false, true]) {
+        if (read) yield* f.service.readTail(targetId, 1);
+        const result = yield* Effect.result(
+          f.service.requestAction({
+            type: "memory-propose",
+            context: "Global",
+            text: "thread:target quoted content",
+          }),
+        );
+        assert.equal(result._tag, "Failure");
+        assert.equal((yield* Ref.get(f.state)).actions.length, 0);
+      }
+    }),
+);
+
+it.effect("unrelated mapping changes preserve a work session; membership changes rotate it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "YB" },
+    });
+    const original = yield* f.service.switchContext({ context: "YB" });
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        projectContexts: { [target.projectId]: "YB", [ProjectId.make("unrelated")]: "Personal" },
+      },
+    });
+    assert.equal((yield* f.service.ensureThread()).threadId, original.threadId);
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        projectContexts: { [target.projectId]: "Dimaggi" },
+      },
+    });
+    assert.notEqual((yield* f.service.ensureThread()).threadId, original.threadId);
+  }),
+);
+
+it.live.each(["unchanged", "context", "session", "disabled"] as const)(
+  "CTO ask returns immediately and handles %s session before its delayed answer",
+  (change) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const received = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let posts = 0;
+        const server = yield* Effect.acquireRelease(
+          Effect.promise(
+            () =>
+              new Promise<NodeHttp.Server>((resolve) => {
+                const instance = NodeHttp.createServer((request, response) => {
+                  posts++;
+                  request.resume();
+                  received.resolve();
+                  void release.promise.then(() =>
+                    response.end(JSON.stringify({ reply: "Delayed synthetic CTO answer" })),
+                  );
+                });
+                instance.listen(0, "127.0.0.1", () => resolve(instance));
+              }),
+          ),
+          (server) =>
+            Effect.promise(() => {
+              release.resolve();
+              server.closeAllConnections();
+              return new Promise<void>((resolve) => server.close(() => resolve()));
+            }),
+        );
+        const address = server.address();
+        if (!address || typeof address === "string") return yield* Effect.die("No fake address");
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-cto-async-" });
+        const f = yield* fixture("act", true, undefined, `${directory}/d4-agent/workspace`, true, {
+          ctoEnabled: true,
+          ctoBaseUrl: `http://127.0.0.1:${address.port}`,
+          memoryEnabled: true,
+        });
+        const identity = yield* f.service.switchContext({ context: "Dimaggi" });
+        yield* Ref.update(f.agentShell, (shell) =>
+          shell ? { ...shell, activeRunId: RunId.make("async-ask") } : shell,
+        );
+        const updates = yield* PubSub.subscribe(f.stateChanges);
+        const question = yield* f.service.requestAction({
+          type: "cto-ask",
+          context: "Dimaggi",
+          text: "Synthetic question",
+        });
+        assert.equal(question.result, "Asked, answer will be posted.");
+        yield* Effect.promise(() => received.promise);
+        assert.isTrue((yield* f.service.getState()).ctoAskInFlight);
+        assert.equal(
+          (yield* Effect.result(
+            f.service.requestAction({ type: "cto-ask", context: "Dimaggi", text: "No duplicate" }),
+          ))._tag,
+          "Failure",
+        );
+        // Independent action budget: a CTO ask does not consume the memory-proposal allowance.
+        assert.equal(
+          (yield* f.service.requestAction({
+            type: "memory-propose",
+            context: "Dimaggi",
+            text: "A scoped proposal",
+          })).status,
+          "executed",
+        );
+        assert.equal(
+          (yield* Effect.result(
+            f.service.requestAction({
+              type: "memory-propose",
+              context: "Dimaggi",
+              text: "Too soon",
+            }),
+          ))._tag,
+          "Failure",
+        );
+        if (change === "context") yield* f.service.switchContext({ context: "YB" });
+        if (change === "session") yield* f.service.newSession();
+        if (change === "disabled") {
+          yield* f.settings.updateSettings({
+            d4Agent: { ...(yield* f.settings.getSettings).d4Agent, enabled: false },
+          });
+          yield* f.service.tick;
+        }
+        release.resolve();
+        const complete = yield* Stream.fromSubscription(updates).pipe(
+          Stream.filter((state) =>
+            state.actions.some(
+              (entry) =>
+                entry.id === question.id &&
+                typeof entry.result === "string" &&
+                entry.result !== "Asked, answer will be posted.",
+            ),
+          ),
+          Stream.runHead,
+        );
+        assert.isTrue(Option.isSome(complete));
+        const posted = (yield* Ref.get(f.dispatches)).includes("thread.system-message.record");
+        assert.equal(posted, change === "unchanged");
+        assert.equal(posts, 1);
+        if (change === "unchanged")
+          assert.equal((yield* f.service.getIdentity())?.threadId, identity.threadId);
+        else
+          assert.notInclude(
+            JSON.stringify(yield* Ref.get(f.sends)),
+            "Delayed synthetic CTO answer",
+          );
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("proposal review survives session rotation and exposes only current-context text", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-proposal-review-" });
+      const vault = `${directory}/vault`;
+      yield* fs.makeDirectory(vault);
+      yield* fs.writeFileString(`${vault}/sentinel`, "Never edit fixture vault");
+      const f = yield* fixture(
+        "ask",
+        true,
+        undefined,
+        `${directory}/state/d4-agent/workspace`,
+        true,
+        { memoryEnabled: true, brainVaultPath: vault },
+      );
+      yield* f.service.switchContext({ context: "YB" });
+      for (const text of ["YB proposal approve", "YB proposal reject"]) {
+        const requested = yield* f.service.requestAction({
+          type: "memory-propose",
+          context: "YB",
+          text,
+        });
+        yield* f.service.resolveAction({ actionId: requested.id, decision: "approve" });
+      }
+      const proposals = (yield* f.service.getState()).memoryProposals!;
+      assert.equal(proposals.length, 2);
+      yield* f.service.newSession();
+      assert.equal((yield* f.service.getState()).memoryProposals?.length, 2);
+      yield* f.service.switchContext({ context: "Dimaggi" });
+      const foreign = yield* f.service.getState();
+      assert.deepEqual(foreign.memoryProposals, []);
+      assert.deepEqual(foreign.otherContextProposalCounts, [{ context: "YB", count: 2 }]);
+      assert.notInclude(JSON.stringify(foreign), "YB proposal");
+      assert.equal(
+        (yield* Effect.result(
+          f.service.resolveMemoryProposal({ proposalId: proposals[0]!.id, approve: true }),
+        ))._tag,
+        "Failure",
+      );
+      yield* f.service.switchContext({ context: "YB" });
+      yield* f.service.resolveMemoryProposal({ proposalId: proposals[0]!.id, approve: true });
+      const reviewed = yield* f.service.resolveMemoryProposal({
+        proposalId: proposals[1]!.id,
+        approve: false,
+      });
+      assert.deepEqual(reviewed.memoryProposals?.map((p) => p.status).sort(), [
+        "approved",
+        "rejected",
+      ]);
+      assert.equal(
+        reviewed.memoryProposals?.find((p) => p.status === "approved")?.text,
+        proposals[0]!.text,
+      );
+      assert.deepEqual(yield* fs.readDirectory(vault), ["sentinel"]);
+      assert.equal(yield* fs.readFileString(`${vault}/sentinel`), "Never edit fixture vault");
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.live(
+  "slow memory embeddings do not hold the agent lock and cannot return across a new session",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-memory-concurrency-" });
+        const vault = `${directory}/vault`;
+        for (const context of ["Global", "YB"]) {
+          const relative = `${context}/note.md`,
+            text = `${context} synthetic search marker`;
+          yield* fs.makeDirectory(`${vault}/${context}/State`, { recursive: true });
+          yield* fs.writeFileString(`${vault}/${relative}`, text);
+          yield* fs.writeFileString(
+            `${vault}/${context}/${context === "Global" ? "" : "State/"}sources.json`,
+            JSON.stringify({ files: [{ path: relative, sha256: sha256Hex(text) }] }),
+          );
+        }
+        const started = Promise.withResolvers<void>(),
+          release = Promise.withResolvers<void>();
+        const server = yield* Effect.acquireRelease(
+          Effect.promise(
+            () =>
+              new Promise<NodeHttp.Server>((resolve) => {
+                const server = NodeHttp.createServer((request, response) => {
+                  let body = "";
+                  request.on("data", (chunk) => {
+                    body += String(chunk);
+                  });
+                  request.on("end", () => {
+                    started.resolve();
+                    void release.promise.then(() => {
+                      const input = JSON.parse(body).input;
+                      response.end(JSON.stringify({ embeddings: input.map(() => [1, 0]) }));
+                    });
+                  });
+                });
+                server.listen(0, "127.0.0.1", () => resolve(server));
+              }),
+          ),
+          (server) =>
+            Effect.promise(() => {
+              release.resolve();
+              server.closeAllConnections();
+              return new Promise<void>((resolve) => server.close(() => resolve()));
+            }),
+        );
+        const address = server.address();
+        if (!address || typeof address === "string") return yield* Effect.die("No fake address");
+        const f = yield* fixture(
+          "read-only",
+          true,
+          undefined,
+          `${directory}/state/d4-agent/workspace`,
+          true,
+          {
+            memoryEnabled: true,
+            brainVaultPath: vault,
+            embeddingsEnabled: true,
+            embeddingBaseUrl: `http://127.0.0.1:${address.port}`,
+            embeddingModel: "fixture",
+          },
+        );
+        const first = yield* f.service.switchContext({ context: "YB" });
+        const search = yield* f.service
+          .memorySearch({ context: "YB", query: "synthetic" })
+          .pipe(Effect.result, Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        const second = yield* f.service.newSession();
+        assert.notEqual(second.threadId, first.threadId);
+        release.resolve();
+        assert.equal((yield* Fiber.join(search))._tag, "Failure");
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );

@@ -14,7 +14,7 @@ import { createScopedBrain } from "./scopedBrain.ts";
 
 const REFUSAL = "Context operation refused; inspect the selected scope configuration.";
 const canonical = NodePath.join(import.meta.dirname, "fixtures", "brain.py");
-const scratch = NodeOS.tmpdir();
+const scratch = process.env.TMPDIR ?? NodeOS.tmpdir();
 const digest = (raw: string | Buffer) => NodeCrypto.createHash("sha256").update(raw).digest("hex");
 let temp: string;
 let root: string;
@@ -64,6 +64,7 @@ beforeEach(() => {
   brain = createScopedBrain({ stateDir });
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   NodeFS.rmSync(temp, { recursive: true, force: true });
 });
@@ -139,7 +140,7 @@ describe("canonical approved scope boundary", () => {
     expect(python().status).toBe(2);
     await expect(brain.inventory({ root, context: "Personal" })).rejects.toThrow(REFUSAL);
   });
-  it.each(["hash", "duplicate", "manifest-shape", "entry-shape", "json", "missing-global"])(
+  it.each(["hash", "duplicate", "manifest-shape", "entry-shape", "json", "bom", "missing-global"])(
     "matches canonical failure for %s",
     async (kind) => {
       const row = { path: "Personal/State/current.md", sha256: digest("personal apple fruit") };
@@ -152,6 +153,8 @@ describe("canonical approved scope boundary", () => {
           '{"files":[{"path":"Personal/State/current.md","sha256":"BAD"}]}',
         );
       if (kind === "json") write("Personal/State/sources.json", "not json");
+      if (kind === "bom")
+        write("Personal/State/sources.json", "\ufeff" + JSON.stringify({ files: [row] }));
       if (kind === "missing-global") NodeFS.unlinkSync(NodePath.join(root, "Global/sources.json"));
       const expected = python();
       expect(expected.status).toBe(2);
@@ -232,17 +235,33 @@ describe("context-local index", () => {
       db.close();
     }
   });
-  it("reports cached statuses without reading or rebuilding vault notes", async () => {
+  it("reports valid manifests as not indexed without creating state", async () => {
+    expect(await brain.indexStatuses({ root })).toEqual([
+      { context: "Global", status: "not-indexed", files: 1, lastRebuild: null },
+      { context: "Personal", status: "not-indexed", files: 2, lastRebuild: null },
+      { context: "YB", status: "not-indexed", files: 2, lastRebuild: null },
+      { context: "Dimaggi", status: "not-indexed", files: 2, lastRebuild: null },
+    ]);
+    expect(NodeFS.existsSync(stateDir)).toBe(false);
+    NodeFS.unlinkSync(NodePath.join(root, "YB/State/sources.json"));
+    expect((await brain.indexStatuses({ root })).find((row) => row.context === "YB")?.status).toBe(
+      "not-available",
+    );
+  });
+  it("refuses stale statuses without rebuilding indexes or creating databases", async () => {
     await brain.status({ root, context: "Personal" });
     NodeFS.unlinkSync(NodePath.join(root, "Personal/State/current.md"));
+    expect(
+      (await brain.indexStatuses({ root })).find((s) => s.context === "Personal"),
+    ).toMatchObject({ status: "ready", files: 2 });
     write("Global/sources.json", "invalid manifest");
     const statuses = await brain.indexStatuses({ root });
     expect(statuses.find((s) => s.context === "Personal")).toMatchObject({
-      status: "ready",
-      files: 2,
+      status: "refused",
+      files: 0,
     });
     expect(statuses.find((s) => s.context === "Global")).toMatchObject({
-      status: "not-available",
+      status: "refused",
       files: 0,
     });
     expect(NodeFS.readdirSync(NodePath.join(stateDir, "d4-agent/brain"))).toEqual([
@@ -259,6 +278,20 @@ describe("context-local index", () => {
     await expect(brain.search({ root, context: "Personal", query: "apple" })).rejects.toThrow(
       REFUSAL,
     );
+  });
+  it("reports a changed valid manifest as not indexed until an explicit indexing operation", async () => {
+    await brain.status({ root, context: "Personal" });
+    const dbPath = NodePath.join(stateDir, "d4-agent/brain/Personal.sqlite");
+    const before = NodeFS.readFileSync(dbPath);
+    manifest("Personal", []);
+    expect(
+      (await brain.indexStatuses({ root })).find((s) => s.context === "Personal")?.status,
+    ).toBe("not-indexed");
+    expect(NodeFS.readFileSync(dbPath)).toEqual(before);
+    await brain.search({ root, context: "Personal", query: "apple" });
+    expect(
+      (await brain.indexStatuses({ root })).find((s) => s.context === "Personal"),
+    ).toMatchObject({ status: "ready", files: 1 });
   });
   it.each(["directory", "database", "dangling-database"])(
     "refuses linked state %s",
@@ -345,6 +378,83 @@ describe("context-local index", () => {
     );
     expect(snapshotVault()).toEqual(before);
   });
+  it("keeps absent state untouched when polling proposal lists and counts", async () => {
+    expect(NodeFS.existsSync(stateDir)).toBe(false);
+    for (const context of ["Global", "Personal", "YB", "Dimaggi"] as const)
+      expect(await brain.listProposals(context)).toEqual([]);
+    expect(await brain.proposalCounts()).toEqual([
+      { context: "Global", pending: 0 },
+      { context: "Personal", pending: 0 },
+      { context: "YB", pending: 0 },
+      { context: "Dimaggi", pending: 0 },
+    ]);
+    expect(NodeFS.existsSync(stateDir)).toBe(false);
+  });
+  it("lists only the requested context and resolves proposals without vault writes", async () => {
+    const before = snapshotVault();
+    const personal = await brain.propose({
+      context: "Personal",
+      text: "personal candidate",
+      sessionId: "session_1",
+    });
+    const yb = await brain.propose({ context: "YB", text: "yb candidate", sessionId: "session_2" });
+    expect(await brain.listProposals("Personal")).toEqual([
+      expect.objectContaining({
+        id: personal.id,
+        context: "Personal",
+        text: "personal candidate",
+        status: "pending",
+        createdAt: expect.stringMatching(/^\d{4}-/),
+      }),
+    ]);
+    expect(await brain.proposalCounts()).toEqual([
+      { context: "Global", pending: 0 },
+      { context: "Personal", pending: 1 },
+      { context: "YB", pending: 1 },
+      { context: "Dimaggi", pending: 0 },
+    ]);
+    await expect(brain.resolveProposal("Personal", yb.id, true)).rejects.toThrow(REFUSAL);
+    expect(await brain.resolveProposal("Personal", personal.id, true)).toEqual({
+      id: personal.id,
+      context: "Personal",
+      status: "approved",
+    });
+    expect(await brain.resolveProposal("YB", yb.id, false)).toEqual({
+      id: yb.id,
+      context: "YB",
+      status: "rejected",
+    });
+    expect((await brain.listProposals("Personal"))[0]?.status).toBe("approved");
+    expect((await brain.listProposals("YB"))[0]?.status).toBe("rejected");
+    expect((await brain.proposalCounts()).every((row) => row.pending === 0)).toBe(true);
+    expect(snapshotVault()).toEqual(before);
+  });
+  it("migrates pending-only proposal stores without dropping proposal content", async () => {
+    await brain.propose({ context: "Personal", text: "initialize", sessionId: "session_1" });
+    const db = new NodeSqlite.DatabaseSync(
+      NodePath.join(stateDir, "d4-agent/brain/Personal.sqlite"),
+    );
+    const id = NodeCrypto.randomUUID();
+    try {
+      db.exec(
+        "DROP TABLE proposals; CREATE TABLE proposals (id TEXT PRIMARY KEY, context TEXT NOT NULL, session_id TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL CHECK(status='pending'));",
+      );
+      db.prepare("INSERT INTO proposals VALUES(?,?,?,?,'pending')").run(
+        id,
+        "Personal",
+        "old_session",
+        "legacy candidate",
+      );
+    } finally {
+      db.close();
+    }
+    const migrated = createScopedBrain({ stateDir });
+    expect(await migrated.listProposals("Personal")).toEqual([
+      expect.objectContaining({ id, text: "legacy candidate", status: "pending", createdAt: null }),
+    ]);
+    await migrated.resolveProposal("Personal", id, true);
+    expect((await migrated.listProposals("Personal"))[0]?.status).toBe("approved");
+  });
   it("redacts failures and diagnostic categories contain no paths or content", async () => {
     const diagnostics: unknown[] = [];
     brain = createScopedBrain({ stateDir, diagnostic: (entry) => diagnostics.push(entry) });
@@ -373,6 +483,26 @@ describe("optional persisted vectors", () => {
     const result = await brain.search({ root, context: "Personal", query: "apple", embeddings });
     expect(result.embeddingStatus).toBe("unavailable");
     expect(result.results).toHaveLength(2);
+  });
+  it("returns FTS after the embedding deadline aborts and skips network calls during backoff", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const fetch = vi.fn(
+      (_url: unknown, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+        }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const searching = brain.search({ root, context: "Personal", query: "apple", embeddings });
+    expect(timeout).toHaveBeenCalledWith(15000);
+    controller.abort(new DOMException("deadline reached", "TimeoutError"));
+    expect(await searching).toMatchObject({
+      embeddingStatus: "unavailable",
+      results: expect.arrayContaining([expect.objectContaining({ text: "personal apple fruit" })]),
+    });
+    await brain.search({ root, context: "Personal", query: "apple", embeddings });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("persists float32 vectors and reuses them across factory instances", async () => {
     const fetch = vi.fn(async (_: unknown, init: RequestInit) => {
@@ -410,6 +540,66 @@ describe("optional persisted vectors", () => {
           .all()
           .map((r) => r.bytes),
       ).toEqual([8, 8]);
+    } finally {
+      db.close();
+    }
+  });
+  it("persists each completed vector batch when a later batch times out and backs off across instances", async () => {
+    approve("Personal", "Personal/State/current.md", "apple ".repeat(6000));
+    let calls = 0;
+    const fetch = vi.fn(async (_: unknown, init: RequestInit) => {
+      calls++;
+      if (calls === 3) throw new DOMException("timed out", "TimeoutError");
+      return new Response(
+        JSON.stringify({ embeddings: JSON.parse(String(init.body)).input.map(() => [1, 0]) }),
+      );
+    });
+    vi.stubGlobal("fetch", fetch);
+    const first = await brain.search({ root, context: "Personal", query: "apple", embeddings });
+    expect(first.embeddingStatus).toBe("unavailable");
+    expect(first.results.length).toBeGreaterThan(0);
+    const db = new NodeSqlite.DatabaseSync(
+      NodePath.join(stateDir, "d4-agent/brain/Personal.sqlite"),
+    );
+    try {
+      expect(db.prepare("SELECT count(*) AS count FROM vectors").get()!.count).toBe(16);
+      const again = createScopedBrain({ stateDir });
+      expect(
+        (await again.search({ root, context: "Personal", query: "apple", embeddings }))
+          .embeddingStatus,
+      ).toBe("unavailable");
+      expect(fetch).toHaveBeenCalledTimes(3);
+      db.exec("UPDATE embedding_retries SET retry_after=0");
+      expect(
+        (await again.search({ root, context: "Personal", query: "apple", embeddings }))
+          .embeddingStatus,
+      ).toBe("ready");
+      expect(fetch).toHaveBeenCalledTimes(5);
+      expect(db.prepare("SELECT count(*) AS count FROM vectors").get()!.count).toBe(24);
+    } finally {
+      db.close();
+    }
+  });
+  it("backs off failed query embeddings without extending the original retry deadline", async () => {
+    const fetch = vi.fn().mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+    vi.stubGlobal("fetch", fetch);
+    await brain.search({ root, context: "Personal", query: "apple", embeddings });
+    const db = new NodeSqlite.DatabaseSync(
+      NodePath.join(stateDir, "d4-agent/brain/Personal.sqlite"),
+      { readOnly: true },
+    );
+    try {
+      const deadline = db.prepare("SELECT retry_after FROM embedding_retries").get()!.retry_after;
+      await createScopedBrain({ stateDir }).search({
+        root,
+        context: "Personal",
+        query: "apple",
+        embeddings,
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(db.prepare("SELECT retry_after FROM embedding_retries").get()!.retry_after).toBe(
+        deadline,
+      );
     } finally {
       db.close();
     }

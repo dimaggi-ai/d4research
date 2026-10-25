@@ -2,6 +2,10 @@
 import * as NodeHttp from "node:http";
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
+import { FetchHttpClient } from "effect/http";
 import * as Cto from "./CtoClient.ts";
 
 const servers: Array<NodeHttp.Server> = [];
@@ -285,4 +289,119 @@ it.live(
     yield* Effect.promise(() => requestClosed);
   }),
   8000,
+);
+
+it.live(
+  "treats a missing brief as no brief yet and still fetches tasks",
+  Effect.fnUntraced(function* () {
+    const requests: Array<string | undefined> = [];
+    const input = yield* Effect.promise(() =>
+      fake((req, res) => {
+        requests.push(req.url);
+        if (req.url === "/api/brief") {
+          res.writeHead(404);
+          res.end("private not-found body");
+        } else res.end(JSON.stringify({ tasks: ["synthetic task"] }));
+      }),
+    );
+    expect(yield* client.brief(input)).toEqual({
+      brief: { status: "no brief yet" },
+      tasks: { tasks: ["synthetic task"] },
+    });
+    expect(requests).toEqual(["/api/brief", "/api/tasks"]);
+  }),
+);
+
+it.effect.each([
+  { operation: "status", deadlineMs: 5000 },
+  { operation: "brief", deadlineMs: 5000 },
+  { operation: "ask", deadlineMs: 450000 },
+] as const)(
+  "cancels $operation at its $deadlineMs ms deadline without retrying",
+  Effect.fnUntraced(function* ({ operation, deadlineMs }) {
+    const started = yield* Deferred.make<void>();
+    let calls = 0;
+    const requestSignals: AbortSignal[] = [];
+    const fetch: typeof globalThis.fetch = (_url, init) => {
+      calls++;
+      requestSignals.push(init!.signal!);
+      Deferred.doneUnsafe(started, Effect.void);
+      return new Promise<Response>((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+      });
+    };
+    const input = { context: "Dimaggi", enabled: true, baseUrl: "http://127.0.0.1:9093" };
+    const request =
+      operation === "ask"
+        ? client.ask({ ...input, text: "synthetic question", permissionMode: "act" })
+        : client[operation](input);
+    const fiber = yield* result(request).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+      Effect.forkChild,
+    );
+    yield* Deferred.await(started);
+    yield* TestClock.adjust(deadlineMs - 1);
+    expect(fiber.pollUnsafe()).toBeUndefined();
+    yield* TestClock.adjust(1);
+    expect(yield* Fiber.join(fiber)).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "unreachable" },
+    });
+    expect(requestSignals[0]?.aborted).toBe(true);
+    expect(calls).toBe(1);
+  }),
+);
+
+it.effect.each([
+  { host: "127.0.0.1", allowed: true },
+  { host: "127.255.255.255", allowed: true },
+  { host: "localhost", allowed: true },
+  { host: "[::1]", allowed: true },
+  { host: "100.64.0.1", allowed: true },
+  { host: "100.127.255.255", allowed: true },
+  { host: "100.63.255.255", allowed: false },
+  { host: "100.128.0.0", allowed: false },
+  { host: "10.0.0.1", allowed: false },
+  { host: "192.168.1.1", allowed: false },
+  { host: "example.test", allowed: false },
+])(
+  "enforces CTO host policy for $host (allowed=$allowed)",
+  Effect.fnUntraced(function* ({ host, allowed }) {
+    const requests: string[] = [];
+    const fetch: typeof globalThis.fetch = async (url) => {
+      requests.push(String(url));
+      return new Response('{"synthetic":true}');
+    };
+    const response = yield* result(
+      client.status({ context: "Dimaggi", enabled: true, baseUrl: `http://${host}:9093` }),
+    ).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch));
+    if (allowed) {
+      expect(response).toMatchObject({ _tag: "Success", success: { synthetic: true } });
+      expect(requests).toEqual([`http://${host}:9093/api/status`]);
+    } else {
+      expect(response).toMatchObject({ _tag: "Failure", failure: { reason: "configuration" } });
+      expect(requests).toEqual([]);
+    }
+  }),
+);
+
+it.effect(
+  "allows a remote CTO host only with an explicit override",
+  Effect.fnUntraced(function* () {
+    const requests: string[] = [];
+    const fetch: typeof globalThis.fetch = async (url) => {
+      requests.push(String(url));
+      return new Response('{"synthetic":true}');
+    };
+    const input = {
+      context: "Dimaggi",
+      enabled: true,
+      baseUrl: "https://example.test",
+      allowRemoteHost: true,
+    };
+    expect(
+      yield* client.status(input).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch)),
+    ).toEqual({ synthetic: true });
+    expect(requests).toEqual(["https://example.test/api/status"]);
+  }),
 );

@@ -20,6 +20,11 @@ const mocks = vi.hoisted(() => ({
     _tag: "Success",
     value: { threadId: "new-agent-thread" as ThreadId },
   })),
+  newSession: vi.fn(async () => ({
+    _tag: "Success",
+    value: { threadId: "fresh-agent-thread" as ThreadId },
+  })),
+  resolveProposal: vi.fn(async () => ({ _tag: "Success" })),
   projectContexts: {} as D4AgentSettings["projectContexts"],
   refresh: vi.fn(),
   threadShells: vi.fn(),
@@ -70,13 +75,21 @@ vi.mock("../../state/server", () => ({
     d4AgentIdentity: () => "identity",
     d4AgentAction: () => "detail",
     ensureD4AgentThread: { permissionAtom: () => "permission" },
+    newD4AgentSession: { permissionAtom: () => "permission", kind: "new-session" },
+    resolveD4AgentMemoryProposal: { permissionAtom: () => "permission", kind: "proposal" },
     switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
     resolveD4AgentAction: { permissionAtom: () => "permission" },
   },
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
-    command.kind === "switch" ? mocks.switchContext : mocks.resolve,
+    command.kind === "switch"
+      ? mocks.switchContext
+      : command.kind === "new-session"
+        ? mocks.newSession
+        : command.kind === "proposal"
+          ? mocks.resolveProposal
+          : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
@@ -118,6 +131,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.resolve.mockClear();
   mocks.switchContext.mockClear();
+  mocks.newSession.mockClear();
+  mocks.resolveProposal.mockClear();
   mocks.projectContexts = {};
   mocks.refresh.mockClear();
   mocks.threadShells.mockClear();
@@ -133,6 +148,10 @@ beforeEach(() => {
     brainContext: "Global",
     brainIndexes: [],
     contextChangedAt: null,
+    sessionChangeReason: null,
+    memoryProposals: [],
+    otherContextProposalCounts: [],
+    ctoAskInFlight: false,
     threadId,
     projectId: null,
     modelAvailable: false,
@@ -383,6 +402,7 @@ it("restricts attention to mapped work projects and marks the new session", asyn
     ...mocks.state!,
     brainContext: "YB",
     contextChangedAt: "2026-10-24T00:00:00.000Z",
+    sessionChangeReason: "context",
   };
   mocks.threads = [
     {
@@ -452,4 +472,177 @@ it("shows the complete CTO request and persisted result when reviewed", async ()
   await act(async () => review.click());
   expect(container.textContent).toContain("Review complete context request");
   expect(container.textContent).toContain("Persisted CTO answer");
+});
+
+it("starts a fresh session in the current context and navigates only after the thread is available", async () => {
+  mocks.state = { ...mocks.state!, brainContext: "YB" };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "New session",
+  )!;
+  await act(async () => button.click());
+  expect(mocks.newSession).toHaveBeenCalledWith({ environmentId, input: {} });
+  expect(mocks.switchContext).not.toHaveBeenCalled();
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId, threadId: "fresh-agent-thread" },
+  });
+});
+it("shows a same-context session divider and an in-flight CTO request", async () => {
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "Dimaggi",
+    sessionChangeReason: "new-session",
+    ctoAskInFlight: true,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("New session.");
+  expect(container.textContent).not.toContain("Context changed to");
+  expect(container.textContent).toContain("CTO question in progress.");
+});
+it("reviews only current-context memory proposals and shows other-context counts", async () => {
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "YB",
+    memoryProposals: [
+      {
+        id: "yb-proposal",
+        context: "YB",
+        text: "Keep this scoped note.",
+        status: "pending",
+        createdAt: "2026-10-24T12:00:00.000Z",
+      },
+      {
+        id: "other-proposal",
+        context: "Dimaggi",
+        text: "Other context private text",
+        status: "pending",
+        createdAt: "2026-10-24T12:00:00.000Z",
+      },
+    ],
+    otherContextProposalCounts: [{ context: "Dimaggi", count: 1 }],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("Keep this scoped note.");
+  expect(container.textContent).toContain("2026-10-24T12:00:00.000Z");
+  expect(container.textContent).toContain("Pending memory proposals · Dimaggi: 1");
+  expect(container.textContent).not.toContain("Other context private text");
+  for (const [label, approve] of [
+    ["Approve", true],
+    ["Reject", false],
+  ] as const) {
+    const button = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === label,
+    )!;
+    await act(async () => button.click());
+    expect(mocks.resolveProposal).toHaveBeenLastCalledWith({
+      environmentId,
+      input: { proposalId: "yb-proposal", approve },
+    });
+  }
+});
+it("copies approved memory text for manual vault entry", async () => {
+  const copy = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "YB",
+    memoryProposals: [
+      {
+        id: "approved",
+        context: "YB",
+        text: "Approved note to copy.",
+        status: "approved",
+        createdAt: "2026-10-24T12:00:00.000Z",
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "Copy text",
+  )!;
+  await act(async () => button.click());
+  expect(copy).toHaveBeenCalledWith("Approved note to copy.");
+  expect(mocks.resolveProposal).not.toHaveBeenCalled();
+});
+it("requires operate permission for session reset and proposal review", async () => {
+  mocks.allowed = false;
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "YB",
+    memoryProposals: [
+      {
+        id: "pending",
+        context: "YB",
+        text: "Pending note",
+        status: "pending",
+        createdAt: "2026-10-24T12:00:00.000Z",
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  for (const label of ["New session", "Approve", "Reject"]) {
+    const button = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === label,
+    )!;
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+  }
+  expect(mocks.newSession).not.toHaveBeenCalled();
+  expect(mocks.resolveProposal).not.toHaveBeenCalled();
+});
+
+it("refreshes an open CTO result after completion without collapsing its details", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "Dimaggi",
+    ctoAskInFlight: true,
+    actionLog: [
+      {
+        id: "slow-cto",
+        type: "cto-ask",
+        targetId: "Dimaggi",
+        preview: "Review slow question",
+        status: "executed",
+        createdAt,
+        resolvedAt: createdAt,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "slow-cto",
+    context: "Dimaggi",
+    sessionId: threadId,
+    action: { type: "cto-ask", context: "Dimaggi", text: "Review slow question" },
+    status: "executed",
+    createdAt,
+    resolvedAt: createdAt,
+    result: "Asked, answer will be posted.",
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () => container.querySelector("summary")!.click());
+  const review = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "Review action",
+  )!;
+  await act(async () => review.click());
+  expect(container.textContent).toContain("Asked, answer will be posted.");
+  mocks.refresh.mockClear();
+  const completedAt = "2026-10-24T12:00:20.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    ctoAskInFlight: false,
+    actionLog: mocks.state!.actionLog.map((record) => ({ ...record, resolvedAt: completedAt })),
+  };
+  mocks.detail = {
+    ...mocks.detail!,
+    resolvedAt: completedAt,
+    result: "Action log only: First line\nSecond line",
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Hide action details");
+  expect(container.textContent).toContain("Action log only: First line\nSecond line");
+  expect(container.textContent).not.toContain("First line\\nSecond line");
+  expect(container.textContent).toContain("Review slow question");
 });

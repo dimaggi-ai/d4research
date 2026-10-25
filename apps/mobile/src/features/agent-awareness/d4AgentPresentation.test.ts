@@ -65,6 +65,9 @@ it("shows all projects in Global and only explicit mappings in work contexts", (
 });
 it("reports unavailable indexes and rebuild information without inventing readiness", () => {
   expect(
+    brainIndexStatus({ context: "YB", status: "not-indexed", files: 2, lastRebuild: null }),
+  ).toBe("Not indexed · 2 files · Last rebuild: Not available");
+  expect(
     brainIndexStatus({ context: "YB", status: "not-available", files: 0, lastRebuild: null }),
   ).toBe("Not available · 0 files · Last rebuild: Not available");
   expect(

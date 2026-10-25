@@ -15,6 +15,9 @@ const SourceManifest = Schema.Struct({
 const decodeManifest = Schema.decodeUnknownSync(SourceManifest);
 const EmbedResponse = Schema.Struct({ embeddings: Schema.Array(Schema.Array(Schema.Number)) });
 const decodeEmbeddings = Schema.decodeUnknownSync(EmbedResponse);
+const decodeProposalStatus = Schema.decodeUnknownSync(
+  Schema.Literals(["pending", "approved", "rejected"]),
+);
 const contexts = new Set<string>(["Global", "Personal", "YB", "Dimaggi"]);
 type Scope = { root: string; context: D4BrainContext };
 type Approved = { path: string; raw: Buffer; sha256: string };
@@ -77,7 +80,7 @@ function readSafe(root: string, path: string) {
     NodeFS.closeSync(fd);
   }
 }
-function approved(input: Scope): Snapshot {
+function approved(input: Scope, readSources = true): Snapshot {
   validateContext(input.context);
   const root = NodeFS.realpathSync(input.root);
   const manifests =
@@ -92,12 +95,13 @@ function approved(input: Scope): Snapshot {
   for (const manifest of manifests) {
     const raw = readSafe(root, manifest.path);
     manifestBytes.push(manifest.path, hash(raw));
+    if (raw.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) refuse("manifest-bom");
     const data = decodeManifest(JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(raw)));
     for (const row of data.files) {
       if (!/^[0-9a-f]{64}$/.test(row.sha256)) refuse("source-entry");
-      if (safe(root, row.path).first !== manifest.prefix) refuse("source-scope");
-      const content = readSafe(root, row.path);
-      if (hash(content) !== row.sha256) refuse("source-hash");
+      if (row.path.split("/")[0] !== manifest.prefix) refuse("source-scope");
+      const content = readSources ? readSafe(root, row.path) : Buffer.alloc(0);
+      if (readSources && hash(content) !== row.sha256) refuse("source-hash");
       rows.push({ path: row.path, raw: content, sha256: row.sha256 });
     }
   }
@@ -193,7 +197,21 @@ export function createScopedBrain(options: {
         CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN INSERT INTO chunks_fts(rowid,path,text) VALUES(new.id,new.path,new.text); END;
         CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN INSERT INTO chunks_fts(chunks_fts,rowid,path,text) VALUES('delete',old.id,old.path,old.text); END;
         CREATE TABLE IF NOT EXISTS vectors (chunk_id INTEGER NOT NULL, configuration TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY(chunk_id,configuration));
-        CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, context TEXT NOT NULL, session_id TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL CHECK(status='pending'));`);
+        CREATE TABLE IF NOT EXISTS embedding_retries (configuration TEXT PRIMARY KEY, retry_after INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, context TEXT NOT NULL, session_id TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')), created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));`);
+      if (
+        !db
+          .prepare("PRAGMA table_info(proposals)")
+          .all()
+          .some((row) => row.name === "created_at")
+      ) {
+        db.exec(`BEGIN IMMEDIATE;
+          ALTER TABLE proposals RENAME TO proposals_legacy;
+          CREATE TABLE proposals (id TEXT PRIMARY KEY, context TEXT NOT NULL, session_id TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')), created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+          INSERT INTO proposals(id,context,session_id,text,status,created_at) SELECT id,context,session_id,text,status,NULL FROM proposals_legacy;
+          DROP TABLE proposals_legacy;
+          COMMIT;`);
+      }
       return body(db);
     } finally {
       db.close();
@@ -366,9 +384,19 @@ export function createScopedBrain(options: {
     let embeddingStatus: "disabled" | "ready" | "unavailable" = "disabled";
     const settings = input.embeddings;
     if (settings?.enabled) {
+      const key = hash(JSON.stringify([settings.baseUrl, settings.model]));
       try {
+        const retryAfter = run("embedding-cache", () =>
+          database(input.context, (db) =>
+            Number(
+              db.prepare("SELECT retry_after FROM embedding_retries WHERE configuration=?").get(key)
+                ?.retry_after ?? 0,
+            ),
+          ),
+        );
+        // @effect-diagnostics-next-line globalDate:off -- The persistent retry deadline must survive factory and process restarts.
+        if (retryAfter > Date.now()) refuse("embedding-backoff");
         const signal = AbortSignal.timeout(15000);
-        const key = hash(JSON.stringify([settings.baseUrl, settings.model]));
         const cached = run("embedding-cache", () =>
           database(
             input.context,
@@ -395,6 +423,26 @@ export function createScopedBrain(options: {
             batch.map((row) => `${prefix ? "search_document: " : ""}${row.text}`),
             signal,
           );
+          run("embedding-cache", () =>
+            database(input.context, (db) => {
+              const latest = approved(input);
+              if (
+                latest.manifestHash !== initial.snapshot.manifestHash ||
+                db.prepare("SELECT value FROM metadata WHERE key='manifestHash'").get()?.value !==
+                  latest.manifestHash
+              )
+                refuse("changed-input");
+              db.exec("BEGIN IMMEDIATE");
+              try {
+                const insert = db.prepare("INSERT OR REPLACE INTO vectors VALUES(?,?,?)");
+                batch.forEach((row, i) => insert.run(row.id, key, encodeVector(vectors[i]!)));
+                db.exec("COMMIT");
+              } catch (error) {
+                db.exec("ROLLBACK");
+                throw error;
+              }
+            }),
+          );
           batch.forEach((row, i) => cached.set(row.id, vectors[i]!));
         }
         const semantic = initial.all
@@ -415,8 +463,7 @@ export function createScopedBrain(options: {
                 latest.manifestHash
             )
               refuse("changed-input");
-            const insert = db.prepare("INSERT OR REPLACE INTO vectors VALUES(?,?,?)");
-            for (const row of missing) insert.run(row.id, key, encodeVector(cached.get(row.id)!));
+            db.prepare("DELETE FROM embedding_retries WHERE configuration=?").run(key);
           }),
         );
         const fused = new Map<string, Hit>();
@@ -430,6 +477,16 @@ export function createScopedBrain(options: {
           .slice(0, input.limit ?? 20);
         embeddingStatus = "ready";
       } catch {
+        run("embedding-backoff", () =>
+          database(input.context, (db) => {
+            // Backoff is not extended by searches that already skipped the network.
+            // @effect-diagnostics-next-line globalDate:off -- The retry timestamp is persisted for subsequent processes.
+            const now = Date.now();
+            db.prepare(
+              "INSERT INTO embedding_retries(configuration,retry_after) VALUES(?,?) ON CONFLICT(configuration) DO UPDATE SET retry_after=excluded.retry_after WHERE embedding_retries.retry_after<=?",
+            ).run(key, now + 60000, now);
+          }),
+        );
         options.diagnostic?.({ operation: "embeddings", category: "unavailable" });
         embeddingStatus = "unavailable";
       }
@@ -457,10 +514,59 @@ export function createScopedBrain(options: {
         return { id, context: input.context, status: "pending" as const };
       });
     });
+  const listProposals = async (context: D4BrainContext) =>
+    run("proposal-list", () => {
+      validateContext(context);
+      if (!NodeFS.existsSync(NodePath.join(directory, `${context}.sqlite`))) return [];
+      return database(context, (db) =>
+        db
+          .prepare(
+            "SELECT id,context,text,status,created_at FROM proposals WHERE context=? ORDER BY created_at,id",
+          )
+          .all(context)
+          .map((row) => ({
+            id: String(row.id),
+            context,
+            text: String(row.text),
+            status: decodeProposalStatus(row.status),
+            createdAt: row.created_at === null ? null : String(row.created_at),
+          })),
+      );
+    });
+  const proposalCounts = async () =>
+    run("proposal-counts", () =>
+      [...contexts].map((context) => ({
+        context: context as D4BrainContext,
+        pending: NodeFS.existsSync(NodePath.join(directory, `${context}.sqlite`))
+          ? database(context as D4BrainContext, (db) =>
+              Number(
+                db
+                  .prepare(
+                    "SELECT count(*) AS count FROM proposals WHERE context=? AND status='pending'",
+                  )
+                  .get(context)!.count,
+              ),
+            )
+          : 0,
+      })),
+    );
+  const resolveProposal = async (context: D4BrainContext, id: string, approve: boolean) =>
+    run("proposal-resolve", () => {
+      if (typeof id !== "string" || !/^[0-9a-f-]{36}$/.test(id) || typeof approve !== "boolean")
+        refuse("proposal");
+      return database(context, (db) => {
+        const status = approve ? ("approved" as const) : ("rejected" as const);
+        const result = db
+          .prepare("UPDATE proposals SET status=? WHERE context=? AND id=?")
+          .run(status, context, id);
+        if (result.changes !== 1) refuse("proposal");
+        return { id, context, status };
+      });
+    });
   const indexStatuses = async (input: { root: string | null; enabled?: boolean }) => {
     type IndexStatus = {
       context: D4BrainContext;
-      status: "ready" | "not-available" | "disabled" | "refused";
+      status: "ready" | "not-indexed" | "not-available" | "disabled" | "refused";
       files: number;
       lastRebuild: string | null;
     };
@@ -474,6 +580,15 @@ export function createScopedBrain(options: {
       } catch {
         return { ...base, status: "not-available" };
       }
+      let snapshot: Snapshot;
+      try {
+        snapshot = approved({ root: input.root, context: context as D4BrainContext }, false);
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+          return { ...base, status: "not-available" };
+        return { ...base, status: "refused" };
+      }
+      const notIndexed = { ...base, files: snapshot.rows.length, status: "not-indexed" as const };
       const path = NodePath.join(directory, `${context}.sqlite`);
       try {
         for (const location of [NodePath.join(options.stateDir, "d4-agent"), directory, path]) {
@@ -487,7 +602,11 @@ export function createScopedBrain(options: {
               .all()
               .map((row) => [String(row.key), String(row.value)]),
           );
-          if (metadata.get("rootHash") !== rootHash) return { ...base, status: "not-available" };
+          if (
+            metadata.get("rootHash") !== rootHash ||
+            metadata.get("manifestHash") !== snapshot.manifestHash
+          )
+            return notIndexed;
           return {
             context: context as D4BrainContext,
             status: "ready",
@@ -499,10 +618,20 @@ export function createScopedBrain(options: {
         }
       } catch (error) {
         if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
-          return { ...base, status: "not-available" };
+          return notIndexed;
         return { ...base, status: "refused" };
       }
     });
   };
-  return { inventory, status, read, search, propose, indexStatuses };
+  return {
+    inventory,
+    status,
+    read,
+    search,
+    propose,
+    listProposals,
+    proposalCounts,
+    resolveProposal,
+    indexStatuses,
+  };
 }

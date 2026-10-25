@@ -3,7 +3,7 @@ import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import { createScopedBrain } from "./brain/scopedBrain.ts";
 import { createCtoClient } from "./cto/CtoClient.ts";
-import { contextScopeHash, projectInScope } from "./brainScope.ts";
+import { contextScopeHash, projectInScope, projectContentInScope } from "./brainScope.ts";
 import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
 import {
@@ -11,6 +11,7 @@ import {
   D4AgentError,
   D4BrainContext,
   type D4AgentSwitchContextInput,
+  type D4AgentResolveMemoryProposalInput,
   MessageId,
   ProjectId,
   ThreadId,
@@ -36,6 +37,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as D4AgentAccess from "./D4AgentAccess.ts";
 import * as D4AgentStore from "./D4AgentStore.ts";
@@ -51,6 +54,10 @@ import { contentFreeDigest, heartbeatDue, modelAvailability, usageAttributes } f
 export class D4Agent extends Context.Service<
   D4Agent,
   {
+    readonly newSession: () => Effect.Effect<typeof D4AgentEnsureThreadResult.Type, D4AgentError>;
+    readonly resolveMemoryProposal: (
+      input: D4AgentResolveMemoryProposalInput,
+    ) => Effect.Effect<D4AgentState, D4AgentError>;
     readonly switchContext: (
       input: D4AgentSwitchContextInput,
     ) => Effect.Effect<typeof D4AgentEnsureThreadResult.Type, D4AgentError>;
@@ -119,7 +126,7 @@ const actionTarget = (action: D4AgentAction) =>
   action.type === "start"
     ? action.projectId
     : "context" in action
-      ? action.context
+      ? `${action.type}:${action.context}`
       : action.threadId;
 export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
@@ -174,6 +181,8 @@ const cachedHealth = (
 export const layer = Layer.effect(
   D4Agent,
   Effect.gen(function* () {
+    const serviceScope = yield* Scope.Scope;
+    let ctoAsk: { id: string; fiber: Fiber.Fiber<void, never> } | undefined;
     const store = yield* D4AgentStore.D4AgentStore;
     const settingsService = yield* ServerSettings.ServerSettingsService;
     const providers = yield* ProviderRegistry.ProviderRegistry;
@@ -264,7 +273,10 @@ export const layer = Layer.effect(
       }
       yield* store.update((value) => ({ ...value, retiringThreadId: null }));
     });
-    const rotate = Effect.fn("D4Agent.rotate")(function* (context: D4BrainContext) {
+    const rotate = Effect.fn("D4Agent.rotate")(function* (
+      context: D4BrainContext,
+      reason: "context" | "new-session" = "context",
+    ) {
       yield* finishRetirement();
       const config = yield* settings;
       const threadId = ThreadId.make(yield* randomUUID);
@@ -278,6 +290,8 @@ export const layer = Layer.effect(
         brainContext: context,
         contextScopeHash: contextScopeHash(context, config),
         contextChangedAt: changedAt,
+        sessionChangeReason: reason,
+        bindings: [],
         heartbeatAt: 0,
         heartbeatKeys: [],
         usageCursor: "",
@@ -296,7 +310,7 @@ export const layer = Layer.effect(
         state.threadId !== null &&
         state.contextScopeHash !== contextScopeHash(state.brainContext, config)
       ) {
-        yield* rotate(state.brainContext);
+        yield* rotate(state.brainContext, "new-session");
         state = yield* store.get;
       }
       // Persist identity before commands so interrupted creation retries the same receipts.
@@ -586,6 +600,18 @@ export const layer = Layer.effect(
       return {
         brainContext: state.brainContext,
         contextChangedAt: state.contextChangedAt,
+        sessionChangeReason: state.sessionChangeReason ?? null,
+        ctoAskInFlight: ctoAsk !== undefined,
+        memoryProposals: yield* Effect.tryPromise({
+          try: () => brain.listProposals(state.brainContext),
+          catch: storageError,
+        }),
+        otherContextProposalCounts: (yield* Effect.tryPromise({
+          try: () => brain.proposalCounts(),
+          catch: storageError,
+        }))
+          .filter((entry) => entry.context !== state.brainContext && entry.pending > 0)
+          .map((entry) => ({ context: entry.context, count: entry.pending })),
         brainIndexes: yield* Effect.tryPromise({
           try: () =>
             brain.indexStatuses({ root: config.brainVaultPath, enabled: config.memoryEnabled }),
@@ -599,7 +625,9 @@ export const layer = Layer.effect(
           state.actions.filter(
             (record) =>
               record.context === state.brainContext &&
-              (record.sessionId === null || record.sessionId === state.threadId),
+              (record.action.type === "cto-ask" ||
+                record.sessionId === null ||
+                record.sessionId === state.threadId),
           ),
         ),
         systemHealth: cachedHealth(
@@ -612,10 +640,12 @@ export const layer = Layer.effect(
     const validateTarget = Effect.fn("D4Agent.validateTarget")(function* (action: D4AgentAction) {
       const { state, config } = yield* bound("context" in action ? action.context : undefined);
       if (action.type === "memory-propose") {
+        if (state.brainContext === "Global") return yield* new D4AgentError({ reason: "context" });
         if (!config.memoryEnabled) return yield* new D4AgentError({ reason: "memory-unavailable" });
         return;
       }
       if (action.type === "cto-ask") {
+        if (ctoAsk !== undefined) return yield* new D4AgentError({ reason: "busy" });
         if (state.brainContext !== "Dimaggi" || !config.ctoEnabled)
           return yield* new D4AgentError({ reason: "context" });
         return;
@@ -671,11 +701,12 @@ export const layer = Layer.effect(
         }).pipe(Effect.tapError(memoryFailure));
       }
       if (action.type === "cto-ask") {
-        return yield* cto
+        const ask = cto
           .ask({
             context: state.brainContext,
             enabled: config.ctoEnabled,
             baseUrl: config.ctoBaseUrl,
+            allowRemoteHost: process.env.D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
             text: action.text,
             permissionMode: config.permissionMode,
             approved: true,
@@ -688,6 +719,121 @@ export const layer = Layer.effect(
                 }),
             ),
           );
+        const run = Effect.scoped(
+          Effect.gen(function* () {
+            const changes = yield* settingsService.subscribeChanges;
+            const disabled = changes.pipe(
+              Stream.filter((value) => !value.d4Agent.enabled || !value.d4Agent.ctoEnabled),
+              Stream.runHead,
+              Effect.flatMap((value) =>
+                Option.isSome(value)
+                  ? Effect.fail(new D4AgentError({ reason: "disabled" }))
+                  : Effect.never,
+              ),
+            );
+            const latestConfig = yield* settings;
+            const result = yield* Effect.result(
+              latestConfig.enabled && latestConfig.ctoEnabled
+                ? Effect.raceFirst(ask, disabled)
+                : Effect.fail(new D4AgentError({ reason: "disabled" })),
+            );
+            yield* lock.withPermits(1)(
+              Effect.gen(function* () {
+                const current = yield* store.get;
+                const latest = yield* settings;
+                const canPost =
+                  result._tag === "Success" &&
+                  latest.enabled &&
+                  latest.ctoEnabled &&
+                  current.threadId === record.sessionId &&
+                  current.brainContext === record.context &&
+                  current.contextScopeHash === contextScopeHash(current.brainContext, latest);
+                const answer =
+                  result._tag === "Success"
+                    ? typeof result.success === "object" &&
+                      result.success !== null &&
+                      "reply" in result.success &&
+                      typeof result.success.reply === "string"
+                      ? result.success.reply
+                      : yield* encodeDigest(result.success).pipe(Effect.mapError(storageError))
+                    : result.failure.message;
+                if (canPost && record.sessionId !== null) {
+                  yield* threads
+                    .dispatch({
+                      type: "thread.system-message.record",
+                      commandId: command(`cto-result:${record.id}`),
+                      threadId: record.sessionId,
+                      messageId: MessageId.make(`d4-cto:${record.id}`),
+                      text: answer,
+                      title: "CTO answer",
+                    })
+                    .pipe(Effect.mapError(threadError));
+                }
+                const resolvedAt = DateTime.formatIso(yield* DateTime.now);
+                yield* store.update((value) => ({
+                  ...value,
+                  actions: value.actions.map((entry) =>
+                    entry.id === record.id
+                      ? {
+                          ...entry,
+                          status:
+                            result._tag === "Success" ? ("executed" as const) : ("failed" as const),
+                          resolvedAt,
+                          result: D4AgentStore.ctoPreview(
+                            `${canPost ? "Posted to chat" : "Action log only"}: ${answer}`,
+                          ),
+                        }
+                      : entry,
+                  ),
+                }));
+              }),
+            );
+          }),
+        ).pipe(
+          Effect.onInterrupt(() =>
+            store
+              .update((value) => ({
+                ...value,
+                actions: value.actions.map((entry) =>
+                  entry.id === record.id
+                    ? {
+                        ...entry,
+                        status: "failed" as const,
+                        result: "CTO question cancelled; no automatic retry.",
+                      }
+                    : entry,
+                ),
+              }))
+              .pipe(Effect.ignore),
+          ),
+          Effect.catch(() =>
+            store
+              .update((value) => ({
+                ...value,
+                actions: value.actions.map((entry) =>
+                  entry.id === record.id
+                    ? {
+                        ...entry,
+                        status: "failed" as const,
+                        result: "CTO answer could not be posted; no automatic retry.",
+                      }
+                    : entry,
+                ),
+              }))
+              .pipe(
+                Effect.ignore,
+                Effect.andThen(Effect.logWarning("d4 Agent CTO answer delivery failed")),
+              ),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (ctoAsk?.id === record.id) ctoAsk = undefined;
+            }),
+          ),
+        );
+        const fiber = yield* run.pipe(Effect.forkIn(serviceScope));
+        ctoAsk = { id: record.id, fiber };
+        return "Asked, answer will be posted.";
       }
       if (action.type === "start") {
         const config = yield* settings;
@@ -816,7 +962,12 @@ export const layer = Layer.effect(
               state.threadId === null
                 ? null
                 : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
-            const scope = own?.activeRunId;
+            const scope =
+              own?.activeRunId == null
+                ? undefined
+                : "context" in action
+                  ? `${own.activeRunId}:${action.type}`
+                  : own.activeRunId;
             const target = actionTarget(action);
             // A persisted reservation is consumed before dispatch, including failed attempts.
             if (
@@ -886,6 +1037,8 @@ export const layer = Layer.effect(
     const tick = lock.withPermits(1)(
       Effect.gen(function* () {
         const config = yield* settings;
+        if ((!config.enabled || !config.ctoEnabled) && ctoAsk !== undefined)
+          yield* Fiber.interrupt(ctoAsk.fiber);
         yield* captureUsage;
         const health = yield* systemHealth();
         if (!config.enabled || config.heartbeatMinutes === null) return;
@@ -932,6 +1085,25 @@ export const layer = Layer.effect(
       }),
     );
     return D4Agent.of({
+      newSession: () =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            yield* selected;
+            yield* rotate((yield* store.get).brainContext, "new-session");
+            return yield* ensure();
+          }),
+        ),
+      resolveMemoryProposal: (input) =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            const { state } = yield* bound();
+            yield* Effect.tryPromise({
+              try: () => brain.resolveProposal(state.brainContext, input.proposalId, input.approve),
+              catch: storageError,
+            });
+            return yield* getState();
+          }),
+        ),
       switchContext: (input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -944,29 +1116,39 @@ export const layer = Layer.effect(
           }),
         ),
       memorySearch: (input) =>
-        lock.withPermits(1)(
-          Effect.gen(function* () {
-            const { state, config } = yield* bound(input.context);
-            if (!config.memoryEnabled)
-              return yield* new D4AgentError({ reason: "memory-unavailable" });
-            const all = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
-            return yield* Effect.tryPromise({
-              try: () =>
-                brain.search({
-                  root: config.brainVaultPath,
-                  context: state.brainContext,
-                  query: input.query,
-                  ...(input.limit === undefined ? {} : { limit: input.limit }),
-                  embeddings: {
-                    enabled: config.embeddingsEnabled,
-                    baseUrl: config.embeddingBaseUrl ?? all.secondBrain.embeddings.baseUrl,
-                    model: config.embeddingModel ?? all.secondBrain.embeddings.model,
-                  },
-                }),
-              catch: () => new D4AgentError({ reason: "context" }),
-            }).pipe(Effect.tapError(memoryFailure));
-          }),
-        ),
+        Effect.gen(function* () {
+          const { state, config } = yield* lock.withPermits(1)(bound(input.context));
+          if (!config.memoryEnabled)
+            return yield* new D4AgentError({ reason: "memory-unavailable" });
+          const all = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+          const result = yield* Effect.tryPromise({
+            try: () =>
+              brain.search({
+                root: config.brainVaultPath,
+                context: state.brainContext,
+                query: input.query,
+                ...(input.limit === undefined ? {} : { limit: input.limit }),
+                embeddings: {
+                  enabled: config.embeddingsEnabled,
+                  baseUrl: config.embeddingBaseUrl ?? all.secondBrain.embeddings.baseUrl,
+                  model: config.embeddingModel ?? all.secondBrain.embeddings.model,
+                },
+              }),
+            catch: () => new D4AgentError({ reason: "context" }),
+          }).pipe(Effect.tapError(memoryFailure));
+          return yield* lock.withPermits(1)(
+            Effect.gen(function* () {
+              const current = yield* bound(input.context);
+              if (
+                current.state.threadId !== state.threadId ||
+                !current.config.memoryEnabled ||
+                current.state.contextScopeHash !== state.contextScopeHash
+              )
+                return yield* new D4AgentError({ reason: "context" });
+              return result;
+            }),
+          );
+        }),
       memoryRead: (input) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -996,6 +1178,7 @@ export const layer = Layer.effect(
               context: state.brainContext,
               enabled: config.ctoEnabled,
               baseUrl: config.ctoBaseUrl,
+              allowRemoteHost: process.env.D4_AGENT_CTO_ALLOW_REMOTE_HOST === "1",
             }).pipe(
               Effect.mapError(
                 (error) =>
@@ -1022,7 +1205,9 @@ export const layer = Layer.effect(
                 (entry) =>
                   entry.id === actionId &&
                   entry.context === state.brainContext &&
-                  (entry.sessionId === null || entry.sessionId === state.threadId),
+                  (entry.action.type === "cto-ask" ||
+                    entry.sessionId === null ||
+                    entry.sessionId === state.threadId),
               ) ?? null,
           ),
         ),
@@ -1048,7 +1233,14 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const visible = yield* scopedThreads();
-            if (!visible.some((thread) => thread.id === threadId))
+            const { state, config } = yield* bound();
+            if (
+              !visible.some(
+                (thread) =>
+                  thread.id === threadId &&
+                  projectContentInScope(state.brainContext, config, thread.projectId),
+              )
+            )
               return yield* new D4AgentError({ reason: "context" });
             return yield* projections
               .getThreadSnapshotWindow(threadId, {

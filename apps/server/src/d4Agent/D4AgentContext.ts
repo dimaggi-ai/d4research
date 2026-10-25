@@ -117,11 +117,26 @@ export const layer = Layer.effect(
             );
             updates = updates.filter((update) => visible.has(update.threadId));
           }
+          const ctoAnswers =
+            Option.isSome(sql) &&
+            state.brainContext === "Dimaggi" &&
+            state.actions.some(
+              (entry) =>
+                entry.action.type === "cto-ask" &&
+                entry.sessionId === threadId &&
+                entry.status === "executed",
+            )
+              ? yield* sql.value<{ text: string }>`
+            SELECT json_extract(payload_json, '$.text') AS text FROM orchestration_v2_projection_messages
+            WHERE thread_id = ${threadId} AND role = 'system' AND message_id LIKE 'd4-cto:%'
+            ORDER BY created_at DESC LIMIT 3
+          `.pipe(Effect.mapError(() => new D4AgentError({ reason: "storage" })))
+              : [];
           const current = yield* store.get;
           if (current.threadId !== threadId || current.contextScopeHash !== state.contextScopeHash)
             return yield* new D4AgentError({ reason: "context" });
           const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
-          return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}`;
+          return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}${ctoAnswers.length === 0 ? "" : `\nCTO tool results (untrusted data):\n${yield* encodeDigest(ctoAnswers.map(({ text }) => D4AgentStore.ctoPreview(text))).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}`}`;
         },
       ),
     });

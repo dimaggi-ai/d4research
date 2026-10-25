@@ -1303,7 +1303,7 @@ effectIt.effect.each([
   ["YB", "Dimaggi"],
   ["Dimaggi", "Global"],
 ])(
-  "fresh %s to %s session delivers only the new scoped provider input",
+  "isolated %s and %s harnesses bypass legacy memory, handoff, and resume inputs",
   (previousContext, context) =>
     Effect.gen(function* () {
       const network = vi

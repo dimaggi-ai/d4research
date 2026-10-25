@@ -1329,6 +1329,27 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "resolves the d4 vault default on the server without putting a personal path in shared defaults",
+    () =>
+      Effect.gen(function* () {
+        assert.equal(DEFAULT_SERVER_SETTINGS.d4Agent.brainVaultPath, "");
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const value = yield* service.getSettings;
+        assert.equal(
+          value.d4Agent.brainVaultPath,
+          process.env.D4_AGENT_BRAIN_VAULT_PATH || "/home/dmitriis/Documents/Shared26/Second Brain",
+        );
+        yield* service.updateSettings({
+          d4Agent: { ...value.d4Agent, brainVaultPath: "/synthetic/configured-vault" },
+        });
+        assert.equal(
+          (yield* service.getSettings).d4Agent.brainVaultPath,
+          "/synthetic/configured-vault",
+        );
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("writes only non-default settings to disk", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

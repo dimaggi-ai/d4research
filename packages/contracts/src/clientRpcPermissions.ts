@@ -15,6 +15,8 @@ import { WS_METHODS } from "./rpc.ts";
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.d4AgentEnsureThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentSwitchContext]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentNewSession]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentResolveMemoryProposal]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentSendMessage]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentResolveAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentClaimSystemAttention]: AuthOrchestrationReadScope,

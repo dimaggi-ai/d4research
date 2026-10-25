@@ -57,6 +57,7 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
   const status = {
     ready: "Ready",
     "not-available": "Not available",
+    "not-indexed": "Not indexed",
     disabled: "Off",
   }[index.status];
   return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;

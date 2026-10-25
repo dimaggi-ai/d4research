@@ -60,7 +60,7 @@ import {
   RuntimeMode,
   ThreadLinkedPullRequest,
   ThreadId,
-  type TurnItemId,
+  TurnItemId,
 } from "@d4research/contracts";
 import { modelSelectionsEqual } from "@d4research/shared/model";
 import {
@@ -487,6 +487,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "checkpoint.rollback.fail":
     case "thread.background-work.settle":
     case "thread.stop":
+    case "thread.system-message.record":
     case "provider.switch":
       return command.threadId;
     case "delegated_task.request":
@@ -875,16 +876,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   }) =>
     input.adapter.getCapabilities().pipe(
       Effect.flatMap((capabilities) =>
-        capabilities.sessions.supportsMultipleProviderThreadsPerSession
-          ? Effect.succeed(
-              idAllocator.derive.providerSession({
+        Effect.gen(function* () {
+          return yield* capabilities.sessions.supportsMultipleProviderThreadsPerSession &&
+          !(yield* ownsD4Agent(input.threadId))
+            ? Effect.succeed(
+                idAllocator.derive.providerSession({
+                  providerInstanceId: input.providerInstanceId,
+                }),
+              )
+            : idAllocator.allocate.providerSession({
                 providerInstanceId: input.providerInstanceId,
-              }),
-            )
-          : idAllocator.allocate.providerSession({
-              providerInstanceId: input.providerInstanceId,
-              threadId: input.threadId,
-            }),
+                threadId: input.threadId,
+              });
+        }),
       ),
     );
 
@@ -10706,6 +10710,70 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
       | undefined;
     switch (command.type) {
+      case "thread.system-message.record": {
+        const now = yield* DateTime.now;
+        const thread = yield* projectionStore
+          .getThread(command.threadId)
+          .pipe(mapDispatchError(command));
+        if (thread.deletedAt !== null)
+          return yield* new OrchestratorCommandRejectedError({
+            commandId: command.commandId,
+            commandType: command.type,
+          });
+        const message: OrchestrationV2ConversationMessage = {
+          id: command.messageId,
+          threadId: command.threadId,
+          runId: null,
+          nodeId: null,
+          role: "system",
+          text: command.text,
+          attachments: [],
+          streaming: false,
+          createdBy: "system",
+          creationSource: "server",
+          createdAt: now,
+          updatedAt: now,
+        };
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "message.updated",
+          threadId: command.threadId,
+          occurredAt: now,
+          payload: message,
+        });
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "turn-item.updated",
+          threadId: command.threadId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(command.messageId),
+            threadId: command.threadId,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: yield* nextTurnItemOrdinal({ thread, turnItems: [] }),
+            status: "completed",
+            title: command.title,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            type: "notification",
+            source: { kind: "system" },
+            outcome: "completed",
+            summary: command.title,
+            detail: command.text,
+          },
+        });
+        break;
+      }
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
         break;

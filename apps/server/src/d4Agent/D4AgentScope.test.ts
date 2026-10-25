@@ -152,11 +152,12 @@ it.effect(
         const service = yield* AgentContext.D4AgentContext.pipe(
           Effect.provide(f.contextLayer(reopened)),
         );
-        assert.equal((yield* reopened.get).bindings.length, 1);
+        assert.equal((yield* reopened.get).bindings.length, 0);
         const prefix = yield* service.prepare(newThread, selection, "existing-provider-session");
         assert.include(prefix!, "marker-work-b");
         assert.notInclude(prefix!, "marker-work-a");
-        assert.equal((yield* reopened.get).bindings.length, 2);
+        assert.equal((yield* reopened.get).bindings.length, 1);
+        assert.equal((yield* reopened.get).bindings[0]?.threadId, newThread);
         const old = yield* Effect.result(
           service.prepare(oldThread, selection, "existing-provider-session"),
         );
@@ -180,7 +181,8 @@ it.effect(
             assert.isUndefined(rebound.failure.cause);
           }
         }
-        assert.equal((yield* reopened.get).bindings.length, 2);
+        assert.equal((yield* reopened.get).bindings.length, 1);
+        assert.equal((yield* reopened.get).bindings[0]?.threadId, newThread);
       }),
     ).pipe(Effect.provide(testLayer)),
 );

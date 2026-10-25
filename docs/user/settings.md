@@ -61,15 +61,16 @@ approval. **Act** can interrupt a run or answer a user-input request; sending a
 message to another thread and starting a thread still require confirmation.
 Act also creates pending memory proposals and sends CTO questions when those
 features are enabled for the selected context. Memory proposals always need
-human review before they can become approved knowledge.
+human review. Approval does not change the vault.
 Provider permission approvals remain manual. Proposed actions and their outcomes
 appear above the agent conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
 Select **Global**, **Personal**, **YB**, or **Dimaggi** above the agent conversation
 before asking about memory. Changing context starts a new session without the
-previous conversation or summary. Changing the vault path or project mappings
-also requires a fresh session; reopen d4 Agent to start it.
+previous conversation or summary. Choose **New session** to reset the conversation
+within the current context. Changing the vault path or the project mappings for the current
+context also requires a fresh session; reopen d4 Agent to start it.
 
 Enable **Brain memory** in the d4 Agent settings and set **Brain vault path** to the
 vault on the environment's host. Memory reads only files approved by that
@@ -80,21 +81,33 @@ source blocks retrieval until its configuration has been reviewed.
 
 Map each project to a context in the same settings section. A work context's
 agent digest, thread reads, and attention list include only its mapped projects.
-Global monitoring includes every project, including unmapped projects.
+Global monitoring shows metadata for every project. In Global, the agent can read
+messages only from projects with no context mapping. Choose **Unmapped** in a project's context
+setting to remove its mapping. Switch to the mapped context to read a work
+project's messages.
 Notifications outside the agent conversation keep their existing behavior.
 
 **Brain embeddings** are optional. Blank endpoint and model fields use the existing
 Second Brain embedding settings. If embedding requests fail, keyword search still
-works. The index status shows files indexed and the last rebuild for each context;
-indexes rebuild from approved sources when retrieval detects a manifest change.
-Memory proposals are saved in d4 state for human review. The agent never edits
-vault files or source manifests and never uses another memory system as a fallback.
+works. The index status shows the approved file count and the last rebuild for each context.
+**Not indexed** means the current approved sources need indexing. Retrieval builds
+the index from approved sources and rebuilds it when a manifest changes.
+Global sessions cannot create memory proposals. Review memory proposals above the
+agent conversation with **Approve** or **Reject**.
+The list shows proposals from the current context and pending counts for other contexts.
+Approved proposals have a **Copy text** action so you can add them to the vault
+manually. Approval changes only the proposal status in d4 state; it does not add
+knowledge to the vault. The agent never edits vault files or source manifests and
+never uses another memory system as a fallback.
 
 CTO tools are available only in Dimaggi sessions. Enable **CTO agents** to use them. The default
 **CTO base URL** is `http://127.0.0.1:9093` on the environment's host. Status,
 brief, and task-list reads are available at every permission level. CTO questions
-require Ask approval or Act mode. Task execution, task changes, direction saves,
-and service operations are unavailable through these tools.
+require Ask approval or Act mode. Only one question can run at a time. The agent
+can continue while it waits, and the answer appears in the same session. If you
+change context or start a new session before it arrives, a preview stays in the
+action log. Disabling the agent or **CTO agents** cancels the request. Task execution, task changes,
+direction saves, and service operations are unavailable through these tools.
 
 **Heartbeat** is off by default. Choose 15, 30, or 60 minutes to let the selected
 model summarize changed attention items in the conversation. Quiet hours apply to

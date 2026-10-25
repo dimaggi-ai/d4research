@@ -17,9 +17,21 @@ export const D4AgentSwitchContextInput = Schema.Struct({ context: D4BrainContext
 export type D4AgentSwitchContextInput = typeof D4AgentSwitchContextInput.Type;
 export const D4BrainIndexStatus = Schema.Struct({
   context: D4BrainContext,
-  status: Schema.Literals(["ready", "not-available", "disabled", "refused"]),
+  status: Schema.Literals(["ready", "not-indexed", "not-available", "disabled", "refused"]),
   files: NonNegativeInt,
   lastRebuild: Schema.NullOr(IsoDateTime),
+});
+export const D4AgentResolveMemoryProposalInput = Schema.Struct({
+  proposalId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  approve: Schema.Boolean,
+});
+export type D4AgentResolveMemoryProposalInput = typeof D4AgentResolveMemoryProposalInput.Type;
+export const D4MemoryProposal = Schema.Struct({
+  id: Schema.String,
+  context: D4BrainContext,
+  text: Schema.String,
+  status: Schema.Literals(["pending", "approved", "rejected"]),
+  createdAt: Schema.NullOr(IsoDateTime),
 });
 export const D4AgentQuietHours = Schema.Struct({
   startMinute: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1439 })),
@@ -28,7 +40,7 @@ export const D4AgentQuietHours = Schema.Struct({
 });
 export const D4AgentSettings = Schema.Struct({
   brainVaultPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(
-    Schema.withDecodingDefault(Effect.succeed("/home/dmitriis/Documents/Shared26/Second Brain")),
+    Schema.withDecodingDefault(Effect.succeed("")),
   ),
   memoryEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   embeddingsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -65,7 +77,7 @@ export const D4AgentSettings = Schema.Struct({
 });
 export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
-  brainVaultPath: "/home/dmitriis/Documents/Shared26/Second Brain",
+  brainVaultPath: "",
   memoryEnabled: false,
   embeddingsEnabled: false,
   embeddingBaseUrl: null,
@@ -175,6 +187,14 @@ export const D4AgentTurnUsage = Schema.Struct({
 });
 export type D4AgentTurnUsage = typeof D4AgentTurnUsage.Type;
 export const D4AgentState = Schema.Struct({
+  sessionChangeReason: Schema.optionalKey(
+    Schema.NullOr(Schema.Literals(["context", "new-session"])),
+  ),
+  memoryProposals: Schema.optionalKey(Schema.Array(D4MemoryProposal)),
+  otherContextProposalCounts: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ context: D4BrainContext, count: NonNegativeInt })),
+  ),
+  ctoAskInFlight: Schema.optionalKey(Schema.Boolean),
   brainContext: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   contextChangedAt: Schema.NullOr(IsoDateTime).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),

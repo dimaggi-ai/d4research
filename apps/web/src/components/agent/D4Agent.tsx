@@ -17,7 +17,7 @@ import {
   type ThreadId,
 } from "@d4research/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -152,6 +152,15 @@ function D4AgentPanelContent({
   const query = useD4AgentState(environmentId);
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
+  const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
+  const canStartSession = useAtomValue(
+    serverEnvironment.newD4AgentSession.permissionAtom(environmentId),
+  );
+  const resolveProposal = useAtomCommand(serverEnvironment.resolveD4AgentMemoryProposal);
+  const canResolveProposal = useAtomValue(
+    serverEnvironment.resolveD4AgentMemoryProposal.permissionAtom(environmentId),
+  );
+  const [startingSession, setStartingSession] = useState(false);
   const canSwitch = useAtomValue(
     serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
   );
@@ -167,6 +176,9 @@ function D4AgentPanelContent({
   const monitorEnabled = config?.settings.agentMonitor.enabled === true;
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
+  const proposals = (state.memoryProposals ?? []).filter(
+    (proposal) => proposal.context === state.brainContext,
+  );
   const attention = monitorEnabled
     ? monitorAttentionThreads(
         threads.filter(
@@ -196,7 +208,7 @@ function D4AgentPanelContent({
           aria-label="Agent context"
           className="rounded-full border border-input bg-background px-3 py-1 text-sm focus-visible:outline focus-visible:outline-ring"
           value={state.brainContext}
-          disabled={!canSwitch || switching}
+          disabled={!canSwitch || switching || startingSession}
           onChange={async (event) => {
             const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
             if (!context || context === state.brainContext) return;
@@ -225,11 +237,39 @@ function D4AgentPanelContent({
             </option>
           ))}
         </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canStartSession || switching || startingSession}
+          onClick={async () => {
+            setStartingSession(true);
+            setActionError(null);
+            await newSession({ environmentId, input: {} })
+              .then(async (result) => {
+                if (
+                  result._tag === "Failure" ||
+                  !(await waitForAgentThread(environmentId, result.value.threadId))
+                )
+                  setActionError("Could not start a new session.");
+                else
+                  await navigate({
+                    to: "/$environmentId/$threadId",
+                    params: { environmentId, threadId: result.value.threadId },
+                  });
+              })
+              .catch(() => setActionError("Could not start a new session."))
+              .finally(() => setStartingSession(false));
+          }}
+        >
+          {startingSession ? "Starting session…" : "New session"}
+        </Button>
         {switching ? <span role="status">Switching context…</span> : null}
       </div>
-      {state.contextChangedAt ? (
+      {state.sessionChangeReason ? (
         <p role="status" className="mb-2 border-b pb-2 text-xs text-muted-foreground">
-          Context changed to {state.brainContext}. New session.
+          {state.sessionChangeReason === "new-session"
+            ? "New session."
+            : `Context changed to ${state.brainContext}. New session.`}
         </p>
       ) : null}
       <div className="flex items-center justify-between gap-2">
@@ -263,6 +303,76 @@ function D4AgentPanelContent({
       {state.systemHealth.map((check) => (
         <p key={check.id} className="py-1 text-muted-foreground">
           {systemCheckLabel(check)}: {systemCheckStatus(check)}
+        </p>
+      ))}
+      {state.ctoAskInFlight ? <p role="status">CTO question in progress.</p> : null}
+      {proposals.length > 0 ? (
+        <section aria-label="Memory proposals" className="space-y-2 py-2">
+          <h2 className="font-medium">Memory proposals · {proposals.length}</h2>
+          {proposals.map((proposal) => (
+            <div key={proposal.id} className="space-y-2 rounded border p-2">
+              <p className="text-xs text-muted-foreground">
+                {proposal.context} ·{" "}
+                {proposal.createdAt === null ? (
+                  "Creation time unavailable"
+                ) : (
+                  <time dateTime={proposal.createdAt}>{proposal.createdAt}</time>
+                )}{" "}
+                · {proposal.status}
+              </p>
+              <p className="whitespace-pre-wrap break-words select-text">{proposal.text}</p>
+              {proposal.status === "pending" ? (
+                <div className="flex gap-2">
+                  {[true, false].map((approve) => (
+                    <Button
+                      key={String(approve)}
+                      size="sm"
+                      variant={approve ? "outline" : "ghost"}
+                      disabled={!canResolveProposal || busy !== null}
+                      onClick={async () => {
+                        setBusy(proposal.id);
+                        setActionError(null);
+                        await resolveProposal({
+                          environmentId,
+                          input: { proposalId: proposal.id, approve },
+                        })
+                          .then((result) => {
+                            if (result._tag === "Failure")
+                              setActionError("Could not review this memory proposal.");
+                            query.refresh();
+                          })
+                          .catch(() => setActionError("Could not review this memory proposal."))
+                          .finally(() => setBusy(null));
+                      }}
+                    >
+                      {approve ? "Approve" : "Reject"}
+                    </Button>
+                  ))}
+                </div>
+              ) : proposal.status === "approved" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(proposal.text);
+                    } catch {
+                      setActionError(
+                        "Could not copy this memory proposal. Select the text to copy it.",
+                      );
+                    }
+                  }}
+                >
+                  Copy text
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {(state.otherContextProposalCounts ?? []).map(({ context, count }) => (
+        <p key={context} className="text-xs text-muted-foreground">
+          Pending memory proposals · {context}: {count}
         </p>
       ))}
       {state.actionLog
@@ -330,6 +440,17 @@ function AgentActionRecord({
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
+  const refreshDetail = useEffectEvent(detail.refresh);
+  const previousResolution = useRef({ status: record.status, resolvedAt: record.resolvedAt });
+  useEffect(() => {
+    if (
+      reviewing &&
+      (previousResolution.current.status !== record.status ||
+        previousResolution.current.resolvedAt !== record.resolvedAt)
+    )
+      refreshDetail();
+    previousResolution.current = { status: record.status, resolvedAt: record.resolvedAt };
+  }, [record.status, record.resolvedAt, reviewing]);
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   return (
@@ -347,11 +468,16 @@ function AgentActionRecord({
             {
               context: detail.data.context,
               action: detail.data.action,
-              result: detail.data.result,
+              ...(typeof detail.data.result === "string" ? {} : { result: detail.data.result }),
             },
             null,
             2,
           )}
+        </pre>
+      ) : null}
+      {reviewing && typeof detail.data?.result === "string" ? (
+        <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
+          {detail.data.result}
         </pre>
       ) : null}
       {detail.error ? <p role="alert">{detail.error}</p> : null}

@@ -67,7 +67,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_memory_propose", {
     ...shared,
     description:
-      "Create a pending memory proposal for human review. Never changes the vault. Read-only denies; Ask requires approval; Act creates the pending proposal.",
+      "Create a pending memory proposal for human review in a work context. Proposals are disabled in Global. Never changes the vault. Read-only denies; Ask requires approval; Act creates the pending proposal.",
     parameters: Schema.Struct({
       context: D4BrainContext,
       text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
@@ -89,7 +89,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_cto_ask", {
     ...shared,
     description:
-      "Ask the CTO server a question. Read-only denies; Ask requires approval; Act sends it. Task execution and service operations are unavailable.",
+      "Ask the CTO server a question asynchronously. Read-only denies; Ask requires approval; Act sends it. After sending, the tool returns immediately. The answer is posted only to the originating session; do not retry while it is in progress. Task execution and service operations are unavailable.",
     parameters: Schema.Struct({
       context: D4BrainContext,
       text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),

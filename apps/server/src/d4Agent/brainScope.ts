@@ -9,13 +9,25 @@ export function projectInScope(
   return context === "Global" || settings.projectContexts[ProjectId.make(projectId)] === context;
 }
 
-// A mapping or vault-root change invalidates sessions that already saw the old scope.
+export function projectContentInScope(
+  context: D4BrainContext,
+  settings: D4AgentSettings,
+  projectId: string,
+): boolean {
+  const mapped = settings.projectContexts[ProjectId.make(projectId)];
+  return context === "Global" ? mapped === undefined : mapped === context;
+}
+
+// Only membership changes affecting the bound context retire its session.
 export function contextScopeHash(context: D4BrainContext, settings: D4AgentSettings): string {
   return sha256Hex(
     JSON.stringify([
       context,
       settings.brainVaultPath,
-      Object.entries(settings.projectContexts).sort(([a], [b]) => a.localeCompare(b)),
+      Object.entries(settings.projectContexts)
+        .filter(([, mapped]) => context === "Global" || mapped === context)
+        .map(([id]) => id)
+        .sort(),
     ]),
   );
 }

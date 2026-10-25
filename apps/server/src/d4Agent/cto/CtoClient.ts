@@ -42,6 +42,7 @@ export type CtoRequest = {
   readonly context: string;
   readonly enabled: boolean;
   readonly baseUrl?: string;
+  readonly allowRemoteHost?: boolean;
 };
 
 export type CtoAskRequest = CtoRequest & {
@@ -61,6 +62,16 @@ export class CtoClient extends Context.Service<
   }
 >()("d4research/d4Agent/cto/CtoClient") {}
 
+export function isLocalCtoHost(host: string): boolean {
+  if (host === "localhost" || host === "[::1]") return true;
+  const parts = host.split(".").map(Number);
+  return (
+    parts.length === 4 &&
+    parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) &&
+    (parts[0] === 127 || (parts[0] === 100 && parts[1]! >= 64 && parts[1]! <= 127))
+  );
+}
+
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -73,6 +84,7 @@ export function createCtoClient(): CtoClient["Service"] {
         text?: string,
       ) => Effect.Effect<unknown, CtoClientError, Scope.Scope>,
     ) => Effect.Effect<A, CtoClientError, Scope.Scope>,
+    deadline: "5 seconds" | "450 seconds" = "5 seconds",
   ): Effect.Effect<A, CtoClientError> =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -88,7 +100,8 @@ export function createCtoClient(): CtoClient["Service"] {
           base.password ||
           base.pathname !== "/" ||
           base.search ||
-          base.hash
+          base.hash ||
+          (!input.allowRemoteHost && !isLocalCtoHost(base.hostname))
         )
           return yield* new CtoClientError({ reason: "configuration" });
         const client = HttpClient.withScope(yield* HttpClient.HttpClient);
@@ -106,6 +119,7 @@ export function createCtoClient(): CtoClient["Service"] {
           const response = yield* client
             .execute(req)
             .pipe(Effect.mapError((cause) => new CtoClientError({ reason: "unreachable", cause })));
+          if (path === "/api/brief" && response.status === 404) return { status: "no brief yet" };
           if (response.status < 200 || response.status >= 300)
             return yield* new CtoClientError({ reason: "unreachable" });
           const declared = Number(response.headers["content-length"]);
@@ -132,7 +146,7 @@ export function createCtoClient(): CtoClient["Service"] {
       }),
     ).pipe(
       Effect.timeoutOrElse({
-        duration: "5 seconds",
+        duration: deadline,
         orElse: () => Effect.fail(new CtoClientError({ reason: "unreachable" })),
       }),
       // Fetch otherwise follows redirects before response status can be checked.
@@ -152,14 +166,18 @@ export function createCtoClient(): CtoClient["Service"] {
         }),
       ),
     ask: (input) =>
-      perform(input, (request) => {
-        if (
-          input.permissionMode !== "act" &&
-          !(input.permissionMode === "ask" && input.approved === true)
-        )
-          return Effect.fail(new CtoClientError({ reason: "permission" }));
-        return request("/api/chat", input.text);
-      }),
+      perform(
+        input,
+        (request) => {
+          if (
+            input.permissionMode !== "act" &&
+            !(input.permissionMode === "ask" && input.approved === true)
+          )
+            return Effect.fail(new CtoClientError({ reason: "permission" }));
+          return request("/api/chat", input.text);
+        },
+        "450 seconds",
+      ),
   });
 }
 

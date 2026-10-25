@@ -180,15 +180,25 @@ export function D4AgentControls({
           key={project.id}
           icon="gearshape"
           label={`Context · ${project.title}`}
-          value={agent.projectContexts[project.id] ?? "Global"}
+          value={agent.projectContexts[project.id] ?? ""}
           disabled={disabled}
-          options={D4_BRAIN_CONTEXTS.map((context) => ({ id: context, label: context }))}
+          options={[
+            { id: "", label: "Unmapped" },
+            ...(agent.projectContexts[project.id] === "Global"
+              ? [{ id: "Global", label: "Global (mapped)" }]
+              : []),
+            ...D4_BRAIN_CONTEXTS.filter((context) => context !== "Global").map((context) => ({
+              id: context,
+              label: context,
+            })),
+          ]}
           onChange={(value) => {
             const context = D4_BRAIN_CONTEXTS.find((item) => item === value);
-            if (context)
-              void writeAgent({
-                projectContexts: { ...agent.projectContexts, [project.id]: context },
-              });
+            const projectContexts = Object.fromEntries(
+              Object.entries(agent.projectContexts).filter(([id]) => id !== project.id),
+            );
+            if (context) projectContexts[project.id] = context;
+            void writeAgent({ projectContexts });
           }}
         />
       ))}

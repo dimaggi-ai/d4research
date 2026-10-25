@@ -63,6 +63,8 @@ describe("command permissions", () => {
   it.effect.each([
     WS_METHODS.d4AgentEnsureThread,
     WS_METHODS.d4AgentSwitchContext,
+    WS_METHODS.d4AgentNewSession,
+    WS_METHODS.d4AgentResolveMemoryProposal,
     WS_METHODS.d4AgentSendMessage,
     WS_METHODS.d4AgentResolveAction,
   ])("rechecks destination operate permission for d4 Agent %s", (method) =>

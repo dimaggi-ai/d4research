@@ -1041,6 +1041,22 @@ export function createServerEnvironmentAtoms<R, E>(
           registry.refresh(d4AgentIdentity({ environmentId, input: {} }));
         }),
     }),
+    newD4AgentSession: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:new-d4-agent-session",
+      tag: WS_METHODS.d4AgentNewSession,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(d4AgentState({ environmentId, input: {} }));
+          registry.refresh(d4AgentIdentity({ environmentId, input: {} }));
+        }),
+    }),
+    resolveD4AgentMemoryProposal: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:resolve-d4-agent-memory-proposal",
+      tag: WS_METHODS.d4AgentResolveMemoryProposal,
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
+    }),
     sendD4AgentMessage: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:send-d4-agent-message",
       tag: WS_METHODS.d4AgentSendMessage,

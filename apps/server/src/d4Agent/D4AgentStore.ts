@@ -21,6 +21,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 
 export const StoredState = Schema.Struct({
+  sessionChangeReason: Schema.optionalKey(
+    Schema.NullOr(Schema.Literals(["context", "new-session"])),
+  ),
   retiringThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   brainContext: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   contextChangedAt: Schema.NullOr(IsoDateTime).pipe(
@@ -71,6 +74,32 @@ const empty: StoredState = {
   systemEpisodes: [],
   systemClaims: [],
 };
+export function ctoPreview(value: unknown): string {
+  const text = typeof value === "string" ? value : (JSON.stringify(value) ?? "");
+  const bytes = new TextEncoder().encode(text);
+  return bytes.length <= 4096
+    ? text
+    : new TextDecoder().decode(bytes.slice(0, 4080), { stream: true }) + "… [truncated]";
+}
+
+export function boundStoredState(state: StoredState): StoredState {
+  const ctoIds = new Set(
+    state.actions
+      .filter((a) => a.action.type === "cto-ask" && a.result !== undefined)
+      .slice(-10)
+      .map((a) => a.id),
+  );
+  return {
+    ...state,
+    bindings: state.bindings.filter((binding) => binding.threadId === state.threadId).slice(-16),
+    actions: state.actions.map((action) => {
+      if (action.action.type !== "cto-ask" || action.result === undefined) return action;
+      const { result, ...without } = action;
+      return ctoIds.has(action.id) ? { ...without, result: ctoPreview(result) } : without;
+    }),
+  };
+}
+
 export class D4AgentStore extends Context.Service<
   D4AgentStore,
   {
@@ -112,12 +141,23 @@ export const layer = Layer.effect(
           : Effect.fail(new D4AgentError({ reason: "storage", cause })),
       ),
     );
-    const state = yield* Ref.make<StoredState>({
-      ...initial,
-      actions: initial.actions.map((action) =>
-        action.status === "approved" ? { ...action, status: "pending" } : action,
-      ),
-    });
+    const state = yield* Ref.make<StoredState>(
+      boundStoredState({
+        ...initial,
+        actions: initial.actions.map((action) =>
+          action.action.type === "cto-ask" && action.result === "Asked, answer will be posted."
+            ? {
+                ...action,
+                status: "failed",
+                result: "CTO question interrupted by server restart; no automatic retry.",
+              }
+            : action.status === "approved"
+              ? { ...action, status: "pending" }
+              : action,
+        ),
+      }),
+    );
+    let persisted = yield* encodeState(initial);
     return D4AgentStore.of({
       workspace: path.join(directory, "workspace"),
       get: Ref.get(state),
@@ -126,18 +166,21 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const current = yield* Ref.get(state);
             const next = yield* Effect.try({
-              try: () => change(current),
+              try: () => boundStoredState(change(current)),
               catch: (cause) =>
                 Schema.is(D4AgentError)(cause)
                   ? cause
                   : new D4AgentError({ reason: "storage", cause }),
             });
+            const encoded = yield* encodeState(next);
+            if (encoded === persisted) return current;
             yield* fs.makeDirectory(directory, { recursive: true });
-            yield* fs.writeFileString(`${statePath}.tmp`, yield* encodeState(next), {
+            yield* fs.writeFileString(`${statePath}.tmp`, encoded, {
               mode: 0o600,
             });
             yield* fs.rename(`${statePath}.tmp`, statePath);
             yield* Ref.set(state, next);
+            persisted = encoded;
             return next;
           }).pipe(
             Effect.mapError((cause) =>

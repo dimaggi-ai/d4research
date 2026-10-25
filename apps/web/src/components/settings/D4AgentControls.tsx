@@ -192,16 +192,21 @@ export function D4AgentControls({
               aria-label={`Context for ${project.title}`}
               className={selectClass}
               disabled={disabled}
-              value={agent.projectContexts[project.id] ?? "Global"}
+              value={agent.projectContexts[project.id] ?? ""}
               onChange={(event) => {
                 const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
-                if (context)
-                  void writeAgent({
-                    projectContexts: { ...agent.projectContexts, [project.id]: context },
-                  });
+                const projectContexts = Object.fromEntries(
+                  Object.entries(agent.projectContexts).filter(([id]) => id !== project.id),
+                );
+                if (context) projectContexts[project.id] = context;
+                void writeAgent({ projectContexts });
               }}
             >
-              {D4_BRAIN_CONTEXTS.map((context) => (
+              <option value="">Unmapped</option>
+              {agent.projectContexts[project.id] === "Global" ? (
+                <option value="Global">Global (mapped)</option>
+              ) : null}
+              {D4_BRAIN_CONTEXTS.filter((context) => context !== "Global").map((context) => (
                 <option key={context} value={context}>
                   {context}
                 </option>

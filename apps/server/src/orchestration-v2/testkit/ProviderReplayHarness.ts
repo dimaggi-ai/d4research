@@ -15,6 +15,9 @@ import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
+import * as GitWorkflow from "../../git/GitWorkflowService.ts";
+import * as SecondBrain from "../../second-brain/SecondBrainService.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
@@ -263,6 +266,8 @@ export function layerWithRegistry<Error>(
     McpProviderSessions.McpProviderSessions
   >,
   options: {
+    readonly layerProjectService?: Layer.Layer<ProjectService.ProjectService>;
+    readonly layerSecondBrain?: Layer.Layer<SecondBrain.SecondBrainService>;
     readonly layerServerSettings?: Layer.Layer<ServerSettings.ServerSettingsService>;
     readonly layerDatabase?: Layer.Layer<
       SqlClient.SqlClient,
@@ -393,6 +398,8 @@ export function layerWithRegistry<Error>(
     ),
   );
   const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+    Layer.provide(layerServerSettings),
+    Layer.provide(options.layerSecondBrain ?? Layer.empty),
     Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
@@ -520,7 +527,20 @@ export function layerWithRegistry<Error>(
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
     layerCommandOutputHubProvided,
-  ).pipe(Layer.provide(ProviderTurnStartServiceTestkit.layer), Layer.provide(NodeServices.layer));
+  ).pipe(
+    Layer.provide(
+      options.layerProjectService === undefined
+        ? ProviderTurnStartServiceTestkit.layer
+        : Layer.merge(
+            options.layerProjectService,
+            Layer.mock(GitWorkflow.GitWorkflowService)({
+              pruneWorktrees: () => Effect.void,
+              createWorktree: () => Effect.succeed({} as never),
+            }),
+          ),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
 
   if (options.runEffectWorker === false) {
     return layerReplayRuntime;

@@ -1,4 +1,10 @@
-import type { D4AgentState, D4AgentSystemCheck } from "@d4research/contracts";
+import type {
+  D4AgentState,
+  D4AgentSystemCheck,
+  D4BrainContext,
+  ProjectId,
+  D4AgentSettings,
+} from "@d4research/contracts";
 
 export function systemCheckLabel(check: D4AgentSystemCheck): string {
   return {
@@ -35,4 +41,23 @@ export function agentUnavailableMessage(reason: D4AgentState["unavailableReason"
     case null:
       return "";
   }
+}
+
+export function projectBelongsToAgentContext(
+  projectId: ProjectId,
+  context: D4BrainContext,
+  mappings: D4AgentSettings["projectContexts"],
+): boolean {
+  return context === "Global" || mappings[projectId] === context;
+}
+
+export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): string {
+  if (index.status === "refused")
+    return "Context operation refused; inspect the selected scope configuration.";
+  const status = {
+    ready: "Ready",
+    "not-available": "Not available",
+    disabled: "Off",
+  }[index.status];
+  return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;
 }

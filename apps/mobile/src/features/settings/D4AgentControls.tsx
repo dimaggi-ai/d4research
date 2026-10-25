@@ -4,13 +4,20 @@ import {
   systemCheckLabel,
   systemCheckStatus,
   agentUnavailableMessage,
+  brainIndexStatus,
 } from "../agent-awareness/d4AgentPresentation";
 import { formatQuietHour, parseQuietHour } from "./d4AgentSettings.logic";
-import type { EnvironmentId, ServerSettings, ServerConfig } from "@d4research/contracts";
+import {
+  D4_BRAIN_CONTEXTS,
+  type EnvironmentId,
+  type ServerSettings,
+  type ServerConfig,
+} from "@d4research/contracts";
 import { getProviderOptionDescriptors } from "@d4research/shared/model";
 import { useState, type ComponentProps } from "react";
 import { View, TextInput, Modal, Pressable, ScrollView } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
+import { useProjects } from "../../state/entities";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
@@ -44,6 +51,7 @@ export function D4AgentControls({
   environmentId: EnvironmentId;
 }) {
   const state = useD4AgentState(environmentId);
+  const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const provider = config?.providers.find(
     (item) => item.instanceId === agent.modelSelection?.instanceId,
   );
@@ -114,6 +122,87 @@ export function D4AgentControls({
             }}
           />
         ))}
+      {(["brainVaultPath", "embeddingBaseUrl", "embeddingModel", "ctoBaseUrl"] as const).map(
+        (field) => {
+          const label = {
+            brainVaultPath: "Brain vault path",
+            embeddingBaseUrl: "Embedding base URL",
+            embeddingModel: "Embedding model",
+            ctoBaseUrl: "CTO base URL",
+          }[field];
+          const inherits = field === "embeddingBaseUrl" || field === "embeddingModel";
+          return (
+            <View key={field} className="gap-2 px-4 py-3">
+              <Text className="text-base text-foreground">{label}</Text>
+              <TextInput
+                accessibilityLabel={label}
+                key={agent[field] ?? ""}
+                defaultValue={agent[field] ?? ""}
+                editable={!disabled}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={inherits ? "Inherit from Second Brain" : undefined}
+                className="rounded border border-border px-3 py-2 text-foreground"
+                onEndEditing={(event) => {
+                  const value = event.nativeEvent.text.trim();
+                  if (value !== (agent[field] ?? ""))
+                    void writeAgent({ [field]: inherits && !value ? null : value });
+                }}
+              />
+              {inherits ? (
+                <Text className="text-sm text-foreground-muted">
+                  Leave blank to use the Second Brain embedding setting.
+                </Text>
+              ) : null}
+            </View>
+          );
+        },
+      )}
+      {(["memoryEnabled", "embeddingsEnabled", "ctoEnabled"] as const).map((field) => {
+        const label = {
+          memoryEnabled: "Brain memory",
+          embeddingsEnabled: "Brain embeddings",
+          ctoEnabled: "CTO agents",
+        }[field];
+        return (
+          <SettingsSwitchRow
+            key={field}
+            icon="gearshape"
+            label={label}
+            value={agent[field]}
+            disabled={disabled}
+            onValueChange={(value) => void writeAgent({ [field]: value })}
+          />
+        );
+      })}
+      {projects.map((project) => (
+        <AgentChoiceRow
+          key={project.id}
+          icon="gearshape"
+          label={`Context · ${project.title}`}
+          value={agent.projectContexts[project.id] ?? "Global"}
+          disabled={disabled}
+          options={D4_BRAIN_CONTEXTS.map((context) => ({ id: context, label: context }))}
+          onChange={(value) => {
+            const context = D4_BRAIN_CONTEXTS.find((item) => item === value);
+            if (context)
+              void writeAgent({
+                projectContexts: { ...agent.projectContexts, [project.id]: context },
+              });
+          }}
+        />
+      ))}
+      {D4_BRAIN_CONTEXTS.map((context) => {
+        const index = state.data?.brainIndexes.find((item) => item.context === context);
+        return (
+          <Text key={context} className="px-4 py-2 text-sm text-foreground-muted">
+            Brain index · {context}:{" "}
+            {brainIndexStatus(
+              index ?? { context, status: "not-available", files: 0, lastRebuild: null },
+            )}
+          </Text>
+        );
+      })}
       <AgentChoiceRow
         icon="gearshape"
         label="Permission level"
@@ -130,9 +219,10 @@ export function D4AgentControls({
         }}
       />
       <Text className="px-4 pb-3 text-sm text-foreground-muted">
-        Read-only observes. Ask requires each action to be approved. Act allows interruption and
-        input answers, but sending messages and starting threads still require confirmation.
-        Provider permission approvals remain manual.
+        Read-only observes. Ask requires approval for each action. Act can interrupt threads, answer
+        input requests, submit memory proposals for review, and ask CTO questions when enabled for
+        the selected context. Sending messages and starting threads still require approval. Provider
+        permission approvals remain manual.
       </Text>
       <AgentChoiceRow
         icon="clock"

@@ -1,14 +1,24 @@
+import * as Effect from "effect/Effect";
+import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
+import { environmentThreadShells } from "../../state/threads";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
   systemCheckLabel,
   systemCheckStatus,
   agentUnavailableMessage,
+  projectBelongsToAgentContext,
 } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
-import type { D4AgentActionSummary, EnvironmentId, ThreadId } from "@d4research/contracts";
+import {
+  D4_BRAIN_CONTEXTS,
+  type D4AgentActionSummary,
+  type EnvironmentId,
+  type ThreadId,
+} from "@d4research/contracts";
 import { useState } from "react";
-import { Pressable, View, ScrollView } from "react-native";
+import { Pressable, View, ScrollView, Modal } from "react-native";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -19,6 +29,15 @@ import { useThreadShells, useEnvironmentServerConfig } from "../../state/entitie
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
+
+function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
+  return Effect.runPromise(
+    waitForD4AgentThreadShell(
+      appAtomRegistry,
+      environmentThreadShells.threadShellAtom({ environmentId, threadId }),
+    ),
+  );
+}
 
 export function D4AgentEntry({
   environmentId,
@@ -51,7 +70,11 @@ export function D4AgentEntry({
             linkTo("/settings/thread-preferences");
             return;
           }
-          if (state.data?.threadId) {
+          if (state.data?.threadId && !allowed) {
+            if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
+              setError(true);
+              return;
+            }
             linkTo(
               `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(state.data.threadId)}`,
             );
@@ -60,8 +83,11 @@ export function D4AgentEntry({
           setOpening(true);
           setError(false);
           await ensure({ environmentId, input: {} })
-            .then((result) => {
-              if (result._tag === "Success")
+            .then(async (result) => {
+              if (
+                result._tag === "Success" &&
+                (await waitForAgentThread(environmentId, result.value.threadId))
+              )
                 linkTo(
                   `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
                 );
@@ -108,14 +134,20 @@ function D4AgentPanelContent({
   threadId: ThreadId;
 }) {
   const query = useD4AgentState(environmentId);
+  const config = useEnvironmentServerConfig(environmentId);
+  const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
+  const canSwitch = useAtomValue(
+    serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
+  );
+  const [choosingContext, setChoosingContext] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const threads = useThreadShells();
   const linkTo = useLinkTo();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
     serverEnvironment.resolveD4AgentAction.permissionAtom(environmentId),
   );
-  const monitorEnabled =
-    useEnvironmentServerConfig(environmentId)?.settings.agentMonitor.enabled === true;
+  const monitorEnabled = config?.settings.agentMonitor.enabled === true;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -127,13 +159,92 @@ function D4AgentPanelContent({
           (thread) =>
             thread.environmentId === environmentId &&
             thread.archivedAt === null &&
-            thread.deletedAt === null,
+            thread.deletedAt === null &&
+            projectBelongsToAgentContext(
+              thread.projectId,
+              state.brainContext,
+              config?.settings.d4Agent.projectContexts ?? {},
+            ),
         ),
       )
     : [];
   return (
     <View className="max-h-64 border-b border-border bg-surface">
+      <Modal
+        visible={choosingContext}
+        transparent
+        animationType="none"
+        onRequestClose={() => setChoosingContext(false)}
+      >
+        <View className="flex-1 justify-center bg-background px-6">
+          <Text className="mb-3 text-lg font-t3-semibold text-foreground">Agent context</Text>
+          {D4_BRAIN_CONTEXTS.map((context) => (
+            <Pressable
+              key={context}
+              accessibilityRole="radio"
+              accessibilityState={{
+                checked: context === state.brainContext,
+                disabled: switching || !canSwitch,
+              }}
+              disabled={switching || !canSwitch}
+              className="rounded-xl bg-surface px-4 py-4"
+              onPress={async () => {
+                setChoosingContext(false);
+                if (context === state.brainContext) return;
+                setSwitching(true);
+                setActionError(null);
+                await switchContext({ environmentId, input: { context } })
+                  .then(async (result) => {
+                    if (
+                      result._tag === "Failure" ||
+                      !(await waitForAgentThread(environmentId, result.value.threadId))
+                    )
+                      setActionError("Could not switch context.");
+                    else
+                      linkTo(
+                        `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
+                      );
+                  })
+                  .catch(() => setActionError("Could not switch context."))
+                  .finally(() => setSwitching(false));
+              }}
+            >
+              <Text className="text-base text-foreground">
+                {context}
+                {context === state.brainContext ? " ✓" : ""}
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            className="p-4"
+            onPress={() => setChoosingContext(false)}
+          >
+            <Text className="text-accent">Cancel</Text>
+          </Pressable>
+        </View>
+      </Modal>
       <ScrollView contentContainerClassName="gap-2 px-4 py-3">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Agent context"
+          accessibilityState={{ disabled: !canSwitch || switching }}
+          disabled={!canSwitch || switching}
+          className="self-start rounded-full border border-border px-3 py-2"
+          onPress={() => setChoosingContext(true)}
+        >
+          <Text className="text-sm text-accent">
+            {switching ? "Switching context…" : `Context · ${state.brainContext}`}
+          </Text>
+        </Pressable>
+        {state.contextChangedAt ? (
+          <Text
+            accessibilityRole="text"
+            className="border-b border-border pb-2 text-xs text-foreground-muted"
+          >
+            Context changed to {state.brainContext}. New session.
+          </Text>
+        ) : null}
         <View className="flex-row items-center justify-between">
           <Text className="font-t3-semibold text-foreground">
             Needs attention · {attention.length}
@@ -258,7 +369,15 @@ function AgentActionRecord({
       </Pressable>
       {reviewing && detail.data ? (
         <Text className="text-xs text-foreground-muted">
-          {JSON.stringify(detail.data.action, null, 2)}
+          {JSON.stringify(
+            {
+              context: detail.data.context,
+              action: detail.data.action,
+              result: detail.data.result,
+            },
+            null,
+            2,
+          )}
         </Text>
       ) : null}
       {detail.error ? <Text accessibilityRole="alert">{detail.error}</Text> : null}

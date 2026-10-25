@@ -4,10 +4,12 @@ import {
   systemCheckLabel,
   systemCheckStatus,
   agentUnavailableMessage,
+  brainIndexStatus,
 } from "../agent/d4AgentPresentation";
-import type { EnvironmentId, ServerSettings } from "@d4research/contracts";
+import { D4_BRAIN_CONTEXTS, type EnvironmentId, type ServerSettings } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { getProviderOptionDescriptors } from "@d4research/shared/model";
+import { useProjects } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { Switch } from "../ui/switch";
 import { Input } from "../ui/input";
@@ -42,6 +44,7 @@ export function D4AgentControls({
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const state = useD4AgentState(environmentId);
+  const projects = useProjects().filter((project) => project.environmentId === environmentId);
   const selectedProvider = config?.providers.find(
     (provider) => provider.instanceId === agent.modelSelection?.instanceId,
   );
@@ -123,9 +126,109 @@ export function D4AgentControls({
             }
           />
         ))}
+      {(["brainVaultPath", "embeddingBaseUrl", "embeddingModel", "ctoBaseUrl"] as const).map(
+        (field) => {
+          const title = {
+            brainVaultPath: "Brain vault path",
+            embeddingBaseUrl: "Embedding base URL",
+            embeddingModel: "Embedding model",
+            ctoBaseUrl: "CTO base URL",
+          }[field];
+          const inherits = field === "embeddingBaseUrl" || field === "embeddingModel";
+          return (
+            <SettingsRow
+              key={field}
+              title={title}
+              description={
+                inherits ? "Leave blank to use the Second Brain embedding setting." : undefined
+              }
+              control={
+                <div className="w-72 max-w-full">
+                  <Input
+                    aria-label={title}
+                    key={agent[field] ?? ""}
+                    defaultValue={agent[field] ?? ""}
+                    disabled={disabled}
+                    placeholder={inherits ? "Inherit from Second Brain" : undefined}
+                    onBlur={(event) => {
+                      const value = event.target.value.trim();
+                      if (value !== (agent[field] ?? ""))
+                        void writeAgent({ [field]: inherits && !value ? null : value });
+                    }}
+                  />
+                </div>
+              }
+            />
+          );
+        },
+      )}
+      {(["memoryEnabled", "embeddingsEnabled", "ctoEnabled"] as const).map((field) => {
+        const title = {
+          memoryEnabled: "Brain memory",
+          embeddingsEnabled: "Brain embeddings",
+          ctoEnabled: "CTO agents",
+        }[field];
+        return (
+          <SettingsRow
+            key={field}
+            title={title}
+            control={
+              <Switch
+                aria-label={title}
+                checked={agent[field]}
+                disabled={disabled}
+                onCheckedChange={(value) => void writeAgent({ [field]: Boolean(value) })}
+              />
+            }
+          />
+        );
+      })}
+      {projects.map((project) => (
+        <SettingsRow
+          key={project.id}
+          title={`Context · ${project.title}`}
+          control={
+            <select
+              aria-label={`Context for ${project.title}`}
+              className={selectClass}
+              disabled={disabled}
+              value={agent.projectContexts[project.id] ?? "Global"}
+              onChange={(event) => {
+                const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
+                if (context)
+                  void writeAgent({
+                    projectContexts: { ...agent.projectContexts, [project.id]: context },
+                  });
+              }}
+            >
+              {D4_BRAIN_CONTEXTS.map((context) => (
+                <option key={context} value={context}>
+                  {context}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      ))}
+      {D4_BRAIN_CONTEXTS.map((context) => {
+        const index = state.data?.brainIndexes.find((item) => item.context === context);
+        return (
+          <SettingsRow
+            key={context}
+            title={`Brain index · ${context}`}
+            control={
+              <span className="text-sm text-muted-foreground">
+                {brainIndexStatus(
+                  index ?? { context, status: "not-available", files: 0, lastRebuild: null },
+                )}
+              </span>
+            }
+          />
+        );
+      })}
       <SettingsRow
         title="Permission level"
-        description="Read-only observes. Ask requires each action to be approved. Act allows interruption and input answers, but sending messages and starting threads still require confirmation. Provider permission approvals remain manual."
+        description="Read-only observes. Ask requires approval for each action. Act can interrupt threads, answer input requests, submit memory proposals for review, and ask CTO questions when enabled for the selected context. Sending messages and starting threads still require approval. Provider permission approvals remain manual."
         control={
           <select
             aria-label="Agent permission level"

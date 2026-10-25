@@ -1,11 +1,21 @@
+import * as Effect from "effect/Effect";
+import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
+import { environmentThreadShells } from "../../state/threads";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
   systemCheckLabel,
   systemCheckStatus,
   agentUnavailableMessage,
+  projectBelongsToAgentContext,
 } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
-import type { D4AgentActionSummary, EnvironmentId, ThreadId } from "@d4research/contracts";
+import {
+  D4_BRAIN_CONTEXTS,
+  type D4AgentActionSummary,
+  type EnvironmentId,
+  type ThreadId,
+} from "@d4research/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -20,6 +30,15 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { Button } from "../ui/button";
 import { useSidebarVisibility } from "../ui/sidebar";
+
+function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
+  return Effect.runPromise(
+    waitForD4AgentThreadShell(
+      appAtomRegistry,
+      environmentThreadShells.threadShellAtom({ environmentId, threadId }),
+    ),
+  );
+}
 
 export function D4AgentEntries() {
   const { environments } = useEnvironments();
@@ -67,7 +86,11 @@ export function D4AgentEntry({
             await navigate({ to: "/settings/general" });
             return;
           }
-          if (state.data?.threadId) {
+          if (state.data?.threadId && !allowed) {
+            if (!(await waitForAgentThread(environmentId, state.data.threadId))) {
+              setError(true);
+              return;
+            }
             await navigate({
               to: "/$environmentId/$threadId",
               params: { environmentId, threadId: state.data.threadId },
@@ -78,7 +101,10 @@ export function D4AgentEntry({
           setError(false);
           await ensure({ environmentId, input: {} })
             .then(async (result) => {
-              if (result._tag === "Success")
+              if (
+                result._tag === "Success" &&
+                (await waitForAgentThread(environmentId, result.value.threadId))
+              )
                 await navigate({
                   to: "/$environmentId/$threadId",
                   params: { environmentId, threadId: result.value.threadId },
@@ -124,6 +150,13 @@ function D4AgentPanelContent({
   threadId: ThreadId;
 }) {
   const query = useD4AgentState(environmentId);
+  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
+  const canSwitch = useAtomValue(
+    serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
+  );
+  const navigate = useNavigate();
+  const [switching, setSwitching] = useState(false);
   const threads = useThreadShells();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
@@ -131,9 +164,7 @@ function D4AgentPanelContent({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const monitorEnabled =
-    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.settings.agentMonitor
-      .enabled === true;
+  const monitorEnabled = config?.settings.agentMonitor.enabled === true;
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
   const attention = monitorEnabled
@@ -142,7 +173,12 @@ function D4AgentPanelContent({
           (thread) =>
             thread.environmentId === environmentId &&
             thread.archivedAt === null &&
-            thread.deletedAt === null,
+            thread.deletedAt === null &&
+            projectBelongsToAgentContext(
+              thread.projectId,
+              state.brainContext,
+              config?.settings.d4Agent.projectContexts ?? {},
+            ),
         ),
       )
     : [];
@@ -151,6 +187,51 @@ function D4AgentPanelContent({
       aria-label="d4 Agent attention"
       className="max-h-64 shrink-0 overflow-y-auto border-b bg-muted/20 px-4 py-3 text-sm"
     >
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="text-muted-foreground" htmlFor="d4-agent-context">
+          Context
+        </label>
+        <select
+          id="d4-agent-context"
+          aria-label="Agent context"
+          className="rounded-full border border-input bg-background px-3 py-1 text-sm focus-visible:outline focus-visible:outline-ring"
+          value={state.brainContext}
+          disabled={!canSwitch || switching}
+          onChange={async (event) => {
+            const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
+            if (!context || context === state.brainContext) return;
+            setSwitching(true);
+            setActionError(null);
+            await switchContext({ environmentId, input: { context } })
+              .then(async (result) => {
+                if (
+                  result._tag === "Failure" ||
+                  !(await waitForAgentThread(environmentId, result.value.threadId))
+                )
+                  setActionError("Could not switch context.");
+                else
+                  await navigate({
+                    to: "/$environmentId/$threadId",
+                    params: { environmentId, threadId: result.value.threadId },
+                  });
+              })
+              .catch(() => setActionError("Could not switch context."))
+              .finally(() => setSwitching(false));
+          }}
+        >
+          {D4_BRAIN_CONTEXTS.map((context) => (
+            <option key={context} value={context}>
+              {context}
+            </option>
+          ))}
+        </select>
+        {switching ? <span role="status">Switching context…</span> : null}
+      </div>
+      {state.contextChangedAt ? (
+        <p role="status" className="mb-2 border-b pb-2 text-xs text-muted-foreground">
+          Context changed to {state.brainContext}. New session.
+        </p>
+      ) : null}
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-medium">Needs attention · {attention.length}</h2>
         <Button size="sm" variant="ghost" disabled={query.isPending} onClick={query.refresh}>
@@ -262,7 +343,15 @@ function AgentActionRecord({
       </Button>
       {reviewing && detail.data ? (
         <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
-          {JSON.stringify(detail.data.action, null, 2)}
+          {JSON.stringify(
+            {
+              context: detail.data.context,
+              action: detail.data.action,
+              result: detail.data.result,
+            },
+            null,
+            2,
+          )}
         </pre>
       ) : null}
       {detail.error ? <p role="alert">{detail.error}</p> : null}

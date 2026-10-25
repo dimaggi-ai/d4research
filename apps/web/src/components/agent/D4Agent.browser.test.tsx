@@ -5,12 +5,22 @@ import { D4AgentEntry, D4AgentPanel } from "./D4Agent";
 import {
   EnvironmentId,
   ThreadId,
+  ProjectId,
+  type D4AgentSettings,
   type D4AgentActionRecord,
   type D4AgentState,
 } from "@d4research/contracts";
 
 const mocks = vi.hoisted(() => ({
-  resolve: vi.fn(async () => ({ _tag: "Success" })),
+  resolve: vi.fn(async () => ({
+    _tag: "Success",
+    value: { threadId: "agent-thread" as ThreadId },
+  })),
+  switchContext: vi.fn(async () => ({
+    _tag: "Success",
+    value: { threadId: "new-agent-thread" as ThreadId },
+  })),
+  projectContexts: {} as D4AgentSettings["projectContexts"],
   refresh: vi.fn(),
   threadShells: vi.fn(),
   stateQuery: vi.fn(),
@@ -21,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   monitorEnabled: true,
   threads: [] as Array<{
     id: ThreadId;
+    projectId: ProjectId;
     title: string;
     environmentId: EnvironmentId;
     archivedAt: null;
@@ -30,6 +41,14 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(async () => undefined),
   state: null as D4AgentState | null,
 }));
+vi.mock("@d4research/client-runtime/state/server", async () => {
+  const Effect = await import("effect/Effect");
+  return { waitForD4AgentThreadShell: () => Effect.succeed(true) };
+});
+vi.mock("../../state/threads", () => ({
+  environmentThreadShells: { threadShellAtom: () => "shell" },
+}));
+vi.mock("../../rpc/atomRegistry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAtomValue: (value: string) =>
@@ -37,7 +56,7 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
       ? mocks.configLoaded
         ? {
             settings: {
-              d4Agent: { enabled: mocks.enabled },
+              d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
               agentMonitor: { enabled: mocks.monitorEnabled },
             },
           }
@@ -51,10 +70,14 @@ vi.mock("../../state/server", () => ({
     d4AgentIdentity: () => "identity",
     d4AgentAction: () => "detail",
     ensureD4AgentThread: { permissionAtom: () => "permission" },
+    switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
     resolveD4AgentAction: { permissionAtom: () => "permission" },
   },
 }));
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.resolve }));
+vi.mock("../../state/use-atom-command", () => ({
+  useAtomCommand: (command: { kind?: string }) =>
+    command.kind === "switch" ? mocks.switchContext : mocks.resolve,
+}));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
     data:
@@ -94,6 +117,8 @@ const threadId = ThreadId.make("agent-thread");
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.resolve.mockClear();
+  mocks.switchContext.mockClear();
+  mocks.projectContexts = {};
   mocks.refresh.mockClear();
   mocks.threadShells.mockClear();
   mocks.stateQuery.mockClear();
@@ -105,6 +130,9 @@ beforeEach(() => {
   mocks.threads = [];
   mocks.navigate.mockClear();
   mocks.state = {
+    brainContext: "Global",
+    brainIndexes: [],
+    contextChangedAt: null,
     threadId,
     projectId: null,
     modelAvailable: false,
@@ -150,6 +178,8 @@ it("shows the proposed message before approving its action and refreshes the log
   )!;
   expect(approve.disabled).toBe(true);
   mocks.detail = {
+    context: "Global",
+    sessionId: threadId,
     id: "action-1",
     action: {
       type: "send",
@@ -220,6 +250,7 @@ it("hides cached attention reports after monitoring is disabled", async () => {
   mocks.threads = [
     {
       id: ThreadId.make("old-thread"),
+      projectId: ProjectId.make("old-project"),
       title: "Old stuck report",
       environmentId,
       archivedAt: null,
@@ -249,7 +280,7 @@ it("waits for configuration before allowing the first pinned-entry click", async
     to: "/$environmentId/$threadId",
     params: { environmentId, threadId },
   });
-  expect(mocks.resolve).not.toHaveBeenCalled();
+  expect(mocks.resolve).toHaveBeenCalledWith({ environmentId, input: {} });
 });
 
 it("keeps ordinary threads free of agent-state and thread-shell subscriptions", async () => {
@@ -300,6 +331,8 @@ it("loads full details for a completed automatic action only when reviewed", asy
     ],
   };
   mocks.detail = {
+    context: "Global",
+    sessionId: threadId,
     id: "completed-1",
     action: {
       type: "send",
@@ -324,4 +357,99 @@ it("loads full details for a completed automatic action only when reviewed", asy
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Approve"),
   ).toBe(false);
+});
+
+it("switches context through the destination command and navigates to the new session", async () => {
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  const selector = container.querySelector<HTMLSelectElement>(
+    "select[aria-label='Agent context']",
+  )!;
+  expect(selector.value).toBe("Global");
+  await act(async () => {
+    selector.value = "YB";
+    selector.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(mocks.switchContext).toHaveBeenCalledWith({ environmentId, input: { context: "YB" } });
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId, threadId: "new-agent-thread" },
+  });
+});
+it("restricts attention to mapped work projects and marks the new session", async () => {
+  const ybProject = ProjectId.make("yb-project");
+  const otherProject = ProjectId.make("other-project");
+  mocks.projectContexts = { [ybProject]: "YB", [otherProject]: "Dimaggi" };
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "YB",
+    contextChangedAt: "2026-10-24T00:00:00.000Z",
+  };
+  mocks.threads = [
+    {
+      id: ThreadId.make("yb-thread"),
+      projectId: ybProject,
+      title: "YB attention",
+      environmentId,
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
+    },
+    {
+      id: ThreadId.make("other-thread"),
+      projectId: otherProject,
+      title: "Other attention",
+      environmentId,
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
+    },
+    {
+      id: ThreadId.make("unmapped-thread"),
+      projectId: ProjectId.make("unmapped-project"),
+      title: "Unmapped attention",
+      environmentId,
+      archivedAt: null,
+      deletedAt: null,
+      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
+    },
+  ];
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("YB attention");
+  expect(container.textContent).not.toContain("Other attention");
+  expect(container.textContent).not.toContain("Unmapped attention");
+  expect(container.textContent).toContain("Context changed to YB. New session.");
+});
+it("shows the complete CTO request and persisted result when reviewed", async () => {
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "cto-result",
+        type: "cto-ask",
+        targetId: "YB",
+        preview: "Review request",
+        status: "executed",
+        createdAt: "2026-10-24T00:00:00.000Z",
+        resolvedAt: "2026-10-24T00:00:01.000Z",
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "cto-result",
+    context: "YB",
+    sessionId: threadId,
+    action: { type: "cto-ask", context: "YB", text: "Review complete context request" },
+    result: { answer: "Persisted CTO answer" },
+    status: "executed",
+    createdAt: "2026-10-24T00:00:00.000Z",
+    resolvedAt: "2026-10-24T00:00:01.000Z",
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () => container.querySelector("summary")!.click());
+  const review = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Review action",
+  )!;
+  await act(async () => review.click());
+  expect(container.textContent).toContain("Review complete context request");
+  expect(container.textContent).toContain("Persisted CTO answer");
 });

@@ -53,6 +53,11 @@ describe("searchSettings", () => {
     "system disk",
     "tokens cache",
     "reasoning effort",
+    "brain vault",
+    "embedding model",
+    "project context",
+    "CTO integration",
+    "index rebuild",
   ])("finds d4 Agent settings for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("agent-monitor");
   });

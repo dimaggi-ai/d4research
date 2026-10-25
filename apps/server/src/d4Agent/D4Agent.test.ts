@@ -2594,6 +2594,125 @@ it.effect(
     }),
 );
 
+const settledIso = "1970-01-01T00:00:00.000Z";
+
+it.effect("settled tasks do not count toward active task capacity", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const tasks = Array.from({ length: 1000 }, (_, index) => ({
+      threadId: ThreadId.make(`task-${index}`),
+      projectId: target.projectId,
+      context: "Global" as const,
+      actionId: `task-${index}`,
+      reportedAt: null,
+      archivedAt: null,
+      undoDisabled: true,
+      settledAt: settledIso,
+    }));
+    yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: tasks }));
+    const card = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      modelSelection,
+      text: "One more task",
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    const stored = (yield* Ref.get(f.state)).agentThreads ?? [];
+    assert.equal(stored.length, 1001);
+    assert.equal(stored.at(-1)?.threadId, `d4-action:${card.id}`);
+  }),
+);
+
+it.effect("tick settles a task whose run failed and reactivates it when a run starts", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const task = {
+      ...target,
+      id: ThreadId.make("task-failed"),
+      createdBy: "agent" as const,
+      latestRunId: RunId.make("failed"),
+      activeRunId: null,
+    };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        { id: task.latestRunId, status: "failed", completedAt: now },
+      ] as unknown as typeof value.runs,
+    }));
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId: task.id,
+          projectId: task.projectId,
+          context: "Global" as const,
+          actionId: "failed",
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* f.service.tick;
+    assert.isString((yield* Ref.get(f.state)).agentThreads?.[0]?.settledAt);
+    yield* Ref.update(f.shells, (all) =>
+      all.map((entry) =>
+        entry.id === task.id
+          ? { ...entry, activeRunId: RunId.make("again"), updatedAt: DateTime.makeUnsafe(1000) }
+          : entry,
+      ),
+    );
+    yield* Ref.update(f.eventRevision, (value) => value + 1);
+    yield* f.service.tick;
+    assert.isNull((yield* Ref.get(f.state)).agentThreads?.[0]?.settledAt);
+  }),
+);
+
+it("the store keeps every active task and only the newest settled ones", () => {
+  const entry = (index: number, settled: boolean) => ({
+    threadId: ThreadId.make(`task-${index}`),
+    projectId: target.projectId,
+    context: "Global" as const,
+    actionId: `task-${index}`,
+    reportedAt: null,
+    archivedAt: null,
+    undoDisabled: false,
+    settledAt: settled ? settledIso : null,
+  });
+  const agentThreads = [
+    entry(0, false),
+    ...Array.from({ length: 1005 }, (_, index) => entry(index + 1, true)),
+    entry(2000, false),
+  ];
+  const state: Store.StoredState = {
+    retiringThreadId: null,
+    brainContext: "Global",
+    contextChangedAt: null,
+    contextScopeHash: null,
+    bindings: [],
+    identityReady: false,
+    automaticActions: [],
+    threadId: null,
+    projectId: null,
+    actions: [],
+    usage: [],
+    usageCursor: "",
+    heartbeatAt: 0,
+    heartbeatKeys: [],
+    systemEpisodes: [],
+    systemClaims: [],
+    agentThreads,
+  };
+  const bounded = Store.boundStoredState(state, 0).agentThreads!;
+  assert.equal(bounded.length, 1002);
+  assert.equal(bounded[0]?.threadId, "task-0");
+  assert.equal(bounded[1]?.threadId, "task-6");
+  assert.equal(bounded.at(-1)?.threadId, "task-2000");
+});
+
 it.effect("a failed completion projection read retries the same unchanged task", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");

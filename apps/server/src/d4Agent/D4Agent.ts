@@ -1496,7 +1496,8 @@ export const layer = Layer.effect(
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const targetId = ThreadId.make(`d4-action:${record.id}`);
-        if ((state.agentThreads?.length ?? 0) >= 1000)
+        // Only active tasks count; settled ones are retired by the store bound.
+        if ((state.agentThreads ?? []).filter((entry) => entry.settledAt == null).length >= 1000)
           return yield* new D4AgentError({ reason: "busy" });
         const register = Effect.gen(function* () {
           yield* store.update((value) => ({
@@ -2005,6 +2006,7 @@ export const layer = Layer.effect(
           ]),
         );
         const removed = new Set<ThreadId>();
+        const settled = new Map<ThreadId, boolean>();
         for (const entry of tracked) {
           const shell = shells.get(entry.threadId);
           if (
@@ -2018,6 +2020,12 @@ export const layer = Layer.effect(
             archiveCursors.delete(entry.threadId);
             continue;
           }
+          const isSettled =
+            shell.latestRunId != null &&
+            shell.activeRunId === null &&
+            shell.pendingRuntimeRequest === null &&
+            (shell.pendingBackgroundTasks?.length ?? 0) === 0;
+          if (isSettled !== (entry.settledAt != null)) settled.set(entry.threadId, isSettled);
           const cursor = `${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId}:${shell.activeRunId}`;
           if (!entry.undoDisabled && taskCursors.get(entry.threadId) !== cursor) {
             if (
@@ -2107,13 +2115,20 @@ export const layer = Layer.effect(
             archiveCursors.delete(entry.threadId);
           }
         }
-        if (removed.size > 0)
+        if (removed.size > 0 || settled.size > 0) {
+          const settledAt = DateTime.formatIso(yield* DateTime.now);
           yield* store.update((value) => ({
             ...value,
-            agentThreads: (value.agentThreads ?? []).filter(
-              (entry) => !removed.has(entry.threadId),
-            ),
+            agentThreads: (value.agentThreads ?? [])
+              .filter((entry) => !removed.has(entry.threadId))
+              .map((entry) => {
+                const next = settled.get(entry.threadId);
+                return next === undefined
+                  ? entry
+                  : { ...entry, settledAt: next ? settledAt : null };
+              }),
           }));
+        }
         const health = yield* systemHealth();
         if (!config.enabled) return;
         const active = (yield* store.get).sessions?.find(

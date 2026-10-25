@@ -39,6 +39,8 @@ export const StoredAgentThread = Schema.Struct({
   pipelineId: Schema.optionalKey(Schema.String),
   pipelineHash: Schema.optionalKey(Schema.String),
   scopeHash: Schema.optionalKey(Schema.String),
+  // Set while the task has no active run, pending request, or background work.
+  settledAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
 });
 export const StoredState = Schema.Struct({
   pendingRetirements: Schema.optionalKey(
@@ -143,6 +145,19 @@ export function ctoPreview(value: unknown): string {
     : new TextDecoder().decode(bytes.slice(0, 4080), { stream: true }) + "… [truncated]";
 }
 
+// Active tasks are bounded at admission. Only the newest settled tasks keep their record; an
+// evicted one loses its task tools, which fails closed.
+const SETTLED_AGENT_THREAD_LIMIT = 1000;
+function boundAgentThreads(
+  entries: ReadonlyArray<typeof StoredAgentThread.Type>,
+): ReadonlyArray<typeof StoredAgentThread.Type> {
+  let settled = 0;
+  return entries
+    .toReversed()
+    .filter((entry) => entry.settledAt == null || ++settled <= SETTLED_AGENT_THREAD_LIMIT)
+    .toReversed();
+}
+
 export function boundStoredState(state: StoredState, now: number): StoredState {
   const ctoIds = new Set(
     state.actions
@@ -170,6 +185,7 @@ export function boundStoredState(state: StoredState, now: number): StoredState {
       )
       .slice(-4),
     chatThreadIds: (state.chatThreadIds ?? []).slice(-256),
+    agentThreads: boundAgentThreads(state.agentThreads ?? []),
     transcript: (state.transcript ?? []).slice(-200),
     bindings: state.bindings
       .filter(

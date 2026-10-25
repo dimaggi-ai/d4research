@@ -1,6 +1,6 @@
 import { D4AgentControls } from "./D4AgentControls";
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerSettings } from "@d4research/contracts";
+import { supportsD4AgentDriver, type ServerSettings } from "@d4research/contracts";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -89,7 +89,12 @@ function EnvironmentMonitorSettings({
   const monitor = target.serverConfig.settings.agentMonitor;
   if (!monitor) return null;
   const agent = target.serverConfig.settings.d4Agent;
-  const groups = groupByProvider(buildModelOptions(config, agent.modelSelection, undefined, null));
+  // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
+  const groups = groupByProvider(
+    buildModelOptions(config, agent.modelSelection, undefined, null).filter((option) =>
+      supportsD4AgentDriver(option.providerDriver),
+    ),
+  );
   const monitored = threads.filter(
     (thread) =>
       thread.environmentId === target.environmentId &&

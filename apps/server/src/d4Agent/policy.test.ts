@@ -85,7 +85,7 @@ describe("d4 Agent policies", () => {
     );
   });
   it("refuses providers whose native tool isolation is unsupported", () => {
-    for (const driver of ["cursor", "grok", "opencode", "antigravity", "agy"])
+    for (const driver of ["cursor", "grok", "opencode", "antigravity", "agy", "deepseek"])
       assert.equal(
         modelAvailability(settings, [{ ...provider, driver: ProviderDriverKind.make(driver) }]),
         "sandbox-unavailable",

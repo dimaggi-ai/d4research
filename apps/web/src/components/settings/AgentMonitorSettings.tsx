@@ -1,6 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
-import type { ModelSelection, ServerSettings } from "@d4research/contracts";
+import {
+  supportsD4AgentDriver,
+  type ModelSelection,
+  type ServerSettings,
+} from "@d4research/contracts";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -65,9 +69,10 @@ function AgentMonitorForm() {
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const agent = settings.d4Agent;
   const selection = agent.modelSelection ?? resolveAppModelSelectionState(settings, providers);
+  // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-  );
+  ).filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
     providers,

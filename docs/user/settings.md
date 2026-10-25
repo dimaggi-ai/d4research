@@ -67,10 +67,13 @@ Provider permission approvals remain manual. Proposed actions and their outcomes
 appear above the agent conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
-An ID, internal link, or exact thread, project, or pipeline title switches the agent
-to the target's mapped context before it reads content. An unmapped project uses **Global**.
-If a reference is ambiguous, the agent asks which target you mean. You can also select
-**Global**, **Personal**, **YB**, or **Dimaggi** above the conversation.
+Use an ID, an internal link, or a reference selected from the **@** picker to address a
+thread, project, or pipeline. The agent switches to the target's mapped context before
+processing your message. Typing a title as plain text keeps the current context. Archived
+threads cannot be referenced. An unmapped project uses **Global**. The picker shows targets
+visible in the selected context. If explicit references are ambiguous, the agent asks which
+target you mean. Above the conversation, you can also select **Global**, **Personal**, **YB**,
+or **Dimaggi**; **Global** shows all target metadata.
 
 The agent keeps at most one open session per context and resumes it when you return.
 Dividers show each switch in the same conversation. **New session** closes the current
@@ -80,7 +83,7 @@ by default; choose 30 minutes, 2 hours, 8 hours, or Never in Settings. The defau
 60% of the model's reported context window. At that limit, the old session produces a short
 summary for its replacement in the same context. If a summary fails or the scope changes,
 the replacement starts without it. Models that report no context window cannot use this
-size check. Changing the vault path or relevant project mappings requires a fresh session.
+size check. Changing the vault path or relevant project or pipeline mappings requires a fresh session.
 
 To start research or a pipeline, map the pipeline to its project in Settings, then ask
 d4 Agent in the same conversation. Review the final prompt, project, pipeline, and model

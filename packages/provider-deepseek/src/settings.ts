@@ -63,7 +63,7 @@ export const DeepSeekSettings = makeProviderSettingsSchema(
     ),
     requestTimeoutMs: Schema.Int.check(
       Schema.isGreaterThanOrEqualTo(1000),
-      Schema.isLessThanOrEqualTo(600000),
+      Schema.isLessThanOrEqualTo(7_200_000),
     ).pipe(
       Schema.withDecodingDefault(Effect.succeed(120000)),
       Schema.annotateKey({ title: "Request timeout (ms)" }),

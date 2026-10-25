@@ -73,7 +73,8 @@ export const requestCompletion = (
         model: config.model,
         messages,
         stream: false,
-        max_tokens: Math.min(4096, config.contextWindowTokens - promptBytes),
+        // The reply may use whatever context the prompt leaves free.
+        max_tokens: config.contextWindowTokens - promptBytes,
       }),
       Effect.mapError((cause) => new DeepSeekRequestError({ category: "configuration", cause })),
     );

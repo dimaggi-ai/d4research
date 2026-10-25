@@ -777,6 +777,71 @@ it.effect("idle heartbeat skips usage snapshots and changed owned thread capture
   }),
 );
 
+it.effect.each([
+  { name: "current context fill", contextUsage: true, rotates: false, recorded: 100 },
+  {
+    name: "summed turn input without context usage",
+    contextUsage: false,
+    rotates: true,
+    recorded: 900,
+  },
+])("session budget uses the $name", ({ contextUsage, rotates, recorded }) =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const own = yield* f.service.ensureThread();
+    const completedAt = DateTime.makeUnsafe(2000);
+    const runId = RunId.make("multi-call-run");
+    const attemptId = RunAttemptId.make("multi-call-attempt");
+    const providerThreadId = ProviderThreadId.make("multi-call-provider-thread");
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [{ id: runId, modelSelection } as (typeof value.runs)[number]],
+      attempts: [{ id: attemptId, runId } as (typeof value.attempts)[number]],
+      providerThreads: [
+        {
+          id: providerThreadId,
+          driver: "codex",
+          contextUsage: contextUsage ? { usedTokens: 100, maxTokens: 1000 } : null,
+        } as unknown as (typeof value.providerThreads)[number],
+      ],
+      providerTurns: [
+        {
+          id: ProviderTurnId.make("multi-call-turn"),
+          providerThreadId,
+          runAttemptId: attemptId,
+          completedAt,
+          startedAt: now,
+          // Nine API calls each re-sent the same ~100-token context.
+          turnTokenUsage: { inputTokens: 900, outputTokens: 30 },
+        } as (typeof value.providerTurns)[number],
+      ],
+    }));
+    yield* Ref.set(f.agentShell, {
+      ...target,
+      id: own.threadId,
+      projectId: own.projectId,
+      updatedAt: completedAt,
+      latestRunId: runId,
+      activeProviderThreadId: providerThreadId,
+    });
+    if (!contextUsage)
+      yield* Ref.update(f.state, (value) => ({
+        ...value,
+        sessions: value.sessions!.map((session) => ({ ...session, contextWindow: 1000 })),
+      }));
+    yield* f.service.tick;
+    const session = (yield* Ref.get(f.state)).sessions!.find(
+      (entry) => entry.threadId === own.threadId,
+    )!;
+    assert.equal(session.inputTokens, recorded);
+    assert.equal(session.contextWindow, 1000);
+    assert.equal(
+      (yield* Ref.get(f.sends)).some((send) => send.text.startsWith("Summarize this session")),
+      rotates,
+    );
+  }),
+);
+
 const realProjectLayer = RuntimeLayer.layerProjectService.pipe(
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(

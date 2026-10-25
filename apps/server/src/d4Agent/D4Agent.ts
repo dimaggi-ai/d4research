@@ -986,7 +986,13 @@ export const layer = Layer.effect(
             (entry) => entry.attributes["gen_ai.usage.input_tokens"] ?? 0,
           );
           const maxTokens = currentUsage?.maxTokens ?? session.contextWindow;
-          if (additions.length > 0 || maxTokens !== session.contextWindow)
+          // Turn input counters sum every API call in a turn; the budget needs the current fill.
+          const usedTokens = currentUsage?.usedTokens;
+          if (
+            additions.length > 0 ||
+            maxTokens !== session.contextWindow ||
+            (usedTokens !== undefined && usedTokens !== session.inputTokens)
+          )
             yield* store.update((value) => ({
               ...value,
               usage: [...value.usage, ...additions].slice(-100),
@@ -994,7 +1000,7 @@ export const layer = Layer.effect(
                 entry.threadId === session.threadId
                   ? {
                       ...entry,
-                      inputTokens: Math.max(entry.inputTokens, ...recordedInput),
+                      inputTokens: usedTokens ?? Math.max(entry.inputTokens, ...recordedInput),
                       contextWindow: maxTokens,
                       lastActivityAt: additions.at(-1)?.recordedAt ?? entry.lastActivityAt,
                     }

@@ -1215,6 +1215,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
 });
 
 it("keeps the draft and says why when another client changed Nia's context first", async () => {
+  mocks.refresh.mockClear();
   mocks.send.mockResolvedValueOnce({
     _tag: "Failure",
     cause: Cause.fail(new D4AgentError({ reason: "stale" })),
@@ -1242,6 +1243,7 @@ it("keeps the draft and says why when another client changed Nia's context first
   });
   expect(input.value).toBe("Global-only draft");
   expect(container.textContent).toContain("Nia's context or session changed");
+  expect(mocks.refresh).toHaveBeenCalledOnce();
 });
 
 it("does not invent an original message for a heartbeat action", async () => {

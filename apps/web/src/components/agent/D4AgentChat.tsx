@@ -193,7 +193,10 @@ export function D4AgentChat({
             });
             if (result._tag === "Failure") {
               const failure = squashAtomCommandFailure(result);
-              setError(isD4AgentError(failure) && failure.reason === "stale" ? "stale" : "failed");
+              const stale = isD4AgentError(failure) && failure.reason === "stale";
+              setError(stale ? "stale" : "failed");
+              // The resend must carry the current context and session, not the ones that went stale.
+              if (stale) refresh();
             } else {
               setText((current) => (current === submitted ? "" : current));
               refresh();

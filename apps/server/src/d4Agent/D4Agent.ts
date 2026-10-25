@@ -74,6 +74,7 @@ import * as AgentMonitor from "../orchestration-v2/AgentMonitorReactor.ts";
 import {
   contentFreeDigest,
   heartbeatDue,
+  heartbeatWindowOpen,
   modelAvailability,
   modelFacingReport,
   usageAttributes,
@@ -2033,13 +2034,10 @@ export const layer = Layer.effect(
             sequence === undefined ||
             taskSequence === undefined ||
             sequence - taskSequence > REFERENCE_SCAN_LIMIT
-          ) {
-            const snapshot = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
+          )
+            // Reload only the tracked tasks, by id, below; never the whole environment.
             taskShells.clear();
-            for (const shell of [...snapshot.threads, ...snapshot.archivedThreads])
-              if (ids.has(shell.id)) taskShells.set(shell.id, shell);
-            for (const id of ids) if (!taskShells.has(id)) taskShells.set(id, null);
-          } else if (sequence !== taskSequence) {
+          else if (sequence !== taskSequence) {
             reload = yield* events.value
               .changedThreadIds({
                 afterSequence: taskSequence,
@@ -2203,6 +2201,16 @@ export const layer = Layer.effect(
         }
         if ((yield* store.get).rotation || config.heartbeatMinutes === null) return;
         const state = yield* store.get;
+        const thread =
+          state.threadId === null
+            ? null
+            : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
+        const now = yield* Clock.currentTimeMillis;
+        const busy = thread?.activeRunId != null;
+        // The digest reads every scoped thread, so build it only when a heartbeat could be sent.
+        // Recovered attention keys are therefore cleared at the next due check, not every tick.
+        if (!heartbeatWindowOpen({ settings: config, now, lastAt: state.heartbeatAt, busy }))
+          return;
         const currentDigest = yield* digest();
         const attentionKeys = [
           ...currentDigest.reports
@@ -2210,11 +2218,6 @@ export const layer = Layer.effect(
             .map((entry) => entry.reportKey),
           ...health.filter((entry) => entry.status === "attention").map((entry) => entry.reportKey),
         ].sort();
-        const thread =
-          state.threadId === null
-            ? null
-            : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
-        const now = yield* Clock.currentTimeMillis;
         if (
           !heartbeatDue({
             settings: config,
@@ -2222,7 +2225,7 @@ export const layer = Layer.effect(
             lastAt: state.heartbeatAt,
             previousKeys: state.heartbeatKeys,
             attentionKeys,
-            busy: thread?.activeRunId != null,
+            busy,
           })
         ) {
           // Clear recovered keys so a later episode can produce a summary.
@@ -2494,14 +2497,18 @@ export const layer = Layer.effect(
       readTail: (threadId, limit) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
-            const visible = yield* scopedThreads();
             const { state, config } = yield* bound();
+            // One point lookup with the same checks scopedThreads applies to the whole list.
+            const thread = yield* threads
+              .getThreadShell(threadId)
+              .pipe(Effect.mapError(threadError));
             if (
-              !visible.some(
-                (thread) =>
-                  thread.id === threadId &&
-                  projectContentInScope(state.brainContext, config, thread.projectId),
-              )
+              thread === null ||
+              thread.deletedAt !== null ||
+              thread.archivedAt !== null ||
+              thread.projectId === state.projectId ||
+              !projectInScope(state.brainContext, config, thread.projectId) ||
+              !projectContentInScope(state.brainContext, config, thread.projectId)
             )
               return yield* new D4AgentError({ reason: "context" });
             return yield* projections

@@ -2725,6 +2725,47 @@ it.effect("the task sweep reloads only tracked tasks that changed", () =>
   }),
 );
 
+it.effect(
+  "the first task sweep, a tail read and a heartbeat that is not due read no full snapshot",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        heartbeatMinutes: 60,
+      });
+      yield* f.service.ensureThread();
+      const task = {
+        ...target,
+        id: ThreadId.make("d4-action:tracked"),
+        createdBy: "agent" as const,
+      };
+      yield* Ref.update(f.shells, (all) => [...all, task]);
+      yield* Ref.update(f.state, (value) => ({
+        ...value,
+        agentThreads: [
+          {
+            threadId: task.id,
+            projectId: task.projectId,
+            context: "Global" as const,
+            actionId: "tracked",
+            reportedAt: null,
+            archivedAt: null,
+            undoDisabled: false,
+          },
+        ],
+      }));
+      const before = (yield* Ref.get(f.reads)).catalogs;
+      yield* f.service.tick;
+      yield* f.service.tick;
+      yield* f.service.readTail(targetId, 10);
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before);
+      assert.equal((yield* Ref.get(f.state)).agentThreads?.length, 1);
+      // Once the interval has passed, the heartbeat builds its digest again.
+      yield* TestClock.adjust("61 minutes");
+      yield* f.service.tick;
+      assert.isAbove((yield* Ref.get(f.reads)).catalogs, before);
+    }),
+);
+
 it.effect("tick settles a task whose run failed and reactivates it when a run starts", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");

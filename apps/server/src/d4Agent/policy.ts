@@ -109,6 +109,22 @@ export function isQuietHour(now: number, quiet: D4AgentSettings["quietHours"]): 
     : minute >= quiet.startMinute || minute < quiet.endMinute;
 }
 
+/** The time and activity part of heartbeatDue; checked before the digest is built. */
+export function heartbeatWindowOpen(input: {
+  settings: D4AgentSettings;
+  now: number;
+  lastAt: number;
+  busy: boolean;
+}): boolean {
+  return (
+    input.settings.enabled &&
+    input.settings.heartbeatMinutes !== null &&
+    !input.busy &&
+    !isQuietHour(input.now, input.settings.quietHours) &&
+    input.now - input.lastAt >= input.settings.heartbeatMinutes * 60_000
+  );
+}
+
 export function heartbeatDue(input: {
   settings: D4AgentSettings;
   now: number;
@@ -118,11 +134,7 @@ export function heartbeatDue(input: {
   busy: boolean;
 }): boolean {
   return (
-    input.settings.enabled &&
-    input.settings.heartbeatMinutes !== null &&
-    !input.busy &&
-    !isQuietHour(input.now, input.settings.quietHours) &&
-    input.now - input.lastAt >= input.settings.heartbeatMinutes * 60_000 &&
+    heartbeatWindowOpen(input) &&
     input.attentionKeys.some((key) => !input.previousKeys.includes(key))
   );
 }

@@ -1,5 +1,5 @@
 import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
-import { contextScopeHash } from "../d4Agent/brainScope.ts";
+import { taskScopeHash } from "../d4Agent/brainScope.ts";
 import { DEFAULT_D4_AGENT_SETTINGS } from "@d4research/contracts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -716,7 +716,11 @@ function makeLocalCommandHarness(input: {
                   reportedAt: null,
                   archivedAt: null,
                   undoDisabled: false,
-                  scopeHash: contextScopeHash("Global", DEFAULT_D4_AGENT_SETTINGS),
+                  scopeHash: taskScopeHash(
+                    "Global",
+                    DEFAULT_D4_AGENT_SETTINGS,
+                    input.taskProjectId ?? projection.thread.projectId,
+                  ),
                 },
               ],
             } as unknown as D4AgentStore.StoredState),

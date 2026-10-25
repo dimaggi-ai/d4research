@@ -92,6 +92,57 @@ it.effect("scoped tasks refuse missing ownership, changed mappings and another p
   }),
 );
 
+it.effect("a settled task keeps its approved scope after monitoring evicts its record", () =>
+  Effect.gen(function* () {
+    const settledAt = "2026-10-24T12:00:00.000Z";
+    const newer = Array.from({ length: 1001 }, (_, index) => ({
+      ...record,
+      threadId: ThreadId.make(`d4-action:newer-${index}`),
+      actionId: `newer-${index}`,
+      settledAt,
+    }));
+    const bounded = Store.boundStoredState(
+      {
+        actions: [],
+        bindings: [],
+        agentThreads: [{ ...record, settledAt }, ...newer],
+      } as unknown as Store.StoredState,
+      0,
+    );
+    assert.isFalse(bounded.agentThreads?.some((entry) => entry.threadId === threadId));
+    const evicted = Layer.mock(Store.D4AgentStore)({
+      workspace: "/isolated/agent",
+      get: Effect.succeed(bounded),
+    });
+    yield* Effect.gen(function* () {
+      const scope = yield* validateAgentTaskScope(threadId, settings, "research:yb", pipelines);
+      assert.equal(scope?.projectId, projectId);
+      // Still fail closed when the approved scope no longer matches the configuration.
+      assert.equal(
+        (yield* Effect.result(
+          validateAgentTaskScope(threadId, {
+            ...settings,
+            projectContexts: { [projectId]: "Dimaggi" },
+          }),
+        ))._tag,
+        "Failure",
+      );
+    }).pipe(Effect.provide(evicted));
+    const revoked = Layer.mock(Store.D4AgentStore)({
+      workspace: "/isolated/agent",
+      get: Effect.succeed(
+        Store.boundStoredState(Store.revokeTasks(bounded, new Set([threadId])), 0),
+      ),
+    });
+    assert.equal(
+      (yield* Effect.result(
+        validateAgentTaskScope(threadId, settings).pipe(Effect.provide(revoked)),
+      ))._tag,
+      "Failure",
+    );
+  }),
+);
+
 it("task MCP policy permits its own tools and refuses unscoped retrieval and cross-thread reads", () => {
   const request = (name: string, args: Record<string, unknown> = {}) => ({
     method: "tools/call",

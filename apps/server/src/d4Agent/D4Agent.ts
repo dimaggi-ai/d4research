@@ -1582,12 +1582,7 @@ export const layer = Layer.effect(
             })
             .pipe(
               Effect.tapError(() =>
-                store.update((value) => ({
-                  ...value,
-                  agentThreads: (value.agentThreads ?? []).filter(
-                    (entry) => entry.threadId !== targetId,
-                  ),
-                })),
+                store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
               ),
             );
         }
@@ -1623,12 +1618,7 @@ export const layer = Layer.effect(
           .pipe(
             Effect.mapError(threadError),
             Effect.tapError(() =>
-              store.update((value) => ({
-                ...value,
-                agentThreads: (value.agentThreads ?? []).filter(
-                  (entry) => entry.threadId !== targetId,
-                ),
-              })),
+              store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
             ),
           );
         return;
@@ -2070,9 +2060,12 @@ export const layer = Layer.effect(
           [...taskShells].flatMap(([id, shell]) => (shell === null ? [] : [[id, shell] as const])),
         );
         const removed = new Set<ThreadId>();
+        // A deleted task also loses its approved scope; an archived one keeps it.
+        const deleted = new Set<ThreadId>();
         const settled = new Map<ThreadId, boolean>();
         for (const entry of tracked) {
           const shell = shells.get(entry.threadId);
+          if (shell === undefined || shell.deletedAt !== null) deleted.add(entry.threadId);
           if (
             shell === undefined ||
             shell.deletedAt !== null ||
@@ -2182,7 +2175,7 @@ export const layer = Layer.effect(
         if (removed.size > 0 || settled.size > 0) {
           const settledAt = DateTime.formatIso(yield* DateTime.now);
           yield* store.update((value) => ({
-            ...value,
+            ...D4AgentStore.revokeTasks(value, deleted),
             agentThreads: (value.agentThreads ?? [])
               .filter((entry) => !removed.has(entry.threadId))
               .map((entry) => {

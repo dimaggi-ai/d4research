@@ -42,6 +42,16 @@ export const StoredAgentThread = Schema.Struct({
   // Set while the task has no active run, pending request, or background work.
   settledAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
 });
+// The approved scope of a task thread. Kept apart from the bounded monitoring record so a settled
+// task that monitoring forgot can still run follow-up turns in the scope it was approved for.
+export const StoredTaskScope = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  context: D4BrainContext,
+  pipelineId: Schema.optionalKey(Schema.String),
+  pipelineHash: Schema.optionalKey(Schema.String),
+  scopeHash: Schema.optionalKey(Schema.String),
+});
 export const StoredState = Schema.Struct({
   pendingRetirements: Schema.optionalKey(
     Schema.Array(
@@ -61,6 +71,7 @@ export const StoredState = Schema.Struct({
     ),
   ),
   agentThreads: Schema.optionalKey(Schema.Array(StoredAgentThread)),
+  taskScopes: Schema.optionalKey(Schema.Array(StoredTaskScope)),
   sessions: Schema.optionalKey(Schema.Array(StoredSession)),
   chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
   transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
@@ -145,9 +156,36 @@ export function ctoPreview(value: unknown): string {
     : new TextDecoder().decode(bytes.slice(0, 4080), { stream: true }) + "… [truncated]";
 }
 
-// Active tasks are bounded at admission. Only the newest settled tasks keep their record; an
-// evicted one loses its task tools, which fails closed.
+// Active tasks are bounded at admission. Only the newest settled tasks keep their monitoring
+// record. Their approved scope stays in taskScopes, so follow-up turns keep working.
 const SETTLED_AGENT_THREAD_LIMIT = 1000;
+// A task beyond this many newer ones loses its scope and its turns are refused (fail closed).
+const TASK_SCOPE_LIMIT = 20_000;
+function scopeOf(entry: typeof StoredAgentThread.Type): typeof StoredTaskScope.Type {
+  return {
+    threadId: entry.threadId,
+    projectId: entry.projectId,
+    context: entry.context,
+    ...(entry.pipelineId !== undefined ? { pipelineId: entry.pipelineId } : {}),
+    ...(entry.pipelineHash !== undefined ? { pipelineHash: entry.pipelineHash } : {}),
+    ...(entry.scopeHash !== undefined ? { scopeHash: entry.scopeHash } : {}),
+  };
+}
+// Every monitored task has its scope recorded; a monitoring record wins over an older scope.
+function boundTaskScopes(state: StoredState): ReadonlyArray<typeof StoredTaskScope.Type> {
+  const monitored = new Map((state.agentThreads ?? []).map((entry) => [entry.threadId, entry]));
+  const scopes = (state.taskScopes ?? []).filter((entry) => !monitored.has(entry.threadId));
+  return [...scopes, ...[...monitored.values()].map(scopeOf)].slice(-TASK_SCOPE_LIMIT);
+}
+
+/** Removes a task's approved scope as well as its monitoring record (failed creation, deletion). */
+export function revokeTasks(state: StoredState, threadIds: ReadonlySet<ThreadId>): StoredState {
+  return {
+    ...state,
+    agentThreads: (state.agentThreads ?? []).filter((entry) => !threadIds.has(entry.threadId)),
+    taskScopes: (state.taskScopes ?? []).filter((entry) => !threadIds.has(entry.threadId)),
+  };
+}
 function boundAgentThreads(
   entries: ReadonlyArray<typeof StoredAgentThread.Type>,
 ): ReadonlyArray<typeof StoredAgentThread.Type> {
@@ -186,6 +224,7 @@ export function boundStoredState(state: StoredState, now: number): StoredState {
       .slice(-4),
     chatThreadIds: (state.chatThreadIds ?? []).slice(-256),
     agentThreads: boundAgentThreads(state.agentThreads ?? []),
+    taskScopes: boundTaskScopes(state),
     transcript: (state.transcript ?? []).slice(-200),
     bindings: state.bindings
       .filter(

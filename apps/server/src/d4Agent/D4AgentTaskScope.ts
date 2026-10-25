@@ -20,9 +20,11 @@ export const makeTaskScopeValidator = Effect.gen(function* () {
     pipelines?: Pick<ServerSettings, "dev" | "research">,
   ) {
     if (!String(threadId).startsWith("d4-action:")) return null;
-    const record = Option.isSome(store)
-      ? (yield* store.value.get).agentThreads?.find((entry) => entry.threadId === threadId)
-      : undefined;
+    const state = Option.isSome(store) ? yield* store.value.get : undefined;
+    // The monitoring record when monitoring still tracks the task, otherwise its durable scope.
+    const record =
+      state?.agentThreads?.find((entry) => entry.threadId === threadId) ??
+      state?.taskScopes?.find((entry) => entry.threadId === threadId);
     if (
       record === undefined ||
       record.scopeHash !==

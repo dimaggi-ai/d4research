@@ -2772,6 +2772,40 @@ it.effect("tick settles a task whose run failed and reactivates it when a run st
   }),
 );
 
+it.effect("the sweep keeps an archived task's scope and revokes a deleted task's scope", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const archived = { ...target, id: ThreadId.make("task-archived"), archivedAt: now };
+    const deleted = { ...target, id: ThreadId.make("task-deleted"), deletedAt: now };
+    yield* Ref.update(f.shells, (all) => [...all, archived, deleted]);
+    const entry = (threadId: ThreadId) => ({
+      threadId,
+      projectId: target.projectId,
+      context: "Global" as const,
+      actionId: threadId,
+      reportedAt: null,
+      archivedAt: null,
+      undoDisabled: false,
+    });
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [entry(archived.id), entry(deleted.id)],
+      taskScopes: [
+        { threadId: archived.id, projectId: target.projectId, context: "Global" as const },
+        { threadId: deleted.id, projectId: target.projectId, context: "Global" as const },
+      ],
+    }));
+    yield* f.service.tick;
+    const state = yield* Ref.get(f.state);
+    assert.deepEqual(state.agentThreads, []);
+    assert.deepEqual(
+      state.taskScopes?.map((scope) => scope.threadId),
+      [archived.id],
+    );
+  }),
+);
+
 it("the store keeps every active task and only the newest settled ones", () => {
   const entry = (index: number, settled: boolean) => ({
     threadId: ThreadId.make(`task-${index}`),

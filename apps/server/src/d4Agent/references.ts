@@ -19,11 +19,15 @@ const mentioned = (text: string, value: string) =>
   value.length > 0 &&
   new RegExp(`(^|[^\\p{L}\\p{N}_-])${escaped(value)}($|[^\\p{L}\\p{N}_-])`, "iu").test(text);
 
-// Resolve identities before any provider turn. Titles are exact matches, never fuzzy context guesses.
+// Only explicit identities may select a context; titles are untrusted display metadata.
 export function resolveAgentReference(text: string, references: ReadonlyArray<AgentReference>) {
-  const ids = references.filter((entry) => mentioned(text, entry.id));
-  const candidates =
-    ids.length > 0 ? ids : references.filter((entry) => mentioned(text, entry.title));
+  const tokens = [...text.matchAll(/\[\[(thread|project|pipeline):([^\]]+)\]\]/g)];
+  const unmarked = text.replace(/\[\[[^\]]*\]\]/g, "");
+  const candidates = references.filter(
+    (entry) =>
+      tokens.some((match) => match[1] === entry.kind && match[2] === entry.id) ||
+      mentioned(unmarked, entry.id),
+  );
   const unique = [
     ...new Map(candidates.map((entry) => [`${entry.kind}:${entry.id}`, entry])).values(),
   ];
@@ -50,9 +54,12 @@ export function validateReplyReferences(
     [];
   const rendered = text.replace(
     /\[\[(thread|project):([^|\]]+)(?:\|([^\]]+))?\]\]/g,
-    (_match, kind: string, id: string, label: string | undefined) => {
+    (_match, kind: string, id: string) => {
       const target = references.find((entry) => entry.kind === kind && entry.id === id);
-      const title = target?.title ?? label ?? id;
+      const metadataAllowed =
+        target !== undefined &&
+        (context === "Global" || referenceContext(target, config) === context);
+      const title = metadataAllowed ? target.title : "Unavailable reference";
       const allowed =
         target?.projectId != null && projectContentInScope(context, config, target.projectId);
       links.push({

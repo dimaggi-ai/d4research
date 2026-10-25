@@ -1,5 +1,5 @@
 import * as AgentStore from "../d4Agent/D4AgentStore.ts";
-import { contextScopeHash } from "../d4Agent/brainScope.ts";
+import { taskScopeHash } from "../d4Agent/brainScope.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { DEFAULT_SERVER_SETTINGS, ProjectId } from "@d4research/contracts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -1060,7 +1060,7 @@ it.effect("admits provider and OAuth client credentials and points only clients 
                     reportedAt: null,
                     archivedAt: null,
                     undoDisabled: false,
-                    scopeHash: contextScopeHash("Global", DEFAULT_SERVER_SETTINGS.d4Agent),
+                    scopeHash: taskScopeHash("Global", DEFAULT_SERVER_SETTINGS.d4Agent, "unmapped"),
                   },
                 ],
               } as unknown as AgentStore.StoredState),

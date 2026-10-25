@@ -53,6 +53,7 @@ export class D4AgentPipelines extends Context.Service<
       readonly actionId: string;
       readonly context: D4BrainContext;
       readonly prepared: PreparedPipeline;
+      readonly onCreated?: (threadId: ThreadId) => Effect.Effect<void, D4AgentError>;
     }) => Effect.Effect<ThreadId, D4AgentError>;
   }
 >()("d4research/d4Agent/D4AgentPipelines") {}
@@ -119,6 +120,7 @@ const make = Effect.gen(function* () {
     readonly actionId: string;
     readonly context: D4BrainContext;
     readonly prepared: PreparedPipeline;
+    readonly onCreated?: (threadId: ThreadId) => Effect.Effect<void, D4AgentError>;
   }) {
     const prepared = input.prepared;
     const pipeline = yield* definition(prepared.pipelineId, prepared.projectId, input.context);
@@ -144,6 +146,7 @@ const make = Effect.gen(function* () {
         creationSource: "server",
       })
       .pipe(Effect.mapError(unavailable));
+    if (input.onCreated) yield* input.onCreated(threadId);
     yield* threads
       .sendToThread({
         projectId: prepared.projectId,

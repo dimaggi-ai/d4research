@@ -17,11 +17,11 @@ const config = {
   projectContexts: { [projectId]: "Dimaggi" as const },
 };
 
-it("resolves references by explicit id, deep link, and exact title", () => {
+it("resolves references by explicit id, deep link, and stable mention token", () => {
   for (const text of [
     `Open ${threadId}`,
     `Open https://app.example/threads/${threadId}`,
-    "Open Investigate the cache",
+    `Open [[thread:${threadId}]]`,
   ]) {
     const result = resolveAgentReference(text, [thread]);
     assert.equal(result.kind, "resolved");
@@ -29,7 +29,7 @@ it("resolves references by explicit id, deep link, and exact title", () => {
   }
 });
 
-it("asks when titles are duplicated or multiple known references are mentioned", () => {
+it("ignores duplicate titles and asks only for multiple explicit identities", () => {
   const duplicate: AgentReference = {
     ...thread,
     id: "thread-two",
@@ -44,7 +44,7 @@ it("asks when titles are duplicated or multiple known references are mentioned",
   };
 
   const duplicateResult = resolveAgentReference("Open Investigate the cache", [thread, duplicate]);
-  assert.equal(duplicateResult.kind, "ambiguous");
+  assert.equal(duplicateResult.kind, "none");
   if (duplicateResult.kind === "ambiguous") assert.equal(duplicateResult.candidates.length, 2);
 
   const multipleResult = resolveAgentReference(`${threadId} and project-two`, [thread, another]);
@@ -74,11 +74,11 @@ it("links valid in-scope thread references and renders other references as plain
 
   assert.equal(
     result.text,
-    "See Investigate the cache, Server supplied unmapped title, and missing thread.",
+    "See Investigate the cache, Unavailable reference, and Unavailable reference.",
   );
   assert.deepEqual(result.links, [
     { label: "Investigate the cache", threadId, projectId },
-    { label: "Server supplied unmapped title", threadId: null, projectId: null },
-    { label: "missing thread", threadId: null, projectId: null },
+    { label: "Unavailable reference", threadId: null, projectId: null },
+    { label: "Unavailable reference", threadId: null, projectId: null },
   ]);
 });

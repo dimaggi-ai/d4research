@@ -1,3 +1,4 @@
+import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as SessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as Pipelines from "./D4AgentPipelines.ts";
 import * as Lifecycle from "./D4AgentThreadLifecycle.ts";
@@ -12,7 +13,12 @@ import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import { createScopedBrain } from "./brain/scopedBrain.ts";
 import { createCtoClient } from "./cto/CtoClient.ts";
-import { contextScopeHash, projectInScope, projectContentInScope } from "./brainScope.ts";
+import {
+  contextScopeHash,
+  taskScopeHash,
+  projectInScope,
+  projectContentInScope,
+} from "./brainScope.ts";
 import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
 import {
@@ -220,6 +226,7 @@ export const layer = Layer.effect(
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const threads = yield* ThreadManagement.ThreadManagementService;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const events = yield* Effect.serviceOption(ApplicationEvents.OrchestrationEventStore);
     const projects = yield* ProjectService.ProjectService;
     const monitor = yield* AgentMonitor.AgentMonitorReactor;
     const probe = yield* SystemProbe.SystemProbe;
@@ -278,49 +285,74 @@ export const layer = Layer.effect(
           projectInScope(state.brainContext, config, thread.projectId),
       );
     });
+    const retirementRetries = new Map<ThreadId, number>();
     const finishRetirement = Effect.fn("D4Agent.finishRetirement")(function* () {
       const state = yield* store.get;
-      if (state.retiringThreadId === null) return;
-      const previous = yield* threads
-        .getThreadShell(state.retiringThreadId)
-        .pipe(Effect.mapError(threadError));
-      if (previous !== null && previous.deletedAt === null) {
-        yield* threads
-          .dispatch({
-            type: "thread.stop",
-            commandId: command(`context-stop:${state.retiringThreadId}`),
-            threadId: state.retiringThreadId,
-          })
-          .pipe(
-            Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
-            Effect.mapError(threadError),
-          );
-        yield* threads
-          .dispatch({
-            type: "thread.archive",
-            commandId: command(`context-archive:${state.retiringThreadId}`),
-            threadId: state.retiringThreadId,
-          })
-          .pipe(
-            Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
-            Effect.mapError(threadError),
-          );
+      const pending = [
+        ...(state.pendingRetirements ?? []),
+        ...(state.retiringThreadId === null
+          ? []
+          : [
+              {
+                threadId: state.retiringThreadId,
+                providerSessionId: state.retiringProviderSessionId ?? null,
+              },
+            ]),
+      ];
+      const at = yield* Clock.currentTimeMillis;
+      for (const retirement of pending) {
+        if ((retirementRetries.get(retirement.threadId) ?? 0) > at) continue;
+        const result = yield* Effect.result(
+          Effect.gen(function* () {
+            // Revoke the retired provider even if thread archival is temporarily unavailable.
+            if (retirement.providerSessionId) {
+              if (Option.isNone(sessionManager))
+                return yield* new D4AgentError({ reason: "storage" });
+              yield* sessionManager.value
+                .detach({
+                  providerSessionId: ProviderSessionId.make(retirement.providerSessionId),
+                  threadId: retirement.threadId,
+                  revokeMcpCredential: true,
+                })
+                .pipe(Effect.mapError(threadError));
+            }
+            const previous = yield* threads
+              .getThreadShell(retirement.threadId)
+              .pipe(Effect.mapError(threadError));
+            if (previous !== null && previous.deletedAt === null) {
+              for (const type of ["thread.stop", "thread.archive"] as const)
+                yield* threads
+                  .dispatch({
+                    type,
+                    commandId: command(`context-${type}:${retirement.threadId}`),
+                    threadId: retirement.threadId,
+                  })
+                  .pipe(
+                    Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
+                    Effect.mapError(threadError),
+                  );
+            }
+          }),
+        );
+        if (result._tag === "Failure") {
+          retirementRetries.set(retirement.threadId, at + 30_000);
+          yield* Effect.logWarning("d4 Agent session retirement will be retried");
+          continue;
+        }
+        retirementRetries.delete(retirement.threadId);
+        yield* store.update((value) => ({
+          ...value,
+          ...(value.retiringThreadId === retirement.threadId
+            ? {
+                retiringThreadId: null,
+                retiringProviderSessionId: null,
+              }
+            : {}),
+          pendingRetirements: (value.pendingRetirements ?? []).filter(
+            (entry) => entry.threadId !== retirement.threadId,
+          ),
+        }));
       }
-      if (state.retiringProviderSessionId) {
-        if (Option.isNone(sessionManager)) return yield* new D4AgentError({ reason: "storage" });
-        yield* sessionManager.value
-          .detach({
-            providerSessionId: ProviderSessionId.make(state.retiringProviderSessionId),
-            threadId: state.retiringThreadId,
-            revokeMcpCredential: true,
-          })
-          .pipe(Effect.mapError(threadError));
-      }
-      yield* store.update((value) => ({
-        ...value,
-        retiringThreadId: null,
-        retiringProviderSessionId: null,
-      }));
     });
     const appendDisplay = Effect.fn("D4Agent.appendDisplay")(function* (
       text: string,
@@ -346,10 +378,29 @@ export const layer = Layer.effect(
       const state = yield* store.get;
       const session = state.sessions?.find((entry) => entry.context === context);
       if (!session) return;
+      if ((state.pendingRetirements?.length ?? 0) + (state.retiringThreadId === null ? 0 : 1) >= 32)
+        return yield* new D4AgentError({ reason: "busy" });
+      if (session.providerSessionId !== null) {
+        if (Option.isNone(sessionManager)) return yield* new D4AgentError({ reason: "storage" });
+        yield* sessionManager.value
+          .detach({
+            providerSessionId: ProviderSessionId.make(session.providerSessionId),
+            threadId: session.threadId,
+            revokeMcpCredential: true,
+          })
+          .pipe(Effect.mapError(threadError));
+      }
       yield* store.update((value) => ({
         ...value,
-        retiringThreadId: session.threadId,
-        retiringProviderSessionId: session.providerSessionId,
+        pendingRetirements: [
+          ...(value.pendingRetirements ?? []).filter(
+            (entry) => entry.threadId !== session.threadId,
+          ),
+          {
+            threadId: session.threadId,
+            providerSessionId: null,
+          },
+        ],
         rotation: value.rotation?.threadId === session.threadId ? null : (value.rotation ?? null),
         sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
         bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
@@ -388,7 +439,6 @@ export const layer = Layer.effect(
         heartbeatAt: 0,
         heartbeatKeys: [],
         usageCursor: "",
-        lastUserText: "",
         sessions: [
           ...(value.sessions ?? []).filter((entry) => entry.context !== context),
           canResume
@@ -440,6 +490,10 @@ export const layer = Layer.effect(
           contextScopeHash: contextScopeHash(value.brainContext, config),
         }));
       }
+      const replaced = state.sessions?.find(
+        (entry) => entry.context === state.brainContext && entry.threadId !== state.threadId,
+      );
+      if (replaced) yield* close(replaced.context);
       const threadId = state.threadId!,
         projectId = state.projectId!;
       yield* projects
@@ -500,12 +554,56 @@ export const layer = Layer.effect(
       }));
       return { threadId, projectId };
     });
+    let cachedReferences: AgentReference[] | undefined;
+    let referenceSequence: number | undefined;
+    let referenceSettings = "";
+    let referenceProject: ProjectId | null = null;
     const referenceCatalog = Effect.gen(function* () {
       const state = yield* store.get;
       const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+      const settingsKey = yield* encodeDigest([
+        config.dev.scenarios.map((entry) => entry.name),
+        config.research.scenarios.map((entry) => entry.name),
+        config.d4Agent.pipelineProjects,
+      ]).pipe(Effect.mapError(storageError));
+      let dirty =
+        cachedReferences === undefined ||
+        settingsKey !== referenceSettings ||
+        state.projectId !== referenceProject;
+      if (Option.isSome(events)) {
+        const sequence = yield* events.value.latestApplicationSequence.pipe(
+          Effect.mapError(threadError),
+        );
+        if (!dirty && referenceSequence !== undefined && sequence !== referenceSequence) {
+          dirty = yield* events.value
+            .readApplicationEvents({ afterSequence: referenceSequence, throughSequence: sequence })
+            .pipe(
+              Stream.runFold(
+                () => false,
+                (changed, stored) =>
+                  changed ||
+                  !("event" in stored) ||
+                  (stored.event.threadId !== state.threadId &&
+                    [
+                      "thread.created",
+                      "thread.metadata-updated",
+                      "thread.archived",
+                      "thread.unarchived",
+                      "thread.deleted",
+                    ].includes(stored.event.type)),
+              ),
+              Effect.mapError(threadError),
+            );
+        }
+        referenceSequence = sequence;
+        if (!dirty) return cachedReferences!;
+      }
       const shell = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
       const visible = shell.threads.filter(
-        (entry) => entry.deletedAt === null && entry.projectId !== state.projectId,
+        (entry) =>
+          entry.deletedAt === null &&
+          entry.archivedAt === null &&
+          entry.projectId !== state.projectId,
       );
       const catalog: AgentReference[] = visible.map((entry) => ({
         kind: "thread",
@@ -536,6 +634,9 @@ export const layer = Layer.effect(
             threadId: null,
           });
         }
+      referenceSettings = settingsKey;
+      referenceProject = state.projectId;
+      cachedReferences = catalog;
       return catalog;
     });
     const sessionSnapshots = new Map<
@@ -615,17 +716,27 @@ export const layer = Layer.effect(
       resumedAfterRotation = false,
     ) {
       id ??= yield* randomUUID;
+      yield* maintainSessions();
       if (!heartbeat) {
         if ((yield* store.get).rotation) return yield* new D4AgentError({ reason: "busy" });
         const resolved = resolveAgentReference(input.text, yield* referenceCatalog);
         if (resolved.kind === "ambiguous") {
+          const state = yield* store.get;
+          const config = yield* settings;
+          const candidates = resolved.candidates.filter(
+            (entry) =>
+              state.brainContext === "Global" ||
+              referenceContext(entry, config) === state.brainContext,
+          );
           const identity = yield* ensure();
           yield* appendDisplay(input.text, "user");
           yield* appendDisplay(
-            `Which thread, project, or pipeline do you mean? ${resolved.candidates
-              .slice(0, 6)
-              .map((target) => `${target.title} (${target.id})`)
-              .join("; ")}`,
+            candidates.length === 0
+              ? "Which thread, project, or pipeline do you mean? Mention one at a time."
+              : `Which thread, project, or pipeline do you mean? ${candidates
+                  .slice(0, 6)
+                  .map((target) => `${target.title} (${target.id})`)
+                  .join("; ")}`,
             "system",
           );
           return identity;
@@ -635,13 +746,11 @@ export const layer = Layer.effect(
           if ((yield* store.get).brainContext !== context) yield* rotate(context);
         }
       }
-      yield* maintainSessions();
       const identity = yield* ensure();
       const modelSelection = yield* selected;
       const at = DateTime.formatIso(yield* DateTime.now);
       if (!heartbeat && !resumedAfterRotation) {
         yield* appendDisplay(input.text, "user", `d4-agent:${id}`);
-        yield* store.update((value) => ({ ...value, lastUserText: input.text }));
       }
       yield* store.update((value) => ({
         ...value,
@@ -660,6 +769,18 @@ export const layer = Layer.effect(
         yield* beginRotation(input.text, heartbeat);
         return identity;
       }
+      if (!heartbeat)
+        yield* store.update((value) => ({
+          ...value,
+          userMessages: [
+            ...(value.userMessages ?? []),
+            {
+              threadId: identity.threadId,
+              messageId: `d4-agent:${id}`,
+              text: input.text,
+            },
+          ].slice(-200),
+        }));
       yield* threads
         .sendToThread({
           ...identity,
@@ -1178,39 +1299,101 @@ export const layer = Layer.effect(
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const targetId = ThreadId.make(`d4-action:${record.id}`);
-        yield* store.update((value) => ({
-          ...value,
-          agentThreads: [
-            ...(value.agentThreads ?? []).filter((entry) => entry.threadId !== targetId),
-            {
-              threadId: targetId,
-              projectId: action.projectId,
-              context: state.brainContext,
-              actionId: record.id,
-              reportedAt: null,
-              archivedAt: null,
-              undoDisabled: false,
-              scopeHash: contextScopeHash(state.brainContext, config),
-              ...("pipelineId" in action
-                ? {
-                    pipelineId: action.pipelineId,
-                    pipelineHash: (record.result as Pipelines.PreparedPipeline).scenarioHash,
-                  }
-                : {}),
-            },
-          ],
-        }));
+        if ((state.agentThreads?.length ?? 0) >= 1000)
+          return yield* new D4AgentError({ reason: "busy" });
+        const register = Effect.gen(function* () {
+          yield* store.update((value) => ({
+            ...value,
+            agentThreads: [
+              ...(value.agentThreads ?? []).filter((entry) => entry.threadId !== targetId),
+              {
+                threadId: targetId,
+                projectId: action.projectId,
+                context: state.brainContext,
+                actionId: record.id,
+                reportedAt: null,
+                archivedAt: null,
+                undoDisabled: false,
+                scopeHash: taskScopeHash(
+                  state.brainContext,
+                  config,
+                  action.projectId,
+                  "pipelineId" in action ? action.pipelineId : undefined,
+                ),
+                ...("pipelineId" in action
+                  ? {
+                      pipelineId: action.pipelineId,
+                      pipelineHash: (record.result as Pipelines.PreparedPipeline).scenarioHash,
+                    }
+                  : {}),
+              },
+            ],
+          }));
+        });
         if (action.type !== "start") {
           const prepared = yield* pipelines.prepare(action, state.brainContext);
           const approved = record.result as Pipelines.PreparedPipeline | undefined;
           if (approved?.scenarioHash !== prepared.scenarioHash)
             return yield* new D4AgentError({ reason: "action-unavailable" });
-          return yield* pipelines.execute({
-            actionId: record.id,
-            context: state.brainContext,
-            prepared,
-          });
+          return yield* pipelines
+            .execute({
+              actionId: record.id,
+              context: state.brainContext,
+              prepared,
+              onCreated: () => register.pipe(Effect.asVoid),
+            })
+            .pipe(
+              Effect.tapError(() =>
+                store.update((value) => ({
+                  ...value,
+                  agentThreads: (value.agentThreads ?? []).filter(
+                    (entry) => entry.threadId !== targetId,
+                  ),
+                })),
+              ),
+            );
         }
+        yield* threads
+          .dispatch({
+            type: "thread.create",
+            commandId: command(`action-create:${record.id}`),
+            threadId: targetId,
+            projectId: action.projectId,
+            title: "d4 Agent task",
+            modelSelection: action.modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdBy: "agent",
+            creationSource: "server",
+          })
+          .pipe(Effect.mapError(threadError));
+        yield* register;
+        yield* threads
+          .sendToThread({
+            projectId: action.projectId,
+            threadId: targetId,
+            commandId: command(`action:${record.id}`),
+            messageId: MessageId.make(`d4-action:${record.id}`),
+            text: action.text,
+            attachments: [],
+            mode: "queue",
+            createdBy: "agent",
+            creationSource: "server",
+          })
+          .pipe(
+            Effect.mapError(threadError),
+            Effect.tapError(() =>
+              store.update((value) => ({
+                ...value,
+                agentThreads: (value.agentThreads ?? []).filter(
+                  (entry) => entry.threadId !== targetId,
+                ),
+              })),
+            ),
+          );
+        return;
       }
       if (action.type === "memory-propose") {
         if (state.threadId === null) return yield* new D4AgentError({ reason: "context" });
@@ -1359,44 +1542,7 @@ export const layer = Layer.effect(
         ctoAsk = { id: record.id, fiber };
         return "Asked, answer will be posted.";
       }
-      if (action.type === "start") {
-        const config = yield* settings;
-        const reason = modelAvailability(
-          { ...config, modelSelection: action.modelSelection },
-          yield* providers.getProviders,
-        );
-        if (reason !== null) return yield* new D4AgentError({ reason });
-        const targetId = ThreadId.make(`d4-action:${record.id}`);
-        yield* threads
-          .dispatch({
-            type: "thread.create",
-            commandId: command(`action-create:${record.id}`),
-            threadId: targetId,
-            projectId: action.projectId,
-            title: "d4 Agent task",
-            modelSelection: action.modelSelection,
-            runtimeMode: "approval-required",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdBy: "agent",
-            creationSource: "server",
-          })
-          .pipe(Effect.mapError(threadError));
-        yield* threads
-          .sendToThread({
-            projectId: action.projectId,
-            threadId: targetId,
-            commandId: command(`action:${record.id}`),
-            messageId: MessageId.make(`d4-action:${record.id}`),
-            text: action.text,
-            attachments: [],
-            mode: "queue",
-            createdBy: "agent",
-            creationSource: "server",
-          })
-          .pipe(Effect.mapError(threadError));
-      } else {
+      {
         const target = yield* threads
           .getThreadShell(action.threadId)
           .pipe(Effect.mapError(threadError));
@@ -1479,11 +1625,25 @@ export const layer = Layer.effect(
           );
           yield* validateTarget(action);
           const state = yield* store.get;
-          if (action.type === "send")
-            action = {
-              ...action,
-              originalText: state.lastUserText ?? action.originalText ?? action.text,
-            };
+          if (action.type === "send") {
+            const shell =
+              state.threadId === null
+                ? null
+                : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
+            let originalText: string | undefined;
+            if (shell?.activeRunId != null) {
+              const message = yield* projections
+                .getRunMessage(shell.id, shell.activeRunId)
+                .pipe(Effect.mapError(threadError));
+              if (message?.createdBy === "user") originalText = message.text;
+            } else if ((yield* D4AgentAccess.ToolCaller) === undefined) {
+              originalText = state.userMessages?.findLast(
+                (entry) => entry.threadId === state.threadId,
+              )?.text;
+            }
+            const { originalText: _untrustedOriginal, ...draft } = action;
+            action = originalText === undefined ? draft : { ...draft, originalText };
+          }
           const prepared =
             action.type === "pipeline" || action.type === "research"
               ? yield* pipelines.prepare(action, state.brainContext)
@@ -1571,7 +1731,12 @@ export const layer = Layer.effect(
             )
               return yield* new D4AgentError({ reason: "read-only" });
             const action = record.action;
-            if (input.sendOriginal && input.editedText !== undefined)
+            if (
+              input.sendOriginal &&
+              (input.editedText !== undefined ||
+                action.type !== "send" ||
+                action.originalText === undefined)
+            )
               return yield* new D4AgentError({ reason: "action-unavailable" });
             const edited =
               action.type === "send"
@@ -1590,21 +1755,55 @@ export const layer = Layer.effect(
           return yield* getState();
         }),
       );
+    const taskCursors = new Map<string, string>();
+    const archiveCursors = new Map<string, string>();
+    let taskShells:
+      | Awaited<Effect.Success<ReturnType<typeof threads.getShellSnapshot>>>
+      | undefined;
+    let taskSequence: number | undefined;
     const tick = lock.withPermits(1)(
       Effect.gen(function* () {
         const config = yield* settings;
         if ((!config.enabled || !config.ctoEnabled) && ctoAsk !== undefined)
           yield* Fiber.interrupt(ctoAsk.fiber);
+        yield* finishRetirement();
         yield* adoptLegacySession;
         yield* captureDisplay();
         yield* finishRotation();
         yield* maintainSessions();
         const current = yield* store.get;
-        for (const entry of config.enabled ? (current.agentThreads ?? []) : []) {
-          if (entry.archivedAt === null && !entry.undoDisabled) {
-            const shell = yield* threads
-              .getThreadShell(entry.threadId)
-              .pipe(Effect.mapError(threadError));
+        const tracked = config.enabled ? (current.agentThreads ?? []) : [];
+        if (tracked.length > 0) {
+          const sequence = Option.isSome(events)
+            ? yield* events.value.latestApplicationSequence.pipe(Effect.mapError(threadError))
+            : undefined;
+          if (taskShells === undefined || sequence === undefined || sequence !== taskSequence) {
+            taskShells = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
+            taskSequence = sequence;
+          }
+        }
+        const shells = new Map(
+          [...(taskShells?.threads ?? []), ...(taskShells?.archivedThreads ?? [])].map((shell) => [
+            shell.id,
+            shell,
+          ]),
+        );
+        const removed = new Set<ThreadId>();
+        for (const entry of tracked) {
+          const shell = shells.get(entry.threadId);
+          if (
+            shell === undefined ||
+            shell.deletedAt !== null ||
+            shell.archivedAt !== null ||
+            entry.archivedAt !== null
+          ) {
+            removed.add(entry.threadId);
+            taskCursors.delete(entry.threadId);
+            archiveCursors.delete(entry.threadId);
+            continue;
+          }
+          const cursor = `${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId}:${shell.activeRunId}`;
+          if (!entry.undoDisabled && taskCursors.get(entry.threadId) !== cursor) {
             if (
               shell?.latestRunId != null &&
               shell.activeRunId === null &&
@@ -1650,21 +1849,35 @@ export const layer = Layer.effect(
               }
             }
           }
+          taskCursors.set(entry.threadId, cursor);
+          const archiveDue =
+            entry.reportedAt !== null &&
+            config.agentThreadArchiveHours !== null &&
+            (yield* Clock.currentTimeMillis) >=
+              Date.parse(entry.reportedAt) + config.agentThreadArchiveHours * 3_600_000;
+          const archiveCursor = `${cursor}:${entry.reportedAt}:${config.agentThreadArchiveHours}`;
           if (
-            yield* lifecycle
-              .archive(entry, config.agentThreadArchiveHours)
-              .pipe(Effect.catch(() => Effect.succeed(false)))
+            archiveDue &&
+            !entry.undoDisabled &&
+            archiveCursors.get(entry.threadId) !== archiveCursor
           ) {
+            const archived = yield* lifecycle
+              .archive(entry, config.agentThreadArchiveHours)
+              .pipe(Effect.result);
+            if (archived._tag === "Failure") continue;
+            archiveCursors.set(entry.threadId, archiveCursor);
+            if (!archived.success) continue;
             const at = DateTime.formatIso(yield* DateTime.now);
             yield* store.update((value) => ({
               ...value,
-              agentThreads: (value.agentThreads ?? []).map((record) =>
-                record.threadId === entry.threadId ? { ...record, archivedAt: at } : record,
+              agentThreads: (value.agentThreads ?? []).filter(
+                (record) => record.threadId !== entry.threadId,
               ),
               actions: [
                 ...value.actions,
                 {
                   id: `archive:${entry.actionId}`,
+                  result: { ...entry, archivedAt: at },
                   context: entry.context,
                   sessionId: null,
                   action: { type: "auto-archive" as const, threadId: entry.threadId },
@@ -1674,8 +1887,17 @@ export const layer = Layer.effect(
                 },
               ],
             }));
+            taskCursors.delete(entry.threadId);
+            archiveCursors.delete(entry.threadId);
           }
         }
+        if (removed.size > 0)
+          yield* store.update((value) => ({
+            ...value,
+            agentThreads: (value.agentThreads ?? []).filter(
+              (entry) => !removed.has(entry.threadId),
+            ),
+          }));
         const health = yield* systemHealth();
         if (!config.enabled) return;
         const active = (yield* store.get).sessions?.find(
@@ -1743,17 +1965,32 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const state = yield* store.get;
-            const entry = state.agentThreads?.find(
-              (record) =>
-                `archive:${record.actionId}` === actionId && record.context === state.brainContext,
+            const record = state.actions.find(
+              (entry) =>
+                entry.id === actionId &&
+                entry.context === state.brainContext &&
+                entry.status === "executed" &&
+                entry.action.type === "auto-archive",
             );
-            if (!entry) return yield* new D4AgentError({ reason: "action-unavailable" });
-            yield* lifecycle.undo(entry);
+            const entry =
+              record === undefined
+                ? undefined
+                : Schema.decodeUnknownOption(D4AgentStore.StoredAgentThread)(record.result);
+            const legacy = state.agentThreads?.find(
+              (entry) =>
+                `archive:${entry.actionId}` === actionId && entry.context === state.brainContext,
+            );
+            const restored = entry !== undefined && Option.isSome(entry) ? entry.value : legacy;
+            if (!restored) return yield* new D4AgentError({ reason: "action-unavailable" });
+            yield* lifecycle.undo(restored);
             yield* store.update((value) => ({
               ...value,
-              agentThreads: (value.agentThreads ?? []).map((record) =>
-                record.threadId === entry.threadId ? { ...record, undoDisabled: true } : record,
-              ),
+              agentThreads: [
+                ...(value.agentThreads ?? []).filter(
+                  (entry) => entry.threadId !== restored.threadId,
+                ),
+                { ...restored, archivedAt: null, undoDisabled: true },
+              ],
               actions: value.actions.map((record) =>
                 record.id === actionId ? { ...record, status: "denied" as const } : record,
               ),
@@ -1904,9 +2141,7 @@ export const layer = Layer.effect(
           Effect.map((state) =>
             state.identityReady && state.threadId !== null && state.projectId !== null
               ? { threadId: state.threadId, projectId: state.projectId }
-              : state.retiringThreadId === null &&
-                  state.projectId !== null &&
-                  state.chatThreadIds?.at(-1)
+              : state.projectId !== null && state.chatThreadIds?.at(-1)
                 ? { threadId: state.chatThreadIds.at(-1)!, projectId: state.projectId }
                 : null,
           ),

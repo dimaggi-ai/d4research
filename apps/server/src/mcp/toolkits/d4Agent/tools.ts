@@ -6,15 +6,22 @@ import {
   ThreadId,
   ProjectId,
   ModelSelection,
+  OrchestratorMcpFailure,
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Agent from "../../../d4Agent/D4Agent.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 const shared = {
   failure: Schema.String,
   failureMode: "return" as const,
   dependencies: [Agent.D4Agent, McpInvocationContext.McpInvocationContext],
+};
+const writable = {
+  ...shared,
+  failure: Schema.Union([Schema.String, OrchestratorMcpFailure]),
+  dependencies: [...shared.dependencies, ThreadManagement.ThreadManagementService],
 };
 export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_resolve", {
@@ -31,7 +38,7 @@ export const D4AgentToolkit = Toolkit.make(
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_research", {
-    ...shared,
+    ...writable,
     description:
       "Draft a run for user approval. Supply the detailed rewritten ask, mapped project, pipeline ID and model. No run starts before approval.",
     parameters: Schema.Struct({
@@ -43,7 +50,7 @@ export const D4AgentToolkit = Toolkit.make(
     success: D4AgentActionRecord,
   }),
   Tool.make("d4_agent_pipeline", {
-    ...shared,
+    ...writable,
     description:
       "Draft a run for user approval. Supply the detailed rewritten ask, mapped project, pipeline ID and model. No run starts before approval.",
     parameters: Schema.Struct({
@@ -78,7 +85,7 @@ export const D4AgentToolkit = Toolkit.make(
     success: Schema.Array(D4AgentSystemCheck),
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_action", {
-    ...shared,
+    ...writable,
     description:
       "Request a bounded d4 action. Send, start, research and pipeline drafts always require user approval. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
     parameters: Schema.Struct({ action: D4AgentAction }),
@@ -105,7 +112,7 @@ export const D4AgentToolkit = Toolkit.make(
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_memory_propose", {
-    ...shared,
+    ...writable,
     description:
       "Create a pending memory proposal for human review in a work context. Proposals are disabled in Global. Never changes the vault. Read-only denies; Ask requires approval; Act creates the pending proposal.",
     parameters: Schema.Struct({
@@ -127,7 +134,7 @@ export const D4AgentToolkit = Toolkit.make(
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_cto_ask", {
-    ...shared,
+    ...writable,
     description:
       "Ask the CTO server a question asynchronously. Read-only denies; Ask requires approval; Act sends it. After sending, the tool returns immediately. The answer is posted only to the originating session; do not retry while it is in progress. Task execution and service operations are unavailable.",
     parameters: Schema.Struct({

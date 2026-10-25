@@ -33,6 +33,8 @@ import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Settings from "../serverSettings.ts";
 import * as AgentContext from "./D4AgentContext.ts";
 import * as Store from "./D4AgentStore.ts";
+import { liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import { contextScopeHash } from "./brainScope.ts";
 
 const selection = { instanceId: ProviderInstanceId.make("codex"), model: "selected" };
@@ -260,6 +262,70 @@ it.effect(
         const toolkit = yield* D4AgentToolkit.pipe(
           Effect.provide(McpToolAccess.HandlersLayer.layer(D4Handlers.layer)),
         );
+        const currentScope = yield* registry.resolve(
+          issuedCurrent.config.authorizationHeader.replace(/^Bearer\s+/, ""),
+        );
+        let requested = 0;
+        for (const name of ["d4_agent_research", "d4_agent_pipeline"] as const) {
+          for (const mode of ["read-only", "inactive", "active"] as const) {
+            const before = requested;
+            const results = yield* toolkit
+              .handle(name, {
+                projectId: ProjectId.make("work-b"),
+                pipelineId: "research:scoped",
+                text: "A synthetic approved scope",
+                modelSelection: selection,
+              })
+              .pipe(
+                Effect.flatMap(Stream.runCollect),
+                Effect.provideService(McpInvocationContext.McpInvocationContext, {
+                  ...currentScope!,
+                  client:
+                    mode === "read-only"
+                      ? { sessionId: "read-client", label: "Read client", access: "read-only" }
+                      : undefined,
+                }),
+                Effect.provideService(Store.D4AgentStore, f.store),
+                Effect.provideService(McpProviderSessions.McpProviderSessions, credentials),
+                Effect.provide(
+                  Layer.mergeAll(
+                    Layer.mock(ThreadManagement.ThreadManagementService)({
+                      getThreadShell: (id) =>
+                        Effect.succeed(
+                          liveThreadShell(id, {
+                            runtimeMode: "approval-required",
+                            ...(mode === "inactive" ? { activeRunId: null } : {}),
+                          }),
+                        ),
+                    }),
+                    Layer.mock(Agent.D4Agent)({
+                      requestAction: (action) =>
+                        Effect.sync(() => {
+                          requested++;
+                          return {
+                            id: `pending-${requested}`,
+                            action,
+                            context: "Dimaggi" as const,
+                            sessionId: threadId,
+                            status: "pending" as const,
+                            createdAt: "2026-10-24T12:00:00Z",
+                            resolvedAt: null,
+                          };
+                        }),
+                    }),
+                  ),
+                ),
+              );
+            assert.equal(requested - before, mode === "active" ? 1 : 0);
+            assert.equal(results[0]?.isFailure, mode !== "active");
+            if (mode === "active") assert.include(JSON.stringify(results), '"status":"pending"');
+            else
+              assert.include(
+                JSON.stringify(results),
+                mode === "read-only" ? "capability_denied" : "parent_not_active",
+              );
+          }
+        }
         for (const [issued, expectedFailure] of [
           [issuedCurrent, false],
           [issuedRetired, true],

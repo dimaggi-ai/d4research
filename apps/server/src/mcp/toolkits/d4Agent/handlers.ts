@@ -41,10 +41,10 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
     call((service) => service.resolveReference(text)),
   ),
   d4_agent_pipelines: McpToolAccess.reads(() => call((service) => service.listPipelines())),
-  d4_agent_research: McpToolAccess.reads((input) =>
+  d4_agent_research: McpToolAccess.writesWithCapability((input) =>
     call((service) => service.requestAction({ ...input, type: "research" })),
   ),
-  d4_agent_pipeline: McpToolAccess.reads((input) =>
+  d4_agent_pipeline: McpToolAccess.writesWithCapability((input) =>
     call((service) => service.requestAction({ ...input, type: "pipeline" })),
   ),
   d4_agent_list: McpToolAccess.reads(() => call((service) => service.list())),
@@ -53,7 +53,7 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   ),
   d4_agent_system_health: McpToolAccess.reads(() => call((service) => service.systemHealth())),
   // The d4 service owns the approval gate and rechecks it when approval is resolved.
-  d4_agent_action: McpToolAccess.reads(({ action }) =>
+  d4_agent_action: McpToolAccess.writesWithCapability(({ action }) =>
     call((service) => service.requestAction(action)),
   ),
   d4_agent_memory_search: McpToolAccess.reads((input) =>
@@ -62,7 +62,7 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   d4_agent_memory_read: McpToolAccess.reads((input) =>
     call((service) => service.memoryRead(input)),
   ),
-  d4_agent_memory_propose: McpToolAccess.reads((input) =>
+  d4_agent_memory_propose: McpToolAccess.writesWithCapability((input) =>
     call((service) => service.requestAction({ type: "memory-propose", ...input })),
   ),
   d4_agent_cto_status: McpToolAccess.reads((input) =>
@@ -71,7 +71,7 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   d4_agent_cto_brief: McpToolAccess.reads((input) =>
     call((service) => service.ctoRead({ ...input, operation: "brief" })),
   ),
-  d4_agent_cto_ask: McpToolAccess.reads((input) =>
+  d4_agent_cto_ask: McpToolAccess.writesWithCapability((input) =>
     call((service) => service.requestAction({ type: "cto-ask", ...input })),
   ),
 });

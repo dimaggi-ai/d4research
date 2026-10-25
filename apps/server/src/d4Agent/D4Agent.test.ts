@@ -1,3 +1,4 @@
+import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -148,6 +149,10 @@ const fixture = (
       ReadonlyArray<Parameters<Threads.ThreadManagementService["Service"]["sendToThread"]>[0]>
     >([]);
     const failStop = yield* Ref.make(false);
+    const failCreate = yield* Ref.make(false);
+    const failSend = yield* Ref.make(false);
+    const failSnapshot = yield* Ref.make(false);
+    const eventRevision = yield* Ref.make(0);
     const request = yield* Ref.make<OrchestrationV2RuntimeRequest | undefined>(undefined);
     const dispatches = yield* Ref.make<ReadonlyArray<string>>([]);
     const projection = yield* Ref.make<OrchestrationV2ThreadProjection>({
@@ -170,7 +175,9 @@ const fixture = (
       visibleTurnItems: [],
       updatedAt: now,
     });
-    const reads = yield* Ref.make({ updates: 0, snapshots: 0, probes: 0 });
+    const reads = yield* Ref.make({ updates: 0, snapshots: 0, probes: 0, shells: 0, catalogs: 0 });
+    let previousShells: ReadonlyArray<OrchestrationV2ThreadShell> | undefined;
+    let revision = 0;
     const stateChanges = yield* PubSub.unbounded<Store.StoredState>();
     const settingsLayer = Settings.layerTest({
       d4Agent: {
@@ -210,12 +217,24 @@ const fixture = (
               ),
           }),
           Layer.succeed(Settings.ServerSettingsService, settings),
+          Layer.mock(ApplicationEvents.OrchestrationEventStore)({
+            latestApplicationSequence: Effect.gen(function* () {
+              const currentShells = yield* Ref.get(shells);
+              if (currentShells !== previousShells) {
+                previousShells = currentShells;
+                revision++;
+              }
+              return revision + (yield* Ref.get(eventRevision));
+            }),
+            readApplicationEvents: () => Stream.make({ type: "project.meta-updated" } as never),
+          }),
           Layer.mock(Providers.ProviderRegistry)({
             getProviders: Ref.get(catalog),
           }),
           Layer.mock(Threads.ThreadManagementService)({
             getThreadShell: (id) =>
-              Ref.get(agentShell).pipe(
+              Ref.update(reads, (r) => ({ ...r, shells: r.shells + 1 })).pipe(
+                Effect.andThen(Ref.get(agentShell)),
                 Effect.flatMap((own) =>
                   own?.id === id
                     ? Effect.succeed(own)
@@ -225,7 +244,8 @@ const fixture = (
                 ),
               ),
             getShellSnapshot: () =>
-              Ref.get(shells).pipe(
+              Ref.update(reads, (r) => ({ ...r, catalogs: r.catalogs + 1 })).pipe(
+                Effect.andThen(Ref.get(shells)),
                 Effect.map((all) => ({
                   threads: all,
                   archivedThreads: [],
@@ -234,13 +254,20 @@ const fixture = (
                 })),
               ),
             sendToThread: (input) =>
-              Ref.update(sends, (all) => [...all, input]).pipe(Effect.as({} as never)),
+              Effect.gen(function* () {
+                if (yield* Ref.get(failSend))
+                  return yield* Effect.fail({ reason: "fixture send failure" } as never);
+                yield* Ref.update(sends, (all) => [...all, input]);
+                return {} as never;
+              }),
             dispatch: (cmd) =>
               Effect.gen(function* () {
                 if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
                   return yield* Effect.fail({ reason: "fixture stop failure" } as never);
                 yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
                 if (cmd.type === "thread.create") {
+                  if (yield* Ref.get(failCreate))
+                    return yield* Effect.fail({ reason: "fixture creation failure" } as never);
                   yield* Ref.update(shells, (all) => [
                     ...all,
                     { ...target, id: cmd.threadId, projectId: cmd.projectId },
@@ -267,16 +294,29 @@ const fixture = (
               ),
           }),
           Layer.mock(Projections.ProjectionStoreV2)({
+            getRunMessage: (_threadId, runId) =>
+              Ref.get(projection).pipe(
+                Effect.map((value) => {
+                  const run = value.runs.find((entry) => entry.id === runId);
+                  return value.messages.find((entry) => entry.id === run?.userMessageId);
+                }),
+              ),
             getRuntimeRequest: () => Ref.get(request),
             getThreadProjection: () => Ref.get(projection),
             getThreadSnapshotWindow: () =>
-              Ref.update(reads, (r) => ({ ...r, snapshots: r.snapshots + 1 })).pipe(
-                Effect.andThen(Ref.get(projection)),
-                Effect.map((value) => ({
-                  schemaVersion: 2,
-                  snapshotSequence: 1,
-                  projection: value,
-                })),
+              Ref.get(failSnapshot).pipe(
+                Effect.flatMap((fail) =>
+                  fail
+                    ? Effect.fail({ reason: "fixture snapshot failure" } as never)
+                    : Ref.update(reads, (r) => ({ ...r, snapshots: r.snapshots + 1 })).pipe(
+                        Effect.andThen(Ref.get(projection)),
+                        Effect.map((value) => ({
+                          schemaVersion: 2,
+                          snapshotSequence: 1,
+                          projection: value,
+                        })),
+                      ),
+                ),
               ),
           }),
           projectService === undefined
@@ -308,6 +348,10 @@ const fixture = (
       shells,
       sends,
       failStop,
+      failCreate,
+      failSend,
+      failSnapshot,
+      eventRevision,
     };
   });
 
@@ -320,10 +364,13 @@ it.effect(
       yield* f.service.sendMessage({ text: "old context secret" });
       const approval = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
       yield* Ref.set(f.failStop, true);
-      assert.equal((yield* Effect.result(f.service.newSession()))._tag, "Failure");
-      assert.equal((yield* Ref.get(f.state)).retiringThreadId, first.threadId);
-      assert.equal(yield* f.service.getIdentity(), null);
+      const replacement = yield* f.service.newSession();
+      assert.notEqual(replacement.threadId, first.threadId);
+      assert.equal((yield* Ref.get(f.state)).pendingRetirements?.[0]?.threadId, first.threadId);
+      assert.equal((yield* f.service.getIdentity())?.projectId, first.projectId);
+      yield* f.service.sendMessage({ text: "Retirement must not block this message" });
       yield* Ref.set(f.failStop, false);
+      yield* TestClock.adjust("30 seconds");
       const second = yield* f.service.ensureThread();
       assert.notEqual(second.threadId, first.threadId);
       assert.equal(second.projectId, first.projectId);
@@ -345,9 +392,9 @@ it.effect(
       );
       yield* f.service.sendMessage({ text: "new context question" });
       const sent = yield* Ref.get(f.sends);
-      assert.equal(sent[1]?.threadId, second.threadId);
-      assert.equal(sent[1]?.text, "new context question");
-      assert.notInclude(JSON.stringify(sent[1]), "old context secret");
+      assert.equal(sent.at(-1)?.threadId, second.threadId);
+      assert.equal(sent.at(-1)?.text, "new context question");
+      assert.notInclude(JSON.stringify(sent.at(-1)), "old context secret");
       assert.deepEqual(yield* f.service.switchContext({ context: "Global" }), second);
     }),
 );
@@ -816,7 +863,13 @@ it.effect("polling state never writes, probes, or loads conversation snapshots",
     yield* Ref.update(state, (s) => ({ ...s, threadId: targetId, projectId: target.projectId }));
     yield* service.getState();
     yield* service.getState();
-    assert.deepEqual(yield* Ref.get(reads), { updates: 0, snapshots: 0, probes: 0 });
+    assert.deepEqual(yield* Ref.get(reads), {
+      updates: 0,
+      snapshots: 0,
+      probes: 0,
+      shells: 2,
+      catalogs: 0,
+    });
   }),
 );
 
@@ -916,7 +969,13 @@ it.effect("identity and notification reads are pure and reserved identity is inv
       projectId: target.projectId,
     });
     assert.equal((yield* service.getSystemHealth()).threadId, targetId);
-    assert.deepEqual(yield* Ref.get(reads), { updates: 0, snapshots: 0, probes: 0 });
+    assert.deepEqual(yield* Ref.get(reads), {
+      updates: 0,
+      snapshots: 0,
+      probes: 0,
+      shells: 0,
+      catalogs: 0,
+    });
   }),
 );
 
@@ -1393,7 +1452,7 @@ it.effect("idle timeout closes a session with a fake clock and never closes a bu
 );
 
 it.effect(
-  "a Dimaggi thread reference switches before provider input; ambiguous titles ask and unmapped references switch to Global",
+  "a Dimaggi thread reference switches before provider input; plain titles send normally and unmapped references switch to Global",
   () =>
     Effect.gen(function* () {
       const project = ProjectId.make("dimaggi-project");
@@ -1415,8 +1474,8 @@ it.effect(
       assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
       assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Read dimaggi-thread");
       yield* f.service.sendMessage({ text: "Read Exact title" });
-      assert.equal((yield* Ref.get(f.sends)).length, 1);
-      assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Which thread");
+      assert.equal((yield* Ref.get(f.sends)).length, 2);
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
       yield* f.service.sendMessage({ text: "Read target" });
       assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
     }),
@@ -1624,5 +1683,479 @@ it.effect("reports an agent-started completion, logs the delayed archive and und
     yield* f.service.undoArchive({ actionId: "archive:completed" });
     assert.isNull((yield* Ref.get(f.shells)).find((thread) => thread.id === threadId)!.archivedAt);
     assert.isTrue((yield* Ref.get(f.state)).agentThreads![0]!.undoDisabled);
+  }),
+);
+
+it.effect(
+  "incidental common titles, agent-renamed titles, and duplicate titles never route or block",
+  () =>
+    Effect.gen(function* () {
+      const otherProject = ProjectId.make("dimaggi-project");
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "YB", [otherProject]: "Dimaggi" },
+      });
+      yield* Ref.update(f.shells, (all) => [
+        ...all,
+        ...["web", "status", "web"].map((title, index) => ({
+          ...target,
+          id: ThreadId.make(`foreign-${index}`),
+          projectId: otherProject,
+          title,
+          createdBy: "agent" as const,
+        })),
+      ]);
+      const identity = yield* f.service.switchContext({ context: "YB" });
+      for (const text of [
+        "check the web build for YB-1234 and summarise the customer notes",
+        "status of customer notes",
+        "web status",
+      ]) {
+        yield* f.service.sendMessage({ text });
+        assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
+        assert.equal((yield* Ref.get(f.sends)).at(-1)?.threadId, identity.threadId);
+        assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, text);
+      }
+      assert.equal((yield* Ref.get(f.sends)).length, 3);
+    }),
+);
+
+it.effect(
+  "work-context ambiguity reveals no foreign title or id; Global may display metadata",
+  () =>
+    Effect.gen(function* () {
+      const foreign = ProjectId.make("foreign-project");
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "YB", [foreign]: "Dimaggi" },
+      });
+      yield* Ref.update(f.shells, (all) => [
+        ...all,
+        {
+          ...target,
+          id: ThreadId.make("foreign-thread"),
+          projectId: foreign,
+          title: "Foreign secret title",
+        },
+        {
+          ...target,
+          id: ThreadId.make("foreign-thread-2"),
+          projectId: foreign,
+          title: "Second foreign title",
+        },
+      ]);
+      yield* f.service.switchContext({ context: "YB" });
+      yield* f.service.sendMessage({ text: "[[thread:target]] [[thread:foreign-thread]]" });
+      const prompt = (yield* Ref.get(f.state)).transcript!.at(-1)!.text;
+      assert.include(prompt, "Private (target)");
+      assert.notInclude(prompt, "foreign-thread");
+      assert.notInclude(prompt, "Foreign secret title");
+      assert.equal((yield* Ref.get(f.sends)).length, 0);
+      yield* f.service.sendMessage({
+        text: "[[thread:foreign-thread]] [[thread:foreign-thread-2]]",
+      });
+      const foreignOnly = (yield* Ref.get(f.state)).transcript!.at(-1)!.text;
+      assert.equal(
+        foreignOnly,
+        "Which thread, project, or pipeline do you mean? Mention one at a time.",
+      );
+      assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
+      assert.equal((yield* Ref.get(f.sends)).length, 0);
+      yield* f.service.switchContext({ context: "Global" });
+      yield* f.service.sendMessage({ text: "[[thread:target]] [[thread:foreign-thread]]" });
+      assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Foreign secret title");
+    }),
+);
+
+it.effect("archived references cannot switch context", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Dimaggi" },
+    });
+    yield* Ref.update(f.shells, (all) => all.map((entry) => ({ ...entry, archivedAt: now })));
+    yield* f.service.sendMessage({ text: "[[thread:target]]" });
+    assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
+    assert.equal((yield* Ref.get(f.sends)).length, 1);
+  }),
+);
+
+it.effect("send original is bound to the active run rather than the latest queued message", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.sendMessage({ text: "First original text exactly\n  preserved" });
+    const first = (yield* Ref.get(f.sends))[0]!;
+    yield* f.service.sendMessage({ text: "Later queued unrelated instruction" });
+    const runId = RunId.make("originating-run");
+    yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: runId });
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [{ id: runId, userMessageId: first.messageId }] as unknown as typeof value.runs,
+      messages: [
+        { id: first.messageId, text: first.text, createdBy: "user" },
+      ] as unknown as typeof value.messages,
+    }));
+    const card = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Draft",
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve", sendOriginal: true });
+    assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, first.text);
+    assert.equal(card.action.type === "send" && card.action.originalText, first.text);
+  }),
+);
+
+it.effect("heartbeat drafts discard spoofed originals and never borrow a prior user message", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.sendMessage({ text: "Prior unrelated request" });
+    const runId = RunId.make("heartbeat-run");
+    const messageId = MessageId.make("heartbeat-message");
+    yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: runId });
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [{ id: runId, userMessageId: messageId }] as unknown as typeof value.runs,
+      messages: [
+        { id: messageId, text: "Heartbeat", createdBy: "system" },
+      ] as unknown as typeof value.messages,
+    }));
+    const card = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Heartbeat draft",
+      originalText: "Spoofed original",
+    });
+    assert.isTrue(card.action.type === "send" && card.action.originalText === undefined);
+    assert.equal(
+      (yield* Effect.result(
+        f.service.resolveAction({ actionId: card.id, decision: "approve", sendOriginal: true }),
+      ))._tag,
+      "Failure",
+    );
+    assert.equal((yield* Ref.get(f.sends)).length, 1);
+  }),
+);
+
+it.effect("explicit reference expires the idle destination before attempting resume", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "YB" },
+      sessionIdleMinutes: 30,
+    });
+    const old = yield* f.service.switchContext({ context: "YB" });
+    yield* f.service.switchContext({ context: "Global" });
+    yield* TestClock.adjust("31 minutes");
+    const next = yield* f.service.sendMessage({ text: "[[thread:target]]" });
+    assert.notEqual(next.threadId, old.threadId);
+    assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
+    assert.isTrue(
+      (yield* Ref.get(f.shells)).find((entry) => entry.id === old.threadId)?.archivedAt !== null,
+    );
+  }),
+);
+
+it.effect("ensure closes a replaced same-context session instead of dropping its record", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const old = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      threadId: ThreadId.make("replacement-session"),
+      identityReady: false,
+    }));
+    const next = yield* f.service.ensureThread();
+    assert.notEqual(next.threadId, old.threadId);
+    assert.isNotNull(
+      (yield* Ref.get(f.shells)).find((entry) => entry.id === old.threadId)!.archivedAt,
+    );
+    assert.equal((yield* Ref.get(f.state)).sessions?.length, 1);
+  }),
+);
+
+it.effect.each(["create", "send"] as const)(
+  "failed task %s leaves no registered agent thread",
+  (failure) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      yield* f.service.ensureThread();
+      const card = yield* f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Task",
+        modelSelection,
+      });
+      yield* Ref.set(failure === "create" ? f.failCreate : f.failSend, true);
+      assert.equal(
+        (yield* Effect.result(f.service.resolveAction({ actionId: card.id, decision: "approve" })))
+          ._tag,
+        "Failure",
+      );
+      assert.deepEqual((yield* Ref.get(f.state)).agentThreads ?? [], []);
+    }),
+);
+
+it.effect(
+  "reference catalog is reused across polls and sends and invalidated by metadata and pipeline changes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      yield* f.service.ensureThread();
+      yield* f.service.sendMessage({ text: "hello" });
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        transcript: [
+          {
+            id: "linked",
+            role: "assistant" as const,
+            text: "Private",
+            context: "Global" as const,
+            createdAt: "1970-01-01T00:00:00.000Z",
+            links: [{ label: "Private", threadId: targetId, projectId: target.projectId }],
+          },
+        ],
+      }));
+      const before = (yield* Ref.get(f.reads)).catalogs;
+      for (let index = 0; index < 5; index++) {
+        yield* f.service.getState();
+        yield* f.service.sendMessage({ text: "ordinary message" });
+      }
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before);
+      yield* Ref.update(f.shells, (all) =>
+        all.map((entry) => (entry.id === targetId ? { ...entry, title: "Renamed" } : entry)),
+      );
+      assert.equal((yield* f.service.getState()).transcript?.[0]?.links[0]?.label, "Renamed");
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 1);
+      yield* Ref.update(f.eventRevision, (value) => value + 1);
+      yield* f.service.getState();
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 2);
+      yield* f.settings.updateSettings({
+        dev: { upsertScenario: { name: "new-pipeline", pipelinePrompt: "Task", promptFiles: [] } },
+      });
+      yield* f.service.resolveReference("[[pipeline:dev:new-pipeline]]");
+      assert.equal((yield* Ref.get(f.reads)).catalogs, before + 3);
+    }),
+);
+
+it.effect("task lifecycle uses one cached projection and prunes deleted or archived entries", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      heartbeatMinutes: null,
+      sessionIdleMinutes: null,
+    });
+    yield* f.service.ensureThread();
+    const tasks = Array.from({ length: 700 }, (_, index) => ({
+      ...target,
+      id: ThreadId.make(`task-${index}`),
+      createdBy: "agent" as const,
+    }));
+    yield* Ref.update(f.shells, (all) => [...all, ...tasks]);
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      agentThreads: tasks.map((entry, index) => ({
+        threadId: entry.id,
+        projectId: entry.projectId,
+        context: "Global" as const,
+        actionId: `task-${index}`,
+        reportedAt: null,
+        archivedAt: null,
+        undoDisabled: false,
+      })),
+    }));
+    yield* f.service.tick;
+    const before = yield* Ref.get(f.reads);
+    yield* f.service.tick;
+    const after = yield* Ref.get(f.reads);
+    assert.equal(after.catalogs, before.catalogs);
+    assert.isBelow(after.shells - before.shells, 10);
+    assert.equal(after.snapshots, before.snapshots);
+    yield* Ref.update(f.shells, (all) =>
+      all.map((entry) =>
+        String(entry.id).startsWith("task-") ? { ...entry, archivedAt: now } : entry,
+      ),
+    );
+    const beforePrune = (yield* Ref.get(f.reads)).updates;
+    yield* f.service.tick;
+    assert.deepEqual((yield* Ref.get(f.state)).agentThreads, []);
+    assert.isBelow((yield* Ref.get(f.reads)).updates - beforePrune, 5);
+  }),
+);
+
+it.effect("stale pipeline approval cannot register an agent task", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* f.settings.updateSettings({
+      dev: { upsertScenario: { name: "checked", pipelinePrompt: "First", promptFiles: [] } },
+    });
+    const card = yield* f.service.requestAction({
+      type: "pipeline",
+      pipelineId: "dev:checked",
+      projectId: target.projectId,
+      modelSelection,
+      text: "Task",
+    });
+    yield* f.settings.updateSettings({
+      dev: { upsertScenario: { name: "checked", pipelinePrompt: "Changed", promptFiles: [] } },
+    });
+    assert.equal(
+      (yield* Effect.result(f.service.resolveAction({ actionId: card.id, decision: "approve" })))
+        ._tag,
+      "Failure",
+    );
+    assert.deepEqual((yield* Ref.get(f.state)).agentThreads ?? [], []);
+    assert.isFalse((yield* Ref.get(f.shells)).some((entry) => entry.id === `d4-action:${card.id}`));
+  }),
+);
+
+it.effect(
+  "permanent archive failures bound cleanup obligations while existing chat remains usable",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      yield* f.service.ensureThread();
+      yield* Ref.set(f.failStop, true);
+      for (let index = 0; index < 32; index++) yield* f.service.newSession();
+      assert.equal((yield* Ref.get(f.state)).pendingRetirements?.length, 32);
+      const current = yield* f.service.getIdentity();
+      assert.equal((yield* Effect.result(f.service.newSession()))._tag, "Failure");
+      yield* f.service.sendMessage({ text: "Continue in the existing session" });
+      assert.equal((yield* Ref.get(f.sends)).at(-1)?.threadId, current?.threadId);
+      assert.equal((yield* Ref.get(f.state)).pendingRetirements?.length, 32);
+      yield* Ref.set(f.failStop, false);
+      yield* TestClock.adjust("30 seconds");
+      yield* f.service.tick;
+      assert.deepEqual((yield* Ref.get(f.state)).pendingRetirements, []);
+    }),
+);
+
+it.effect("failed provider revocation retains the existing session instead of replacing it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      sessions: (value.sessions ?? []).map((entry) => ({
+        ...entry,
+        providerSessionId: "unavailable-runtime",
+      })),
+    }));
+    assert.equal((yield* Effect.result(f.service.newSession()))._tag, "Failure");
+    assert.deepEqual(yield* f.service.getIdentity(), identity);
+    assert.equal((yield* Ref.get(f.state)).sessions?.[0]?.threadId, identity.threadId);
+  }),
+);
+
+it.effect(
+  "active task capacity rejects another start without discarding existing authorizations",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      yield* f.service.ensureThread();
+      const tasks = Array.from({ length: 1000 }, (_, index) => ({
+        threadId: ThreadId.make(`task-${index}`),
+        projectId: target.projectId,
+        context: "Global" as const,
+        actionId: `task-${index}`,
+        reportedAt: null,
+        archivedAt: null,
+        undoDisabled: false,
+      }));
+      yield* Ref.update(f.state, (value) => ({ ...value, agentThreads: tasks }));
+      const card = yield* f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        modelSelection,
+        text: "One more task",
+      });
+      assert.equal(
+        (yield* Effect.result(f.service.resolveAction({ actionId: card.id, decision: "approve" })))
+          ._tag,
+        "Failure",
+      );
+      assert.deepEqual((yield* Ref.get(f.state)).agentThreads, tasks);
+    }),
+);
+
+it.effect("a failed completion projection read retries the same unchanged task", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* f.service.tick;
+    const task = {
+      ...target,
+      id: ThreadId.make("task-retry"),
+      createdBy: "agent" as const,
+      latestRunId: RunId.make("completed"),
+    };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        { id: task.latestRunId, status: "completed", completedAt: now },
+      ] as unknown as typeof value.runs,
+    }));
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId: task.id,
+          projectId: task.projectId,
+          context: "Global" as const,
+          actionId: "retry",
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* Ref.set(f.failSnapshot, true);
+    assert.equal((yield* Effect.result(f.service.tick))._tag, "Failure");
+    yield* Ref.set(f.failSnapshot, false);
+    yield* f.service.tick;
+    assert.isNotNull((yield* Ref.get(f.state)).agentThreads?.[0]?.reportedAt);
+    assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Completed: Private.");
+  }),
+);
+
+it.effect("send original keeps the pending user text after a size rotation", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    const initial = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      sessions: (state.sessions ?? []).map((entry) => ({
+        ...entry,
+        inputTokens: 80,
+        contextWindow: 100,
+      })),
+    }));
+    const original = "Exact pending ask\n  after rotation";
+    yield* f.service.sendMessage({ text: original });
+    const rotation = (yield* Ref.get(f.state)).rotation!;
+    const runId = RunId.make("summary-run");
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        { id: runId, userMessageId: rotation.messageId, status: "completed" },
+      ] as unknown as typeof value.runs,
+      messages: [
+        {
+          id: MessageId.make("summary-result"),
+          role: "assistant",
+          runId,
+          text: "Scoped summary",
+          createdAt: now,
+        },
+      ] as unknown as typeof value.messages,
+    }));
+    yield* f.service.tick;
+    const delivered = (yield* Ref.get(f.sends)).at(-1)!;
+    assert.notEqual(delivered.threadId, initial.threadId);
+    assert.equal(delivered.text, original);
+    const card = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Rewrite",
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve", sendOriginal: true });
+    assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, original);
   }),
 );

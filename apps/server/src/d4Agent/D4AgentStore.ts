@@ -28,23 +28,37 @@ export const StoredSession = Schema.Struct({
   seedSummary: Schema.optionalKey(Schema.String),
 });
 export type StoredSession = typeof StoredSession.Type;
+export const StoredAgentThread = Schema.Struct({
+  threadId: ThreadId,
+  projectId: ProjectId,
+  context: D4BrainContext,
+  actionId: Schema.String,
+  reportedAt: Schema.NullOr(IsoDateTime),
+  archivedAt: Schema.NullOr(IsoDateTime),
+  undoDisabled: Schema.Boolean,
+  pipelineId: Schema.optionalKey(Schema.String),
+  pipelineHash: Schema.optionalKey(Schema.String),
+  scopeHash: Schema.optionalKey(Schema.String),
+});
 export const StoredState = Schema.Struct({
-  agentThreads: Schema.optionalKey(
+  pendingRetirements: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         threadId: ThreadId,
-        projectId: ProjectId,
-        context: D4BrainContext,
-        actionId: Schema.String,
-        reportedAt: Schema.NullOr(IsoDateTime),
-        archivedAt: Schema.NullOr(IsoDateTime),
-        undoDisabled: Schema.Boolean,
-        pipelineId: Schema.optionalKey(Schema.String),
-        pipelineHash: Schema.optionalKey(Schema.String),
-        scopeHash: Schema.optionalKey(Schema.String),
+        providerSessionId: Schema.NullOr(Schema.String),
       }),
     ),
   ),
+  userMessages: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        threadId: ThreadId,
+        messageId: Schema.String,
+        text: Schema.String,
+      }),
+    ),
+  ),
+  agentThreads: Schema.optionalKey(Schema.Array(StoredAgentThread)),
   sessions: Schema.optionalKey(Schema.Array(StoredSession)),
   chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
   transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
@@ -123,15 +137,26 @@ export function ctoPreview(value: unknown): string {
     : new TextDecoder().decode(bytes.slice(0, 4080), { stream: true }) + "… [truncated]";
 }
 
-export function boundStoredState(state: StoredState): StoredState {
+export function boundStoredState(state: StoredState, now: number): StoredState {
   const ctoIds = new Set(
     state.actions
       .filter((a) => a.action.type === "cto-ask" && a.result !== undefined)
       .slice(-10)
       .map((a) => a.id),
   );
+  let completed = 0;
+  const actions = state.actions
+    .filter(
+      (action) =>
+        action.action.type !== "auto-archive" ||
+        now - Date.parse(action.createdAt) < 30 * 86_400_000,
+    )
+    .toReversed()
+    .filter((action) => action.status === "pending" || ++completed <= 200)
+    .toReversed();
   return {
     ...state,
+    userMessages: (state.userMessages ?? []).slice(-200),
     sessions: (state.sessions ?? [])
       .filter(
         (entry, index, all) =>
@@ -147,7 +172,7 @@ export function boundStoredState(state: StoredState): StoredState {
           state.sessions?.some((session) => session.threadId === binding.threadId),
       )
       .slice(-16),
-    actions: state.actions.map((action) => {
+    actions: actions.map((action) => {
       if (action.action.type !== "cto-ask" || action.result === undefined) return action;
       const { result, ...without } = action;
       return ctoIds.has(action.id) ? { ...without, result: ctoPreview(result) } : without;
@@ -196,21 +221,25 @@ export const layer = Layer.effect(
           : Effect.fail(new D4AgentError({ reason: "storage", cause })),
       ),
     );
+    const loadedAt = yield* Clock.currentTimeMillis;
     const state = yield* Ref.make<StoredState>(
-      boundStoredState({
-        ...initial,
-        actions: initial.actions.map((action) =>
-          action.action.type === "cto-ask" && action.result === "Asked, answer will be posted."
-            ? {
-                ...action,
-                status: "failed",
-                result: "CTO question interrupted by server restart; no automatic retry.",
-              }
-            : action.status === "approved"
-              ? { ...action, status: "pending" }
-              : action,
-        ),
-      }),
+      boundStoredState(
+        {
+          ...initial,
+          actions: initial.actions.map((action) =>
+            action.action.type === "cto-ask" && action.result === "Asked, answer will be posted."
+              ? {
+                  ...action,
+                  status: "failed",
+                  result: "CTO question interrupted by server restart; no automatic retry.",
+                }
+              : action.status === "approved"
+                ? { ...action, status: "pending" }
+                : action,
+          ),
+        },
+        loadedAt,
+      ),
     );
     let persisted = yield* encodeState(initial);
     return D4AgentStore.of({
@@ -220,8 +249,9 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const current = yield* Ref.get(state);
+            const now = yield* Clock.currentTimeMillis;
             const next = yield* Effect.try({
-              try: () => boundStoredState(change(current)),
+              try: () => boundStoredState(change(current), now),
               catch: (cause) =>
                 Schema.is(D4AgentError)(cause)
                   ? cause

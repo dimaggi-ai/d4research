@@ -222,6 +222,10 @@ it.effect.each([
     name: "size budget rotates through an old-session summary and seeds only the same context",
   },
   {
+    operation: "pipeline-remap",
+    name: "pipeline remapping retires the affected session without carrying old provider input",
+  },
+  {
     operation: "rapid-switch",
     name: "rapid Global YB Dimaggi YB Personal Global switching resumes provider sessions without cross-context input",
   },
@@ -458,6 +462,49 @@ it.effect.each([
             expect((yield* state.get).sessions!.length).toBe(2);
             return;
           }
+          if (operation === "pipeline-remap") {
+            const settingsService = yield* Settings.ServerSettingsService;
+            const initialConfig = yield* settingsService.getSettings;
+            yield* settingsService.updateSettings({
+              d4Agent: {
+                ...initialConfig.d4Agent,
+                pipelineProjects: { "research:shared": ybProject },
+              },
+            });
+            const previous = yield* service.switchContext({ context: "YB" });
+            yield* runTurn(previous.threadId, "YB_PRIVATE_PIPELINE_BEFORE_REMAP");
+            const withPipeline = yield* settingsService.getSettings;
+            yield* settingsService.updateSettings({
+              d4Agent: {
+                ...withPipeline.d4Agent,
+                pipelineProjects: {
+                  ...withPipeline.d4Agent.pipelineProjects,
+                  "dev:unrelated": dimaggiProject,
+                },
+              },
+            });
+            expect((yield* service.ensureThread()).threadId).toBe(previous.threadId);
+            const unrelatedConfig = yield* settingsService.getSettings;
+            yield* settingsService.updateSettings({
+              d4Agent: {
+                ...unrelatedConfig.d4Agent,
+                pipelineProjects: {
+                  ...unrelatedConfig.d4Agent.pipelineProjects,
+                  "research:shared": dimaggiProject,
+                },
+              },
+            });
+            const fresh = yield* service.ensureThread();
+            expect(fresh.threadId).not.toBe(previous.threadId);
+            yield* runTurn(fresh.threadId, "Continue current scope");
+            expect(started).toHaveLength(2);
+            expect(started[1]!.providerThread.providerSessionId).not.toBe(
+              started[0]!.providerThread.providerSessionId,
+            );
+            expect(JSON.stringify(started[1])).not.toContain("YB_PRIVATE_PIPELINE_BEFORE_REMAP");
+            expect(started[1]!.message.text).not.toContain("Same-context session summary");
+            return;
+          }
           if (operation === "rapid-switch") {
             const identities = new Map<string, ThreadId>();
             const providerIds = new Map<string, string>();
@@ -473,6 +520,11 @@ it.effect.each([
                 const current = yield* service.switchContext({ context });
                 if (identities.has(context)) expect(current.threadId).toBe(identities.get(context));
                 identities.set(context, current.threadId);
+                yield* Ref.set(updates, [
+                  monitorUpdate(ybDigestThread),
+                  monitorUpdate(dimaggiDigestThread),
+                  ...[...identities.values()].map(monitorUpdate),
+                ]);
                 yield* runTurn(current.threadId, `${context}_PRIVATE_MATERIAL_${round}`);
                 const turn = started.at(-1)!;
                 if (providerIds.has(context))
@@ -480,14 +532,33 @@ it.effect.each([
                 expect(turn.providerThread.providerSessionId).not.toBeNull();
                 providerIds.set(context, turn.providerThread.providerSessionId!);
                 expect((yield* state.get).sessions!.length).toBeLessThanOrEqual(4);
-                if (context === "YB") {
-                  expect(JSON.stringify(turn)).not.toContain("Dimaggi_PRIVATE_MATERIAL");
-                  expect(JSON.stringify(turn)).not.toContain("Personal_PRIVATE_MATERIAL");
+                for (const agentThreadId of identities.values())
+                  expect(turn.message.text).not.toContain(agentThreadId);
+                expect(turn.message.text).toContain(`${context}_PRIVATE_MATERIAL_${round}`);
+                for (const other of ["Global", "YB", "Dimaggi", "Personal"] as const) {
+                  if (other !== context)
+                    expect(JSON.stringify(turn)).not.toContain(`${other}_PRIVATE_MATERIAL`);
                 }
               }
             expect(providerIds.size).toBe(4);
             expect(new Set(providerIds.values()).size).toBe(4);
             expect(opened).toHaveLength(4);
+            expect(started).toHaveLength(18);
+            for (const turn of started) {
+              const context = [...identities].find(([, id]) => id === turn.threadId)?.[0];
+              expect(context).toBeDefined();
+              for (const other of ["Global", "YB", "Dimaggi", "Personal"] as const)
+                if (other !== context)
+                  expect(JSON.stringify(turn)).not.toContain(`${other}_PRIVATE_MATERIAL`);
+              expect(turn.providerThread.providerSessionId).toBe(providerIds.get(context!));
+            }
+            for (const resumedThread of resumed) {
+              const context = [...identities].find(
+                ([, id]) => id === resumedThread.appThreadId,
+              )?.[0];
+              expect(context).toBeDefined();
+              expect(resumedThread.providerSessionId).toBe(providerIds.get(context!));
+            }
             return;
           }
           if (operation === "cto-answer") {

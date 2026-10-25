@@ -14,7 +14,7 @@ import { PipelinesToolkitHandlersLive } from "./handlers.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
 import * as Store from "../../../d4Agent/D4AgentStore.ts";
-import { contextScopeHash } from "../../../d4Agent/brainScope.ts";
+import { taskScopeHash } from "../../../d4Agent/brainScope.ts";
 import { pipelineFingerprint } from "../../../d4Agent/PipelineCatalog.ts";
 
 it.effect(
@@ -48,7 +48,7 @@ it.effect(
                 reportedAt: null,
                 archivedAt: null,
                 undoDisabled: false,
-                scopeHash: contextScopeHash("YB", settings.d4Agent),
+                scopeHash: taskScopeHash("YB", settings.d4Agent, projectId, "research:yb"),
                 pipelineId: "research:yb",
                 pipelineHash: pipelineFingerprint({ ...own, kind: "research" }),
               },

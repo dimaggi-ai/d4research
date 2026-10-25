@@ -9,7 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Store from "./D4AgentStore.ts";
-import { contextScopeHash } from "./brainScope.ts";
+import { taskScopeHash } from "./brainScope.ts";
 import { isAllowedTaskMcpRequest, validateAgentTaskScope } from "./D4AgentTaskScope.ts";
 
 const projectId = ProjectId.make("yb");
@@ -37,7 +37,7 @@ const record = {
   reportedAt: null,
   archivedAt: null,
   undoDisabled: false,
-  scopeHash: contextScopeHash("YB", settings),
+  scopeHash: taskScopeHash("YB", settings, projectId, "research:yb"),
   pipelineId: "research:yb",
   pipelineHash: pipelineFingerprint(scenario),
 };
@@ -124,3 +124,57 @@ it("task MCP policy permits its own tools and refuses unscoped retrieval and cro
   assert.isFalse(isAllowedTaskMcpRequest([request("pipeline_list")], threadId));
   assert.isFalse(isAllowedTaskMcpRequest({ method: "resources/read" }, threadId));
 });
+
+it.effect(
+  "Global tasks survive unrelated mappings and refuse their own project or pipeline remap",
+  () =>
+    Effect.gen(function* () {
+      const target = ProjectId.make("unmapped-target");
+      const baseline = { ...DEFAULT_D4_AGENT_SETTINGS };
+      const globalRecord = {
+        ...record,
+        projectId: target,
+        context: "Global" as const,
+        scopeHash: taskScopeHash("Global", baseline, target, record.pipelineId),
+      };
+      const dependencies = Layer.mock(Store.D4AgentStore)({
+        workspace: "/isolated/agent",
+        get: Effect.succeed({ agentThreads: [globalRecord] } as unknown as Store.StoredState),
+      });
+      yield* Effect.gen(function* () {
+        const unrelated = {
+          ...baseline,
+          projectContexts: { [ProjectId.make("elsewhere")]: "YB" as const },
+          pipelineProjects: { "dev:elsewhere": ProjectId.make("elsewhere") },
+        };
+        assert.deepEqual(
+          yield* validateAgentTaskScope(threadId, unrelated, record.pipelineId, pipelines),
+          globalRecord,
+        );
+        for (const changed of [
+          {
+            ...unrelated,
+            projectContexts: { ...unrelated.projectContexts, [target]: "Personal" as const },
+          },
+          {
+            ...unrelated,
+            pipelineProjects: { ...unrelated.pipelineProjects, [record.pipelineId]: target },
+          },
+          {
+            ...unrelated,
+            pipelineProjects: {
+              ...unrelated.pipelineProjects,
+              [record.pipelineId]: ProjectId.make("elsewhere"),
+            },
+          },
+        ]) {
+          assert.equal(
+            (yield* Effect.result(
+              validateAgentTaskScope(threadId, changed, record.pipelineId, pipelines),
+            ))._tag,
+            "Failure",
+          );
+        }
+      }).pipe(Effect.provide(dependencies));
+    }),
+);

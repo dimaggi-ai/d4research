@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Store from "./D4AgentStore.ts";
-import { contextScopeHash, projectContentInScope } from "./brainScope.ts";
+import { taskScopeHash, projectContentInScope } from "./brainScope.ts";
 
 export const makeTaskScopeValidator = Effect.gen(function* () {
   const store = yield* Effect.serviceOption(Store.D4AgentStore);
@@ -25,7 +25,8 @@ export const makeTaskScopeValidator = Effect.gen(function* () {
       : undefined;
     if (
       record === undefined ||
-      record.scopeHash !== contextScopeHash(record.context, settings) ||
+      record.scopeHash !==
+        taskScopeHash(record.context, settings, record.projectId, record.pipelineId) ||
       !projectContentInScope(record.context, settings, record.projectId) ||
       (pipelineId !== undefined && record.pipelineId !== pipelineId)
     )

@@ -1,3 +1,4 @@
+import * as TestClock from "effect/testing/TestClock";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ThreadId } from "@d4research/contracts";
@@ -218,4 +219,39 @@ it.effect("restart marks an unfinished CTO ask failed without retrying", () =>
       );
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "bounds archive records by count and thirty-day age while preserving pending approvals",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-agent-archive-bounds-" });
+        const store = yield* Store.D4AgentStore.pipe(
+          Effect.provide(
+            Store.layer.pipe(Layer.provide(Config.layerTest(process.cwd(), directory))),
+          ),
+        );
+        const state = yield* store.update((value) => ({
+          ...value,
+          actions: Array.from({ length: 900 }, (_, index) => ({
+            id: `archive:${index}`,
+            context: "Global" as const,
+            sessionId: null,
+            action: { type: "auto-archive" as const, threadId: ThreadId.make(`task-${index}`) },
+            status: "executed" as const,
+            createdAt: index < 100 ? "1969-01-01T00:00:00.000Z" : "1970-01-01T00:00:00.000Z",
+            resolvedAt: "1970-01-01T00:00:00.000Z",
+          })),
+        }));
+        assert.equal(state.actions.length, 200);
+        assert.equal(state.actions[0]?.id, "archive:700");
+        yield* TestClock.adjust("31 days");
+        assert.equal((yield* store.update((value) => value)).actions.length, 0);
+        assert.isTrue(
+          state.actions.every((entry) => entry.createdAt === "1970-01-01T00:00:00.000Z"),
+        );
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );

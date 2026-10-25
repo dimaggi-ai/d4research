@@ -105,7 +105,7 @@ export const layer = Layer.effect(
           let updates = yield* monitor.snapshot.pipe(
             Effect.mapError((cause) => new D4AgentError({ reason: "thread", cause })),
           );
-          if (state.brainContext !== "Global") {
+          if (state.brainContext !== "Global" || state.projectId !== null) {
             if (Option.isNone(sql)) return yield* new D4AgentError({ reason: "context" });
             const rows = yield* sql.value<{
               threadId: string;

@@ -2826,6 +2826,30 @@ it.effect("a failed completion projection read retries the same unchanged task",
   }),
 );
 
+it.effect("closing the session of a pending rotation tells the user the message was not sent", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      sessions: (state.sessions ?? []).map((entry) => ({
+        ...entry,
+        inputTokens: 80,
+        contextWindow: 100,
+      })),
+    }));
+    const original = "Pending ask that never reached a provider";
+    yield* f.service.sendMessage({ text: original });
+    assert.equal((yield* Ref.get(f.state)).rotation?.pendingText, original);
+    yield* f.service.newSession();
+    const state = yield* Ref.get(f.state);
+    assert.isNull(state.rotation ?? null);
+    const notice = state.transcript?.find((entry) => entry.id.startsWith("rotation-dropped:"));
+    assert.equal(notice?.role, "system");
+    assert.include(notice?.text, original);
+  }),
+);
+
 it.effect("send original keeps the pending user text after a size rotation", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");

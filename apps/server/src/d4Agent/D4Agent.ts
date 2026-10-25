@@ -461,32 +461,51 @@ export const layer = Layer.effect(
           })
           .pipe(Effect.mapError(threadError));
       }
-      yield* store.update((value) => ({
-        ...value,
-        pendingRetirements: [
-          ...(value.pendingRetirements ?? []).filter(
-            (entry) => entry.threadId !== session.threadId,
-          ),
-          {
-            threadId: session.threadId,
-            providerSessionId: null,
-          },
-        ],
+      const closedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* store.update((value) => {
         // A decided rotation outlives its source session; closing its destination abandons it.
-        rotation:
+        const abandoned =
           value.rotation &&
           (value.rotation.targetThreadId ?? value.rotation.threadId) === session.threadId
-            ? null
-            : (value.rotation ?? null),
-        sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
-        bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
-        ...(value.threadId === session.threadId ? { threadId: null, identityReady: false } : {}),
-        actions: value.actions.map((entry) =>
-          entry.sessionId === session.threadId && entry.status === "pending"
-            ? { ...entry, status: "denied" as const }
-            : entry,
-        ),
-      }));
+            ? value.rotation
+            : null;
+        return {
+          ...value,
+          pendingRetirements: [
+            ...(value.pendingRetirements ?? []).filter(
+              (entry) => entry.threadId !== session.threadId,
+            ),
+            {
+              threadId: session.threadId,
+              providerSessionId: null,
+            },
+          ],
+          rotation: abandoned ? null : (value.rotation ?? null),
+          ...(abandoned && !abandoned.heartbeat
+            ? {
+                transcript: [
+                  ...(value.transcript ?? []),
+                  {
+                    id: `rotation-dropped:${abandoned.deliveryId ?? abandoned.messageId}`,
+                    role: "system" as const,
+                    text: `Not sent: the session closed before Nia could deliver your message. Send it again if you still need it: ${abandoned.pendingText}`,
+                    context: abandoned.context,
+                    createdAt: closedAt,
+                    links: [],
+                  },
+                ].slice(-200),
+              }
+            : {}),
+          sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
+          bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
+          ...(value.threadId === session.threadId ? { threadId: null, identityReady: false } : {}),
+          actions: value.actions.map((entry) =>
+            entry.sessionId === session.threadId && entry.status === "pending"
+              ? { ...entry, status: "denied" as const }
+              : entry,
+          ),
+        };
+      });
       yield* finishRetirement();
     });
     const rotate = Effect.fn("D4Agent.rotate")(function* (

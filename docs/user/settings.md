@@ -110,9 +110,9 @@ source blocks retrieval until its configuration has been reviewed.
 Map each project to a context in the same settings section. A work context's
 agent digest, thread reads, and attention list include only its mapped projects.
 In Global, Nia can read the messages of every project, so it can monitor and explain all
-work. Global still searches only Global memory and cannot propose memory notes, and it acts
-on a work project only after you approve a switch to that project's context. Choose
-**Unmapped** in a project's context setting to remove its mapping.
+work. Global still searches only Global memory and cannot make memory proposals. It acts on a
+work project only after you approve a switch to that project's context. To remove a project's
+mapping, choose **Unmapped** in its context setting.
 Notifications outside the Nia conversation keep their existing behavior.
 
 **Brain embeddings** are optional. Blank endpoint and model fields use the existing

@@ -606,6 +606,33 @@ it.effect("approved switch-context rotates to the target context and replays the
   }),
 );
 
+it.effect("switch-context replays only the request of the current turn", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Dimaggi" },
+    });
+    yield* f.service.sendMessage({ text: "Older unrelated Global request" });
+    yield* f.service.sendMessage({ text: "Another earlier request" });
+    const current = yield* f.service.sendMessage({ text: switchRequest });
+    const run = RunId.make("switch-run");
+    const message = (yield* Ref.get(f.sends)).at(-1)!;
+    yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: run });
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [{ id: run, userMessageId: message.messageId }] as unknown as typeof value.runs,
+      messages: [
+        { id: message.messageId, text: message.text, createdBy: "user" },
+      ] as unknown as typeof value.messages,
+    }));
+    const card = yield* f.service
+      .requestAction({ type: "switch-context", threadId: targetId })
+      .pipe(Effect.provideService(Access.ToolCaller, current.threadId));
+    assert.equal(card.action.type === "switch-context" && card.action.originalText, switchRequest);
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, switchRequest);
+  }),
+);
+
 it.effect("denied switch-context leaves the context and session unchanged", () =>
   Effect.gen(function* () {
     const f = yield* switchFixture("ask");
@@ -1026,6 +1053,11 @@ it.effect("thread listing omits opaque report keys that heartbeats still track",
     yield* TestClock.adjust("16 minutes");
     yield* f.service.tick;
     assert.deepEqual((yield* Ref.get(f.state)).heartbeatKeys, [reportKey]);
+    const heartbeat = (yield* Ref.get(f.sends)).at(-1)?.text ?? "";
+    assert.include(heartbeat, "Heartbeat:");
+    assert.include(heartbeat, "pending_request");
+    assert.notInclude(heartbeat, "dedupe:");
+    assert.notInclude(heartbeat, "reportKey");
   }),
 );
 

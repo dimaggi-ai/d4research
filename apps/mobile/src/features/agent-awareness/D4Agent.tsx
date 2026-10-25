@@ -515,8 +515,10 @@ function AgentActionRecord({
   const [reviewing, setReviewing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState<string | null>(null);
+  // A pending switch shows its replay up front so the user sees what will be resent.
+  const pendingSwitch = record.type === "switch-context" && record.status === "pending";
   const detail = useEnvironmentQuery(
-    reviewing
+    reviewing || pendingSwitch
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
@@ -552,9 +554,11 @@ function AgentActionRecord({
       {heading.detail ? (
         <Text className="text-sm text-foreground-muted">{heading.detail}</Text>
       ) : null}
-      <Pressable accessibilityRole="button" onPress={() => setReviewing(!reviewing)}>
-        <Text className="text-accent">{reviewing ? "Hide action details" : "Review action"}</Text>
-      </Pressable>
+      {pendingSwitch ? null : (
+        <Pressable accessibilityRole="button" onPress={() => setReviewing(!reviewing)}>
+          <Text className="text-accent">{reviewing ? "Hide action details" : "Review action"}</Text>
+        </Pressable>
+      )}
       {reviewing && detail.data && !sendAction && !launchAction && !switchAction ? (
         <Text className="text-xs text-foreground-muted">
           {JSON.stringify(
@@ -592,7 +596,7 @@ function AgentActionRecord({
           </Text>
         </View>
       ) : null}
-      {reviewing && switchAction ? (
+      {(reviewing || pendingSwitch) && switchAction ? (
         <View className="gap-2 rounded border border-border p-3">
           <Text className="text-xs text-foreground-muted">
             {switchAction.originalText

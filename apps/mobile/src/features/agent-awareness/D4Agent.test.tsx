@@ -1245,3 +1245,51 @@ it("does not invent an original message for a heartbeat action", async () => {
   expect(container.textContent).toContain("Detailed rewritten request");
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
+
+it("shows the request a pending context switch will resend without expanding the card", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "switch",
+        type: "switch-context",
+        targetId: "target-thread",
+        preview: "Switch to Dimaggi: [Private](https://example.test)",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "switch",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "switch-context",
+      threadId: ThreadId.make("target-thread"),
+      targetContext: "Dimaggi",
+      title: "[Private](https://example.test)",
+      originalText: "Add local DeepSeek to the CTO provider list",
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("Request to resend in Dimaggi");
+  expect(container.textContent).toContain("Add local DeepSeek to the CTO provider list");
+  expect(container.textContent).toContain("Switch to Dimaggi: [Private](https://example.test)");
+  expect(container.querySelector('a[href="https://example.test"]')).toBeNull();
+  expect(container.textContent).not.toContain("Review action");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Switch")!
+      .click(),
+  );
+  expect(mocks.resolve).toHaveBeenCalledWith({
+    environmentId,
+    input: { actionId: "switch", decision: "approve" },
+  });
+});

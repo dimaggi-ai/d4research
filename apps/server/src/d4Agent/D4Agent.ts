@@ -1771,34 +1771,30 @@ export const layer = Layer.effect(
           );
           yield* validateTarget(action);
           const state = yield* store.get;
-          if (action.type === "send") {
+          // The user's words of the turn that led to this draft, never text the agent wrote.
+          const currentUserText = Effect.gen(function* () {
             const shell =
               state.threadId === null
                 ? null
                 : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
-            let originalText: string | undefined;
             if (shell?.activeRunId != null) {
               const message = yield* projections
                 .getRunMessage(shell.id, shell.activeRunId)
                 .pipe(Effect.mapError(threadError));
-              if (message?.createdBy === "user") originalText = message.text;
-            } else if ((yield* D4AgentAccess.ToolCaller) === undefined) {
-              originalText = state.userMessages?.findLast(
-                (entry) => entry.threadId === state.threadId,
-              )?.text;
+              return message?.createdBy === "user" ? message.text : undefined;
             }
+            if ((yield* D4AgentAccess.ToolCaller) !== undefined) return undefined;
+            return state.userMessages?.findLast((entry) => entry.threadId === state.threadId)?.text;
+          });
+          if (action.type === "send") {
+            const originalText = yield* currentUserText;
             const { originalText: _untrustedOriginal, ...draft } = action;
             action = originalText === undefined ? draft : { ...draft, originalText };
           }
           if (action.type === "switch-context") {
             const { targetContext, title } = yield* switchTarget(action);
-            // The replay is the user's recent words in this session, never text the agent wrote.
-            const originalText = (state.userMessages ?? [])
-              .filter((entry) => entry.threadId === state.threadId)
-              .slice(-3)
-              .map((entry) => entry.text)
-              .join("\n\n")
-              .slice(-16000);
+            // Replay only the current turn's request; older Global requests stay in Global.
+            const originalText = (yield* currentUserText)?.slice(-16000) ?? "";
             action = {
               type: "switch-context",
               ...(action.threadId === undefined ? {} : { threadId: action.threadId }),
@@ -2108,10 +2104,16 @@ export const layer = Layer.effect(
             yield* store.update((value) => ({ ...value, heartbeatKeys: [] }));
           return;
         }
+        const changed = yield* encodeDigest({
+          reports: currentDigest.reports
+            .filter(
+              (entry) => entry.attentionRequired && !state.heartbeatKeys.includes(entry.reportKey),
+            )
+            .map(modelFacingReport),
+          system: health.map(({ reportKey: _reportKey, ...check }) => check),
+        }).pipe(Effect.mapError(storageError));
         yield* send(
-          {
-            text: `Heartbeat: summarize these changed attention reports briefly.\n${yield* encodeDigest({ reportKeys: attentionKeys.filter((key) => !state.heartbeatKeys.includes(key)), system: health }).pipe(Effect.mapError(storageError))}`,
-          },
+          { text: `Heartbeat: summarize these changed attention reports briefly.\n${changed}` },
           true,
           `heartbeat:${sha256Hex(attentionKeys.join("\n"))}`,
         ).pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-heartbeat"));

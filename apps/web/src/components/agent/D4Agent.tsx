@@ -460,8 +460,10 @@ function AgentActionRecord({
   const [reviewing, setReviewing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState<string | null>(null);
+  // A pending switch shows its replay up front so the user sees what will be resent.
+  const pendingSwitch = record.type === "switch-context" && record.status === "pending";
   const detail = useEnvironmentQuery(
-    reviewing
+    reviewing || pendingSwitch
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
@@ -495,9 +497,11 @@ function AgentActionRecord({
       {heading.detail ? (
         <p className="whitespace-pre-wrap break-words text-muted-foreground">{heading.detail}</p>
       ) : null}
-      <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
-        {reviewing ? "Hide action details" : "Review action"}
-      </Button>
+      {pendingSwitch ? null : (
+        <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
+          {reviewing ? "Hide action details" : "Review action"}
+        </Button>
+      )}
       {reviewing && detail.data && !sendAction && !launchAction && !switchAction ? (
         <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
           {JSON.stringify(
@@ -529,7 +533,7 @@ function AgentActionRecord({
           <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
         </div>
       ) : null}
-      {reviewing && switchAction ? (
+      {(reviewing || pendingSwitch) && switchAction ? (
         <div className="space-y-2 rounded border p-3">
           <p className="text-xs text-muted-foreground">
             {switchAction.originalText

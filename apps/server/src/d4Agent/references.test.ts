@@ -52,6 +52,28 @@ it("ignores duplicate titles and asks only for multiple explicit identities", ()
   if (multipleResult.kind === "ambiguous") assert.equal(multipleResult.candidates.length, 2);
 });
 
+it("resolves pipelines only through the picker token and matches raw ids case-sensitively", () => {
+  const pipeline: AgentReference = {
+    kind: "pipeline",
+    id: "dev:web",
+    title: "web",
+    projectId,
+    threadId: null,
+  };
+  for (const text of [
+    "after npm run dev:web finishes, check the logs",
+    "pnpm Dev:Web",
+    "run dev:web please",
+  ]) {
+    assert.equal(resolveAgentReference(text, [pipeline, thread]).kind, "none");
+  }
+  assert.equal(resolveAgentReference(`Open ${threadId.toUpperCase()}`, [thread]).kind, "none");
+
+  const result = resolveAgentReference("Start [[pipeline:dev:web]] now", [pipeline, thread]);
+  assert.equal(result.kind, "resolved");
+  if (result.kind === "resolved") assert.equal(result.target, pipeline);
+});
+
 it("defaults unmapped references to Global and uses the mapped context", () => {
   assert.equal(referenceContext({ ...thread, projectId: null }, config), "Global");
   assert.equal(referenceContext(thread, config), "Dimaggi");

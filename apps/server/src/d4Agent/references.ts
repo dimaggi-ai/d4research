@@ -17,16 +17,18 @@ export interface AgentReference {
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const mentioned = (text: string, value: string) =>
   value.length > 0 &&
-  new RegExp(`(^|[^\\p{L}\\p{N}_-])${escaped(value)}($|[^\\p{L}\\p{N}_-])`, "iu").test(text);
+  new RegExp(`(^|[^\\p{L}\\p{N}_-])${escaped(value)}($|[^\\p{L}\\p{N}_-])`, "u").test(text);
 
 // Only explicit identities may select a context; titles are untrusted display metadata.
+// Pipeline ids are user-chosen names (e.g. `dev:web`) that collide with ordinary text,
+// so pipelines resolve only through the picker token; raw ids match threads and projects.
 export function resolveAgentReference(text: string, references: ReadonlyArray<AgentReference>) {
   const tokens = [...text.matchAll(/\[\[(thread|project|pipeline):([^\]]+)\]\]/g)];
   const unmarked = text.replace(/\[\[[^\]]*\]\]/g, "");
   const candidates = references.filter(
     (entry) =>
       tokens.some((match) => match[1] === entry.kind && match[2] === entry.id) ||
-      mentioned(unmarked, entry.id),
+      (entry.kind !== "pipeline" && mentioned(unmarked, entry.id)),
   );
   const unique = [
     ...new Map(candidates.map((entry) => [`${entry.kind}:${entry.id}`, entry])).values(),

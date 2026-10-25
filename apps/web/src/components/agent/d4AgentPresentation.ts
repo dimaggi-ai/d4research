@@ -6,6 +6,11 @@ import type {
   ProjectId,
   D4AgentSettings,
 } from "@d4research/contracts";
+import {
+  threadRuntimeIsActive,
+  type ThreadRunSummary,
+  type ThreadRuntimeSummary,
+} from "@d4research/client-runtime/state/models";
 
 export function systemCheckLabel(check: D4AgentSystemCheck): string {
   return {
@@ -71,4 +76,35 @@ export function actionHeading(
   return record.type === "switch-context"
     ? { title: record.preview, detail: "" }
     : { title: `${record.type} · ${record.targetId}`, detail: record.preview };
+}
+
+/** What Nia is doing now, from its own thread's run state. */
+export function agentActivityLabel(input: {
+  runtime: ThreadRuntimeSummary | null;
+  latestRun: ThreadRunSummary | null;
+  formatTime: (iso: string) => string;
+}): { text: string; tone: "working" | "error" | "idle" } {
+  const { runtime, latestRun } = input;
+  if (runtime?.status === "waiting") return { text: "Nia is waiting for you.", tone: "working" };
+  if (threadRuntimeIsActive(runtime))
+    return { text: "Nia is working on a reply…", tone: "working" };
+  if (runtime?.status === "failed" || runtime?.lastError)
+    return {
+      text: `Last reply failed${runtime.lastError ? `: ${runtime.lastError.slice(0, 120)}` : "."}`,
+      tone: "error",
+    };
+  if (latestRun?.completedAt)
+    return { text: `Last reply at ${input.formatTime(latestRun.completedAt)}.`, tone: "idle" };
+  return { text: "Nia is idle.", tone: "idle" };
+}
+
+/** Whether Nia looks at threads on its own, or only when asked. */
+export function agentWatchLabel(input: {
+  heartbeatMinutes: D4AgentSettings["heartbeatMinutes"];
+  monitorEnabled: boolean;
+}): { text: string; off: boolean } {
+  if (!input.monitorEnabled) return { text: "Thread monitor is off.", off: true };
+  if (input.heartbeatMinutes === null)
+    return { text: "Automatic checks are off. Nia acts only when you write.", off: true };
+  return { text: `Checks threads every ${input.heartbeatMinutes} min.`, off: false };
 }

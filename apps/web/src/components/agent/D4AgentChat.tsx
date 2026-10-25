@@ -30,6 +30,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
+import { agentActivityLabel, agentWatchLabel } from "./d4AgentPresentation";
 
 const isD4AgentError = Schema.is(D4AgentError);
 
@@ -106,6 +107,19 @@ export function D4AgentChat({
   });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<"failed" | "stale" | null>(null);
+  const agentShell = useThreadShell(
+    state.threadId ? { environmentId, threadId: state.threadId } : null,
+  );
+  const activity = agentActivityLabel({
+    runtime: agentShell?.runtime ?? null,
+    latestRun: agentShell?.latestRun ?? null,
+    formatTime: (iso) =>
+      new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  });
+  const watch = agentWatchLabel({
+    heartbeatMinutes: config?.settings.d4Agent.heartbeatMinutes ?? null,
+    monitorEnabled: config?.settings.agentMonitor.enabled === true,
+  });
   const conversation = useRef<HTMLDivElement>(null);
   const followConversation = useRef(true);
   useEffect(() => {
@@ -194,8 +208,41 @@ export function D4AgentChat({
           </p>
         ) : null}
       </div>
+      <div
+        role="status"
+        aria-label="Nia activity"
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t px-4 pt-2 text-xs"
+      >
+        <span
+          className={cn(
+            "flex items-center gap-1.5",
+            activity.tone === "working" && "font-medium text-foreground",
+            activity.tone === "error" && "text-destructive",
+            activity.tone === "idle" && "text-muted-foreground",
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              activity.tone === "working" && "bg-primary",
+              activity.tone === "error" && "bg-destructive",
+              activity.tone === "idle" && "bg-muted-foreground/50",
+            )}
+          />
+          {activity.text}
+        </span>
+        <span className="text-muted-foreground">
+          {watch.text}{" "}
+          {watch.off ? (
+            <Link to="/settings/general" className="text-primary underline underline-offset-2">
+              Turn on
+            </Link>
+          ) : null}
+        </span>
+      </div>
       <form
-        className="shrink-0 space-y-2 border-t p-4"
+        className="shrink-0 space-y-2 p-4 pt-2"
         onSubmit={async (event) => {
           event.preventDefault();
           if (sending || !enabled || !allowed || !text.trim() || moved) return;

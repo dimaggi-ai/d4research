@@ -7,6 +7,8 @@ import {
   projectBelongsToAgentContext,
   brainIndexStatus,
   actionHeading,
+  agentActivityLabel,
+  agentWatchLabel,
 } from "./d4AgentPresentation";
 it("labels disk values as percent used and failed services as counts", () => {
   expect(
@@ -96,4 +98,34 @@ it("headlines a context switch with its target instead of the raw id", () => {
     title: "send · thread-1",
     detail: "Draft",
   });
+});
+
+it("says when Nia is working, failed, or idle", () => {
+  const formatTime = () => "14:05";
+  const runtime = (status: "running" | "waiting" | "failed" | "idle", lastError: string | null) =>
+    ({ status, lastError }) as Parameters<typeof agentActivityLabel>[0]["runtime"];
+  expect(
+    agentActivityLabel({ runtime: runtime("running", null), latestRun: null, formatTime }),
+  ).toEqual({ text: "Nia is working on a reply…", tone: "working" });
+  expect(
+    agentActivityLabel({ runtime: runtime("idle", "quota hit"), latestRun: null, formatTime }),
+  ).toEqual({ text: "Last reply failed: quota hit", tone: "error" });
+  expect(
+    agentActivityLabel({
+      runtime: runtime("idle", null),
+      latestRun: { completedAt: "2026-10-25T21:05:00Z" } as Parameters<
+        typeof agentActivityLabel
+      >[0]["latestRun"],
+      formatTime,
+    }),
+  ).toEqual({ text: "Last reply at 14:05.", tone: "idle" });
+});
+
+it("says whether Nia checks threads on its own", () => {
+  expect(agentWatchLabel({ heartbeatMinutes: null, monitorEnabled: true }).off).toBe(true);
+  expect(agentWatchLabel({ heartbeatMinutes: 15, monitorEnabled: true })).toEqual({
+    text: "Checks threads every 15 min.",
+    off: false,
+  });
+  expect(agentWatchLabel({ heartbeatMinutes: 15, monitorEnabled: false }).off).toBe(true);
 });

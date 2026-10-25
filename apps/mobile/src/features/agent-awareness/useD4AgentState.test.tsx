@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   currentState: "active",
   selected: null as unknown,
   listener: null as ((state: string) => void) | null,
+  agentData: { brainContext: "Global" },
 }));
 vi.mock("@react-navigation/native", () => ({ useIsFocused: () => mocks.focused }));
 vi.mock("react-native", () => ({
@@ -35,7 +36,7 @@ vi.mock("../../state/server", () => ({
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: unknown) => {
     mocks.selected = atom;
-    return { refresh: mocks.refresh, data: null };
+    return { refresh: mocks.refresh, data: atom === "agent-state" ? mocks.agentData : null };
   },
 }));
 let root: Root;
@@ -53,7 +54,8 @@ beforeEach(() => {
   mocks.focused = true;
   mocks.currentState = "active";
   mocks.refresh.mockClear();
-  root = createRoot(document.createElement("div"));
+  container = document.createElement("div");
+  root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -117,4 +119,25 @@ it("does not subscribe to system health when initially backgrounded", () => {
   expect(mocks.selected).toBe("system-health");
   act(() => vi.advanceTimersByTime(15_000));
   expect(mocks.refresh).toHaveBeenCalledOnce();
+});
+
+let container: HTMLDivElement;
+const shown = () => container.textContent;
+function StateProbe({ environmentId }: { environmentId: string }) {
+  return <span>{JSON.stringify(useD4AgentState(environmentId as never).data)}</span>;
+}
+
+it("keeps the last state for the same environment while unfocused or backgrounded", () => {
+  act(() => root.render(<StateProbe environmentId="env" />));
+  expect(shown()).toBe(JSON.stringify(mocks.agentData));
+  act(() => mocks.listener!("background"));
+  expect(mocks.selected).toBeNull();
+  expect(shown()).toBe(JSON.stringify(mocks.agentData));
+  act(() => mocks.listener!("active"));
+  mocks.focused = false;
+  act(() => root.render(<StateProbe environmentId="env" />));
+  expect(mocks.selected).toBeNull();
+  expect(shown()).toBe(JSON.stringify(mocks.agentData));
+  act(() => root.render(<StateProbe environmentId="other-env" />));
+  expect(shown()).toBe("null");
 });

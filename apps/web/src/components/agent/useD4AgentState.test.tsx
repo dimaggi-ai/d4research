@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useD4AgentState, useD4AgentSystemHealth } from "./useD4AgentState";
 
-const mocks = vi.hoisted(() => ({ refresh: vi.fn(), query: vi.fn(), selected: null as unknown }));
+const mocks = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  query: vi.fn(),
+  selected: null as unknown,
+  agentData: { brainContext: "Global" },
+}));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
     d4AgentState: () => "agent-state",
@@ -15,7 +20,7 @@ vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: unknown) => {
     mocks.query(atom);
     mocks.selected = atom;
-    return { refresh: mocks.refresh, data: null };
+    return { refresh: mocks.refresh, data: atom === "agent-state" ? mocks.agentData : null };
   },
 }));
 let visibility: DocumentVisibilityState;
@@ -35,7 +40,8 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
   mocks.refresh.mockClear();
   mocks.query.mockClear();
-  root = createRoot(document.createElement("div"));
+  container = document.createElement("div");
+  root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -90,4 +96,21 @@ it("detaches system health while hidden and resumes its polling when visible", (
   const resumedAgain = mocks.refresh.mock.calls.length;
   act(() => vi.advanceTimersByTime(15_000));
   expect(mocks.refresh).toHaveBeenCalledTimes(resumedAgain + 1);
+});
+
+let container: HTMLDivElement;
+const shown = () => container.textContent;
+function StateProbe({ environmentId }: { environmentId: string }) {
+  return <span>{JSON.stringify(useD4AgentState(environmentId as never).data)}</span>;
+}
+
+it("keeps the last state for the same environment while hidden so the chat draft survives", () => {
+  act(() => root.render(<StateProbe environmentId="env" />));
+  expect(shown()).toBe(JSON.stringify(mocks.agentData));
+  visibility = "hidden";
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(mocks.selected).toBeNull();
+  expect(shown()).toBe(JSON.stringify(mocks.agentData));
+  act(() => root.render(<StateProbe environmentId="other-env" />));
+  expect(shown()).toBe("null");
 });

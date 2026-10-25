@@ -14,6 +14,26 @@ function useDocumentVisible() {
   return visible;
 }
 
+// Pausing detaches the subscription but keeps the last state, so the chat and its draft stay
+// mounted while the page is hidden or the app is in the background.
+function useRetainedWhilePaused<T extends { readonly data: unknown }>(
+  query: T,
+  environmentId: EnvironmentId | null,
+  paused: boolean,
+): T {
+  const [last, setLast] = useState<{ environmentId: EnvironmentId; data: T["data"] } | null>(null);
+  if (
+    !paused &&
+    environmentId !== null &&
+    query.data != null &&
+    (last?.environmentId !== environmentId || last.data !== query.data)
+  )
+    setLast({ environmentId, data: query.data });
+  return paused && last !== null && last.environmentId === environmentId
+    ? { ...query, data: last.data }
+    : query;
+}
+
 export function useD4AgentState(environmentId: EnvironmentId | null, enabled = true) {
   const visible = useDocumentVisible();
   const query = useEnvironmentQuery(
@@ -26,7 +46,7 @@ export function useD4AgentState(environmentId: EnvironmentId | null, enabled = t
     key: `d4-agent:${environmentId}`,
     intervalMs: 15_000,
   });
-  return query;
+  return useRetainedWhilePaused(query, environmentId, enabled && !visible);
 }
 
 export function useD4AgentSystemHealth(environmentId: EnvironmentId) {

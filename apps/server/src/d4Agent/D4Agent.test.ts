@@ -553,6 +553,93 @@ it.effect("act still requires approval for arbitrary send instructions", () =>
   }),
 );
 
+const switchRequest = "Add local DeepSeek to the CTO d4 provider list";
+const switchFixture = (mode: "read-only" | "ask" | "act") =>
+  Effect.gen(function* () {
+    const f = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Dimaggi" },
+    });
+    const global = yield* f.service.sendMessage({ text: switchRequest });
+    const card = yield* f.service.requestAction({
+      type: "switch-context",
+      threadId: targetId,
+      targetContext: "Personal",
+      title: "Spoofed",
+      originalText: "Spoofed request",
+    });
+    return { ...f, global, card };
+  });
+
+it.effect.each(["read-only", "ask", "act"] as const)(
+  "switch-context stays pending in %s mode with server-filled target and request",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* switchFixture(mode);
+      assert.equal(f.card.status, "pending");
+      assert.deepEqual(f.card.action, {
+        type: "switch-context",
+        threadId: targetId,
+        targetContext: "Dimaggi",
+        title: "Private",
+        originalText: switchRequest,
+      });
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      assert.equal(
+        (yield* f.service.getState()).actionLog[0]?.preview,
+        "Switch to Dimaggi: Private",
+      );
+    }),
+);
+
+it.effect("approved switch-context rotates to the target context and replays the request", () =>
+  Effect.gen(function* () {
+    const f = yield* switchFixture("act");
+    yield* f.service.resolveAction({ actionId: f.card.id, decision: "approve" });
+    const state = yield* Ref.get(f.state);
+    assert.equal(state.brainContext, "Dimaggi");
+    assert.notEqual(state.threadId, f.global.threadId);
+    const replay = (yield* Ref.get(f.sends)).at(-1);
+    assert.equal(replay?.text, switchRequest);
+    assert.equal(replay?.threadId, state.threadId);
+    assert.equal(state.actions.find((entry) => entry.id === f.card.id)?.status, "executed");
+  }),
+);
+
+it.effect("denied switch-context leaves the context and session unchanged", () =>
+  Effect.gen(function* () {
+    const f = yield* switchFixture("ask");
+    yield* f.service.resolveAction({ actionId: f.card.id, decision: "deny" });
+    const state = yield* Ref.get(f.state);
+    assert.equal(state.brainContext, "Global");
+    assert.equal(state.threadId, f.global.threadId);
+    assert.equal((yield* Ref.get(f.sends)).length, 1);
+  }),
+);
+
+it.effect("switch-context moves requests only from Global into a work context", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Dimaggi" },
+    });
+    yield* Ref.set(f.shells, [
+      target,
+      { ...target, id: ThreadId.make("unmapped"), projectId: ProjectId.make("unmapped") },
+    ]);
+    yield* f.service.sendMessage({ text: switchRequest });
+    const unmapped = yield* Effect.result(
+      f.service.requestAction({ type: "switch-context", threadId: ThreadId.make("unmapped") }),
+    );
+    assert.equal(unmapped._tag === "Failure" && unmapped.failure.reason, "action-unavailable");
+    yield* f.service.switchContext({ context: "YB" });
+    const fromWork = yield* Effect.result(
+      f.service.requestAction({ type: "switch-context", threadId: targetId }),
+    );
+    assert.equal(fromWork._tag === "Failure" && fromWork.failure.reason, "context");
+    assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+  }),
+);
+
 it.effect("an answer cannot resolve a provider permission request", () =>
   Effect.gen(function* () {
     const { service, request, dispatches } = yield* fixture("act");

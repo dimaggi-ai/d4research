@@ -9,6 +9,7 @@ import {
   systemCheckStatus,
   agentUnavailableMessage,
   projectBelongsToAgentContext,
+  actionHeading,
 } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -478,6 +479,8 @@ function AgentActionRecord({
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
+  const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
+  const heading = actionHeading(record);
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
     detail.data &&
@@ -488,14 +491,14 @@ function AgentActionRecord({
       : null;
   return (
     <div className="space-y-2 py-2">
-      <p>
-        {record.type} · {record.targetId}
-      </p>
-      <p className="whitespace-pre-wrap break-words text-muted-foreground">{record.preview}</p>
+      <p>{heading.title}</p>
+      {heading.detail ? (
+        <p className="whitespace-pre-wrap break-words text-muted-foreground">{heading.detail}</p>
+      ) : null}
       <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
         {reviewing ? "Hide action details" : "Review action"}
       </Button>
-      {reviewing && detail.data && !sendAction && !launchAction ? (
+      {reviewing && detail.data && !sendAction && !launchAction && !switchAction ? (
         <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
           {JSON.stringify(
             {
@@ -524,6 +527,18 @@ function AgentActionRecord({
           </p>
           <p className="text-xs text-muted-foreground">Final prompt</p>
           <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+        </div>
+      ) : null}
+      {reviewing && switchAction ? (
+        <div className="space-y-2 rounded border p-3">
+          <p className="text-xs text-muted-foreground">
+            {switchAction.originalText
+              ? `Request to resend in ${switchAction.targetContext ?? "the new context"}`
+              : "No request will be resent."}
+          </p>
+          {switchAction.originalText ? (
+            <p className="whitespace-pre-wrap break-words">{switchAction.originalText}</p>
+          ) : null}
         </div>
       ) : null}
       {reviewing && sendAction ? (
@@ -593,7 +608,7 @@ function AgentActionRecord({
               )
             }
           >
-            {sendAction ? "Send" : "Approve"}
+            {sendAction ? "Send" : record.type === "switch-context" ? "Switch" : "Approve"}
           </Button>
           {sendAction?.originalText ? (
             <Button

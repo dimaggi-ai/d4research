@@ -6,6 +6,7 @@ import {
   agentUnavailableMessage,
   projectBelongsToAgentContext,
   brainIndexStatus,
+  actionHeading,
 } from "./d4AgentPresentation";
 it("labels disk values as percent used and failed services as counts", () => {
   expect(
@@ -81,4 +82,18 @@ it("reports unavailable indexes and rebuild information without inventing readin
       lastRebuild: "2026-10-24T00:00:00.000Z",
     }),
   ).toBe("Ready · 12 files · Last rebuild: 2026-10-24T00:00:00.000Z");
+});
+
+it("headlines a context switch with its target instead of the raw id", () => {
+  expect(
+    actionHeading({
+      type: "switch-context",
+      targetId: "thread-1",
+      preview: "Switch to Dimaggi: Provider setup",
+    }),
+  ).toEqual({ title: "Switch to Dimaggi: Provider setup", detail: "" });
+  expect(actionHeading({ type: "send", targetId: "thread-1", preview: "Draft" })).toEqual({
+    title: "send · thread-1",
+    detail: "Draft",
+  });
 });

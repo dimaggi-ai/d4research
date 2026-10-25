@@ -1,4 +1,5 @@
 import type {
+  D4AgentActionSummary,
   D4AgentState,
   D4AgentSystemCheck,
   D4BrainContext,
@@ -61,4 +62,13 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
     disabled: "Off",
   }[index.status];
   return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;
+}
+
+// Context switches carry a readable server-filled preview; other actions show their raw target.
+export function actionHeading(
+  record: Pick<D4AgentActionSummary, "type" | "targetId" | "preview">,
+): { title: string; detail: string } {
+  return record.type === "switch-context"
+    ? { title: record.preview, detail: "" }
+    : { title: `${record.type} · ${record.targetId}`, detail: record.preview };
 }

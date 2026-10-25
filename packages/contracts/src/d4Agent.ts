@@ -166,6 +166,15 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
     modelSelection: ModelSelection,
   }),
+  // The agent names a thread or project; the server fills targetContext, title and originalText.
+  Schema.Struct({
+    type: Schema.Literal("switch-context"),
+    threadId: Schema.optionalKey(ThreadId),
+    projectId: Schema.optionalKey(ProjectId),
+    targetContext: Schema.optionalKey(D4BrainContext),
+    title: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
+    originalText: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16000))),
+  }),
 ]);
 export type D4AgentAction = typeof D4AgentAction.Type;
 export const D4AgentActionRecord = Schema.Struct({
@@ -191,6 +200,7 @@ export const D4AgentActionSummary = Schema.Struct({
     "pipeline",
     "research",
     "auto-archive",
+    "switch-context",
   ]),
   targetId: Schema.String,
   preview: Schema.String.check(Schema.isMaxLength(256)),

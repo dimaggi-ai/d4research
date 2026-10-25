@@ -10,6 +10,7 @@ import {
   systemCheckStatus,
   agentUnavailableMessage,
   projectBelongsToAgentContext,
+  actionHeading,
 } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
@@ -533,6 +534,8 @@ function AgentActionRecord({
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
+  const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
+  const heading = actionHeading(record);
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
     detail.data &&
@@ -544,13 +547,15 @@ function AgentActionRecord({
   return (
     <View className="gap-2 py-2">
       <Text className="text-sm text-foreground">
-        {record.createdAt} · {record.type} · {record.targetId} · {record.status}
+        {record.createdAt} · {heading.title} · {record.status}
       </Text>
-      <Text className="text-sm text-foreground-muted">{record.preview}</Text>
+      {heading.detail ? (
+        <Text className="text-sm text-foreground-muted">{heading.detail}</Text>
+      ) : null}
       <Pressable accessibilityRole="button" onPress={() => setReviewing(!reviewing)}>
         <Text className="text-accent">{reviewing ? "Hide action details" : "Review action"}</Text>
       </Pressable>
-      {reviewing && detail.data && !sendAction && !launchAction ? (
+      {reviewing && detail.data && !sendAction && !launchAction && !switchAction ? (
         <Text className="text-xs text-foreground-muted">
           {JSON.stringify(
             {
@@ -585,6 +590,20 @@ function AgentActionRecord({
           <Text selectable className="text-sm text-foreground">
             {launchAction.text}
           </Text>
+        </View>
+      ) : null}
+      {reviewing && switchAction ? (
+        <View className="gap-2 rounded border border-border p-3">
+          <Text className="text-xs text-foreground-muted">
+            {switchAction.originalText
+              ? `Request to resend in ${switchAction.targetContext ?? "the new context"}`
+              : "No request will be resent."}
+          </Text>
+          {switchAction.originalText ? (
+            <Text selectable className="text-sm text-foreground">
+              {switchAction.originalText}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {reviewing && sendAction ? (
@@ -657,7 +676,9 @@ function AgentActionRecord({
               )
             }
           >
-            <Text className="text-accent">{sendAction ? "Send" : "Approve"}</Text>
+            <Text className="text-accent">
+              {sendAction ? "Send" : record.type === "switch-context" ? "Switch" : "Approve"}
+            </Text>
           </Pressable>
           {sendAction?.originalText ? (
             <Pressable

@@ -198,16 +198,20 @@ const storageError = (cause: unknown) => new D4AgentError({ reason: "storage", c
 const threadError = (cause: unknown) => new D4AgentError({ reason: "thread", cause });
 const command = (id: string) => CommandId.make(`d4-agent:${id}`);
 const actionTarget = (action: D4AgentAction) =>
-  "projectId" in action
-    ? action.projectId
-    : "context" in action
-      ? `${action.type}:${action.context}`
-      : action.threadId;
+  action.type === "switch-context"
+    ? (action.threadId ?? action.projectId ?? "")
+    : "projectId" in action
+      ? action.projectId
+      : "context" in action
+        ? `${action.type}:${action.context}`
+        : action.threadId;
 export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
   action: D4AgentAction,
 ) =>
   mode === "ask" ||
+  // A context switch moves the user's words into another context's session, so only a human may approve it.
+  action.type === "switch-context" ||
   action.type === "send" ||
   action.type === "start" ||
   action.type === "research" ||
@@ -227,9 +231,11 @@ export function actionSummaries(
       targetId: actionTarget(action),
       preview: ("text" in action
         ? action.text
-        : action.type === "answer"
-          ? JSON.stringify(action.answers)
-          : ""
+        : action.type === "switch-context"
+          ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
+          : action.type === "answer"
+            ? JSON.stringify(action.answers)
+            : ""
       ).slice(0, 256),
       status,
       createdAt,
@@ -756,11 +762,13 @@ export const layer = Layer.effect(
       heartbeat = false,
       id?: string,
       resumedAfterRotation = false,
+      resolveReferences = true,
     ) {
       id ??= yield* randomUUID;
       yield* maintainSessions();
-      if (!heartbeat) {
-        if ((yield* store.get).rotation) return yield* new D4AgentError({ reason: "busy" });
+      if (!heartbeat && (yield* store.get).rotation)
+        return yield* new D4AgentError({ reason: "busy" });
+      if (!heartbeat && resolveReferences) {
         const resolved = resolveAgentReference(input.text, yield* referenceCatalog);
         if (resolved.kind === "ambiguous") {
           const state = yield* store.get;
@@ -1324,7 +1332,41 @@ export const layer = Layer.effect(
         usage: state.usage,
       } satisfies D4AgentState;
     });
+    // Only Global may hand a request to a work context: Global content is shareable, work content is not.
+    const switchTarget = Effect.fn("D4Agent.switchTarget")(function* (
+      action: Extract<D4AgentAction, { type: "switch-context" }>,
+    ) {
+      const { state, config } = yield* bound();
+      if (state.brainContext !== "Global") return yield* new D4AgentError({ reason: "context" });
+      if ((action.threadId === undefined) === (action.projectId === undefined))
+        return yield* new D4AgentError({ reason: "action-unavailable" });
+      let projectId: ProjectId, title: string;
+      if (action.threadId !== undefined) {
+        const thread = yield* threads
+          .getThreadShell(action.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (thread === null || thread.deletedAt !== null)
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        projectId = thread.projectId;
+        title = thread.title;
+      } else {
+        const project = (yield* projects.listShells().pipe(Effect.mapError(threadError))).find(
+          (entry) => entry.id === action.projectId,
+        );
+        if (project === undefined) return yield* new D4AgentError({ reason: "action-unavailable" });
+        projectId = project.id;
+        title = project.title;
+      }
+      const targetContext = config.projectContexts[projectId] ?? "Global";
+      if (projectId === state.projectId || targetContext === "Global")
+        return yield* new D4AgentError({ reason: "action-unavailable" });
+      return { targetContext, title: title.slice(0, 256) };
+    });
     const validateTarget = Effect.fn("D4Agent.validateTarget")(function* (action: D4AgentAction) {
+      if (action.type === "switch-context") {
+        yield* switchTarget(action);
+        return;
+      }
       const { state, config } = yield* bound("context" in action ? action.context : undefined);
       if (action.type === "memory-propose") {
         if (state.brainContext === "Global") return yield* new D4AgentError({ reason: "context" });
@@ -1383,6 +1425,19 @@ export const layer = Layer.effect(
         return yield* new D4AgentError({ reason: "context" });
       if (action.type === "auto-archive")
         return yield* new D4AgentError({ reason: "action-unavailable" });
+      if (action.type === "switch-context") {
+        // The mapping may have changed while the card waited for approval.
+        const target = yield* switchTarget(action);
+        if (target.targetContext !== action.targetContext || state.rotation)
+          return yield* new D4AgentError({ reason: "context" });
+        yield* rotate(target.targetContext);
+        if (!action.originalText) return yield* ensure().pipe(Effect.asVoid);
+        // The user approved this replay, so it is their message in the new session.
+        return yield* send({ text: action.originalText }, false, undefined, false, false).pipe(
+          Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
+          Effect.asVoid,
+        );
+      }
       if (action.type === "pipeline" || action.type === "research" || action.type === "start") {
         const reason = modelAvailability(
           { ...config, modelSelection: action.modelSelection },
@@ -1708,7 +1763,7 @@ export const layer = Layer.effect(
           if (!config.enabled) return yield* new D4AgentError({ reason: "disabled" });
           if (
             config.permissionMode === "read-only" &&
-            !["send", "start", "pipeline", "research"].includes(action.type)
+            !["send", "start", "pipeline", "research", "switch-context"].includes(action.type)
           )
             return yield* new D4AgentError({ reason: "read-only" });
           yield* validateAction(action).pipe(
@@ -1734,6 +1789,24 @@ export const layer = Layer.effect(
             }
             const { originalText: _untrustedOriginal, ...draft } = action;
             action = originalText === undefined ? draft : { ...draft, originalText };
+          }
+          if (action.type === "switch-context") {
+            const { targetContext, title } = yield* switchTarget(action);
+            // The replay is the user's recent words in this session, never text the agent wrote.
+            const originalText = (state.userMessages ?? [])
+              .filter((entry) => entry.threadId === state.threadId)
+              .slice(-3)
+              .map((entry) => entry.text)
+              .join("\n\n")
+              .slice(-16000);
+            action = {
+              type: "switch-context",
+              ...(action.threadId === undefined ? {} : { threadId: action.threadId }),
+              ...(action.projectId === undefined ? {} : { projectId: action.projectId }),
+              targetContext,
+              title,
+              ...(originalText === "" ? {} : { originalText }),
+            };
           }
           const prepared =
             action.type === "pipeline" || action.type === "research"
@@ -1818,7 +1891,9 @@ export const layer = Layer.effect(
             if (
               !config.enabled ||
               (config.permissionMode === "read-only" &&
-                !["send", "start", "pipeline", "research"].includes(record.action.type))
+                !["send", "start", "pipeline", "research", "switch-context"].includes(
+                  record.action.type,
+                ))
             )
               return yield* new D4AgentError({ reason: "read-only" });
             const action = record.action;

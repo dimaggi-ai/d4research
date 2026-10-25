@@ -93,7 +93,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_action", {
     ...writable,
     description:
-      "Request a bounded d4 action. Send, start, research and pipeline drafts always require user approval. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
+      "Request a bounded d4 action. Send, start, research, pipeline and switch-context drafts always require user approval. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
     parameters: Schema.Struct({ action: D4AgentAction }),
     success: D4AgentActionRecord,
   }).annotate(Tool.Destructive, true),

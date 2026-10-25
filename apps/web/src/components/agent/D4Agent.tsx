@@ -1,3 +1,4 @@
+import { D4AgentSessions } from "./D4AgentSessions";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
 import { environmentThreadShells } from "../../state/threads";
@@ -17,7 +18,7 @@ import {
   type ThreadId,
 } from "@d4research/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -40,20 +41,23 @@ function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   );
 }
 
-export function D4AgentEntries() {
+export function D4AgentEntries({ children }: { children?: ReactNode }) {
   const { environments } = useEnvironments();
   const visible = useSidebarVisibility();
-  if (!visible) return null;
+  if (!visible) return children;
   return (
-    <div className="space-y-1 px-2 pb-2">
-      {environments.map((environment) => (
-        <D4AgentEntry
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          label={environments.length > 1 ? environment.label : null}
-        />
-      ))}
-    </div>
+    <>
+      <div className="space-y-1 px-2 pb-2">
+        {environments.map((environment) => (
+          <D4AgentEntry
+            key={environment.environmentId}
+            environmentId={environment.environmentId}
+            label={environments.length > 1 ? environment.label : null}
+          />
+        ))}
+      </div>
+      {children}
+    </>
   );
 }
 export function D4AgentEntry({
@@ -71,7 +75,7 @@ export function D4AgentEntry({
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
   return (
-    <>
+    <div className="rounded-lg border border-primary/25 bg-primary/5 p-1">
       <Button
         variant="ghost"
         size="sm"
@@ -122,7 +126,7 @@ export function D4AgentEntry({
           Could not open d4 Agent. Check that it is enabled with an available model in Settings.
         </p>
       ) : null}
-    </>
+    </div>
   );
 }
 export function D4AgentPanel({
@@ -265,11 +269,20 @@ function D4AgentPanelContent({
         </Button>
         {switching ? <span role="status">Switching context…</span> : null}
       </div>
+      <D4AgentSessions
+        environmentId={environmentId}
+        sessions={state.openSessions ?? []}
+        refresh={query.refresh}
+      />
       {state.sessionChangeReason ? (
         <p role="status" className="mb-2 border-b pb-2 text-xs text-muted-foreground">
-          {state.sessionChangeReason === "new-session"
-            ? "New session."
-            : `Context changed to ${state.brainContext}. New session.`}
+          {state.sessionChangeReason === "resumed"
+            ? `Resumed ${state.brainContext} session.`
+            : state.sessionChangeReason === "size"
+              ? "Session size budget reached. New session."
+              : state.sessionChangeReason === "new-session"
+                ? "New session."
+                : `Context changed to ${state.brainContext}. New session.`}
         </p>
       ) : null}
       <div className="flex items-center justify-between gap-2">
@@ -384,10 +397,10 @@ function D4AgentPanelContent({
             record={record}
             allowed={allowed}
             busy={busy !== null}
-            onResolve={async (decision) => {
+            onResolve={async (decision, options) => {
               setBusy(record.id);
               setActionError(null);
-              await resolve({ environmentId, input: { actionId: record.id, decision } })
+              await resolve({ environmentId, input: { actionId: record.id, decision, ...options } })
                 .then((result) => {
                   if (result._tag === "Failure") setActionError("Could not resolve this action.");
                   query.refresh();
@@ -432,9 +445,20 @@ function AgentActionRecord({
   record: D4AgentActionSummary;
   allowed: boolean;
   busy: boolean;
-  onResolve: (decision: "approve" | "deny") => Promise<void>;
+  onResolve: (
+    decision: "approve" | "deny",
+    options?: { editedText?: string; sendOriginal?: boolean },
+  ) => Promise<void>;
 }) {
+  const undoArchive = useAtomCommand(serverEnvironment.undoD4AgentArchive);
+  const canUndoArchive = useAtomValue(
+    serverEnvironment.undoD4AgentArchive.permissionAtom(environmentId),
+  );
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editedText, setEditedText] = useState<string | null>(null);
   const detail = useEnvironmentQuery(
     reviewing
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
@@ -453,6 +477,15 @@ function AgentActionRecord({
   }, [record.status, record.resolvedAt, reviewing]);
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
+  const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
+  const finalText = editedText ?? sendAction?.text ?? "";
+  const launchAction =
+    detail.data &&
+    (detail.data.action.type === "research" ||
+      detail.data.action.type === "pipeline" ||
+      detail.data.action.type === "start")
+      ? detail.data.action
+      : null;
   return (
     <div className="space-y-2 py-2">
       <p>
@@ -462,7 +495,7 @@ function AgentActionRecord({
       <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
         {reviewing ? "Hide action details" : "Review action"}
       </Button>
-      {reviewing && detail.data ? (
+      {reviewing && detail.data && !sendAction && !launchAction ? (
         <pre className="overflow-auto whitespace-pre-wrap break-words text-xs">
           {JSON.stringify(
             {
@@ -480,17 +513,96 @@ function AgentActionRecord({
           {detail.data.result}
         </pre>
       ) : null}
+      {reviewing && launchAction ? (
+        <div className="space-y-2 rounded border p-3">
+          <p className="text-xs text-muted-foreground">Target project · {launchAction.projectId}</p>
+          {launchAction.type !== "start" ? (
+            <p className="text-xs text-muted-foreground">Pipeline · {launchAction.pipelineId}</p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
+          </p>
+          <p className="text-xs text-muted-foreground">Final prompt</p>
+          <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
+        </div>
+      ) : null}
+      {reviewing && sendAction ? (
+        <div className="space-y-2 rounded border p-3">
+          <p className="text-xs text-muted-foreground">Original</p>
+          <p className="whitespace-pre-wrap break-words">
+            {sendAction.originalText ?? sendAction.text}
+          </p>
+          <p className="text-xs text-muted-foreground">Rewritten prompt</p>
+          {editing ? (
+            <textarea
+              aria-label="Edit rewritten prompt"
+              value={finalText}
+              onChange={(event) => setEditedText(event.target.value)}
+              className="min-h-24 w-full rounded border border-input bg-background p-2 focus-visible:outline focus-visible:outline-ring"
+            />
+          ) : (
+            <p className="whitespace-pre-wrap break-words">{finalText}</p>
+          )}
+          {record.status === "pending" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!canApprove}
+              onClick={() => setEditing(!editing)}
+            >
+              {editing ? "Done editing" : "Edit"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {detail.error ? <p role="alert">{detail.error}</p> : null}
+      {record.type === "auto-archive" && record.status === "executed" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canUndoArchive || undoing}
+          onClick={async () => {
+            setUndoing(true);
+            setUndoError(false);
+            try {
+              const result = await undoArchive({ environmentId, input: { actionId: record.id } });
+              if (result._tag === "Failure") setUndoError(true);
+              else refreshDetail();
+            } catch {
+              setUndoError(true);
+            }
+            setUndoing(false);
+          }}
+        >
+          {undoing ? "Restoring…" : "Undo archive"}
+        </Button>
+      ) : null}
+      {undoError ? <p role="alert">Could not restore this thread.</p> : null}
       {record.status === "pending" ? (
         <div className="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            disabled={!canApprove}
-            onClick={() => void onResolve("approve")}
+            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
+            onClick={() =>
+              void onResolve(
+                "approve",
+                sendAction && editedText !== null ? { editedText } : undefined,
+              )
+            }
           >
-            Approve
+            {sendAction ? "Send" : "Approve"}
           </Button>
+          {sendAction?.originalText ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canApprove}
+              onClick={() => void onResolve("approve", { sendOriginal: true })}
+            >
+              Send original
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"

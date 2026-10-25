@@ -25,12 +25,14 @@ function useAgentRefresh(refreshQuery: () => void, visible: boolean) {
   }, [visible]);
 }
 
-export function useD4AgentState(environmentId: EnvironmentId, enabled = true) {
+export function useD4AgentState(environmentId: EnvironmentId | null, enabled = true) {
   const focused = useIsFocused();
   const active = useAppActive();
-  const visible = enabled && focused && active;
+  const visible = enabled && focused && active && environmentId !== null;
   const query = useEnvironmentQuery(
-    visible ? serverEnvironment.d4AgentState({ environmentId, input: {} }) : null,
+    visible && environmentId !== null
+      ? serverEnvironment.d4AgentState({ environmentId, input: {} })
+      : null,
   );
   useAgentRefresh(query.refresh, visible);
   return query;

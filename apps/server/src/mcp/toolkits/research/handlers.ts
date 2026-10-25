@@ -1,3 +1,4 @@
+import { validateAgentTaskScope } from "../../../d4Agent/D4AgentTaskScope.ts";
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -489,8 +490,9 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
     // Shared context rides along as-is — no summarization between what one
     // model learned and what the next one reads. Best-effort: a memory
     // outage degrades to a delegate without context, never a failed step.
+    const scopedAgentTask = String(input.orchestratorThreadId).startsWith("d4-action:");
     let sharedContext: string | null = null;
-    if (input.shareMemoContext && memoProject !== null) {
+    if (!scopedAgentTask && input.shareMemoContext && memoProject !== null) {
       sharedContext = yield* Effect.gen(function* () {
         const connector = yield* makeConfiguredMemoryConnector();
         const found = yield* connector.search(input.prompt, 5, memoProject);
@@ -499,19 +501,21 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
     }
 
     const brain = yield* SecondBrainService.SecondBrainService;
-    const brainContext = yield* brain
-      .buildTurnContext({
-        userText: input.prompt,
-        includeCore: true,
-        ...(memoProject ? { projectTitle: memoProject } : {}),
-        ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
-      })
-      .pipe(
-        Effect.timeout("1500 millis"),
-        Effect.catchCause(() =>
-          Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
-        ),
-      );
+    const brainContext = scopedAgentTask
+      ? null
+      : yield* brain
+          .buildTurnContext({
+            userText: input.prompt,
+            includeCore: true,
+            ...(memoProject ? { projectTitle: memoProject } : {}),
+            ...(delegateCwd ? { workspacePath: delegateCwd } : {}),
+          })
+          .pipe(
+            Effect.timeout("1500 millis"),
+            Effect.catchCause(() =>
+              Effect.logWarning("Delegate second brain context unavailable").pipe(Effect.as(null)),
+            ),
+          );
     const turnInput = [
       ...(brainContext?.policy ? [SecondBrainService.formatTurnContext(brainContext)] : []),
       ...(sharedContext !== null
@@ -616,6 +620,20 @@ export const makeResearchDelegateHandler =
         Effect.mapError(
           (cause) =>
             new ResearchDelegateError({ detail: `Could not read settings: ${String(cause)}` }),
+        ),
+      );
+      yield* validateAgentTaskScope(
+        invocation.thread.threadId,
+        settings.d4Agent,
+        `${input.pipelineKind ?? "research"}:${input.scenario ?? ""}`,
+        settings,
+      ).pipe(
+        Effect.mapError(
+          () =>
+            new ResearchDelegateError({
+              detail: "Context operation refused; inspect the selected scope configuration.",
+              failureKind: "authorization",
+            }),
         ),
       );
       const providerRegistry = yield* ProviderRegistry;

@@ -1,3 +1,12 @@
+import * as SessionManager from "../orchestration-v2/ProviderSessionManager.ts";
+import * as Pipelines from "./D4AgentPipelines.ts";
+import * as Lifecycle from "./D4AgentThreadLifecycle.ts";
+import {
+  resolveAgentReference,
+  referenceContext,
+  validateReplyReferences,
+  type AgentReference,
+} from "./references.ts";
 import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
@@ -13,9 +22,12 @@ import {
   type D4AgentSwitchContextInput,
   type D4AgentResolveMemoryProposalInput,
   MessageId,
+  type ModelSelection,
   ProjectId,
+  ProviderSessionId,
   ThreadId,
   type D4AgentIdentity,
+  type OrchestrationV2ThreadProjection,
   type D4AgentGetActionInput,
   type D4AgentActionSummary,
   type D4AgentSystemHealthState,
@@ -54,6 +66,21 @@ import { contentFreeDigest, heartbeatDue, modelAvailability, usageAttributes } f
 export class D4Agent extends Context.Service<
   D4Agent,
   {
+    readonly closeSession: (
+      input: D4AgentSwitchContextInput,
+    ) => Effect.Effect<D4AgentState, D4AgentError>;
+    readonly undoArchive: (
+      input: D4AgentGetActionInput,
+    ) => Effect.Effect<D4AgentState, D4AgentError>;
+    readonly listPipelines: () => Effect.Effect<
+      {
+        readonly pipelines: ReadonlyArray<Pipelines.ScopedPipeline>;
+        readonly modelSelection: ModelSelection;
+        readonly projects: ReadonlyArray<{ readonly projectId: ProjectId; readonly title: string }>;
+      },
+      D4AgentError
+    >;
+    readonly resolveReference: (text: string) => Effect.Effect<unknown, D4AgentError>;
     readonly newSession: () => Effect.Effect<typeof D4AgentEnsureThreadResult.Type, D4AgentError>;
     readonly resolveMemoryProposal: (
       input: D4AgentResolveMemoryProposalInput,
@@ -123,7 +150,7 @@ const storageError = (cause: unknown) => new D4AgentError({ reason: "storage", c
 const threadError = (cause: unknown) => new D4AgentError({ reason: "thread", cause });
 const command = (id: string) => CommandId.make(`d4-agent:${id}`);
 const actionTarget = (action: D4AgentAction) =>
-  action.type === "start"
+  "projectId" in action
     ? action.projectId
     : "context" in action
       ? `${action.type}:${action.context}`
@@ -131,7 +158,12 @@ const actionTarget = (action: D4AgentAction) =>
 export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
   action: D4AgentAction,
-) => mode === "ask" || action.type === "send" || action.type === "start";
+) =>
+  mode === "ask" ||
+  action.type === "send" ||
+  action.type === "start" ||
+  action.type === "research" ||
+  action.type === "pipeline";
 
 export function actionSummaries(
   actions: ReadonlyArray<D4AgentActionRecord>,
@@ -191,6 +223,9 @@ export const layer = Layer.effect(
     const projects = yield* ProjectService.ProjectService;
     const monitor = yield* AgentMonitor.AgentMonitorReactor;
     const probe = yield* SystemProbe.SystemProbe;
+    const sessionManager = yield* Effect.serviceOption(SessionManager.ProviderSessionManagerV2);
+    const pipelines = yield* Pipelines.D4AgentPipelines.pipe(Effect.provide(Pipelines.layer));
+    const lifecycle = yield* Lifecycle.D4AgentThreadLifecycle.pipe(Effect.provide(Lifecycle.layer));
     const path = yield* Effect.serviceOption(Path.Path);
     let brainDiagnostic: { operation: string; category: string } | undefined;
     const brain = createScopedBrain({
@@ -253,7 +288,7 @@ export const layer = Layer.effect(
         yield* threads
           .dispatch({
             type: "thread.stop",
-            commandId: command(`context-stop:${state.threadId}`),
+            commandId: command(`context-stop:${state.retiringThreadId}`),
             threadId: state.retiringThreadId,
           })
           .pipe(
@@ -263,7 +298,7 @@ export const layer = Layer.effect(
         yield* threads
           .dispatch({
             type: "thread.archive",
-            commandId: command(`context-archive:${state.threadId}`),
+            commandId: command(`context-archive:${state.retiringThreadId}`),
             threadId: state.retiringThreadId,
           })
           .pipe(
@@ -271,35 +306,115 @@ export const layer = Layer.effect(
             Effect.mapError(threadError),
           );
       }
-      yield* store.update((value) => ({ ...value, retiringThreadId: null }));
-    });
-    const rotate = Effect.fn("D4Agent.rotate")(function* (
-      context: D4BrainContext,
-      reason: "context" | "new-session" = "context",
-    ) {
-      yield* finishRetirement();
-      const config = yield* settings;
-      const threadId = ThreadId.make(yield* randomUUID);
-      const changedAt = DateTime.formatIso(yield* DateTime.now);
-      // Persist both identities so a crash retries shutdown before creating the new session.
+      if (state.retiringProviderSessionId) {
+        if (Option.isNone(sessionManager)) return yield* new D4AgentError({ reason: "storage" });
+        yield* sessionManager.value
+          .detach({
+            providerSessionId: ProviderSessionId.make(state.retiringProviderSessionId),
+            threadId: state.retiringThreadId,
+            revokeMcpCredential: true,
+          })
+          .pipe(Effect.mapError(threadError));
+      }
       yield* store.update((value) => ({
         ...value,
-        retiringThreadId: value.threadId,
-        threadId,
-        identityReady: false,
-        brainContext: context,
-        contextScopeHash: contextScopeHash(context, config),
-        contextChangedAt: changedAt,
-        sessionChangeReason: reason,
-        bindings: [],
-        heartbeatAt: 0,
-        heartbeatKeys: [],
-        usageCursor: "",
+        retiringThreadId: null,
+        retiringProviderSessionId: null,
+      }));
+    });
+    const appendDisplay = Effect.fn("D4Agent.appendDisplay")(function* (
+      text: string,
+      role: "user" | "system",
+      id?: string,
+    ) {
+      const state = yield* store.get;
+      const entry = {
+        id: id ?? (yield* randomUUID),
+        role,
+        text,
+        context: state.brainContext,
+        createdAt: DateTime.formatIso(yield* DateTime.now),
+        links: [],
+      };
+      yield* store.update((value) => ({
+        ...value,
+        transcript: [...(value.transcript ?? []), entry].slice(-200),
+      }));
+    });
+    const close = Effect.fn("D4Agent.close")(function* (context: D4BrainContext) {
+      yield* finishRetirement();
+      const state = yield* store.get;
+      const session = state.sessions?.find((entry) => entry.context === context);
+      if (!session) return;
+      yield* store.update((value) => ({
+        ...value,
+        retiringThreadId: session.threadId,
+        retiringProviderSessionId: session.providerSessionId,
+        rotation: value.rotation?.threadId === session.threadId ? null : (value.rotation ?? null),
+        sessions: (value.sessions ?? []).filter((entry) => entry.threadId !== session.threadId),
+        bindings: value.bindings.filter((entry) => entry.threadId !== session.threadId),
+        ...(value.threadId === session.threadId ? { threadId: null, identityReady: false } : {}),
         actions: value.actions.map((entry) =>
-          entry.status === "pending" ? { ...entry, status: "denied" as const } : entry,
+          entry.sessionId === session.threadId && entry.status === "pending"
+            ? { ...entry, status: "denied" as const }
+            : entry,
         ),
       }));
       yield* finishRetirement();
+    });
+    const rotate = Effect.fn("D4Agent.rotate")(function* (
+      context: D4BrainContext,
+      reason: "context" | "new-session" | "size" = "context",
+      seedSummary?: string,
+    ) {
+      yield* finishRetirement();
+      yield* adoptLegacySession;
+      yield* captureDisplay();
+      const config = yield* settings;
+      const existing = (yield* store.get).sessions?.find((entry) => entry.context === context);
+      const canResume =
+        reason === "context" && existing?.scopeHash === contextScopeHash(context, config);
+      if (existing && !canResume) yield* close(context);
+      const threadId = canResume ? existing.threadId : ThreadId.make(yield* randomUUID);
+      const changedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* store.update((value) => ({
+        ...value,
+        threadId,
+        identityReady: canResume,
+        brainContext: context,
+        contextScopeHash: contextScopeHash(context, config),
+        contextChangedAt: changedAt,
+        sessionChangeReason: canResume ? "resumed" : reason,
+        heartbeatAt: 0,
+        heartbeatKeys: [],
+        usageCursor: "",
+        lastUserText: "",
+        sessions: [
+          ...(value.sessions ?? []).filter((entry) => entry.context !== context),
+          canResume
+            ? { ...existing, lastActivityAt: changedAt }
+            : {
+                context,
+                threadId,
+                providerSessionId: null,
+                lastActivityAt: changedAt,
+                inputTokens: 0,
+                contextWindow: null,
+                scopeHash: contextScopeHash(context, config),
+                ...(seedSummary === undefined ? {} : { seedSummary }),
+              },
+        ],
+      }));
+      yield* appendDisplay(
+        canResume
+          ? `Resumed ${context} session.`
+          : reason === "new-session"
+            ? "New session."
+            : reason === "size"
+              ? `Session size limit reached. New ${context} session.`
+              : `Context changed to ${context}. New session.`,
+        "system",
+      );
     });
     const ensure = Effect.fn("D4Agent.ensureThread")(function* () {
       const selection = yield* selected;
@@ -307,8 +422,9 @@ export const layer = Layer.effect(
       let state = yield* store.get;
       const config = yield* settings;
       if (
-        state.threadId !== null &&
-        state.contextScopeHash !== contextScopeHash(state.brainContext, config)
+        (state.threadId === null && state.projectId !== null) ||
+        (state.threadId !== null &&
+          state.contextScopeHash !== contextScopeHash(state.brainContext, config))
       ) {
         yield* rotate(state.brainContext, "new-session");
         state = yield* store.get;
@@ -362,17 +478,188 @@ export const layer = Layer.effect(
       yield* threads
         .dispatch({ type: "thread.pin", commandId: command(`pin:${threadId}`), threadId })
         .pipe(Effect.mapError(threadError));
-      if (!state.identityReady) yield* store.update((value) => ({ ...value, identityReady: true }));
+      const at = DateTime.formatIso(yield* DateTime.now);
+      yield* store.update((value) => ({
+        ...value,
+        identityReady: true,
+        chatThreadIds: [...new Set([...(value.chatThreadIds ?? []), threadId])].slice(-256),
+        sessions: value.sessions?.some((entry) => entry.threadId === threadId)
+          ? value.sessions
+          : [
+              ...(value.sessions ?? []).filter((entry) => entry.context !== value.brainContext),
+              {
+                context: value.brainContext,
+                threadId,
+                providerSessionId: null,
+                lastActivityAt: at,
+                inputTokens: 0,
+                contextWindow: null,
+                scopeHash: contextScopeHash(value.brainContext, config),
+              },
+            ],
+      }));
       return { threadId, projectId };
+    });
+    const referenceCatalog = Effect.gen(function* () {
+      const state = yield* store.get;
+      const config = yield* settingsService.getSettings.pipe(Effect.mapError(storageError));
+      const shell = yield* threads.getShellSnapshot().pipe(Effect.mapError(threadError));
+      const visible = shell.threads.filter(
+        (entry) => entry.deletedAt === null && entry.projectId !== state.projectId,
+      );
+      const catalog: AgentReference[] = visible.map((entry) => ({
+        kind: "thread",
+        id: entry.id,
+        title: entry.title,
+        projectId: entry.projectId,
+        threadId: entry.id,
+      }));
+      const allProjects = yield* projects.listShells().pipe(Effect.mapError(threadError));
+      for (const project of allProjects) {
+        if (project.id === state.projectId) continue;
+        catalog.push({
+          kind: "project",
+          id: project.id,
+          title: project.title,
+          projectId: project.id,
+          threadId: visible.find((thread) => thread.projectId === project.id)?.id ?? null,
+        });
+      }
+      for (const kind of ["dev", "research"] as const)
+        for (const scenario of config[kind].scenarios) {
+          const id = `${kind}:${scenario.name}`;
+          catalog.push({
+            kind: "pipeline",
+            id,
+            title: scenario.name,
+            projectId: config.d4Agent.pipelineProjects[id] ?? null,
+            threadId: null,
+          });
+        }
+      return catalog;
+    });
+    const sessionSnapshots = new Map<
+      string,
+      { cursor: string; projection: OrchestrationV2ThreadProjection }
+    >();
+    const sessionSnapshot = Effect.fn("D4Agent.sessionSnapshot")(function* (
+      threadId: ThreadId,
+      cursor: string,
+    ) {
+      const cached = sessionSnapshots.get(threadId);
+      if (cached?.cursor === cursor) return cached.projection;
+      const { projection } = yield* projections
+        .getThreadSnapshotWindow(threadId, { rowLimit: 100, userTurnLimit: 30 })
+        .pipe(Effect.mapError(threadError));
+      sessionSnapshots.set(threadId, { cursor, projection });
+      for (const id of sessionSnapshots.keys())
+        if (!(yield* store.get).sessions?.some((entry) => entry.threadId === id))
+          sessionSnapshots.delete(id);
+      return projection;
+    });
+    const displayCursors = new Map<string, string>();
+    const captureDisplay = Effect.fn("D4Agent.captureDisplay")(function* () {
+      const state = yield* store.get;
+      const config = yield* settings;
+      let references: AgentReference[] | undefined;
+      for (const session of state.sessions ?? []) {
+        const shell = yield* threads
+          .getThreadShell(session.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (shell === null) continue;
+        const cursor = `${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId ?? ""}:${shell.activeRunId ?? ""}`;
+        if (displayCursors.get(session.threadId) === cursor) continue;
+        const projection = yield* sessionSnapshot(session.threadId, cursor);
+        const summaryRuns = new Set(
+          projection.runs
+            .filter((run) => String(run.userMessageId).startsWith("d4-summary:"))
+            .map((run) => run.id),
+        );
+        const messages = projection.messages.filter(
+          (message) =>
+            (message.role === "assistant" || message.role === "system") &&
+            message.text.trim() &&
+            (message.runId === null || !summaryRuns.has(message.runId)),
+        );
+        if (messages.length > 0) {
+          references ??= yield* referenceCatalog;
+          const entries = messages.map((message) => ({
+            id: message.id,
+            role: message.role === "assistant" ? ("assistant" as const) : ("system" as const),
+            context: session.context,
+            createdAt: DateTime.formatIso(message.createdAt),
+            ...validateReplyReferences(
+              message.text.slice(0, 16000),
+              references!,
+              session.context,
+              config,
+            ),
+          }));
+          yield* store.update((value) => {
+            const all = [...(value.transcript ?? [])];
+            for (const entry of entries) {
+              const index = all.findIndex((old) => old.id === entry.id);
+              if (index < 0) all.push(entry);
+              else all[index] = entry;
+            }
+            return { ...value, transcript: all.slice(-200) };
+          });
+        }
+        displayCursors.set(session.threadId, cursor);
+      }
     });
     const send = Effect.fn("D4Agent.sendMessage")(function* (
       input: D4AgentSendInput,
       heartbeat = false,
       id?: string,
+      resumedAfterRotation = false,
     ) {
       id ??= yield* randomUUID;
+      if (!heartbeat) {
+        if ((yield* store.get).rotation) return yield* new D4AgentError({ reason: "busy" });
+        const resolved = resolveAgentReference(input.text, yield* referenceCatalog);
+        if (resolved.kind === "ambiguous") {
+          const identity = yield* ensure();
+          yield* appendDisplay(input.text, "user");
+          yield* appendDisplay(
+            `Which thread, project, or pipeline do you mean? ${resolved.candidates
+              .slice(0, 6)
+              .map((target) => `${target.title} (${target.id})`)
+              .join("; ")}`,
+            "system",
+          );
+          return identity;
+        }
+        if (resolved.kind === "resolved") {
+          const context = referenceContext(resolved.target, yield* settings);
+          if ((yield* store.get).brainContext !== context) yield* rotate(context);
+        }
+      }
+      yield* maintainSessions();
       const identity = yield* ensure();
       const modelSelection = yield* selected;
+      const at = DateTime.formatIso(yield* DateTime.now);
+      if (!heartbeat && !resumedAfterRotation) {
+        yield* appendDisplay(input.text, "user", `d4-agent:${id}`);
+        yield* store.update((value) => ({ ...value, lastUserText: input.text }));
+      }
+      yield* store.update((value) => ({
+        ...value,
+        sessions: (value.sessions ?? []).map((entry) =>
+          entry.threadId === identity.threadId ? { ...entry, lastActivityAt: at } : entry,
+        ),
+      }));
+      const current = yield* store.get;
+      const session = current.sessions?.find((entry) => entry.threadId === identity.threadId);
+      const budget = (yield* settings).sessionBudgetPercent;
+      if (
+        !resumedAfterRotation &&
+        session?.contextWindow != null &&
+        session.inputTokens >= (session.contextWindow * budget) / 100
+      ) {
+        yield* beginRotation(input.text, heartbeat);
+        return identity;
+      }
       yield* threads
         .sendToThread({
           ...identity,
@@ -516,79 +803,230 @@ export const layer = Layer.effect(
           return { claimed: true };
         }),
       );
-    let usageSnapshotCursor: string | undefined;
+    const usageCursors = new Map<string, string>();
     const captureUsage = usageLock.withPermits(1)(
       Effect.gen(function* () {
         const state = yield* store.get;
-        if (state.threadId === null) return;
-        const shell = yield* threads
-          .getThreadShell(state.threadId)
-          .pipe(Effect.mapError(threadError));
-        if (shell === null) return;
-        const snapshotCursor = `${shell.id}:${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId ?? ""}:${shell.activeRunId ?? ""}`;
-        if (snapshotCursor === usageSnapshotCursor) return;
-        const { projection: records } = yield* projections
-          .getThreadSnapshotWindow(state.threadId, { rowLimit: 100, userTurnLimit: 30 })
-          .pipe(Effect.mapError(threadError));
-        const catalog = yield* providers.getProviders;
-        const additions = records.providerTurns.flatMap((turn) => {
-          if (
-            turn.completedAt === null ||
-            `${DateTime.formatIso(turn.completedAt)}:${turn.id}` <= state.usageCursor ||
-            state.usage.some((entry) => entry.runId === turn.id)
-          )
-            return [];
-          const attempt = records.attempts.find((candidate) => candidate.id === turn.runAttemptId);
-          const run = records.runs.find((candidate) => candidate.id === attempt?.runId);
-          if (!run) return [];
-          const counters = turn.turnTokenUsage;
-          const driver =
-            records.providerThreads.find((entry) => entry.id === turn.providerThreadId)?.driver ??
-            catalog.find((entry) => entry.instanceId === run.modelSelection.instanceId)?.driver ??
-            run.modelSelection.instanceId;
-          return [
-            {
-              runId: turn.id,
-              recordedAt: DateTime.formatIso(turn.completedAt),
-              attributes: usageAttributes({
-                provider: driver,
-                model: run.modelSelection.model,
-                conversationId: state.threadId!,
-                durationMs:
-                  turn.startedAt === null
-                    ? 0
-                    : DateTime.toEpochMillis(turn.completedAt) -
-                      DateTime.toEpochMillis(turn.startedAt),
-                ...(counters?.inputTokens === undefined
-                  ? {}
-                  : { inputTokens: counters.inputTokens }),
-                ...(counters?.outputTokens === undefined
-                  ? {}
-                  : { outputTokens: counters.outputTokens }),
-                ...(counters?.cachedInputTokens === undefined
-                  ? {}
-                  : { cachedInputTokens: counters.cachedInputTokens }),
-                // Codex canonical usage defaults this unreported counter to zero.
-                ...(driver === "codex" || counters?.cacheCreationTokens === undefined
-                  ? {}
-                  : { cacheCreationTokens: counters.cacheCreationTokens }),
-              }),
-            },
-          ];
-        });
-        if (additions.length > 0)
-          yield* store.update((value) => ({
-            ...value,
-            usage: [...value.usage, ...additions].slice(-100),
-            usageCursor: additions
-              .map((entry) => `${entry.recordedAt}:${entry.runId}`)
-              .sort()
-              .at(-1)!,
-          }));
-        usageSnapshotCursor = snapshotCursor;
+        for (const session of state.sessions ?? []) {
+          const shell = yield* threads
+            .getThreadShell(session.threadId)
+            .pipe(Effect.mapError(threadError));
+          if (shell === null) continue;
+          const cursor = `${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId ?? ""}:${shell.activeRunId ?? ""}`;
+          if (usageCursors.get(session.threadId) === cursor) continue;
+          const records = yield* sessionSnapshot(session.threadId, cursor);
+          const catalog = yield* providers.getProviders;
+          const additions = records.providerTurns.flatMap((turn) => {
+            if (turn.completedAt === null || state.usage.some((entry) => entry.runId === turn.id))
+              return [];
+            const attempt = records.attempts.find(
+              (candidate) => candidate.id === turn.runAttemptId,
+            );
+            const run = records.runs.find((candidate) => candidate.id === attempt?.runId);
+            if (!run) return [];
+            const counters = turn.turnTokenUsage;
+            const driver =
+              records.providerThreads.find((entry) => entry.id === turn.providerThreadId)?.driver ??
+              catalog.find((entry) => entry.instanceId === run.modelSelection.instanceId)?.driver ??
+              run.modelSelection.instanceId;
+            return [
+              {
+                runId: turn.id,
+                recordedAt: DateTime.formatIso(turn.completedAt),
+                attributes: usageAttributes({
+                  provider: driver,
+                  model: run.modelSelection.model,
+                  conversationId: session.threadId,
+                  durationMs:
+                    turn.startedAt === null
+                      ? 0
+                      : DateTime.toEpochMillis(turn.completedAt) -
+                        DateTime.toEpochMillis(turn.startedAt),
+                  ...(counters?.inputTokens === undefined
+                    ? {}
+                    : { inputTokens: counters.inputTokens }),
+                  ...(counters?.outputTokens === undefined
+                    ? {}
+                    : { outputTokens: counters.outputTokens }),
+                  ...(counters?.cachedInputTokens === undefined
+                    ? {}
+                    : { cachedInputTokens: counters.cachedInputTokens }),
+                  ...(driver === "codex" || counters?.cacheCreationTokens === undefined
+                    ? {}
+                    : { cacheCreationTokens: counters.cacheCreationTokens }),
+                }),
+              },
+            ];
+          });
+          const currentUsage = records.providerThreads.find(
+            (entry) => entry.id === shell.activeProviderThreadId,
+          )?.contextUsage;
+          const recordedInput = additions.map(
+            (entry) => entry.attributes["gen_ai.usage.input_tokens"] ?? 0,
+          );
+          const maxTokens = currentUsage?.maxTokens ?? session.contextWindow;
+          if (additions.length > 0 || maxTokens !== session.contextWindow)
+            yield* store.update((value) => ({
+              ...value,
+              usage: [...value.usage, ...additions].slice(-100),
+              sessions: (value.sessions ?? []).map((entry) =>
+                entry.threadId === session.threadId
+                  ? {
+                      ...entry,
+                      inputTokens: Math.max(entry.inputTokens, ...recordedInput),
+                      contextWindow: maxTokens,
+                      lastActivityAt: additions.at(-1)?.recordedAt ?? entry.lastActivityAt,
+                    }
+                  : entry,
+              ),
+            }));
+          usageCursors.set(session.threadId, cursor);
+        }
       }),
     );
+    const adoptLegacySession = Effect.gen(function* () {
+      const state = yield* store.get;
+      if (state.threadId === null || (state.sessions?.length ?? 0) > 0) return;
+      const config = yield* settings;
+      const at = DateTime.formatIso(yield* DateTime.now);
+      yield* store.update((value) => ({
+        ...value,
+        sessions: [
+          {
+            context: state.brainContext,
+            threadId: state.threadId!,
+            providerSessionId:
+              state.bindings.findLast((binding) => binding.threadId === state.threadId)
+                ?.sessionId ?? null,
+            lastActivityAt: at,
+            inputTokens: 0,
+            contextWindow: null,
+            scopeHash: state.contextScopeHash ?? contextScopeHash(state.brainContext, config),
+          },
+        ],
+      }));
+    });
+    const maintainSessions = Effect.fn("D4Agent.maintainSessions")(function* () {
+      yield* adoptLegacySession;
+      yield* captureUsage;
+      const config = yield* settings;
+      const now = yield* Clock.currentTimeMillis;
+      for (const session of (yield* store.get).sessions ?? []) {
+        const shell = yield* threads
+          .getThreadShell(session.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (
+          !config.enabled ||
+          (config.sessionIdleMinutes !== null &&
+            now - Date.parse(session.lastActivityAt) >= config.sessionIdleMinutes * 60_000 &&
+            shell?.activeRunId == null &&
+            shell?.pendingRuntimeRequest == null &&
+            (shell?.pendingBackgroundTasks?.length ?? 0) === 0)
+        ) {
+          yield* captureDisplay();
+          yield* close(session.context);
+        }
+      }
+    });
+    const beginRotation = Effect.fn("D4Agent.beginRotation")(function* (
+      pendingText: string,
+      heartbeat: boolean,
+    ) {
+      const state = yield* store.get;
+      if (state.rotation || state.threadId === null || state.projectId === null) return;
+      const summaryId = `d4-summary:${yield* randomUUID}`;
+      const at = DateTime.formatIso(yield* DateTime.now);
+      yield* store.update((value) => ({
+        ...value,
+        rotation: {
+          threadId: state.threadId!,
+          context: state.brainContext,
+          messageId: summaryId,
+          pendingText,
+          requestedAt: at,
+          heartbeat,
+        },
+      }));
+      yield* threads
+        .sendToThread({
+          threadId: state.threadId,
+          projectId: state.projectId,
+          commandId: command(summaryId),
+          messageId: MessageId.make(summaryId),
+          text: "Summarize this session in at most 300 words for a fresh session in the same bound context. Keep decisions, open work and relevant identifiers. Use only this session. Do not call tools or act on any requests.",
+          attachments: [],
+          modelSelection: yield* selected,
+          mode: "queue",
+          createdBy: "system",
+          creationSource: "server",
+        })
+        .pipe(
+          Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"),
+          Effect.mapError(threadError),
+        );
+    });
+    const deliverRotated = Effect.fn("D4Agent.deliverRotated")(function* (
+      rotation: NonNullable<D4AgentStore.StoredState["rotation"]>,
+    ) {
+      if (rotation.pendingText)
+        yield* send(
+          { text: rotation.pendingText },
+          rotation.heartbeat ?? false,
+          undefined,
+          true,
+        ).pipe(Effect.provideService(D4AgentAccess.DispatchOrigin, "internal-server"));
+      else yield* ensure();
+    });
+    const finishRotation = Effect.fn("D4Agent.finishRotation")(function* () {
+      const state = yield* store.get;
+      const rotation = state.rotation;
+      if (!rotation) return;
+      const config = yield* settings;
+      const source = state.sessions?.find(
+        (session) => session.threadId === rotation.threadId && session.context === rotation.context,
+      );
+      if (
+        source?.scopeHash !== contextScopeHash(rotation.context, config) ||
+        state.threadId !== rotation.threadId
+      ) {
+        yield* store.update((value) => ({ ...value, rotation: null }));
+        yield* rotate(rotation.context, "size");
+        yield* appendDisplay(
+          "The context configuration changed. Started a new session without the previous summary.",
+          "system",
+        );
+        yield* deliverRotated(rotation);
+        return;
+      }
+      const projection = yield* projections
+        .getThreadProjection(rotation.threadId)
+        .pipe(Effect.mapError(threadError));
+      const run = projection.runs.find((entry) => entry.userMessageId === rotation.messageId);
+      const response = projection.messages.findLast(
+        (message) => message.role === "assistant" && message.runId === run?.id,
+      );
+      if (run?.status !== "completed" || !response?.text.trim()) {
+        if (
+          run?.status === "failed" ||
+          run?.status === "interrupted" ||
+          (yield* Clock.currentTimeMillis) - Date.parse(rotation.requestedAt) > 120_000
+        ) {
+          yield* store.update((value) => ({ ...value, rotation: null }));
+          yield* rotate(rotation.context, "size");
+          yield* appendDisplay(
+            "The previous session could not produce a summary. Started a new session.",
+            "system",
+          );
+          yield* deliverRotated(rotation);
+        }
+        return;
+      }
+      yield* store.update((value) => ({ ...value, rotation: null }));
+      yield* rotate(rotation.context, "size", response.text.slice(0, 4000));
+      yield* deliverRotated(rotation);
+    });
     const getState = Effect.fn("D4Agent.getState")(function* () {
+      yield* captureDisplay();
       const state = yield* store.get;
       const config = yield* settings;
       const unavailableReason = modelAvailability(config, yield* providers.getProviders);
@@ -597,7 +1035,43 @@ export const layer = Layer.effect(
           ? null
           : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
       const available = thread !== null && thread.deletedAt === null;
+      const references = (state.transcript ?? []).some((entry) => entry.links.length > 0)
+        ? yield* referenceCatalog
+        : [];
+      const transcript = (state.transcript ?? []).map((entry) => ({
+        ...entry,
+        links: entry.links.map((link) => {
+          const target = references.find(
+            (reference) =>
+              reference.threadId === link.threadId && reference.projectId === link.projectId,
+          );
+          return target &&
+            target.projectId &&
+            projectContentInScope(state.brainContext, config, target.projectId)
+            ? { label: target.title, threadId: target.threadId, projectId: target.projectId }
+            : { label: link.label, threadId: null, projectId: null };
+        }),
+      }));
       return {
+        openSessions: (state.sessions ?? []).map(
+          ({
+            context,
+            threadId,
+            providerSessionId,
+            lastActivityAt,
+            inputTokens,
+            contextWindow,
+          }) => ({
+            context,
+            threadId,
+            providerSessionId,
+            lastActivityAt,
+            inputTokens,
+            contextWindow,
+          }),
+        ),
+        transcript,
+        chatThreadIds: state.chatThreadIds ?? [],
         brainContext: state.brainContext,
         contextChangedAt: state.contextChangedAt,
         sessionChangeReason: state.sessionChangeReason ?? null,
@@ -626,6 +1100,7 @@ export const layer = Layer.effect(
             (record) =>
               record.context === state.brainContext &&
               (record.action.type === "cto-ask" ||
+                record.action.type === "auto-archive" ||
                 record.sessionId === null ||
                 record.sessionId === state.threadId),
           ),
@@ -650,9 +1125,15 @@ export const layer = Layer.effect(
           return yield* new D4AgentError({ reason: "context" });
         return;
       }
+      if (action.type === "auto-archive")
+        return yield* new D4AgentError({ reason: "action-unavailable" });
+      if (action.type === "pipeline" || action.type === "research") {
+        yield* pipelines.prepare(action, state.brainContext);
+        return;
+      }
       if (action.type === "start") {
         if (
-          !projectInScope(state.brainContext, config, action.projectId) ||
+          !projectContentInScope(state.brainContext, config, action.projectId) ||
           action.projectId === state.projectId
         )
           return yield* new D4AgentError({ reason: "context" });
@@ -668,7 +1149,7 @@ export const layer = Layer.effect(
         target.deletedAt !== null ||
         target.runtimeMode !== "approval-required" ||
         target.projectId === state.projectId ||
-        !projectInScope(state.brainContext, config, target.projectId)
+        !projectContentInScope(state.brainContext, config, target.projectId)
       )
         return yield* new D4AgentError({ reason: "action-unavailable" });
       if (action.type === "answer") {
@@ -688,6 +1169,49 @@ export const layer = Layer.effect(
         (record.sessionId !== null && record.sessionId !== state.threadId)
       )
         return yield* new D4AgentError({ reason: "context" });
+      if (action.type === "auto-archive")
+        return yield* new D4AgentError({ reason: "action-unavailable" });
+      if (action.type === "pipeline" || action.type === "research" || action.type === "start") {
+        const reason = modelAvailability(
+          { ...config, modelSelection: action.modelSelection },
+          yield* providers.getProviders,
+        );
+        if (reason !== null) return yield* new D4AgentError({ reason });
+        const targetId = ThreadId.make(`d4-action:${record.id}`);
+        yield* store.update((value) => ({
+          ...value,
+          agentThreads: [
+            ...(value.agentThreads ?? []).filter((entry) => entry.threadId !== targetId),
+            {
+              threadId: targetId,
+              projectId: action.projectId,
+              context: state.brainContext,
+              actionId: record.id,
+              reportedAt: null,
+              archivedAt: null,
+              undoDisabled: false,
+              scopeHash: contextScopeHash(state.brainContext, config),
+              ...("pipelineId" in action
+                ? {
+                    pipelineId: action.pipelineId,
+                    pipelineHash: (record.result as Pipelines.PreparedPipeline).scenarioHash,
+                  }
+                : {}),
+            },
+          ],
+        }));
+        if (action.type !== "start") {
+          const prepared = yield* pipelines.prepare(action, state.brainContext);
+          const approved = record.result as Pipelines.PreparedPipeline | undefined;
+          if (approved?.scenarioHash !== prepared.scenarioHash)
+            return yield* new D4AgentError({ reason: "action-unavailable" });
+          return yield* pipelines.execute({
+            actionId: record.id,
+            context: state.brainContext,
+            prepared,
+          });
+        }
+      }
       if (action.type === "memory-propose") {
         if (state.threadId === null) return yield* new D4AgentError({ reason: "context" });
         return yield* Effect.tryPromise({
@@ -945,13 +1469,25 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const config = yield* settings;
           if (!config.enabled) return yield* new D4AgentError({ reason: "disabled" });
-          if (config.permissionMode === "read-only")
+          if (
+            config.permissionMode === "read-only" &&
+            !["send", "start", "pipeline", "research"].includes(action.type)
+          )
             return yield* new D4AgentError({ reason: "read-only" });
           yield* validateAction(action).pipe(
             Effect.mapError(() => new D4AgentError({ reason: "action-unavailable" })),
           );
           yield* validateTarget(action);
           const state = yield* store.get;
+          if (action.type === "send")
+            action = {
+              ...action,
+              originalText: state.lastUserText ?? action.originalText ?? action.text,
+            };
+          const prepared =
+            action.type === "pipeline" || action.type === "research"
+              ? yield* pipelines.prepare(action, state.brainContext)
+              : undefined;
           if (state.actions.filter((entry) => entry.status === "pending").length >= 50)
             return yield* new D4AgentError({ reason: "busy" });
           const automatic = !requiresActionApproval(config.permissionMode, action);
@@ -985,6 +1521,7 @@ export const layer = Layer.effect(
             sessionId: state.threadId,
             id: yield* randomUUID,
             action,
+            ...(prepared === undefined ? {} : { result: prepared }),
             status: requiresActionApproval(config.permissionMode, action) ? "pending" : "approved",
             createdAt: DateTime.formatIso(yield* DateTime.now),
             resolvedAt: null,
@@ -1027,9 +1564,28 @@ export const layer = Layer.effect(
             }));
           else {
             const config = yield* settings;
-            if (!config.enabled || config.permissionMode === "read-only")
+            if (
+              !config.enabled ||
+              (config.permissionMode === "read-only" &&
+                !["send", "start", "pipeline", "research"].includes(record.action.type))
+            )
               return yield* new D4AgentError({ reason: "read-only" });
-            yield* resolveRecord(record);
+            const action = record.action;
+            if (input.sendOriginal && input.editedText !== undefined)
+              return yield* new D4AgentError({ reason: "action-unavailable" });
+            const edited =
+              action.type === "send"
+                ? {
+                    ...record,
+                    action: {
+                      ...action,
+                      text: input.sendOriginal
+                        ? (action.originalText ?? action.text)
+                        : (input.editedText ?? action.text),
+                    },
+                  }
+                : record;
+            yield* resolveRecord(edited);
           }
           return yield* getState();
         }),
@@ -1039,9 +1595,103 @@ export const layer = Layer.effect(
         const config = yield* settings;
         if ((!config.enabled || !config.ctoEnabled) && ctoAsk !== undefined)
           yield* Fiber.interrupt(ctoAsk.fiber);
-        yield* captureUsage;
+        yield* adoptLegacySession;
+        yield* captureDisplay();
+        yield* finishRotation();
+        yield* maintainSessions();
+        const current = yield* store.get;
+        for (const entry of config.enabled ? (current.agentThreads ?? []) : []) {
+          if (entry.archivedAt === null && !entry.undoDisabled) {
+            const shell = yield* threads
+              .getThreadShell(entry.threadId)
+              .pipe(Effect.mapError(threadError));
+            if (
+              shell?.latestRunId != null &&
+              shell.activeRunId === null &&
+              shell.pendingRuntimeRequest === null &&
+              (entry.reportedAt === null ||
+                DateTime.toEpochMillis(shell.updatedAt) > Date.parse(entry.reportedAt))
+            ) {
+              const { projection } = yield* projections
+                .getThreadSnapshotWindow(entry.threadId, { rowLimit: 40, userTurnLimit: 10 })
+                .pipe(Effect.mapError(threadError));
+              const completedRun = projection.runs.find((run) => run.id === shell.latestRunId);
+              if (
+                completedRun?.status === "completed" &&
+                completedRun.completedAt !== null &&
+                (entry.reportedAt === null ||
+                  DateTime.toEpochMillis(completedRun.completedAt) > Date.parse(entry.reportedAt))
+              ) {
+                const at = DateTime.formatIso(yield* DateTime.now);
+                const text = `Completed: ${shell.title}.`;
+                yield* store.update((value) => ({
+                  ...value,
+                  transcript: [
+                    ...(value.transcript ?? []),
+                    {
+                      id: `report:${entry.actionId}:${completedRun.id}`,
+                      role: "system" as const,
+                      text,
+                      context: entry.context,
+                      createdAt: at,
+                      links: [
+                        {
+                          label: shell.title,
+                          threadId: entry.threadId,
+                          projectId: entry.projectId,
+                        },
+                      ],
+                    },
+                  ].slice(-200),
+                  agentThreads: (value.agentThreads ?? []).map((record) =>
+                    record.threadId === entry.threadId ? { ...record, reportedAt: at } : record,
+                  ),
+                }));
+              }
+            }
+          }
+          if (
+            yield* lifecycle
+              .archive(entry, config.agentThreadArchiveHours)
+              .pipe(Effect.catch(() => Effect.succeed(false)))
+          ) {
+            const at = DateTime.formatIso(yield* DateTime.now);
+            yield* store.update((value) => ({
+              ...value,
+              agentThreads: (value.agentThreads ?? []).map((record) =>
+                record.threadId === entry.threadId ? { ...record, archivedAt: at } : record,
+              ),
+              actions: [
+                ...value.actions,
+                {
+                  id: `archive:${entry.actionId}`,
+                  context: entry.context,
+                  sessionId: null,
+                  action: { type: "auto-archive" as const, threadId: entry.threadId },
+                  status: "executed" as const,
+                  createdAt: at,
+                  resolvedAt: at,
+                },
+              ],
+            }));
+          }
+        }
         const health = yield* systemHealth();
-        if (!config.enabled || config.heartbeatMinutes === null) return;
+        if (!config.enabled) return;
+        const active = (yield* store.get).sessions?.find(
+          (entry) => entry.threadId === current.threadId,
+        );
+        if (
+          !(yield* store.get).rotation &&
+          active?.contextWindow != null &&
+          active.inputTokens >= (active.contextWindow * config.sessionBudgetPercent) / 100
+        ) {
+          const shell = yield* threads
+            .getThreadShell(active.threadId)
+            .pipe(Effect.mapError(threadError));
+          if (shell?.activeRunId == null) yield* beginRotation("", true);
+        }
+        if ((yield* store.get).rotation || config.heartbeatMinutes === null) return;
         const state = yield* store.get;
         const currentDigest = yield* digest();
         const attentionKeys = [
@@ -1085,6 +1735,64 @@ export const layer = Layer.effect(
       }),
     );
     return D4Agent.of({
+      closeSession: ({ context }) =>
+        lock.withPermits(1)(
+          adoptLegacySession.pipe(Effect.andThen(close(context)), Effect.andThen(getState())),
+        ),
+      undoArchive: ({ actionId }) =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            const state = yield* store.get;
+            const entry = state.agentThreads?.find(
+              (record) =>
+                `archive:${record.actionId}` === actionId && record.context === state.brainContext,
+            );
+            if (!entry) return yield* new D4AgentError({ reason: "action-unavailable" });
+            yield* lifecycle.undo(entry);
+            yield* store.update((value) => ({
+              ...value,
+              agentThreads: (value.agentThreads ?? []).map((record) =>
+                record.threadId === entry.threadId ? { ...record, undoDisabled: true } : record,
+              ),
+              actions: value.actions.map((record) =>
+                record.id === actionId ? { ...record, status: "denied" as const } : record,
+              ),
+            }));
+            return yield* getState();
+          }),
+        ),
+      listPipelines: () =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            const { state, config } = yield* bound();
+            const availableProjects = yield* projects
+              .listShells()
+              .pipe(Effect.mapError(threadError));
+            return {
+              pipelines: yield* pipelines.list(state.brainContext),
+              modelSelection: yield* selected,
+              projects: availableProjects
+                .filter(
+                  (project) =>
+                    project.id !== state.projectId &&
+                    projectContentInScope(state.brainContext, config, project.id),
+                )
+                .map((project) => ({ projectId: project.id, title: project.title })),
+            };
+          }),
+        ),
+      resolveReference: (text) =>
+        lock.withPermits(1)(
+          Effect.gen(function* () {
+            const { state, config } = yield* bound();
+            return resolveAgentReference(
+              text,
+              (yield* referenceCatalog).filter(
+                (entry) => referenceContext(entry, config) === state.brainContext,
+              ),
+            );
+          }),
+        ),
       newSession: () =>
         lock.withPermits(1)(
           Effect.gen(function* () {
@@ -1111,6 +1819,8 @@ export const layer = Layer.effect(
               Effect.mapError(() => new D4AgentError({ reason: "context" })),
             );
             yield* selected;
+            if ((yield* store.get).rotation) return yield* new D4AgentError({ reason: "busy" });
+            yield* maintainSessions();
             if ((yield* store.get).brainContext !== context) yield* rotate(context);
             return yield* ensure();
           }),
@@ -1194,7 +1904,11 @@ export const layer = Layer.effect(
           Effect.map((state) =>
             state.identityReady && state.threadId !== null && state.projectId !== null
               ? { threadId: state.threadId, projectId: state.projectId }
-              : null,
+              : state.retiringThreadId === null &&
+                  state.projectId !== null &&
+                  state.chatThreadIds?.at(-1)
+                ? { threadId: state.chatThreadIds.at(-1)!, projectId: state.projectId }
+                : null,
           ),
         ),
       getAction: ({ actionId }) =>
@@ -1206,6 +1920,7 @@ export const layer = Layer.effect(
                   entry.id === actionId &&
                   entry.context === state.brainContext &&
                   (entry.action.type === "cto-ask" ||
+                    entry.action.type === "auto-archive" ||
                     entry.sessionId === null ||
                     entry.sessionId === state.threadId),
               ) ?? null,

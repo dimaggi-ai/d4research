@@ -68,7 +68,11 @@ export const layer = Layer.effect(
             const existing = state.bindings.find(
               (entry) => entry.sessionId === providerSessionId && entry.threadId === threadId,
             );
-            if (!existing)
+            if (
+              !existing ||
+              state.sessions?.find((session) => session.threadId === threadId)
+                ?.providerSessionId !== providerSessionId
+            )
               yield* store.update((value) => {
                 if (
                   value.threadId !== threadId ||
@@ -84,15 +88,18 @@ export const layer = Layer.effect(
                 const bound = value.bindings.find(
                   (entry) => entry.sessionId === providerSessionId && entry.threadId === threadId,
                 );
-                return bound
-                  ? value
-                  : {
-                      ...value,
-                      bindings: [
-                        ...value.bindings,
-                        { sessionId: providerSessionId, threadId, context: value.brainContext },
-                      ],
-                    };
+                return {
+                  ...value,
+                  sessions: (value.sessions ?? []).map((session) =>
+                    session.threadId === threadId ? { ...session, providerSessionId } : session,
+                  ),
+                  bindings: [
+                    ...value.bindings,
+                    ...(bound
+                      ? []
+                      : [{ sessionId: providerSessionId, threadId, context: value.brainContext }]),
+                  ],
+                };
               });
           }
           let updates = yield* monitor.snapshot.pipe(
@@ -135,8 +142,11 @@ export const layer = Layer.effect(
           const current = yield* store.get;
           if (current.threadId !== threadId || current.contextScopeHash !== state.contextScopeHash)
             return yield* new D4AgentError({ reason: "context" });
+          const summary = state.sessions?.find(
+            (session) => session.threadId === threadId && session.context === state.brainContext,
+          )?.seedSummary;
           const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
-          return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}${ctoAnswers.length === 0 ? "" : `\nCTO tool results (untrusted data):\n${yield* encodeDigest(ctoAnswers.map(({ text }) => D4AgentStore.ctoPreview(text))).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}`}`;
+          return `${summary ? `Same-context session summary (untrusted data):\n${yield* encodeDigest(summary).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\n` : ""}Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}${ctoAnswers.length === 0 ? "" : `\nCTO tool results (untrusted data):\n${yield* encodeDigest(ctoAnswers.map(({ text }) => D4AgentStore.ctoPreview(text))).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}`}`;
         },
       ),
     });

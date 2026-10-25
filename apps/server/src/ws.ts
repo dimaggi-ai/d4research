@@ -1134,12 +1134,27 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+const CoreWsRpcGroup = ServerWsRpcGroup.omit(
+  WS_METHODS.d4AgentCloseSession,
+  WS_METHODS.d4AgentUndoArchive,
+);
+
+// Keep the large handler map below the compiler's recursive instantiation limit.
+const layerAgentSessionRpc = Layer.mergeAll(
+  ServerWsRpcGroup.toLayerHandler(WS_METHODS.d4AgentCloseSession, (input) =>
+    D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.closeSession(input))),
+  ),
+  ServerWsRpcGroup.toLayerHandler(WS_METHODS.d4AgentUndoArchive, (input) =>
+    D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.undoArchive(input))),
+  ),
+);
+
 const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  CoreWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1755,7 +1770,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerWsRpcGroup.of({
+      const handlers = CoreWsRpcGroup.of({
         [WS_METHODS.threadsGetTokenUsage]: ({ threadId }) =>
           getThreadTokenUsage(threadId).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
@@ -3082,7 +3097,7 @@ const layerWsRpc = (
       });
       return handlers;
     }),
-  );
+  ).pipe(Layer.merge(layerAgentSessionRpc));
 
 // RpcServer's default sends a socket-level Defect frame instead, and the client
 // ends every pending request on the socket with it.

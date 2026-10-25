@@ -1,3 +1,4 @@
+import { D4AgentSessions } from "./D4AgentSessions";
 import * as Clipboard from "expo-clipboard";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
@@ -18,8 +19,8 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Pressable, View, ScrollView, Modal } from "react-native";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { Pressable, View, ScrollView, Modal, TextInput } from "react-native";
 import {
   agentMonitorLabel,
   monitorAttentionThreads,
@@ -37,6 +38,34 @@ function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
       appAtomRegistry,
       environmentThreadShells.threadShellAtom({ environmentId, threadId }),
     ),
+  );
+}
+
+export function D4AgentHomeHeader({
+  environments,
+  selectedEnvironmentId,
+  children,
+}: {
+  environments: ReadonlyArray<{ environmentId: EnvironmentId; label: string }>;
+  selectedEnvironmentId: EnvironmentId | null;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      {environments
+        .filter(
+          (environment) =>
+            selectedEnvironmentId === null || environment.environmentId === selectedEnvironmentId,
+        )
+        .map((environment) => (
+          <D4AgentEntry
+            key={environment.environmentId}
+            environmentId={environment.environmentId}
+            label={environments.length > 1 ? environment.label : undefined}
+          />
+        ))}
+      {children}
+    </>
   );
 }
 
@@ -64,7 +93,7 @@ export function D4AgentEntry({
           opening ||
           (config.settings.d4Agent.enabled === true && !state.data?.threadId && !allowed)
         }
-        className="rounded-xl bg-surface px-4 py-3"
+        className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3"
         onPress={async () => {
           if (!config) return;
           if (!config.settings.d4Agent.enabled) {
@@ -278,14 +307,23 @@ function D4AgentPanelContent({
             {startingSession ? "Starting session…" : "New session"}
           </Text>
         </Pressable>
+        <D4AgentSessions
+          environmentId={environmentId}
+          sessions={state.openSessions ?? []}
+          refresh={query.refresh}
+        />
         {state.sessionChangeReason ? (
           <Text
             accessibilityRole="text"
             className="border-b border-border pb-2 text-xs text-foreground-muted"
           >
-            {state.sessionChangeReason === "new-session"
-              ? "New session."
-              : `Context changed to ${state.brainContext}. New session.`}
+            {state.sessionChangeReason === "resumed"
+              ? `Resumed ${state.brainContext} session.`
+              : state.sessionChangeReason === "size"
+                ? "Session size budget reached. New session."
+                : state.sessionChangeReason === "new-session"
+                  ? "New session."
+                  : `Context changed to ${state.brainContext}. New session.`}
           </Text>
         ) : null}
         <View className="flex-row items-center justify-between">
@@ -402,10 +440,13 @@ function D4AgentPanelContent({
               record={record}
               allowed={allowed}
               busy={busy}
-              onResolve={async (decision) => {
+              onResolve={async (decision, options) => {
                 setBusy(true);
                 setActionError(null);
-                await resolve({ environmentId, input: { actionId: record.id, decision } })
+                await resolve({
+                  environmentId,
+                  input: { actionId: record.id, decision, ...options },
+                })
                   .then((result) => {
                     if (result._tag === "Failure") setActionError("Could not resolve this action.");
                     query.refresh();
@@ -459,9 +500,20 @@ function AgentActionRecord({
   record: D4AgentActionSummary;
   allowed: boolean;
   busy: boolean;
-  onResolve: (decision: "approve" | "deny") => Promise<void>;
+  onResolve: (
+    decision: "approve" | "deny",
+    options?: { editedText?: string; sendOriginal?: boolean },
+  ) => Promise<void>;
 }) {
+  const undoArchive = useAtomCommand(serverEnvironment.undoD4AgentArchive);
+  const canUndoArchive = useAtomValue(
+    serverEnvironment.undoD4AgentArchive.permissionAtom(environmentId),
+  );
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editedText, setEditedText] = useState<string | null>(null);
   const detail = useEnvironmentQuery(
     reviewing
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
@@ -480,6 +532,15 @@ function AgentActionRecord({
   }, [record.status, record.resolvedAt, reviewing]);
   const canApprove =
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
+  const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
+  const finalText = editedText ?? sendAction?.text ?? "";
+  const launchAction =
+    detail.data &&
+    (detail.data.action.type === "research" ||
+      detail.data.action.type === "pipeline" ||
+      detail.data.action.type === "start")
+      ? detail.data.action
+      : null;
   return (
     <View className="gap-2 py-2">
       <Text className="text-sm text-foreground">
@@ -489,7 +550,7 @@ function AgentActionRecord({
       <Pressable accessibilityRole="button" onPress={() => setReviewing(!reviewing)}>
         <Text className="text-accent">{reviewing ? "Hide action details" : "Review action"}</Text>
       </Pressable>
-      {reviewing && detail.data ? (
+      {reviewing && detail.data && !sendAction && !launchAction ? (
         <Text className="text-xs text-foreground-muted">
           {JSON.stringify(
             {
@@ -507,17 +568,102 @@ function AgentActionRecord({
           {detail.data.result}
         </Text>
       ) : null}
+      {reviewing && launchAction ? (
+        <View className="gap-2 rounded border border-border p-3">
+          <Text className="text-xs text-foreground-muted">
+            Target project · {launchAction.projectId}
+          </Text>
+          {launchAction.type !== "start" ? (
+            <Text className="text-xs text-foreground-muted">
+              Pipeline · {launchAction.pipelineId}
+            </Text>
+          ) : null}
+          <Text className="text-xs text-foreground-muted">
+            Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
+          </Text>
+          <Text className="text-xs text-foreground-muted">Final prompt</Text>
+          <Text selectable className="text-sm text-foreground">
+            {launchAction.text}
+          </Text>
+        </View>
+      ) : null}
+      {reviewing && sendAction ? (
+        <View className="gap-2 rounded border border-border p-3">
+          <Text className="text-xs text-foreground-muted">Original</Text>
+          <Text selectable className="text-sm text-foreground">
+            {sendAction.originalText ?? sendAction.text}
+          </Text>
+          <Text className="text-xs text-foreground-muted">Rewritten prompt</Text>
+          {editing ? (
+            <TextInput
+              accessibilityLabel="Edit rewritten prompt"
+              multiline
+              value={finalText}
+              onChangeText={setEditedText}
+              className="min-h-24 rounded border border-border p-3 text-foreground"
+            />
+          ) : (
+            <Text selectable className="text-sm text-foreground">
+              {finalText}
+            </Text>
+          )}
+          {record.status === "pending" ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!canApprove}
+              onPress={() => setEditing(!editing)}
+            >
+              <Text className="text-accent">{editing ? "Done editing" : "Edit"}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {detail.error ? <Text accessibilityRole="alert">{detail.error}</Text> : null}
+      {record.type === "auto-archive" && record.status === "executed" ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={!canUndoArchive || undoing}
+          onPress={async () => {
+            setUndoing(true);
+            setUndoError(false);
+            try {
+              const result = await undoArchive({ environmentId, input: { actionId: record.id } });
+              if (result._tag === "Failure") setUndoError(true);
+              else refreshDetail();
+            } catch {
+              setUndoError(true);
+            }
+            setUndoing(false);
+          }}
+        >
+          <Text className="text-accent">{undoing ? "Restoring…" : "Undo archive"}</Text>
+        </Pressable>
+      ) : null}
+      {undoError ? <Text accessibilityRole="alert">Could not restore this thread.</Text> : null}
       {record.status === "pending" ? (
         <View className="flex-row gap-4">
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ disabled: !canApprove }}
-            disabled={!canApprove}
-            onPress={() => void onResolve("approve")}
+            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
+            onPress={() =>
+              void onResolve(
+                "approve",
+                sendAction && editedText !== null ? { editedText } : undefined,
+              )
+            }
           >
-            <Text className="text-accent">Approve</Text>
+            <Text className="text-accent">{sendAction ? "Send" : "Approve"}</Text>
           </Pressable>
+          {sendAction?.originalText ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!canApprove}
+              onPress={() => void onResolve("approve", { sendOriginal: true })}
+            >
+              <Text className="text-accent">Send original</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             disabled={!allowed || busy}

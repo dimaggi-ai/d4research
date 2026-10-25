@@ -1,3 +1,4 @@
+import { D4AgentSessions } from "../agent/D4AgentSessions";
 import { useD4AgentState } from "../agent/useD4AgentState";
 import { withAgentModelOption } from "./D4AgentControls.logic";
 import {
@@ -83,6 +84,11 @@ export function D4AgentControls({
   );
   return (
     <>
+      <D4AgentSessions
+        environmentId={environmentId}
+        sessions={state.data?.openSessions ?? []}
+        refresh={state.refresh}
+      />
       {agent.enabled && state.data && !state.data.modelAvailable ? (
         <p role="status" className="py-2 text-sm text-muted-foreground">
           {agentUnavailableMessage(state.data.unavailableReason)}
@@ -215,6 +221,39 @@ export function D4AgentControls({
           }
         />
       ))}
+      {(["dev", "research"] as const).flatMap((kind) =>
+        (config?.settings[kind].scenarios ?? []).map((pipeline) => {
+          const id = `${kind}:${pipeline.name}`;
+          return (
+            <SettingsRow
+              key={id}
+              title={`Pipeline project · ${id}`}
+              control={
+                <select
+                  aria-label={`Project for ${id}`}
+                  className={selectClass}
+                  disabled={disabled}
+                  value={agent.pipelineProjects[id] ?? ""}
+                  onChange={(event) => {
+                    const pipelineProjects = { ...agent.pipelineProjects };
+                    const project = projects.find((item) => item.id === event.target.value);
+                    if (project) pipelineProjects[id] = project.id;
+                    else delete pipelineProjects[id];
+                    void writeAgent({ pipelineProjects });
+                  }}
+                >
+                  <option value="">Unmapped</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
+          );
+        }),
+      )}
       {D4_BRAIN_CONTEXTS.map((context) => {
         const index = state.data?.brainIndexes.find((item) => item.context === context);
         return (
@@ -249,6 +288,58 @@ export function D4AgentControls({
             <option value="read-only">Read-only</option>
             <option value="ask">Ask</option>
             <option value="act">Act</option>
+          </select>
+        }
+      />
+      <SettingsRow
+        title="Session idle timeout"
+        description="Close idle provider sessions after this interval."
+        control={
+          <select
+            aria-label="Session idle timeout"
+            className={selectClass}
+            disabled={disabled}
+            value={agent.sessionIdleMinutes ?? "never"}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              void writeAgent({
+                sessionIdleMinutes: value === 30 || value === 120 || value === 480 ? value : null,
+              });
+            }}
+          >
+            <option value="never">Never</option>
+            <option value="30">30 minutes</option>
+            <option value="120">2 hours</option>
+            <option value="480">8 hours</option>
+          </select>
+        }
+      />
+      <SettingsRow
+        title="Session size budget"
+        description="Rotate a session at this percentage of its model context window."
+        control={numberInput(
+          agent.sessionBudgetPercent,
+          10,
+          90,
+          "Session size budget percent",
+          (sessionBudgetPercent) => void writeAgent({ sessionBudgetPercent }),
+        )}
+      />
+      <SettingsRow
+        title="Agent thread auto-archive"
+        description="Archive completed agent-started threads after they have been reported. Replies and pins prevent archiving."
+        control={
+          <select
+            aria-label="Agent thread auto-archive"
+            className={selectClass}
+            disabled={disabled}
+            value={agent.agentThreadArchiveHours ?? "off"}
+            onChange={(event) =>
+              void writeAgent({ agentThreadArchiveHours: event.target.value === "24" ? 24 : null })
+            }
+          >
+            <option value="off">Off</option>
+            <option value="24">24 hours</option>
           </select>
         }
       />

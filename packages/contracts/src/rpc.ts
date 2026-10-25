@@ -516,6 +516,8 @@ export const WS_METHODS = {
   d4AgentGetState: "d4Agent.getState",
   d4AgentSwitchContext: "d4Agent.switchContext",
   d4AgentNewSession: "d4Agent.newSession",
+  d4AgentCloseSession: "d4Agent.closeSession",
+  d4AgentUndoArchive: "d4Agent.undoArchive",
   d4AgentResolveMemoryProposal: "d4Agent.resolveMemoryProposal",
   d4AgentGetIdentity: "d4Agent.getIdentity",
   d4AgentGetAction: "d4Agent.getAction",
@@ -847,6 +849,16 @@ const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAtt
 
 const WsD4AgentGetStateRpc = Rpc.make(WS_METHODS.d4AgentGetState, {
   payload: Schema.Struct({}),
+  success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentCloseSessionRpc = Rpc.make(WS_METHODS.d4AgentCloseSession, {
+  payload: D4AgentSwitchContextInput,
+  success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentUndoArchiveRpc = Rpc.make(WS_METHODS.d4AgentUndoArchive, {
+  payload: D4AgentGetActionInput,
   success: D4AgentState,
   error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
 });
@@ -2046,6 +2058,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsD4AgentGetStateRpc,
   WsD4AgentSwitchContextRpc,
   WsD4AgentNewSessionRpc,
+  WsD4AgentCloseSessionRpc,
+  WsD4AgentUndoArchiveRpc,
   WsD4AgentResolveMemoryProposalRpc,
   WsD4AgentGetIdentityRpc,
   WsD4AgentGetActionRpc,

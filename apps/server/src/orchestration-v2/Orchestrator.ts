@@ -2454,6 +2454,34 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is deleted.`,
       });
     }
+    if (command.type === "thread.archive" && command.onlyIfUpdatedAt !== undefined) {
+      const projection = yield* loadProjectionForCommand(command, [
+        "runs",
+        "messages",
+        "runtimeRequests",
+        "subagents",
+      ]);
+      const latest = projection.runs.at(-1);
+      const active = new Set(["preparing", "queued", "starting", "pending", "running", "waiting"]);
+      if (
+        DateTime.formatIso(thread.updatedAt) !== command.onlyIfUpdatedAt ||
+        thread.createdBy !== "agent" ||
+        thread.pinnedAt != null ||
+        thread.archivedAt !== null ||
+        latest?.status !== "completed" ||
+        projection.runs.some((run) => active.has(run.status)) ||
+        projection.runtimeRequests.some((request) => request.status === "pending") ||
+        projection.subagents.some((agent) => active.has(agent.status)) ||
+        projection.messages.some(
+          (message) => message.role === "user" && message.createdBy !== "agent",
+        )
+      )
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: "Agent task changed before archive.",
+        });
+    }
     if (
       command.type === "thread.pull-request.watch" &&
       command.watching &&

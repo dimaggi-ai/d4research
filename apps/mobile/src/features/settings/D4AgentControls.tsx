@@ -1,3 +1,4 @@
+import { D4AgentSessions } from "../agent-awareness/D4AgentSessions";
 import { useD4AgentState } from "../agent-awareness/useD4AgentState";
 import * as Arr from "effect/Array";
 import {
@@ -87,6 +88,11 @@ export function D4AgentControls({
   );
   return (
     <SettingsSection title="Agent behavior">
+      <D4AgentSessions
+        environmentId={environmentId}
+        sessions={state.data?.openSessions ?? []}
+        refresh={state.refresh}
+      />
       {agent.enabled && state.data && !state.data.modelAvailable ? (
         <Text accessibilityRole="alert" className="px-4 py-3 text-sm text-foreground-muted">
           {agentUnavailableMessage(state.data.unavailableReason)}
@@ -202,6 +208,31 @@ export function D4AgentControls({
           }}
         />
       ))}
+      {(["dev", "research"] as const).flatMap((kind) =>
+        (config?.settings[kind].scenarios ?? []).map((pipeline) => {
+          const id = `${kind}:${pipeline.name}`;
+          return (
+            <AgentChoiceRow
+              key={id}
+              icon="gearshape"
+              label={`Pipeline project · ${id}`}
+              disabled={disabled}
+              value={agent.pipelineProjects[id] ?? ""}
+              options={[
+                { id: "", label: "Unmapped" },
+                ...projects.map((project) => ({ id: project.id, label: project.title })),
+              ]}
+              onChange={(value) => {
+                const pipelineProjects = { ...agent.pipelineProjects };
+                const project = projects.find((item) => item.id === value);
+                if (project) pipelineProjects[id] = project.id;
+                else delete pipelineProjects[id];
+                void writeAgent({ pipelineProjects });
+              }}
+            />
+          );
+        }),
+      )}
       {D4_BRAIN_CONTEXTS.map((context) => {
         const index = state.data?.brainIndexes.find((item) => item.context === context);
         return (
@@ -233,6 +264,51 @@ export function D4AgentControls({
         input requests, submit memory proposals for review, and ask CTO questions when enabled for
         the selected context. Sending messages and starting threads still require approval. Provider
         permission approvals remain manual.
+      </Text>
+      <AgentChoiceRow
+        icon="clock"
+        label="Session idle timeout"
+        value={String(agent.sessionIdleMinutes ?? "never")}
+        disabled={disabled}
+        options={[
+          { id: "never", label: "Never" },
+          { id: "30", label: "30 minutes" },
+          { id: "120", label: "2 hours" },
+          { id: "480", label: "8 hours" },
+        ]}
+        onChange={(selected) => {
+          const value = Number(selected);
+          void writeAgent({
+            sessionIdleMinutes: value === 30 || value === 120 || value === 480 ? value : null,
+          });
+        }}
+      />
+      {numeric(
+        "Session size budget percent",
+        agent.sessionBudgetPercent,
+        10,
+        90,
+        (sessionBudgetPercent) => void writeAgent({ sessionBudgetPercent }),
+      )}
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        Rotate a session at this percentage of its model context window.
+      </Text>
+      <AgentChoiceRow
+        icon="clock"
+        label="Agent thread auto-archive"
+        value={String(agent.agentThreadArchiveHours ?? "off")}
+        disabled={disabled}
+        options={[
+          { id: "off", label: "Off" },
+          { id: "24", label: "24 hours" },
+        ]}
+        onChange={(selected) =>
+          void writeAgent({ agentThreadArchiveHours: selected === "24" ? 24 : null })
+        }
+      />
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        Archive completed agent-started threads after they have been reported. Replies and pins
+        prevent archiving.
       </Text>
       <AgentChoiceRow
         icon="clock"

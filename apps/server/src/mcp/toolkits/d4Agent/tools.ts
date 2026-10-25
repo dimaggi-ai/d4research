@@ -4,6 +4,8 @@ import {
   D4AgentActionRecord,
   D4AgentSystemCheck,
   ThreadId,
+  ProjectId,
+  ModelSelection,
 } from "@d4research/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -15,6 +17,44 @@ const shared = {
   dependencies: [Agent.D4Agent, McpInvocationContext.McpInvocationContext],
 };
 export const D4AgentToolkit = Toolkit.make(
+  Tool.make("d4_agent_resolve", {
+    ...shared,
+    description:
+      "Resolve an exact thread, project, or pipeline reference within the current context. Ambiguous references require a short user question.",
+    parameters: Schema.Struct({ text: Schema.String }),
+    success: Schema.Unknown,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("d4_agent_pipelines", {
+    ...shared,
+    description:
+      "List pipelines available in the bound context, including their mapped project, active state, available projects, and selected model.",
+    success: Schema.Unknown,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("d4_agent_research", {
+    ...shared,
+    description:
+      "Draft a run for user approval. Supply the detailed rewritten ask, mapped project, pipeline ID and model. No run starts before approval.",
+    parameters: Schema.Struct({
+      projectId: ProjectId,
+      pipelineId: Schema.String,
+      text: Schema.String,
+      modelSelection: ModelSelection,
+    }),
+    success: D4AgentActionRecord,
+  }),
+  Tool.make("d4_agent_pipeline", {
+    ...shared,
+    description:
+      "Draft a run for user approval. Supply the detailed rewritten ask, mapped project, pipeline ID and model. No run starts before approval.",
+    parameters: Schema.Struct({
+      projectId: ProjectId,
+      pipelineId: Schema.String,
+      text: Schema.String,
+      modelSelection: ModelSelection,
+    }),
+    success: D4AgentActionRecord,
+  }),
+
   Tool.make("d4_agent_list", {
     ...shared,
     description:
@@ -40,7 +80,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_action", {
     ...shared,
     description:
-      "Request a bounded d4 action. Read-only denies all actions. Ask requires user approval. Act automatically allows interrupt and user-input answers; send/start still require approval. Provider permission requests cannot be approved.",
+      "Request a bounded d4 action. Send, start, research and pipeline drafts always require user approval. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
     parameters: Schema.Struct({ action: D4AgentAction }),
     success: D4AgentActionRecord,
   }).annotate(Tool.Destructive, true),

@@ -39,6 +39,18 @@ export const D4AgentQuietHours = Schema.Struct({
   utcOffsetMinutes: Schema.Int.check(Schema.isBetween({ minimum: -840, maximum: 840 })),
 });
 export const D4AgentSettings = Schema.Struct({
+  sessionIdleMinutes: Schema.NullOr(Schema.Literals([30, 120, 480])).pipe(
+    Schema.withDecodingDefault(Effect.succeed(120)),
+  ),
+  sessionBudgetPercent: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 90 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(60)),
+  ),
+  agentThreadArchiveHours: Schema.NullOr(Schema.Literal(24)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(24)),
+  ),
+  pipelineProjects: Schema.Record(Schema.String, ProjectId).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   brainVaultPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
   ),
@@ -77,6 +89,10 @@ export const D4AgentSettings = Schema.Struct({
 });
 export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
+  sessionIdleMinutes: 120,
+  sessionBudgetPercent: 60,
+  agentThreadArchiveHours: 24,
+  pipelineProjects: {},
   brainVaultPath: "",
   memoryEnabled: false,
   embeddingsEnabled: false,
@@ -95,6 +111,21 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
 };
 
 export const D4AgentAction = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("auto-archive"), threadId: ThreadId }),
+  Schema.Struct({
+    type: Schema.Literal("pipeline"),
+    projectId: ProjectId,
+    text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+    modelSelection: ModelSelection,
+    pipelineId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("research"),
+    projectId: ProjectId,
+    text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+    modelSelection: ModelSelection,
+    pipelineId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  }),
   Schema.Struct({
     type: Schema.Literal("memory-propose"),
     context: D4BrainContext,
@@ -107,6 +138,7 @@ export const D4AgentAction = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("send"),
+    originalText: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16000))),
     threadId: ThreadId,
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
   }),
@@ -145,7 +177,17 @@ export const D4AgentActionRecord = Schema.Struct({
 export type D4AgentActionRecord = typeof D4AgentActionRecord.Type;
 export const D4AgentActionSummary = Schema.Struct({
   id: Schema.String,
-  type: Schema.Literals(["send", "interrupt", "answer", "start", "memory-propose", "cto-ask"]),
+  type: Schema.Literals([
+    "send",
+    "interrupt",
+    "answer",
+    "start",
+    "memory-propose",
+    "cto-ask",
+    "pipeline",
+    "research",
+    "auto-archive",
+  ]),
   targetId: Schema.String,
   preview: Schema.String.check(Schema.isMaxLength(256)),
   status: D4AgentActionRecord.fields.status,
@@ -186,9 +228,35 @@ export const D4AgentTurnUsage = Schema.Struct({
   }),
 });
 export type D4AgentTurnUsage = typeof D4AgentTurnUsage.Type;
+export const D4AgentLink = Schema.Struct({
+  label: Schema.String,
+  threadId: Schema.NullOr(ThreadId),
+  projectId: Schema.NullOr(ProjectId),
+});
+export type D4AgentLink = typeof D4AgentLink.Type;
+export const D4AgentTranscriptEntry = Schema.Struct({
+  id: Schema.String,
+  role: Schema.Literals(["user", "assistant", "system"]),
+  text: Schema.String,
+  context: D4BrainContext,
+  createdAt: IsoDateTime,
+  links: Schema.Array(D4AgentLink),
+});
+export type D4AgentTranscriptEntry = typeof D4AgentTranscriptEntry.Type;
+export const D4AgentOpenSession = Schema.Struct({
+  context: D4BrainContext,
+  threadId: ThreadId,
+  providerSessionId: Schema.NullOr(Schema.String),
+  lastActivityAt: IsoDateTime,
+  inputTokens: NonNegativeInt,
+  contextWindow: Schema.NullOr(NonNegativeInt),
+});
 export const D4AgentState = Schema.Struct({
+  transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
+  chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
+  openSessions: Schema.optionalKey(Schema.Array(D4AgentOpenSession)),
   sessionChangeReason: Schema.optionalKey(
-    Schema.NullOr(Schema.Literals(["context", "new-session"])),
+    Schema.NullOr(Schema.Literals(["context", "new-session", "resumed", "size"])),
   ),
   memoryProposals: Schema.optionalKey(Schema.Array(D4MemoryProposal)),
   otherContextProposalCounts: Schema.optionalKey(
@@ -232,6 +300,10 @@ export const D4AgentSendInput = Schema.Struct({
 export const D4AgentResolveActionInput = Schema.Struct({
   actionId: Schema.String,
   decision: Schema.Literals(["approve", "deny"]),
+  editedText: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+  ),
+  sendOriginal: Schema.optionalKey(Schema.Boolean),
 });
 export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentError", {
   reason: Schema.Literals([

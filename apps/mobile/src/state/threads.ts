@@ -1,3 +1,6 @@
+import type { EnvironmentThreadShell } from "@d4research/client-runtime/state/shell";
+import { arrayElementsEqual } from "@d4research/client-runtime/state/entities";
+import { agentProjectIdAtom } from "./projects";
 import { useAtomValue } from "@effect/atom-react";
 import {
   createEnvironmentThreadDetailAtoms,
@@ -47,3 +50,15 @@ export function useEnvironmentThread(
   ) as EnvironmentThreadState;
   return state;
 }
+
+export const normalNavigationThreadShellsAtom = (() => {
+  let previous: ReadonlyArray<EnvironmentThreadShell> = [];
+  return Atom.make((get) => {
+    const next = get(environmentThreadShells.navigationThreadShellsAtom).filter(
+      (thread) => thread.projectId !== get(agentProjectIdAtom(thread.environmentId)),
+    );
+    if (arrayElementsEqual(previous, next)) return previous;
+    previous = next;
+    return next;
+  });
+})();

@@ -116,7 +116,7 @@ export function useEnvironmentThreadRefs(
 }
 
 export function useProjects(): ReadonlyArray<EnvironmentProject> {
-  return useAtomValue(environmentProjects.projectsAtom);
+  return useAtomValue(environmentProjects.normalProjectsAtom);
 }
 
 /** Providers are left out; read them with `useEnvironmentProviders()`. */

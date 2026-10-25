@@ -1,3 +1,4 @@
+import { D4AgentRoute } from "./agent/D4AgentChat";
 import { scopedThreadKey } from "@d4research/client-runtime/environment";
 import type { ScopedThreadRef } from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -29,6 +30,19 @@ import {
  * only survives a route swap when the same parent renders it.
  */
 export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
+  return (
+    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
+      <D4AgentRoute
+        environmentId={target.kind === "server" ? target.threadRef.environmentId : null}
+        threadId={target.kind === "server" ? target.threadRef.threadId : null}
+      >
+        <NativeThreadRouteView target={target} />
+      </D4AgentRoute>
+    </SidebarInset>
+  );
+}
+
+function NativeThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
@@ -174,9 +188,5 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     );
   }
 
-  return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {view}
-    </SidebarInset>
-  );
+  return view;
 }

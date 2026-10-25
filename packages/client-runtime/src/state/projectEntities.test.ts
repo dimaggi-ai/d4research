@@ -46,12 +46,23 @@ function makeHarness(withConfig = true) {
       ]),
     ),
   });
+  const agentProjectIdAtom = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make<ProjectId | null>(null),
+  );
   const projects = createEnvironmentProjectAtoms({
+    agentProjectIdAtom,
     catalogValueAtom,
     snapshotAtom,
     ...(withConfig ? { serverConfigValueAtom: configAtom } : {}),
   });
-  return { registry: AtomRegistry.make(), projects, configAtom, snapshotAtom, catalogValueAtom };
+  return {
+    registry: AtomRegistry.make(),
+    projects,
+    configAtom,
+    snapshotAtom,
+    catalogValueAtom,
+    agentProjectIdAtom,
+  };
 }
 
 describe("project scratch identity", () => {
@@ -128,6 +139,55 @@ describe("project scratch identity", () => {
       registry.set(configAtom(environmentId), { scratchWorkspaceRoot: v2Project.workspaceRoot });
       expect(registry.get(projects.projectsAtom)).toBe(initial);
       expect(initial.every((project) => !project.isScratch)).toBe(true);
+    } finally {
+      registry.dispose();
+    }
+  });
+});
+
+describe("normal project navigation", () => {
+  it("filters only the server-owned project in its environment while retaining direct lookup", () => {
+    const { registry, projects, agentProjectIdAtom, snapshotAtom } = makeHarness();
+    try {
+      const original = registry.get(projects.projectsAtom);
+      const snapshot = registry.get(snapshotAtom(environmentId));
+      registry.set(agentProjectIdAtom(environmentId), v2Project.id);
+      const visible = registry.get(projects.normalProjectsAtom);
+      expect(visible).toHaveLength(original.length - 1);
+      expect(
+        visible.some(
+          (project) => project.environmentId === environmentId && project.id === v2Project.id,
+        ),
+      ).toBe(false);
+      expect(
+        visible.some(
+          (project) => project.environmentId === remoteEnvironmentId && project.id === v2Project.id,
+        ),
+      ).toBe(true);
+      expect(
+        registry.get(projects.projectAtom({ environmentId, projectId: v2Project.id })),
+      ).not.toBeNull();
+      expect(registry.get(projects.projectsAtom)).toBe(original);
+      expect(registry.get(snapshotAtom(environmentId))).toBe(snapshot);
+      registry.set(agentProjectIdAtom(environmentId), null);
+      expect(registry.get(projects.normalProjectsAtom)).toEqual(original);
+    } finally {
+      registry.dispose();
+    }
+  });
+
+  it("does not infer ownership from a project title or path", () => {
+    const { registry, projects, snapshotAtom, agentProjectIdAtom } = makeHarness();
+    try {
+      const snapshot = registry.get(snapshotAtom(environmentId));
+      registry.set(snapshotAtom(environmentId), {
+        ...snapshot,
+        projects: snapshot.projects.map((project) => ({ ...project, title: "d4 Agent" })),
+      });
+      registry.set(agentProjectIdAtom(environmentId), ProjectId.make("not-present"));
+      expect(registry.get(projects.normalProjectsAtom)).toEqual(
+        registry.get(projects.projectsAtom),
+      );
     } finally {
       registry.dispose();
     }

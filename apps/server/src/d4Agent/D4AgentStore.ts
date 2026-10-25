@@ -1,5 +1,7 @@
 import {
   D4AgentActionRecord,
+  D4AgentTranscriptEntry,
+  D4AgentOpenSession,
   D4BrainContext,
   IsoDateTime,
   D4AgentError,
@@ -20,10 +22,49 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 
+export const StoredSession = Schema.Struct({
+  ...D4AgentOpenSession.fields,
+  scopeHash: Schema.String,
+  seedSummary: Schema.optionalKey(Schema.String),
+});
+export type StoredSession = typeof StoredSession.Type;
 export const StoredState = Schema.Struct({
-  sessionChangeReason: Schema.optionalKey(
-    Schema.NullOr(Schema.Literals(["context", "new-session"])),
+  agentThreads: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        threadId: ThreadId,
+        projectId: ProjectId,
+        context: D4BrainContext,
+        actionId: Schema.String,
+        reportedAt: Schema.NullOr(IsoDateTime),
+        archivedAt: Schema.NullOr(IsoDateTime),
+        undoDisabled: Schema.Boolean,
+        pipelineId: Schema.optionalKey(Schema.String),
+        pipelineHash: Schema.optionalKey(Schema.String),
+        scopeHash: Schema.optionalKey(Schema.String),
+      }),
+    ),
   ),
+  sessions: Schema.optionalKey(Schema.Array(StoredSession)),
+  chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
+  transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
+  rotation: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        threadId: ThreadId,
+        context: D4BrainContext,
+        messageId: Schema.String,
+        pendingText: Schema.String,
+        requestedAt: IsoDateTime,
+        heartbeat: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+  ),
+  lastUserText: Schema.optionalKey(Schema.String),
+  sessionChangeReason: Schema.optionalKey(
+    Schema.NullOr(Schema.Literals(["context", "new-session", "resumed", "size"])),
+  ),
+  retiringProviderSessionId: Schema.optionalKey(Schema.NullOr(Schema.String)),
   retiringThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   brainContext: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   contextChangedAt: Schema.NullOr(IsoDateTime).pipe(
@@ -91,7 +132,21 @@ export function boundStoredState(state: StoredState): StoredState {
   );
   return {
     ...state,
-    bindings: state.bindings.filter((binding) => binding.threadId === state.threadId).slice(-16),
+    sessions: (state.sessions ?? [])
+      .filter(
+        (entry, index, all) =>
+          all.findLastIndex((other) => other.context === entry.context) === index,
+      )
+      .slice(-4),
+    chatThreadIds: (state.chatThreadIds ?? []).slice(-256),
+    transcript: (state.transcript ?? []).slice(-200),
+    bindings: state.bindings
+      .filter(
+        (binding) =>
+          binding.threadId === state.threadId ||
+          state.sessions?.some((session) => session.threadId === binding.threadId),
+      )
+      .slice(-16),
     actions: state.actions.map((action) => {
       if (action.action.type !== "cto-ask" || action.result === undefined) return action;
       const { result, ...without } = action;

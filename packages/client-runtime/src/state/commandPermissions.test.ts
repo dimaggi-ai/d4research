@@ -64,6 +64,8 @@ describe("command permissions", () => {
     WS_METHODS.d4AgentEnsureThread,
     WS_METHODS.d4AgentSwitchContext,
     WS_METHODS.d4AgentNewSession,
+    WS_METHODS.d4AgentCloseSession,
+    WS_METHODS.d4AgentUndoArchive,
     WS_METHODS.d4AgentResolveMemoryProposal,
     WS_METHODS.d4AgentSendMessage,
     WS_METHODS.d4AgentResolveAction,

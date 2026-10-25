@@ -22,6 +22,7 @@ export function createEnvironmentProjectAtoms(input: {
   readonly snapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<OrchestrationV2ShellSnapshot | null>;
+  readonly agentProjectIdAtom?: (environmentId: EnvironmentId) => Atom.Atom<ProjectId | null>;
   readonly serverConfigValueAtom?: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<Pick<ServerConfig, "scratchWorkspaceRoot"> | null>;
@@ -115,6 +116,18 @@ export function createEnvironmentProjectAtoms(input: {
     return previousProjects;
   }).pipe(Atom.withLabel("environment-project-list"));
 
+  let previousNormalProjects: ReadonlyArray<EnvironmentProject> = [];
+  const normalProjectsAtom = Atom.make((get) => {
+    const next = get(projectsAtom).filter((project) =>
+      input.agentProjectIdAtom
+        ? project.id !== get(input.agentProjectIdAtom(project.environmentId))
+        : true,
+    );
+    if (arrayElementsEqual(previousNormalProjects, next)) return previousNormalProjects;
+    previousNormalProjects = next;
+    return next;
+  }).pipe(Atom.withLabel("environment-normal-project-list"));
+
   const projectConfigsReadyAtom = Atom.make((get) => {
     const catalog = get(input.catalogValueAtom);
     if (!catalog.isReady) return false;
@@ -132,6 +145,7 @@ export function createEnvironmentProjectAtoms(input: {
     environmentProjectRefsAtom,
     projectRefsAtom,
     projectsAtom,
+    normalProjectsAtom,
     projectConfigsReadyAtom,
     projectAtom: (ref: ScopedProjectRef) => projectAtomFamily(projectKey(ref)),
   };

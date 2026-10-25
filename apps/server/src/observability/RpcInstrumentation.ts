@@ -71,6 +71,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.d4AgentGetState]: "orchestration",
   [WS_METHODS.d4AgentSwitchContext]: "orchestration",
   [WS_METHODS.d4AgentNewSession]: "orchestration",
+  [WS_METHODS.d4AgentCloseSession]: "orchestration",
+  [WS_METHODS.d4AgentUndoArchive]: "orchestration",
   [WS_METHODS.d4AgentResolveMemoryProposal]: "orchestration",
   [WS_METHODS.d4AgentGetIdentity]: "orchestration",
   [WS_METHODS.d4AgentGetAction]: "orchestration",

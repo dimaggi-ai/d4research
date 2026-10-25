@@ -1,3 +1,7 @@
+import * as AgentStore from "../d4Agent/D4AgentStore.ts";
+import { contextScopeHash } from "../d4Agent/brainScope.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId } from "@d4research/contracts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { expect, it } from "@effect/vitest";
@@ -982,6 +986,11 @@ it.effect("admits provider and OAuth client credentials and points only clients 
         capabilities: new Set(["orchestration"]),
         issuedAt: 1,
       };
+      const taskScope = {
+        ...providerScope,
+        requestNamespace: "task-session",
+        thread: { ...providerScope.thread!, threadId: ThreadId.make("d4-action:http-test") },
+      };
       const clientScope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         requestNamespace: "client:session-1",
@@ -992,7 +1001,7 @@ it.effect("admits provider and OAuth client credentials and points only clients 
       };
       const seen: Array<McpInvocationContext.McpInvocationScope> = [];
       const ProbeToolkit = Toolkit.make(
-        Tool.make("probe", {
+        Tool.make("t3_worktree_status", {
           description: "Reports the caller.",
           success: Schema.Struct({ ok: Schema.Boolean }),
           failure: OrchestratorMcpFailure,
@@ -1003,7 +1012,7 @@ it.effect("admits provider and OAuth client credentials and points only clients 
       const serverLayer = McpHttpServer.toolkitRegistration(
         ProbeToolkit,
         McpToolAccess.toLayer(ProbeToolkit, {
-          probe: McpToolAccess.reads(() =>
+          t3_worktree_status: McpToolAccess.reads(() =>
             McpInvocationContext.McpInvocationContext.pipe(
               Effect.tap((scope) => Effect.sync(() => seen.push(scope))),
               Effect.as({ ok: true }),
@@ -1018,7 +1027,9 @@ it.effect("admits provider and OAuth client credentials and points only clients 
               Effect.succeed(
                 token === providerToken
                   ? (providerScope as McpInvocationContext.McpThreadInvocationScope)
-                  : undefined,
+                  : token === "taskToken"
+                    ? (taskScope as McpInvocationContext.McpThreadInvocationScope)
+                    : undefined,
               ),
           }),
         ),
@@ -1031,11 +1042,41 @@ it.effect("admits provider and OAuth client credentials and points only clients 
           }),
         ),
       );
-      yield* HttpRouter.serve(serverLayer, { disableListenLog: true, disableLogger: true }).pipe(
+      const scopedServer = serverLayer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(ServerSettingsService)({
+              getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+            }),
+            Layer.mock(AgentStore.D4AgentStore)({
+              workspace: "/isolated/agent",
+              get: Effect.succeed({
+                agentThreads: [
+                  {
+                    threadId: taskScope.thread.threadId,
+                    projectId: ProjectId.make("unmapped"),
+                    context: "Global",
+                    actionId: "http-test",
+                    reportedAt: null,
+                    archivedAt: null,
+                    undoDisabled: false,
+                    scopeHash: contextScopeHash("Global", DEFAULT_SERVER_SETTINGS.d4Agent),
+                  },
+                ],
+              } as unknown as AgentStore.StoredState),
+            }),
+          ),
+        ),
+      );
+      yield* HttpRouter.serve(scopedServer, { disableListenLog: true, disableLogger: true }).pipe(
         Layer.build,
       );
       const httpClient = yield* HttpClient.HttpClient;
-      const call = (token: string | undefined) =>
+      const call = (
+        token: string | undefined,
+        name = "t3_worktree_status",
+        args: Record<string, unknown> = {},
+      ) =>
         Effect.gen(function* () {
           const headers = {
             accept: "application/json, text/event-stream",
@@ -1056,7 +1097,12 @@ it.effect("admits provider and OAuth client credentials and points only clients 
               "mcp-protocol-version": "2025-06-18",
             },
             body: HttpBody.text(
-              `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"probe","arguments":{}}}`,
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: 2,
+                method: "tools/call",
+                params: { name, arguments: args },
+              }),
               "application/json",
             ),
           });
@@ -1069,6 +1115,15 @@ it.effect("admits provider and OAuth client credentials and points only clients 
         "client:session-1",
       ]);
 
+      expect((yield* call("taskToken")).status).toBe(200);
+      expect(seen.at(-1)?.requestNamespace).toBe("task-session");
+      const beforeDenied = seen.length;
+      for (const name of ["memory_search", "brain_search", "t3_thread_search", "pipeline_upsert"])
+        expect((yield* call("taskToken", name)).status).toBe(403);
+      expect(
+        (yield* call("taskToken", "t3_thread_read", { threadId: "dimaggi-thread" })).status,
+      ).toBe(403);
+      expect(seen.length).toBe(beforeDenied);
       const missing = yield* call(undefined);
       expect(missing.status).toBe(401);
       expect(missing.headers["www-authenticate"]).toMatch(

@@ -1,4 +1,8 @@
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { validateAgentTaskScope } from "../../../d4Agent/D4AgentTaskScope.ts";
+import { McpInvocationContext } from "../../McpInvocationContext.ts";
+import * as Catalog from "../../../d4Agent/PipelineCatalog.ts";
 
 import type { ResearchScenario, ServerSettings } from "@d4research/contracts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
@@ -15,16 +19,6 @@ function scenarioOutput(settings: ServerSettings, kind: PipelineKind, scenario: 
   };
 }
 
-function scenarioSummary(settings: ServerSettings, kind: PipelineKind, scenario: ResearchScenario) {
-  return {
-    kind,
-    name: scenario.name,
-    active: settings[kind].activeScenario === scenario.name,
-    trigger: `!${kind}:${scenario.name}`,
-    promptFileNames: scenario.promptFiles.map((file) => file.name),
-  };
-}
-
 function findScenario(settings: ServerSettings, kind: PipelineKind, name: string) {
   return settings[kind].scenarios.find((scenario) => scenario.name === name);
 }
@@ -36,36 +30,77 @@ const readSettings = (service: ServerSettingsService["Service"]) =>
     ),
   );
 
+const taskPipeline = Effect.gen(function* () {
+  const invocation = yield* Effect.serviceOption(McpInvocationContext);
+  const threadId = Option.isSome(invocation) ? invocation.value.thread?.threadId : undefined;
+  if (threadId === undefined || !threadId.startsWith("d4-action:")) return null;
+  const settings = yield* readSettings(yield* ServerSettingsService);
+  const record = yield* validateAgentTaskScope(
+    threadId,
+    settings.d4Agent,
+    undefined,
+    settings,
+  ).pipe(
+    Effect.mapError(
+      () =>
+        new PipelineToolError({
+          detail: "Context operation refused; inspect the selected scope configuration.",
+        }),
+    ),
+  );
+  return record?.pipelineId ?? "";
+});
+
 const handlers = {
   pipeline_list: ({ kind }) =>
     Effect.gen(function* () {
-      const service = yield* ServerSettingsService;
-      const settings = yield* readSettings(service);
-      const kinds: ReadonlyArray<PipelineKind> = kind ? [kind] : ["dev", "research"];
+      const authorizedPipeline = yield* taskPipeline;
+      const catalog = yield* Catalog.PipelineCatalog;
+      const pipelines = yield* catalog
+        .list(kind)
+        .pipe(
+          Effect.mapError(() => new PipelineToolError({ detail: "Could not read pipelines." })),
+        );
       return {
-        pipelines: kinds.flatMap((entry) =>
-          settings[entry].scenarios.map((scenario) => scenarioSummary(settings, entry, scenario)),
-        ),
+        pipelines: pipelines
+          .filter(
+            (entry) =>
+              authorizedPipeline === null || `${entry.kind}:${entry.name}` === authorizedPipeline,
+          )
+          .map(({ pipelinePrompt: _prompt, promptFiles, ...entry }) => ({
+            ...entry,
+            promptFileNames: promptFiles.map((file) => file.name),
+          })),
       };
-    }),
+    }).pipe(Effect.provide(Catalog.layer)),
   pipeline_get: ({ kind, name }) =>
     Effect.gen(function* () {
-      const service = yield* ServerSettingsService;
-      const settings = yield* readSettings(service);
-      const scenario = findScenario(settings, kind, name);
-      if (!scenario) {
+      const authorizedPipeline = yield* taskPipeline;
+      const catalog = yield* Catalog.PipelineCatalog;
+      if (authorizedPipeline !== null && authorizedPipeline !== `${kind}:${name}`)
         return yield* new PipelineToolError({
-          detail: `No ${kind} pipeline named "${name}". Call pipeline_list to see available names.`,
+          detail: "Context operation refused; inspect the selected scope configuration.",
         });
-      }
+      const scenario = yield* catalog.get(kind, name).pipe(
+        Effect.mapError(
+          () =>
+            new PipelineToolError({
+              detail: `No ${kind} pipeline named "${name}". Call pipeline_list to see available names.`,
+            }),
+        ),
+      );
       return {
-        ...scenarioOutput(settings, kind, scenario),
+        ...scenario,
         editHint:
           "Call pipeline_upsert with this kind and name. Supply the complete pipelinePrompt; omit promptFiles to preserve them.",
       };
-    }),
+    }).pipe(Effect.provide(Catalog.layer)),
   pipeline_upsert: ({ kind, name, pipelinePrompt, promptFiles, makeActive }) =>
     Effect.gen(function* () {
+      if ((yield* taskPipeline) !== null)
+        return yield* new PipelineToolError({
+          detail: "Context operation refused; inspect the selected scope configuration.",
+        });
       const service = yield* ServerSettingsService;
       const scenarioPatch = {
         name,
@@ -95,6 +130,10 @@ const handlers = {
     }),
   pipeline_delete: ({ kind, name }) =>
     Effect.gen(function* () {
+      if ((yield* taskPipeline) !== null)
+        return yield* new PipelineToolError({
+          detail: "Context operation refused; inspect the selected scope configuration.",
+        });
       const service = yield* ServerSettingsService;
       const current = yield* readSettings(service);
       if (!findScenario(current, kind, name)) {

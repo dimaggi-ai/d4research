@@ -31,7 +31,12 @@ import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
   it("context switching requires orchestration operate scope", () => {
-    for (const method of [WS_METHODS.d4AgentNewSession, WS_METHODS.d4AgentResolveMemoryProposal])
+    for (const method of [
+      WS_METHODS.d4AgentNewSession,
+      WS_METHODS.d4AgentCloseSession,
+      WS_METHODS.d4AgentUndoArchive,
+      WS_METHODS.d4AgentResolveMemoryProposal,
+    ])
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
     expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentSwitchContext)).toBe(
       AuthOrchestrationOperateScope,

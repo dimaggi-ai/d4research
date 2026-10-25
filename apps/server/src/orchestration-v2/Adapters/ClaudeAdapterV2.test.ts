@@ -560,6 +560,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       d4AgentOnly: true,
     });
     const expected = [
+      "d4_agent_resolve",
+      "d4_agent_pipelines",
+      "d4_agent_research",
+      "d4_agent_pipeline",
       "d4_agent_list",
       "d4_agent_read_tail",
       "d4_agent_system_health",

@@ -1,4 +1,5 @@
 import { toolGuardEnvironment } from "../provider/toolGuardRuntime.ts";
+import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
 import { AgentScope } from "@d4research/shared/AgentScope";
 import * as KeyedLock from "@d4research/shared/KeyedLock";
 import { resolveProjectSettings } from "@d4research/shared/projectSettings";
@@ -324,6 +325,18 @@ export const layerWithOptions = (
        * agent one toolset and is visible immediately (#7083).
        */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+      const d4AgentStore = yield* Effect.serviceOption(D4AgentStore.D4AgentStore);
+      const managedAgentThread = Effect.fnUntraced(function* (
+        providerSessionId: ProviderSessionId,
+        threadIds: ReadonlySet<ThreadId>,
+      ) {
+        if (Option.isNone(d4AgentStore)) return false;
+        return ((yield* d4AgentStore.value.get).sessions ?? []).some(
+          (session) =>
+            threadIds.has(session.threadId) &&
+            (session.providerSessionId === null || session.providerSessionId === providerSessionId),
+        );
+      });
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
@@ -1113,6 +1126,11 @@ export const layerWithOptions = (
           ) {
             return;
           }
+          // d4 owns these context sessions' configured idle lifetime and explicit detach.
+          if (yield* managedAgentThread(input.providerSessionId, entry.attachedThreadIds)) {
+            yield* Effect.sleep(Duration.millis(idleTimeoutMs));
+            return yield* releaseIfStillIdle(input);
+          }
           // Capture runtime identity before yielding: a replacement session
           // can reuse the same providerSessionId while this fiber is parked.
           const probedRuntime = entry.runtime;
@@ -1596,6 +1614,9 @@ export const layerWithOptions = (
                 hasBusyTurn(entry, pending.providerThread.id)
               ) {
                 return "skipped" as const;
+              }
+              if (yield* managedAgentThread(input.providerSessionId, new Set([input.threadId]))) {
+                return "deferred" as const;
               }
               // Unloading stops the native thread's background terminals, so a
               // thread still running background work stays loaded.
@@ -2458,7 +2479,8 @@ export const layerWithOptions = (
             }
             if (
               detached.value.attachedThreadIds.size === 0 &&
-              !detached.value.supportsMultipleProviderThreads
+              (!detached.value.supportsMultipleProviderThreads ||
+                input.revokeMcpCredential === true)
             ) {
               yield* releaseEntry({
                 providerSessionId: input.providerSessionId,

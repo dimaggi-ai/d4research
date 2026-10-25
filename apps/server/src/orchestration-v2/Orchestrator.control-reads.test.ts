@@ -1068,3 +1068,47 @@ it.effect("wakes the parent once when its delegated task asks a question", () =>
     });
   }).pipe(Effect.provide(DelegatedTaskQuestionReactor.layer.pipe(Layer.provideMerge(layerTest)))),
 );
+
+it.effect("guarded agent archive refuses a user reply committed after the eligibility read", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("agent-archive-race");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("agent-archive-create"),
+      threadId,
+      projectId: ProjectId.make("project"),
+      title: "Agent task",
+      modelSelection,
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "agent",
+      creationSource: "server",
+    });
+    const before = yield* projections.getThread(threadId);
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("agent-archive-reply"),
+      threadId,
+      messageId: MessageId.make("reply"),
+      text: "Keep working",
+      attachments: [],
+      dispatchMode: { type: "defer_start" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const result = yield* Effect.result(
+      orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("agent-archive-stale"),
+        threadId,
+        onlyIfUpdatedAt: DateTime.formatIso(before.updatedAt),
+      }),
+    );
+    assert.equal(result._tag, "Failure");
+    assert.isNull((yield* projections.getThread(threadId)).archivedAt);
+  }).pipe(Effect.provide(layerTest)),
+);

@@ -37,6 +37,16 @@ const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4
     );
   }).pipe(Effect.mapError((error) => error.message));
 export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
+  d4_agent_resolve: McpToolAccess.reads(({ text }) =>
+    call((service) => service.resolveReference(text)),
+  ),
+  d4_agent_pipelines: McpToolAccess.reads(() => call((service) => service.listPipelines())),
+  d4_agent_research: McpToolAccess.reads((input) =>
+    call((service) => service.requestAction({ ...input, type: "research" })),
+  ),
+  d4_agent_pipeline: McpToolAccess.reads((input) =>
+    call((service) => service.requestAction({ ...input, type: "pipeline" })),
+  ),
   d4_agent_list: McpToolAccess.reads(() => call((service) => service.list())),
   d4_agent_read_tail: McpToolAccess.reads(({ threadId, limit }) =>
     call((service) => service.readTail(threadId, limit ?? 10)),

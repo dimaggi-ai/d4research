@@ -1,3 +1,5 @@
+import { isAllowedTaskMcpRequest, makeTaskScopeValidator } from "../d4Agent/D4AgentTaskScope.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import { isAllowedAgentMcpRequest } from "../d4Agent/policy.ts";
 import { D4AgentToolkit } from "./toolkits/d4Agent/tools.ts";
@@ -157,6 +159,8 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
   const d4AgentContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
+  const taskSettings = yield* Effect.serviceOption(ServerSettingsService);
+  const validateTaskScope = yield* makeTaskScopeValidator;
   return Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const authorization = request.headers.authorization;
@@ -178,6 +182,21 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         presentedToken: token.length > 0,
         offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
       });
+    }
+    if (invocation.thread?.threadId.startsWith("d4-action:") && request.method === "POST") {
+      const payload = yield* request.json.pipe(Effect.catch(() => Effect.succeed(null)));
+      const allowed = isAllowedTaskMcpRequest(payload, invocation.thread.threadId);
+      const validScope = Option.isSome(taskSettings)
+        ? yield* taskSettings.value.getSettings.pipe(
+            Effect.flatMap((settings) =>
+              validateTaskScope(invocation.thread!.threadId, settings.d4Agent, undefined, settings),
+            ),
+            Effect.as(true),
+            Effect.catchCause(() => Effect.succeed(false)),
+          )
+        : false;
+      if (!allowed || !validScope)
+        return HttpServerResponse.jsonUnsafe({ error: "d4_agent_tool_denied" }, { status: 403 });
     }
     if (
       Option.isSome(d4AgentContext) &&

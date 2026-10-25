@@ -58,6 +58,11 @@ describe("searchSettings", () => {
     "project context",
     "CTO integration",
     "index rebuild",
+    "session idle timeout",
+    "session size budget",
+    "open sessions",
+    "agent thread auto archive",
+    "pipeline project",
   ])("finds d4 Agent settings for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("agent-monitor");
   });

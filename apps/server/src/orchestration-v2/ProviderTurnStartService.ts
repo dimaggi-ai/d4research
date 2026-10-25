@@ -1,3 +1,4 @@
+import { makeTaskScopeValidator } from "../d4Agent/D4AgentTaskScope.ts";
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
 import * as HandoffMemory from "../handoffMemory.ts";
@@ -155,6 +156,7 @@ export const layer: Layer.Layer<
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const providerRegistry = yield* ProviderRegistry;
     const d4AgentContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
+    const validateAgentTaskScope = yield* makeTaskScopeValidator;
     const researchServices = yield* Effect.context<
       InlineDelegationRunner | OrchestrationEventStore
     >();
@@ -323,6 +325,7 @@ export const layer: Layer.Layer<
           cause: `Run ${runId} is missing its execution projection state.`,
         });
       }
+      const scopedAgentTask = String(projection.thread.id).startsWith("d4-action:");
       const d4AgentPrefix = Option.isSome(d4AgentContext)
         ? yield* d4AgentContext.value.prepare(
             projection.thread.id,
@@ -416,6 +419,17 @@ export const layer: Layer.Layer<
         },
       );
       const settings = yield* serverSettings.getSettings;
+      const taskScope = yield* validateAgentTaskScope(
+        projection.thread.id,
+        settings.d4Agent,
+        undefined,
+        settings,
+      ).pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId, cause })));
+      if (taskScope !== null && taskScope.projectId !== projection.thread.projectId)
+        return yield* new ProviderTurnStartError({
+          runId,
+          cause: "Context operation refused; inspect the selected scope configuration.",
+        });
       const providers = yield* providerRegistry.getProviders;
       const nextOrdinal =
         Math.max(
@@ -1190,6 +1204,7 @@ export const layer: Layer.Layer<
       ).handoff;
       if (
         d4AgentPrefix === null &&
+        !scopedAgentTask &&
         settings.handoff.memoryBackend === "meko" &&
         attachedHandoff !== null
       )
@@ -1339,6 +1354,7 @@ export const layer: Layer.Layer<
           !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
       const brainContext =
         d4AgentPrefix !== null ||
+        scopedAgentTask ||
         !settings.secondBrain.path ||
         !settings.secondBrain.injection.enabled ||
         message.text.trimStart().startsWith("/")
@@ -1392,10 +1408,10 @@ export const layer: Layer.Layer<
                   }),
                 ];
           const compression =
-            d4AgentPrefix === null
+            d4AgentPrefix === null && !scopedAgentTask
               ? settings.handoff.contextCompression
               : { ...settings.handoff.contextCompression, mode: "bounded" as const };
-          compact = compact && d4AgentPrefix === null;
+          compact = compact && d4AgentPrefix === null && !scopedAgentTask;
           let deliveryHandoffs = [...effectiveHandoffs, ...retryHandoff];
           if (compression.mode !== "bounded" && deliveryHandoffs.length > 0) {
             // Preparation is pure and bounded. Recover intact covered items here,
@@ -1407,6 +1423,7 @@ export const layer: Layer.Layer<
           }
           if (
             d4AgentPrefix === null &&
+            !scopedAgentTask &&
             settings.handoff.memoryBackend === "meko" &&
             deliveryHandoffs.length > 0
           ) {

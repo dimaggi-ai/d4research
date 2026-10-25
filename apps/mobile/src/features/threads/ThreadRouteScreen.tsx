@@ -1,3 +1,4 @@
+import { D4AgentRoute } from "../agent-awareness/D4AgentChat";
 import { D4AgentPanel } from "../agent-awareness/D4Agent";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -190,6 +191,19 @@ function ThreadUnavailableScreen(props: {
 
 export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
   useAndroidWorkspaceBack("threads");
+  const environmentIdRaw = firstRouteParam(props.route.params.environmentId);
+  const threadIdRaw = firstRouteParam(props.route.params.threadId);
+  return (
+    <D4AgentRoute
+      environmentId={environmentIdRaw ? EnvironmentId.make(environmentIdRaw) : null}
+      threadId={threadIdRaw ? ThreadId.make(threadIdRaw) : null}
+    >
+      <NativeThreadRouteScreen {...props} />
+    </D4AgentRoute>
+  );
+}
+
+function NativeThreadRouteScreen(props: ThreadRouteScreenProps) {
   const connectionsReady = useConnectionsReady();
   const { connectionState } = useRemoteConnectionStatus();
   const { selectedThread } = useThreadSelection();

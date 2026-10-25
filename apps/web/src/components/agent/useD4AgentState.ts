@@ -14,10 +14,12 @@ function useDocumentVisible() {
   return visible;
 }
 
-export function useD4AgentState(environmentId: EnvironmentId, enabled = true) {
+export function useD4AgentState(environmentId: EnvironmentId | null, enabled = true) {
   const visible = useDocumentVisible();
   const query = useEnvironmentQuery(
-    enabled && visible ? serverEnvironment.d4AgentState({ environmentId, input: {} }) : null,
+    enabled && visible && environmentId !== null
+      ? serverEnvironment.d4AgentState({ environmentId, input: {} })
+      : null,
   );
   useLiveRefresh(query.refresh, {
     enabled: enabled && visible,

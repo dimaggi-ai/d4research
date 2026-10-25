@@ -209,6 +209,22 @@ it.effect.each([
     operation: "cto-answer",
     name: "persisted CTO answer starts no run, reaches the next provider turn, and stays out of a fresh same-context session",
   },
+  {
+    operation: "repeated-close",
+    name: "repeated new sessions retire distinct provider identities and release resources before replacements",
+  },
+  {
+    operation: "size-scope-change",
+    name: "size rotation drops an old summary when context membership changes",
+  },
+  {
+    operation: "size-rotation",
+    name: "size budget rotates through an old-session summary and seeds only the same context",
+  },
+  {
+    operation: "rapid-switch",
+    name: "rapid Global YB Dimaggi YB Personal Global switching resumes provider sessions without cross-context input",
+  },
 ] as const)(
   "$name",
   ({ operation }) =>
@@ -297,6 +313,7 @@ it.effect.each([
           Layer.provide(
             Layer.mergeAll(
               threads,
+              runtime,
               projects,
               store,
               ProjectionStore.layer.pipe(Layer.provide(database)),
@@ -353,6 +370,126 @@ it.effect.each([
             );
             return projection;
           });
+          if (operation === "repeated-close") {
+            let session = yield* service.ensureThread();
+            for (let count = 0; count < 3; count++) {
+              yield* runTurn(session.threadId, `Synthetic close request ${count}`);
+              const previous = session;
+              session = yield* service.newSession();
+              const retired = yield* orchestrator.getThreadProjection(previous.threadId);
+              expect(retired.thread.archivedAt).not.toBeNull();
+              expect(retired.providerSessions.every((entry) => entry.status === "stopped")).toBe(
+                true,
+              );
+              expect((yield* state.get).retiringThreadId).toBeNull();
+            }
+            expect(new Set(opened.map((entry) => entry.providerSessionId)).size).toBe(3);
+            return;
+          }
+          if (operation === "size-rotation" || operation === "size-scope-change") {
+            const first = yield* service.switchContext({ context: "YB" });
+            yield* runTurn(first.threadId, "YB session facts");
+            const dimaggi = yield* service.switchContext({ context: "Dimaggi" });
+            yield* runTurn(dimaggi.threadId, "Dimaggi_PRIVATE_SUMMARY_EXCLUSION");
+            yield* service.switchContext({ context: "YB" });
+            yield* state.update((value) => ({
+              ...value,
+              sessions: value.sessions!.map((session) =>
+                session.context === "YB"
+                  ? { ...session, inputTokens: 700, contextWindow: 1000 }
+                  : session,
+              ),
+            }));
+            yield* runTurn(first.threadId, "Continue the YB work");
+            expect(started.at(-1)!.message.text).toContain("Summarize this session");
+            expect(started.at(-1)!.providerThread.providerSessionId).toBe(
+              started[0]!.providerThread.providerSessionId,
+            );
+            if (operation === "size-scope-change") {
+              const settingsService = yield* Settings.ServerSettingsService;
+              const config = yield* settingsService.getSettings;
+              yield* settingsService.updateSettings({
+                d4Agent: {
+                  ...config.d4Agent,
+                  projectContexts: {
+                    ...config.d4Agent.projectContexts,
+                    [ProjectId.make("new-membership")]: "YB",
+                  },
+                },
+              });
+            }
+            yield* service.tick;
+            const fresh = (yield* state.get).threadId!;
+            expect(
+              fresh,
+              JSON.stringify({
+                rotation: (yield* state.get).rotation,
+                runs: (yield* orchestrator.getThreadProjection(first.threadId)).runs.map(
+                  ({ id, status, userMessageId }) => ({ id, status, userMessageId }),
+                ),
+                messages: (yield* orchestrator.getThreadProjection(first.threadId)).messages.map(
+                  ({ id, runId, role, text }) => ({ id, runId, role, text }),
+                ),
+              }),
+            ).not.toBe(first.threadId);
+            yield* sink.stream({ threadId: fresh, afterSequence: 0 }).pipe(
+              Stream.filter(
+                (stored) =>
+                  stored.event.type === "run.updated" &&
+                  ["completed", "failed"].includes(stored.event.payload.status),
+              ),
+              Stream.take(1),
+              Stream.runDrain,
+            );
+            yield* worker.drain();
+            const last = started.at(-1)!;
+            if (operation === "size-scope-change") {
+              expect(last.message.text).not.toContain("Same-context session summary");
+              expect(last.message.text).not.toContain("Current answer");
+            } else {
+              expect(last.message.text).toContain("Same-context session summary");
+              expect(last.message.text).toContain("Current answer");
+            }
+            expect(last.message.text).toContain("Continue the YB work");
+            expect(JSON.stringify(last)).not.toContain("Dimaggi_PRIVATE_SUMMARY_EXCLUSION");
+            expect(last.providerThread.providerSessionId).not.toBe(
+              started[0]!.providerThread.providerSessionId,
+            );
+            expect((yield* state.get).sessions!.length).toBe(2);
+            return;
+          }
+          if (operation === "rapid-switch") {
+            const identities = new Map<string, ThreadId>();
+            const providerIds = new Map<string, string>();
+            for (let round = 0; round < 3; round++)
+              for (const context of [
+                "Global",
+                "YB",
+                "Dimaggi",
+                "YB",
+                "Personal",
+                "Global",
+              ] as const) {
+                const current = yield* service.switchContext({ context });
+                if (identities.has(context)) expect(current.threadId).toBe(identities.get(context));
+                identities.set(context, current.threadId);
+                yield* runTurn(current.threadId, `${context}_PRIVATE_MATERIAL_${round}`);
+                const turn = started.at(-1)!;
+                if (providerIds.has(context))
+                  expect(turn.providerThread.providerSessionId).toBe(providerIds.get(context));
+                expect(turn.providerThread.providerSessionId).not.toBeNull();
+                providerIds.set(context, turn.providerThread.providerSessionId!);
+                expect((yield* state.get).sessions!.length).toBeLessThanOrEqual(4);
+                if (context === "YB") {
+                  expect(JSON.stringify(turn)).not.toContain("Dimaggi_PRIVATE_MATERIAL");
+                  expect(JSON.stringify(turn)).not.toContain("Personal_PRIVATE_MATERIAL");
+                }
+              }
+            expect(providerIds.size).toBe(4);
+            expect(new Set(providerIds.values()).size).toBe(4);
+            expect(opened).toHaveLength(4);
+            return;
+          }
           if (operation === "cto-answer") {
             const firstSession = yield* service.switchContext({ context: "Dimaggi" });
             const firstProjection = yield* runTurn(firstSession.threadId, "Check CTO status");
@@ -506,9 +643,10 @@ it.effect.each([
               : yield* service.newSession();
           expect(fresh.threadId).not.toBe(previous.threadId);
           expect(fresh.projectId).toBe(previous.projectId);
-          expect(
-            (yield* orchestrator.getThreadProjection(previous.threadId)).thread.archivedAt,
-          ).not.toBeNull();
+          const previousArchived = (yield* orchestrator.getThreadProjection(previous.threadId))
+            .thread.archivedAt;
+          if (operation === "switch-context") expect(previousArchived).toBeNull();
+          else expect(previousArchived).not.toBeNull();
           const currentProjection = yield* runTurn(fresh.threadId, "Current request");
           expect(started).toHaveLength(2);
           const second = started[1]!;
@@ -559,7 +697,7 @@ it.effect.each([
             threadId: fresh.threadId,
             context: operation === "switch-context" ? "Dimaggi" : "YB",
           });
-        }).pipe(Effect.provide(Layer.mergeAll(agent, runtime, store, threads)));
+        }).pipe(Effect.provide(Layer.mergeAll(agent, runtime, store, threads, settings)));
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   { timeout: 20000 },

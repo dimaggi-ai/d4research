@@ -1,3 +1,6 @@
+import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
+import { contextScopeHash } from "../d4Agent/brainScope.ts";
+import { DEFAULT_D4_AGENT_SETTINGS } from "@d4research/contracts";
 import * as McpProviderSessions from "@d4research/provider-core/server/McpProviderSessions";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it, vi } from "vite-plus/test";
@@ -281,6 +284,8 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly scopedTask?: boolean;
+  readonly taskProjectId?: ProjectId;
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
@@ -301,7 +306,7 @@ function makeLocalCommandHarness(input: {
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
   const identity = input.nativeIdentity ?? "native-account-command";
-  const threadId = ThreadId.make(`thread-${identity}`);
+  const threadId = ThreadId.make(input.scopedTask ? `d4-action:${identity}` : `thread-${identity}`);
   const runId = RunId.make("run-native-account-command");
   const rootNodeId = NodeId.make("root-native-account-command");
   const attemptId = RunAttemptId.make("attempt-native-account-command");
@@ -697,6 +702,27 @@ function makeLocalCommandHarness(input: {
   );
   const prepareProviderHandoff = vi.fn(() => Effect.die("history read must fail first"));
   const layer = ProviderTurnStart.layer.pipe(
+    Layer.provide(
+      input.scopedTask
+        ? Layer.mock(D4AgentStore.D4AgentStore)({
+            workspace: "/isolated/agent",
+            get: Effect.succeed({
+              agentThreads: [
+                {
+                  threadId,
+                  projectId: input.taskProjectId ?? projection.thread.projectId,
+                  context: "Global",
+                  actionId: identity,
+                  reportedAt: null,
+                  archivedAt: null,
+                  undoDisabled: false,
+                  scopeHash: contextScopeHash("Global", DEFAULT_D4_AGENT_SETTINGS),
+                },
+              ],
+            } as unknown as D4AgentStore.StoredState),
+          })
+        : Layer.empty,
+    ),
     Layer.provide(
       input.d4AgentPrepare === undefined
         ? Layer.empty
@@ -1390,4 +1416,33 @@ effectIt.effect.each([
         network.mockRestore();
       }
     }),
+);
+
+effectIt.effect("agent-started task turns bypass flat second-brain injection", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Scoped task",
+      allowNative: true,
+      scopedTask: true,
+    });
+    yield* harness.start;
+    expect(harness.nativeStart).toHaveBeenCalledOnce();
+    expect(harness.buildTurnContext).not.toHaveBeenCalled();
+    expect(JSON.stringify(harness.nativeStart.mock.calls[0])).not.toContain("legacy-memory");
+  }),
+);
+
+effectIt.effect("agent-started task refuses a project move before starting its provider", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Scoped task",
+      allowNative: true,
+      scopedTask: true,
+      taskProjectId: ProjectId.make("original-project"),
+    });
+    const result = yield* Effect.result(harness.start);
+    expect(result._tag).toBe("Failure");
+    expect(harness.nativeStart).not.toHaveBeenCalled();
+    expect(harness.buildTurnContext).not.toHaveBeenCalled();
+  }),
 );

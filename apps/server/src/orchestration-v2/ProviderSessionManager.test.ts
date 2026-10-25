@@ -1,4 +1,5 @@
 import * as NetAddress from "effect/net/NetAddress";
+import * as D4AgentStore from "../d4Agent/D4AgentStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@d4research/shared/AgentScope";
@@ -582,6 +583,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly layerProjectService?: Layer.Layer<ProjectService.ProjectService>;
+  readonly layerD4AgentStore?: Layer.Layer<D4AgentStore.D4AgentStore>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -659,6 +661,7 @@ function layerTest(input: {
           layerTestStores,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.layerProjectService === undefined ? [] : [input.layerProjectService]),
+          ...(input.layerD4AgentStore === undefined ? [] : [input.layerD4AgentStore]),
         ),
       ),
     ),
@@ -4647,7 +4650,11 @@ function runIdleThreadUnloadScenario(
     readonly endTurn: (threadId: ThreadId, ordinal: number) => Effect.Effect<void>;
     readonly resume: (threadId: ThreadId) => Effect.Effect<void>;
   }) => Effect.Effect<void, ProviderSessionManager.ProviderSessionManagerV2Error>,
-  options: { readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean> } = {},
+  options: {
+    readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
+    readonly layerD4AgentStore?: Layer.Layer<D4AgentStore.D4AgentStore>;
+    readonly idleTimeoutMs?: number;
+  } = {},
 ) {
   return Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -4683,6 +4690,20 @@ function runIdleThreadUnloadScenario(
           now,
           nativeThreadId: `native-${threadId}`,
         });
+      yield* eventSink.write({
+        events: yield* Effect.forEach([threadA, threadB], (threadId) =>
+          Effect.gen(function* () {
+            return {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "provider-thread.updated" as const,
+              threadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: providerThreadOf(threadId),
+            };
+          }),
+        ),
+      });
       const resume = (threadId: ThreadId) =>
         runtime
           .resumeThread({
@@ -4760,7 +4781,10 @@ function runIdleThreadUnloadScenario(
       Effect.provide(
         layerTest({
           state,
-          idleTimeoutMs: 1000,
+          idleTimeoutMs: options.idleTimeoutMs ?? 1000,
+          ...(options.layerD4AgentStore === undefined
+            ? {}
+            : { layerD4AgentStore: options.layerD4AgentStore }),
           ...(options.hasPendingBackgroundWorkForThread === undefined
             ? {}
             : { hasPendingBackgroundWorkForThread: options.hasPendingBackgroundWorkForThread }),
@@ -5000,5 +5024,146 @@ it.effect(
         projectExists: false,
       });
       assert.isFalse(denied?.capabilities?.has("device"));
+    }),
+);
+
+it.effect.each(["detach", "unregister"] as const)(
+  "ProviderSessionManagerV2 preserves d4 context sessions beyond thirty minutes until %s",
+  (cleanup) =>
+    Effect.gen(function* () {
+      const runtimeState = yield* Ref.make(emptyState);
+      const agentState = yield* Ref.make({
+        sessions: [],
+        agentThreads: [],
+      } as unknown as D4AgentStore.StoredState);
+      const layerD4AgentStore = Layer.mock(D4AgentStore.D4AgentStore)({
+        workspace: "/isolated/d4-agent",
+        get: Ref.get(agentState),
+      });
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const opened = [];
+        for (const kind of ["managed", "normal", "task"] as const) {
+          const threadId = ThreadId.make(kind === "task" ? "d4-action:idle-task" : `idle-${kind}`);
+          const providerSessionId = yield* idAllocator.allocate.providerSession({
+            providerInstanceId: modelSelection.instanceId,
+            threadId,
+          });
+          if (kind === "managed")
+            yield* Ref.update(agentState, (state) => ({
+              ...state,
+              sessions: [
+                {
+                  context: "Global" as const,
+                  threadId,
+                  providerSessionId,
+                  lastActivityAt: DateTime.formatIso(now),
+                  inputTokens: 0,
+                  contextWindow: null,
+                  scopeHash: "scope",
+                },
+              ],
+            }));
+          if (kind === "task")
+            yield* Ref.update(agentState, (state) => ({
+              ...state,
+              agentThreads: [
+                {
+                  context: "Global" as const,
+                  threadId,
+                  projectId: ProjectId.make("task-project"),
+                  actionId: "idle-task",
+                  reportedAt: null,
+                  archivedAt: null,
+                  undoDisabled: false,
+                },
+              ],
+            }));
+          yield* eventSink.write({
+            events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+          });
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+          opened.push({ kind, threadId, providerSessionId });
+        }
+        yield* TestClock.adjust("30 minutes");
+        for (const entry of opened) {
+          assert.equal(yield* manager.isLive(entry.providerSessionId), entry.kind === "managed");
+        }
+        const managed = opened[0]!;
+        yield* TestClock.adjust("8 hours");
+        assert.isTrue(yield* manager.isLive(managed.providerSessionId));
+        assert.equal((yield* Ref.get(runtimeState)).closeCount, 2);
+        if (cleanup === "detach") {
+          yield* manager.detach({
+            providerSessionId: managed.providerSessionId,
+            threadId: managed.threadId,
+            revokeMcpCredential: true,
+          });
+        } else {
+          yield* Ref.update(agentState, (state) => ({ ...state, sessions: [] }));
+          yield* TestClock.adjust("30 minutes");
+        }
+        assert.isFalse(yield* manager.isLive(managed.providerSessionId));
+        assert.equal((yield* Ref.get(runtimeState)).closeCount, 3);
+      }).pipe(
+        Effect.provide(
+          layerTest({ state: runtimeState, idleTimeoutMs: 30 * 60_000, layerD4AgentStore }),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 preserves a managed d4 native thread while unloading an ordinary shared-runtime thread",
+  () =>
+    Effect.gen(function* () {
+      const agentState = yield* Ref.make({ sessions: [] } as unknown as D4AgentStore.StoredState);
+      const layerD4AgentStore = Layer.mock(D4AgentStore.D4AgentStore)({
+        workspace: "/isolated/d4-agent",
+        get: Ref.get(agentState),
+      });
+      yield* runIdleThreadUnloadScenario(
+        "managed-d4",
+        ({ state, manager, providerSessionId, threadA, startTurn, endTurn }) =>
+          Effect.gen(function* () {
+            yield* Ref.update(agentState, (state) => ({
+              ...state,
+              sessions: [
+                {
+                  context: "YB" as const,
+                  threadId: threadA,
+                  providerSessionId,
+                  lastActivityAt: "1970-01-01T00:00:00.000Z",
+                  inputTokens: 0,
+                  contextWindow: null,
+                  scopeHash: "scope",
+                },
+              ],
+            }));
+            yield* startTurn(threadA, 1);
+            yield* endTurn(threadA, 1);
+            const threadB = ThreadId.make("thread-provider-session-manager-managed-d4-b");
+            yield* endTurn(threadB, 1);
+            yield* TestClock.adjust("30 minutes");
+            assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, [
+              `native-${threadB}`,
+            ]);
+            assert.isTrue(yield* manager.isLive(providerSessionId));
+            yield* TestClock.adjust("8 hours");
+            assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, [
+              `native-${threadB}`,
+            ]);
+            assert.equal((yield* Ref.get(state)).closeCount, 0);
+            yield* manager.detach({ providerSessionId, threadId: threadA });
+            assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, [
+              `native-${threadB}`,
+              `native-${threadA}`,
+            ]);
+          }),
+        { idleTimeoutMs: 30 * 60_000, layerD4AgentStore },
+      );
     }),
 );

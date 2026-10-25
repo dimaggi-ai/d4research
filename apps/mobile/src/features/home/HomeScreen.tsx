@@ -1,4 +1,4 @@
-import { D4AgentEntry } from "../agent-awareness/D4Agent";
+import { D4AgentHomeHeader } from "../agent-awareness/D4Agent";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
@@ -902,6 +902,12 @@ export function HomeScreen(props: HomeScreenProps) {
   if (!hasAnyThreads) {
     return (
       <View className={containerClassName}>
+        <View style={{ paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0 }}>
+          <D4AgentHomeHeader
+            environments={props.environments}
+            selectedEnvironmentId={props.selectedEnvironmentId}
+          />
+        </View>
         <View
           className={cn(
             "flex-1 items-center justify-center px-8",
@@ -910,19 +916,12 @@ export function HomeScreen(props: HomeScreenProps) {
           )}
           style={{
             paddingBottom: Platform.OS === "ios" ? iosBottomClearance : Math.max(insets.bottom, 24),
-            paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
+
             paddingLeft: 32 + (contentSideInsets?.left ?? 0),
             paddingRight: 32 + (contentSideInsets?.right ?? 0),
           }}
         >
           <View className="w-full max-w-[430px]">
-            {props.environments.map((environment) => (
-              <D4AgentEntry
-                key={environment.environmentId}
-                environmentId={environment.environmentId}
-                label={props.environments.length > 1 ? environment.label : undefined}
-              />
-            ))}
             <EmptyState
               title={emptyState.title}
               detail={emptyState.detail}
@@ -957,29 +956,21 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
-      {props.environments
-        .filter(
-          (environment) =>
-            props.selectedEnvironmentId === null ||
-            environment.environmentId === props.selectedEnvironmentId,
-        )
-        .map((environment) => (
-          <D4AgentEntry
-            key={environment.environmentId}
-            environmentId={environment.environmentId}
-            label={props.environments.length > 1 ? environment.label : undefined}
+      <D4AgentHomeHeader
+        environments={props.environments}
+        selectedEnvironmentId={props.selectedEnvironmentId}
+      >
+        {Platform.OS === "ios" && workspace ? (
+          <ThreadListFilters
+            environments={props.environments}
+            projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
+            selectedEnvironmentId={props.selectedEnvironmentId}
+            selectedProjectKey={props.selectedProjectKey}
+            onEnvironmentChange={props.onEnvironmentChange}
+            onProjectChange={props.onProjectChange}
           />
-        ))}
-      {Platform.OS === "ios" && workspace ? (
-        <ThreadListFilters
-          environments={props.environments}
-          projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
-          selectedEnvironmentId={props.selectedEnvironmentId}
-          selectedProjectKey={props.selectedProjectKey}
-          onEnvironmentChange={props.onEnvironmentChange}
-          onProjectChange={props.onProjectChange}
-        />
-      ) : null}
+        ) : null}
+      </D4AgentHomeHeader>
     </>
   );
 

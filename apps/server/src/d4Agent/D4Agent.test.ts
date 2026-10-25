@@ -215,13 +215,14 @@ const fixture = (
           }),
           Layer.mock(Threads.ThreadManagementService)({
             getThreadShell: (id) =>
-              Ref.get(shells).pipe(
-                Effect.flatMap((all) => {
-                  const found = all.find((thread) => thread.id === id);
-                  return found
-                    ? Effect.succeed(found)
-                    : Ref.get(agentShell).pipe(Effect.map((own) => (own?.id === id ? own : null)));
-                }),
+              Ref.get(agentShell).pipe(
+                Effect.flatMap((own) =>
+                  own?.id === id
+                    ? Effect.succeed(own)
+                    : Ref.get(shells).pipe(
+                        Effect.map((all) => all.find((thread) => thread.id === id) ?? null),
+                      ),
+                ),
               ),
             getShellSnapshot: () =>
               Ref.get(shells).pipe(
@@ -239,12 +240,25 @@ const fixture = (
                 if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
                   return yield* Effect.fail({ reason: "fixture stop failure" } as never);
                 yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
-                if (cmd.type === "thread.create")
+                if (cmd.type === "thread.create") {
+                  yield* Ref.update(shells, (all) => [
+                    ...all,
+                    { ...target, id: cmd.threadId, projectId: cmd.projectId },
+                  ]);
                   yield* Ref.set(agentShell, {
                     ...target,
                     id: cmd.threadId,
                     projectId: cmd.projectId,
                   });
+                }
+                if (cmd.type === "thread.archive" || cmd.type === "thread.unarchive") {
+                  const archivedAt = cmd.type === "thread.archive" ? yield* DateTime.now : null;
+                  yield* Ref.update(shells, (all) =>
+                    all.map((thread) =>
+                      thread.id === cmd.threadId ? { ...thread, archivedAt } : thread,
+                    ),
+                  );
+                }
                 return { sequence: 1, duplicate: false, storedEvents: [] };
               }),
             interruptThread: () =>
@@ -254,6 +268,7 @@ const fixture = (
           }),
           Layer.mock(Projections.ProjectionStoreV2)({
             getRuntimeRequest: () => Ref.get(request),
+            getThreadProjection: () => Ref.get(projection),
             getThreadSnapshotWindow: () =>
               Ref.update(reads, (r) => ({ ...r, snapshots: r.snapshots + 1 })).pipe(
                 Effect.andThen(Ref.get(projection)),
@@ -265,7 +280,10 @@ const fixture = (
               ),
           }),
           projectService === undefined
-            ? Layer.mock(Projects.ProjectService)({ create: () => Effect.succeed({} as never) })
+            ? Layer.mock(Projects.ProjectService)({
+                create: () => Effect.succeed({} as never),
+                listShells: () => Effect.succeed([]),
+              })
             : Layer.succeed(Projects.ProjectService, projectService),
           Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
         ),
@@ -294,7 +312,7 @@ const fixture = (
   });
 
 it.effect(
-  "context switch creates a fresh thread, retires the old one and rejects stale callers",
+  "new session retries retirement, releases the old session and rejects stale callers",
   () =>
     Effect.gen(function* () {
       const f = yield* fixture("ask");
@@ -302,10 +320,7 @@ it.effect(
       yield* f.service.sendMessage({ text: "old context secret" });
       const approval = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
       yield* Ref.set(f.failStop, true);
-      assert.equal(
-        (yield* Effect.result(f.service.switchContext({ context: "YB" })))._tag,
-        "Failure",
-      );
+      assert.equal((yield* Effect.result(f.service.newSession()))._tag, "Failure");
       assert.equal((yield* Ref.get(f.state)).retiringThreadId, first.threadId);
       assert.equal(yield* f.service.getIdentity(), null);
       yield* Ref.set(f.failStop, false);
@@ -313,7 +328,7 @@ it.effect(
       assert.notEqual(second.threadId, first.threadId);
       assert.equal(second.projectId, first.projectId);
       assert.equal((yield* Ref.get(f.state)).retiringThreadId, null);
-      assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
       assert.include(yield* Ref.get(f.dispatches), "thread.stop");
       assert.include(yield* Ref.get(f.dispatches), "thread.archive");
       assert.equal(
@@ -333,7 +348,7 @@ it.effect(
       assert.equal(sent[1]?.threadId, second.threadId);
       assert.equal(sent[1]?.text, "new context question");
       assert.notInclude(JSON.stringify(sent[1]), "old context secret");
-      assert.deepEqual(yield* f.service.switchContext({ context: "YB" }), second);
+      assert.deepEqual(yield* f.service.switchContext({ context: "Global" }), second);
     }),
 );
 
@@ -1320,4 +1335,294 @@ it.live(
         assert.equal((yield* Fiber.join(search))._tag, "Failure");
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "rapid context switching retains at most four sessions and resumes the same context identity",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const ids = new Map<string, string>();
+      for (let round = 0; round < 20; round++)
+        for (const context of ["Global", "YB", "Dimaggi", "YB", "Personal", "Global"] as const) {
+          const identity = yield* f.service.switchContext({ context });
+          if (ids.has(context)) assert.equal(identity.threadId, ids.get(context));
+          ids.set(context, identity.threadId);
+          const state = yield* Ref.get(f.state);
+          assert.isAtMost(state.sessions!.length, 4);
+          assert.equal(
+            new Set(state.sessions!.map((session) => session.context)).size,
+            state.sessions!.length,
+          );
+        }
+      assert.equal(ids.size, 4);
+      assert.notInclude(yield* Ref.get(f.dispatches), "thread.stop");
+    }),
+);
+
+it.effect("idle timeout closes a session with a fake clock and never closes a busy session", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      sessionIdleMinutes: 30,
+    });
+    const first = yield* f.service.ensureThread();
+    yield* TestClock.adjust("29 minutes");
+    yield* f.service.tick;
+    assert.equal((yield* Ref.get(f.state)).sessions?.length, 1);
+    yield* TestClock.adjust("1 minute");
+    yield* f.service.tick;
+    assert.equal((yield* Ref.get(f.state)).sessions?.length, 0);
+    assert.equal((yield* Ref.get(f.state)).bindings.length, 0);
+    assert.include(yield* Ref.get(f.dispatches), "thread.stop");
+    const next = yield* f.service.ensureThread();
+    assert.notEqual(next.threadId, first.threadId);
+    assert.equal((yield* Ref.get(f.state)).transcript?.at(-1)?.text, "New session.");
+    assert.equal((yield* Ref.get(f.state)).sessionChangeReason, "new-session");
+    yield* Ref.update(f.shells, (all) =>
+      all.map((entry) =>
+        entry.id === next.threadId ? { ...entry, activeRunId: RunId.make("busy") } : entry,
+      ),
+    );
+    yield* Ref.update(f.agentShell, (entry) =>
+      entry === null ? entry : { ...entry, activeRunId: RunId.make("busy") },
+    );
+    yield* TestClock.adjust("31 minutes");
+    yield* f.service.tick;
+    assert.equal((yield* Ref.get(f.state)).sessions?.length, 1);
+  }),
+);
+
+it.effect(
+  "a Dimaggi thread reference switches before provider input; ambiguous titles ask and unmapped references switch to Global",
+  () =>
+    Effect.gen(function* () {
+      const project = ProjectId.make("dimaggi-project");
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [project]: "Dimaggi" },
+      });
+      yield* Ref.update(f.shells, (all) => [
+        ...all,
+        {
+          ...target,
+          id: ThreadId.make("dimaggi-thread"),
+          projectId: project,
+          title: "Exact title",
+        },
+        { ...target, id: ThreadId.make("duplicate"), title: "Exact title" },
+      ]);
+      yield* f.service.ensureThread();
+      yield* f.service.sendMessage({ text: "Read dimaggi-thread" });
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
+      assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Read dimaggi-thread");
+      yield* f.service.sendMessage({ text: "Read Exact title" });
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Which thread");
+      yield* f.service.sendMessage({ text: "Read target" });
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
+    }),
+);
+
+it.effect.each(["read-only", "ask", "act"] as const)(
+  "rewrite-and-send always awaits approval and permits an edited or original send (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      yield* f.service.ensureThread();
+      yield* f.service.sendMessage({ text: "Original user command" });
+      const record = yield* f.service.requestAction({
+        type: "send",
+        threadId: targetId,
+        text: "Rewritten command",
+      });
+      assert.equal(record.status, "pending");
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      assert.equal(
+        record.action.type === "send" && record.action.originalText,
+        "Original user command",
+      );
+      yield* f.service.resolveAction({
+        actionId: record.id,
+        decision: "approve",
+        sendOriginal: true,
+      });
+      assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Original user command");
+      const edited = yield* f.service.requestAction({
+        type: "send",
+        threadId: targetId,
+        text: "Second draft",
+      });
+      yield* f.service.resolveAction({
+        actionId: edited.id,
+        decision: "approve",
+        editedText: "Human edit",
+      });
+      assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Human edit");
+    }),
+);
+
+it.effect.each(["read-only", "ask", "act"] as const)(
+  "pipeline and research starts always require approval and call existing services (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      yield* f.service.ensureThread();
+      yield* f.settings.updateSettings({
+        research: {
+          upsertScenario: {
+            name: "fixture-research",
+            pipelinePrompt: "Use approved sources and report results.",
+            promptFiles: [],
+          },
+        },
+        dev: {
+          upsertScenario: {
+            name: "fixture-dev",
+            pipelinePrompt: "Implement the requested task.",
+            promptFiles: [],
+          },
+        },
+      });
+      for (const type of ["pipeline", "research"] as const) {
+        const record = yield* f.service.requestAction({
+          type,
+          projectId: target.projectId,
+          text: "Detailed user task",
+          modelSelection,
+          pipelineId: type === "pipeline" ? "dev:fixture-dev" : "research:fixture-research",
+        });
+        assert.equal(record.status, "pending");
+        assert.isFalse(
+          (yield* Ref.get(f.sends)).some((send) => send.threadId === `d4-action:${record.id}`),
+        );
+        yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+        assert.equal(
+          (yield* Ref.get(f.sends)).at(-1)?.text,
+          `${type === "pipeline" ? "!dev:fixture-dev" : "!research:fixture-research"}\n\nDetailed user task`,
+        );
+        assert.equal(
+          (yield* Ref.get(f.state)).agentThreads?.at(-1)?.threadId,
+          `d4-action:${record.id}`,
+        );
+      }
+    }),
+);
+
+it.effect("size overflow starts a summary on tick without waiting for another user message", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      sessions: value.sessions!.map((session) => ({
+        ...session,
+        inputTokens: 601,
+        contextWindow: 1000,
+      })),
+    }));
+    yield* f.service.tick;
+    assert.include((yield* Ref.get(f.sends)).at(-1)!.text, "Summarize this session");
+    assert.equal((yield* Ref.get(f.state)).rotation?.pendingText, "");
+  }),
+);
+
+it.effect("the first switch after upgrade retains the legacy session for resumption", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const original = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, ({ sessions: _sessions, ...value }) => value);
+    yield* f.service.switchContext({ context: "YB" });
+    assert.equal((yield* Ref.get(f.state)).sessions?.length, 2);
+    const resumed = yield* f.service.switchContext({ context: "Global" });
+    assert.equal(resumed.threadId, original.threadId);
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.stop");
+  }),
+);
+
+it.effect("pipeline discovery supplies the configured model and only scoped project choices", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* f.service.ensureThread();
+    const available = yield* f.service.listPipelines();
+    assert.deepEqual(available.modelSelection, modelSelection);
+    assert.isTrue(available.pipelines.every((pipeline) => pipeline.projectId === null));
+    const state = yield* Ref.get(f.state);
+    assert.isFalse(available.projects.some((project) => project.projectId === state.projectId));
+  }),
+);
+
+it.effect("reports an agent-started completion, logs the delayed archive and undoes it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      sessionIdleMinutes: null,
+    });
+    yield* f.service.ensureThread();
+    const threadId = ThreadId.make("d4-action:completed");
+    const runId = RunId.make("completed");
+    const completedThread = {
+      ...target,
+      id: threadId,
+      createdBy: "agent" as const,
+      latestRunId: runId,
+    };
+    yield* Ref.update(f.shells, (all) => [...all, completedThread]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      thread: { ...completedThread, lastVisitedAt: completedThread.lastVisitedAt ?? null },
+      runs: [{ id: runId, status: "completed", completedAt: now }] as unknown as typeof value.runs,
+    }));
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId,
+          projectId: target.projectId,
+          context: "Global" as const,
+          actionId: "completed",
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* f.service.tick;
+    assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Completed: Private.");
+    assert.isNotNull((yield* Ref.get(f.state)).agentThreads![0]!.reportedAt);
+    yield* TestClock.adjust("23 hours");
+    yield* f.service.tick;
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.archive");
+    const laterRunId = RunId.make("later-completion");
+    const laterCompletion = yield* DateTime.now;
+    yield* Ref.update(f.shells, (all) =>
+      all.map((thread) =>
+        thread.id === threadId
+          ? { ...thread, latestRunId: laterRunId, updatedAt: laterCompletion }
+          : thread,
+      ),
+    );
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        { id: laterRunId, status: "completed", completedAt: laterCompletion },
+      ] as unknown as typeof value.runs,
+    }));
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.state)).agentThreads![0]!.reportedAt,
+      DateTime.formatIso(laterCompletion),
+    );
+    yield* TestClock.adjust("1 hour");
+    yield* f.service.tick;
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.archive");
+    yield* TestClock.adjust("23 hours");
+    yield* f.service.tick;
+    const archived = yield* f.service.getState();
+    assert.equal(archived.actionLog[0]?.type, "auto-archive");
+    assert.equal(archived.actionLog[0]?.status, "executed");
+    assert.isNotNull(
+      (yield* Ref.get(f.shells)).find((thread) => thread.id === threadId)!.archivedAt,
+    );
+    yield* f.service.undoArchive({ actionId: "archive:completed" });
+    assert.isNull((yield* Ref.get(f.shells)).find((thread) => thread.id === threadId)!.archivedAt);
+    assert.isTrue((yield* Ref.get(f.state)).agentThreads![0]!.undoDisabled);
+  }),
 );

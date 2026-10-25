@@ -1,12 +1,14 @@
+import { D4AgentRoute } from "./D4AgentChat";
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { D4AgentPanel } from "./D4Agent";
+import { D4AgentHomeHeader, D4AgentPanel } from "./D4Agent";
 import {
   EnvironmentId,
   ThreadId,
   ProjectId,
+  ProviderInstanceId,
   type D4AgentSettings,
   type D4AgentActionRecord,
   type D4AgentState,
@@ -26,12 +28,20 @@ const mocks = vi.hoisted(() => ({
     _tag: "Success",
     value: { threadId: "fresh-agent-thread" as ThreadId },
   })),
+  send: vi.fn(async () => ({ _tag: "Success", value: { threadId: "agent-thread" as ThreadId } })),
+  undo: vi.fn(async () => ({ _tag: "Success" })),
+  closeSession: vi.fn(async () => ({ _tag: "Success" })),
   resolveProposal: vi.fn(async () => ({ _tag: "Success" })),
   projectContexts: {} as D4AgentSettings["projectContexts"],
   refresh: vi.fn(),
   threadShells: vi.fn(),
   stateQuery: vi.fn(),
   detail: null as D4AgentActionRecord | null,
+  identityMissing: false,
+  routeShellMissing: false,
+  stateUnavailable: false,
+  statePending: false,
+  nativeRoute: vi.fn(),
   allowed: true,
   enabled: true,
   configLoaded: true,
@@ -77,6 +87,9 @@ vi.mock("../../state/server", () => ({
     d4AgentIdentity: () => "identity",
     d4AgentAction: () => "detail",
     ensureD4AgentThread: { permissionAtom: () => "permission" },
+    sendD4AgentMessage: { permissionAtom: () => "permission", kind: "send" },
+    undoD4AgentArchive: { permissionAtom: () => "permission", kind: "undo-archive" },
+    closeD4AgentSession: { permissionAtom: () => "permission", kind: "close-session" },
     newD4AgentSession: { permissionAtom: () => "permission", kind: "new-session" },
     resolveD4AgentMemoryProposal: { permissionAtom: () => "permission", kind: "proposal" },
     switchD4AgentContext: { permissionAtom: () => "permission", kind: "switch" },
@@ -85,19 +98,27 @@ vi.mock("../../state/server", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
-    command.kind === "switch"
-      ? mocks.switchContext
-      : command.kind === "new-session"
-        ? mocks.newSession
-        : command.kind === "proposal"
-          ? mocks.resolveProposal
-          : mocks.resolve,
+    command.kind === "undo-archive"
+      ? mocks.undo
+      : command.kind === "send"
+        ? mocks.send
+        : command.kind === "close-session"
+          ? mocks.closeSession
+          : command.kind === "switch"
+            ? mocks.switchContext
+            : command.kind === "new-session"
+              ? mocks.newSession
+              : command.kind === "proposal"
+                ? mocks.resolveProposal
+                : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
     data:
       atom === "identity"
-        ? { threadId: mocks.state?.threadId }
+        ? mocks.identityMissing
+          ? null
+          : { threadId: mocks.state?.threadId, projectId: mocks.state?.projectId }
         : atom === "detail"
           ? mocks.detail
           : atom
@@ -109,6 +130,7 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("../../state/entities", () => ({
+  useThreadShell: () => (mocks.routeShellMissing ? null : { projectId: mocks.state?.projectId }),
   useThreadShells: () => mocks.threads,
   useEnvironmentServerConfig: () => ({
     settings: {
@@ -118,10 +140,10 @@ vi.mock("../../state/entities", () => ({
   }),
 }));
 vi.mock("./useD4AgentState", () => ({
-  useD4AgentState: () => ({
-    data: mocks.state,
+  useD4AgentState: (_environmentId: EnvironmentId, enabled = true) => ({
+    data: enabled && !mocks.statePending && !mocks.stateUnavailable ? mocks.state : null,
     refresh: mocks.refresh,
-    isPending: false,
+    isPending: mocks.statePending,
     error: null,
   }),
 }));
@@ -131,6 +153,26 @@ vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
+  KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TextInput: ({
+    value,
+    onChangeText,
+    accessibilityLabel,
+    editable = true,
+  }: {
+    value: string;
+    onChangeText: (text: string) => void;
+    accessibilityLabel: string;
+    editable?: boolean;
+  }) => (
+    <textarea
+      aria-label={accessibilityLabel}
+      disabled={!editable}
+      value={value}
+      onChange={(event) => onChangeText(event.target.value)}
+    />
+  ),
   View: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Modal: ({ children, visible }: { children: React.ReactNode; visible: boolean }) =>
@@ -156,8 +198,11 @@ const threadId = ThreadId.make("agent-thread");
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.resolve.mockClear();
+  mocks.send.mockClear();
+  mocks.undo.mockClear();
   mocks.switchContext.mockClear();
   mocks.newSession.mockClear();
+  mocks.closeSession.mockClear();
   mocks.resolveProposal.mockClear();
   mocks.copy.mockClear();
   mocks.projectContexts = {};
@@ -165,6 +210,11 @@ beforeEach(() => {
   mocks.threadShells.mockClear();
   mocks.stateQuery.mockClear();
   mocks.detail = null;
+  mocks.identityMissing = false;
+  mocks.routeShellMissing = false;
+  mocks.stateUnavailable = false;
+  mocks.statePending = false;
+  mocks.nativeRoute.mockClear();
   mocks.allowed = true;
   mocks.enabled = true;
   mocks.configLoaded = true;
@@ -358,4 +408,481 @@ it("refreshes an open CTO result after completion without collapsing its details
   expect(container.textContent).toContain("Action log only: First line\nSecond line");
   expect(container.textContent).not.toContain("First line\\nSecond line");
   expect(container.textContent).toContain("Review slow question");
+});
+
+it("keeps one visible transcript across isolated context routes and hides provider history", async () => {
+  const oldThreadId = ThreadId.make("old-global-session");
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "YB",
+    chatThreadIds: [oldThreadId, threadId],
+    transcript: [
+      {
+        id: "first",
+        role: "user",
+        context: "Global",
+        text: "What needs me?",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+      {
+        id: "divider",
+        role: "system",
+        context: "YB",
+        text: "Context changed to YB. New session.",
+        createdAt: "2026-10-24T12:01:00.000Z",
+        links: [],
+      },
+      {
+        id: "reply",
+        role: "assistant",
+        context: "YB",
+        text: "Review this thread.",
+        createdAt: "2026-10-24T12:02:00.000Z",
+        links: [
+          { label: "Validated target", threadId: ThreadId.make("valid-target"), projectId: null },
+          { label: "Other context label", threadId: null, projectId: null },
+        ],
+      },
+    ],
+  };
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={oldThreadId}>
+        <p>Private provider history</p>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("What needs me?");
+  expect(container.textContent).toContain("Context changed to YB. New session.");
+  expect(container.textContent).toContain("Review this thread.");
+  expect(container.textContent).not.toContain("Private provider history");
+  expect(mocks.send).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Validated target")!
+      .click(),
+  );
+  expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/valid-target`);
+  expect(
+    [...container.querySelectorAll("button")].some(
+      (item) => item.textContent === "Other context label",
+    ),
+  ).toBe(false);
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <p>Private YB provider history</p>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("What needs me?");
+  expect(container.textContent).not.toContain("Private YB provider history");
+});
+
+it("shows session usage and closes only the selected context after an explicit click", async () => {
+  mocks.state = {
+    ...mocks.state!,
+    openSessions: [
+      {
+        context: "YB",
+        threadId,
+        providerSessionId: "native-yb",
+        lastActivityAt: "2026-10-24T12:00:00.000Z",
+        inputTokens: 1234,
+        contextWindow: 200000,
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("Open sessions · 1/4");
+  expect(mocks.closeSession).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent?.includes("Open sessions"))!
+      .click(),
+  );
+  expect(container.textContent).toContain("1234 input tokens");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Close YB session")!
+      .click(),
+  );
+  expect(mocks.closeSession).toHaveBeenCalledWith({ environmentId, input: { context: "YB" } });
+  expect(mocks.refresh).toHaveBeenCalled();
+});
+
+it("requires explicit review before sending a rewrite and allows sending the original", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "rewrite",
+        type: "send",
+        targetId: "target-thread",
+        preview: "Detailed rewritten request",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "rewrite",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "send",
+      threadId: ThreadId.make("target-thread"),
+      originalText: "Check this",
+      text: "Detailed rewritten request",
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  expect(container.textContent).toContain("Original");
+  expect(container.textContent).toContain("Check this");
+  expect(container.textContent).toContain("Rewritten prompt");
+  expect(container.textContent).toContain("Detailed rewritten request");
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
+  );
+  expect(container.querySelector('textarea[aria-label="Edit rewritten prompt"]')).not.toBeNull();
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Send original")!
+      .click(),
+  );
+  expect(mocks.resolve).toHaveBeenCalledWith({
+    environmentId,
+    input: { actionId: "rewrite", decision: "approve", sendOriginal: true },
+  });
+});
+
+it("sends an agent draft only on explicit submit and preserves the single-chat route", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <p>Native content</p>
+      </D4AgentRoute>,
+    ),
+  );
+  const input = container.querySelector(
+    'textarea[aria-label="Message d4 Agent"]',
+  ) as HTMLTextAreaElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Research the question",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(mocks.send).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Send")!.click(),
+  );
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: { text: "Research the question" },
+  });
+  expect(input.value).toBe("");
+  expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+it("sends the human-edited rewrite only after explicit Send", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "edited",
+        type: "send",
+        targetId: "target-thread",
+        preview: "Draft rewrite",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.detail = {
+    id: "edited",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "send",
+      threadId: ThreadId.make("target-thread"),
+      originalText: "Check this",
+      text: "Draft rewrite",
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
+  );
+  const input = container.querySelector(
+    'textarea[aria-label="Edit rewritten prompt"]',
+  ) as HTMLTextAreaElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Human-edited instruction",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Send")!.click(),
+  );
+  expect(mocks.resolve).toHaveBeenCalledWith({
+    environmentId,
+    input: { actionId: "edited", decision: "approve", editedText: "Human-edited instruction" },
+  });
+});
+
+it.each(["research", "pipeline"] as const)(
+  "shows the final %s prompt, target, pipeline and model before approval",
+  async (type) => {
+    const createdAt = "2026-10-24T12:00:00.000Z";
+    mocks.state = {
+      ...mocks.state!,
+      actionLog: [
+        {
+          id: "launch",
+          type,
+          targetId: "target-project",
+          preview: "Research the topic",
+          status: "pending",
+          createdAt,
+          resolvedAt: null,
+        },
+      ],
+    };
+    mocks.detail = {
+      id: "launch",
+      context: "Global",
+      sessionId: threadId,
+      action: {
+        type,
+        projectId: ProjectId.make("target-project"),
+        text: "Detailed approved research prompt",
+        pipelineId: "research:focused",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex-instance"),
+          model: "gpt-test",
+        },
+      },
+      status: "pending",
+      createdAt,
+      resolvedAt: null,
+    };
+    await act(() =>
+      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
+    );
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Review action")!
+        .click(),
+    );
+    expect(container.textContent).toContain("Target project · target-project");
+    expect(container.textContent).toContain("Pipeline · research:focused");
+    expect(container.textContent).toContain("Model · codex-instance / gpt-test");
+    expect(container.textContent).toContain("Detailed approved research prompt");
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Approve")!
+        .click(),
+    );
+    expect(mocks.resolve).toHaveBeenCalledWith({
+      environmentId,
+      input: { actionId: "launch", decision: "approve" },
+    });
+  },
+);
+
+it("restores an automatically archived thread only after Undo archive", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "archived",
+        type: "auto-archive",
+        targetId: "target-thread",
+        preview: "Archived completed agent thread",
+        status: "executed",
+        createdAt,
+        resolvedAt: createdAt,
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent?.startsWith("Action log"))!
+      .click(),
+  );
+  expect(mocks.undo).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Undo archive")!
+      .click(),
+  );
+  expect(mocks.undo).toHaveBeenCalledWith({ environmentId, input: { actionId: "archived" } });
+});
+
+it("pins one agent entry above mobile home filters and projects and opens its chat", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentHomeHeader
+        environments={[{ environmentId, label: "Local" }]}
+        selectedEnvironmentId={null}
+      >
+        <button>Filter projects</button>
+        <button>Ordinary project</button>
+      </D4AgentHomeHeader>,
+    ),
+  );
+  const buttons = [...container.querySelectorAll("button")];
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    "d4 Agent",
+    "Filter projects",
+    "Ordinary project",
+  ]);
+  await act(() => buttons[0]!.click());
+  expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/${threadId}`);
+});
+
+it("keeps only the selected environment agent entry at the top of mobile home", async () => {
+  const other = EnvironmentId.make("other");
+  await act(() =>
+    root.render(
+      <D4AgentHomeHeader
+        environments={[
+          { environmentId, label: "Local" },
+          { environmentId: other, label: "Remote" },
+        ]}
+        selectedEnvironmentId={environmentId}
+      >
+        <button>Projects</button>
+      </D4AgentHomeHeader>,
+    ),
+  );
+  expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+    "d4 Agent · Local",
+    "Projects",
+  ]);
+});
+
+it("removes project-only actions from the dedicated mobile chat", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <button>Initialize Git</button>
+        <button>Add project script</button>
+        <button>Open in Files</button>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("d4 Agent");
+  for (const label of ["Initialize Git", "Add project script", "Open in Files"])
+    expect(container.textContent).not.toContain(label);
+});
+
+it("keeps a disabled historical agent route on the special chat surface with sending disabled", async () => {
+  mocks.enabled = false;
+  mocks.state = {
+    ...mocks.state!,
+    projectId: ProjectId.make("agent-project"),
+    threadId: null,
+    chatThreadIds: [threadId],
+  };
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <button>Initialize Git</button>
+        <button>Add project script</button>
+        <button>Open in Files</button>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("d4 Agent");
+  for (const label of ["Initialize Git", "Add project script", "Open in Files"])
+    expect(container.textContent).not.toContain(label);
+  expect(
+    container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message d4 Agent"]')
+      ?.disabled,
+  ).toBe(true);
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it("reloads an idle-closed archived agent chat without mounting the native missing-thread fallback", async () => {
+  mocks.identityMissing = true;
+  mocks.routeShellMissing = true;
+  mocks.stateUnavailable = true;
+  mocks.statePending = false;
+  mocks.state = {
+    ...mocks.state!,
+    projectId: ProjectId.make("agent-project"),
+    threadId: null,
+    chatThreadIds: [threadId],
+    openSessions: [],
+    transcript: [
+      {
+        id: "closed",
+        role: "assistant",
+        context: "Global",
+        text: "Retained conversation",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+    ],
+  };
+  function NativeMissingRoute() {
+    mocks.nativeRoute();
+    return <button>Initialize Git</button>;
+  }
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <NativeMissingRoute />
+      </D4AgentRoute>,
+    ),
+  );
+  expect(mocks.nativeRoute).not.toHaveBeenCalled();
+  mocks.stateUnavailable = false;
+  mocks.statePending = false;
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={threadId}>
+        <NativeMissingRoute />
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("Retained conversation");
+  expect(container.textContent).not.toContain("Initialize Git");
+  expect(mocks.nativeRoute).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
 });

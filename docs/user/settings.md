@@ -43,7 +43,7 @@ model is unavailable or the provider cannot enforce its tool restrictions. The
 monitor continues to use deterministic rules regardless of the chat model. The
 monitor does not read conversation content or take recovery actions.
 
-Each context session persists as a separate thread. Each model turn receives a compact status
+d4 Agent keeps one visible conversation across context switches. Each model turn receives a compact status
 digest; conversation content is fetched through a read tool when needed. The
 agent's Settings section shows recent provider-reported input, output, and cache
 token counts. Missing counts appear as unavailable. Cache use depends on the
@@ -56,9 +56,10 @@ Agent MCP calls do not receive that identity. Ownership checks fail closed on
 database errors: if the server cannot verify whether a thread belongs to d4 Agent, it
 blocks access that requires the check.
 
-The default permission level is **Read-only**. **Ask** queues actions for your
-approval. **Act** can interrupt a run or answer a user-input request; sending a
-message to another thread and starting a thread still require confirmation.
+The default permission level is **Read-only**. Sending a message or starting a thread,
+research run, or pipeline always requires your approval, at every permission level.
+Other actions are disabled in Read-only. **Ask** queues those actions for your approval.
+**Act** can interrupt a run or answer a user-input request.
 Act also creates pending memory proposals and sends CTO questions when those
 features are enabled for the selected context. Memory proposals always need
 human review. Approval does not change the vault.
@@ -66,11 +67,30 @@ Provider permission approvals remain manual. Proposed actions and their outcomes
 appear above the agent conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
-Select **Global**, **Personal**, **YB**, or **Dimaggi** above the agent conversation
-before asking about memory. Changing context starts a new session without the
-previous conversation or summary. Choose **New session** to reset the conversation
-within the current context. Changing the vault path or the project mappings for the current
-context also requires a fresh session; reopen d4 Agent to start it.
+An ID, internal link, or exact thread, project, or pipeline title switches the agent
+to the target's mapped context before it reads content. An unmapped project uses **Global**.
+If a reference is ambiguous, the agent asks which target you mean. You can also select
+**Global**, **Personal**, **YB**, or **Dimaggi** above the conversation.
+
+The agent keeps at most one open session per context and resumes it when you return.
+Dividers show each switch in the same conversation. **New session** closes the current
+session and starts a fresh one. The open-sessions panel shows activity times and recorded
+input tokens, with a **Close** control for each session. Idle sessions close after 2 hours
+by default; choose 30 minutes, 2 hours, 8 hours, or Never in Settings. The default size budget is
+60% of the model's reported context window. At that limit, the old session produces a short
+summary for its replacement in the same context. If a summary fails or the scope changes,
+the replacement starts without it. Models that report no context window cannot use this
+size check. Changing the vault path or relevant project mappings requires a fresh session.
+
+To start research or a pipeline, map the pipeline to its project in Settings, then ask
+d4 Agent in the same conversation. Review the final prompt, project, pipeline, and model
+before approving. To send a message to another thread, ask the agent to rewrite it for
+that thread. The approval card lets you edit and send the draft or send your original text.
+
+Completed threads started by d4 Agent are reported in the conversation, then archived
+after 24 hours by default. You can turn this off in Settings. A user reply or pin prevents
+automatic archiving; user-started threads are never archived automatically. Use **Undo
+archive** in the action log to restore an archived thread.
 
 Enable **Brain memory** in the d4 Agent settings and set **Brain vault path** to the
 vault on the environment's host. Memory reads only files approved by that

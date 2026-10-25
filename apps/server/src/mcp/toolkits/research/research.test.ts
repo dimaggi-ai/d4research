@@ -964,6 +964,31 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* () {
 });
 
 describe("inline delegation shares the pipeline delegation budget", () => {
+  it("agent-started delegates never read flat second-brain or shared Memo context", async () => {
+    await Effect.gen(function* () {
+      const harness = yield* makeInlineDelegationHarness();
+      yield* runBoundedDelegation({
+        orchestratorThreadId: ThreadId.make("d4-action:scoped"),
+        runId: "scoped-run",
+        requestedTarget: "codex:gpt-5.6-sol",
+        resolvedTarget: "codex:gpt-5.6-sol",
+        substituted: false,
+        parsedTarget: { instanceId: "codex", model: "gpt-5.6-sol" },
+        prompt: "Scoped question",
+        attachments: [],
+        resolvePromptFile: Effect.succeed(null),
+        shareMemoContext: true,
+        step: "1",
+        visit: 1,
+      }).pipe(
+        Effect.provideService(SecondBrainService.SecondBrainService, {
+          buildTurnContext: () => Effect.die("Flat brain must not run"),
+        } as unknown as SecondBrainService.SecondBrainService["Service"]),
+        Effect.provide(harness.layer),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+  });
+
   it("draws both entry points from one per-run ceiling and one accounting map", async () => {
     await Effect.gen(function* () {
       const harness = yield* makeInlineDelegationHarness();

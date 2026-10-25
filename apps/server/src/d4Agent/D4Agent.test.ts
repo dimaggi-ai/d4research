@@ -2869,3 +2869,14 @@ it.effect.each(["create", "send"] as const)(
       );
     }),
 );
+
+it("per-session caches drop every thread whose session closed", () => {
+  const display = new Map([
+    ["open", "cursor"],
+    ["closed", "cursor"],
+  ]);
+  const usage = new Map([["closed", "cursor"]]);
+  Agent.retainOpenSessions([display, usage], [{ threadId: "open" }]);
+  assert.deepEqual([...display.keys()], ["open"]);
+  assert.equal(usage.size, 0);
+});

@@ -220,6 +220,15 @@ export const requiresActionApproval = (
   action.type === "research" ||
   action.type === "pipeline";
 
+// Per-session caches are keyed by thread id and must not outlive the session that filled them.
+export function retainOpenSessions(
+  caches: ReadonlyArray<Map<string, unknown>>,
+  sessions: ReadonlyArray<{ readonly threadId: string }>,
+): void {
+  const open = new Set(sessions.map((session) => session.threadId));
+  for (const cache of caches) for (const id of cache.keys()) if (!open.has(id)) cache.delete(id);
+}
+
 export function actionSummaries(
   actions: ReadonlyArray<D4AgentActionRecord>,
 ): ReadonlyArray<D4AgentActionSummary> {
@@ -732,14 +741,13 @@ export const layer = Layer.effect(
         .getThreadSnapshotWindow(threadId, { rowLimit: 100, userTurnLimit: 30 })
         .pipe(Effect.mapError(threadError));
       sessionSnapshots.set(threadId, { cursor, projection });
-      for (const id of sessionSnapshots.keys())
-        if (!(yield* store.get).sessions?.some((entry) => entry.threadId === id))
-          sessionSnapshots.delete(id);
       return projection;
     });
     const displayCursors = new Map<string, string>();
+    const usageCursors = new Map<string, string>();
     const captureDisplay = Effect.fn("D4Agent.captureDisplay")(function* () {
       const state = yield* store.get;
+      retainOpenSessions([sessionSnapshots, displayCursors, usageCursors], state.sessions ?? []);
       const config = yield* settings;
       let references: AgentReference[] | undefined;
       for (const session of state.sessions ?? []) {
@@ -1048,10 +1056,10 @@ export const layer = Layer.effect(
           return { claimed: true };
         }),
       );
-    const usageCursors = new Map<string, string>();
     const captureUsage = usageLock.withPermits(1)(
       Effect.gen(function* () {
         const state = yield* store.get;
+        retainOpenSessions([sessionSnapshots, displayCursors, usageCursors], state.sessions ?? []);
         for (const session of state.sessions ?? []) {
           const shell = yield* threads
             .getThreadShell(session.threadId)

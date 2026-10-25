@@ -280,6 +280,12 @@ const fixture = (
                     projectId: cmd.projectId,
                   });
                 }
+                if (cmd.type === "thread.metadata.update" && cmd.title !== undefined) {
+                  const title = cmd.title;
+                  yield* Ref.update(agentShell, (own) =>
+                    own?.id === cmd.threadId ? { ...own, title } : own,
+                  );
+                }
                 if (cmd.type === "thread.archive" || cmd.type === "thread.unarchive") {
                   const archivedAt = cmd.type === "thread.archive" ? yield* DateTime.now : null;
                   yield* Ref.update(shells, (all) =>
@@ -1010,6 +1016,45 @@ it.effect(
         assert.include(yield* Ref.get(dispatches), "thread.create");
       }),
     ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+it.effect("ensure renames the old default project and chat titles to Nia once", () =>
+  Effect.gen(function* () {
+    const projectTitle = yield* Ref.make("d4 Agent");
+    const updates = yield* Ref.make<ReadonlyArray<string>>([]);
+    const projectService = {
+      create: () => Ref.get(projectTitle).pipe(Effect.map((title) => ({ title }) as never)),
+      update: (input: { readonly commandId: string; readonly title?: string }) =>
+        Ref.update(updates, (all) => [...all, input.commandId]).pipe(
+          Effect.andThen(Ref.set(projectTitle, input.title ?? "")),
+          Effect.as({} as never),
+        ),
+      listShells: () => Effect.succeed([]),
+    } as unknown as Projects.ProjectService["Service"];
+    const f = yield* fixture("read-only", true, projectService);
+    const first = yield* f.service.ensureThread();
+    yield* Ref.update(f.agentShell, (own) => own && { ...own, title: "d4 Agent" });
+    yield* f.service.ensureThread();
+    assert.equal((yield* Ref.get(f.agentShell))?.title, "Nia");
+    assert.equal(yield* Ref.get(projectTitle), "Nia");
+    yield* f.service.ensureThread();
+    assert.deepEqual(yield* Ref.get(updates), [`d4-agent:project-title:${first.projectId}`]);
+    assert.equal(
+      (yield* Ref.get(f.dispatches)).filter((type) => type === "thread.metadata.update").length,
+      1,
+    );
+  }),
+);
+
+it.effect("ensure keeps a chat title the user chose", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* f.service.ensureThread();
+    yield* Ref.update(f.agentShell, (own) => own && { ...own, title: "My assistant" });
+    yield* f.service.ensureThread();
+    assert.equal((yield* Ref.get(f.agentShell))?.title, "My assistant");
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.metadata.update");
+  }),
 );
 
 it.effect("thread listing omits opaque report keys that heartbeats still track", () =>

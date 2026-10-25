@@ -72,7 +72,7 @@ it.effect(
       );
       const prefix = yield* context.prepare(ownId, model);
       assert.isTrue(prefix?.startsWith("Current monitor digest:"));
-      assert.isFalse(prefix?.includes("You are d4 Agent"));
+      assert.isFalse(prefix?.includes("You are Nia"));
       assert.isTrue(prefix?.includes('"counts":{}'));
     }).pipe(Effect.provide(layer)),
 );

@@ -182,7 +182,7 @@ describe("normal project navigation", () => {
       const snapshot = registry.get(snapshotAtom(environmentId));
       registry.set(snapshotAtom(environmentId), {
         ...snapshot,
-        projects: snapshot.projects.map((project) => ({ ...project, title: "d4 Agent" })),
+        projects: snapshot.projects.map((project) => ({ ...project, title: "Nia" })),
       });
       registry.set(agentProjectIdAtom(environmentId), ProjectId.make("not-present"));
       expect(registry.get(projects.normalProjectsAtom)).toEqual(

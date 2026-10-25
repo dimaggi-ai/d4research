@@ -46,6 +46,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 
 describe("searchSettings", () => {
   it.each([
+    "nia",
     "d4 agent",
     "heartbeat",
     "quiet hours",
@@ -63,7 +64,7 @@ describe("searchSettings", () => {
     "open sessions",
     "agent thread auto archive",
     "pipeline project",
-  ])("finds d4 Agent settings for %s", (query) => {
+  ])("finds Nia settings for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("agent-monitor");
   });
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(

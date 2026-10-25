@@ -51,7 +51,7 @@ export function D4AgentRoute({
   )
     return (
       <p role="status" className="p-4 text-sm text-muted-foreground">
-        Loading d4 Agent…
+        Loading Nia…
       </p>
     );
   return isAgentRoute && state && environmentId !== null ? (
@@ -96,7 +96,7 @@ export function D4AgentChat({
     if (node && followConversation.current) node.scrollTop = node.scrollHeight;
   }, [state.transcript]);
   return (
-    <section aria-label="d4 Agent chat" className="flex h-full min-h-0 flex-col bg-background">
+    <section aria-label="Nia chat" className="flex h-full min-h-0 flex-col bg-background">
       <header
         className={cn(
           "relative flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center justify-between border-b bg-background pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
@@ -104,7 +104,7 @@ export function D4AgentChat({
           COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
       >
-        <h1 className="font-medium">d4 Agent</h1>
+        <h1 className="font-medium">Nia</h1>
         <Link
           to="/settings/general"
           className="text-sm text-muted-foreground hover:underline [-webkit-app-region:no-drag]"
@@ -135,11 +135,7 @@ export function D4AgentChat({
             }
           >
             <p className="text-xs text-muted-foreground">
-              {entry.role === "user"
-                ? "You"
-                : entry.role === "assistant"
-                  ? "d4 Agent"
-                  : entry.context}
+              {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
             </p>
             <p className="whitespace-pre-wrap break-words select-text">{entry.text}</p>
             {entry.links.map((link) =>
@@ -213,7 +209,7 @@ export function D4AgentChat({
           </div>
         ) : null}
         <Textarea
-          aria-label="Message d4 Agent"
+          aria-label="Message Nia"
           value={text}
           maxLength={16000}
           disabled={!enabled || !allowed || sending}

@@ -37,7 +37,7 @@ describe("system monitor notifications", () => {
     expect(input.claim).toHaveBeenCalledWith("stable-device");
     expect(input.notify).toHaveBeenCalledExactlyOnceWith({
       title: "System needs attention",
-      body: "Open d4 Agent to review host health.",
+      body: "Open Nia to review host health.",
       data: { deepLink: "/threads/env/agent" },
     });
     input.notify.mockClear();

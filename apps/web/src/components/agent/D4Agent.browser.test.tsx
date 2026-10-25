@@ -890,7 +890,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
     ),
   );
   const input = container.querySelector(
-    'textarea[aria-label="Message d4 Agent"]',
+    'textarea[aria-label="Message Nia"]',
   ) as HTMLTextAreaElement;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
@@ -1071,7 +1071,7 @@ it("keeps ordinary threads on the native surface without polling full agent stat
     ),
   );
   expect(container.textContent).toContain("Ordinary thread transcript");
-  expect(container.textContent).not.toContain("Message d4 Agent");
+  expect(container.textContent).not.toContain("Message Nia");
   expect(mocks.stateQuery).toHaveBeenLastCalledWith(false);
 });
 
@@ -1081,7 +1081,7 @@ it("removes project-only actions when entering the dedicated agent chat", async 
       <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
     ),
   );
-  expect(container.textContent).toContain("d4 Agent");
+  expect(container.textContent).toContain("Nia");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
     expect(container.textContent).not.toContain(label);
 });
@@ -1099,12 +1099,11 @@ it("keeps a disabled historical agent route on the special chat surface with sen
       <ThreadRouteView target={{ kind: "server", threadRef: { environmentId, threadId } }} />,
     ),
   );
-  expect(container.textContent).toContain("d4 Agent");
+  expect(container.textContent).toContain("Nia");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
     expect(container.textContent).not.toContain(label);
   expect(
-    container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message d4 Agent"]')
-      ?.disabled,
+    container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')?.disabled,
   ).toBe(true);
   expect(mocks.send).not.toHaveBeenCalled();
 });
@@ -1222,9 +1221,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
       <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
     );
   await act(renderChat);
-  const input = container.querySelector<HTMLTextAreaElement>(
-    'textarea[aria-label="Message d4 Agent"]',
-  )!;
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
   await act(() => {
     setter.call(input, "@");

@@ -28,17 +28,17 @@ export function systemCheckStatus(check: D4AgentSystemCheck): string {
 export function agentUnavailableMessage(reason: D4AgentState["unavailableReason"]): string {
   switch (reason) {
     case "disabled":
-      return "Agent chat is off. Enable it in Settings → d4 Agent and threads.";
+      return "Agent chat is off. Enable it in Settings → Nia and threads.";
     case "model-not-selected":
-      return "Choose an agent model in Settings → d4 Agent and threads.";
+      return "Choose an agent model in Settings → Nia and threads.";
     case "provider-unavailable":
       return "The selected provider is unavailable. Check its connection in Settings.";
     case "model-unavailable":
-      return "The selected model is unavailable. Choose an available model in Settings → d4 Agent and threads.";
+      return "The selected model is unavailable. Choose an available model in Settings → Nia and threads.";
     case "option-unavailable":
-      return "The selected model options are unavailable. Update them in Settings → d4 Agent and threads.";
+      return "The selected model options are unavailable. Update them in Settings → Nia and threads.";
     case "sandbox-unavailable":
-      return "The selected provider cannot enforce the agent permissions. Choose a supported provider in Settings → d4 Agent and threads.";
+      return "The selected provider cannot enforce the agent permissions. Choose a supported provider in Settings → Nia and threads.";
     case null:
       return "";
   }

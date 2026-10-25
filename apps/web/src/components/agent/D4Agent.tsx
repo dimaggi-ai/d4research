@@ -120,11 +120,11 @@ export function D4AgentEntry({
             .finally(() => setOpening(false));
         }}
       >
-        {opening ? "Opening d4 Agent…" : `d4 Agent${label ? ` · ${label}` : ""}`}
+        {opening ? "Opening Nia…" : `Nia${label ? ` · ${label}` : ""}`}
       </Button>
       {error ? (
         <p role="alert" className="px-2 text-xs text-destructive">
-          Could not open d4 Agent. Check that it is enabled with an available model in Settings.
+          Could not open Nia. Check that it is enabled with an available model in Settings.
         </p>
       ) : null}
     </div>
@@ -201,7 +201,7 @@ function D4AgentPanelContent({
     : [];
   return (
     <section
-      aria-label="d4 Agent attention"
+      aria-label="Nia attention"
       className="max-h-64 shrink-0 overflow-y-auto border-b bg-muted/20 px-4 py-3 text-sm"
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">

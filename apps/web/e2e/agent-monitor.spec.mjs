@@ -44,7 +44,7 @@ async function savedChange(app, label, change, matches, section = "agentMonitor"
 
 const chooseEnvironment = (page) =>
   page
-    .getByText("Choose one environment to configure d4 Agent.", { exact: true })
+    .getByText("Choose one environment to configure Nia.", { exact: true })
     .locator("..")
     .getByRole("button")
     .click();
@@ -63,7 +63,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   );
   console.log("PASS monitor enable and persistence");
   await page.getByText("No threads need attention.", { exact: true }).waitFor();
-  const picker = page.getByRole("button", { name: "d4 Agent model", exact: true });
+  const picker = page.getByRole("button", { name: "Nia model", exact: true });
   await picker.click();
   const selected = await savedChange(
     app,
@@ -79,8 +79,8 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     "d4Agent",
   );
   NodeAssert.ok(selected.modelSelection.instanceId);
-  console.log("PASS d4 Agent model persistence");
-  const agentEnabled = page.getByRole("switch", { name: "Enable d4 Agent", exact: true });
+  console.log("PASS Nia model persistence");
+  const agentEnabled = page.getByRole("switch", { name: "Enable Nia", exact: true });
   await savedChange(
     app,
     "enable agent chat",
@@ -97,7 +97,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await openProject(page, workspace);
   await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
   const sidebar = page.locator('[data-slot="sidebar-inner"]');
-  const agent = sidebar.getByRole("button", { name: "d4 Agent", exact: true });
+  const agent = sidebar.getByRole("button", { name: "Nia", exact: true });
   await agent.waitFor();
   const search = sidebar.getByRole("combobox", { name: "Search threads", exact: true });
   await search.waitFor();
@@ -109,24 +109,24 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     ),
   );
   await agent.click();
-  const chat = page.getByRole("region", { name: "d4 Agent chat", exact: true });
+  const chat = page.getByRole("region", { name: "Nia chat", exact: true });
   await chat.waitFor();
   // The real agent-owned project has the same title as its dedicated entry.
-  NodeAssert.equal(await sidebar.getByText("d4 Agent", { exact: true }).count(), 1);
+  NodeAssert.equal(await sidebar.getByText("Nia", { exact: true }).count(), 1);
   // The accessible name gains ": <project>" while a project filter is active.
   await sidebar.getByRole("combobox", { name: /^Filter threads by project/ }).click();
   const projectSearch = page.getByRole("combobox", { name: "Search projects", exact: true });
   await projectSearch.waitFor();
   await projectSearch.fill("agent-monitor-workspace");
   await page.getByRole("option", { name: /agent-monitor-workspace/ }).waitFor();
-  await projectSearch.fill("d4 Agent");
+  await projectSearch.fill("Nia");
   await page.getByText("No matching projects.", { exact: true }).waitFor();
-  NodeAssert.equal(await page.getByRole("option", { name: "d4 Agent", exact: true }).count(), 0);
+  NodeAssert.equal(await page.getByRole("option", { name: "Nia", exact: true }).count(), 0);
   await projectSearch.press("Escape");
   for (const name of ["Initialize Git", "Add project script", "Open in Files"])
     NodeAssert.equal(await chat.getByRole("button", { name, exact: true }).count(), 0);
   console.log(
-    "PASS real Sidebar pins d4 Agent above Search, hides its project, and opens the dedicated route",
+    "PASS real Sidebar pins Nia above Search, hides its project, and opens the dedicated route",
   );
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
@@ -139,7 +139,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
     (value) => value.systemProbeEnabled === true,
     "d4Agent",
   );
-  console.log("PASS d4 Agent enable and system probe persistence");
+  console.log("PASS Nia enable and system probe persistence");
   const notifications = page.getByRole("switch", {
     name: "Monitor attention notifications",
     exact: true,
@@ -204,5 +204,5 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   NodeAssert.equal(await agentEnabled.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await probes.getAttribute("aria-checked"), "false");
   NodeAssert.equal(await picker.innerText(), "Choose model");
-  console.log("PASS monitor and d4 Agent disable persistence after reload");
+  console.log("PASS monitor and Nia disable persistence after reload");
 }

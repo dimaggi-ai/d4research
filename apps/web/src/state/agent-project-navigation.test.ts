@@ -42,7 +42,7 @@ vi.mock("./shell", async () => {
   return {
     environmentSnapshotAtom: Atom.family(() =>
       Atom.make({
-        projects: [v2Project, { ...v2Project, id: "ordinary", title: "d4 Agent" }],
+        projects: [v2Project, { ...v2Project, id: "ordinary", title: "Nia" }],
       }),
     ),
   };
@@ -77,7 +77,7 @@ it("web project navigation hides only the identity-owned project and keeps its c
   expect(
     visible.some((project) => project.environmentId === "remote" && project.id === agentProjectId),
   ).toBe(true);
-  expect(visible.filter((project) => project.title === "d4 Agent")).toHaveLength(2);
+  expect(visible.filter((project) => project.title === "Nia")).toHaveLength(2);
   expect(
     registry.get(
       environmentProjects.projectAtom({ environmentId: local, projectId: agentProjectId }),

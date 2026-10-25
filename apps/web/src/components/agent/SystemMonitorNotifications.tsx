@@ -92,7 +92,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
       const id = toastManager.add({
         type: "warning",
         title: "System needs attention",
-        description: "Open d4 Agent to review host health.",
+        description: "Open Nia to review host health.",
         data: { hideCopyButton: true },
         actionProps: {
           children: "Review",
@@ -113,7 +113,7 @@ function EnabledSystemNotifications({ environmentId }: { environmentId: Environm
       return;
     try {
       const notification = new Notification("System needs attention", {
-        body: "Open d4 Agent to review host health.",
+        body: "Open Nia to review host health.",
         tag: `d4-system:${environmentId}`,
         silent: true,
       });

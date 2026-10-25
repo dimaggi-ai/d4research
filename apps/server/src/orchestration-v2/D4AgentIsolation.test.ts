@@ -55,7 +55,7 @@ it.effect(
         commandId: CommandId.make("create-owned"),
         threadId: owned,
         projectId: ProjectId.make("agent-project"),
-        title: "d4 Agent",
+        title: "Nia",
         modelSelection,
         runtimeMode: "approval-required",
         interactionMode: "default",

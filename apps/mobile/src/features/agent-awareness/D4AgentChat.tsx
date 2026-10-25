@@ -60,7 +60,7 @@ export function D4AgentRoute({
   )
     return (
       <View className="flex-1 justify-center bg-background p-4">
-        <Text className="text-sm text-foreground-muted">Loading d4 Agent…</Text>
+        <Text className="text-sm text-foreground-muted">Loading Nia…</Text>
       </View>
     );
   return isAgentRoute && state && environmentId !== null ? (
@@ -106,7 +106,7 @@ export function D4AgentChat({
       className="flex-1 bg-background"
     >
       <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-        <Text className="text-lg font-t3-semibold text-foreground">d4 Agent</Text>
+        <Text className="text-lg font-t3-semibold text-foreground">Nia</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => linkTo("/settings/thread-preferences")}
@@ -137,11 +137,7 @@ export function D4AgentChat({
             className={entry.role === "system" ? "gap-2 border-y border-border py-2" : "gap-2"}
           >
             <Text className="text-xs text-foreground-muted">
-              {entry.role === "user"
-                ? "You"
-                : entry.role === "assistant"
-                  ? "d4 Agent"
-                  : entry.context}
+              {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
             </Text>
             <Text
               selectable
@@ -208,7 +204,7 @@ export function D4AgentChat({
           </ScrollView>
         ) : null}
         <TextInput
-          accessibilityLabel="Message d4 Agent"
+          accessibilityLabel="Message Nia"
           multiline
           value={text}
           maxLength={16000}

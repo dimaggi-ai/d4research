@@ -21,10 +21,13 @@ track the environment: every client connected to that same server sees the same 
 Sensitive provider environment variables stay as server secrets and never return to clients after
 saving.
 
-## d4 Agent
+## Nia
 
-In web or desktop Settings → General, select an environment and open **d4 Agent**.
-On iPhone or iPad, use Settings → d4 Agent and threads. Settings are shared
+Nia is the environment's local assistant. Ask it about your threads and the host's health in
+one conversation.
+
+In web or desktop Settings → General, select an environment and open **Nia**.
+On iPhone or iPad, use Settings → Nia and threads. Settings are shared
 by clients connected to that environment.
 
 Enable **Monitor threads** to see threads that need attention. The server checks
@@ -34,26 +37,26 @@ exceed the threshold while still working; a stuck report is evidence to inspect,
 not proof that the provider has failed. Existing problems are visible when you
 enable monitoring, but do not generate a new alert.
 
-Enable **agent chat**, choose a provider and model, and use the **d4 Agent**
+Enable **agent chat**, choose a provider and model, and use the **Nia**
 entry in the sidebar or home screen to open its conversation. Ask what is running,
 what needs you, or ask it to
 read a particular thread. Model options, including reasoning effort when offered,
-come from the environment's provider catalog. The agent stays off if the selected
+come from the environment's provider catalog. Nia stays off if the selected
 model is unavailable or the provider cannot enforce its tool restrictions. The
 monitor continues to use deterministic rules regardless of the chat model. The
 monitor does not read conversation content or take recovery actions.
 
-d4 Agent keeps one visible conversation across context switches. Each model turn receives a compact status
-digest; conversation content is fetched through a read tool when needed. The
-agent's Settings section shows recent provider-reported input, output, and cache
+Nia keeps one visible conversation across context switches. Each model turn receives a compact status
+digest; conversation content is fetched through a read tool when needed. The Nia
+settings section shows recent provider-reported input, output, and cache
 token counts. Missing counts appear as unavailable. Cache use depends on the
 provider and the request; selecting a model does not guarantee a cache hit.
 
 Only authenticated users and the server's heartbeat or continuation services can
-send messages into the d4 Agent conversation. An **authenticated user** is
+send messages into the Nia conversation. An **authenticated user** is
 any client session with the orchestration-operate scope (`orchestration:operate`).
 Agent MCP calls do not receive that identity. Ownership checks fail closed on
-database errors: if the server cannot verify whether a thread belongs to d4 Agent, it
+database errors: if the server cannot verify whether a thread belongs to Nia, it
 blocks access that requires the check.
 
 The default permission level is **Read-only**. Sending a message or starting a thread,
@@ -64,18 +67,20 @@ Act also creates pending memory proposals and sends CTO questions when those
 features are enabled for the selected context. Memory proposals always need
 human review. Approval does not change the vault.
 Provider permission approvals remain manual. Proposed actions and their outcomes
-appear above the agent conversation. These permissions do not grant authority to
+appear above the Nia conversation. These permissions do not grant authority to
 publish, push, or run sudo.
 
 Use an ID, an internal link, or a reference selected from the **@** picker to address a
-thread, project, or pipeline. The agent switches to the target's mapped context before
+thread, project, or pipeline. Nia switches to the target's mapped context before
 processing your message. Typing a title as plain text keeps the current context. Archived
 threads cannot be referenced. An unmapped project uses **Global**. The picker shows targets
-visible in the selected context. If explicit references are ambiguous, the agent asks which
-target you mean. Above the conversation, you can also select **Global**, **Personal**, **YB**,
+visible in the selected context. If explicit references are ambiguous, Nia asks which
+target you mean. If a request in Global needs a thread or project from a work context, Nia
+can propose a context switch. The approval card shows the request it will resend in that context; nothing
+switches until you approve. Above the conversation, you can also select **Global**, **Personal**, **YB**,
 or **Dimaggi**; **Global** shows all target metadata.
 
-The agent keeps at most one open session per context and resumes it when you return.
+Nia keeps at most one open session per context and resumes it when you return.
 Dividers show each switch in the same conversation. **New session** closes the current
 session and starts a fresh one. The open-sessions panel shows activity times and recorded
 input tokens, with a **Close** control for each session. Idle sessions close after 2 hours
@@ -86,16 +91,16 @@ the replacement starts without it. Models that report no context window cannot u
 size check. Changing the vault path or relevant project or pipeline mappings requires a fresh session.
 
 To start research or a pipeline, map the pipeline to its project in Settings, then ask
-d4 Agent in the same conversation. Review the final prompt, project, pipeline, and model
-before approving. To send a message to another thread, ask the agent to rewrite it for
+Nia in the same conversation. Review the final prompt, project, pipeline, and model
+before approving. To send a message to another thread, ask Nia to rewrite it for
 that thread. The approval card lets you edit and send the draft or send your original text.
 
-Completed threads started by d4 Agent are reported in the conversation, then archived
+Completed threads started by Nia are reported in the conversation, then archived
 after 24 hours by default. You can turn this off in Settings. A user reply or pin prevents
 automatic archiving; user-started threads are never archived automatically. Use **Undo
 archive** in the action log to restore an archived thread.
 
-Enable **Brain memory** in the d4 Agent settings and set **Brain vault path** to the
+Enable **Brain memory** in the Nia settings and set **Brain vault path** to the
 vault on the environment's host. Memory reads only files approved by that
 context's source manifest, after checking their SHA-256 hashes. Work contexts
 also include approved neutral Global knowledge. Global memory reads Global
@@ -104,11 +109,11 @@ source blocks retrieval until its configuration has been reviewed.
 
 Map each project to a context in the same settings section. A work context's
 agent digest, thread reads, and attention list include only its mapped projects.
-Global monitoring shows metadata for every project. In Global, the agent can read
+Global monitoring shows metadata for every project. In Global, Nia can read
 messages only from projects with no context mapping. Choose **Unmapped** in a project's context
 setting to remove its mapping. Switch to the mapped context to read a work
 project's messages.
-Notifications outside the agent conversation keep their existing behavior.
+Notifications outside the Nia conversation keep their existing behavior.
 
 **Brain embeddings** are optional. Blank endpoint and model fields use the existing
 Second Brain embedding settings. If embedding requests fail, keyword search still
@@ -116,20 +121,20 @@ works. The index status shows the approved file count and the last rebuild for e
 **Not indexed** means the current approved sources need indexing. Retrieval builds
 the index from approved sources and rebuilds it when a manifest changes.
 Global sessions cannot create memory proposals. Review memory proposals above the
-agent conversation with **Approve** or **Reject**.
+Nia conversation with **Approve** or **Reject**.
 The list shows proposals from the current context and pending counts for other contexts.
 Approved proposals have a **Copy text** action so you can add them to the vault
 manually. Approval changes only the proposal status in d4 state; it does not add
-knowledge to the vault. The agent never edits vault files or source manifests and
+knowledge to the vault. Nia never edits vault files or source manifests and
 never uses another memory system as a fallback.
 
 CTO tools are available only in Dimaggi sessions. Enable **CTO agents** to use them. The default
 **CTO base URL** is `http://127.0.0.1:9093` on the environment's host. Status,
 brief, and task-list reads are available at every permission level. CTO questions
-require Ask approval or Act mode. Only one question can run at a time. The agent
+require Ask approval or Act mode. Only one question can run at a time. Nia
 can continue while it waits, and the answer appears in the same session. If you
 change context or start a new session before it arrives, a preview stays in the
-action log. Disabling the agent or **CTO agents** cancels the request. Task execution, task changes,
+action log. Disabling Nia or **CTO agents** cancels the request. Task execution, task changes,
 direction saves, and service operations are unavailable through these tools.
 
 **Heartbeat** is off by default. Choose 15, 30, or 60 minutes to let the selected

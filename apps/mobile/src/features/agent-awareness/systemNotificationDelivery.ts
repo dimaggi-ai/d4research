@@ -37,7 +37,7 @@ export async function deliverSystemNotification(input: {
   if (claimed && input.isEnabled())
     await input.notify({
       title: "System needs attention",
-      body: "Open d4 Agent to review host health.",
+      body: "Open Nia to review host health.",
       data: { deepLink: systemAttentionDeepLink(input.environmentId, input.threadId) },
     });
   return true;

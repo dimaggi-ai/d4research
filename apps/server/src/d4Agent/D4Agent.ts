@@ -196,6 +196,8 @@ const validateAction = Schema.decodeUnknownEffect(D4AgentAction);
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const storageError = (cause: unknown) => new D4AgentError({ reason: "storage", cause });
 const threadError = (cause: unknown) => new D4AgentError({ reason: "thread", cause });
+const AGENT_TITLE = "Nia";
+const LEGACY_AGENT_TITLE = "d4 Agent";
 const command = (id: string) => CommandId.make(`d4-agent:${id}`);
 const actionTarget = (action: D4AgentAction) =>
   action.type === "switch-context"
@@ -544,16 +546,25 @@ export const layer = Layer.effect(
       if (replaced) yield* close(replaced.context);
       const threadId = state.threadId!,
         projectId = state.projectId!;
-      yield* projects
+      const project = yield* projects
         .create({
           commandId: command(`project:${projectId}`),
           projectId,
-          title: "d4 Agent",
+          title: AGENT_TITLE,
           workspaceRoot: store.workspace,
           createWorkspaceRootIfMissing: true,
           defaultModelSelection: selection,
         })
         .pipe(Effect.mapError(threadError));
+      // Installs created before the rename keep the old default title; rename it once.
+      if (project.title === LEGACY_AGENT_TITLE)
+        yield* projects
+          .update({
+            commandId: command(`project-title:${projectId}`),
+            projectId,
+            title: AGENT_TITLE,
+          })
+          .pipe(Effect.mapError(threadError));
       const existing = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(threadError));
       if (existing === null)
         yield* threads
@@ -562,7 +573,7 @@ export const layer = Layer.effect(
             commandId: command(`thread:${threadId}`),
             threadId,
             projectId,
-            title: "d4 Agent",
+            title: AGENT_TITLE,
             modelSelection: selection,
             runtimeMode: "approval-required",
             interactionMode: "default",
@@ -576,6 +587,15 @@ export const layer = Layer.effect(
       if (existing?.archivedAt !== null && existing !== null)
         yield* threads
           .dispatch({ type: "thread.unarchive", commandId: command(yield* randomUUID), threadId })
+          .pipe(Effect.mapError(threadError));
+      if (existing?.title === LEGACY_AGENT_TITLE)
+        yield* threads
+          .dispatch({
+            type: "thread.metadata.update",
+            commandId: command(`thread-title:${threadId}`),
+            threadId,
+            title: AGENT_TITLE,
+          })
           .pipe(Effect.mapError(threadError));
       yield* threads
         .dispatch({ type: "thread.pin", commandId: command(`pin:${threadId}`), threadId })
@@ -1505,7 +1525,7 @@ export const layer = Layer.effect(
             commandId: command(`action-create:${record.id}`),
             threadId: targetId,
             projectId: action.projectId,
-            title: "d4 Agent task",
+            title: "Nia task",
             modelSelection: action.modelSelection,
             runtimeMode: "approval-required",
             interactionMode: "default",

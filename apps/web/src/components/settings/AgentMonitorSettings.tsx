@@ -40,9 +40,9 @@ export function AgentMonitorSettings() {
   return scope.kind === "environment" && environment?.serverConfig ? (
     <AgentMonitorForm key={environment.environmentId} />
   ) : (
-    <SettingsSection title="d4 Agent">
+    <SettingsSection title="Nia">
       <SettingsScopeNotice target="environment">
-        Choose one environment to configure d4 Agent.
+        Choose one environment to configure Nia.
       </SettingsScopeNotice>
     </SettingsSection>
   );
@@ -62,8 +62,8 @@ function AgentMonitorForm() {
   const monitor = settings.agentMonitor;
   if (!monitor)
     return (
-      <SettingsSection title="d4 Agent">
-        <p className="text-sm text-muted-foreground">This environment does not support d4 Agent.</p>
+      <SettingsSection title="Nia">
+        <p className="text-sm text-muted-foreground">This environment does not support Nia.</p>
       </SettingsSection>
     );
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
@@ -99,9 +99,9 @@ function AgentMonitorForm() {
       input: { patch: { agentMonitor: { ...monitor, ...patch } } },
     })
       .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
       })
-      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
   const writeAgent = async (patch: Partial<ServerSettings["d4Agent"]>) => {
@@ -110,14 +110,14 @@ function AgentMonitorForm() {
     setSaveError(null);
     await updateSettings({ environmentId, input: { patch: { d4Agent: { ...agent, ...patch } } } })
       .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
       })
-      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
   const saveModel = (modelSelection: ModelSelection | null) => void writeAgent({ modelSelection });
   return (
-    <SettingsSection title="d4 Agent" id="agent-monitor">
+    <SettingsSection title="Nia" id="agent-monitor">
       {saveError ? (
         <p role="alert" className="text-sm text-destructive">
           {saveError}
@@ -137,10 +137,10 @@ function AgentMonitorForm() {
       />
       <SettingsRow
         title="Enable agent chat"
-        description="Chat with the agent about threads and host health."
+        description="Chat with Nia about threads and host health."
         control={
           <Switch
-            aria-label="Enable d4 Agent"
+            aria-label="Enable Nia"
             checked={agent.enabled}
             disabled={!allowed || saving}
             onCheckedChange={(enabled) => void writeAgent({ enabled: Boolean(enabled) })}
@@ -149,7 +149,7 @@ function AgentMonitorForm() {
       />
       <SettingsRow
         title="Agent model"
-        description="Uses the live provider catalog. An unavailable model keeps the agent off."
+        description="Uses the live provider catalog. An unavailable model keeps Nia off."
         control={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <ProviderModelPicker
@@ -160,7 +160,7 @@ function AgentMonitorForm() {
               instanceEntries={entries}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-              triggerAriaLabel="d4 Agent model"
+              triggerAriaLabel="Nia model"
               {...(agent.modelSelection ? {} : { triggerLabel: "Choose model" })}
               disabled={!allowed || saving}
               onInstanceModelChange={(instanceId, model) =>

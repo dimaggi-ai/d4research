@@ -344,7 +344,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     if (this.reason === "context")
       return "Context operation refused; inspect the selected scope configuration.";
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
-    return `d4 Agent: ${this.reason}.`;
+    return `Nia: ${this.reason}.`;
   }
 }
 

@@ -31,7 +31,7 @@ export function AgentMonitorSettings() {
     <View className="gap-4">
       {selectedProjectKey !== null ? (
         <Text className="px-2 text-sm text-foreground-muted">
-          Choose an environment to configure d4 Agent.
+          Choose an environment to configure Nia.
         </Text>
       ) : (
         selectedTargets.map((target) => (
@@ -115,9 +115,9 @@ function EnvironmentMonitorSettings({
       input: { patch: { agentMonitor: { ...monitor, ...patch } } },
     })
       .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
       })
-      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
   const writeAgent = async (patch: Partial<ServerSettings["d4Agent"]>) => {
@@ -129,9 +129,9 @@ function EnvironmentMonitorSettings({
       input: { patch: { d4Agent: { ...agent, ...patch } } },
     })
       .then((result) => {
-        if (result._tag === "Failure") setSaveError("Could not save d4 Agent settings.");
+        if (result._tag === "Failure") setSaveError("Could not save Nia settings.");
       })
-      .catch(() => setSaveError("Could not save d4 Agent settings."))
+      .catch(() => setSaveError("Could not save Nia settings."))
       .finally(() => setSaving(false));
   };
   const toggleNotifications = async (enabled: boolean) => {
@@ -161,7 +161,7 @@ function EnvironmentMonitorSettings({
   };
   return (
     <View className="gap-3">
-      <SettingsSection title={`d4 Agent · ${target.label}`}>
+      <SettingsSection title={`Nia · ${target.label}`}>
         <SettingsSwitchRow
           icon="bolt.circle"
           label="Monitor threads"
@@ -205,7 +205,7 @@ function EnvironmentMonitorSettings({
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         Thread monitoring uses local rules. Agent chat uses the selected model. Unavailable models
-        keep the agent off.
+        keep Nia off.
       </Text>
       <D4AgentControls
         environmentId={target.environmentId}
@@ -275,7 +275,7 @@ function EnvironmentMonitorSettings({
       >
         <View className="flex-1 bg-background pt-6">
           <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">d4 Agent model</Text>
+            <Text className="text-lg font-t3-semibold text-foreground">Nia model</Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => setPickerOpen(false)}

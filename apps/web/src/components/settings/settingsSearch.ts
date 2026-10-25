@@ -131,11 +131,11 @@ const SOURCE_CONTROL_HOST_SEARCH_ITEMS = sourceControlClients.definitions.flatMa
 export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "agent-monitor",
-    title: "d4 Agent",
+    title: "Nia",
     to: "/settings/general",
     targetId: "agent-monitor",
     searchTerms: [
-      "d4 agent monitor attention stuck liveness model provider reasoning effort notifications permission read-only ask act heartbeat quiet hours system disk usage tokens cache brain vault memory embeddings embedding model base URL context Global Personal YB Dimaggi project mapping CTO integration index rebuild session idle timeout auto close size budget context window open sessions agent thread auto archive delay pipeline project",
+      "nia d4 agent monitor attention stuck liveness model provider reasoning effort notifications permission read-only ask act heartbeat quiet hours system disk usage tokens cache brain vault memory embeddings embedding model base URL context Global Personal YB Dimaggi project mapping CTO integration index rebuild session idle timeout auto close size budget context window open sessions agent thread auto archive delay pipeline project",
     ],
     scope: "environment",
   },

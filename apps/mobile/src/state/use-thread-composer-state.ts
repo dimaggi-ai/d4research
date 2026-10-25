@@ -634,7 +634,7 @@ export function useThreadComposerState() {
         if (attachments.length > 0 || (draft.context?.records.length ?? 0) > 0) {
           setThreadComposerError(
             threadKey,
-            "Send text to d4 Agent. Ask it to read a thread when you need its content.",
+            "Send text to Nia. Ask it to read a thread when you need its content.",
           );
           return null;
         }
@@ -648,7 +648,7 @@ export function useThreadComposerState() {
           const error = squashAtomCommandFailure(result);
           setThreadComposerError(
             threadKey,
-            error instanceof Error ? error.message : "Could not send to d4 Agent.",
+            error instanceof Error ? error.message : "Could not send to Nia.",
           );
         } else {
           clearThreadComposerError(threadKey);

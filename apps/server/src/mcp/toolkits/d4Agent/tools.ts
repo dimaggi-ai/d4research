@@ -71,7 +71,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_environment", {
     ...shared,
     description:
-      "Describe this d4research environment: bound context, contexts with their mapped projects, configured providers with models and availability, and the d4 Agent model and permission mode. Returns no thread content.",
+      "Describe this d4research environment: bound context, contexts with their mapped projects, configured providers with models and availability, and the Nia model and permission mode. Returns no thread content.",
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_read_tail", {

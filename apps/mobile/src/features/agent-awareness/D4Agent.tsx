@@ -88,7 +88,7 @@ export function D4AgentEntry({
     <View className="px-4 py-2">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`d4 Agent${label ? ` · ${label}` : ""}`}
+        accessibilityLabel={`Nia${label ? ` · ${label}` : ""}`}
         disabled={
           !config ||
           opening ||
@@ -129,12 +129,12 @@ export function D4AgentEntry({
         }}
       >
         <Text className="text-base font-t3-semibold text-foreground">
-          {opening ? "Opening d4 Agent…" : `d4 Agent${label ? ` · ${label}` : ""}`}
+          {opening ? "Opening Nia…" : `Nia${label ? ` · ${label}` : ""}`}
         </Text>
       </Pressable>
       {error ? (
         <Text accessibilityRole="alert" className="py-2 text-sm text-foreground-muted">
-          Could not open d4 Agent. Check that it is enabled with an available model in Settings.
+          Could not open Nia. Check that it is enabled with an available model in Settings.
         </Text>
       ) : null}
     </View>

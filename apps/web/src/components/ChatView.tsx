@@ -7086,7 +7086,7 @@ function ChatViewContent(props: ChatViewProps) {
       if (directAnnotation || composerHasNonPromptContent) {
         setThreadError(
           activeThread.id,
-          "Send text to d4 Agent. Ask it to read a thread when you need its content.",
+          "Send text to Nia. Ask it to read a thread when you need its content.",
         );
         return;
       }

@@ -25,22 +25,28 @@ function useAgentRefresh(refreshQuery: () => void, visible: boolean) {
   }, [visible]);
 }
 
-// Pausing detaches the subscription but keeps the last state, so the chat and its draft stay
+// Pausing detaches the subscription, and the state cache drops it at once (idle TTL 0). Keep the
+// last state while paused and until the resumed query has data, so the chat and its draft stay
 // mounted while the page is hidden or the app is in the background.
 function useRetainedWhilePaused<T extends { readonly data: unknown }>(
   query: T,
   environmentId: EnvironmentId | null,
+  enabled: boolean,
   paused: boolean,
 ): T {
   const [last, setLast] = useState<{ environmentId: EnvironmentId; data: T["data"] } | null>(null);
   if (
+    enabled &&
     !paused &&
     environmentId !== null &&
     query.data != null &&
     (last?.environmentId !== environmentId || last.data !== query.data)
   )
     setLast({ environmentId, data: query.data });
-  return paused && last !== null && last.environmentId === environmentId
+  return enabled &&
+    (paused || query.data == null) &&
+    last !== null &&
+    last.environmentId === environmentId
     ? { ...query, data: last.data }
     : query;
 }
@@ -55,7 +61,7 @@ export function useD4AgentState(environmentId: EnvironmentId | null, enabled = t
       : null,
   );
   useAgentRefresh(query.refresh, visible);
-  return useRetainedWhilePaused(query, environmentId, enabled && !(focused && active));
+  return useRetainedWhilePaused(query, environmentId, enabled, !(focused && active));
 }
 
 export function useD4AgentSystemHealth(environmentId: EnvironmentId) {

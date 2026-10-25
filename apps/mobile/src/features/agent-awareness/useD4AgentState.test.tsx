@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   currentState: "active",
   selected: null as unknown,
   listener: null as ((state: string) => void) | null,
-  agentData: { brainContext: "Global" },
+  agentData: { brainContext: "Global" } as { brainContext: string } | null,
 }));
 vi.mock("@react-navigation/native", () => ({ useIsFocused: () => mocks.focused }));
 vi.mock("react-native", () => ({
@@ -54,6 +54,7 @@ beforeEach(() => {
   mocks.focused = true;
   mocks.currentState = "active";
   mocks.refresh.mockClear();
+  mocks.agentData = { brainContext: "Global" };
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -140,4 +141,18 @@ it("keeps the last state for the same environment while unfocused or backgrounde
   expect(shown()).toBe(JSON.stringify(mocks.agentData));
   act(() => root.render(<StateProbe environmentId="other-env" />));
   expect(shown()).toBe("null");
+});
+
+it("keeps the last state after resuming until the resumed query has data", () => {
+  act(() => root.render(<StateProbe environmentId="env" />));
+  const before = JSON.stringify(mocks.agentData);
+  act(() => mocks.listener!("background"));
+  // The state cache drops the detached node, so the resumed subscription starts empty.
+  mocks.agentData = null;
+  act(() => mocks.listener!("active"));
+  expect(mocks.selected).toBe("agent-state");
+  expect(shown()).toBe(before);
+  mocks.agentData = { brainContext: "YB" };
+  act(() => root.render(<StateProbe environmentId="env" />));
+  expect(shown()).toBe(JSON.stringify({ brainContext: "YB" }));
 });

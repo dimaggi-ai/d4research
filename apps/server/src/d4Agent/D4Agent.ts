@@ -2471,9 +2471,10 @@ export const layer = Layer.effect(
             // Checked before idle sessions close, so only a change made by another client or a
             // size rotation counts. A closed session is not stale: the send reopens the same context.
             const state = yield* store.get;
+            if (input.expectedContext === undefined || input.expectedThreadId === undefined)
+              return yield* new D4AgentError({ reason: "client-outdated" });
             if (
-              (input.expectedContext !== undefined &&
-                input.expectedContext !== state.brainContext) ||
+              input.expectedContext !== state.brainContext ||
               (input.expectedThreadId != null &&
                 state.threadId !== null &&
                 input.expectedThreadId !== state.threadId)

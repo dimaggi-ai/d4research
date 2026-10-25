@@ -1296,6 +1296,46 @@ it("keeps the draft and says why when another client changed Nia's context first
   expect(mocks.refresh).toHaveBeenCalledOnce();
 });
 
+it("keeps a draft bound to its context until the user reassigns it", async () => {
+  const render = (state: typeof mocks.state) =>
+    act(() =>
+      root.render(
+        <D4AgentChat environmentId={environmentId} state={state!} refresh={mocks.refresh} />,
+      ),
+    );
+  await render(mocks.state);
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(() => {
+    setter.call(input, "Global-only draft");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const moved = {
+    ...mocks.state!,
+    brainContext: "Dimaggi" as const,
+    threadId: ThreadId.make("dimaggi-session"),
+  };
+  await render(moved);
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
+  expect(input.value).toBe("Global-only draft");
+  expect(container.textContent).toContain(
+    "You wrote this draft while Nia was in Global. Nia is now in Dimaggi.",
+  );
+  expect(button("Send").disabled).toBe(true);
+  await act(async () => button("Use in Dimaggi").click());
+  await act(async () => button("Send").click());
+  expect(mocks.send).toHaveBeenLastCalledWith({
+    environmentId,
+    input: {
+      text: "Global-only draft",
+      expectedContext: "Dimaggi",
+      expectedThreadId: "dimaggi-session",
+    },
+  });
+});
+
 it("does not invent an original message for a heartbeat action", async () => {
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {

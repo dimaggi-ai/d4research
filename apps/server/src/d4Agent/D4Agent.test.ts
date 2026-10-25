@@ -360,6 +360,17 @@ const fixture = (
     );
     return {
       service,
+      // A human send bound to the context and session the client currently shows.
+      send: (input: Parameters<typeof service.sendMessage>[0]) =>
+        Ref.get(state).pipe(
+          Effect.flatMap((current) =>
+            service.sendMessage({
+              expectedContext: current.brainContext,
+              expectedThreadId: current.threadId,
+              ...input,
+            }),
+          ),
+        ),
       restart,
       state,
       stateChanges,
@@ -390,14 +401,14 @@ it.effect(
     Effect.gen(function* () {
       const f = yield* fixture("ask");
       const first = yield* f.service.ensureThread();
-      yield* f.service.sendMessage({ text: "old context secret" });
+      yield* f.send({ text: "old context secret" });
       const approval = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
       yield* Ref.set(f.failStop, true);
       const replacement = yield* f.service.newSession();
       assert.notEqual(replacement.threadId, first.threadId);
       assert.equal((yield* Ref.get(f.state)).pendingRetirements?.[0]?.threadId, first.threadId);
       assert.equal((yield* f.service.getIdentity())?.projectId, first.projectId);
-      yield* f.service.sendMessage({ text: "Retirement must not block this message" });
+      yield* f.send({ text: "Retirement must not block this message" });
       yield* Ref.set(f.failStop, false);
       yield* TestClock.adjust("30 seconds");
       const second = yield* f.service.ensureThread();
@@ -419,7 +430,7 @@ it.effect(
         ))._tag,
         "Failure",
       );
-      yield* f.service.sendMessage({ text: "new context question" });
+      yield* f.send({ text: "new context question" });
       const sent = yield* Ref.get(f.sends);
       assert.equal(sent.at(-1)?.threadId, second.threadId);
       assert.equal(sent.at(-1)?.text, "new context question");
@@ -585,7 +596,7 @@ const switchFixture = (mode: "read-only" | "ask" | "act") =>
     const f = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
       projectContexts: { [target.projectId]: "Dimaggi" },
     });
-    const global = yield* f.service.sendMessage({ text: switchRequest });
+    const global = yield* f.send({ text: switchRequest });
     const card = yield* f.service.requestAction({
       type: "switch-context",
       threadId: targetId,
@@ -637,9 +648,9 @@ it.effect("switch-context replays only the request of the current turn", () =>
     const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
       projectContexts: { [target.projectId]: "Dimaggi" },
     });
-    yield* f.service.sendMessage({ text: "Older unrelated Global request" });
-    yield* f.service.sendMessage({ text: "Another earlier request" });
-    const current = yield* f.service.sendMessage({ text: switchRequest });
+    yield* f.send({ text: "Older unrelated Global request" });
+    yield* f.send({ text: "Another earlier request" });
+    const current = yield* f.send({ text: switchRequest });
     const run = RunId.make("switch-run");
     const message = (yield* Ref.get(f.sends)).at(-1)!;
     yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: run });
@@ -679,7 +690,7 @@ it.effect("switch-context moves requests only from Global into a work context", 
       target,
       { ...target, id: ThreadId.make("unmapped"), projectId: ProjectId.make("unmapped") },
     ]);
-    yield* f.service.sendMessage({ text: switchRequest });
+    yield* f.send({ text: switchRequest });
     const unmapped = yield* Effect.result(
       f.service.requestAction({ type: "switch-context", threadId: ThreadId.make("unmapped") }),
     );
@@ -1912,13 +1923,13 @@ it.effect(
         { ...target, id: ThreadId.make("duplicate"), title: "Exact title" },
       ]);
       yield* f.service.ensureThread();
-      yield* f.service.sendMessage({ text: "Read dimaggi-thread" });
+      yield* f.send({ text: "Read dimaggi-thread" });
       assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
       assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, "Read dimaggi-thread");
-      yield* f.service.sendMessage({ text: "Read Exact title" });
+      yield* f.send({ text: "Read Exact title" });
       assert.equal((yield* Ref.get(f.sends)).length, 2);
       assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
-      yield* f.service.sendMessage({ text: "Read target" });
+      yield* f.send({ text: "Read target" });
       assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
     }),
 );
@@ -1936,6 +1947,24 @@ const staleFixture = Effect.gen(function* () {
   return { ...f, global };
 });
 
+it.effect("a send without the context and session it was written for asks for an update", () =>
+  Effect.gen(function* () {
+    const f = yield* staleFixture;
+    for (const input of [
+      { text: "Unbound draft" },
+      { text: "Unbound draft", expectedContext: "Global" as const },
+    ]) {
+      const result = yield* Effect.result(f.service.sendMessage(input));
+      assert.equal(result._tag === "Failure" && result.failure.reason, "client-outdated");
+    }
+    assert.equal((yield* Ref.get(f.sends)).length, 0);
+    assert.isFalse(
+      (yield* Ref.get(f.state)).userMessages?.some((entry) => entry.text === "Unbound draft") ??
+        false,
+    );
+  }),
+);
+
 it.effect("a send written for a context another client left is rejected as stale", () =>
   Effect.gen(function* () {
     const f = yield* staleFixture;
@@ -1943,7 +1972,7 @@ it.effect("a send written for a context another client left is rejected as stale
     const sendsBefore = (yield* Ref.get(f.sends)).length;
     const transcriptBefore = (yield* Ref.get(f.state)).transcript?.length ?? 0;
     const result = yield* Effect.result(
-      f.service.sendMessage({
+      f.send({
         text: "Global-only draft",
         expectedContext: "Global",
         expectedThreadId: f.global.threadId,
@@ -1966,7 +1995,7 @@ it.effect("a send written for a session another client replaced is rejected as s
     const fresh = yield* f.service.newSession();
     assert.notEqual(fresh.threadId, f.global.threadId);
     const stale = yield* Effect.result(
-      f.service.sendMessage({
+      f.send({
         text: "Written for the old session",
         expectedContext: "Global",
         expectedThreadId: f.global.threadId,
@@ -1974,7 +2003,7 @@ it.effect("a send written for a session another client replaced is rejected as s
     );
     assert.equal(stale._tag === "Failure" && stale.failure.reason, "stale");
     assert.equal((yield* Ref.get(f.sends)).length, 0);
-    const sent = yield* f.service.sendMessage({
+    const sent = yield* f.send({
       text: "Written for the new session",
       expectedContext: "Global",
       expectedThreadId: fresh.threadId,
@@ -1987,7 +2016,7 @@ it.effect("a send written for a session another client replaced is rejected as s
 it.effect("an explicit reference still switches when the send matches the displayed context", () =>
   Effect.gen(function* () {
     const f = yield* staleFixture;
-    yield* f.service.sendMessage({
+    yield* f.send({
       text: "Read dimaggi-thread",
       expectedContext: "Global",
       expectedThreadId: f.global.threadId,
@@ -2004,8 +2033,8 @@ it.effect("of two clients racing, a Global draft never lands in the Dimaggi sess
     const view = { expectedContext: "Global" as const, expectedThreadId: f.global.threadId };
     const [switched, draft] = yield* Effect.all(
       [
-        Effect.result(f.service.sendMessage({ text: "Read dimaggi-thread", ...view })),
-        Effect.result(f.service.sendMessage({ text: "Global-only draft", ...view })),
+        Effect.result(f.send({ text: "Read dimaggi-thread", ...view })),
+        Effect.result(f.send({ text: "Global-only draft", ...view })),
       ],
       { concurrency: "unbounded" },
     );
@@ -2028,7 +2057,7 @@ it.effect.each(["read-only", "ask", "act"] as const)(
     Effect.gen(function* () {
       const f = yield* fixture(mode);
       yield* f.service.ensureThread();
-      yield* f.service.sendMessage({ text: "Original user command" });
+      yield* f.send({ text: "Original user command" });
       const record = yield* f.service.requestAction({
         type: "send",
         threadId: targetId,
@@ -2251,7 +2280,7 @@ it.effect(
         "status of customer notes",
         "web status",
       ]) {
-        yield* f.service.sendMessage({ text });
+        yield* f.send({ text });
         assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
         assert.equal((yield* Ref.get(f.sends)).at(-1)?.threadId, identity.threadId);
         assert.equal((yield* Ref.get(f.sends)).at(-1)?.text, text);
@@ -2284,13 +2313,13 @@ it.effect(
         },
       ]);
       yield* f.service.switchContext({ context: "YB" });
-      yield* f.service.sendMessage({ text: "[[thread:target]] [[thread:foreign-thread]]" });
+      yield* f.send({ text: "[[thread:target]] [[thread:foreign-thread]]" });
       const prompt = (yield* Ref.get(f.state)).transcript!.at(-1)!.text;
       assert.include(prompt, "Private (target)");
       assert.notInclude(prompt, "foreign-thread");
       assert.notInclude(prompt, "Foreign secret title");
       assert.equal((yield* Ref.get(f.sends)).length, 0);
-      yield* f.service.sendMessage({
+      yield* f.send({
         text: "[[thread:foreign-thread]] [[thread:foreign-thread-2]]",
       });
       const foreignOnly = (yield* Ref.get(f.state)).transcript!.at(-1)!.text;
@@ -2301,7 +2330,7 @@ it.effect(
       assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
       assert.equal((yield* Ref.get(f.sends)).length, 0);
       yield* f.service.switchContext({ context: "Global" });
-      yield* f.service.sendMessage({ text: "[[thread:target]] [[thread:foreign-thread]]" });
+      yield* f.send({ text: "[[thread:target]] [[thread:foreign-thread]]" });
       assert.include((yield* Ref.get(f.state)).transcript!.at(-1)!.text, "Foreign secret title");
     }),
 );
@@ -2312,7 +2341,7 @@ it.effect("archived references cannot switch context", () =>
       projectContexts: { [target.projectId]: "Dimaggi" },
     });
     yield* Ref.update(f.shells, (all) => all.map((entry) => ({ ...entry, archivedAt: now })));
-    yield* f.service.sendMessage({ text: "[[thread:target]]" });
+    yield* f.send({ text: "[[thread:target]]" });
     assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
     assert.equal((yield* Ref.get(f.sends)).length, 1);
   }),
@@ -2321,9 +2350,9 @@ it.effect("archived references cannot switch context", () =>
 it.effect("send original is bound to the active run rather than the latest queued message", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");
-    yield* f.service.sendMessage({ text: "First original text exactly\n  preserved" });
+    yield* f.send({ text: "First original text exactly\n  preserved" });
     const first = (yield* Ref.get(f.sends))[0]!;
-    yield* f.service.sendMessage({ text: "Later queued unrelated instruction" });
+    yield* f.send({ text: "Later queued unrelated instruction" });
     const runId = RunId.make("originating-run");
     yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: runId });
     yield* Ref.update(f.projection, (value) => ({
@@ -2347,7 +2376,7 @@ it.effect("send original is bound to the active run rather than the latest queue
 it.effect("heartbeat drafts discard spoofed originals and never borrow a prior user message", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");
-    yield* f.service.sendMessage({ text: "Prior unrelated request" });
+    yield* f.send({ text: "Prior unrelated request" });
     const runId = RunId.make("heartbeat-run");
     const messageId = MessageId.make("heartbeat-message");
     yield* Ref.update(f.agentShell, (value) => value && { ...value, activeRunId: runId });
@@ -2384,7 +2413,7 @@ it.effect("explicit reference expires the idle destination before attempting res
     const old = yield* f.service.switchContext({ context: "YB" });
     yield* f.service.switchContext({ context: "Global" });
     yield* TestClock.adjust("31 minutes");
-    const next = yield* f.service.sendMessage({ text: "[[thread:target]]" });
+    const next = yield* f.send({ text: "[[thread:target]]" });
     assert.notEqual(next.threadId, old.threadId);
     assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
     assert.isTrue(
@@ -2439,7 +2468,7 @@ it.effect(
     Effect.gen(function* () {
       const f = yield* fixture("ask");
       yield* f.service.ensureThread();
-      yield* f.service.sendMessage({ text: "hello" });
+      yield* f.send({ text: "hello" });
       yield* Ref.update(f.state, (state) => ({
         ...state,
         transcript: [
@@ -2456,7 +2485,7 @@ it.effect(
       const before = (yield* Ref.get(f.reads)).catalogs;
       for (let index = 0; index < 5; index++) {
         yield* f.service.getState();
-        yield* f.service.sendMessage({ text: "ordinary message" });
+        yield* f.send({ text: "ordinary message" });
       }
       assert.equal((yield* Ref.get(f.reads)).catalogs, before);
       yield* Ref.update(f.shells, (all) =>
@@ -2569,7 +2598,7 @@ it.effect(
       assert.equal((yield* Ref.get(f.state)).pendingRetirements?.length, 32);
       const current = yield* f.service.getIdentity();
       assert.equal((yield* Effect.result(f.service.newSession()))._tag, "Failure");
-      yield* f.service.sendMessage({ text: "Continue in the existing session" });
+      yield* f.send({ text: "Continue in the existing session" });
       assert.equal((yield* Ref.get(f.sends)).at(-1)?.threadId, current?.threadId);
       assert.equal((yield* Ref.get(f.state)).pendingRetirements?.length, 32);
       yield* Ref.set(f.failStop, false);
@@ -2839,7 +2868,7 @@ it.effect("closing the session of a pending rotation tells the user the message 
       })),
     }));
     const original = "Pending ask that never reached a provider";
-    yield* f.service.sendMessage({ text: original });
+    yield* f.send({ text: original });
     assert.equal((yield* Ref.get(f.state)).rotation?.pendingText, original);
     yield* f.service.newSession();
     const state = yield* Ref.get(f.state);
@@ -2863,7 +2892,7 @@ it.effect("send original keeps the pending user text after a size rotation", () 
       })),
     }));
     const original = "Exact pending ask\n  after rotation";
-    yield* f.service.sendMessage({ text: original });
+    yield* f.send({ text: original });
     const rotation = (yield* Ref.get(f.state)).rotation!;
     const runId = RunId.make("summary-run");
     yield* Ref.update(f.projection, (value) => ({
@@ -2910,7 +2939,7 @@ it.effect.each(["create", "send"] as const)(
         })),
       }));
       const original = "Pending request that must survive";
-      yield* f.service.sendMessage({ text: original });
+      yield* f.send({ text: original });
       const summary = (yield* Ref.get(f.state)).rotation!;
       const runId = RunId.make("summary-run");
       yield* Ref.update(f.projection, (value) => ({

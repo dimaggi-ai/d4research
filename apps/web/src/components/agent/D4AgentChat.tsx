@@ -1,7 +1,10 @@
 import {
+  agentDraftMovedNotice,
+  agentDraftOrigin,
   agentMentionOptions,
   agentMentionQuery,
   insertAgentMention,
+  type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
 import { useEnvironmentQuery } from "../../state/query";
 import { useProjects, useThreadShells, useThreadShell } from "../../state/entities";
@@ -86,6 +89,10 @@ export function D4AgentChat({
   const send = useAtomCommand(serverEnvironment.sendD4AgentMessage);
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const [text, setText] = useState("");
+  const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
+  if (!text.trim() && origin !== null) setOrigin(null);
+  const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
+  const moved = agentDraftMovedNotice(origin, state);
   const mentions = agentMentionOptions({
     environmentId,
     context: state.brainContext,
@@ -178,8 +185,9 @@ export function D4AgentChat({
         className="shrink-0 space-y-2 border-t p-4"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (sending || !enabled || !allowed || !text.trim()) return;
+          if (sending || !enabled || !allowed || !text.trim() || moved) return;
           const submitted = text;
+          const target = origin ?? agentDraftOrigin(state);
           setSending(true);
           setError(null);
           try {
@@ -187,8 +195,8 @@ export function D4AgentChat({
               environmentId,
               input: {
                 text: submitted.trim(),
-                expectedContext: state.brainContext,
-                expectedThreadId: state.threadId,
+                expectedContext: target.context,
+                expectedThreadId: target.threadId,
               },
             });
             if (result._tag === "Failure") {
@@ -218,7 +226,10 @@ export function D4AgentChat({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => setText((current) => insertAgentMention(current, mention))}
+                  onClick={() => {
+                    setText((current) => insertAgentMention(current, mention));
+                    bindDraft();
+                  }}
                 >
                   {mention.kind} · {mention.title}
                 </Button>
@@ -234,17 +245,36 @@ export function D4AgentChat({
           value={text}
           maxLength={16000}
           disabled={!enabled || !allowed || sending}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            if (event.target.value.trim()) bindDraft();
+          }}
         />
         <div className="flex justify-end">
           <Button
             type="submit"
             size="sm"
-            disabled={!enabled || !allowed || sending || !text.trim()}
+            disabled={!enabled || !allowed || sending || !text.trim() || moved !== null}
           >
             {sending ? "Sending…" : "Send"}
           </Button>
         </div>
+        {moved ? (
+          <div role="status" className="flex items-center justify-between gap-2 text-sm">
+            <p>{moved.message}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setOrigin(agentDraftOrigin(state));
+                setError(null);
+              }}
+            >
+              {moved.reassignLabel}
+            </Button>
+          </div>
+        ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error === "stale"

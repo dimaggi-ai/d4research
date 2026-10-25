@@ -312,9 +312,9 @@ export const D4AgentIdentity = Schema.NullOr(D4AgentEnsureThreadResult);
 export type D4AgentIdentity = typeof D4AgentIdentity.Type;
 export const D4AgentSendInput = Schema.Struct({
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
-  // The context and session the client displayed when the user wrote the message. The server
-  // rejects the send as "stale" when another client changed either one in the meantime.
-  // Optional only so older clients keep working.
+  // The context and session the user wrote the message for. The server rejects the send as
+  // "stale" when either one changed in the meantime. Both are required; they decode as optional
+  // only so a client that omits them gets "client-outdated" instead of a schema error.
   expectedContext: Schema.optionalKey(D4BrainContext),
   expectedThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
 });
@@ -341,6 +341,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "thread",
     "busy",
     "stale",
+    "client-outdated",
     "context",
     "memory-unavailable",
     "cto-unreachable",
@@ -354,6 +355,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
     if (this.reason === "stale")
       return "Nia's context or session changed after you wrote this message. Check it, then send again.";
+    if (this.reason === "client-outdated") return "Update this app to send messages to Nia.";
     return `Nia: ${this.reason}.`;
   }
 }

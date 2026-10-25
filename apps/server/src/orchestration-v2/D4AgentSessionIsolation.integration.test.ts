@@ -363,8 +363,13 @@ it.effect.each([
                 Stream.runDrain,
                 Effect.forkScoped,
               );
+            const shown = yield* state.get;
             yield* service
-              .sendMessage({ text })
+              .sendMessage({
+                text,
+                expectedContext: shown.brainContext,
+                expectedThreadId: shown.threadId,
+              })
               .pipe(Effect.provideService(AgentAccess.DispatchOrigin, "authenticated-user"));
             yield* Fiber.join(completed);
             yield* worker.drain();

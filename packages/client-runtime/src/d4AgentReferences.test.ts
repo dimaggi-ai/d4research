@@ -1,6 +1,12 @@
 import { expect, it } from "vite-plus/test";
-import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId } from "@d4research/contracts";
-import { agentMentionOptions, agentMentionQuery, insertAgentMention } from "./d4AgentReferences.ts";
+import { DEFAULT_SERVER_SETTINGS, EnvironmentId, ProjectId, ThreadId } from "@d4research/contracts";
+import {
+  agentDraftMovedNotice,
+  agentDraftOrigin,
+  agentMentionOptions,
+  agentMentionQuery,
+  insertAgentMention,
+} from "./d4AgentReferences.ts";
 
 it("offers only active references in the bound scope and current environment", () => {
   const environmentId = EnvironmentId.make("local");
@@ -62,4 +68,22 @@ it("inserts thread, project and pipeline ids without carrying the mutable title"
   }
   expect(agentMentionQuery("check @partial")).toBe("partial");
   expect(agentMentionQuery("name@example.com")).toBeNull();
+});
+
+it("flags a draft only when Nia moved to another context or replaced its session", () => {
+  const first = ThreadId.make("first");
+  const origin = agentDraftOrigin({ brainContext: "Global", threadId: first });
+  expect(agentDraftMovedNotice(null, { brainContext: "YB", threadId: null })).toBeNull();
+  expect(agentDraftMovedNotice(origin, { brainContext: "Global", threadId: first })).toBeNull();
+  expect(agentDraftMovedNotice(origin, { brainContext: "Global", threadId: null })).toBeNull();
+  expect(agentDraftMovedNotice(origin, { brainContext: "YB", threadId: first })).toEqual({
+    message: "You wrote this draft while Nia was in Global. Nia is now in YB.",
+    reassignLabel: "Use in YB",
+  });
+  expect(
+    agentDraftMovedNotice(origin, { brainContext: "Global", threadId: ThreadId.make("second") }),
+  ).toEqual({
+    message: "You wrote this draft for an earlier Nia session.",
+    reassignLabel: "Use in the current session",
+  });
 });

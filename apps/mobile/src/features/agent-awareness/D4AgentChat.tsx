@@ -1,7 +1,10 @@
 import {
+  agentDraftMovedNotice,
+  agentDraftOrigin,
   agentMentionOptions,
   agentMentionQuery,
   insertAgentMention,
+  type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
 import { useEnvironmentQuery } from "../../state/query";
 import {
@@ -96,6 +99,10 @@ export function D4AgentChat({
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
   const [text, setText] = useState("");
+  const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
+  if (!text.trim() && origin !== null) setOrigin(null);
+  const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
+  const moved = agentDraftMovedNotice(origin, state);
   const mentions = agentMentionOptions({
     environmentId,
     context: state.brainContext,
@@ -200,7 +207,10 @@ export function D4AgentChat({
                 key={`${mention.kind}:${mention.id}`}
                 accessibilityRole="button"
                 className="px-3 py-3"
-                onPress={() => setText((current) => insertAgentMention(current, mention))}
+                onPress={() => {
+                  setText((current) => insertAgentMention(current, mention));
+                  bindDraft();
+                }}
               >
                 <Text className="text-accent">
                   {mention.kind} · {mention.title}
@@ -218,17 +228,23 @@ export function D4AgentChat({
           value={text}
           maxLength={16000}
           editable={enabled && allowed && !sending}
-          onChangeText={setText}
+          onChangeText={(value) => {
+            setText(value);
+            if (value.trim()) bindDraft();
+          }}
           className="min-h-20 rounded-xl border border-border p-3 text-foreground"
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: !enabled || !allowed || sending || !text.trim() }}
-          disabled={!enabled || !allowed || sending || !text.trim()}
+          accessibilityState={{
+            disabled: !enabled || !allowed || sending || !text.trim() || moved !== null,
+          }}
+          disabled={!enabled || !allowed || sending || !text.trim() || moved !== null}
           className="self-end px-4 py-3"
           onPress={async () => {
-            if (sending || !enabled || !allowed || !text.trim()) return;
+            if (sending || !enabled || !allowed || !text.trim() || moved) return;
             const submitted = text;
+            const target = origin ?? agentDraftOrigin(state);
             setSending(true);
             setError(null);
             try {
@@ -236,8 +252,8 @@ export function D4AgentChat({
                 environmentId,
                 input: {
                   text: submitted.trim(),
-                  expectedContext: state.brainContext,
-                  expectedThreadId: state.threadId,
+                  expectedContext: target.context,
+                  expectedThreadId: target.threadId,
                 },
               });
               if (result._tag === "Failure") {
@@ -258,6 +274,23 @@ export function D4AgentChat({
         >
           <Text className="text-accent">{sending ? "Sending…" : "Send"}</Text>
         </Pressable>
+        {moved ? (
+          <View className="gap-2">
+            <Text accessibilityRole="alert" className="text-sm text-foreground">
+              {moved.message}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              className="self-start px-4 py-3"
+              onPress={() => {
+                setOrigin(agentDraftOrigin(state));
+                setError(null);
+              }}
+            >
+              <Text className="text-accent">{moved.reassignLabel}</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
             {error === "stale"

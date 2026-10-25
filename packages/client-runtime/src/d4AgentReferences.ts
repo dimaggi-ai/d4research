@@ -3,6 +3,7 @@ import type {
   EnvironmentId,
   ProjectId,
   ServerSettings,
+  ThreadId,
 } from "@d4research/contracts";
 
 export interface AgentMention {
@@ -88,4 +89,44 @@ export function agentMentionOptions(input: {
         option.id.toLocaleLowerCase().includes(query),
     )
     .slice(0, 12);
+}
+
+/** The Nia context and session a draft was written for. */
+export interface AgentDraftOrigin {
+  readonly context: D4BrainContext;
+  readonly threadId: ThreadId | null;
+}
+
+interface AgentDraftTarget {
+  readonly brainContext: D4BrainContext;
+  readonly threadId: ThreadId | null;
+}
+
+export const agentDraftOrigin = (state: AgentDraftTarget): AgentDraftOrigin => ({
+  context: state.brainContext,
+  threadId: state.threadId,
+});
+
+/**
+ * A draft stays bound to the context and session it was written for. When Nia has moved on, the
+ * user must reassign the draft before sending, so its text never lands in another context
+ * unnoticed.
+ */
+export function agentDraftMovedNotice(
+  origin: AgentDraftOrigin | null,
+  state: AgentDraftTarget,
+): { readonly message: string; readonly reassignLabel: string } | null {
+  if (origin === null) return null;
+  if (origin.context !== state.brainContext)
+    return {
+      message: `You wrote this draft while Nia was in ${origin.context}. Nia is now in ${state.brainContext}.`,
+      reassignLabel: `Use in ${state.brainContext}`,
+    };
+  // Opening or closing a session in the same context is not a move; replacing one is.
+  if (origin.threadId !== null && state.threadId !== null && origin.threadId !== state.threadId)
+    return {
+      message: "You wrote this draft for an earlier Nia session.",
+      reassignLabel: "Use in the current session",
+    };
+  return null;
 }

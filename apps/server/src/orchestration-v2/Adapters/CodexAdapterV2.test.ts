@@ -637,6 +637,71 @@ describe("CodexAdapterV2 runtime policy", () => {
 });
 
 describe("CodexAdapterV2 process spawning", () => {
+  it("d4 Agent exposes exactly the bounded tools and keeps native capabilities disabled", () => {
+    const params = CodexAdapterV2.codexThreadRuntimeParams({
+      mcpSession: {
+        environmentId: EnvironmentId.make("d4-agent-environment"),
+        threadId: ThreadId.make("d4-agent-thread"),
+        providerSessionId: "d4-agent-session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer synthetic-token",
+        browserToolsAvailable: true,
+      },
+      disabledMcpServers: ["unrelated-memory", "t3-code"],
+      runtimePolicy: {
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        cwd: "/agent",
+        toolPolicy: "d4-agent",
+      },
+    });
+    const expected = [
+      "d4_agent_list",
+      "d4_agent_read_tail",
+      "d4_agent_system_health",
+      "d4_agent_action",
+      "d4_agent_memory_search",
+      "d4_agent_memory_read",
+      "d4_agent_memory_propose",
+      "d4_agent_cto_status",
+      "d4_agent_cto_brief",
+      "d4_agent_cto_ask",
+    ];
+    const servers = params.config.mcp_servers as Record<
+      string,
+      {
+        enabled?: boolean;
+        enabled_tools?: string[];
+        tools?: Record<string, { approval_mode: string }>;
+      }
+    >;
+    assert.deepEqual(servers["t3-code"]?.enabled_tools, expected);
+    assert.deepEqual(
+      servers["t3-code"]?.tools,
+      Object.fromEntries(expected.map((name) => [name, { approval_mode: "approve" }])),
+    );
+    assert.deepEqual(servers["unrelated-memory"], { enabled: false });
+    for (const feature of [
+      "shell_tool",
+      "multi_agent",
+      "multi_agent_v2",
+      "browser_use",
+      "computer_use",
+      "memory_tool",
+      "external_agent_memory_import",
+      "plugins",
+      "apps",
+      "skill_search",
+      "view_image",
+      "image_generation",
+    ])
+      assert.equal(params.config[`features.${feature}`], false);
+    assert.equal(params.config.web_search, "disabled");
+    assert.equal(params.config["tools.update_plan.enabled"], false);
+    assert.equal(params.config.project_doc_max_bytes, 0);
+  });
+
   it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
     const mcpSession = {

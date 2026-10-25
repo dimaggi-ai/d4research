@@ -30,6 +30,12 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("context switching requires orchestration operate scope", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentSwitchContext)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("allows reading d4 Agent state but reserves chat and action decisions for operators", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentGetState)).toBe(AuthOrchestrationReadScope);
     expect(requiredScopeForRpcMethod(WS_METHODS.d4AgentClaimSystemAttention)).toBe(

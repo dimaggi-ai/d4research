@@ -2339,6 +2339,7 @@ const layerWsRpc = (
         [WS_METHODS.secondBrainRegenerateIndex]: () => secondBrain.regenerateIndex(),
         [WS_METHODS.agentMonitorClaimAttention]: (input) => agentMonitor.claimAttention(input),
         [WS_METHODS.d4AgentGetState]: () => d4Agent.getState(),
+        [WS_METHODS.d4AgentSwitchContext]: (input) => d4Agent.switchContext(input),
         [WS_METHODS.d4AgentGetIdentity]: () => d4Agent.getIdentity(),
         [WS_METHODS.d4AgentGetAction]: (input) => d4Agent.getAction(input),
         [WS_METHODS.d4AgentGetSystemHealth]: () => d4Agent.getSystemHealth(),

@@ -1,6 +1,7 @@
 import { AgentMonitorError } from "./agentMonitor.ts";
 import {
   D4AgentError,
+  D4AgentSwitchContextInput,
   D4AgentState,
   D4AgentIdentity,
   D4AgentActionRecord,
@@ -512,6 +513,7 @@ export const WS_METHODS = {
   secondBrainRegenerateIndex: "secondBrain.regenerateIndex",
   agentMonitorClaimAttention: "agentMonitor.claimAttention",
   d4AgentGetState: "d4Agent.getState",
+  d4AgentSwitchContext: "d4Agent.switchContext",
   d4AgentGetIdentity: "d4Agent.getIdentity",
   d4AgentGetAction: "d4Agent.getAction",
   d4AgentGetSystemHealth: "d4Agent.getSystemHealth",
@@ -843,6 +845,11 @@ const WsAgentMonitorClaimAttentionRpc = Rpc.make(WS_METHODS.agentMonitorClaimAtt
 const WsD4AgentGetStateRpc = Rpc.make(WS_METHODS.d4AgentGetState, {
   payload: Schema.Struct({}),
   success: D4AgentState,
+  error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsD4AgentSwitchContextRpc = Rpc.make(WS_METHODS.d4AgentSwitchContext, {
+  payload: D4AgentSwitchContextInput,
+  success: D4AgentEnsureThreadResult,
   error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
 });
 const WsD4AgentGetIdentityRpc = Rpc.make(WS_METHODS.d4AgentGetIdentity, {
@@ -2024,6 +2031,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetDatabaseStorageRpc,
   WsAgentMonitorClaimAttentionRpc,
   WsD4AgentGetStateRpc,
+  WsD4AgentSwitchContextRpc,
   WsD4AgentGetIdentityRpc,
   WsD4AgentGetActionRpc,
   WsD4AgentGetSystemHealthRpc,

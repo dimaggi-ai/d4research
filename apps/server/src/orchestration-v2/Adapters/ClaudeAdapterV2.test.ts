@@ -553,6 +553,57 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     browserToolsAvailable: true,
   });
 
+  it("d4 Agent exposes exactly the bounded tools and blocks native tools and launch overrides", () => {
+    const mcp = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession: mcpSessionFor(ThreadId.make("d4-agent-native-tools")),
+      readOnlySandbox: true,
+      d4AgentOnly: true,
+    });
+    const expected = [
+      "d4_agent_list",
+      "d4_agent_read_tail",
+      "d4_agent_system_health",
+      "d4_agent_action",
+      "d4_agent_memory_search",
+      "d4_agent_memory_read",
+      "d4_agent_memory_propose",
+      "d4_agent_cto_status",
+      "d4_agent_cto_brief",
+      "d4_agent_cto_ask",
+    ].map((name) => `mcp__t3-code__${name}`);
+    assert.deepEqual(mcp.allowedTools, expected);
+    assert.deepEqual(Object.keys(mcp.mcpServers ?? {}), ["t3-code"]);
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "d4-agent-native-tools",
+      resume: false,
+      cwd: "/agent",
+      d4AgentOnly: true,
+      tools: ["Bash", "Read", "Edit", "WebSearch", "Task"],
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--dangerously-skip-permissions" },
+      ...mcp,
+    });
+    assert.deepEqual(options.allowedTools, expected);
+    assert.deepEqual(options.tools, []);
+    assert.deepEqual(options.settingSources, []);
+    assert.isTrue(options.strictMcpConfig);
+    assert.equal(options.permissionMode, "dontAsk");
+    assert.isUndefined(options.allowDangerouslySkipPermissions);
+    assert.isUndefined(options.extraArgs);
+    for (const forbidden of [
+      "Bash",
+      "Read",
+      "Edit",
+      "WebSearch",
+      "Task",
+      "mcp__t3-code__*",
+      "mcp__other-memory__search",
+    ])
+      assert.notInclude(options.allowedTools ?? [], forbidden);
+  });
+
   it("leaves an absent allowlist absent when no MCP session exists", () => {
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
       mcpSession: undefined,

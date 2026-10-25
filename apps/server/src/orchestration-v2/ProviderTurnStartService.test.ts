@@ -32,6 +32,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
+import * as SecondBrain from "../second-brain/SecondBrainService.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -294,14 +295,26 @@ function makeLocalCommandHarness(input: {
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
   readonly d4AgentPrepare?: D4AgentContext.D4AgentContext["Service"]["prepare"];
+  readonly allowNative?: boolean;
+  readonly nativeIdentity?: string;
+  readonly sharedTransport?: boolean;
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
-  const threadId = ThreadId.make("thread-native-account-command");
+  const identity = input.nativeIdentity ?? "native-account-command";
+  const threadId = ThreadId.make(`thread-${identity}`);
   const runId = RunId.make("run-native-account-command");
   const rootNodeId = NodeId.make("root-native-account-command");
   const attemptId = RunAttemptId.make("attempt-native-account-command");
-  const providerThreadId = ProviderThreadId.make("new-provider-thread");
-  const providerSessionId = ProviderSessionId.make("new-provider-session");
+  const providerThreadId = ProviderThreadId.make(
+    input.nativeIdentity === undefined ? "new-provider-thread" : `provider-thread-${identity}`,
+  );
+  const providerSessionId = ProviderSessionId.make(
+    input.sharedTransport === true
+      ? "provider-session:provider-instance:codex:shared"
+      : input.nativeIdentity === undefined
+        ? "new-provider-session"
+        : `provider-session-${identity}`,
+  );
   const oldProviderThreadId = ProviderThreadId.make("existing-native-provider-thread");
   const oldInstanceId = ProviderInstanceId.make("antigravity-personal");
   const newInstanceId = ProviderInstanceId.make("codex-personal");
@@ -517,6 +530,34 @@ function makeLocalCommandHarness(input: {
       ),
     ensureThread: () => Effect.succeed(providerThread),
   };
+  const nativeStart = vi.fn((_input: ProviderAdapter.ProviderAdapterV2TurnInput) => Effect.void);
+  const ensureNativeThread = vi.fn(() =>
+    Effect.succeed({
+      ...providerThread,
+      nativeThreadRef: {
+        driver: providerThread.driver,
+        nativeId: `native-${identity}`,
+        strength: "strong" as const,
+      },
+    }),
+  );
+  const nativeSession = {
+    driver: providerThread.driver,
+    providerSession: {
+      id: providerSessionId,
+      driver: providerThread.driver,
+      providerInstanceId: newInstanceId,
+      status: "ready",
+      cwd: "/tmp/native-account-command",
+      model: null,
+      capabilities: CodexProviderCapabilitiesV2,
+      createdAt: now,
+      updatedAt: now,
+      lastError: null,
+    },
+    ensureThread: ensureNativeThread,
+    startTurn: nativeStart,
+  };
   const open = vi.fn(() =>
     input.interruptOpen === true
       ? Effect.interrupt
@@ -538,31 +579,52 @@ function makeLocalCommandHarness(input: {
                   ),
                 ),
               )
-            : input.failReadsAfterRunning === true
-              ? Effect.succeed({
-                  driver: providerThread.driver,
-                  providerSession: {
-                    id: providerSessionId,
+            : input.allowNative === true
+              ? Effect.succeed(nativeSession as never)
+              : input.failReadsAfterRunning === true
+                ? Effect.succeed({
                     driver: providerThread.driver,
-                    providerInstanceId: newInstanceId,
-                    status: "ready",
-                    cwd: "/tmp/native-account-command",
-                    model: null,
-                    capabilities: CodexProviderCapabilitiesV2,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastError: null,
-                  },
-                  ensureThread: () => Effect.succeed(providerThread),
-                } as never)
-              : Effect.die("A local command must not open a native session."),
+                    providerSession: {
+                      id: providerSessionId,
+                      driver: providerThread.driver,
+                      providerInstanceId: newInstanceId,
+                      status: "ready",
+                      cwd: "/tmp/native-account-command",
+                      model: null,
+                      capabilities: CodexProviderCapabilitiesV2,
+                      createdAt: now,
+                      updatedAt: now,
+                      lastError: null,
+                    },
+                    ensureThread: () => Effect.succeed(providerThread),
+                  } as never)
+                : Effect.die("A local command must not open a native session."),
   );
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
-  >(() =>
-    input.failReadsAfterRunning === true
-      ? Effect.void
-      : Effect.die("A local command must not start a native turn."),
+  >((runInput) =>
+    input.allowNative === true
+      ? runInput.session
+          .startTurn({
+            appThread: runInput.appThread,
+            threadId: runInput.appThread.id,
+            runId: runInput.run.id,
+            runOrdinal: runInput.run.ordinal,
+            providerTurnOrdinal: runInput.providerTurnOrdinal,
+            ...(runInput.nativeThreadHasTurns === undefined
+              ? {}
+              : { nativeThreadHasTurns: runInput.nativeThreadHasTurns }),
+            attemptId: runInput.attemptId,
+            rootNodeId: runInput.rootNode.id,
+            providerThread: runInput.providerThread,
+            message: runInput.message,
+            modelSelection: runInput.modelSelection,
+            runtimePolicy: runInput.runtimePolicy,
+          })
+          .pipe(Effect.orDie)
+      : input.failReadsAfterRunning === true
+        ? Effect.void
+        : Effect.die("A local command must not start a native turn."),
   );
   const failReadIfRunning = Effect.suspend(() =>
     input.failReadsAfterRunning === true &&
@@ -625,6 +687,15 @@ function makeLocalCommandHarness(input: {
       ),
     }),
   );
+  const buildTurnContext = vi.fn(() =>
+    Effect.succeed({
+      policy: "legacy-memory-policy",
+      core: "legacy-memory-core",
+      retrieved: "legacy-memory-retrieved",
+      citations: [],
+    }),
+  );
+  const prepareProviderHandoff = vi.fn(() => Effect.die("history read must fail first"));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       input.d4AgentPrepare === undefined
@@ -634,12 +705,23 @@ function makeLocalCommandHarness(input: {
             owns: () => Effect.succeed(true),
           }),
     ),
+    Layer.provide(
+      input.allowNative === true
+        ? Layer.mergeAll(
+            Layer.mock(SecondBrain.SecondBrainService)({ buildTurnContext }),
+            ServerSettings.layerTest({
+              secondBrain: { path: "/synthetic-memory", injection: { enabled: true } },
+              handoff: { memoryBackend: "meko", contextCompression: { mode: "smart" } },
+            }),
+          )
+        : Layer.empty,
+    ),
     Layer.provide(McpProviderSessions.layer),
     Layer.provide(researchTurnDependenciesTestLayer),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
-          prepareProviderHandoff: () => Effect.die("history read must fail first"),
+          prepareProviderHandoff,
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
@@ -686,6 +768,10 @@ function makeLocalCommandHarness(input: {
   );
   return {
     getThreadRecords,
+    nativeStart,
+    ensureNativeThread,
+    buildTurnContext,
+    prepareProviderHandoff,
     getTurnStartContext,
     setProjection: (next: OrchestrationV2ThreadProjection) => {
       projection = next;
@@ -1209,5 +1295,99 @@ effectIt.effect(
       expect(result._tag).toBe("Failure");
       expect(harness.open).not.toHaveBeenCalled();
       expect(harness.tryHandlePromptCommand).not.toHaveBeenCalled();
+    }),
+);
+
+effectIt.effect.each([
+  ["Global", "YB"],
+  ["YB", "Dimaggi"],
+  ["Dimaggi", "Global"],
+])(
+  "fresh %s to %s session delivers only the new scoped provider input",
+  (previousContext, context) =>
+    Effect.gen(function* () {
+      const network = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("Unexpected memory request"));
+      try {
+        const priorMarkers = ["prior-transcript", "prior-memory-result", "prior-summary"];
+        const previous = makeLocalCommandHarness({
+          text: priorMarkers.join("\n"),
+          allowNative: true,
+          nativeIdentity: `before-${previousContext}`,
+          sharedTransport: true,
+          d4AgentPrepare: () =>
+            Effect.succeed(
+              `Current monitor digest: prior-digest\nBound context: ${previousContext}`,
+            ),
+        });
+        yield* previous.start;
+        expect(previous.nativeStart).toHaveBeenCalledOnce();
+        const previousInput = previous.nativeStart.mock.calls[0]![0];
+        expect(previousInput.message.text).toContain("prior-digest");
+        for (const marker of priorMarkers) expect(previousInput.message.text).toContain(marker);
+
+        const prepare = vi.fn(() =>
+          Effect.succeed(`Current monitor digest: current-digest\nBound context: ${context}`),
+        );
+        const fresh = makeLocalCommandHarness({
+          text: "Current request",
+          allowNative: true,
+          nativeIdentity: `after-${context}`,
+          sharedTransport: true,
+          d4AgentPrepare: prepare,
+        });
+        yield* fresh.start;
+        expect(fresh.nativeStart).toHaveBeenCalledOnce();
+        expect(fresh.ensureNativeThread).toHaveBeenCalledOnce();
+        const currentInput = fresh.nativeStart.mock.calls[0]![0];
+        expect(currentInput.message.text).toBe(
+          `Current monitor digest: current-digest\nBound context: ${context}\n\nUser message:\nCurrent request`,
+        );
+        expect(currentInput.threadId).not.toBe(previousInput.threadId);
+        expect(currentInput.providerThread.providerSessionId).toBe(
+          previousInput.providerThread.providerSessionId,
+        );
+        expect(currentInput.providerThread.nativeThreadRef?.nativeId).toBe(
+          `native-after-${context}`,
+        );
+        expect(currentInput.providerThread.nativeThreadRef?.nativeId).not.toBe(
+          previousInput.providerThread.nativeThreadRef?.nativeId,
+        );
+        expect(currentInput.nativeThreadHasTurns).toBe(false);
+        expect(currentInput.runtimePolicy).toMatchObject({
+          toolPolicy: "d4-agent",
+          approvalPolicy: "never",
+        });
+        expect(prepare).toHaveBeenCalledWith(
+          currentInput.threadId,
+          currentInput.modelSelection,
+          currentInput.providerThread.providerSessionId,
+        );
+        const serialized = JSON.stringify(currentInput);
+        for (const marker of [
+          ...priorMarkers,
+          "prior-digest",
+          "legacy-memory-policy",
+          "legacy-memory-core",
+          "legacy-memory-retrieved",
+          `native-before-${previousContext}`,
+        ])
+          expect(serialized).not.toContain(marker);
+        for (const harness of [previous, fresh]) {
+          expect(harness.buildTurnContext).not.toHaveBeenCalled();
+          expect(harness.prepareProviderHandoff).not.toHaveBeenCalled();
+          expect(harness.tryHandlePromptCommand).not.toHaveBeenCalled();
+          expect(harness.open.mock.calls[0]).not.toMatchObject([
+            { resumeFromSession: expect.anything() },
+          ]);
+          expect(harness.open.mock.calls[0]).not.toMatchObject([
+            { initialNativeThreadId: expect.anything() },
+          ]);
+        }
+        expect(network).not.toHaveBeenCalled();
+      } finally {
+        network.mockRestore();
+      }
     }),
 );

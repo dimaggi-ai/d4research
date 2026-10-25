@@ -69,6 +69,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.secondBrainRegenerateIndex]: "secondBrain",
   [WS_METHODS.agentMonitorClaimAttention]: "orchestration",
   [WS_METHODS.d4AgentGetState]: "orchestration",
+  [WS_METHODS.d4AgentSwitchContext]: "orchestration",
   [WS_METHODS.d4AgentGetIdentity]: "orchestration",
   [WS_METHODS.d4AgentGetAction]: "orchestration",
   [WS_METHODS.d4AgentGetSystemHealth]: "orchestration",

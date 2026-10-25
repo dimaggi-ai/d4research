@@ -324,7 +324,11 @@ export const layer: Layer.Layer<
         });
       }
       const d4AgentPrefix = Option.isSome(d4AgentContext)
-        ? yield* d4AgentContext.value.prepare(projection.thread.id, run.modelSelection)
+        ? yield* d4AgentContext.value.prepare(
+            projection.thread.id,
+            run.modelSelection,
+            providerThread.providerSessionId,
+          )
         : null;
       const settleRunBeforeStart = Effect.fn("orchestrationV2.providerTurnStart.settleBeforeStart")(
         function* (input: {

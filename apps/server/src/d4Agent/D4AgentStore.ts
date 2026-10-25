@@ -1,5 +1,7 @@
 import {
   D4AgentActionRecord,
+  D4BrainContext,
+  IsoDateTime,
   D4AgentError,
   D4AgentTurnUsage,
   D4AgentSystemCheck,
@@ -19,6 +21,17 @@ import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 
 export const StoredState = Schema.Struct({
+  retiringThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  brainContext: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
+  contextChangedAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  contextScopeHash: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  bindings: Schema.Array(
+    Schema.Struct({ sessionId: Schema.String, threadId: ThreadId, context: D4BrainContext }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   identityReady: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   automaticActions: Schema.Array(
     Schema.Struct({ scope: Schema.String, target: Schema.String, at: Schema.Number }),
@@ -41,6 +54,11 @@ export type StoredState = typeof StoredState.Type;
 const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(StoredState));
 const encodeState = Schema.encodeEffect(Schema.fromJsonString(StoredState));
 const empty: StoredState = {
+  retiringThreadId: null,
+  brainContext: "Global",
+  contextChangedAt: null,
+  contextScopeHash: null,
+  bindings: [],
   identityReady: false,
   automaticActions: [],
   threadId: null,
@@ -106,7 +124,14 @@ export const layer = Layer.effect(
       update: (change) =>
         lock.withPermits(1)(
           Effect.gen(function* () {
-            const next = change(yield* Ref.get(state));
+            const current = yield* Ref.get(state);
+            const next = yield* Effect.try({
+              try: () => change(current),
+              catch: (cause) =>
+                Schema.is(D4AgentError)(cause)
+                  ? cause
+                  : new D4AgentError({ reason: "storage", cause }),
+            });
             yield* fs.makeDirectory(directory, { recursive: true });
             yield* fs.writeFileString(`${statePath}.tmp`, yield* encodeState(next), {
               mode: 0o600,
@@ -114,7 +139,13 @@ export const layer = Layer.effect(
             yield* fs.rename(`${statePath}.tmp`, statePath);
             yield* Ref.set(state, next);
             return next;
-          }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause }))),
+          }).pipe(
+            Effect.mapError((cause) =>
+              Schema.is(D4AgentError)(cause)
+                ? cause
+                : new D4AgentError({ reason: "storage", cause }),
+            ),
+          ),
         ),
     });
   }),

@@ -1,4 +1,4 @@
-import { D4_AGENT_PREFIX } from "../../d4Agent/policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "../../d4Agent/policy.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@d4research/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
@@ -1367,19 +1367,9 @@ export function codexThreadRuntimeParams(input: {
                   ? {
                       enabled: true,
                       tools: Object.fromEntries(
-                        [
-                          "d4_agent_list",
-                          "d4_agent_read_tail",
-                          "d4_agent_system_health",
-                          "d4_agent_action",
-                        ].map((name) => [name, { approval_mode: "approve" }]),
+                        D4_AGENT_TOOLS.map((name) => [name, { approval_mode: "approve" }]),
                       ),
-                      enabled_tools: [
-                        "d4_agent_list",
-                        "d4_agent_read_tail",
-                        "d4_agent_system_health",
-                        "d4_agent_action",
-                      ],
+                      enabled_tools: [...D4_AGENT_TOOLS],
                     }
                   : {}),
                 url: mcpSession.endpoint,

@@ -54,6 +54,19 @@ import {
   withoutEnvironmentThemes,
 } from "./serverConfigProjection.ts";
 
+export function waitForD4AgentThreadShell<A>(
+  registry: AtomRegistry.AtomRegistry,
+  atom: Atom.Atom<A | null>,
+  timeoutMs = 10_000,
+) {
+  return AtomRegistry.toStream(registry, atom).pipe(
+    Stream.filter((thread) => thread !== null),
+    Stream.runHead,
+    Effect.timeoutOption(timeoutMs),
+    Effect.map((result) => Option.isSome(result) && Option.isSome(result.value)),
+  );
+}
+
 export type { ServerConfigProjection } from "./serverConfigProjection.ts";
 
 export type ServerUpdateStage = "downloading" | "installing" | "resuming";
@@ -1011,6 +1024,16 @@ export function createServerEnvironmentAtoms<R, E>(
     ensureD4AgentThread: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:ensure-d4-agent-thread",
       tag: WS_METHODS.d4AgentEnsureThread,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(d4AgentState({ environmentId, input: {} }));
+          registry.refresh(d4AgentIdentity({ environmentId, input: {} }));
+        }),
+    }),
+    switchD4AgentContext: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:switch-d4-agent-context",
+      tag: WS_METHODS.d4AgentSwitchContext,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
       onSuccess: ({ environmentId }, registry) =>
         Effect.sync(() => {

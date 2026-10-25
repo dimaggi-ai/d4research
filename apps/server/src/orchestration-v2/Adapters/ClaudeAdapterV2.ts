@@ -1,4 +1,4 @@
-import { D4_AGENT_PREFIX } from "../../d4Agent/policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "../../d4Agent/policy.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
@@ -1240,9 +1240,7 @@ export function claudeMcpQueryOverrides(input: {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
   const mcpAllowedTools = input.d4AgentOnly
-    ? ["d4_agent_list", "d4_agent_read_tail", "d4_agent_system_health", "d4_agent_action"].map(
-        (name) => `mcp__t3-code__${name}`,
-      )
+    ? D4_AGENT_TOOLS.map((name) => `mcp__t3-code__${name}`)
     : input.readOnlySandbox
       ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
       : [CLAUDE_T3_MCP_TOOL_WILDCARD];

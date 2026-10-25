@@ -9,7 +9,7 @@ import {
   claudeMcpQueryOverrides,
   makeClaudeQueryOptions,
 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { D4_AGENT_PREFIX } from "./policy.ts";
+import { D4_AGENT_PREFIX, D4_AGENT_TOOLS } from "./policy.ts";
 const session = {
   environmentId: EnvironmentId.make("environment"),
   threadId: ThreadId.make("agent"),
@@ -68,11 +68,7 @@ it.effect("Codex agent disables inherited MCP endpoints and exposes only bounded
     >;
     assert.deepEqual(
       servers["t3-code"]?.tools,
-      Object.fromEntries(
-        ["d4_agent_list", "d4_agent_read_tail", "d4_agent_system_health", "d4_agent_action"].map(
-          (name) => [name, { approval_mode: "approve" }],
-        ),
-      ),
+      Object.fromEntries(D4_AGENT_TOOLS.map((name) => [name, { approval_mode: "approve" }])),
     );
     assert.equal(params.model, "selected");
     const turn = yield* buildCodexTurnStartParams({
@@ -97,9 +93,7 @@ it("Claude agent cannot inherit native tools, external MCP, or bypass launch fla
   });
   assert.deepEqual(
     mcp.allowedTools,
-    ["d4_agent_list", "d4_agent_read_tail", "d4_agent_system_health", "d4_agent_action"].map(
-      (name) => `mcp__t3-code__${name}`,
-    ),
+    D4_AGENT_TOOLS.map((name) => `mcp__t3-code__${name}`),
   );
   const options = makeClaudeQueryOptions({
     modelSelection: {

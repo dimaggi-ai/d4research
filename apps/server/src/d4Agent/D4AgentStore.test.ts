@@ -24,6 +24,8 @@ it.effect(
           threadId: ThreadId.make("persistent"),
           actions: [
             {
+              context: "Global",
+              sessionId: null,
               id: "interrupted",
               action: { type: "interrupt", threadId: ThreadId.make("other") },
               status: "approved",

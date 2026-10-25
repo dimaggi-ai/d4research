@@ -19,6 +19,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { RpcClientError } from "effect/rpc";
 import * as Socket from "effect/socket/Socket";
 
@@ -46,6 +47,7 @@ import {
   serverUpdateStateForServerVersion,
   validateServerUpdateReadyEvent,
   waitForNextEnvironmentReconnect,
+  waitForD4AgentThreadShell,
   waitForDesktopUpdateTarget,
   runDesktopCommitWithReconnectObserver,
 } from "./server.ts";
@@ -920,6 +922,45 @@ describe("server state projection", () => {
       );
 
       expect(yield* Queue.poll(savedConfigs)).toEqual(Option.none());
+    }),
+  );
+});
+
+describe("d4 Agent shell navigation barrier", () => {
+  it.effect("accepts an already projected thread", () =>
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      const atom = Atom.make<string | null>("ready");
+      expect(yield* waitForD4AgentThreadShell(registry, atom)).toBe(true);
+      registry.dispose();
+    }),
+  );
+  it.effect("waits for the shell atom to project the returned thread", () =>
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      const source = Atom.make<string | null>(null);
+      const subscribed = yield* Deferred.make<void>();
+      const atom = Atom.make((get) => {
+        const value = get(source);
+        Deferred.doneUnsafe(subscribed, Exit.void);
+        return value;
+      });
+      const waiting = yield* waitForD4AgentThreadShell(registry, atom).pipe(Effect.forkChild);
+      yield* Deferred.await(subscribed);
+      expect(waiting.pollUnsafe()).toBeUndefined();
+      registry.set(source, "new-thread");
+      expect(yield* Fiber.join(waiting)).toBe(true);
+      registry.dispose();
+    }),
+  );
+  it.effect("fails closed when the shell never receives the returned thread", () =>
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      const atom = Atom.make<string | null>(null);
+      const waiting = yield* waitForD4AgentThreadShell(registry, atom, 1000).pipe(Effect.forkChild);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(waiting)).toBe(false);
+      registry.dispose();
     }),
   );
 });

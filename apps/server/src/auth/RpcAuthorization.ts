@@ -95,6 +95,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.d4AgentGetAction]: AuthOrchestrationReadScope,
   [WS_METHODS.d4AgentGetSystemHealth]: AuthOrchestrationReadScope,
   [WS_METHODS.d4AgentEnsureThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.d4AgentSwitchContext]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentSendMessage]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentResolveAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.d4AgentClaimSystemAttention]: AuthOrchestrationReadScope,

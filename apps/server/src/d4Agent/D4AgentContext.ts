@@ -1,5 +1,7 @@
 import * as AgentAccess from "./D4AgentAccess.ts";
 import { D4AgentError, type ModelSelection, type ThreadId } from "@d4research/contracts";
+import * as Option from "effect/Option";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -10,6 +12,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentMonitor from "../orchestration-v2/AgentMonitorReactor.ts";
 import { compactDigest, modelAvailability, selectionsEqual } from "./policy.ts";
+import { contextScopeHash, projectInScope } from "./brainScope.ts";
 
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -19,6 +22,7 @@ export class D4AgentContext extends Context.Service<
     readonly prepare: (
       threadId: ThreadId,
       selection: ModelSelection,
+      providerSessionId?: string,
     ) => Effect.Effect<string | null, D4AgentError>;
     readonly owns: (threadId: ThreadId) => Effect.Effect<boolean>;
   }
@@ -31,30 +35,95 @@ export const layer = Layer.effect(
     const settingsService = yield* ServerSettings.ServerSettingsService;
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const monitor = yield* AgentMonitor.AgentMonitorReactor;
+    const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
     return D4AgentContext.of({
       owns,
-      prepare: Effect.fn("D4AgentContext.prepare")(function* (threadId, selection) {
-        const state = yield* store.get;
-        if (state.threadId !== threadId) {
-          if (yield* owns(threadId)) return yield* new D4AgentError({ reason: "thread" });
-          return null;
-        }
-        const settings = yield* settingsService.getSettings.pipe(
-          Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })),
-        );
-        const available = modelAvailability(settings.d4Agent, yield* providers.getProviders);
-        if (available !== null) return yield* new D4AgentError({ reason: available });
-        if (
-          settings.d4Agent.modelSelection === null ||
-          !selectionsEqual(selection, settings.d4Agent.modelSelection)
-        )
-          return yield* new D4AgentError({ reason: "model-unavailable" });
-        const updates = yield* monitor.snapshot.pipe(
-          Effect.mapError((cause) => new D4AgentError({ reason: "thread", cause })),
-        );
-        const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
-        return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nPermission mode: ${settings.d4Agent.permissionMode}`;
-      }),
+      prepare: Effect.fn("D4AgentContext.prepare")(
+        function* (threadId, selection, providerSessionId) {
+          const state = yield* store.get;
+          if (state.threadId !== threadId) {
+            if (yield* owns(threadId)) return yield* new D4AgentError({ reason: "thread" });
+            return null;
+          }
+          const settings = yield* settingsService.getSettings.pipe(
+            Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })),
+          );
+          const available = modelAvailability(settings.d4Agent, yield* providers.getProviders);
+          if (available !== null) return yield* new D4AgentError({ reason: available });
+          if (
+            settings.d4Agent.modelSelection === null ||
+            !selectionsEqual(selection, settings.d4Agent.modelSelection)
+          )
+            return yield* new D4AgentError({ reason: "model-unavailable" });
+          if (state.contextScopeHash !== contextScopeHash(state.brainContext, settings.d4Agent))
+            return yield* new D4AgentError({ reason: "context" });
+          // Codex shares one runtime transport across conversations; app threads never change context.
+          if (
+            state.bindings.some(
+              (entry) => entry.threadId === threadId && entry.context !== state.brainContext,
+            )
+          )
+            return yield* new D4AgentError({ reason: "context" });
+          if (providerSessionId !== undefined) {
+            const existing = state.bindings.find(
+              (entry) => entry.sessionId === providerSessionId && entry.threadId === threadId,
+            );
+            if (!existing)
+              yield* store.update((value) => {
+                if (
+                  value.threadId !== threadId ||
+                  value.contextScopeHash !== state.contextScopeHash
+                )
+                  throw new D4AgentError({ reason: "context" });
+                if (
+                  value.bindings.some(
+                    (entry) => entry.threadId === threadId && entry.context !== value.brainContext,
+                  )
+                )
+                  throw new D4AgentError({ reason: "context" });
+                const bound = value.bindings.find(
+                  (entry) => entry.sessionId === providerSessionId && entry.threadId === threadId,
+                );
+                return bound
+                  ? value
+                  : {
+                      ...value,
+                      bindings: [
+                        ...value.bindings,
+                        { sessionId: providerSessionId, threadId, context: value.brainContext },
+                      ],
+                    };
+              });
+          }
+          let updates = yield* monitor.snapshot.pipe(
+            Effect.mapError((cause) => new D4AgentError({ reason: "thread", cause })),
+          );
+          if (state.brainContext !== "Global") {
+            if (Option.isNone(sql)) return yield* new D4AgentError({ reason: "context" });
+            const rows = yield* sql.value<{
+              threadId: string;
+              projectId: string;
+            }>`SELECT thread_id AS threadId, project_id AS projectId FROM orchestration_v2_projection_threads`.pipe(
+              Effect.mapError(() => new D4AgentError({ reason: "context" })),
+            );
+            const visible = new Set(
+              rows
+                .filter(
+                  (row) =>
+                    row.projectId !== state.projectId &&
+                    projectInScope(state.brainContext, settings.d4Agent, row.projectId),
+                )
+                .map((row) => row.threadId),
+            );
+            updates = updates.filter((update) => visible.has(update.threadId));
+          }
+          const current = yield* store.get;
+          if (current.threadId !== threadId || current.contextScopeHash !== state.contextScopeHash)
+            return yield* new D4AgentError({ reason: "context" });
+          const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
+          return `Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}`;
+        },
+      ),
     });
   }),
 );

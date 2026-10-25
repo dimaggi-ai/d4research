@@ -34,6 +34,11 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 import * as Agent from "./D4Agent.ts";
 import * as Store from "./D4AgentStore.ts";
+import { contextScopeHash } from "./brainScope.ts";
+import * as Access from "./D4AgentAccess.ts";
+import { sha256Hex } from "@d4research/shared/hash";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The fake HTTP server records exactly which CTO endpoints the service requests.
+import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
@@ -99,12 +104,18 @@ const fixture = (
   projectService?: Projects.ProjectService["Service"],
   workspace = "/isolated/d4-agent",
   monitorEnabled = true,
+  overrides: Partial<D4AgentSettings> = {},
 ) =>
   Effect.gen(function* () {
     const catalog = yield* Ref.make<ReadonlyArray<ServerProvider>>(
       providerAvailable ? [provider] : [],
     );
     const state = yield* Ref.make<Store.StoredState>({
+      retiringThreadId: null,
+      brainContext: "Global",
+      contextChangedAt: null,
+      contextScopeHash: contextScopeHash("Global", { ...DEFAULT_D4_AGENT_SETTINGS, ...overrides }),
+      bindings: [],
       identityReady: false,
       automaticActions: [],
       threadId: null,
@@ -127,6 +138,11 @@ const fixture = (
       },
     ]);
     const agentShell = yield* Ref.make<OrchestrationV2ThreadShell | null>(null);
+    const shells = yield* Ref.make<ReadonlyArray<OrchestrationV2ThreadShell>>([target]);
+    const sends = yield* Ref.make<
+      ReadonlyArray<Parameters<Threads.ThreadManagementService["Service"]["sendToThread"]>[0]>
+    >([]);
+    const failStop = yield* Ref.make(false);
     const request = yield* Ref.make<OrchestrationV2RuntimeRequest | undefined>(undefined);
     const dispatches = yield* Ref.make<ReadonlyArray<string>>([]);
     const projection = yield* Ref.make<OrchestrationV2ThreadProjection>({
@@ -174,6 +190,7 @@ const fixture = (
               modelSelection,
               permissionMode: mode,
               systemProbeEnabled: true,
+              ...overrides,
             },
             agentMonitor: {
               enabled: monitorEnabled,
@@ -186,18 +203,38 @@ const fixture = (
           }),
           Layer.mock(Threads.ThreadManagementService)({
             getThreadShell: (id) =>
-              id === targetId ? Effect.succeed(target) : Ref.get(agentShell),
-            getShellSnapshot: () =>
-              Effect.succeed({
-                threads: [target],
-                archivedThreads: [],
-                snapshotSequence: 0,
-                schemaVersion: 2,
-              }),
-            dispatch: (cmd) =>
-              Ref.update(dispatches, (value) => [...value, cmd.type]).pipe(
-                Effect.as({ sequence: 1, duplicate: false, storedEvents: [] }),
+              Ref.get(shells).pipe(
+                Effect.flatMap((all) => {
+                  const found = all.find((thread) => thread.id === id);
+                  return found
+                    ? Effect.succeed(found)
+                    : Ref.get(agentShell).pipe(Effect.map((own) => (own?.id === id ? own : null)));
+                }),
               ),
+            getShellSnapshot: () =>
+              Ref.get(shells).pipe(
+                Effect.map((all) => ({
+                  threads: all,
+                  archivedThreads: [],
+                  snapshotSequence: 0,
+                  schemaVersion: 2 as const,
+                })),
+              ),
+            sendToThread: (input) =>
+              Ref.update(sends, (all) => [...all, input]).pipe(Effect.as({} as never)),
+            dispatch: (cmd) =>
+              Effect.gen(function* () {
+                if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
+                  return yield* Effect.fail({ reason: "fixture stop failure" } as never);
+                yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
+                if (cmd.type === "thread.create")
+                  yield* Ref.set(agentShell, {
+                    ...target,
+                    id: cmd.threadId,
+                    projectId: cmd.projectId,
+                  });
+                return { sequence: 1, duplicate: false, storedEvents: [] };
+              }),
             interruptThread: () =>
               Ref.update(dispatches, (value) => [...value, "interrupt"]).pipe(
                 Effect.as({ type: "no_active_run" as const }),
@@ -216,15 +253,179 @@ const fixture = (
               ),
           }),
           projectService === undefined
-            ? Layer.mock(Projects.ProjectService)({})
+            ? Layer.mock(Projects.ProjectService)({ create: () => Effect.succeed({} as never) })
             : Layer.succeed(Projects.ProjectService, projectService),
           Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
         ),
       ),
     );
     const service = yield* Agent.D4Agent.pipe(Effect.provide(layer));
-    return { service, state, checks, request, dispatches, projection, catalog, reads, agentShell };
+    return {
+      service,
+      state,
+      checks,
+      request,
+      dispatches,
+      projection,
+      catalog,
+      reads,
+      agentShell,
+      shells,
+      sends,
+      failStop,
+    };
   });
+
+it.effect(
+  "context switch creates a fresh thread, retires the old one and rejects stale callers",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      const first = yield* f.service.ensureThread();
+      yield* f.service.sendMessage({ text: "old context secret" });
+      const approval = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* Ref.set(f.failStop, true);
+      assert.equal(
+        (yield* Effect.result(f.service.switchContext({ context: "YB" })))._tag,
+        "Failure",
+      );
+      assert.equal((yield* Ref.get(f.state)).retiringThreadId, first.threadId);
+      assert.equal(yield* f.service.getIdentity(), null);
+      yield* Ref.set(f.failStop, false);
+      const second = yield* f.service.ensureThread();
+      assert.notEqual(second.threadId, first.threadId);
+      assert.equal(second.projectId, first.projectId);
+      assert.equal((yield* Ref.get(f.state)).retiringThreadId, null);
+      assert.equal((yield* Ref.get(f.state)).brainContext, "YB");
+      assert.include(yield* Ref.get(f.dispatches), "thread.stop");
+      assert.include(yield* Ref.get(f.dispatches), "thread.archive");
+      assert.equal(
+        (yield* Effect.result(
+          f.service.list().pipe(Effect.provideService(Access.ToolCaller, first.threadId)),
+        ))._tag,
+        "Failure",
+      );
+      assert.equal(
+        (yield* Effect.result(
+          f.service.resolveAction({ actionId: approval.id, decision: "approve" }),
+        ))._tag,
+        "Failure",
+      );
+      yield* f.service.sendMessage({ text: "new context question" });
+      const sent = yield* Ref.get(f.sends);
+      assert.equal(sent[1]?.threadId, second.threadId);
+      assert.equal(sent[1]?.text, "new context question");
+      assert.notInclude(JSON.stringify(sent[1]), "old context secret");
+      assert.deepEqual(yield* f.service.switchContext({ context: "YB" }), second);
+    }),
+);
+
+it.effect(
+  "work-bound list and read-tail exclude sibling and unmapped projects before reading messages",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "YB" },
+      });
+      yield* Ref.set(f.shells, [
+        target,
+        {
+          ...target,
+          id: ThreadId.make("sibling"),
+          projectId: ProjectId.make("other"),
+          title: "sibling secret",
+        },
+        {
+          ...target,
+          id: ThreadId.make("unmapped"),
+          projectId: ProjectId.make("unmapped"),
+          title: "unmapped secret",
+        },
+      ]);
+      yield* f.service.switchContext({ context: "YB" });
+      assert.deepEqual(
+        (yield* f.service.list()).threads.map((thread) => thread.threadId),
+        [targetId],
+      );
+      for (const id of ["sibling", "unmapped"])
+        assert.equal(
+          (yield* Effect.result(f.service.readTail(ThreadId.make(id), 10)))._tag,
+          "Failure",
+        );
+      assert.equal((yield* Ref.get(f.reads)).snapshots, 0);
+      yield* f.service.readTail(targetId, 10);
+      assert.equal((yield* Ref.get(f.reads)).snapshots, 1);
+      yield* f.service.switchContext({ context: "Global" });
+      assert.equal((yield* f.service.list()).threads.length, 3);
+    }),
+);
+
+it.effect.each(["read-only", "ask", "act"] as const)(
+  "memory proposal permission matrix (%s) never changes vault bytes",
+  (mode) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-memory-action-" });
+        const vault = `${directory}/vault`;
+        yield* fs.makeDirectory(`${vault}/Global`, { recursive: true });
+        const note = "Neutral approved marker";
+        const manifest = JSON.stringify({
+          files: [{ path: "Global/method.md", sha256: sha256Hex(note) }],
+        });
+        yield* fs.writeFileString(`${vault}/Global/method.md`, note);
+        yield* fs.writeFileString(`${vault}/Global/sources.json`, manifest);
+        const f = yield* fixture(
+          mode,
+          true,
+          undefined,
+          `${directory}/state/d4-agent/workspace`,
+          true,
+          { memoryEnabled: true, brainVaultPath: vault },
+        );
+        yield* f.service.ensureThread();
+        yield* Ref.update(f.agentShell, (shell) =>
+          shell ? { ...shell, activeRunId: RunId.make("proposal-run") } : shell,
+        );
+        const result = yield* Effect.result(
+          f.service.requestAction({
+            type: "memory-propose",
+            context: "Global",
+            text: "Review this neutral method",
+          }),
+        );
+        const database = `${directory}/state/d4-agent/brain/Global.sqlite`;
+        if (mode === "read-only") {
+          assert.equal(result._tag, "Failure");
+          assert.isFalse(yield* fs.exists(database));
+        } else {
+          assert.equal(result._tag, "Success");
+          if (result._tag === "Success") {
+            assert.equal(result.success.status, mode === "ask" ? "pending" : "executed");
+            if (mode === "ask") {
+              assert.isFalse(yield* fs.exists(database));
+              yield* f.service.resolveAction({ actionId: result.success.id, decision: "approve" });
+            }
+            const saved = yield* f.service.getAction({ actionId: result.success.id });
+            assert.deepInclude(saved?.result, { context: "Global", status: "pending" });
+            assert.isTrue(yield* fs.exists(database));
+          }
+        }
+        assert.equal(yield* fs.readFileString(`${vault}/Global/method.md`), note);
+        assert.equal(yield* fs.readFileString(`${vault}/Global/sources.json`), manifest);
+        assert.deepEqual((yield* fs.readDirectory(vault)).sort(), ["Global"]);
+        assert.equal(
+          (yield* Effect.result(f.service.memoryRead({ context: "YB", path: "Global/method.md" })))
+            ._tag,
+          "Failure",
+        );
+        assert.equal(
+          (yield* Effect.result(f.service.memorySearch({ context: "YB", query: "marker" })))._tag,
+          "Failure",
+        );
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.effect("read-only blocks every action before a side effect", () =>
   Effect.gen(function* () {
@@ -591,6 +792,8 @@ it.effect("state contains bounded unique summaries and full actions require deta
   Effect.gen(function* () {
     const { service, state } = yield* fixture();
     const actions = Array.from({ length: 249 }, (_, i) => ({
+      context: "Global" as const,
+      sessionId: null,
       id: `action:${i}`,
       action: { type: "send" as const, threadId: targetId, text: "x".repeat(16000) },
       status: i < 50 ? ("pending" as const) : ("executed" as const),
@@ -623,7 +826,7 @@ it.effect(
       yield* Ref.update(state, (s) => ({
         ...s,
         threadId: agentId,
-        projectId: target.projectId,
+        projectId: ProjectId.make("agent-project"),
         identityReady: true,
       }));
       const results = yield* Effect.all(
@@ -683,4 +886,85 @@ it.effect("identity and notification reads are pure and reserved identity is inv
     assert.equal((yield* service.getSystemHealth()).threadId, targetId);
     assert.deepEqual(yield* Ref.get(reads), { updates: 0, snapshots: 0, probes: 0 });
   }),
+);
+
+it.live.each(["read-only", "ask", "act"] as const)(
+  "CTO questions enforce scoped approval before the fake server receives POST (%s)",
+  (mode) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const requests: string[] = [];
+        const server = yield* Effect.acquireRelease(
+          Effect.tryPromise(
+            () =>
+              new Promise<NodeHttp.Server>((resolve, reject) => {
+                const instance = NodeHttp.createServer((request, response) => {
+                  requests.push(`${request.method} ${request.url}`);
+                  request.resume();
+                  response.setHeader("content-type", "application/json");
+                  response.end(JSON.stringify({ answer: "Fixture CTO answer" }));
+                });
+                instance.once("error", reject);
+                instance.listen(0, "127.0.0.1", () => resolve(instance));
+              }),
+          ),
+          (instance) =>
+            Effect.promise(() => new Promise<void>((resolve) => instance.close(() => resolve()))),
+        );
+        const address = server.address();
+        if (address === null || typeof address === "string")
+          return yield* Effect.die("Expected fixture listener");
+        const ctoBaseUrl = `http://127.0.0.1:${address.port}`;
+        const f = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
+          ctoEnabled: true,
+          ctoBaseUrl,
+        });
+        yield* f.service.ensureThread();
+        assert.equal(
+          (yield* Effect.result(f.service.ctoRead({ context: "Global", operation: "status" })))
+            ._tag,
+          "Failure",
+        );
+        assert.deepEqual(requests, []);
+        yield* f.service.switchContext({ context: "Dimaggi" });
+        yield* Ref.update(f.agentShell, (shell) =>
+          shell ? { ...shell, activeRunId: RunId.make("cto-run") } : shell,
+        );
+        yield* f.service.ctoRead({ context: "Dimaggi", operation: "status" });
+        assert.deepEqual(requests, ["GET /api/status"]);
+        const action = yield* Effect.result(
+          f.service.requestAction({
+            type: "cto-ask",
+            context: "Dimaggi",
+            text: "What is the fixture status?",
+          }),
+        );
+        if (mode === "read-only") {
+          assert.equal(action._tag, "Failure");
+          assert.deepEqual(requests, ["GET /api/status"]);
+        } else if (action._tag === "Success") {
+          if (mode === "ask") {
+            assert.equal(action.success.status, "pending");
+            assert.deepEqual(requests, ["GET /api/status"]);
+            yield* f.service.resolveAction({ actionId: action.success.id, decision: "approve" });
+          } else assert.equal(action.success.status, "executed");
+          assert.deepEqual(requests, ["GET /api/status", "POST /api/chat"]);
+          assert.deepEqual((yield* f.service.getAction({ actionId: action.success.id }))?.result, {
+            answer: "Fixture CTO answer",
+          });
+        } else assert.fail("Expected authorized CTO action");
+        const disabled = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
+          ctoBaseUrl,
+        });
+        yield* disabled.service.switchContext({ context: "Dimaggi" });
+        const count = requests.length;
+        assert.equal(
+          (yield* Effect.result(
+            disabled.service.ctoRead({ context: "Dimaggi", operation: "brief" }),
+          ))._tag,
+          "Failure",
+        );
+        assert.equal(requests.length, count);
+      }),
+    ),
 );

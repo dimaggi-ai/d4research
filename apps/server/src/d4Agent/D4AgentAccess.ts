@@ -10,6 +10,10 @@ export const DispatchOrigin = Context.Reference<
   "authenticated-user" | "internal-heartbeat" | "internal-server" | undefined
 >("d4research/d4Agent/DispatchOrigin", { defaultValue: () => undefined });
 
+export const ToolCaller = Context.Reference<ThreadId | undefined>("d4research/d4Agent/ToolCaller", {
+  defaultValue: () => undefined,
+});
+
 // Store ownership is available below the monitor/context layer without a cycle.
 export const ownership = Effect.gen(function* () {
   const store = yield* Effect.serviceOption(Store.D4AgentStore);

@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "./D4AgentContext.ts";
 import * as Store from "./D4AgentStore.ts";
+import { contextScopeHash } from "./brainScope.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Monitor from "../orchestration-v2/AgentMonitorReactor.ts";
@@ -34,6 +35,11 @@ const layer = Context.layer.pipe(
       Layer.mock(Store.D4AgentStore)({
         workspace: "/isolated",
         get: Effect.succeed({
+          retiringThreadId: null,
+          brainContext: "Global",
+          contextChangedAt: null,
+          contextScopeHash: contextScopeHash("Global", DEFAULT_D4_AGENT_SETTINGS),
+          bindings: [],
           identityReady: true,
           automaticActions: [],
           threadId: ownId,

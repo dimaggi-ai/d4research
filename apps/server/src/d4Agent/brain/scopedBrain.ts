@@ -223,12 +223,34 @@ export function createScopedBrain(options: {
       )
         db.exec("ALTER TABLE proposals ADD COLUMN resolved_at TEXT");
       db.exec(
+        // The resolved index holds resolved rows only, so the resolved page never walks the
+        // pending backlog. Its WHERE term must match the resolved query exactly.
         `CREATE INDEX IF NOT EXISTS proposals_status_idx ON proposals(context,status,created_at);
-        CREATE INDEX IF NOT EXISTS proposals_resolved_idx ON proposals(context,resolved_at);`,
+        DROP INDEX IF EXISTS proposals_resolved_idx;
+        CREATE INDEX IF NOT EXISTS proposals_resolved_only_idx ON proposals(context,resolved_at) WHERE status!='pending';`,
       );
       return body(db);
     } finally {
       db.close();
+    }
+  }
+  // Applies one proposal change and bumps the proposal revision in the same transaction.
+  function changeProposals<A extends { readonly changes: number | bigint }>(
+    db: NodeSqlite.DatabaseSync,
+    change: () => A,
+  ): A {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = change();
+      if (Number(result.changes) > 0)
+        db.prepare(
+          "INSERT INTO metadata(key,value) VALUES('proposalRevision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1",
+        ).run();
+      db.exec("COMMIT");
+      return result;
+    } catch (cause) {
+      db.exec("ROLLBACK");
+      throw cause;
     }
   }
   function reconcile(db: NodeSqlite.DatabaseSync, snapshot: Snapshot) {
@@ -522,9 +544,13 @@ export function createScopedBrain(options: {
         refuse("proposal");
       return database(input.context, (db) => {
         const id = NodeCrypto.randomUUID();
-        db.prepare(
-          "INSERT INTO proposals(id,context,session_id,text,status) VALUES(?,?,?,?,'pending')",
-        ).run(id, input.context, input.sessionId, input.text);
+        changeProposals(db, () =>
+          db
+            .prepare(
+              "INSERT INTO proposals(id,context,session_id,text,status) VALUES(?,?,?,?,'pending')",
+            )
+            .run(id, input.context, input.sessionId, input.text),
+        );
         return { id, context: input.context, status: "pending" as const };
       });
     });
@@ -554,20 +580,31 @@ export function createScopedBrain(options: {
         })),
       );
     });
+  // State polling reads these counts often. Each proposal change bumps a revision in the same
+  // transaction, so a count is recomputed only after a change (from any process).
+  const pendingCounts = new Map<string, { revision: string; pending: number }>();
   const proposalCounts = async () =>
     run("proposal-counts", () =>
       [...contexts].map((context) => ({
         context: context as D4BrainContext,
         pending: NodeFS.existsSync(NodePath.join(directory, `${context}.sqlite`))
-          ? database(context as D4BrainContext, (db) =>
-              Number(
+          ? database(context as D4BrainContext, (db) => {
+              const revision = String(
+                db.prepare("SELECT value FROM metadata WHERE key='proposalRevision'").get()
+                  ?.value ?? "0",
+              );
+              const cached = pendingCounts.get(context);
+              if (cached?.revision === revision) return cached.pending;
+              const pending = Number(
                 db
                   .prepare(
                     "SELECT count(*) AS count FROM proposals WHERE context=? AND status='pending'",
                   )
                   .get(context)!.count,
-              ),
-            )
+              );
+              pendingCounts.set(context, { revision, pending });
+              return pending;
+            })
           : 0,
       })),
     );
@@ -577,11 +614,13 @@ export function createScopedBrain(options: {
         refuse("proposal");
       return database(context, (db) => {
         const status = approve ? ("approved" as const) : ("rejected" as const);
-        const result = db
-          .prepare(
-            "UPDATE proposals SET status=?,resolved_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE context=? AND id=?",
-          )
-          .run(status, context, id);
+        const result = changeProposals(db, () =>
+          db
+            .prepare(
+              "UPDATE proposals SET status=?,resolved_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE context=? AND id=?",
+            )
+            .run(status, context, id),
+        );
         if (result.changes !== 1) refuse("proposal");
         return { id, context, status };
       });

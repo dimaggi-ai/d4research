@@ -444,6 +444,55 @@ describe("context-local index", () => {
     expect(resolved.map((proposal) => proposal.id)).toEqual(ids.slice(65).toReversed());
     expect((await brain.proposalCounts()).find((row) => row.context === "YB")?.pending).toBe(60);
   });
+  it("reads resolved proposals through a resolved-only index and caches pending counts", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 3; index++)
+      ids.push(
+        (await brain.propose({ context: "YB", text: `candidate ${index}`, sessionId: "session" }))
+          .id,
+      );
+    await brain.resolveProposal("YB", ids[0]!, true);
+    const path = NodePath.join(stateDir, "d4-agent/brain/YB.sqlite");
+    const inspect = new NodeSqlite.DatabaseSync(path);
+    try {
+      const partial = inspect
+        .prepare("PRAGMA index_list(proposals)")
+        .all()
+        .filter((row) => row.partial === 1)
+        .map((row) => String(row.name));
+      expect(partial).toEqual(["proposals_resolved_only_idx"]);
+      const plan = inspect
+        .prepare(
+          "EXPLAIN QUERY PLAN SELECT id,context,text,status,created_at FROM proposals WHERE context=? AND status!='pending' ORDER BY resolved_at DESC,rowid DESC LIMIT ?",
+        )
+        .all("YB", 10)
+        .map((row) => String(row.detail))
+        .join("\n");
+      expect(plan).toContain("proposals_resolved_only_idx");
+    } finally {
+      inspect.close();
+    }
+    const pending = async () =>
+      (await brain.proposalCounts()).find((row) => row.context === "YB")?.pending;
+    expect(await pending()).toBe(2);
+    // A row written without a revision bump is not counted: the count comes from the cache.
+    const writer = new NodeSqlite.DatabaseSync(path);
+    try {
+      writer
+        .prepare(
+          "INSERT INTO proposals(id,context,session_id,text,status) VALUES('uncounted','YB','session','x','pending')",
+        )
+        .run();
+    } finally {
+      writer.close();
+    }
+    expect(await pending()).toBe(2);
+    // Any proposal change through the brain bumps the revision and recounts.
+    await brain.resolveProposal("YB", ids[1]!, false);
+    expect(await pending()).toBe(2);
+    await brain.propose({ context: "YB", text: "candidate 3", sessionId: "session" });
+    expect(await pending()).toBe(3);
+  });
   it("migrates pending-only proposal stores without dropping proposal content", async () => {
     await brain.propose({ context: "Personal", text: "initialize", sessionId: "session_1" });
     const db = new NodeSqlite.DatabaseSync(

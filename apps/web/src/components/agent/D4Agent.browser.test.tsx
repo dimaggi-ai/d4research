@@ -160,6 +160,9 @@ vi.mock("../ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../ChatView", () => ({ default: () => <button>Initialize Git</button> }));
+vi.mock("../ChatMarkdown", () => ({
+  default: ({ text }: { text: string }) => <div className="chat-markdown">{text}</div>,
+}));
 vi.mock("../ChatView.logic", () => ({
   resolveDraftPromotionNavigationTarget: () => null,
   threadHasStarted: () => false,

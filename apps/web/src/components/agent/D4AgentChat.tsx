@@ -26,6 +26,8 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import ChatMarkdown from "../ChatMarkdown";
+import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
 
@@ -153,7 +155,18 @@ export function D4AgentChat({
             <p className="text-xs text-muted-foreground">
               {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
             </p>
-            <p className="whitespace-pre-wrap break-words select-text">{entry.text}</p>
+            {entry.role === "assistant" ? (
+              // Nia quotes other threads, so their HTML is shown as text, never rendered.
+              <ChatMarkdown
+                text={entry.text}
+                cwd={undefined}
+                environmentId={environmentId}
+                lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
+                parseRawHtml={false}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap break-words select-text">{entry.text}</p>
+            )}
             {entry.links.map((link) =>
               link.threadId ? (
                 <Link

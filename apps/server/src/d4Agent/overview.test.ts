@@ -7,6 +7,7 @@ import {
   overviewMessageId,
   overviewRevision,
   overviewText,
+  OVERVIEW_POST_LIMIT,
   pendingOverview,
   updateOverview,
   type OverviewInput,
@@ -247,14 +248,37 @@ describe("overview ingestion and delivery", () => {
     );
   });
 
-  it("renders only the top five with an overflow count and excludes expired pending items", () => {
-    const items = initial(Array.from({ length: 7 }, (_, index) => input(String(index))));
+  it("renders up to the post limit with an overflow count and excludes expired pending items", () => {
+    const items = initial(
+      Array.from({ length: OVERVIEW_POST_LIMIT + 2 }, (_, index) => input(String(index))),
+    );
     const lines = overviewText(items, []).split("\n");
-    assert.lengthOf(lines, 6);
-    assert.equal(lines[5], "+2 more");
+    assert.lengthOf(lines, OVERVIEW_POST_LIMIT + 1);
+    assert.equal(lines[OVERVIEW_POST_LIMIT], "+2 more");
     const expired = initial([input("expired", { expiresAt: "2026-10-26T14:00:00.000Z" })]);
     assert.isEmpty(pendingOverview(expired, "Global", now));
   });
+});
+
+it("groups a digest from several sources under source headings", () => {
+  const mail = ingestOverview(
+    [],
+    snapshot([input("m", { title: "Bill due" })], { source: "mail" }),
+    now,
+    true,
+  );
+  const intel = ingestOverview(
+    mail,
+    snapshot([input("i", { title: "Radar", recommendation: "Read: https://x/#yb" })], {
+      source: "intel",
+    }),
+    now,
+    true,
+  );
+  assert.equal(
+    overviewText(intel, []),
+    "Mail:\n• Bill due\nDaily intel:\n• Radar — Read: https://x/#yb",
+  );
 });
 
 it("first ingestion ignores expired items when selecting the five current notices", () => {

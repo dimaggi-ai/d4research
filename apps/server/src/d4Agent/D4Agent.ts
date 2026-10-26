@@ -2782,7 +2782,7 @@ export const layer = Layer.effect(
             `${other}: ${pending.get(other)!.length} new items → [[thread:${session.threadId}|${other}]]`,
           );
         }
-        const selectedItems = items.slice(0, 5);
+        const selectedItems = items.slice(0, Overview.OVERVIEW_POST_LIMIT);
         const countIds = countContexts.map((other) =>
           Overview.overviewMessageId(other, pending.get(other)!),
         );

@@ -155,14 +155,34 @@ export const overviewMessageId = (
   counts: ReadonlyArray<string> = [],
 ) =>
   `d4-overview:${sha256Hex(JSON.stringify([context, items.map((item) => [overviewIdentity(item), item.revision]).sort(), counts]))}`;
-export const overviewText = (items: ReadonlyArray<OverviewItem>, counts: ReadonlyArray<string>) =>
-  [
-    ...items
-      .slice(0, 5)
-      .map((item) => `• ${item.title}${item.recommendation ? ` — ${item.recommendation}` : ""}`),
-    ...(items.length > 5 ? [`+${items.length - 5} more`] : []),
+// One post carries the whole morning digest; the rest follows on the next heartbeat.
+export const OVERVIEW_POST_LIMIT = 30;
+const sourceLabels: Record<string, string> = {
+  mail: "Mail",
+  intel: "Daily intel",
+  system: "System",
+  threads: "Threads",
+  scheduled: "Scheduled runs",
+  cto: "CTO",
+};
+const overviewLine = (item: OverviewItem) =>
+  `• ${item.title}${item.recommendation ? ` — ${item.recommendation}` : ""}`;
+export const overviewText = (items: ReadonlyArray<OverviewItem>, counts: ReadonlyArray<string>) => {
+  const shown = items.slice(0, OVERVIEW_POST_LIMIT);
+  const sources = [...new Set(shown.map((item) => item.source))];
+  const body =
+    sources.length < 2
+      ? shown.map(overviewLine)
+      : sources.flatMap((source) => [
+          `${sourceLabels[source] ?? source}:`,
+          ...shown.filter((item) => item.source === source).map(overviewLine),
+        ]);
+  return [
+    ...body,
+    ...(items.length > OVERVIEW_POST_LIMIT ? [`+${items.length - OVERVIEW_POST_LIMIT} more`] : []),
     ...counts,
   ].join("\n");
+};
 export function updateOverview(
   items: ReadonlyArray<OverviewItem>,
   context: D4BrainContext,

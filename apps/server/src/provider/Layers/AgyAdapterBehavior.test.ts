@@ -277,6 +277,35 @@ it.layer(NodeServices.layer)("AgyAdapter behaviour", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("names agy's print timeout instead of reporting an empty answer", () =>
+    Effect.gen(function* () {
+      const mock = yield* writeMock(
+        [
+          "process.stdin.resume();",
+          'process.stdin.on("data", () => {});',
+          'process.stdin.on("end", () => {',
+          '  process.stderr.write("[agy] print timeout after 5m0s with turn in progress; returning partial output");',
+          `  console.log(${JSON.stringify(resultLine("SUCCESS"))});`,
+          "});",
+        ].join("\n"),
+      );
+      const { adapter, threadId } = yield* startAdapter(mock.file, mock.dir);
+      const events = yield* collectEvents(adapter);
+
+      const exit = yield* Effect.exit(adapter.sendTurn({ threadId, input: "hi", attachments: [] }));
+      assert.isTrue(Exit.isFailure(exit));
+      yield* settle;
+      yield* Fiber.interrupt(events.fiber);
+
+      const completed = (yield* Ref.get(events.ref)).find(
+        (event) => event.type === "turn.completed",
+      );
+      const payload = completed?.payload as { state: string; errorMessage?: string };
+      assert.equal(payload.state, "failed");
+      assert.include(payload.errorMessage ?? "", "print timeout");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("balances turn.started when command spawn fails before a process exists", () =>
     Effect.gen(function* () {
       const cwd = yield* Effect.promise(() =>

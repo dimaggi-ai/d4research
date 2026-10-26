@@ -295,8 +295,11 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
           ...tokenizeCliArgs(settings.launchArgs),
           "--output-format",
           "stream-json",
+          // At its own print timeout agy exits 0 with status SUCCESS and an empty
+          // response, so every turn longer than it looked like an empty answer.
+          // 0 waits for the turn; DEFAULT_TURN_TIMEOUT stays the hard ceiling.
           "--print-timeout",
-          "5m",
+          "0",
           "--model",
           model,
           ...(context.conversationId
@@ -489,7 +492,9 @@ export const makeAgyAdapter = (settings: AgySettings, options?: AgyAdapterLiveOp
         const emptySuccess = exitCode === 0 && resultStatus === "SUCCESS" && !responseText.trim();
         const succeeded = exitCode === 0 && resultStatus === "SUCCESS" && !emptySuccess;
         const failureDetail = emptySuccess
-          ? "Agy returned SUCCESS without assistant output."
+          ? /print timeout/i.test(stderr)
+            ? `Agy stopped at its print timeout before answering: ${stderr.trim()}`
+            : "Agy returned SUCCESS without assistant output."
           : stderr.trim() || `Agy exited with code ${exitCode}.`;
         const completedAt = yield* nowIso;
         const { activeTurnId: _activeTurnId, ...sessionWithoutTurn } = context.session;

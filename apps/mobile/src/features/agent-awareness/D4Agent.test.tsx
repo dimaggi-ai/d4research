@@ -8,7 +8,7 @@ import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { D4AgentHomeHeader, D4AgentPanel } from "./D4Agent";
+import { D4AgentEntry, D4AgentHomeHeader, D4AgentPanel } from "./D4Agent";
 import * as Cause from "effect/Cause";
 import {
   D4AgentError,
@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => ({
   allowed: true,
   enabled: true,
   configLoaded: true,
+  connectionPhase: "connected",
   monitorEnabled: true,
   threads: [] as Array<{
     id: ThreadId;
@@ -73,6 +74,9 @@ vi.mock("@d4research/client-runtime/state/server", async () => {
   const Effect = await import("effect/Effect");
   return { waitForD4AgentThreadShell: () => Effect.succeed(true) };
 });
+vi.mock("../../state/environments", () => ({
+  useEnvironmentConnectionState: () => ({ data: { phase: mocks.connectionPhase } }),
+}));
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
 }));
@@ -438,6 +442,7 @@ const threadId = ThreadId.make("agent-thread");
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.resolve.mockClear();
+  mocks.connectionPhase = "connected";
   mocks.send.mockClear();
   mocks.undo.mockClear();
   mocks.switchContext.mockClear();
@@ -998,6 +1003,21 @@ it("restores an automatically archived thread only after Undo archive", async ()
       .click(),
   );
   expect(mocks.undo).toHaveBeenCalledWith({ environmentId, input: { actionId: "archived" } });
+});
+
+it("waits for a connection before opening Nia with cached configuration", async () => {
+  mocks.state = { ...mocks.state!, threadId: null, projectId: null };
+  mocks.connectionPhase = "connecting";
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} />));
+  await act(async () => container.querySelector("button")!.click());
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
+
+  mocks.connectionPhase = "connected";
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} />));
+  await act(async () => container.querySelector("button")!.click());
+  expect(mocks.resolve).toHaveBeenCalledOnce();
+  expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/${threadId}`);
 });
 
 it("pins the agent above filters in the actual mobile HomeScreen", async () => {

@@ -22,7 +22,7 @@ import {
 } from "@d4research/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import { useEnvironments } from "../../state/environments";
+import { useEnvironment, useEnvironments } from "../../state/environments";
 import { useThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -66,6 +66,7 @@ export function D4AgentEntry({
   label: string | null;
 }) {
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const environment = useEnvironment(environmentId);
   const state = useD4AgentState(environmentId, config?.settings.d4Agent.enabled === true);
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
@@ -97,7 +98,8 @@ export function D4AgentEntry({
         disabled={
           !config ||
           opening ||
-          (config.settings.d4Agent.enabled === true && !state.data?.threadId && !allowed)
+          (config.settings.d4Agent.enabled === true &&
+            (allowed ? environment?.connection.phase !== "connected" : !state.data?.threadId))
         }
         onClick={async () => {
           if (!config) return;

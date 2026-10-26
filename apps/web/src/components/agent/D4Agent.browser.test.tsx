@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   allowed: true,
   enabled: true,
   configLoaded: true,
+  connectionPhase: "connected",
   monitorEnabled: true,
   threads: [] as Array<{
     id: ThreadId;
@@ -185,6 +186,7 @@ vi.mock("../../composerDraftStore", async () => ({
 vi.mock("../../sidebarPendingFileDropStore", () => ({ useSidebarPendingFileDropStore: {} }));
 vi.mock("../../state/shell", () => ({ useEnvironmentShellStatus: () => "live" }));
 vi.mock("../../state/environments", () => ({
+  useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
     environments: [{ environmentId: "test-environment", label: "Local" }],
   }),
@@ -210,6 +212,7 @@ const threadId = ThreadId.make("agent-thread");
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.resolve.mockClear();
+  mocks.connectionPhase = "connected";
   mocks.send.mockClear();
   mocks.undo.mockClear();
   mocks.switchContext.mockClear();
@@ -352,6 +355,24 @@ it("opens settings when agent chat is disabled", async () => {
   await act(async () => container.querySelector("button")!.click());
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/settings/general" });
   expect(mocks.resolve).not.toHaveBeenCalled();
+});
+
+it("waits for a connection before opening Nia with cached configuration", async () => {
+  mocks.state = { ...mocks.state!, threadId: null, projectId: null };
+  mocks.connectionPhase = "connecting";
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await act(async () => container.querySelector("button")!.click());
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
+
+  mocks.connectionPhase = "connected";
+  await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
+  await act(async () => container.querySelector("button")!.click());
+  expect(mocks.resolve).toHaveBeenCalledOnce();
+  expect(mocks.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId, threadId },
+  });
 });
 
 it("waits for configuration before allowing the first pinned-entry click", async () => {

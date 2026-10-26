@@ -119,6 +119,7 @@ const fixture = (
   workspace = "/isolated/d4-agent",
   monitorEnabled = true,
   overrides: Partial<D4AgentSettings> = {},
+  store?: Store.D4AgentStore["Service"],
 ) =>
   Effect.gen(function* () {
     const catalog = yield* Ref.make<ReadonlyArray<ServerProvider>>(
@@ -238,15 +239,18 @@ const fixture = (
     const layer = Agent.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          Layer.succeed(Store.D4AgentStore, {
-            workspace,
-            get: Ref.get(state),
-            update: (f) =>
-              Ref.update(reads, (r) => ({ ...r, updates: r.updates + 1 })).pipe(
-                Effect.andThen(Ref.updateAndGet(state, f)),
-                Effect.tap((value) => PubSub.publish(stateChanges, value)),
-              ),
-          }),
+          Layer.succeed(
+            Store.D4AgentStore,
+            store ?? {
+              workspace,
+              get: Ref.get(state),
+              update: (f) =>
+                Ref.update(reads, (r) => ({ ...r, updates: r.updates + 1 })).pipe(
+                  Effect.andThen(Ref.updateAndGet(state, f)),
+                  Effect.tap((value) => PubSub.publish(stateChanges, value)),
+                ),
+            },
+          ),
           Layer.succeed(Inbox.OverviewInbox, {
             read: () =>
               Ref.get(inboxSnapshots).pipe(
@@ -1096,6 +1100,37 @@ const realProjectLayer = RuntimeLayer.layerProjectService.pipe(
   Layer.provide(Settings.layerTest()),
   Layer.provide(Config.layerTest(process.cwd(), { prefix: "d4-agent-project-" })),
 );
+it.effect("ensureThread creates a project and thread in a fresh environment", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-agent-fresh-" });
+      const projects = yield* Projects.ProjectService;
+      const store = yield* Store.D4AgentStore.pipe(
+        Effect.provide(Store.layer.pipe(Layer.provide(Config.layerTest(process.cwd(), directory)))),
+      );
+      const f = yield* fixture("read-only", true, projects, store.workspace, true, {}, store);
+      const initial = yield* store.get;
+      assert.equal(initial.threadId, null);
+      assert.equal(initial.projectId, null);
+      assert.deepEqual(initial.sessions, []);
+
+      const identity = yield* f.service.ensureThread();
+
+      assert.isTrue(Option.isSome(yield* projects.getById(identity.projectId)));
+      const shell = yield* Ref.get(f.agentShell);
+      assert.equal(shell?.id, identity.threadId);
+      assert.equal(shell?.projectId, identity.projectId);
+      const state = yield* store.get;
+      assert.equal(state.threadId, identity.threadId);
+      assert.equal(state.projectId, identity.projectId);
+      assert.isTrue(state.identityReady);
+      assert.equal(state.sessions?.[0]?.threadId, identity.threadId);
+      assert.deepEqual(yield* f.service.ensureThread(), identity);
+    }),
+  ).pipe(Effect.provide(realProjectLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
 it.effect(
   "ensureThread creates a missing isolated workspace and retries the same owned project",
   () =>

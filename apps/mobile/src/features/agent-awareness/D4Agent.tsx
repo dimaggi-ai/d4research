@@ -18,6 +18,7 @@ import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "rea
 import { Pressable, View, ScrollView, Modal, TextInput } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentConnectionState } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -67,6 +68,7 @@ export function D4AgentEntry({
   label?: string;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
+  const connection = useEnvironmentConnectionState(environmentId);
   const state = useD4AgentState(environmentId, config?.settings.d4Agent.enabled === true);
   const ensure = useAtomCommand(serverEnvironment.ensureD4AgentThread);
   const allowed = useAtomValue(serverEnvironment.ensureD4AgentThread.permissionAtom(environmentId));
@@ -81,7 +83,8 @@ export function D4AgentEntry({
         disabled={
           !config ||
           opening ||
-          (config.settings.d4Agent.enabled === true && !state.data?.threadId && !allowed)
+          (config.settings.d4Agent.enabled === true &&
+            (allowed ? connection.data?.phase !== "connected" : !state.data?.threadId))
         }
         className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3"
         onPress={async () => {

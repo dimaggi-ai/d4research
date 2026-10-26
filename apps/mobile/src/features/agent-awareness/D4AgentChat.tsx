@@ -19,7 +19,7 @@ import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runti
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
-import { useRef, useState, type ComponentRef, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -28,6 +28,12 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
+import { flattenThemeColor } from "../../lib/mobileTheme";
+import { useFontFamily } from "../../lib/useFontFamily";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
   useEnvironmentServerConfig,
@@ -41,6 +47,59 @@ import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
 
 const isD4AgentError = Schema.is(D4AgentError);
+
+function useNiaMarkdownStyles() {
+  const { appearance } = useAppearancePreferences();
+  const theme = useUniwindTheme();
+  const fontFamily = useFontFamily("regular");
+  const boldFontFamily = useFontFamily("bold");
+  return useMemo(() => {
+    const typography = resolveNativeMarkdownTypography(appearance.baseFontSize);
+    const common = {
+      ...typography,
+      fontFamily,
+      headingFontFamily: boldFontFamily,
+      boldFontFamily,
+      contextChipBorderColor: flattenThemeColor(
+        theme["--color-border"],
+        theme["--color-user-bubble"],
+      ),
+    };
+    const userColor = theme["--color-user-bubble-foreground"];
+    return {
+      user: {
+        ...common,
+        color: userColor,
+        strongColor: userColor,
+        mutedColor: userColor,
+        linkColor: userColor,
+        inlineCodeColor: theme["--color-user-bubble-foreground-muted"],
+        codeColor: theme["--color-md-user-code-text"],
+        codeBackgroundColor: theme["--color-md-user-code-bg"],
+        codeBlockBackgroundColor: theme["--color-md-user-fence-bg"],
+        fileTextColor: userColor,
+        skillTextColor: theme["--color-user-bubble-skill-foreground"],
+        quoteMarkerColor: userColor,
+        dividerColor: userColor,
+      },
+      assistant: {
+        ...common,
+        color: theme["--color-md-body"],
+        strongColor: theme["--color-md-strong"],
+        mutedColor: theme["--color-md-body"],
+        linkColor: theme["--color-md-link"],
+        inlineCodeColor: theme["--color-foreground-secondary"],
+        codeColor: theme["--color-md-code-text"],
+        codeBackgroundColor: theme["--color-md-code-bg"],
+        codeBlockBackgroundColor: theme["--color-md-code-bg"],
+        fileTextColor: theme["--color-md-code-text"],
+        skillTextColor: theme["--color-inline-skill-foreground"],
+        quoteMarkerColor: theme["--color-md-blockquote-border"],
+        dividerColor: theme["--color-md-hr"],
+      },
+    };
+  }, [appearance.baseFontSize, theme, fontFamily, boldFontFamily]);
+}
 
 export function D4AgentRoute({
   environmentId,
@@ -93,6 +152,7 @@ export function D4AgentChat({
   state: D4AgentState;
   refresh: () => void;
 }) {
+  const markdownStyles = useNiaMarkdownStyles();
   const config = useEnvironmentServerConfig(environmentId);
   const projects = useProjects();
   const threads = useThreadShells();
@@ -177,38 +237,38 @@ export function D4AgentChat({
               {entry.role === "system" ? (
                 <Text className="text-xs text-foreground-muted">{entry.context}</Text>
               ) : null}
-              <Text
-                selectable
-                className={
-                  entry.role === "system"
-                    ? "text-sm text-foreground"
-                    : entry.role === "user"
-                      ? "text-base text-user-bubble-foreground"
-                      : "text-base text-foreground"
-                }
-              >
-                {segments === null
-                  ? entry.text
-                  : segments.map((segment, index) =>
-                      segment.kind === "text" ? (
-                        segment.text
-                      ) : (
-                        <Text
-                          // oxlint-disable-next-line react/no-array-index-key -- segments of one immutable message
-                          key={index}
-                          accessibilityRole="link"
-                          className="text-accent"
-                          onPress={() =>
-                            segment.kind === "url"
-                              ? void tryOpenExternalUrl(segment.href, "markdown-link")
-                              : openThread(segment.threadId)
-                          }
-                        >
-                          {segment.text}
-                        </Text>
-                      ),
-                    )}
-              </Text>
+              {entry.role === "system" ? (
+                <Text selectable className="text-sm text-foreground">
+                  {segments?.map((segment, index) =>
+                    segment.kind === "text" ? (
+                      segment.text
+                    ) : (
+                      <Text
+                        // oxlint-disable-next-line react/no-array-index-key -- segments of one immutable message
+                        key={index}
+                        accessibilityRole="link"
+                        className="text-accent"
+                        onPress={() =>
+                          segment.kind === "url"
+                            ? void tryOpenExternalUrl(segment.href, "markdown-link")
+                            : openThread(segment.threadId)
+                        }
+                      >
+                        {segment.text}
+                      </Text>
+                    ),
+                  )}
+                </Text>
+              ) : (
+                <SelectableMarkdownText
+                  markdown={entry.text}
+                  textStyle={markdownStyles[entry.role]}
+                  preserveSoftBreaks={entry.role === "user"}
+                  onLinkPress={(href) => {
+                    if (/^https?:\/\//i.test(href)) void tryOpenExternalUrl(href, "markdown-link");
+                  }}
+                />
+              )}
               {entry.links
                 .filter(
                   (link) =>

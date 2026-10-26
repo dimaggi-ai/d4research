@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
     value: { threadId: "new-agent-thread" as ThreadId },
   })),
   copy: vi.fn(async (_text: string) => undefined),
+  openExternal: vi.fn(async () => true),
   newSession: vi.fn(async () => ({
     _tag: "Success",
     value: { threadId: "fresh-agent-thread" as ThreadId },
@@ -191,6 +192,28 @@ vi.mock("@react-navigation/native", () => ({
   useFocusEffect: () => undefined,
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: (text: string) => mocks.copy(text) }));
+vi.mock("../../lib/openExternalUrl", () => ({ tryOpenExternalUrl: mocks.openExternal }));
+vi.mock("../../lib/useUniwindTheme", () => ({
+  useUniwindTheme: () => new Proxy<Record<string, string>>({}, { get: () => "#222222" }),
+}));
+vi.mock("../../native/SelectableMarkdownText", () => ({
+  SelectableMarkdownText: ({
+    markdown,
+    onLinkPress,
+  }: {
+    markdown: string;
+    onLinkPress?: (href: string) => void;
+  }) => (
+    <div>
+      {markdown}
+      {[...markdown.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map((match) => (
+        <button key={match[2]} onClick={() => onLinkPress?.(match[2]!)}>
+          {match[1]}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
@@ -420,7 +443,7 @@ vi.mock("../threads/threadContentPresentation", () => ({
   projectThreadContentPresentation: vi.fn(),
 }));
 vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
-  useAppearancePreferences: vi.fn(),
+  useAppearancePreferences: vi.fn(() => ({ appearance: { baseFontSize: 14 } })),
 }));
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: vi.fn(),
@@ -1481,4 +1504,53 @@ it("asks before creating a thread and then links the thread it created", async (
   expect(mocks.navigate).toHaveBeenCalledWith(
     `/threads/${environmentId}/${encodeURIComponent("d4-action:start-1")}`,
   );
+});
+
+it("opens web Markdown links without treating unvalidated internal or command links as navigation", async () => {
+  mocks.openExternal.mockClear();
+  mocks.navigate.mockClear();
+  mocks.state = {
+    ...mocks.state!,
+    transcript: [
+      {
+        id: "markdown-links",
+        role: "assistant",
+        context: "Global",
+        text: "[Web](https://example.test) [Command](command:run) [Thread](t3://thread/hidden)",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+      {
+        id: "literal-system",
+        role: "system",
+        context: "Global",
+        text: "[Unvalidated](https://other.test)",
+        createdAt: "2026-10-24T12:00:00.000Z",
+        links: [],
+      },
+    ],
+  };
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  for (const label of ["Web", "Command", "Thread"]) {
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === label)!
+        .click(),
+    );
+  }
+  expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+    "https://example.test",
+    "markdown-link",
+  );
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("[Unvalidated](https://other.test)");
+  expect(
+    [...container.querySelectorAll("button")].some(
+      (button) => button.textContent === "Unvalidated",
+    ),
+  ).toBe(false);
 });

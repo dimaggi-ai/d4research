@@ -140,6 +140,7 @@ export interface ComposerPromptEditorProps {
   cursor: number;
   richTextEnabled?: boolean;
   literalText?: boolean;
+  maxLength?: number;
   contextRecords: ComposerDraftContextRecords;
   buildContextClipboardFragment?:
     | ((contextIds: ReadonlyArray<string>) => string | null)
@@ -885,6 +886,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     cursor,
     richTextEnabled,
     literalText = false,
+    maxLength,
     contextRecords,
     buildContextClipboardFragment,
     importContextFragment,
@@ -920,6 +922,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const expandEditorCursor = (text: string, position: number) =>
     literalText ? position : expandCollapsedComposerCursor(text, position);
 
+  const getMaxLength = useStableCallback(() => maxLength);
   const onChangeRef = useRef(onChange);
   const onVisibleSelectionChangeRef = useRef(onVisibleSelectionChange);
   const onCommandKeyDownRef = useRef(onCommandKeyDown);
@@ -1082,7 +1085,26 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
 
   const editor = useEditor(
     {
-      extensions: richText ? RICH_TEXT_EXTENSIONS : PLAIN_TEXT_EXTENSIONS,
+      extensions: [
+        ...(richText ? RICH_TEXT_EXTENSIONS : PLAIN_TEXT_EXTENSIONS),
+        Extension.create({
+          name: "composerLengthLimit",
+          addProseMirrorPlugins() {
+            return [
+              new Plugin({
+                filterTransaction(transaction, state) {
+                  const limit = getMaxLength();
+                  if (limit === undefined || !transaction.docChanged) return true;
+                  const nextLength = serializeEditorDoc(transaction.doc).value.length;
+                  return (
+                    nextLength <= limit || nextLength < serializeEditorDoc(state.doc).value.length
+                  );
+                },
+              }),
+            ];
+          },
+        }),
+      ],
       content: buildDocJson(
         value,
         (name) => {

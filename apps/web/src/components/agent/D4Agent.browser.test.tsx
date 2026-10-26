@@ -1,3 +1,5 @@
+import type { Editor } from "@tiptap/core";
+import { serializeEditorDoc } from "../../composer-rich-text-doc";
 import { ThreadRouteView } from "../ThreadRouteView";
 import { D4AgentChat, D4AgentRoute } from "./D4AgentChat";
 import { act } from "react";
@@ -70,11 +72,23 @@ const mocks = vi.hoisted(() => ({
     source: { agentMonitor: { attentionRequired: boolean; classification: string } };
   }>,
   navigate: vi.fn(async () => undefined),
-  state: null as D4AgentState | null,
+  stateListeners: new Set<() => void>(),
+  stateValue: null as D4AgentState | null,
+  // Nia's panel is compiler-memoized; like the real atom, a state change must notify readers.
+  get state() {
+    return this.stateValue;
+  },
+  set state(value) {
+    this.stateValue = value;
+    for (const listener of this.stateListeners) listener();
+  },
 }));
-vi.mock("@d4research/client-runtime/state/server", async () => {
+vi.mock("@d4research/client-runtime/state/server", async (importOriginal) => {
   const Effect = await import("effect/Effect");
-  return { waitForD4AgentThreadShell: () => Effect.succeed(true) };
+  return {
+    ...(await importOriginal<object>()),
+    waitForD4AgentThreadShell: () => Effect.succeed(true),
+  };
 });
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
@@ -99,7 +113,17 @@ vi.mock("../../lib/attachmentUploadQueue", () => ({
       sizeBytes,
     })),
 }));
+vi.mock("../../assets/assetUrls", () => ({
+  useAssetUrlState: vi.fn(),
+  useAssetUrlRefresh: vi.fn(),
+  resolveAssetUrl: vi.fn(),
+  useAssetUrl: (environmentId: string, asset: { attachmentId: string }) =>
+    `/${environmentId}/attachments/${asset.attachmentId}`,
+}));
 vi.mock("../../hooks/useSettings", () => ({
+  getClientSettings: vi.fn(),
+  ensureClientSettingsHydrated: vi.fn(),
+  useEnvironmentIdentificationMode: () => "none",
   useMergedSettings: (settings: object) => ({ ...DEFAULT_CLIENT_SETTINGS, ...settings }),
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
   useUpdateClientSettings: () => vi.fn(),
@@ -135,8 +159,10 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
       : mocks.allowed,
 }));
 vi.mock("../../state/server", () => ({
+  environmentServerConfigsAtom: vi.fn(),
   EMPTY_SERVER_PROVIDERS: [],
   primaryServerKeybindingsAtom: "keybindings",
+  primaryServerConfigAtom: "config",
   serverEnvironment: {
     updateSettings: { permissionAtom: () => "permission", kind: "settings" },
     configValueAtom: () => "config",
@@ -172,6 +198,7 @@ vi.mock("../../state/use-atom-command", () => ({
                   : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
+  formatEnvironmentQueryError: vi.fn(),
   useEnvironmentQuery: (atom: string | null) => ({
     data:
       atom === "identity"
@@ -189,6 +216,8 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("../../state/entities", () => ({
+  useEnvironmentSupportsServerBrowser: vi.fn(),
+  readEnvironmentSupportsServerBrowser: vi.fn(),
   useEnvironmentThreadRefs: () => [],
   useThreadRefs: () => [],
   useQuietThreadShell: () => null,
@@ -207,23 +236,34 @@ vi.mock("../../state/entities", () => ({
     return mocks.threads;
   },
 }));
-vi.mock("./useD4AgentState", () => ({
-  useD4AgentState: (_environmentId: EnvironmentId, enabled = true) => {
-    mocks.stateQuery(enabled);
-    return {
-      data: enabled && !mocks.statePending && !mocks.stateUnavailable ? mocks.state : null,
-      refresh: mocks.refresh,
-      isPending: mocks.statePending,
-      error: null,
-    };
-  },
-}));
+vi.mock("./useD4AgentState", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useD4AgentState: (_environmentId: EnvironmentId, enabled = true) => {
+      mocks.stateQuery(enabled);
+      const state = useSyncExternalStore(
+        (listener) => {
+          mocks.stateListeners.add(listener);
+          return () => mocks.stateListeners.delete(listener);
+        },
+        () => mocks.state,
+      );
+      return {
+        data: enabled && !mocks.statePending && !mocks.stateUnavailable ? state : null,
+        refresh: mocks.refresh,
+        isPending: mocks.statePending,
+        error: null,
+      };
+    },
+  };
+});
 vi.mock("../ui/sidebar", () => ({
   useSidebarVisibility: () => true,
   SidebarInset: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../ChatView", () => ({ default: () => <button>Initialize Git</button> }));
 vi.mock("../ChatMarkdown", () => ({
+  MarkdownCodeBlockFrame: vi.fn(),
   default: ({ text }: { text: string }) => <div className="chat-markdown">{text}</div>,
 }));
 vi.mock("../ChatView.logic", () => ({
@@ -234,6 +274,7 @@ vi.mock("../chat/draftHeroTransition", () => ({
   waitForDraftHeroTransition: async () => undefined,
 }));
 vi.mock("../../composerDraftStore", async () => ({
+  composerFileNeedsReattach: vi.fn(),
   DraftId: (await import("effect/Schema")).String.pipe(
     (await import("effect/Schema")).brand("DraftId"),
   ),
@@ -247,10 +288,15 @@ vi.mock("../../composerDraftStore", async () => ({
   finalizePromotedDraftThreadByRef: vi.fn(),
   markPromotedDraftThreadByRef: vi.fn(),
   useBackgroundDraftSubmissionPending: () => false,
+  clearComposerDraftsEnvironment: vi.fn(),
 }));
 vi.mock("../../sidebarPendingFileDropStore", () => ({ useSidebarPendingFileDropStore: {} }));
-vi.mock("../../state/shell", () => ({ useEnvironmentShellStatus: () => "live" }));
+vi.mock("../../state/shell", () => ({
+  environmentSnapshotAtom: vi.fn(),
+  useEnvironmentShellStatus: () => "live",
+}));
 vi.mock("../../state/environments", () => ({
+  usePrimaryEnvironmentId: vi.fn(),
   useEnvironmentProviders: () => new Map([[environmentId, mocks.providers]]),
   useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
@@ -270,7 +316,31 @@ vi.mock("@tanstack/react-router", () => ({
     </a>
   ),
   useNavigate: () => mocks.navigate,
+  useParams: () => ({}),
 }));
+function niaEditor() {
+  const input = container.querySelector<HTMLElement & { editor: Editor }>(
+    '[data-testid="composer-editor"][aria-label="Message Nia"]',
+  );
+  if (!input) throw new Error("Nia editor is missing");
+  return input;
+}
+function writeNiaDraft(text: string) {
+  niaEditor().editor.commands.setContent({
+    type: "doc",
+    content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+  });
+}
+function niaDraftText() {
+  return serializeEditorDoc(niaEditor().editor.state.doc).value;
+}
+function niaSubmit() {
+  const button = container.querySelector<HTMLButtonElement>(
+    '[data-chat-composer-actions="right"] button[type="submit"]',
+  );
+  if (!button) throw new Error("Nia submit button is missing");
+  return button;
+}
 let root: Root;
 let container: HTMLDivElement;
 const environmentId = EnvironmentId.make("test-environment");
@@ -580,7 +650,7 @@ it("keeps monitor reports and session banners out of the chat header", async () 
   expect(container.textContent).not.toContain("Stuck report");
   expect(container.textContent).not.toContain("need attention");
   expect(container.textContent).not.toContain("New session.");
-  expect(container.querySelector('[aria-label="Waiting for you"]')!.className).toContain("hidden");
+  expect(container.querySelector('[aria-label="Waiting for you"]')).toBeNull();
 });
 it("shows the complete CTO request and persisted result when reviewed", async () => {
   mocks.state = {
@@ -953,6 +1023,25 @@ it("requires explicit review before sending a rewrite and allows sending the ori
   });
 });
 
+it("keeps Nia's literal draft bounded and permits edits after reaching the limit", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const draft = "x".repeat(16000);
+  await act(() => writeNiaDraft(draft));
+  await act(() => {
+    const editor = niaEditor().editor;
+    editor.commands.setTextSelection(16001);
+    editor.commands.insertContent("overflow");
+  });
+  expect(niaDraftText()).toBe(draft);
+  await act(() => writeNiaDraft("[[thread:stable-target]] **literal**"));
+  expect(niaDraftText()).toBe("[[thread:stable-target]] **literal**");
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
 it("sends an agent draft only on explicit submit and preserves the single-chat route", async () => {
   await act(() =>
     root.render(
@@ -961,21 +1050,14 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
       </D4AgentRoute>,
     ),
   );
-  const input = container.querySelector(
-    'textarea[aria-label="Message Nia"]',
-  ) as HTMLTextAreaElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      input,
-      "Research the question",
-    );
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () => writeNiaDraft("Research the question"));
   expect(mocks.send).not.toHaveBeenCalled();
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((item) => item.getAttribute("aria-label") === "Send" || item.textContent === "Send")!
+      .find(
+        (item) =>
+          item.getAttribute("aria-label") === "Submit message" || item.textContent === "Send",
+      )!
       .click(),
   );
   expect(mocks.send).toHaveBeenCalledWith({
@@ -988,7 +1070,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
       expectedThreadId: mocks.state!.threadId,
     },
   });
-  expect(input.value).toBe("");
+  expect(niaDraftText()).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
@@ -1045,7 +1127,10 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
   expect(mocks.resolve).not.toHaveBeenCalled();
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((item) => item.getAttribute("aria-label") === "Send" || item.textContent === "Send")!
+      .find(
+        (item) =>
+          item.getAttribute("aria-label") === "Submit message" || item.textContent === "Send",
+      )!
       .click(),
   );
   expect(mocks.resolve).toHaveBeenCalledWith({
@@ -1184,9 +1269,7 @@ it("keeps a disabled historical agent route on the special chat surface with sen
   expect(container.textContent).toContain("Nia");
   for (const label of ["Initialize Git", "Add project script", "Open in Files"])
     expect(container.textContent).not.toContain(label);
-  expect(
-    container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')?.disabled,
-  ).toBe(true);
+  expect(niaEditor().getAttribute("contenteditable")).toBe("false");
   expect(mocks.send).not.toHaveBeenCalled();
 });
 
@@ -1303,13 +1386,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
       <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
     );
   await act(renderChat);
-  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  await act(() => {
-    setter.call(input, "@");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(() => writeNiaDraft("@"));
   expect(container.textContent).toContain("Original title");
   expect(container.textContent).not.toContain("Hidden title");
   expect(container.innerHTML).not.toContain("secret-target");
@@ -1319,13 +1396,14 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
       .find((button) => button.textContent === "thread · Original title")!
       .click(),
   );
-  expect(input.value).toBe("[[thread:stable-target]] ");
+  expect(niaDraftText()).toBe("[[thread:stable-target]] ");
   mocks.threads[0] = { ...mocks.threads[0]!, title: "Renamed target" };
   await act(renderChat);
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find(
-        (button) => button.getAttribute("aria-label") === "Send" || button.textContent === "Send",
+        (button) =>
+          button.getAttribute("aria-label") === "Submit message" || button.textContent === "Send",
       )!
       .click(),
   );
@@ -1352,17 +1430,12 @@ it("keeps the draft and says why when another client changed Nia's context first
       <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
     ),
   );
-  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  await act(() => {
-    setter.call(input, "Global-only draft");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(() => writeNiaDraft("Global-only draft"));
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find(
-        (button) => button.getAttribute("aria-label") === "Send" || button.textContent === "Send",
+        (button) =>
+          button.getAttribute("aria-label") === "Submit message" || button.textContent === "Send",
       )!
       .click(),
   );
@@ -1376,7 +1449,7 @@ it("keeps the draft and says why when another client changed Nia's context first
       expectedThreadId: threadId,
     },
   });
-  expect(input.value).toBe("Global-only draft");
+  expect(niaDraftText()).toBe("Global-only draft");
   expect(container.textContent).toContain("Nia's context or session changed");
   expect(mocks.refresh).toHaveBeenCalledOnce();
 });
@@ -1389,13 +1462,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
       ),
     );
   await render(mocks.state);
-  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  await act(() => {
-    setter.call(input, "Global-only draft");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(() => writeNiaDraft("Global-only draft"));
   const moved = {
     ...mocks.state!,
     brainContext: "Dimaggi" as const,
@@ -1406,13 +1473,13 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
     [...container.querySelectorAll("button")].find(
       (item) => item.textContent === label || item.getAttribute("aria-label") === label,
     )!;
-  expect(input.value).toBe("Global-only draft");
+  expect(niaDraftText()).toBe("Global-only draft");
   expect(container.textContent).toContain(
     "You wrote this draft while Nia was in Global. Nia is now in Dimaggi.",
   );
-  expect(button("Send").disabled).toBe(true);
+  expect(niaSubmit().disabled).toBe(true);
   await act(async () => button("Use in Dimaggi").click());
-  await act(async () => button("Send").click());
+  await act(async () => niaSubmit().click());
   expect(mocks.send).toHaveBeenLastCalledWith({
     environmentId,
     input: {
@@ -1540,7 +1607,7 @@ it("keeps an attachment-only draft bound to its context and sends it only after 
     ),
   );
   expect(container.textContent).toContain("You wrote this draft while Nia was in Global.");
-  const send = () => container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  const send = niaSubmit;
   expect(send().disabled).toBe(true);
   expect(mocks.send).not.toHaveBeenCalled();
   await act(async () =>
@@ -1577,19 +1644,9 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
       <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
     ),
   );
-  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
-  const write = async (text: string) =>
-    act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-        input,
-        text,
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+  const write = async (text: string) => act(async () => writeNiaDraft(text));
   await write("Queue this");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Queue"]')!.click(),
-  );
+  await act(async () => niaSubmit().click());
   expect(mocks.send).toHaveBeenLastCalledWith({
     environmentId,
     input: {
@@ -1602,9 +1659,9 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
   });
   await write("Steer this");
   await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Steer")!
-      .click(),
+    niaSubmit().dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }),
+    ),
   );
   expect(mocks.send).toHaveBeenLastCalledWith({
     environmentId,
@@ -1627,9 +1684,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
     _tag: "Failure",
     cause: Cause.fail(new D4AgentError({ reason: "stale" })),
   } as never);
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Queue"]')!.click(),
-  );
+  await act(async () => niaSubmit().click());
   expect(container.textContent).toContain("keep.txt");
   expect(container.textContent).toContain("Your draft is preserved.");
 });

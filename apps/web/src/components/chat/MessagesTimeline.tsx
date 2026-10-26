@@ -1,9 +1,15 @@
+import {
+  AssistantMessageMeta,
+  CollapsibleUserMessageBody,
+  MESSAGE_HEADING_LEVEL,
+  UserMessageMeta,
+} from "./MessagePresentation";
 import { readTimelinePosition } from "./timelineScrollAnchoring";
 import { rememberTimelinePosition } from "./timelineScrollAnchoring";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shallow } from "zustand/vanilla/shallow";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
-import { MarkdownFindContext, findRevealRef } from "./markdownFindContext";
+import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock, WorkLogButton, WorkLogDetails, WorkLogList, WorkLogRow } from "./WorkLog";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -204,7 +210,6 @@ import {
   deriveMessagesTimelineRowsWithState,
   type MessagesTimelineRowsProjection,
   liveWorkEntryLabel,
-  resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapCurrentIndex,
@@ -215,7 +220,6 @@ import {
   resolveTimelineMinimapNavigationInteractive,
   resolveTimelineMinimapTopPercent,
   resolveWorkGroupScrollIndex,
-  shouldCollapseUserMessage,
   shouldFollowWorkGroupAppend,
   timelineTurnFoldRunIdsByEntryId,
   threadReadLabelPrefix,
@@ -2143,8 +2147,6 @@ function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
   );
 }
 
-const MESSAGE_HEADING_LEVEL = 3;
-
 function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
 }
@@ -2498,6 +2500,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             renderContextReference={renderContextReference}
             skills={ctx.skills}
             markdownCwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
           />
         </div>
       </div>
@@ -2511,42 +2514,30 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </span>
         </div>
       ) : null}
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipPopup>
-          </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
-            )}
-            {resolvedContext.text && (
-              <MessageCopyButton
-                text={contextClipboardFragment ? resolvedContext.text : plainText}
-                {...(contextClipboardFragment
-                  ? {
-                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
-                    }
-                  : {})}
-                variant="ghost"
-              />
-            )}
-            {promptLink !== null && (
-              <MessageCopyButton
-                text={promptLink}
-                label="Copy prompt link"
-                icon={LinkIconNode}
-                variant="ghost"
-              />
-            )}
-          </div>
-        </div>
-      </div>
+      <UserMessageMeta createdAt={row.message.createdAt} timestampFormat={ctx.timestampFormat}>
+        {typeof revertTurnCount === "number" && (
+          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+        )}
+        {resolvedContext.text && (
+          <MessageCopyButton
+            text={contextClipboardFragment ? resolvedContext.text : plainText}
+            {...(contextClipboardFragment
+              ? {
+                  extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                }
+              : {})}
+            variant="ghost"
+          />
+        )}
+        {promptLink !== null && (
+          <MessageCopyButton
+            text={promptLink}
+            label="Copy prompt link"
+            icon={LinkIconNode}
+            variant="ghost"
+          />
+        )}
+      </UserMessageMeta>
     </div>
   );
   // A handoff folds to one line: the switch is a thread milestone, not
@@ -2822,7 +2813,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <AssistantMessageMeta
+          <TimelineAssistantMessageMeta
             className="mt-1.5"
             projectedItem={row.projectedItem}
             message={row.message}
@@ -2888,7 +2879,7 @@ function AssistantMetaTimelineRow({
 }) {
   return (
     <div className="px-1">
-      <AssistantMessageMeta
+      <TimelineAssistantMessageMeta
         className="mt-0.5"
         projectedItem={row.projectedItem}
         message={row.message}
@@ -2900,13 +2891,9 @@ function AssistantMetaTimelineRow({
   );
 }
 
-function AssistantMessageMeta({
-  className,
+function TimelineAssistantMessageMeta({
   projectedItem,
-  message,
-  showCopyButton,
-  copyStreaming,
-  alwaysVisible = false,
+  ...props
 }: {
   className?: string;
   projectedItem?: Extract<TimelineRow, { kind: "message" }>["projectedItem"];
@@ -2916,64 +2903,18 @@ function AssistantMessageMeta({
   alwaysVisible?: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
-
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
-        alwaysVisible
-          ? "opacity-100"
-          : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
-        className,
-      )}
-    >
-      {projectedItem && projectedItem.item.status !== "completed" ? (
-        <span className="rounded-full border border-border/70 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
-          {projectedItem.item.status}
-        </span>
-      ) : null}
-      <AssistantCopyButton
-        message={message}
-        showCopyButton={showCopyButton}
-        streaming={copyStreaming}
-      />
-      {projectedItem?.item.type === "assistant_message" ? (
-        <AssistantForkButton projectedItem={projectedItem} />
-      ) : null}
-      {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
-          </TooltipPopup>
-        </Tooltip>
-      )}
-    </div>
+    <AssistantMessageMeta
+      {...props}
+      timestampFormat={ctx.timestampFormat}
+      status={projectedItem?.item.status}
+      actions={
+        projectedItem?.item.type === "assistant_message" ? (
+          <AssistantForkButton projectedItem={projectedItem} />
+        ) : null
+      }
+    />
   );
-}
-
-function AssistantCopyButton({
-  message,
-  showCopyButton,
-  streaming,
-}: {
-  message: ChatMessage;
-  showCopyButton: boolean;
-  streaming: boolean;
-}) {
-  const assistantCopyState = resolveAssistantMessageCopyState({
-    text: message.text ?? null,
-    showCopyButton,
-    streaming,
-  });
-
-  if (!assistantCopyState.visible) {
-    return null;
-  }
-
-  return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
 }
 
 function ProposedPlanTimelineRow({
@@ -4707,109 +4648,6 @@ function UserMessageContextReferenceChip(props: {
     onOpenFile: props.onOpenFile,
   });
 }
-
-const COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM = 1.75;
-
-const COLLAPSED_USER_MESSAGE_FADE_MASK = `linear-gradient(to bottom, black calc(100% - ${COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM}rem), transparent)`;
-
-const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
-  text: string;
-  renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
-  skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
-  markdownCwd: string | undefined;
-  footer?: ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const revealForFind = () => setExpanded(true);
-  const revealRef = findRevealRef(revealForFind);
-  const hasVisibleBody = props.text.trim().length > 0;
-  const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
-  const isCollapsed = canCollapse && !expanded;
-  const showCollapseControl = canCollapse;
-
-  return (
-    <div>
-      {hasVisibleBody ? (
-        <div
-          ref={revealRef}
-          className={cn("relative", isCollapsed && "max-h-44 overflow-hidden")}
-          data-user-message-body="true"
-          data-thread-find-text="true"
-          data-thread-find-fold={isCollapsed ? "" : undefined}
-          data-user-message-collapsed={isCollapsed ? "true" : "false"}
-          data-user-message-collapsible={canCollapse ? "true" : "false"}
-          data-user-message-fade={isCollapsed ? "true" : "false"}
-          style={
-            isCollapsed
-              ? {
-                  WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                  maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                }
-              : undefined
-          }
-        >
-          <UserMessageBody
-            text={props.text}
-            renderContextReference={props.renderContextReference}
-            skills={props.skills}
-            markdownCwd={props.markdownCwd}
-          />
-        </div>
-      ) : null}
-      {showCollapseControl || props.footer ? (
-        <div
-          className={cn(
-            "mt-1.5 flex items-center gap-2",
-            showCollapseControl && props.footer ? "justify-between" : "justify-end",
-          )}
-          data-user-message-footer="true"
-        >
-          {showCollapseControl ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost-muted"
-              aria-expanded={expanded}
-              data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
-              className="-ml-1"
-            >
-              {expanded ? "Show less" : "Show full message"}
-            </Button>
-          ) : null}
-          {props.footer ? (
-            <div className="ml-auto flex items-center gap-2">{props.footer}</div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-const UserMessageBody = memo(function UserMessageBody(props: {
-  text: string;
-  renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
-  skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
-  markdownCwd: string | undefined;
-}) {
-  const ctx = use(TimelineRowCtx);
-  if (props.text.length === 0) {
-    return null;
-  }
-  return (
-    <ChatMarkdown
-      text={props.text}
-      cwd={props.markdownCwd}
-      threadRef={ctx.threadRef ?? undefined}
-      skills={props.skills}
-      className="text-foreground"
-      lineBreaks
-      parseRawHtml={false}
-      renderContextReference={props.renderContextReference}
-      headingLevelOffset={MESSAGE_HEADING_LEVEL}
-    />
-  );
-});
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);

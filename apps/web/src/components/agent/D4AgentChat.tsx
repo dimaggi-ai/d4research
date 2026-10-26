@@ -30,7 +30,8 @@ import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
-import { agentActivityLabel, agentWatchLabel } from "./d4AgentPresentation";
+import { agentActivityLabel, agentWatchLabel, niaPresence } from "./d4AgentPresentation";
+import { NiaAvatar } from "./NiaAvatar";
 
 const isD4AgentError = Schema.is(D4AgentError);
 
@@ -136,7 +137,10 @@ export function D4AgentChat({
           COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
       >
-        <h1 className="font-medium">Nia</h1>
+        <h1 className="flex items-center gap-2 font-medium">
+          <NiaAvatar presence={niaPresence(activity, watch)} />
+          Nia
+        </h1>
         <Link
           to="/settings/general"
           className="text-sm text-muted-foreground hover:underline [-webkit-app-region:no-drag]"
@@ -166,7 +170,8 @@ export function D4AgentChat({
                 : "mx-auto max-w-3xl space-y-2"
             }
           >
-            <p className="text-xs text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {entry.role === "assistant" ? <NiaAvatar className="size-4" /> : null}
               {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
             </p>
             {entry.role === "assistant" ? (

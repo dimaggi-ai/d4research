@@ -108,3 +108,12 @@ export function agentWatchLabel(input: {
     return { text: "Automatic checks are off. Nia acts only when you write.", off: true };
   return { text: `Checks threads every ${input.heartbeatMinutes} min.`, off: false };
 }
+
+export function niaPresence(
+  activity: ReturnType<typeof agentActivityLabel>,
+  watch: ReturnType<typeof agentWatchLabel>,
+): "working" | "watching" | "error" | "off" {
+  if (activity.tone === "working") return "working";
+  if (activity.tone === "error") return "error";
+  return watch.off ? "off" : "watching";
+}

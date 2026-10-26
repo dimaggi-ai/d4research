@@ -1454,3 +1454,26 @@ it.effect("moves rolled-up attention immediately when a child changes parents", 
     }),
   ),
 );
+
+it.effect("a settled thread needs no attention, including its failed subagents", () =>
+  isolated(
+    Effect.gen(function* () {
+      yield* enable();
+      const monitor = yield* AgentMonitor.make;
+      const parent = yield* seed("settled-parent", "completed");
+      const child = yield* seed("settled-child", "failed");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json=json_set(payload_json,
+      '$.lineage.parentThreadId', ${parent.threadId}, '$.lineage.relationshipToParent', 'subagent') WHERE thread_id=${child.threadId}`;
+      yield* monitor.sweep;
+      assert.isTrue((yield* read(parent.threadId)).agentMonitor!.attentionRequired);
+      yield* sql`UPDATE orchestration_v2_projection_threads SET updated_at='2026-10-24T12:05:00.000Z',
+      payload_json=json_set(payload_json, '$.settledAt', '2026-10-24T12:05:00.000Z') WHERE thread_id=${parent.threadId}`;
+      yield* monitor.sweep;
+      const report = (yield* read(parent.threadId)).agentMonitor!;
+      assert.equal(report.classification, "failed");
+      assert.isFalse(report.attentionRequired);
+      assert.isFalse(report.notificationEligible);
+    }),
+  ),
+);

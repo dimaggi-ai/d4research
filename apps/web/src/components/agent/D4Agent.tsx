@@ -10,7 +10,11 @@ import {
   agentUnavailableMessage,
   projectBelongsToAgentContext,
   actionHeading,
+  agentActivityLabel,
+  agentWatchLabel,
+  niaPresence,
 } from "./d4AgentPresentation";
+import { NiaAvatar } from "./NiaAvatar";
 import { useAtomValue } from "@effect/atom-react";
 import {
   D4_BRAIN_CONTEXTS,
@@ -26,7 +30,7 @@ import {
   AGENT_MONITOR_LIST_LIMIT,
 } from "@d4research/client-runtime/state/agent-monitor";
 import { useEnvironments } from "../../state/environments";
-import { useThreadShells } from "../../state/entities";
+import { useThreadShell, useThreadShells } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -76,6 +80,22 @@ export function D4AgentEntry({
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
+  const agentShell = useThreadShell(
+    state.data?.threadId ? { environmentId, threadId: state.data.threadId } : null,
+  );
+  const presence = config?.settings.d4Agent.enabled
+    ? niaPresence(
+        agentActivityLabel({
+          runtime: agentShell?.runtime ?? null,
+          latestRun: agentShell?.latestRun ?? null,
+          formatTime: () => "",
+        }),
+        agentWatchLabel({
+          heartbeatMinutes: config.settings.d4Agent.heartbeatMinutes,
+          monitorEnabled: config.settings.agentMonitor.enabled,
+        }),
+      )
+    : undefined;
   return (
     <div className="rounded-lg border border-primary/25 bg-primary/5 p-1">
       <Button
@@ -121,6 +141,7 @@ export function D4AgentEntry({
             .finally(() => setOpening(false));
         }}
       >
+        <NiaAvatar presence={presence} className="size-5" />
         {opening ? "Opening Nia…" : `Nia${label ? ` · ${label}` : ""}`}
       </Button>
       {error ? (

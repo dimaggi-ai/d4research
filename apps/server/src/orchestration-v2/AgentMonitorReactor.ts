@@ -44,6 +44,7 @@ interface Observation {
   readonly lease_expired: number;
   readonly report_json: string | null;
   readonly revision: number;
+  readonly settled: number;
 }
 
 const decodeReport = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentMonitorReport));
@@ -150,7 +151,8 @@ export const make = Effect.gen(function* () {
       EXISTS(SELECT 1 FROM orchestration_v2_effect_outbox o WHERE o.thread_id = t.thread_id
         AND o.status = 'running' AND o.lease_expires_at < ${DateTime.formatIso(DateTime.makeUnsafe(now))}) AS lease_expired,
       json_extract(t.payload_json, '$.agentMonitor') AS report_json,
-      COALESCE(json_extract(t.payload_json, '$.agentMonitorRevision'), 0) AS revision
+      COALESCE(json_extract(t.payload_json, '$.agentMonitorRevision'), 0) AS revision,
+      json_extract(t.payload_json, '$.settledAt') IS NOT NULL AS settled
     FROM orchestration_v2_projection_threads t
     LEFT JOIN orchestration_v2_projection_runs r ON r.run_id = (
       SELECT candidate.run_id FROM orchestration_v2_projection_runs candidate
@@ -309,7 +311,8 @@ export const make = Effect.gen(function* () {
         continue;
       report = { ...child, reportKey: JSON.stringify([row.thread_id, child.reportKey]) };
     }
-    return report;
+    // Settling a thread is the user's acknowledgment of its state, including failed subagents.
+    return own.settled === 1 ? { ...report, attentionRequired: false } : report;
   };
   const notificationsAllowed = (
     report: AgentMonitorReport,

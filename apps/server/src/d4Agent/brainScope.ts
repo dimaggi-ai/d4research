@@ -20,15 +20,16 @@ export function projectContentInScope(
   return projectInScope(context, settings, projectId);
 }
 
-// Actions (send, answer, start, pipelines, task tools) target only projects of the bound context;
-// Global reaches a mapped project's work through an approved switch-context instead.
+// Global is the single overview chat, so its approval cards (send, answer, start, pipelines, task
+// tools) may target any project; work contexts target only their own. A card targets the project,
+// it never loads that project's context memory. Continuing inside a work context still goes
+// through an approved switch-context.
 export function projectActionInScope(
   context: D4BrainContext,
   settings: D4AgentSettings,
   projectId: string,
 ): boolean {
-  const mapped = settings.projectContexts[ProjectId.make(projectId)];
-  return context === "Global" ? mapped === undefined : mapped === context;
+  return projectInScope(context, settings, projectId);
 }
 
 // Only membership changes affecting the bound context retire its session.

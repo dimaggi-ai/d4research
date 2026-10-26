@@ -3112,7 +3112,9 @@ export const layer = Layer.effect(
             return resolveAgentReference(
               text,
               (yield* referenceCatalog).filter(
-                (entry) => referenceContext(entry, config) === state.brainContext,
+                (entry) =>
+                  state.brainContext === "Global" ||
+                  referenceContext(entry, config) === state.brainContext,
               ),
             );
           }),

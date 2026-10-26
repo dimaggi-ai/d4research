@@ -63,7 +63,7 @@ const fixture = () => {
   };
 };
 
-it.effect("lists only pipelines associated with the bound project context", () =>
+it.effect("work contexts list their own pipelines and Global lists every pipeline", () =>
   Effect.gen(function* () {
     const f = fixture();
     yield* Effect.gen(function* () {
@@ -78,7 +78,7 @@ it.effect("lists only pipelines associated with the bound project context", () =
       );
       assert.deepEqual(
         (yield* service.list("Global")).map((p) => p.pipelineId),
-        ["research:global"],
+        ["dev:dimaggi", "research:yb", "research:global"],
       );
     }).pipe(Effect.provide(f.layer));
   }),

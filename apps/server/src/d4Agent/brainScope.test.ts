@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import { DEFAULT_D4_AGENT_SETTINGS, ProjectId } from "@d4research/contracts";
-import { contextScopeHash } from "./brainScope.ts";
+import { contextScopeHash, projectActionInScope } from "./brainScope.ts";
 
 const yb = ProjectId.make("yb");
 const dimaggi = ProjectId.make("dimaggi");
@@ -50,4 +50,12 @@ it("overview source remapping invalidates only the old and new owning contexts",
     assert.notEqual(contextScopeHash(context, before), contextScopeHash(context, after));
   for (const context of ["Global", "YB"] as const)
     assert.equal(contextScopeHash(context, before), contextScopeHash(context, after));
+});
+
+it("Global may target every project while work contexts target only their own", () => {
+  for (const project of [yb, dimaggi, personal, ProjectId.make("unmapped")])
+    assert.isTrue(projectActionInScope("Global", settings, project));
+  assert.isTrue(projectActionInScope("YB", settings, yb));
+  for (const project of [dimaggi, personal, ProjectId.make("unmapped")])
+    assert.isFalse(projectActionInScope("YB", settings, project));
 });

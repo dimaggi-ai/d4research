@@ -1,5 +1,6 @@
 import { OverviewItem } from "./overview.ts";
 import {
+  ChatAttachment,
   D4AgentActionRecord,
   D4AgentTranscriptEntry,
   D4AgentOpenSession,
@@ -113,11 +114,13 @@ export const StoredState = Schema.Struct({
         context: D4BrainContext,
         messageId: Schema.String,
         pendingText: Schema.String,
+        pendingAttachments: Schema.optionalKey(Schema.Array(ChatAttachment)),
+        pendingFollowUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
         requestedAt: IsoDateTime,
         heartbeat: Schema.optionalKey(Schema.Boolean),
         // Stable identity of the pending message, reused by every delivery retry.
         deliveryId: Schema.optionalKey(Schema.String),
-        // Set once the summary outcome is decided; the record then stays until delivery is accepted.
+        // Reserved before claiming uploads, or when the summary outcome is decided.
         targetThreadId: Schema.optionalKey(ThreadId),
         seedSummary: Schema.optionalKey(Schema.String),
         notice: Schema.optionalKey(Schema.String),

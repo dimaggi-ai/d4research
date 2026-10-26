@@ -7,10 +7,15 @@ import { D4AgentEntry, D4AgentPanel } from "./D4Agent";
 import * as Cause from "effect/Cause";
 import {
   D4AgentError,
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
   ProjectId,
   ProviderInstanceId,
+  ProviderDriverKind,
+  type ServerProvider,
+  type ModelSelection,
   type D4AgentSettings,
   type D4AgentActionRecord,
   type D4AgentState,
@@ -45,6 +50,10 @@ const mocks = vi.hoisted(() => ({
   stateUnavailable: false,
   statePending: false,
   nativeRoute: vi.fn(),
+  providers: [] as ServerProvider[],
+  modelSelection: null as ModelSelection | null,
+  updateSettings: vi.fn(async () => ({ _tag: "Success" })),
+  running: false,
   allowed: true,
   enabled: true,
   configLoaded: true,
@@ -69,6 +78,34 @@ vi.mock("@d4research/client-runtime/state/server", async () => {
 vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: () => "shell" },
 }));
+vi.mock("../../lib/attachmentUploadQueue", () => ({
+  useAttachmentUploadStore: (selector: (store: { uploadsByImageId: object }) => unknown) =>
+    selector({ uploadsByImageId: {} }),
+  startAttachmentUpload: vi.fn(),
+  retryAttachmentUpload: vi.fn(),
+  releaseDraftAttachments: vi.fn(),
+  awaitAttachmentUploads: async () => undefined,
+  getUploadedAttachments: ({
+    images,
+  }: {
+    images: Array<{ id: string; type: string; name: string; mimeType: string; sizeBytes: number }>;
+  }) =>
+    images.map(({ id, type, name, mimeType, sizeBytes }) => ({
+      id,
+      type,
+      name,
+      mimeType,
+      sizeBytes,
+    })),
+}));
+vi.mock("../../hooks/useSettings", () => ({
+  useMergedSettings: (settings: object) => ({ ...DEFAULT_CLIENT_SETTINGS, ...settings }),
+  useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
+  useUpdateClientSettings: () => vi.fn(),
+  useUpdateEnvironmentSettings: () => vi.fn(),
+  useEnvironmentModelPreferences: () => ({ favorites: [], hiddenModels: [] }),
+  useToggleEnvironmentModelFavorite: () => vi.fn(),
+}));
 vi.mock("../../rpc/atomRegistry", () => ({ appAtomRegistry: {} }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -76,8 +113,20 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
     value === "config"
       ? mocks.configLoaded
         ? {
+            environment: {
+              capabilities: {
+                attachmentUploads: true,
+                fileAttachments: { maxUploadBytes: 10000000 },
+              },
+            },
             settings: {
-              d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
+              ...DEFAULT_SERVER_SETTINGS,
+              d4Agent: {
+                ...DEFAULT_SERVER_SETTINGS.d4Agent,
+                enabled: mocks.enabled,
+                modelSelection: mocks.modelSelection,
+                projectContexts: mocks.projectContexts,
+              },
               agentMonitor: { enabled: mocks.monitorEnabled },
             },
           }
@@ -85,7 +134,10 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
       : mocks.allowed,
 }));
 vi.mock("../../state/server", () => ({
+  EMPTY_SERVER_PROVIDERS: [],
+  primaryServerKeybindingsAtom: "keybindings",
   serverEnvironment: {
+    updateSettings: { permissionAtom: () => "permission", kind: "settings" },
     configValueAtom: () => "config",
     d4AgentState: () => "state",
     d4AgentIdentity: () => "identity",
@@ -102,19 +154,21 @@ vi.mock("../../state/server", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: { kind?: string }) =>
-    command.kind === "undo-archive"
-      ? mocks.undo
-      : command.kind === "send"
-        ? mocks.send
-        : command.kind === "close-session"
-          ? mocks.closeSession
-          : command.kind === "switch"
-            ? mocks.switchContext
-            : command.kind === "new-session"
-              ? mocks.newSession
-              : command.kind === "proposal"
-                ? mocks.resolveProposal
-                : mocks.resolve,
+    command.kind === "settings"
+      ? mocks.updateSettings
+      : command.kind === "undo-archive"
+        ? mocks.undo
+        : command.kind === "send"
+          ? mocks.send
+          : command.kind === "close-session"
+            ? mocks.closeSession
+            : command.kind === "switch"
+              ? mocks.switchContext
+              : command.kind === "new-session"
+                ? mocks.newSession
+                : command.kind === "proposal"
+                  ? mocks.resolveProposal
+                  : mocks.resolve,
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: string | null) => ({
@@ -138,7 +192,12 @@ vi.mock("../../state/entities", () => ({
   useThreadRefs: () => [],
   useQuietThreadShell: () => null,
   useThreadShell: () =>
-    mocks.routeShellMissing ? null : { projectId: mocks.routeProjectId ?? mocks.state?.projectId },
+    mocks.routeShellMissing
+      ? null
+      : {
+          projectId: mocks.routeProjectId ?? mocks.state?.projectId,
+          runtime: mocks.running ? { status: "running" } : null,
+        },
   useProjects: () => mocks.projects,
   useThreadShells: () => {
     mocks.threadShells();
@@ -175,7 +234,10 @@ vi.mock("../../composerDraftStore", async () => ({
   DraftId: (await import("effect/Schema")).String.pipe(
     (await import("effect/Schema")).brand("DraftId"),
   ),
-  useComposerDraftStore: () => {
+  useComposerDraftStore: (
+    selector: (store: { setProviderModelOptions: ReturnType<typeof vi.fn> }) => unknown,
+  ) => {
+    if (mocks.providers.length) return selector({ setProviderModelOptions: vi.fn() });
     mocks.nativeRoute();
     throw new Error("Archived agent route reached native draft/missing guard");
   },
@@ -186,6 +248,7 @@ vi.mock("../../composerDraftStore", async () => ({
 vi.mock("../../sidebarPendingFileDropStore", () => ({ useSidebarPendingFileDropStore: {} }));
 vi.mock("../../state/shell", () => ({ useEnvironmentShellStatus: () => "live" }));
 vi.mock("../../state/environments", () => ({
+  useEnvironmentProviders: () => new Map([[environmentId, mocks.providers]]),
   useEnvironment: () => ({ connection: { phase: mocks.connectionPhase } }),
   useEnvironments: () => ({
     environments: [{ environmentId: "test-environment", label: "Local" }],
@@ -231,6 +294,10 @@ beforeEach(() => {
   mocks.stateUnavailable = false;
   mocks.statePending = false;
   mocks.nativeRoute.mockClear();
+  mocks.providers = [];
+  mocks.modelSelection = null;
+  mocks.updateSettings.mockClear();
+  mocks.running = false;
   mocks.allowed = true;
   mocks.enabled = true;
   mocks.configLoaded = true;
@@ -596,7 +663,7 @@ it("reviews only current-context memory proposals and shows other-context counts
     ["Reject", false],
   ] as const) {
     const button = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === label,
+      (item) => item.textContent === label || item.getAttribute("aria-label") === label,
     )!;
     await act(async () => button.click());
     expect(mocks.resolveProposal).toHaveBeenLastCalledWith({
@@ -647,7 +714,7 @@ it("requires operate permission for session reset and proposal review", async ()
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   for (const label of ["New session", "Approve", "Reject"]) {
     const button = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === label,
+      (item) => item.textContent === label || item.getAttribute("aria-label") === label,
     )!;
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
@@ -881,11 +948,15 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   });
   expect(mocks.send).not.toHaveBeenCalled();
   await act(async () =>
-    [...container.querySelectorAll("button")].find((item) => item.textContent === "Send")!.click(),
+    [...container.querySelectorAll("button")]
+      .find((item) => item.getAttribute("aria-label") === "Send" || item.textContent === "Send")!
+      .click(),
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
     input: {
+      attachments: [],
+      followUpBehavior: "queue",
       text: "Research the question",
       expectedContext: mocks.state!.brainContext,
       expectedThreadId: mocks.state!.threadId,
@@ -947,7 +1018,9 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
   });
   expect(mocks.resolve).not.toHaveBeenCalled();
   await act(async () =>
-    [...container.querySelectorAll("button")].find((item) => item.textContent === "Send")!.click(),
+    [...container.querySelectorAll("button")]
+      .find((item) => item.getAttribute("aria-label") === "Send" || item.textContent === "Send")!
+      .click(),
   );
   expect(mocks.resolve).toHaveBeenCalledWith({
     environmentId,
@@ -1225,12 +1298,16 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
   await act(renderChat);
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Send")!
+      .find(
+        (button) => button.getAttribute("aria-label") === "Send" || button.textContent === "Send",
+      )!
       .click(),
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
     input: {
+      attachments: [],
+      followUpBehavior: "queue",
       text: "[[thread:stable-target]]",
       expectedContext: "YB",
       expectedThreadId: mocks.state!.threadId,
@@ -1258,12 +1335,20 @@ it("keeps the draft and says why when another client changed Nia's context first
   });
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Send")!
+      .find(
+        (button) => button.getAttribute("aria-label") === "Send" || button.textContent === "Send",
+      )!
       .click(),
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
-    input: { text: "Global-only draft", expectedContext: "Global", expectedThreadId: threadId },
+    input: {
+      attachments: [],
+      followUpBehavior: "queue",
+      text: "Global-only draft",
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+    },
   });
   expect(input.value).toBe("Global-only draft");
   expect(container.textContent).toContain("Nia's context or session changed");
@@ -1292,7 +1377,9 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
   };
   await render(moved);
   const button = (label: string) =>
-    [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === label || item.getAttribute("aria-label") === label,
+    )!;
   expect(input.value).toBe("Global-only draft");
   expect(container.textContent).toContain(
     "You wrote this draft while Nia was in Global. Nia is now in Dimaggi.",
@@ -1303,6 +1390,8 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
   expect(mocks.send).toHaveBeenLastCalledWith({
     environmentId,
     input: {
+      attachments: [],
+      followUpBehavior: "queue",
       text: "Global-only draft",
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
@@ -1398,4 +1487,197 @@ it("shows the request a pending context switch will resend without expanding the
     environmentId,
     input: { actionId: "switch", decision: "approve" },
   });
+});
+
+it("keeps an attachment-only draft bound to its context and sends it only after reassignment", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const upload = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const transfer = new DataTransfer();
+  transfer.items.add(new File(["research notes"], "notes.txt", { type: "text/plain" }));
+  await act(async () => {
+    upload.files = transfer.files;
+    upload.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("notes.txt");
+  mocks.state = {
+    ...mocks.state!,
+    brainContext: "Dimaggi",
+    threadId: ThreadId.make("dimaggi-session"),
+  };
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  expect(container.textContent).toContain("You wrote this draft while Nia was in Global.");
+  const send = () => container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  expect(send().disabled).toBe(true);
+  expect(mocks.send).not.toHaveBeenCalled();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Use in Dimaggi")!
+      .click(),
+  );
+  await act(async () => send().click());
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      text: "",
+      expectedContext: "Dimaggi",
+      expectedThreadId: "dimaggi-session",
+      followUpBehavior: "queue",
+      attachments: [
+        {
+          type: "file",
+          id: expect.any(String),
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 14,
+        },
+      ],
+    },
+  });
+  expect(container.textContent).not.toContain("notes.txt");
+});
+
+it("sends the selected active-turn queue and steer behavior and preserves rejected attachments", async () => {
+  mocks.running = true;
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  const write = async (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        input,
+        text,
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await write("Queue this");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Queue"]')!.click(),
+  );
+  expect(mocks.send).toHaveBeenLastCalledWith({
+    environmentId,
+    input: {
+      text: "Queue this",
+      attachments: [],
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+      followUpBehavior: "queue",
+    },
+  });
+  await write("Steer this");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Steer")!
+      .click(),
+  );
+  expect(mocks.send).toHaveBeenLastCalledWith({
+    environmentId,
+    input: {
+      text: "Steer this",
+      attachments: [],
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+      followUpBehavior: "steer",
+    },
+  });
+  const upload = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const transfer = new DataTransfer();
+  transfer.items.add(new File(["content"], "keep.txt", { type: "text/plain" }));
+  await act(async () => {
+    upload.files = transfer.files;
+    upload.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  mocks.send.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(new D4AgentError({ reason: "stale" })),
+  } as never);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Queue"]')!.click(),
+  );
+  expect(container.textContent).toContain("keep.txt");
+  expect(container.textContent).toContain("Your draft is preserved.");
+});
+
+it("persists Nia effort in the environment's Nia model selection", async () => {
+  const instanceId = ProviderInstanceId.make("codex");
+  mocks.modelSelection = {
+    instanceId,
+    model: "nia-model",
+    options: [{ id: "reasoningEffort", value: "low" }],
+  };
+  mocks.providers = [
+    {
+      instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-26T00:00:00.000Z",
+      models: [
+        {
+          slug: "nia-model",
+          name: "Nia model",
+          isCustom: false,
+          capabilities: {
+            optionDescriptors: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                type: "select",
+                currentValue: "low",
+                options: [
+                  { id: "low", label: "Low" },
+                  { id: "high", label: "High" },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    },
+  ];
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const effort = [...container.querySelectorAll("button")].find(
+    (button) => button.getAttribute("aria-label") === "Low",
+  )!;
+  expect(effort).toBeDefined();
+  await act(async () => effort.click());
+  const high = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((item) =>
+    item.textContent?.includes("High"),
+  )!;
+  expect(high).toBeDefined();
+  await act(async () => high.click());
+  expect(mocks.updateSettings).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      patch: {
+        d4Agent: expect.objectContaining({
+          modelSelection: {
+            instanceId,
+            model: "nia-model",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          },
+        }),
+      },
+    },
+  });
+  expect(mocks.send).not.toHaveBeenCalled();
 });

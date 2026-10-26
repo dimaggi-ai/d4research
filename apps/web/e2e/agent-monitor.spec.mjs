@@ -125,9 +125,74 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await projectSearch.press("Escape");
   for (const name of ["Initialize Git", "Add project script", "Open in Files"])
     NodeAssert.equal(await chat.getByRole("button", { name, exact: true }).count(), 0);
+  for (const name of ["Nia model", "Attach files", "Start voice conversation", "Send"])
+    await chat.getByRole("button", { name, exact: true }).waitFor();
+  const composerPicker = chat.getByRole("button", { name: "Nia model", exact: true });
+  const previousModelLabel = await composerPicker.innerText();
+  await composerPicker.click();
+  await savedChange(
+    app,
+    "select model in Nia composer",
+    () =>
+      page
+        .locator("[data-model-picker-content]")
+        .getByRole("option")
+        .and(page.locator(':not([aria-disabled="true"]):not([aria-expanded])'))
+        .nth(1)
+        .click(),
+    (value) =>
+      typeof value.modelSelection?.model === "string" &&
+      (value.modelSelection.model !== selected.modelSelection.model ||
+        value.modelSelection.instanceId !== selected.modelSelection.instanceId),
+    "d4Agent",
+  );
+  await page.waitForFunction((previous) => {
+    const picker = document.querySelector(
+      'section[aria-label="Nia chat"] button[aria-label="Nia model"]',
+    );
+    return picker instanceof HTMLButtonElement && !picker.disabled && picker.innerText !== previous;
+  }, previousModelLabel);
+  await page.locator("[data-model-picker-content]").waitFor({ state: "hidden" });
+  const composerModelLabel = await composerPicker.innerText();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await chat.getByRole("textbox", { name: "Message Nia", exact: true }).waitFor();
+    const attachBounds = await chat
+      .getByRole("button", { name: "Attach files", exact: true })
+      .boundingBox();
+    NodeAssert.ok(
+      attachBounds && attachBounds.x >= 0 && attachBounds.x + attachBounds.width <= width,
+    );
+    await page.screenshot({ path: NodePath.join(screenshotDir, `nia-composer-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   console.log(
     "PASS real Sidebar pins Nia above Search, hides its project, and opens the dedicated route",
   );
+  await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
+  await chooseEnvironment(page);
+  await picker.waitFor();
+  NodeAssert.equal(await picker.innerText(), composerModelLabel);
+  await picker.click();
+  await savedChange(
+    app,
+    "restore Nia model from Settings",
+    () =>
+      page
+        .locator("[data-model-picker-content]")
+        .getByRole("option")
+        .and(page.locator(':not([aria-disabled="true"])'))
+        .first()
+        .click(),
+    (value) =>
+      value.modelSelection?.model === selected.modelSelection.model &&
+      value.modelSelection?.instanceId === selected.modelSelection.instanceId,
+    "d4Agent",
+  );
+  await page.goto(app.webUrl, { waitUntil: "domcontentloaded" });
+  await agent.click();
+  await composerPicker.waitFor();
+  NodeAssert.equal(await composerPicker.innerText(), previousModelLabel);
   await page.goto(`${app.webUrl}/settings/general`, { waitUntil: "domcontentloaded" });
   await chooseEnvironment(page);
   await agentEnabled.waitFor();

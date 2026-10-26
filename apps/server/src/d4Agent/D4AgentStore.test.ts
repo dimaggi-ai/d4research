@@ -1,7 +1,8 @@
 import * as TestClock from "effect/testing/TestClock";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ThreadId } from "@d4research/contracts";
+import { ChatAttachmentId, D4AgentSendInput, ThreadId } from "@d4research/contracts";
+import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -25,6 +26,23 @@ it.effect(
         yield* first.update((state) => ({
           ...state,
           threadId: ThreadId.make("persistent"),
+          rotation: {
+            threadId: ThreadId.make("persistent"),
+            context: "Global",
+            messageId: "summary",
+            pendingText: "",
+            requestedAt: "2026-10-24T00:00:00Z",
+            pendingAttachments: [
+              {
+                type: "image",
+                id: ChatAttachmentId.make("pending-image"),
+                name: "screen.png",
+                mimeType: "image/png",
+                sizeBytes: 3,
+              },
+            ],
+            pendingFollowUpBehavior: "queue",
+          },
           actions: [
             {
               context: "Global",
@@ -40,6 +58,8 @@ it.effect(
         const reopened = yield* acquire;
         assert.equal((yield* reopened.get).threadId, "persistent");
         assert.equal((yield* reopened.get).actions[0]?.status, "pending");
+        assert.deepEqual((yield* reopened.get).rotation, (yield* first.get).rotation);
+        assert.equal((yield* reopened.get).rotation?.pendingAttachments?.[0]?.name, "screen.png");
         assert.equal(
           (yield* fs.stat(`${directory}/userdata/d4-agent/state.json`)).mode & 0o777,
           0o600,
@@ -255,3 +275,29 @@ it.effect(
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
 );
+
+it("send decoding accepts older clients and attachment-only input but rejects an empty turn", () => {
+  const decode = Schema.decodeUnknownOption(D4AgentSendInput);
+  assert.isTrue(
+    Option.isSome(
+      decode({ text: "Existing client", expectedContext: "Global", expectedThreadId: null }),
+    ),
+  );
+  assert.isTrue(
+    Option.isSome(
+      decode({
+        text: "",
+        attachments: [
+          {
+            type: "image",
+            id: "pending-image",
+            name: "screen.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      }),
+    ),
+  );
+  assert.isTrue(Option.isNone(decode({ text: "", attachments: [] })));
+});

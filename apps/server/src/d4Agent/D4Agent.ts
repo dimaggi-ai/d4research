@@ -28,6 +28,7 @@ import {
 import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
 import {
+  type ChatAttachment,
   canStartProviderTurn,
   CommandId,
   D4_BRAIN_CONTEXTS,
@@ -56,6 +57,8 @@ import {
   type D4AgentSystemCheck,
   type D4AgentEnsureThreadResult,
 } from "@d4research/contracts";
+import * as FileSystem from "effect/FileSystem";
+import * as ServerConfig from "../config.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -73,6 +76,8 @@ import * as SystemProbe from "./SystemProbe.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as AttachmentClaims from "../orchestration-v2/AttachmentClaims.ts";
+import * as ThreadMessageIntake from "../orchestration-v2/ThreadMessageIntake.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -349,6 +354,8 @@ export const layer = Layer.effect(
     const settingsService = yield* ServerSettings.ServerSettingsService;
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const threads = yield* ThreadManagement.ThreadManagementService;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const serverConfig = yield* ServerConfig.ServerConfig;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const events = yield* Effect.serviceOption(ApplicationEvents.OrchestrationEventStore);
     const projects = yield* ProjectService.ProjectService;
@@ -505,6 +512,7 @@ export const layer = Layer.effect(
       text: string,
       role: "user" | "system",
       id?: string,
+      attachments?: ReadonlyArray<ChatAttachment>,
     ) {
       const state = yield* store.get;
       // Rotation retries replay their notices; a stable id shows each notice once.
@@ -516,6 +524,7 @@ export const layer = Layer.effect(
         context: state.brainContext,
         createdAt: DateTime.formatIso(yield* DateTime.now),
         links: [],
+        ...(attachments?.length ? { attachments } : {}),
       };
       yield* store.update((value) => ({
         ...value,
@@ -544,7 +553,9 @@ export const layer = Layer.effect(
         // A decided rotation outlives its source session; closing its destination abandons it.
         const abandoned =
           value.rotation &&
-          (value.rotation.targetThreadId ?? value.rotation.threadId) === session.threadId
+          (value.rotation.seedSummary === undefined && value.rotation.notice === undefined
+            ? value.rotation.threadId
+            : (value.rotation.targetThreadId ?? value.rotation.threadId)) === session.threadId
             ? value.rotation
             : null;
         return {
@@ -570,6 +581,9 @@ export const layer = Layer.effect(
                     context: abandoned.context,
                     createdAt: closedAt,
                     links: [],
+                    ...(abandoned.pendingAttachments?.length
+                      ? { attachments: abandoned.pendingAttachments }
+                      : {}),
                   },
                 ].slice(-200),
               }
@@ -936,6 +950,7 @@ export const layer = Layer.effect(
       if (!heartbeat && resolveReferences) {
         const resolved = resolveAgentReference(input.text, yield* referenceCatalog);
         if (resolved.kind === "ambiguous") {
+          if (input.attachments?.length) return yield* new D4AgentError({ reason: "context" });
           const state = yield* store.get;
           const config = yield* settings;
           const candidates = resolved.candidates.filter(
@@ -964,9 +979,6 @@ export const layer = Layer.effect(
       const identity = yield* ensure(context);
       const modelSelection = yield* selected;
       const at = DateTime.formatIso(yield* DateTime.now);
-      if (!heartbeat && !resumedAfterRotation) {
-        yield* appendDisplay(input.text, "user", `d4-agent:${id}`);
-      }
       yield* store.update((value) => ({
         ...value,
         sessions: (value.sessions ?? []).map((entry) =>
@@ -979,10 +991,11 @@ export const layer = Layer.effect(
       if (
         !heartbeat &&
         !resumedAfterRotation &&
+        input.followUpBehavior !== "steer" &&
         session?.contextWindow != null &&
         session.inputTokens >= (session.contextWindow * budget) / 100
       ) {
-        yield* beginRotation(input.text, heartbeat, id);
+        yield* beginRotation(input.text, heartbeat, id, input);
         return identity;
       }
       if (!heartbeat)
@@ -997,19 +1010,33 @@ export const layer = Layer.effect(
             },
           ].slice(-200),
         }));
-      yield* threads
-        .sendToThread({
-          ...identity,
-          commandId: command(`message:${id}`),
-          messageId: MessageId.make(`d4-agent:${id}`),
-          text: input.text,
-          attachments: [],
-          modelSelection,
-          mode: "queue",
-          createdBy: heartbeat ? "system" : "user",
-          creationSource: "server",
-        })
-        .pipe(Effect.mapError(threadError));
+      const delivered = yield* ThreadMessageIntake.sendToThread({
+        ...identity,
+        commandId: command(`message:${id}`),
+        messageId: MessageId.make(`d4-agent:${id}`),
+        text: input.text,
+        attachments: input.attachments ?? [],
+        modelSelection,
+        mode: input.followUpBehavior ?? "queue",
+        createdBy: heartbeat ? "system" : "user",
+        creationSource: "server",
+      }).pipe(
+        Effect.provideService(ThreadManagement.ThreadManagementService, threads),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+        Effect.mapError(threadError),
+      );
+      if (!heartbeat)
+        yield* appendDisplay(input.text, "user", `d4-agent:${id}`, delivered.message.attachments);
+      if (!heartbeat && resumedAfterRotation)
+        yield* store.update((value) => ({
+          ...value,
+          transcript: (value.transcript ?? []).map((entry) =>
+            entry.id === `d4-agent:${id}`
+              ? { ...entry, attachments: delivered.message.attachments }
+              : entry,
+          ),
+        }));
       return identity;
     });
     const digest = Effect.fn("D4Agent.digest")(function* () {
@@ -1327,24 +1354,56 @@ export const layer = Layer.effect(
       pendingText: string,
       heartbeat: boolean,
       deliveryId?: string,
+      pendingInput?: D4AgentSendInput,
     ) {
       const state = yield* store.get;
       if (state.rotation || state.threadId === null || state.projectId === null) return;
       const summaryId = `d4-summary:${yield* randomUUID}`;
       const at = DateTime.formatIso(yield* DateTime.now);
       const pendingId = deliveryId ?? (yield* randomUUID);
-      yield* store.update((value) => ({
-        ...value,
-        rotation: {
-          threadId: state.threadId!,
-          context: state.brainContext,
-          messageId: summaryId,
-          pendingText,
-          requestedAt: at,
-          heartbeat,
-          deliveryId: pendingId,
-        },
-      }));
+      const targetThreadId = pendingInput?.attachments?.length
+        ? ThreadId.make(yield* randomUUID)
+        : undefined;
+      const claimed =
+        targetThreadId === undefined
+          ? { attachments: pendingInput?.attachments ?? [], claimedPaths: [] }
+          : yield* AttachmentClaims.claimPendingAttachments({
+              threadId: targetThreadId,
+              attachments: pendingInput?.attachments ?? [],
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+              Effect.mapError(threadError),
+            );
+      yield* store
+        .update((value) => ({
+          ...value,
+          rotation: {
+            threadId: state.threadId!,
+            context: state.brainContext,
+            messageId: summaryId,
+            pendingText,
+            ...(pendingInput?.attachments === undefined
+              ? {}
+              : { pendingAttachments: claimed.attachments }),
+            ...(pendingInput?.followUpBehavior === undefined
+              ? {}
+              : { pendingFollowUpBehavior: pendingInput.followUpBehavior }),
+            requestedAt: at,
+            heartbeat,
+            deliveryId: pendingId,
+            ...(targetThreadId === undefined ? {} : { targetThreadId }),
+          },
+        }))
+        .pipe(
+          Effect.onError(() =>
+            AttachmentClaims.releaseClaimedAttachments(claimed.claimedPaths).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+            ),
+          ),
+        );
+      if (!heartbeat)
+        yield* appendDisplay(pendingText, "user", `d4-agent:${pendingId}`, claimed.attachments);
       yield* threads
         .sendToThread({
           threadId: state.threadId,
@@ -1366,9 +1425,13 @@ export const layer = Layer.effect(
     const deliverRotated = Effect.fn("D4Agent.deliverRotated")(function* (
       rotation: NonNullable<D4AgentStore.StoredState["rotation"]>,
     ) {
-      if (rotation.pendingText)
+      if (rotation.pendingText || rotation.pendingAttachments?.length)
         yield* send(
-          { text: rotation.pendingText },
+          {
+            text: rotation.pendingText,
+            attachments: rotation.pendingAttachments ?? [],
+            followUpBehavior: rotation.pendingFollowUpBehavior ?? "queue",
+          },
           rotation.heartbeat ?? false,
           rotation.deliveryId,
           true,
@@ -1382,7 +1445,10 @@ export const layer = Layer.effect(
       const pending = state.rotation;
       if (!pending) return;
       let rotation = pending;
-      if (rotation.targetThreadId === undefined) {
+      if (
+        rotation.targetThreadId === undefined ||
+        (rotation.seedSummary === undefined && rotation.notice === undefined)
+      ) {
         const config = yield* settings;
         const source = state.sessions?.find(
           (session) => session.threadId === pending.threadId && session.context === pending.context,
@@ -1420,7 +1486,7 @@ export const layer = Layer.effect(
           ...pending,
           ...outcome,
           deliveryId: pending.deliveryId ?? (yield* randomUUID),
-          targetThreadId: ThreadId.make(yield* randomUUID),
+          targetThreadId: pending.targetThreadId ?? ThreadId.make(yield* randomUUID),
         };
         yield* store.update((value) => ({
           ...value,

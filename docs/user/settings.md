@@ -46,6 +46,12 @@ model is unavailable or the provider cannot enforce its tool restrictions. The
 monitor continues to use deterministic rules regardless of the chat model. The
 monitor does not read conversation content or take recovery actions.
 
+In web and desktop, Nia's composer lets you change its model and, when supported,
+reasoning effort. These choices are shared with Settings. You can attach images or
+files when the connected server supports attachments. Use the microphone to start a
+voice conversation. While Nia is running, choose **Queue** to send your next message
+after its current turn or **Steer** to update the current turn.
+
 Nia shows the conversation for the selected context. Each model turn receives a compact status
 digest; conversation content is fetched through a read tool when needed. The Nia
 settings section shows recent provider-reported input, output, and cache

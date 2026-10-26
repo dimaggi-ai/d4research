@@ -3,12 +3,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Config from "../config.ts";
+import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import { assert, it } from "@effect/vitest";
 import {
+  ChatAttachmentId,
   DEFAULT_D4_AGENT_SETTINGS,
   MessageId,
   NodeId,
@@ -122,6 +124,15 @@ const fixture = (
   store?: Store.D4AgentStore["Service"],
 ) =>
   Effect.gen(function* () {
+    const attachmentConfig = Context.get(
+      yield* Layer.buildWithScope(
+        Config.layerTest(process.cwd(), { prefix: "nia-intake-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+        yield* Scope.Scope,
+      ),
+      Config.ServerConfig,
+    );
     const catalog = yield* Ref.make<ReadonlyArray<ServerProvider>>(
       providerAvailable ? [provider] : [],
     );
@@ -312,7 +323,7 @@ const fixture = (
                 yield* Ref.update(sends, (all) => [...all, input]);
                 const limit = yield* DispatchModeLimit;
                 yield* Ref.update(sendLimits, (all) => [...all, limit?.runtimeMode]);
-                return {} as never;
+                return { message: { attachments: input.attachments } } as never;
               }),
             dispatch: (cmd) =>
               Effect.gen(function* () {
@@ -428,6 +439,8 @@ const fixture = (
           }),
         ),
       ),
+      Layer.provide(Layer.succeed(Config.ServerConfig, attachmentConfig)),
+      Layer.provide(NodeServices.layer),
     );
     const scope = yield* Scope.Scope;
     const service = Context.get(yield* Layer.buildWithScope(layer, scope), Agent.D4Agent);
@@ -437,6 +450,7 @@ const fixture = (
     );
     return {
       service,
+      attachmentConfig,
       // A human send bound to the context and session the client currently shows.
       send: (input: Parameters<typeof service.sendMessage>[0]) =>
         Ref.get(state).pipe(
@@ -3104,7 +3118,16 @@ it.effect("closing the session of a pending rotation tells the user the message 
       })),
     }));
     const original = "Pending ask that never reached a provider";
-    yield* f.send({ text: original });
+    const attachments = [
+      {
+        type: "image" as const,
+        id: ChatAttachmentId.make("fixture-image"),
+        name: "screen.png",
+        mimeType: "image/png",
+        sizeBytes: 3,
+      },
+    ];
+    yield* f.send({ text: original, attachments });
     assert.equal((yield* Ref.get(f.state)).rotation?.pendingText, original);
     yield* f.service.newSession();
     const state = yield* Ref.get(f.state);
@@ -3112,6 +3135,7 @@ it.effect("closing the session of a pending rotation tells the user the message 
     const notice = state.transcript?.find((entry) => entry.id.startsWith("rotation-dropped:"));
     assert.equal(notice?.role, "system");
     assert.include(notice?.text, original);
+    assert.deepEqual(notice?.attachments, attachments);
   }),
 );
 
@@ -3176,9 +3200,20 @@ it.effect.each(["create", "send"] as const)(
           contextWindow: 100,
         })),
       }));
-      const original = "Pending request that must survive";
-      yield* f.send({ text: original });
+      const original = failure === "create" ? "" : "Pending request that must survive";
+      const attachments = [
+        {
+          type: "image" as const,
+          id: ChatAttachmentId.make("fixture-image"),
+          name: "screen.png",
+          mimeType: "image/png",
+          sizeBytes: 3,
+        },
+      ];
+      yield* f.send({ text: original, attachments, followUpBehavior: "queue" });
       const summary = (yield* Ref.get(f.state)).rotation!;
+      assert.deepEqual(summary.pendingAttachments, attachments);
+      assert.equal(summary.pendingFollowUpBehavior, "queue");
       const runId = RunId.make("summary-run");
       yield* Ref.update(f.projection, (value) => ({
         ...value,
@@ -3219,6 +3254,8 @@ it.effect.each(["create", "send"] as const)(
       const state = yield* Ref.get(f.state);
       const deliveries = (yield* Ref.get(f.sends)).filter((entry) => entry.text === original);
       assert.equal(deliveries.length, 1);
+      assert.deepEqual(deliveries[0]!.attachments, attachments);
+      assert.equal(deliveries[0]!.mode, "queue");
       assert.equal(deliveries[0]!.threadId, pending!.targetThreadId);
       assert.notEqual(deliveries[0]!.threadId, initial.threadId);
       assert.equal(deliveries[0]!.commandId, `d4-agent:message:${pending!.deliveryId}`);
@@ -3880,4 +3917,257 @@ it.effect("internal overview collection waits for the next window even when no i
     yield* f.service.tick;
     assert.isAbove((yield* Ref.get(f.reads)).catalogs, first);
   }),
+);
+
+it.effect.each(["queue", "steer"] as const)(
+  "Nia claims uploads and delivers attachment-only %s turns",
+  (followUpBehavior) =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const fs = yield* FileSystem.FileSystem;
+      const attachment = {
+        type: "image" as const,
+        id: ChatAttachmentId.make(createPendingAttachmentId()),
+        name: "screen.png",
+        mimeType: "image/png",
+        sizeBytes: 3,
+      };
+      const sourcePath = resolveAttachmentPath({
+        attachmentsDir: f.attachmentConfig.attachmentsDir,
+        attachment,
+      });
+      assert.isNotNull(sourcePath);
+      yield* fs.makeDirectory(f.attachmentConfig.attachmentsDir, { recursive: true });
+      yield* fs.writeFile(sourcePath!, new Uint8Array([1, 2, 3]));
+      const identity = yield* f.send({ text: "", attachments: [attachment], followUpBehavior });
+      const delivered = (yield* Ref.get(f.sends)).at(-1)!;
+      assert.equal(delivered.threadId, identity.threadId);
+      assert.equal(delivered.mode, followUpBehavior);
+      assert.equal(delivered.attachments.length, 1);
+      assert.notEqual(delivered.attachments[0]!.id, attachment.id);
+      assert.equal(
+        yield* fs.exists(
+          resolveAttachmentPath({
+            attachmentsDir: f.attachmentConfig.attachmentsDir,
+            attachment: delivered.attachments[0]!,
+          })!,
+        ),
+        true,
+      );
+      const entry = (yield* Ref.get(f.state)).transcript!.find(
+        (entry) => entry.id === delivered.messageId,
+      );
+      assert.deepEqual(entry?.attachments, delivered.attachments);
+      assert.equal(entry?.text, "");
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("stale attachments fail before claiming uploads or dispatching", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const result = yield* Effect.result(
+      f.service.sendMessage({
+        text: "",
+        attachments: [
+          {
+            type: "image",
+            id: ChatAttachmentId.make(createPendingAttachmentId()),
+            name: "screen.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+        expectedContext: "Personal",
+        expectedThreadId: null,
+        followUpBehavior: "steer",
+      }),
+    );
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "stale");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    assert.equal((yield* Ref.get(f.state)).threadId, null);
+  }),
+);
+
+it.effect("ambiguous references retain attachments by failing the send", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* Ref.update(f.shells, (all) => [
+      ...all,
+      { ...target, id: ThreadId.make("second-target") },
+    ]);
+    const result = yield* Effect.result(
+      f.send({
+        text: "[[thread:target]] [[thread:second-target]]",
+        attachments: [
+          {
+            type: "image",
+            id: ChatAttachmentId.make(createPendingAttachmentId()),
+            name: "screen.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      }),
+    );
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "context");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+  }),
+);
+
+it.effect("a high-budget steer stays on the current session", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      sessions: value.sessions!.map((session) => ({
+        ...session,
+        inputTokens: 80,
+        contextWindow: 100,
+      })),
+    }));
+    yield* f.send({ text: "Correct the current turn", followUpBehavior: "steer" });
+    const sent = (yield* Ref.get(f.sends)).at(-1)!;
+    assert.equal(sent.threadId, identity.threadId);
+    assert.equal(sent.mode, "steer");
+    assert.isUndefined((yield* Ref.get(f.state)).rotation);
+  }),
+);
+
+it.effect("a rejected upload leaves no accepted transcript entry", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const result = yield* Effect.result(
+      f.send({
+        text: "Rejected upload",
+        attachments: [
+          {
+            type: "image",
+            id: ChatAttachmentId.make(createPendingAttachmentId()),
+            name: "screen.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      }),
+    );
+    assert.equal(result._tag, "Failure");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    assert.isFalse(
+      (yield* Ref.get(f.state)).transcript?.some((entry) => entry.text === "Rejected upload") ??
+        false,
+    );
+  }),
+);
+
+it.effect("explicit references claim uploads into the final context session", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Dimaggi" },
+    });
+    const initial = yield* f.service.ensureThread();
+    const fs = yield* FileSystem.FileSystem;
+    const attachment = {
+      type: "image" as const,
+      id: ChatAttachmentId.make(createPendingAttachmentId()),
+      name: "screen.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+    };
+    yield* fs.makeDirectory(f.attachmentConfig.attachmentsDir, { recursive: true });
+    yield* fs.writeFile(
+      resolveAttachmentPath({ attachmentsDir: f.attachmentConfig.attachmentsDir, attachment })!,
+      new Uint8Array([1, 2, 3]),
+    );
+    const identity = yield* f.send({ text: "[[thread:target]]", attachments: [attachment] });
+    const sent = (yield* Ref.get(f.sends)).at(-1)!;
+    assert.notEqual(identity.threadId, initial.threadId);
+    assert.equal((yield* Ref.get(f.state)).brainContext, "Dimaggi");
+    assert.equal(sent.threadId, identity.threadId);
+    assert.isTrue(sent.attachments[0]!.id.startsWith(`${identity.threadId}-`));
+    assert.equal(
+      yield* fs.exists(
+        resolveAttachmentPath({
+          attachmentsDir: f.attachmentConfig.attachmentsDir,
+          attachment: sent.attachments[0]!,
+        })!,
+      ),
+      true,
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "rotation retains claimed attachment-only input after the client deletes its upload",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const initial = yield* f.service.ensureThread();
+      const fs = yield* FileSystem.FileSystem;
+      const attachment = {
+        type: "image" as const,
+        id: ChatAttachmentId.make(createPendingAttachmentId()),
+        name: "screen.png",
+        mimeType: "image/png",
+        sizeBytes: 3,
+      };
+      yield* fs.makeDirectory(f.attachmentConfig.attachmentsDir, { recursive: true });
+      const originalPath = resolveAttachmentPath({
+        attachmentsDir: f.attachmentConfig.attachmentsDir,
+        attachment,
+      })!;
+      yield* fs.writeFile(originalPath, new Uint8Array([1, 2, 3]));
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        sessions: state.sessions!.map((session) => ({
+          ...session,
+          inputTokens: 80,
+          contextWindow: 100,
+        })),
+      }));
+      yield* f.send({ text: "", attachments: [attachment], followUpBehavior: "queue" });
+      const pending = (yield* Ref.get(f.state)).rotation!;
+      assert.isDefined(pending.targetThreadId);
+      assert.notEqual(pending.pendingAttachments![0]!.id, attachment.id);
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      yield* fs.remove(originalPath);
+      yield* f.service.tick;
+      assert.equal((yield* Ref.get(f.state)).threadId, initial.threadId);
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      const runId = RunId.make("upload-summary");
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [
+          { id: runId, userMessageId: pending.messageId, status: "completed" },
+        ] as unknown as typeof value.runs,
+        messages: [
+          {
+            id: MessageId.make("upload-summary-result"),
+            role: "assistant",
+            runId,
+            text: "Scoped summary",
+            createdAt: now,
+          },
+        ] as unknown as typeof value.messages,
+      }));
+      const restarted = yield* f.restart;
+      yield* restarted.tick;
+      const delivered = (yield* Ref.get(f.sends)).at(-1)!;
+      assert.equal(delivered.threadId, pending.targetThreadId);
+      assert.equal(delivered.text, "");
+      assert.equal(delivered.mode, "queue");
+      assert.deepEqual(delivered.attachments, pending.pendingAttachments);
+      assert.equal(
+        yield* fs.exists(
+          resolveAttachmentPath({
+            attachmentsDir: f.attachmentConfig.attachmentsDir,
+            attachment: delivered.attachments[0]!,
+          })!,
+        ),
+        true,
+      );
+      assert.isNull((yield* Ref.get(f.state)).rotation);
+    }).pipe(Effect.provide(NodeServices.layer)),
 );

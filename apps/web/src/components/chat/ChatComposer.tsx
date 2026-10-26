@@ -352,7 +352,7 @@ import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
-import { VoiceConversationBanner, VoiceConversationButton } from "./VoiceConversationControl";
+import { VoiceConversationBanner } from "./VoiceConversationControl";
 import { composerDraftOperationKey } from "./composerDraftOperationKey";
 
 import {
@@ -7561,18 +7561,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </Tooltip>
                     </>
                   ) : null}
-                  <VoiceConversationButton
-                    active={voiceConversation.active}
-                    status={voiceConversation.status}
-                    disabled={
-                      isConnecting ||
-                      environmentUnavailable !== null ||
-                      noProviderAvailable ||
-                      projectSelectionRequired ||
-                      (!voiceConversation.active && voiceConversation.status !== "idle")
-                    }
-                    onToggle={voiceConversation.toggleConversation}
-                  />
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}

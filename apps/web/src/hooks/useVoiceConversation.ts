@@ -119,7 +119,7 @@ export async function summarizeReplyForSpeech(
 }
 
 export function useVoiceConversation(options: {
-  messages: readonly ChatMessage[];
+  messages: readonly (Pick<ChatMessage, "role" | "text" | "streaming"> & { readonly id: string })[];
   onTranscript: (transcript: string) => boolean;
   onError: (message: string) => void;
 }) {
@@ -400,7 +400,11 @@ export function useVoiceConversation(options: {
     }
   }, [messages]);
 
-  useEffect(() => stopConversation, [stopConversation]);
+  const stopConversationRef = useRef(stopConversation);
+  useLayoutEffect(() => {
+    stopConversationRef.current = stopConversation;
+  });
+  useEffect(() => () => stopConversationRef.current(), []);
 
   return { active, status, hasOriginalReply, toggleConversation, stopConversation };
 }

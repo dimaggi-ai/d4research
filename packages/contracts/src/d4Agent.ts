@@ -8,6 +8,7 @@ import {
   ThreadId,
   RuntimeRequestId,
 } from "./baseSchemas.ts";
+import { ChatAttachment } from "./chatAttachment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import { MIN_SCHEDULED_TASK_INTERVAL_MS, ScheduledTaskFixedTimeSchedule } from "./scheduledTask.ts";
 
@@ -321,6 +322,7 @@ export const D4AgentTranscriptEntry = Schema.Struct({
   context: D4BrainContext,
   createdAt: IsoDateTime,
   links: Schema.Array(D4AgentLink),
+  attachments: Schema.optionalKey(Schema.Array(ChatAttachment)),
 });
 export type D4AgentTranscriptEntry = typeof D4AgentTranscriptEntry.Type;
 export const D4AgentOpenSession = Schema.Struct({
@@ -385,13 +387,19 @@ export const D4AgentEnsureThreadResult = Schema.Struct({
 export const D4AgentIdentity = Schema.NullOr(D4AgentEnsureThreadResult);
 export type D4AgentIdentity = typeof D4AgentIdentity.Type;
 export const D4AgentSendInput = Schema.Struct({
-  text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+  text: Schema.String.check(Schema.isMaxLength(16000)),
+  attachments: Schema.optionalKey(Schema.Array(ChatAttachment)),
+  followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   // The context and session the user wrote the message for. The server rejects the send as
   // "stale" when either one changed in the meantime. Both are required; they decode as optional
   // only so a client that omits them gets "client-outdated" instead of a schema error.
   expectedContext: Schema.optionalKey(D4BrainContext),
   expectedThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
-});
+}).check(
+  Schema.makeFilter(
+    (input) => input.text.trim().length > 0 || (input.attachments?.length ?? 0) > 0,
+  ),
+);
 export const D4AgentResolveActionInput = Schema.Struct({
   actionId: Schema.String,
   decision: Schema.Literals(["approve", "deny"]),

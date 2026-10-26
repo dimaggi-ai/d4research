@@ -214,6 +214,10 @@ export async function idleAgentsAndAudio({ page, context, app, screenshotDir }) 
     await page.setViewportSize({ width, height: 900 });
     await page.getByText("Finished the source update.", { exact: true }).waitFor();
     NodeAssert.equal(
+      await page.getByRole("button", { name: "Start voice conversation", exact: true }).count(),
+      0,
+    );
+    NodeAssert.equal(
       await page.getByRole("button", { name: "Remove audio artifact", exact: true }).count(),
       0,
     );

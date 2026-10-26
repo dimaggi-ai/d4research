@@ -193,6 +193,14 @@ describe("d4 Agent policies", () => {
       }),
     );
   });
+  it("quiet hours follow the stored time zone across a DST change", () => {
+    // 06:30 PST on 2026-11-02; the summer offset alone would read 07:30, outside quiet hours.
+    const now = Date.parse("2026-11-02T14:30:00Z");
+    const quiet = { startMinute: 22 * 60, endMinute: 7 * 60, utcOffsetMinutes: -420 };
+    assert.isFalse(isQuietHour(now, quiet));
+    assert.isTrue(isQuietHour(now, { ...quiet, timeZone: "America/Los_Angeles" }));
+    assert.isFalse(isQuietHour(now, { ...quiet, timeZone: "Not/AZone" }));
+  });
   it("never auto-relays arbitrary instructions and denies MCP bypass routes", () => {
     assert.isTrue(
       requiresActionApproval("act", {

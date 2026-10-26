@@ -100,10 +100,32 @@ export function compactDigest(
   };
 }
 
+const zoneMinute = (now: number, timeZone: string): number | undefined => {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(now);
+    const part = (type: "hour" | "minute") =>
+      Number(parts.find((entry) => entry.type === type)?.value);
+    const minute = part("hour") * 60 + part("minute");
+    return Number.isInteger(minute) ? minute : undefined;
+  } catch {
+    // An unknown zone name falls back to the stored offset.
+    return undefined;
+  }
+};
+
 export function isQuietHour(now: number, quiet: D4AgentSettings["quietHours"]): boolean {
   if (quiet === null || quiet.startMinute === quiet.endMinute) return false;
-  const date = DateTime.toPartsUtc(DateTime.makeUnsafe(now + quiet.utcOffsetMinutes * 60_000));
-  const minute = date.hour * 60 + date.minute;
+  const offsetParts = DateTime.toPartsUtc(
+    DateTime.makeUnsafe(now + quiet.utcOffsetMinutes * 60_000),
+  );
+  const minute =
+    (quiet.timeZone === undefined ? undefined : zoneMinute(now, quiet.timeZone)) ??
+    offsetParts.hour * 60 + offsetParts.minute;
   return quiet.startMinute < quiet.endMinute
     ? minute >= quiet.startMinute && minute < quiet.endMinute
     : minute >= quiet.startMinute || minute < quiet.endMinute;

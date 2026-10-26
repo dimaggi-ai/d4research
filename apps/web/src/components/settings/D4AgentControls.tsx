@@ -383,6 +383,7 @@ export function D4AgentControls({
                       startMinute: 1320,
                       endMinute: 480,
                       utcOffsetMinutes: -new Date().getTimezoneOffset(),
+                      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     }
                   : null,
               })

@@ -41,6 +41,8 @@ export const D4AgentQuietHours = Schema.Struct({
   startMinute: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1439 })),
   endMinute: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1439 })),
   utcOffsetMinutes: Schema.Int.check(Schema.isBetween({ minimum: -840, maximum: 840 })),
+  // IANA zone; when present it wins over the fixed offset so quiet hours follow DST.
+  timeZone: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
 });
 export const D4AgentSettings = Schema.Struct({
   sessionIdleMinutes: Schema.NullOr(Schema.Literals([30, 120, 480])).pipe(

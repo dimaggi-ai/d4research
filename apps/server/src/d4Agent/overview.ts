@@ -111,6 +111,16 @@ export function ingestOverview(
       : item,
   );
 }
+// Global is the single overview chat: it carries every context's items, while a work context
+// sees only its own.
+export const overviewVisible = (item: Pick<OverviewItem, "context">, context: D4BrainContext) =>
+  context === "Global" || item.context === context;
+// Other contexts reach Global as metadata only (title, status, links), never their bodies.
+export const overviewMetadata = (item: OverviewItem, context: D4BrainContext): OverviewItem => {
+  if (item.context === context) return item;
+  const { body: _body, ...metadata } = item;
+  return metadata;
+};
 export const pendingOverview = (
   items: ReadonlyArray<OverviewItem>,
   context: D4BrainContext,
@@ -119,7 +129,7 @@ export const pendingOverview = (
   sortOverview(
     items.filter(
       (item) =>
-        item.context === context &&
+        overviewVisible(item, context) &&
         item.resolvedAt === null &&
         item.status !== "acknowledged" &&
         (item.status !== "snoozed" || (item.snoozedUntil !== null && item.snoozedUntil <= now)) &&
@@ -165,17 +175,31 @@ const sourceLabels: Record<string, string> = {
   scheduled: "Scheduled runs",
   cto: "CTO",
 };
-const overviewLine = (item: OverviewItem) =>
-  `• ${item.title}${item.recommendation ? ` — ${item.recommendation}` : ""}`;
-export const overviewText = (items: ReadonlyArray<OverviewItem>, counts: ReadonlyArray<string>) => {
+// Thread refs become [[thread:ID|title]] links, which the server validates before display.
+const overviewLine = (item: OverviewItem, context: D4BrainContext) => {
+  const thread = item.ref?.startsWith("thread:") ? item.ref.slice("thread:".length) : null;
+  const title =
+    thread === null || /[|\]]/.test(thread)
+      ? item.title
+      : `[[thread:${thread}|${item.title.replace(/[[\]|]/g, "")}]]`;
+  const label = item.context === context ? "" : `${item.context}: `;
+  return `• ${label}${title}${item.recommendation ? ` — ${item.recommendation}` : ""}`;
+};
+export const overviewText = (
+  items: ReadonlyArray<OverviewItem>,
+  counts: ReadonlyArray<string> = [],
+  context: D4BrainContext = "Global",
+) => {
   const shown = items.slice(0, OVERVIEW_POST_LIMIT);
   const sources = [...new Set(shown.map((item) => item.source))];
   const body =
     sources.length < 2
-      ? shown.map(overviewLine)
+      ? shown.map((item) => overviewLine(item, context))
       : sources.flatMap((source) => [
           `${sourceLabels[source] ?? source}:`,
-          ...shown.filter((item) => item.source === source).map(overviewLine),
+          ...shown
+            .filter((item) => item.source === source)
+            .map((item) => overviewLine(item, context)),
         ]);
   return [
     ...body,
@@ -192,7 +216,8 @@ export function updateOverview(
   minutes = 60,
 ): ReadonlyArray<OverviewItem> {
   const matching = items.filter(
-    (item) => item.context === context && (overviewIdentity(item) === key || item.key === key),
+    (item) =>
+      overviewVisible(item, context) && (overviewIdentity(item) === key || item.key === key),
   );
   if (matching.length !== 1 || !Number.isInteger(minutes) || minutes < 1 || minutes > 525600)
     return items;

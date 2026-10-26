@@ -2489,13 +2489,15 @@ export const layer = Layer.effect(
     const overview = Effect.fn("D4Agent.overview")(function* (includeClosed = false) {
       const { state, config } = yield* bound();
       return Overview.sortOverview(
-        (state.overviewItems ?? []).filter(
-          (item) =>
-            (["threads", "scheduled", "system", "cto"].includes(item.source) ||
-              config.overviewSources[item.source] === item.context) &&
-            item.context === state.brainContext &&
-            (includeClosed || (item.resolvedAt === null && item.status !== "acknowledged")),
-        ),
+        (state.overviewItems ?? [])
+          .filter(
+            (item) =>
+              (["threads", "scheduled", "system", "cto"].includes(item.source) ||
+                config.overviewSources[item.source] === item.context) &&
+              Overview.overviewVisible(item, state.brainContext) &&
+              (includeClosed || (item.resolvedAt === null && item.status !== "acknowledged")),
+          )
+          .map((item) => Overview.overviewMetadata(item, state.brainContext)),
       );
     });
     const updateOverview = (input: {
@@ -2583,6 +2585,8 @@ export const layer = Layer.effect(
             continue;
           const context = config.projectContexts[thread.projectId] ?? "Global";
           const report = reports.get(thread.id);
+          // readCompleted is newest first; older runs of the same thread add only noise.
+          const latest = completedByThread.get(thread.id)?.[0];
           if (
             thread.archivedAt === null &&
             report?.attentionRequired &&
@@ -2594,13 +2598,15 @@ export const layer = Layer.effect(
               title: Overview.cleanOverviewText(`${thread.title}: ${report.classification}`),
               ref: `thread:${thread.id}`,
             });
-          for (const run of completedByThread.get(thread.id) ?? [])
+          else if (latest !== undefined)
             byContext.get(context)!.push({
-              key: `completed:${thread.id}:${run.runId}`,
+              key: `completed:${thread.id}`,
               severity: "info",
               title: Overview.cleanOverviewText(`Completed: ${thread.title}`),
+              // A new run changes the revision, so it is announced again as the same line.
+              body: `latest run ${latest.runId}`,
               ref: `thread:${thread.id}`,
-              observedAt: Date.parse(run.completedAt),
+              observedAt: Date.parse(latest.completedAt),
             });
         }
         for (const [context, entries] of byContext)
@@ -2609,16 +2615,27 @@ export const layer = Layer.effect(
           const completed = yield* scheduledTasks.value
             .completedRuns()
             .pipe(Effect.mapError(threadError));
+          // Only the latest run of each task is shown.
+          const latestRuns = new Map<string, (typeof completed)[number]>();
+          for (const run of completed) {
+            const previous = latestRuns.get(run.taskId);
+            if (
+              previous === undefined ||
+              Date.parse(run.completedAt) > Date.parse(previous.completedAt)
+            )
+              latestRuns.set(run.taskId, run);
+          }
           for (const context of D4_BRAIN_CONTEXTS)
             snapshots.push({
               source: "scheduled",
               context,
-              items: completed
+              items: [...latestRuns.values()]
                 .filter((run) => (config.projectContexts[run.projectId] ?? "Global") === context)
                 .map((run) => ({
-                  key: run.messageId,
+                  key: `task:${run.taskId}`,
                   severity: run.status === "succeeded" ? ("info" as const) : ("attention" as const),
                   title: Overview.cleanOverviewText(`${run.title}: ${run.status}`),
+                  body: `latest run ${run.messageId}`,
                   observedAt: Date.parse(run.completedAt),
                 })),
             });
@@ -2705,14 +2722,18 @@ export const layer = Layer.effect(
         }
         if (!Overview.overviewDue(config, [], now, 0, false)) continue;
         const data = yield* encodeDigest(
-          pending.items.map(({ title, body, recommendation, severity, key, source }) => ({
-            title,
-            body,
-            recommendation,
-            severity,
-            key,
-            source,
-          })),
+          pending.items
+            .map((item) => Overview.overviewMetadata(item, pending.context))
+            .map(({ context, title, body, recommendation, severity, key, source, ref }) => ({
+              context,
+              title,
+              body,
+              recommendation,
+              severity,
+              key,
+              source,
+              ref,
+            })),
         ).pipe(Effect.mapError(storageError));
         const result = yield* send(
           {
@@ -2744,86 +2765,61 @@ export const layer = Layer.effect(
     ) {
       yield* deliverOverviewJudgements(config, now);
       const initial = yield* store.get;
-      const pending = new Map(
-        D4_BRAIN_CONTEXTS.map((context) => [
-          context,
-          Overview.pendingOverview(initial.overviewItems ?? [], context, now),
-        ]),
-      );
-      // Global sees only counts captured before the work-context deliveries consume their items.
-      for (const context of D4_BRAIN_CONTEXTS) {
-        const items = pending.get(context)!;
-        const countContexts =
-          context === "Global"
-            ? D4_BRAIN_CONTEXTS.filter(
-                (other) => other !== "Global" && pending.get(other)!.length > 0,
-              )
-            : [];
-        if (items.length === 0 && countContexts.length === 0) continue;
-        const existing = initial.sessions?.find((session) => session.context === context);
-        const target = existing
-          ? yield* threads.getThreadShell(existing.threadId).pipe(Effect.mapError(threadError))
-          : null;
-        if (
-          !Overview.overviewDue(
-            config,
-            items,
-            now,
-            initial.overviewHeartbeatAt?.[context] ?? 0,
-            target?.activeRunId != null,
-          )
+      // Global is the single overview chat. Work contexts get no separate post, so nothing is
+      // announced twice; their items reach Global as metadata.
+      const context = "Global";
+      const items = Overview.pendingOverview(initial.overviewItems ?? [], context, now);
+      if (items.length === 0) return;
+      const existing = initial.sessions?.find((session) => session.context === context);
+      const target = existing
+        ? yield* threads.getThreadShell(existing.threadId).pipe(Effect.mapError(threadError))
+        : null;
+      if (
+        !Overview.overviewDue(
+          config,
+          items,
+          now,
+          initial.overviewHeartbeatAt?.[context] ?? 0,
+          target?.activeRunId != null,
         )
-          continue;
-        const identity = yield* ensure(context);
-        const counts: string[] = [];
-        for (const other of countContexts) {
-          const session = yield* ensure(other);
-          counts.push(
-            `${other}: ${pending.get(other)!.length} new items → [[thread:${session.threadId}|${other}]]`,
-          );
-        }
-        const selectedItems = items.slice(0, Overview.OVERVIEW_POST_LIMIT);
-        const countIds = countContexts.map((other) =>
-          Overview.overviewMessageId(other, pending.get(other)!),
-        );
-        const messageId = Overview.overviewMessageId(context, selectedItems, [
-          ...counts,
-          ...countIds,
-        ]);
-        yield* threads
-          .dispatch({
-            type: "thread.system-message.record",
-            commandId: command(messageId),
-            threadId: identity.threadId,
-            messageId: MessageId.make(messageId),
-            title: "Overview",
-            text: Overview.overviewText(items, counts),
-          })
-          .pipe(Effect.mapError(threadError));
-        yield* store.update((value) => ({
-          ...value,
-          overviewItems: (value.overviewItems ?? []).map((item) =>
-            selectedItems.some(
-              (selected) =>
-                Overview.overviewIdentity(selected) === Overview.overviewIdentity(item) &&
-                selected.revision === item.revision,
-            )
-              ? { ...item, deliveredRevision: item.revision, deliveredAt: now }
-              : item,
-          ),
-          overviewHeartbeatAt: { ...value.overviewHeartbeatAt, [context]: now },
-          overviewJudgements: [
-            ...(value.overviewJudgements ?? []).filter((entry) => entry.messageId !== messageId),
-            {
-              context,
-              scopeHash: contextScopeHash(context, config),
-              messageId,
-              items: selectedItems,
-            },
-          ],
-        }));
-        yield* deliverOverviewJudgements(config, now);
-      }
+      )
+        return;
+      const identity = yield* ensure(context);
+      const selectedItems = items.slice(0, Overview.OVERVIEW_POST_LIMIT);
+      const messageId = Overview.overviewMessageId(context, selectedItems);
+      yield* threads
+        .dispatch({
+          type: "thread.system-message.record",
+          commandId: command(messageId),
+          threadId: identity.threadId,
+          messageId: MessageId.make(messageId),
+          title: "Overview",
+          text: Overview.overviewText(items, [], context),
+        })
+        .pipe(Effect.mapError(threadError));
+      yield* store.update((value) => ({
+        ...value,
+        overviewItems: (value.overviewItems ?? []).map((item) =>
+          selectedItems.some(
+            (selected) =>
+              Overview.overviewIdentity(selected) === Overview.overviewIdentity(item) &&
+              selected.revision === item.revision,
+          )
+            ? { ...item, deliveredRevision: item.revision, deliveredAt: now }
+            : item,
+        ),
+        overviewHeartbeatAt: { ...value.overviewHeartbeatAt, [context]: now },
+        overviewJudgements: [
+          ...(value.overviewJudgements ?? []).filter((entry) => entry.messageId !== messageId),
+          {
+            context,
+            scopeHash: contextScopeHash(context, config),
+            messageId,
+            items: selectedItems,
+          },
+        ],
+      }));
+      yield* deliverOverviewJudgements(config, now);
     });
     const taskCursors = new Map<string, string>();
     const archiveCursors = new Map<string, string>();

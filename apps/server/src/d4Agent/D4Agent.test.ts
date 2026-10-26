@@ -52,6 +52,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
 import * as Inbox from "./OverviewInbox.ts";
+import * as OverviewThreads from "./OverviewThreads.ts";
 import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
 import * as Pc from "./PcCommand.ts";
@@ -164,6 +165,12 @@ const fixture = (
       },
     ]);
     const inboxSnapshots = yield* Ref.make<ReadonlyArray<Inbox.OverviewSnapshot>>([]);
+    const completedThreadRuns = yield* Ref.make<
+      ReadonlyArray<{ threadId: ThreadId; runId: string; completedAt: string }>
+    >([]);
+    const scheduledRuns = yield* Ref.make<
+      Effect.Success<ReturnType<ScheduledTasks.ScheduledTaskService["Service"]["completedRuns"]>>
+    >([]);
     const failSystemMessage = yield* Ref.make(false);
     const systemMessageIds = yield* Ref.make<ReadonlyArray<string>>([]);
     const monitorUpdates = yield* Ref.make<ReadonlyArray<AgentMonitorUpdate>>([]);
@@ -262,6 +269,9 @@ const fixture = (
                 ),
             },
           ),
+          Layer.succeed(OverviewThreads.OverviewThreads, {
+            readCompleted: () => Ref.get(completedThreadRuns),
+          }),
           Layer.succeed(Inbox.OverviewInbox, {
             read: () =>
               Ref.get(inboxSnapshots).pipe(
@@ -416,7 +426,7 @@ const fixture = (
               ),
           }),
           Layer.mock(ScheduledTasks.ScheduledTaskService)({
-            completedRuns: () => Effect.succeed([]),
+            completedRuns: () => Ref.get(scheduledRuns),
             upsert: (input) =>
               Ref.update(scheduled, (all) => [...all, input]).pipe(
                 Effect.as({
@@ -471,6 +481,8 @@ const fixture = (
       dispatches,
       systemMessages,
       inboxSnapshots,
+      completedThreadRuns,
+      scheduledRuns,
       failSystemMessage,
       systemMessageIds,
       pcCommands,
@@ -3601,7 +3613,7 @@ it.effect(
 );
 
 it.effect(
-  "Global Overview contains Personal counts only and its model input and getState omit private text",
+  "Global Overview carries Personal titles once, while model input and getState omit bodies",
   () =>
     Effect.gen(function* () {
       const f = yield* overviewFixture;
@@ -3639,11 +3651,10 @@ it.effect(
         (message) => message.threadId === globalThread && message.title === "Overview",
       );
       assert.equal(global.length, 1);
-      assert.include(global[0]!.text, "Personal: 1 new items");
-      assert.include(global[0]!.text, "[[thread:");
-      assert.notInclude(global[0]!.text, "Private medical invoice");
+      assert.include(global[0]!.text, "• Personal: Private medical invoice");
       assert.notInclude(global[0]!.text, "private body marker");
-      assert.isTrue(
+      // No second post in the Personal session, so nothing is announced twice.
+      assert.isFalse(
         messages.some(
           (message) =>
             message.threadId !== globalThread && message.text.includes("Private medical invoice"),
@@ -3652,14 +3663,61 @@ it.effect(
       const globalInputs = (yield* Ref.get(f.sends)).filter(
         (send) => send.threadId === globalThread,
       );
-      assert.notInclude(JSON.stringify(globalInputs), "Private medical invoice");
+      assert.include(JSON.stringify(globalInputs), "Private medical invoice");
       assert.notInclude(JSON.stringify(globalInputs), "private body marker");
+      assert.notInclude(JSON.stringify(yield* f.service.overview()), "private body marker");
       const visible = JSON.stringify(yield* f.service.getState());
-      assert.notInclude(visible, "Private medical invoice");
       assert.notInclude(visible, "private body marker");
       assert.notInclude(visible, "private transcript marker");
       assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
     }),
+);
+
+it.effect("Global Overview shows one linked line per work thread and per scheduled task", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        projectContexts: { [target.projectId]: "Dimaggi" },
+      },
+    });
+    yield* f.service.ensureThread();
+    const globalThread = (yield* Ref.get(f.state)).threadId!;
+    yield* Ref.set(f.completedThreadRuns, [
+      { threadId: targetId, runId: "run-2", completedAt: "2026-10-26T13:50:00.000Z" },
+      { threadId: targetId, runId: "run-1", completedAt: "2026-10-26T13:00:00.000Z" },
+    ]);
+    yield* Ref.set(f.scheduledRuns, [
+      {
+        messageId: MessageId.make("m-1"),
+        taskId: ScheduledTaskId.make("nightly"),
+        projectId: target.projectId,
+        title: "Nightly",
+        status: "succeeded",
+        completedAt: "2026-10-26T12:00:00.000Z",
+      },
+      {
+        messageId: MessageId.make("m-2"),
+        taskId: ScheduledTaskId.make("nightly"),
+        projectId: target.projectId,
+        title: "Nightly",
+        status: "failed",
+        completedAt: "2026-10-26T13:00:00.000Z",
+      },
+    ]);
+    yield* f.service.tick;
+    const posts = (yield* Ref.get(f.systemMessages)).filter(
+      (message) => message.title === "Overview",
+    );
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0]!.threadId, globalThread);
+    const text = posts[0]!.text;
+    assert.equal(text.split("Completed: Private").length, 2);
+    assert.include(text, `• Dimaggi: [[thread:${targetId}|Completed: Private]]`);
+    assert.include(text, "• Dimaggi: Nightly: failed");
+    assert.notInclude(text, "Nightly: succeeded");
+  }),
 );
 
 it.effect("a first Overview snapshot emits only five items and persists the silent baseline", () =>
@@ -3854,7 +3912,7 @@ it.effect("a failed Overview judgement retries after restart without reposting t
   }),
 );
 
-it.effect("background tools read and update only their bound overview context", () =>
+it.effect("Global tools see every overview context; work-context tools only their own", () =>
   Effect.gen(function* () {
     const f = yield* overviewFixture;
     yield* Ref.set(f.inboxSnapshots, [
@@ -3866,33 +3924,21 @@ it.effect("background tools read and update only their bound overview context", 
       },
     ]);
     yield* f.service.tick;
-    const state = yield* Ref.get(f.state);
-    const personal = state.sessions?.find((session) => session.context === "Personal");
-    assert.isDefined(personal);
-    const privateItems = yield* f.service
-      .overview()
-      .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId));
     assert.deepEqual(
-      privateItems.map((item) => item.key),
+      (yield* f.service.overview()).map((item) => item.key),
+      ["disk", "private"],
+    );
+    yield* f.service.switchContext({ context: "Personal" });
+    assert.deepEqual(
+      (yield* f.service.overview()).map((item) => item.key),
       ["private"],
     );
-    const wrong = yield* Effect.result(
-      f.service
-        .updateOverview({ key: "disk", op: "ack" })
-        .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId)),
-    );
+    const wrong = yield* Effect.result(f.service.updateOverview({ key: "disk", op: "ack" }));
     assert.equal(wrong._tag, "Failure");
-    yield* f.service
-      .updateOverview({ key: "private", op: "ack" })
-      .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId));
+    yield* f.service.updateOverview({ key: "private", op: "ack" });
     assert.equal(
       (yield* Ref.get(f.state)).overviewItems?.find((item) => item.key === "private")?.status,
       "acknowledged",
-    );
-    assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
-    assert.deepEqual(
-      (yield* f.service.overview()).map((item) => item.key),
-      ["disk"],
     );
   }),
 );

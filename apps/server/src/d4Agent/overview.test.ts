@@ -5,6 +5,7 @@ import {
   overviewDue,
   overviewIdentity,
   overviewMessageId,
+  overviewMetadata,
   overviewRevision,
   overviewText,
   OVERVIEW_POST_LIMIT,
@@ -123,7 +124,7 @@ describe("overview ingestion and delivery", () => {
     assert.equal(resolved.find((item) => item.key === "missing")?.resolvedAt, now + 1000);
     assert.isEmpty(
       pendingOverview(
-        resolved.filter((item) => item.source === "system"),
+        resolved.filter((item) => item.source === "system" && item.context === "Global"),
         "Global",
         now + 1000,
       ),
@@ -211,7 +212,7 @@ describe("overview ingestion and delivery", () => {
     );
   });
 
-  it("filters pending items by context and keeps Global's cross-context summary limited to supplied counts", () => {
+  it("Global carries every context as metadata while work contexts see only their own", () => {
     const first = initial([
       input("public", { title: "Global title", recommendation: "Global recommendation" }),
     ]);
@@ -232,20 +233,33 @@ describe("overview ingestion and delivery", () => {
     );
     const global = pendingOverview(mixed, "Global", now);
     const personal = pendingOverview(mixed, "Personal", now);
-    assert.lengthOf(global, 1);
-    assert.lengthOf(personal, 1);
-    const counts = [`Personal: ${personal.length} new items → [[thread:personal-thread|Personal]]`];
-    assert.equal(
-      overviewText(global, counts),
-      "• Global title — Global recommendation\nPersonal: 1 new items → [[thread:personal-thread|Personal]]",
+    assert.lengthOf(global, 2);
+    assert.deepEqual(
+      personal.map((item) => item.key),
+      ["private"],
     );
-    assert.notInclude(overviewText(global, counts), "Private");
-    assert.equal(updateOverview(mixed, "Global", "private", "ack", now), mixed);
     assert.equal(
-      pendingOverview(updateOverview(mixed, "Personal", "private", "ack", now), "Global", now)[0]
+      overviewText(global.toSorted((a, b) => a.key.localeCompare(b.key))),
+      "• Personal: Private title — Private recommendation\n• Global title — Global recommendation",
+    );
+    assert.isUndefined(
+      overviewMetadata(
+        global.find((item) => item.key === "private")!,
+        "Global",
+      ).body,
+    );
+    assert.equal(overviewMetadata(personal[0]!, "Personal").body, "Private body");
+    assert.equal(updateOverview(mixed, "Personal", "public", "ack", now), mixed);
+    assert.equal(
+      pendingOverview(updateOverview(mixed, "Global", "private", "ack", now), "Global", now)[0]
         ?.key,
       "public",
     );
+  });
+
+  it("renders thread refs as link tokens that cannot be broken by their titles", () => {
+    const [item] = initial([input("t", { title: "Fix [x]|y", ref: "thread:abc" })]);
+    assert.equal(overviewText([item!]), "• [[thread:abc|Fix xy]]");
   });
 
   it("renders up to the post limit with an overflow count and excludes expired pending items", () => {

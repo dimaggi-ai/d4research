@@ -141,6 +141,7 @@ direction saves, and service operations are unavailable through these tools.
 of new or changed items in each context's conversation. Each post shows up to five items.
 Nia then adds recommendations or takes actions permitted by your settings. Background
 turns cannot start work, send messages to other agents, change schedules, or ask the CTO.
+They can draft research or pipeline runs; a draft always waits until you click **Approve**.
 Money and security items receive recommendations only. Ask Nia to acknowledge, snooze,
 or reopen an overview item. Global shows only counts for other contexts' overview items.
 
@@ -153,7 +154,7 @@ Each source needs an explicit context mapping in the environment's `overviewSour
 unmapped sources are ignored. Enabling heartbeat does not configure mail collection.
 
 Enable **System probes** to check failed user and system services, disk usage, pending OS
-updates, doctor results, and server health. Choose the disk warning percentage. These checks
+updates, doctor results (`/var/lib/system-doctor/status.json`), and server health. Choose the disk warning percentage. These checks
 run on the environment's host, including when agent chat is off. Updates are checked at most
 once every six hours; Nia does not install them. Missing or failed probes report unknown status,
 and missing doctor results or results older than 26 hours are reported as stale.

@@ -181,6 +181,27 @@ it.effect("doctor failures require attention while warnings are informational", 
     );
   }).pipe(Effect.provide(layer)),
 );
+it.effect("watchdog status.json failures are named in the title", () =>
+  Effect.gen(function* () {
+    host.doctorFailure = false;
+    host.doctor = JSON.stringify({
+      timestamp: "1970-01-01T00:00:00.000Z",
+      overall: "fail",
+      checks: [
+        { area: "svc", name: "content-qa.service", status: "fail", detail: "failed" },
+        { area: "net", name: "internet", status: "ok", detail: "reachable" },
+        { area: "disk", name: "root", status: "warn", detail: "85%" },
+      ],
+    });
+    const service = yield* Probe.SystemProbe;
+    const checks = yield* service.check(90);
+    assert.equal(checks.find((entry) => entry.id === "doctor")?.status, "attention");
+    assert.equal(
+      checks.find((entry) => entry.id === "doctor")?.title,
+      "doctor: 1 failures, 1 warnings (content-qa.service)",
+    );
+  }).pipe(Effect.provide(layer)),
+);
 it.effect("invalid and unreadable doctor snapshots remain unknown", () =>
   Effect.gen(function* () {
     host.doctorFailure = false;

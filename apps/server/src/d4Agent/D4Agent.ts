@@ -2129,9 +2129,15 @@ export const layer = Layer.effect(
               (yield* currentUserText) === undefined);
           if (
             background &&
-            !["pc", "remind", "cancel-reminder", "auto-archive", "memory-propose"].includes(
-              action.type,
-            )
+            ![
+              "pc",
+              "remind",
+              "cancel-reminder",
+              "auto-archive",
+              "memory-propose",
+              "research",
+              "pipeline",
+            ].includes(action.type)
           )
             return yield* new D4AgentError({ reason: "action-unavailable" });
           if (action.type === "send") {
@@ -2221,13 +2227,15 @@ export const layer = Layer.effect(
             return yield* new D4AgentError({ reason: "guard-denied" });
           }
           const held =
-            guard === undefined
+            // Research Nia proposes on its own stays a card until the user clicks it.
+            (background && (action.type === "research" || action.type === "pipeline")) ||
+            (guard === undefined
               ? requiresActionApproval(config.permissionMode, action)
               : config.permissionMode !== "act" ||
                 // A context switch moves the user's words into another context, so it stays human-only.
                 action.type === "switch-context" ||
                 guard.decision === "escalated" ||
-                guard.decision === "unavailable";
+                guard.decision === "unavailable");
           const automatic = !held;
           const at = yield* Clock.currentTimeMillis;
           let automaticBudget: { scope: string; target: string; at: number } | undefined;

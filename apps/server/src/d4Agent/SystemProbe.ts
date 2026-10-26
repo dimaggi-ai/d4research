@@ -3,7 +3,6 @@ import { sha256Hex } from "@d4research/shared/hash";
 import * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect FileSystem does not expose filesystem capacity (statfs).
 import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
 import type { D4AgentSystemCheck } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Ref from "effect/Ref";
@@ -22,9 +21,15 @@ const isDoctorReadError = Schema.is(DoctorReadError);
 const DoctorRows = Schema.Array(
   Schema.Struct({ status: Schema.Literals(["OK", "WARN", "FAIL", "INFO"]) }),
 );
+// system-doctor-watchdog.timer writes this every 5 minutes.
+const doctorStatusPath = "/var/lib/system-doctor/status.json";
+const WatchdogRows = Schema.Array(
+  Schema.Struct({ name: Schema.String, status: Schema.Literals(["ok", "warn", "fail", "info"]) }),
+);
 const DoctorSnapshot = Schema.Union([
   DoctorRows,
   Schema.Struct({ generatedAt: Schema.String, results: DoctorRows }),
+  Schema.Struct({ timestamp: Schema.String, checks: WatchdogRows }),
 ]);
 const decodeDoctorSnapshot = Schema.decodeUnknownEffect(Schema.fromJsonString(DoctorSnapshot));
 const updateCacheMs = 6 * 60 * 60 * 1000;
@@ -170,7 +175,7 @@ export const layer = Layer.effect(
     });
     const doctor = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
-      const path = `${NodeOS.homedir()}/.local/state/system-doctor/latest.json`;
+      const path = doctorStatusPath;
       const loaded = yield* Effect.tryPromise({
         try: async (signal) => {
           const stat = await NodeFSP.stat(path);
@@ -183,9 +188,18 @@ export const layer = Layer.effect(
         catch: (cause) => new DoctorReadError({ cause }),
       });
       const snapshot = yield* decodeDoctorSnapshot(loaded.content);
-      const rows = "results" in snapshot ? snapshot.results : snapshot;
+      const rows: ReadonlyArray<{ status: string; name?: string }> =
+        "checks" in snapshot
+          ? snapshot.checks.map((row) => ({ name: row.name, status: row.status.toUpperCase() }))
+          : "results" in snapshot
+            ? snapshot.results
+            : snapshot;
       const generatedAt =
-        "results" in snapshot ? Date.parse(snapshot.generatedAt) : loaded.modifiedAt;
+        "checks" in snapshot
+          ? Date.parse(snapshot.timestamp)
+          : "results" in snapshot
+            ? Date.parse(snapshot.generatedAt)
+            : loaded.modifiedAt;
       if (rows.length === 0 || !Number.isFinite(generatedAt) || generatedAt > now) {
         return { ...unavailable("doctor"), title: "doctor results unknown" };
       }
@@ -200,11 +214,15 @@ export const layer = Layer.effect(
         } satisfies D4AgentSystemCheck;
       const failures = rows.filter((row) => row.status === "FAIL").length;
       const warnings = rows.filter((row) => row.status === "WARN").length;
+      const failed = rows
+        .filter((row) => row.status === "FAIL" && row.name !== undefined)
+        .map((row) => row.name)
+        .slice(0, 3);
       return {
         notificationEligible: false,
         id: "doctor",
         status: failures > 0 ? "attention" : warnings > 0 ? "info" : "ok",
-        title: `doctor: ${failures} failures, ${warnings} warnings`,
+        title: `doctor: ${failures} failures, ${warnings} warnings${failed.length > 0 ? ` (${failed.join(", ")})` : ""}`,
         reportKey: `doctor:${failures}:${warnings}`,
         value: failures + warnings,
       } satisfies D4AgentSystemCheck;

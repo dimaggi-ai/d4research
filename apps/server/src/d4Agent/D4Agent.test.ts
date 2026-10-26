@@ -3643,6 +3643,35 @@ it.effect.each(["send", "start", "schedule"] as const)("a heartbeat rejects %s i
   }),
 );
 
+it.effect("a heartbeat research draft waits for approval even when the guard allows", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    yield* f.service.ensureThread();
+    yield* f.settings.updateSettings({
+      research: {
+        upsertScenario: {
+          name: "fixture-research",
+          pipelinePrompt: "Use approved sources and report results.",
+          promptFiles: [],
+        },
+      },
+    });
+    const record = yield* f.service
+      .requestAction({
+        type: "research",
+        projectId: target.projectId,
+        text: "YB Agent Access Mode",
+        modelSelection,
+        pipelineId: "research:fixture-research",
+      })
+      .pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat"));
+    assert.equal(record.status, "pending");
+    assert.isFalse(
+      (yield* Ref.get(f.sends)).some((send) => send.threadId === `d4-action:${record.id}`),
+    );
+  }),
+);
+
 it.effect("a heartbeat may create a reminder in act mode", () =>
   Effect.gen(function* () {
     const f = yield* guardedFixture();

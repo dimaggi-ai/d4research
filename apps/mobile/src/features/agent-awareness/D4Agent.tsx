@@ -118,7 +118,7 @@ export function D4AgentEntry({
         }}
       >
         <Text className="text-base font-t3-semibold text-foreground">
-          {opening ? "Opening Nia…" : `Nia${label ? ` · ${label}` : ""}`}
+          {`Nia${label ? ` · ${label}` : ""}`}
         </Text>
       </Pressable>
       {error ? (

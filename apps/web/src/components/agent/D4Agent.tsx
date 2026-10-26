@@ -89,10 +89,11 @@ export function D4AgentEntry({
       )
     : undefined;
   return (
-    <div className="rounded-lg border border-primary/25 bg-primary/5 p-1">
+    <div className="rounded-lg border border-primary/25 bg-primary/5">
       <Button
         variant="ghost"
         size="sm"
+        className="w-full justify-start"
         disabled={
           !config ||
           opening ||
@@ -134,7 +135,7 @@ export function D4AgentEntry({
         }}
       >
         <NiaAvatar presence={presence} className="size-5" />
-        {opening ? "Opening Nia…" : `Nia${label ? ` · ${label}` : ""}`}
+        {`Nia${label ? ` · ${label}` : ""}`}
       </Button>
       {error ? (
         <p role="alert" className="px-2 text-xs text-destructive">

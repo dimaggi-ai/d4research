@@ -409,7 +409,7 @@ it("shows an unavailable model without sending a request or selecting a fallback
   expect(container.textContent).toContain("The selected model is unavailable.");
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
-it("shows the proposed message before approving its action and refreshes the log", async () => {
+it("shows the full message, why and effect, and a live Send without a review step", async () => {
   mocks.state = {
     ...mocks.state!,
     actionLog: [
@@ -418,6 +418,10 @@ it("shows the proposed message before approving its action and refreshes the log
         type: "send",
         targetId: "target-thread",
         preview: "Run the focused regression tests.",
+        note: {
+          why: "The System thread stalled on a failing test.",
+          effect: "Sends one prompt to target-thread, which runs with full access.",
+        },
         status: "pending",
         createdAt: "2026-10-24T12:00:00.000Z",
         resolvedAt: null,
@@ -444,13 +448,19 @@ it("shows the proposed message before approving its action and refreshes the log
     createdAt: "2026-10-24T12:00:00.000Z",
     resolvedAt: null,
   };
-  const review = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Review action",
+  // The details query resolves on the next mount; the compiler memoizes an identical re-render.
+  await act(() =>
+    root.render(<D4AgentPanel key="loaded" environmentId={environmentId} threadId={threadId} />),
+  );
+  const send = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Send",
   )!;
-  await act(async () => review.click());
-  expect(container.textContent).toContain("Full text.");
-  expect(approve.disabled).toBe(false);
-  await act(async () => approve.click());
+  expect(container.textContent).toContain("Run the focused regression tests. Full text.");
+  expect(container.textContent).toContain("The System thread stalled on a failing test.");
+  expect(container.textContent).toContain("which runs with full access.");
+  expect(container.textContent).not.toContain("Review action");
+  expect(send.disabled).toBe(false);
+  await act(async () => send.click());
   expect(mocks.resolve).toHaveBeenCalledWith({
     environmentId,
     input: { actionId: "action-1", decision: "approve" },
@@ -562,9 +572,7 @@ it("keeps pending approvals older than the latest twenty actions accessible", as
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(
-    [...container.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Review action",
-    ),
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Approve"),
   ).toHaveLength(25);
   expect(container.textContent).toContain("target-24");
 });
@@ -938,7 +946,7 @@ it("settings show session usage and close only the selected context after an exp
   expect(mocks.refresh).toHaveBeenCalled();
 });
 
-it("requires explicit review before sending a rewrite and allows sending the original", async () => {
+it("shows the rewrite without a review step and allows sending the original", async () => {
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -970,11 +978,6 @@ it("requires explicit review before sending a rewrite and allows sending the ori
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(mocks.resolve).not.toHaveBeenCalled();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   expect(container.textContent).toContain("Original");
   expect(container.textContent).toContain("Check this");
   expect(container.textContent).toContain("Rewritten prompt");
@@ -1077,11 +1080,6 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
     resolvedAt: null,
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   await act(async () =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
   );
@@ -1510,11 +1508,6 @@ it("does not invent an original message for a heartbeat action", async () => {
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(mocks.resolve).not.toHaveBeenCalled();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   expect(container.textContent).not.toContain("Original");
   expect(container.textContent).not.toContain("Send original");
   expect(container.textContent).toContain("Detailed rewritten request");

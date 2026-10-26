@@ -797,7 +797,7 @@ it("settings show session usage and close only the selected context after an exp
   expect(mocks.refresh).toHaveBeenCalled();
 });
 
-it("requires explicit review before sending a rewrite and allows sending the original", async () => {
+it("shows the rewrite without a review step and allows sending the original", async () => {
   const createdAt = "2026-10-24T12:00:00.000Z";
   mocks.state = {
     ...mocks.state!,
@@ -829,11 +829,6 @@ it("requires explicit review before sending a rewrite and allows sending the ori
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(mocks.resolve).not.toHaveBeenCalled();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   expect(container.textContent).toContain("Original");
   expect(container.textContent).toContain("Check this");
   expect(container.textContent).toContain("Rewritten prompt");
@@ -920,11 +915,6 @@ it("sends the human-edited rewrite only after explicit Send", async () => {
     resolvedAt: null,
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   await act(async () =>
     [...container.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
   );
@@ -1373,11 +1363,6 @@ it("does not invent an original message for a heartbeat action", async () => {
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(mocks.resolve).not.toHaveBeenCalled();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((item) => item.textContent === "Review action")!
-      .click(),
-  );
   expect(container.textContent).not.toContain("Original");
   expect(container.textContent).not.toContain("Send original");
   expect(container.textContent).toContain("Detailed rewritten request");

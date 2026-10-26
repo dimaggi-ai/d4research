@@ -1,6 +1,7 @@
 import {
   D4BrainContext,
   D4AgentAction,
+  D4AgentActionNote,
   D4AgentActionRecord,
   D4AgentSystemCheck,
   ThreadId,
@@ -119,8 +120,12 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_action", {
     ...writable,
     description:
-      "Request a bounded d4 action. Send, start, research, pipeline, interrupt, answer, pc, schedule, unschedule and switch-context are critical: each returns a pending card and runs only after the user approves it, even when Tool Guard allows it. Never say a pending action ran. pc runs one bash command on the user's desktop (DISPLAY :0) with a 60-second limit; its output is posted to the chat after approval; start GUI apps detached with `setsid -f APP >/dev/null 2>&1`. remind posts text into this chat at an ISO time; cancel-reminder removes one by id. schedule creates a recurring agent run (interval or fixed_time) in a mapped project; unschedule deletes one Nia created. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only allows only send, start, research, pipeline and switch-context drafts. Remind, cancel-reminder, memory-propose and cto-ask run without approval in Act. Provider permission requests cannot be approved.",
-    parameters: Schema.Struct({ action: D4AgentAction }),
+      "Request a bounded d4 action. Send, start, research, pipeline, interrupt, answer, pc, schedule, unschedule and switch-context are critical: each returns a pending card and runs only after the user approves it, even when Tool Guard allows it. Never say a pending action ran. pc runs one bash command on the user's desktop (DISPLAY :0) with a 60-second limit; its output is posted to the chat after approval; start GUI apps detached with `setsid -f APP >/dev/null 2>&1`. remind posts text into this chat at an ISO time; cancel-reminder removes one by id. schedule creates a recurring agent run (interval or fixed_time) in a mapped project; unschedule deletes one Nia created. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only allows only send, start, research, pipeline and switch-context drafts. Remind, cancel-reminder, memory-propose and cto-ask run without approval in Act. Provider permission requests cannot be approved. why is one line on why the action is needed now; effect is one line on exactly what it will change (target, command or service). Both appear on the approval card.",
+    parameters: Schema.Struct({
+      action: D4AgentAction,
+      why: D4AgentActionNote.fields.why,
+      effect: D4AgentActionNote.fields.effect,
+    }),
     success: D4AgentActionRecord,
   }).annotate(Tool.Destructive, true),
   Tool.make("d4_agent_memory_search", {

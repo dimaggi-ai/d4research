@@ -99,6 +99,8 @@ To start research or a pipeline, map the pipeline to its project in Settings, th
 Nia in the same conversation. Review the final prompt, project, pipeline, and model
 before approving. To send a message to another thread, ask Nia to rewrite it for
 that thread. The approval card lets you edit and send the draft or send your original text.
+Every approval card shows the full action, with a Why line on the reason for it and an Effect
+line on what it will change.
 
 When Tool Guard reviews Nia's actions, a thread Nia starts runs in **Auto** mode, where the
 provider sandboxes or reviews each step. Without Tool Guard, each step waits for your approval

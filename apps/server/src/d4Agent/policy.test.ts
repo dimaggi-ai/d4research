@@ -1,4 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
 import {
   DEFAULT_D4_AGENT_SETTINGS,
   ProviderDriverKind,
@@ -22,6 +24,7 @@ import {
 } from "./policy.ts";
 import { diskCheck } from "./SystemProbe.ts";
 import { requiresActionApproval } from "./D4Agent.ts";
+import { D4AgentToolkit } from "../mcp/toolkits/d4Agent/tools.ts";
 
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -58,6 +61,21 @@ const settings: D4AgentSettings = {
 };
 
 describe("d4 Agent policies", () => {
+  it("refuses an action draft without its why and effect lines", () => {
+    const decode = Schema.decodeUnknownExit(D4AgentToolkit.tools.d4_agent_action.parametersSchema);
+    const action = { type: "pc", command: "systemctl --user restart caddy-auth.service" };
+    assert.isTrue(Exit.isFailure(decode({ action })));
+    assert.isTrue(Exit.isFailure(decode({ action, why: "Auth gate returns 502." })));
+    assert.isTrue(
+      Exit.isSuccess(
+        decode({
+          action,
+          why: "Auth gate returns 502.",
+          effect: "Restarts caddy-auth.service; logins drop for a few seconds.",
+        }),
+      ),
+    );
+  });
   it("requires the exact live provider, model, and effort without fallback", () => {
     assert.equal(modelAvailability(settings, [provider]), null);
     assert.equal(modelAvailability(settings, []), "provider-unavailable");

@@ -5,6 +5,7 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
   agentUnavailableMessage,
+  actionFullText,
   actionHeading,
   approveLabel,
   guardNotice,
@@ -414,11 +415,11 @@ function AgentActionRecord({
   const project = useProject(
     tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
   );
-  // A pending switch or launch shows what it will send up front, so it can be approved in place.
-  const pendingSwitch =
-    (record.type === "switch-context" || tag !== null) && record.status === "pending";
+  // A pending card shows the full action up front, so it can be approved in place.
+  const pending = record.status === "pending";
+  const open = reviewing || pending;
   const detail = useEnvironmentQuery(
-    reviewing || pendingSwitch
+    open
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
@@ -438,6 +439,7 @@ function AgentActionRecord({
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
   const heading = actionHeading(record, project?.title);
+  const fullText = detail.data ? actionFullText(detail.data.action) : null;
   const guard = guardNotice(record.guard);
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
@@ -455,13 +457,27 @@ function AgentActionRecord({
             {tag}
           </Badge>
         ) : null}
-        <span className="min-w-0 truncate">{heading.title}</span>
+        <span className="min-w-0 break-words">{heading.title}</span>
       </p>
-      {heading.detail ? (
-        <p className="whitespace-pre-wrap break-words text-muted-foreground">{heading.detail}</p>
+      {record.note ? (
+        <dl className="space-y-1">
+          <div>
+            <dt className="inline text-muted-foreground">Why · </dt>
+            <dd className="inline">{record.note.why}</dd>
+          </div>
+          <div>
+            <dt className="inline text-muted-foreground">Effect · </dt>
+            <dd className="inline">{record.note.effect}</dd>
+          </div>
+        </dl>
+      ) : null}
+      {heading.detail && !(open && (sendAction || launchAction)) ? (
+        <p className="whitespace-pre-wrap break-words text-muted-foreground">
+          {(pending ? fullText : null) ?? heading.detail}
+        </p>
       ) : null}
       {guard ? <p className="text-xs text-muted-foreground">{guard.title}</p> : null}
-      {pendingSwitch ? null : (
+      {pending ? null : (
         <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
           {reviewing ? "Hide action details" : "Review action"}
         </Button>
@@ -484,7 +500,7 @@ function AgentActionRecord({
           {detail.data.result}
         </pre>
       ) : null}
-      {(reviewing || pendingSwitch) && launchAction ? (
+      {open && launchAction ? (
         <div className="space-y-2 rounded border p-3">
           <p className="text-xs text-muted-foreground">
             Target project · {project?.title ?? launchAction.projectId}
@@ -499,7 +515,7 @@ function AgentActionRecord({
           <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
         </div>
       ) : null}
-      {(reviewing || pendingSwitch) && switchAction ? (
+      {open && switchAction ? (
         <div className="space-y-2 rounded border p-3">
           <p className="text-xs text-muted-foreground">
             {switchAction.originalText
@@ -511,7 +527,7 @@ function AgentActionRecord({
           ) : null}
         </div>
       ) : null}
-      {reviewing && sendAction ? (
+      {open && sendAction ? (
         <div className="space-y-2 rounded border p-3">
           {sendAction.originalText !== undefined ? (
             <>

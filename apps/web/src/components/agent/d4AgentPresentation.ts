@@ -104,11 +104,9 @@ export function approveLabel(type: D4AgentActionSummary["type"]): string {
     ? "Send"
     : type === "switch-context"
       ? "Switch"
-      : type === "start"
+      : launchTag(type) !== null
         ? "Create thread"
-        : type === "research" || type === "pipeline"
-          ? "Start research"
-          : "Approve";
+        : "Approve";
 }
 
 /** Tool Guard's verdict on an action, or null when no notice is due. */

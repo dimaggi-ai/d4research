@@ -80,6 +80,20 @@ describe("overview ingestion and delivery", () => {
     assert.equal(rekeyed.find((item) => item.key === "mail:a")?.firstSeenAt, now);
   });
 
+  it("reports a new item whose content matches one already delivered under another key", () => {
+    const shown = delivered(initial([input("a", { title: "Invoice" })]));
+    const next = ingestOverview(
+      shown,
+      snapshot([input("a", { title: "Invoice" }), input("b", { title: "Invoice" })]),
+      now + 1000,
+      true,
+    );
+    assert.deepEqual(
+      pendingOverview(next, "Global", now + 1000).map((item) => item.key),
+      ["b"],
+    );
+  });
+
   it("refreshes lastSeenAt on every current snapshot without changing firstSeenAt or revision", () => {
     const first = initial([input("seen")]);
     const repeated = ingestOverview(first, snapshot([input("seen")]), now + 1000, true);

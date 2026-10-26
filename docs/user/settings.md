@@ -65,12 +65,13 @@ Agent MCP calls do not receive that identity. Ownership checks fail closed on
 database errors: if the server cannot verify whether a thread belongs to Nia, it
 blocks access that requires the check.
 
-The default permission level is **Read-only**. Sending a message or starting a thread,
-research run, or pipeline always requires your approval, at every permission level.
-Other actions are disabled in Read-only. **Ask** queues those actions for your approval.
-**Act** can interrupt a run or answer a user-input request.
-Act also creates pending memory proposals and sends CTO questions when those
-features are enabled for the selected context. Memory proposals always need
+The default permission level is **Read-only**. Sending a message, starting a thread,
+research run, or pipeline, interrupting a run, answering an input request, running a
+command, and creating or deleting a schedule always require your approval, at every
+permission level, even when Tool Guard allows them. Read-only allows only drafts of
+messages, threads, research, pipelines, and context switches. **Ask** queues every action
+for your approval. **Act** sets reminders without asking, creates pending memory
+proposals, and sends CTO questions when those features are enabled for the selected context. Memory proposals always need
 human review. Approval does not change the vault.
 Provider permission approvals remain manual. Proposed actions and their outcomes
 appear above the Nia conversation. These permissions do not grant authority to

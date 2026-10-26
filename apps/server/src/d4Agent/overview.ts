@@ -60,19 +60,16 @@ export function ingestOverview(
   initialized: boolean,
 ): ReadonlyArray<OverviewItem> {
   const old = new Map(previous.map((item) => [overviewIdentity(item), item]));
-  // A producer may re-key items it already sent (a new key format, say). Content the user was
-  // already shown from this source is not new, whatever its key.
-  const shown = new Map(
-    previous
-      .filter(
-        (item) =>
-          item.context === snapshot.context &&
-          item.source === snapshot.source &&
-          item.deliveredRevision === item.revision,
-      )
-      .map((item) => [item.revision, item]),
-  );
   const incoming = new Set(snapshot.items.map((item) => item.key));
+  // A producer may add a namespace to its keys ("<id>" becomes "mail:<id>"). An item it already
+  // sent under the bare key, with unchanged content, is not new. Identical content under an
+  // unrelated key still is.
+  const renamedFrom = (key: string, revision: string) => {
+    const bare = key.slice(key.indexOf(":") + 1);
+    if (bare === key || incoming.has(bare)) return undefined;
+    const item = old.get(overviewIdentity({ ...snapshot, key: bare }));
+    return item?.revision === revision && item.deliveredRevision === revision ? item : undefined;
+  };
   const next = previous
     .filter((item) => item.context !== snapshot.context || item.source !== snapshot.source)
     .concat(
@@ -89,7 +86,7 @@ export function ingestOverview(
         const existing = old.get(overviewIdentity({ ...snapshot, key: input.key }));
         const revision = overviewRevision(input);
         const changed = existing?.revision !== revision;
-        const seen = existing === undefined ? shown.get(revision) : undefined;
+        const seen = existing === undefined ? renamedFrom(input.key, revision) : undefined;
         if (seen !== undefined)
           return {
             ...input,

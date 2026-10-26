@@ -3429,10 +3429,11 @@ it.effect("an approved start links the thread it created", () =>
     assert.equal(record.status, "pending");
     assert.equal((yield* f.service.getState()).actionLog[0]?.threadId, undefined);
     yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
-    assert.equal(
-      (yield* f.service.getState()).actionLog[0]?.threadId,
-      ThreadId.make(`d4-action:${record.id}`),
-    );
+    const state = yield* f.service.getState();
+    assert.equal(state.actionLog[0]?.threadId, ThreadId.make(`d4-action:${record.id}`));
+    const posted = state.transcript?.at(-1);
+    assert.equal(posted?.text, "New thread: Fix the flaky login test");
+    assert.equal(posted?.links[0]?.threadId, ThreadId.make(`d4-action:${record.id}`));
   }),
 );
 

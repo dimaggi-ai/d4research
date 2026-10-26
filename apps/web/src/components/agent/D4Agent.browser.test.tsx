@@ -1106,7 +1106,7 @@ it.each(["research", "pipeline"] as const)(
     expect(mocks.resolve).not.toHaveBeenCalled();
     await act(async () =>
       [...container.querySelectorAll("button")]
-        .find((item) => item.textContent === "Start research")!
+        .find((item) => item.textContent === "Create thread")!
         .click(),
     );
     expect(mocks.resolve).toHaveBeenCalledWith({

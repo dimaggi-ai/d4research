@@ -272,7 +272,7 @@ export function D4AgentControls({
       })}
       <SettingsRow
         title="Permission level"
-        description="Read-only observes. Ask requires approval for each action. Act can interrupt threads, answer input requests, submit memory proposals for review, and ask CTO questions when enabled for the selected context. Sending messages and starting threads still require approval. Provider permission approvals remain manual."
+        description="Read-only observes. Ask requires approval for each action. Act sets reminders, submits memory proposals for review, and asks CTO questions when enabled for the selected context. Sending, starting threads, interrupting, answering, commands and schedules always require your approval. Provider permission approvals remain manual."
         control={
           <select
             aria-label="Agent permission level"

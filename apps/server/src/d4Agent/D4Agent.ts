@@ -2161,9 +2161,37 @@ export const layer = Layer.effect(
           ? { result: result.success }
           : {}),
       };
+      const action = record.action;
+      // The new thread appears in the chat where its card was approved, with a link to open it.
+      const created =
+        result._tag === "Success" &&
+        (action.type === "start" || action.type === "research" || action.type === "pipeline")
+          ? action.text.trim().split("\n")[0]!.slice(0, 80) || "Nia task"
+          : null;
       yield* store.update((value) => ({
         ...value,
         actions: value.actions.map((entry) => (entry.id === record.id ? resolved : entry)),
+        ...(created === null
+          ? {}
+          : {
+              transcript: [
+                ...(value.transcript ?? []),
+                {
+                  id: `action-created:${record.id}`,
+                  role: "system" as const,
+                  text: `New thread: ${created}`,
+                  context: record.context,
+                  createdAt: now,
+                  links: [
+                    {
+                      label: created,
+                      threadId: ThreadId.make(`d4-action:${record.id}`),
+                      projectId: "projectId" in action ? action.projectId : null,
+                    },
+                  ],
+                },
+              ].slice(-200),
+            }),
       }));
       if (result._tag === "Failure") return yield* Effect.fail(result.failure);
       return resolved;

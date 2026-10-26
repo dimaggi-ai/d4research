@@ -864,7 +864,7 @@ it("keeps one visible transcript across isolated context routes and hides provid
     ),
   );
   expect(container.textContent).toContain("What needs me?");
-  expect(container.textContent).toContain("Context changed to YB. New session.");
+  expect(container.textContent).not.toContain("Context changed to YB. New session.");
   expect(container.textContent).toContain("Review this thread.");
   expect(container.textContent).not.toContain("Private provider history");
   expect(mocks.send).not.toHaveBeenCalled();

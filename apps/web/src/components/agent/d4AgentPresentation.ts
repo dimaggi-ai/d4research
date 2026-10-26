@@ -166,3 +166,10 @@ export function niaPresence(
   if (activity.tone === "error") return "error";
   return watch.off ? "off" : "watching";
 }
+
+// Older transcripts carry session bookkeeping posts; they are not messages for the user.
+const SESSION_NOTICE =
+  /^(New session\.|Resumed \S+ session\.|Context changed to \S+\. New session\.|Session size limit reached\. New \S+ session\.)$/;
+export function isSessionNotice(entry: { role: string; text: string }): boolean {
+  return entry.role === "system" && SESSION_NOTICE.test(entry.text);
+}

@@ -103,3 +103,22 @@ export function approveLabel(type: D4AgentActionSummary["type"]): string {
         ? "Create thread"
         : "Approve";
 }
+
+// Older transcripts carry session bookkeeping posts; they are not messages for the user.
+const SESSION_NOTICE =
+  /^(New session\.|Resumed \S+ session\.|Context changed to \S+\. New session\.|Session size limit reached\. New \S+ session\.)$/;
+export function isSessionNotice(entry: { role: string; text: string }): boolean {
+  return entry.role === "system" && SESSION_NOTICE.test(entry.text);
+}
+
+export function postTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+}

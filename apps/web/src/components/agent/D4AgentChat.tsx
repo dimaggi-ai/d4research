@@ -23,7 +23,12 @@ import {
 } from "@d4research/client-runtime/d4-agent-references";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
-import { agentActivityLabel, agentWatchLabel, niaPresence } from "./d4AgentPresentation";
+import {
+  agentActivityLabel,
+  agentWatchLabel,
+  isSessionNotice,
+  niaPresence,
+} from "./d4AgentPresentation";
 import { NiaAvatar } from "./NiaAvatar";
 
 import { DEFAULT_SERVER_SETTINGS } from "@d4research/contracts";
@@ -39,7 +44,6 @@ import {
   AssistantMessageMeta,
 } from "../chat/MessagePresentation";
 import { MessageCopyButton } from "../chat/MessageCopyButton";
-import { TimelineSystemDivider } from "../chat/TimelineSystemDivider";
 import { ChevronDownIcon } from "lucide-react";
 import { D4AgentComposer } from "./D4AgentComposer";
 
@@ -109,6 +113,7 @@ export function D4AgentChat({
     monitorEnabled: config?.settings.agentMonitor.enabled === true,
   });
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
+  const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const [composerInset, setComposerInset] = useState(0);
@@ -167,7 +172,7 @@ export function D4AgentChat({
             >
               <div className="chat-content-lane flex min-h-full flex-col">
                 <div aria-hidden className="h-3 shrink-0 sm:h-4" />
-                {(state.transcript ?? []).map((entry) => {
+                {transcript.map((entry) => {
                   const segments =
                     entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
                   // System text already shows every label; only links it could not place are repeated below.
@@ -254,12 +259,12 @@ export function D4AgentChat({
                         timestampFormat={settings.timestampFormat}
                         showCopyButton
                         copyStreaming={false}
+                        alwaysVisible
                       />
                     </article>
                   ) : (
                     <article key={entry.id} className="pb-4">
                       <div className="px-1 py-2 text-sm text-muted-foreground">
-                        <TimelineSystemDivider label={entry.context} />
                         <p className="whitespace-pre-wrap break-words select-text">
                           {segments === null ? (
                             entry.text
@@ -268,11 +273,23 @@ export function D4AgentChat({
                           )}
                         </p>
                         {extras}
+                        <AssistantMessageMeta
+                          className="mt-1.5"
+                          message={{
+                            text: entry.text,
+                            updatedAt: entry.createdAt,
+                            streaming: false,
+                          }}
+                          timestampFormat={settings.timestampFormat}
+                          showCopyButton={false}
+                          copyStreaming={false}
+                          alwaysVisible
+                        />
                       </div>
                     </article>
                   );
                 })}
-                {(state.transcript ?? []).length === 0 ? (
+                {transcript.length === 0 ? (
                   <div className="flex flex-1 items-center justify-center">
                     <p className="text-center text-sm text-muted-foreground/30">
                       Ask what needs attention, send a message to a thread, or start research.

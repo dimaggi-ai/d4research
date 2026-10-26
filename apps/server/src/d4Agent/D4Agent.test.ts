@@ -2034,7 +2034,9 @@ it.effect("idle timeout closes a session with a fake clock and never closes a bu
     assert.include(yield* Ref.get(f.dispatches), "thread.stop");
     const next = yield* f.service.ensureThread();
     assert.notEqual(next.threadId, first.threadId);
-    assert.equal((yield* Ref.get(f.state)).transcript?.at(-1)?.text, "New session.");
+    assert.isFalse(
+      ((yield* Ref.get(f.state)).transcript ?? []).some((entry) => entry.text === "New session."),
+    );
     assert.equal((yield* Ref.get(f.state)).sessionChangeReason, "new-session");
     yield* Ref.update(f.shells, (all) =>
       all.map((entry) =>
@@ -3286,7 +3288,7 @@ it.effect.each(["create", "send"] as const)(
       assert.equal(
         state.transcript?.filter((entry) => entry.text.startsWith("Session size limit reached"))
           .length,
-        1,
+        0,
       );
     }),
 );

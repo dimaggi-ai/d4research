@@ -653,16 +653,6 @@ export const layer = Layer.effect(
               },
         ],
       }));
-      yield* appendDisplay(
-        canResume
-          ? `Resumed ${context} session.`
-          : reason === "new-session"
-            ? "New session."
-            : reason === "size"
-              ? `Session size limit reached. New ${context} session.`
-              : `Context changed to ${context}. New session.`,
-        "system",
-      );
     });
     const ensure = Effect.fn("D4Agent.ensureThread")(function* (context?: D4BrainContext) {
       const config = yield* settings;

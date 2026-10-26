@@ -8,6 +8,7 @@ import {
   type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { isSessionNotice, postTime } from "./d4AgentPresentation";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
@@ -153,6 +154,7 @@ export function D4AgentChat({
   refresh: () => void;
 }) {
   const markdownStyles = useNiaMarkdownStyles();
+  const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
   const config = useEnvironmentServerConfig(environmentId);
   const projects = useProjects();
   const threads = useThreadShells();
@@ -203,7 +205,7 @@ export function D4AgentChat({
           if (followConversation.current) conversation.current?.scrollToEnd({ animated: false });
         }}
       >
-        {(state.transcript ?? []).map((entry) => {
+        {transcript.map((entry) => {
           const segments =
             entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
           // System text already shows every label; only links it could not place are repeated below.
@@ -228,9 +230,6 @@ export function D4AgentChat({
                     : "gap-2 rounded-xl border border-border px-3 py-2"
               }
             >
-              {entry.role === "system" ? (
-                <Text className="text-xs text-foreground-muted">{entry.context}</Text>
-              ) : null}
               {entry.role === "system" ? (
                 <Text selectable className="text-sm text-foreground">
                   {segments?.map((segment, index) =>
@@ -287,10 +286,13 @@ export function D4AgentChat({
                     </Text>
                   ),
                 )}
+              {entry.role === "user" ? null : (
+                <Text className="text-xs text-foreground-muted">{postTime(entry.createdAt)}</Text>
+              )}
             </View>
           );
         })}
-        {(state.transcript ?? []).length === 0 ? (
+        {transcript.length === 0 ? (
           <Text className="text-sm text-foreground-muted">
             Ask what needs attention, send a message to a thread, or start research.
           </Text>

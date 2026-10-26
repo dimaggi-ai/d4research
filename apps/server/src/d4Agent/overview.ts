@@ -200,6 +200,9 @@ const sourceLabels: Record<string, string> = {
   scheduled: "Scheduled runs",
   cto: "CTO",
 };
+// The daily evolution round writes one source per context (evolution-global, evolution-yb, ...).
+const sourceLabel = (source: string) =>
+  sourceLabels[source] ?? (source.startsWith("evolution-") ? "Suggestions for Nia" : source);
 // Thread refs become [[thread:ID|title]] links, which the server validates before display.
 const overviewLine = (item: OverviewItem, context: D4BrainContext) => {
   const thread = item.ref?.startsWith("thread:") ? item.ref.slice("thread:".length) : null;
@@ -221,7 +224,7 @@ export const overviewText = (
     sources.length < 2
       ? shown.map((item) => overviewLine(item, context))
       : sources.flatMap((source) => [
-          `${sourceLabels[source] ?? source}:`,
+          `${sourceLabel(source)}:`,
           ...shown
             .filter((item) => item.source === source)
             .map((item) => overviewLine(item, context)),

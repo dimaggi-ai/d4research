@@ -324,6 +324,38 @@ it("groups a digest from several sources under source headings", () => {
   );
 });
 
+it("shows another context's evolution suggestion in Global under one heading, without its body", () => {
+  const mail = ingestOverview(
+    [],
+    snapshot([input("m", { title: "Bill due" })], { source: "mail" }),
+    now,
+    true,
+  );
+  const items = ingestOverview(
+    mail,
+    snapshot(
+      [
+        input("e", {
+          title: "Use case: status digests",
+          body: "Evidence from a YB thread",
+          recommendation: "Approve the playbook note.",
+        }),
+      ],
+      { source: "evolution-yb", context: "YB" },
+    ),
+    now,
+    true,
+  );
+  const global = pendingOverview(items, "Global", now).map((item) =>
+    overviewMetadata(item, "Global"),
+  );
+  assert.equal(
+    overviewText(global, []),
+    "Mail:\n• Bill due\nSuggestions for Nia:\n• YB: Use case: status digests — Approve the playbook note.",
+  );
+  assert.notInclude(JSON.stringify(global), "Evidence from a YB thread");
+});
+
 it("first ingestion ignores expired items when selecting the five current notices", () => {
   const expired = Array.from({ length: 5 }, (_, index) =>
     input(`expired${index}`, { severity: "critical", expiresAt: "2026-10-25T00:00:00Z" }),

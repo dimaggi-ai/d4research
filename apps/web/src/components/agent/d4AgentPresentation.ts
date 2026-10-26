@@ -76,13 +76,39 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
   return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;
 }
 
-// Context switches carry a readable server-filled preview; other actions show their raw target.
+// Context switches carry a readable server-filled preview; launches name their project; other
+// actions show their raw target.
 export function actionHeading(
   record: Pick<D4AgentActionSummary, "type" | "targetId" | "preview">,
+  projectTitle?: string,
 ): { title: string; detail: string } {
-  return record.type === "switch-context"
-    ? { title: record.preview, detail: "" }
-    : { title: `${record.type} · ${record.targetId}`, detail: record.preview };
+  if (record.type === "switch-context") return { title: record.preview, detail: "" };
+  if (launchTag(record.type) !== null)
+    return { title: projectTitle ?? record.targetId, detail: record.preview };
+  return { title: `${record.type} · ${record.targetId}`, detail: record.preview };
+}
+
+/** The tag of an action that creates a thread, or null for every other action. */
+export function launchTag(type: D4AgentActionSummary["type"]): string | null {
+  return type === "start"
+    ? "New thread"
+    : type === "research"
+      ? "Research"
+      : type === "pipeline"
+        ? "Pipeline"
+        : null;
+}
+
+export function approveLabel(type: D4AgentActionSummary["type"]): string {
+  return type === "send"
+    ? "Send"
+    : type === "switch-context"
+      ? "Switch"
+      : type === "start"
+        ? "Create thread"
+        : type === "research" || type === "pipeline"
+          ? "Start research"
+          : "Approve";
 }
 
 /** Tool Guard's verdict on an action, or null when no notice is due. */

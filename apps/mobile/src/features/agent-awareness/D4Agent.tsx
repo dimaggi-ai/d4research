@@ -4,11 +4,18 @@ import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/serv
 import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useD4AgentState } from "./useD4AgentState";
-import { agentUnavailableMessage, actionHeading } from "./d4AgentPresentation";
+import {
+  agentUnavailableMessage,
+  actionHeading,
+  approveLabel,
+  launchTag,
+} from "./d4AgentPresentation";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import {
   D4_BRAIN_CONTEXTS,
+  ProjectId,
   type D4AgentActionSummary,
   type EnvironmentId,
   type ThreadId,
@@ -16,7 +23,7 @@ import {
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Pressable, View, ScrollView, Modal, TextInput } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
-import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentServerConfig, useProject } from "../../state/entities";
 import { useEnvironmentConnectionState } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -467,8 +474,14 @@ function AgentActionRecord({
   const [reviewing, setReviewing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState<string | null>(null);
-  // A pending switch shows its replay up front so the user sees what will be resent.
-  const pendingSwitch = record.type === "switch-context" && record.status === "pending";
+  const linkTo = useLinkTo();
+  const tag = launchTag(record.type);
+  const project = useProject(
+    tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
+  );
+  // A pending switch or launch shows what it will send up front, so it can be approved in place.
+  const pendingSwitch =
+    (record.type === "switch-context" || tag !== null) && record.status === "pending";
   const detail = useEnvironmentQuery(
     reviewing || pendingSwitch
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
@@ -489,7 +502,8 @@ function AgentActionRecord({
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
-  const heading = actionHeading(record);
+  const heading = actionHeading(record, project?.title);
+  const createdThreadId = record.threadId;
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
     detail.data &&
@@ -500,9 +514,14 @@ function AgentActionRecord({
       : null;
   return (
     <View className="gap-2 py-2">
-      <Text className="text-sm text-foreground">
-        {record.createdAt} · {heading.title} · {record.status}
-      </Text>
+      <View className="flex-row items-center gap-2">
+        {tag ? (
+          <Text className="rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">{tag}</Text>
+        ) : null}
+        <Text className="shrink text-sm text-foreground">
+          {record.createdAt} · {heading.title} · {record.status}
+        </Text>
+      </View>
       {heading.detail ? (
         <Text className="text-sm text-foreground-muted">{heading.detail}</Text>
       ) : null}
@@ -529,10 +548,10 @@ function AgentActionRecord({
           {detail.data.result}
         </Text>
       ) : null}
-      {reviewing && launchAction ? (
+      {(reviewing || pendingSwitch) && launchAction ? (
         <View className="gap-2 rounded border border-border p-3">
           <Text className="text-xs text-foreground-muted">
-            Target project · {launchAction.projectId}
+            Target project · {project?.title ?? launchAction.projectId}
           </Text>
           {launchAction.type !== "start" ? (
             <Text className="text-xs text-foreground-muted">
@@ -619,6 +638,18 @@ function AgentActionRecord({
         </Pressable>
       ) : null}
       {undoError ? <Text accessibilityRole="alert">Could not restore this thread.</Text> : null}
+      {createdThreadId ? (
+        <Pressable
+          accessibilityRole="link"
+          onPress={() =>
+            linkTo(
+              `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(createdThreadId)}`,
+            )
+          }
+        >
+          <Text className="text-accent">Open thread</Text>
+        </Pressable>
+      ) : null}
       {record.status === "pending" ? (
         <View className="flex-row gap-4">
           <Pressable
@@ -632,9 +663,7 @@ function AgentActionRecord({
               )
             }
           >
-            <Text className="text-accent">
-              {sendAction ? "Send" : record.type === "switch-context" ? "Switch" : "Approve"}
-            </Text>
+            <Text className="text-accent">{approveLabel(record.type)}</Text>
           </Pressable>
           {sendAction?.originalText ? (
             <Pressable

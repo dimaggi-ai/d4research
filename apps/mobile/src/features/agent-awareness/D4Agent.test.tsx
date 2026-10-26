@@ -168,6 +168,8 @@ vi.mock("../../state/query", () => ({
 vi.mock("../../state/entities", () => ({
   useThreadShell: () => (mocks.routeShellMissing ? null : { projectId: mocks.state?.projectId }),
   useProjects: () => mocks.projects,
+  useProject: (ref: { projectId: string } | null) =>
+    mocks.projects.find((project) => project.id === ref?.projectId) ?? null,
   useThreadShells: () => mocks.threads,
   useEnvironmentServerConfig: () => ({
     settings: {
@@ -954,6 +956,9 @@ it.each(["research", "pipeline"] as const)(
         },
       ],
     };
+    mocks.projects = [
+      { id: ProjectId.make("target-project"), title: "Research lab", environmentId },
+    ];
     mocks.detail = {
       id: "launch",
       context: "Global",
@@ -976,19 +981,16 @@ it.each(["research", "pipeline"] as const)(
       root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
     );
     expect(mocks.resolve).not.toHaveBeenCalled();
-    await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((item) => item.textContent === "Review action")!
-        .click(),
-    );
-    expect(container.textContent).toContain("Target project · target-project");
+    // A pending launch shows its details without a separate review step.
+    expect(container.textContent).toContain(type === "research" ? "Research" : "Pipeline");
+    expect(container.textContent).toContain("Target project · Research lab");
     expect(container.textContent).toContain("Pipeline · research:focused");
     expect(container.textContent).toContain("Model · codex-instance / gpt-test");
     expect(container.textContent).toContain("Detailed approved research prompt");
     expect(mocks.resolve).not.toHaveBeenCalled();
     await act(async () =>
       [...container.querySelectorAll("button")]
-        .find((item) => item.textContent === "Approve")!
+        .find((item) => item.textContent === "Start research")!
         .click(),
     );
     expect(mocks.resolve).toHaveBeenCalledWith({
@@ -1417,4 +1419,66 @@ it("shows the request a pending context switch will resend without expanding the
     environmentId,
     input: { actionId: "switch", decision: "approve" },
   });
+});
+
+it("asks before creating a thread and then links the thread it created", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  const card = {
+    id: "start-1",
+    type: "start" as const,
+    targetId: "target-project",
+    preview: "Fix the flaky login test",
+    createdAt,
+  };
+  mocks.projects = [{ id: ProjectId.make("target-project"), title: "Web app", environmentId }];
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [{ ...card, status: "pending", resolvedAt: null }],
+  };
+  mocks.detail = {
+    id: "start-1",
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "start",
+      projectId: ProjectId.make("target-project"),
+      text: "Fix the flaky login test",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex-instance"), model: "gpt-test" },
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("New thread");
+  expect(container.textContent).toContain("Web app");
+  expect(container.textContent).not.toContain("Open thread");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Create thread")!
+      .click(),
+  );
+  expect(mocks.resolve).toHaveBeenCalledWith({
+    environmentId,
+    input: { actionId: "start-1", decision: "approve" },
+  });
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        ...card,
+        status: "executed",
+        resolvedAt: createdAt,
+        threadId: ThreadId.make("d4-action:start-1"),
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  for (const label of ["History", "Open thread"])
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((item) => item.textContent === label)!.click(),
+    );
+  expect(mocks.navigate).toHaveBeenCalledWith(
+    `/threads/${environmentId}/${encodeURIComponent("d4-action:start-1")}`,
+  );
 });

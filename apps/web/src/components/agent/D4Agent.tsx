@@ -6,26 +6,31 @@ import { useD4AgentState } from "./useD4AgentState";
 import {
   agentUnavailableMessage,
   actionHeading,
+  approveLabel,
   guardNotice,
+  launchTag,
   agentActivityLabel,
   agentWatchLabel,
   niaPresence,
 } from "./d4AgentPresentation";
 import { NiaAvatar } from "./NiaAvatar";
 import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import {
   D4_BRAIN_CONTEXTS,
+  ProjectId,
   type D4AgentActionSummary,
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { useEnvironment, useEnvironments } from "../../state/environments";
-import { useThreadShell } from "../../state/entities";
+import { useProject, useThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { useSidebarVisibility } from "../ui/sidebar";
 
@@ -457,8 +462,13 @@ function AgentActionRecord({
   const [reviewing, setReviewing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editedText, setEditedText] = useState<string | null>(null);
-  // A pending switch shows its replay up front so the user sees what will be resent.
-  const pendingSwitch = record.type === "switch-context" && record.status === "pending";
+  const tag = launchTag(record.type);
+  const project = useProject(
+    tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
+  );
+  // A pending switch or launch shows what it will send up front, so it can be approved in place.
+  const pendingSwitch =
+    (record.type === "switch-context" || tag !== null) && record.status === "pending";
   const detail = useEnvironmentQuery(
     reviewing || pendingSwitch
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
@@ -479,7 +489,7 @@ function AgentActionRecord({
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
-  const heading = actionHeading(record);
+  const heading = actionHeading(record, project?.title);
   const guard = guardNotice(record.guard);
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
@@ -491,7 +501,14 @@ function AgentActionRecord({
       : null;
   return (
     <div className="space-y-2 py-2">
-      <p>{heading.title}</p>
+      <p className="flex min-w-0 items-center gap-2">
+        {tag ? (
+          <Badge variant="info" size="sm">
+            {tag}
+          </Badge>
+        ) : null}
+        <span className="min-w-0 truncate">{heading.title}</span>
+      </p>
       {heading.detail ? (
         <p className="whitespace-pre-wrap break-words text-muted-foreground">{heading.detail}</p>
       ) : null}
@@ -519,9 +536,11 @@ function AgentActionRecord({
           {detail.data.result}
         </pre>
       ) : null}
-      {reviewing && launchAction ? (
+      {(reviewing || pendingSwitch) && launchAction ? (
         <div className="space-y-2 rounded border p-3">
-          <p className="text-xs text-muted-foreground">Target project · {launchAction.projectId}</p>
+          <p className="text-xs text-muted-foreground">
+            Target project · {project?.title ?? launchAction.projectId}
+          </p>
           {launchAction.type !== "start" ? (
             <p className="text-xs text-muted-foreground">Pipeline · {launchAction.pipelineId}</p>
           ) : null}
@@ -576,6 +595,15 @@ function AgentActionRecord({
         </div>
       ) : null}
       {detail.error ? <p role="alert">{detail.error}</p> : null}
+      {record.threadId ? (
+        <Link
+          to="/$environmentId/$threadId"
+          params={{ environmentId, threadId: record.threadId }}
+          className="inline-block text-sm text-primary underline underline-offset-2"
+        >
+          Open thread
+        </Link>
+      ) : null}
       {record.type === "auto-archive" && record.status === "executed" ? (
         <Button
           size="sm"
@@ -611,7 +639,7 @@ function AgentActionRecord({
               )
             }
           >
-            {sendAction ? "Send" : record.type === "switch-context" ? "Switch" : "Approve"}
+            {approveLabel(record.type)}
           </Button>
           {sendAction?.originalText ? (
             <Button

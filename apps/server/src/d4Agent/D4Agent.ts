@@ -920,6 +920,7 @@ export const layer = Layer.effect(
                 : references!,
               session.context,
               config,
+              message.role === "system",
             ),
           }));
           yield* store.update((value) => {

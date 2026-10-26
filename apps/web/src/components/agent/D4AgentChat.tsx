@@ -10,6 +10,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { serverEnvironment } from "../../state/server";
 import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
+import {
+  niaSystemTextSegments,
+  type NiaTextSegment,
+} from "@d4research/client-runtime/d4-agent-references";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
 import { agentActivityLabel, agentWatchLabel, niaPresence } from "./d4AgentPresentation";
@@ -122,64 +126,83 @@ export function D4AgentChat({
         aria-label="Agent conversation"
         className="min-h-0 flex-1 space-y-4 overflow-y-auto scrollbar-gutter-both px-4 py-6"
       >
-        {(state.transcript ?? []).map((entry) => (
-          <article
-            key={entry.id}
-            className={
-              entry.role === "system"
-                ? "border-y py-2 text-xs text-muted-foreground"
-                : "mx-auto max-w-3xl space-y-2"
-            }
-          >
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {entry.role === "assistant" ? <NiaAvatar className="size-4" /> : null}
-              {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
-            </p>
-            {entry.role === "assistant" ? (
-              // Nia quotes other threads, so their HTML is shown as text, never rendered.
-              <ChatMarkdown
-                text={entry.text}
-                cwd={undefined}
-                environmentId={environmentId}
-                lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
-                parseRawHtml={false}
-              />
-            ) : (
-              <p className="whitespace-pre-wrap break-words select-text">{entry.text}</p>
-            )}
-            {entry.attachments?.length ? (
-              <ul className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-                {entry.attachments.map((attachment) => (
-                  <li
-                    key={attachment.id}
-                    className="max-w-full truncate rounded-lg border px-2 py-1"
-                  >
-                    {attachment.name}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {entry.links.map((link) =>
-              link.threadId ? (
-                <Link
-                  key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                  to="/$environmentId/$threadId"
-                  params={{ environmentId, threadId: link.threadId }}
-                  className="mr-3 inline-block text-sm text-primary underline underline-offset-2"
-                >
-                  {link.label}
-                </Link>
+        {(state.transcript ?? []).map((entry) => {
+          const segments =
+            entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
+          // System text already shows every label; only links it could not place are repeated below.
+          const inline = new Set(
+            segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
+          );
+          return (
+            <article
+              key={entry.id}
+              className={
+                entry.role === "system"
+                  ? "border-y py-2 text-xs text-muted-foreground"
+                  : "mx-auto max-w-3xl space-y-2"
+              }
+            >
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {entry.role === "assistant" ? <NiaAvatar className="size-4" /> : null}
+                {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
+              </p>
+              {entry.role === "assistant" ? (
+                // Nia quotes other threads, so their HTML is shown as text, never rendered.
+                <ChatMarkdown
+                  text={entry.text}
+                  cwd={undefined}
+                  environmentId={environmentId}
+                  lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
+                  parseRawHtml={false}
+                />
               ) : (
-                <span
-                  key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                  className="mr-3 text-sm text-muted-foreground"
-                >
-                  {link.label}
-                </span>
-              ),
-            )}
-          </article>
-        ))}
+                <p className="whitespace-pre-wrap break-words select-text">
+                  {segments === null ? (
+                    entry.text
+                  ) : (
+                    <SystemText environmentId={environmentId} segments={segments} />
+                  )}
+                </p>
+              )}
+              {entry.attachments?.length ? (
+                <ul className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                  {entry.attachments.map((attachment) => (
+                    <li
+                      key={attachment.id}
+                      className="max-w-full truncate rounded-lg border px-2 py-1"
+                    >
+                      {attachment.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {entry.links
+                .filter(
+                  (link) =>
+                    segments === null || (link.threadId !== null && !inline.has(link.threadId)),
+                )
+                .map((link) =>
+                  link.threadId ? (
+                    <Link
+                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                      to="/$environmentId/$threadId"
+                      params={{ environmentId, threadId: link.threadId }}
+                      className="mr-3 inline-block text-sm text-primary underline underline-offset-2"
+                    >
+                      {link.label}
+                    </Link>
+                  ) : (
+                    <span
+                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                      className="mr-3 text-sm text-muted-foreground"
+                    >
+                      {link.label}
+                    </span>
+                  ),
+                )}
+            </article>
+          );
+        })}
         {(state.transcript ?? []).length === 0 ? (
           <p className="mx-auto max-w-3xl text-sm text-muted-foreground">
             Ask what needs attention, send a message to a thread, or start research.
@@ -227,5 +250,41 @@ export function D4AgentChat({
         refresh={refresh}
       />
     </section>
+  );
+}
+
+/* oxlint-disable react/no-array-index-key -- Segments of one immutable message keep their positions and may repeat. */
+// Overview and other server posts are plain text; only their URLs and validated thread
+// references become links, so no HTML is ever rendered.
+function SystemText({
+  environmentId,
+  segments,
+}: {
+  environmentId: EnvironmentId;
+  segments: ReadonlyArray<NiaTextSegment>;
+}) {
+  return segments.map((segment, index) =>
+    segment.kind === "url" ? (
+      <a
+        key={index}
+        href={segment.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary underline underline-offset-2"
+      >
+        {segment.text}
+      </a>
+    ) : segment.kind === "thread" ? (
+      <Link
+        key={index}
+        to="/$environmentId/$threadId"
+        params={{ environmentId, threadId: segment.threadId }}
+        className="text-primary underline underline-offset-2"
+      >
+        {segment.text}
+      </Link>
+    ) : (
+      segment.text
+    ),
   );
 }

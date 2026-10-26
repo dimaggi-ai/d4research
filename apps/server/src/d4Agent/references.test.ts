@@ -104,3 +104,15 @@ it("links valid in-scope thread references and renders other references as plain
     { label: "Unavailable reference", threadId: null, projectId: null },
   ]);
 });
+
+it("keeps server-authored labels and validated thread tokens inline for system text", () => {
+  const result = validateReplyReferences(
+    `• [[thread:${threadId}|Completed: a|b]] and [[thread:missing|Gone]]`,
+    [thread],
+    "Dimaggi",
+    config,
+    true,
+  );
+  assert.equal(result.text, `• [[thread:${threadId}|Completed: ab]] and Unavailable reference`);
+  assert.deepEqual(result.links[0], { label: "Completed: a|b", threadId, projectId });
+});

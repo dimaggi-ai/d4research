@@ -6,6 +6,7 @@ import {
   agentMentionOptions,
   agentMentionQuery,
   insertAgentMention,
+  niaSystemTextSegments,
 } from "./d4AgentReferences.ts";
 
 it("offers only active references in the bound scope and current environment", () => {
@@ -86,4 +87,23 @@ it("flags a draft only when Nia moved to another context or replaced its session
     message: "You wrote this draft in an earlier Nia session.",
     reassignLabel: "Use in the current session",
   });
+});
+
+it("links URLs and server-validated thread tokens in Nia system text, nothing else", () => {
+  const known = ThreadId.make("known");
+  expect(
+    niaSystemTextSegments(
+      "• Dimaggi: [[thread:known|Completed: Fix]]\n• [[thread:forged|Forged]] — Read: https://host/intel/#cto. <b>x</b>",
+      [{ threadId: known }, { threadId: null }],
+    ),
+  ).toEqual([
+    { kind: "text", text: "• Dimaggi: " },
+    { kind: "thread", text: "Completed: Fix", threadId: known },
+    { kind: "text", text: "\n• Forged — Read: " },
+    { kind: "url", text: "https://host/intel/#cto", href: "https://host/intel/#cto" },
+    { kind: "text", text: ". <b>x</b>" },
+  ]);
+  expect(niaSystemTextSegments("javascript:alert(1)", [])).toEqual([
+    { kind: "text", text: "javascript:alert(1)" },
+  ]);
 });

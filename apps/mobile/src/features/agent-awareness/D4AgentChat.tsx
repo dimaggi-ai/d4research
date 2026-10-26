@@ -4,8 +4,10 @@ import {
   agentMentionOptions,
   agentMentionQuery,
   insertAgentMention,
+  niaSystemTextSegments,
   type AgentDraftOrigin,
 } from "@d4research/client-runtime/d4-agent-references";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../state/query";
 import {
   D4AgentError,
@@ -147,49 +149,80 @@ export function D4AgentChat({
           if (followConversation.current) conversation.current?.scrollToEnd({ animated: false });
         }}
       >
-        {(state.transcript ?? []).map((entry) => (
-          <View
-            key={entry.id}
-            className={entry.role === "system" ? "gap-2 border-y border-border py-2" : "gap-2"}
-          >
-            <Text className="text-xs text-foreground-muted">
-              {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
-            </Text>
-            <Text
-              selectable
-              className={
-                entry.role === "system"
-                  ? "text-xs text-foreground-muted"
-                  : "text-base text-foreground"
-              }
+        {(state.transcript ?? []).map((entry) => {
+          const segments =
+            entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
+          // System text already shows every label; only links it could not place are repeated below.
+          const inline = new Set(
+            segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
+          );
+          const openThread = (threadId: ThreadId) =>
+            linkTo(`/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`);
+          return (
+            <View
+              key={entry.id}
+              className={entry.role === "system" ? "gap-2 border-y border-border py-2" : "gap-2"}
             >
-              {entry.text}
-            </Text>
-            {entry.links.map((link) =>
-              link.threadId ? (
-                <Pressable
-                  key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                  accessibilityRole="link"
-                  onPress={() =>
-                    linkTo(
-                      `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(link.threadId!)}`,
-                    )
-                  }
-                  className="py-2"
-                >
-                  <Text className="text-accent">{link.label}</Text>
-                </Pressable>
-              ) : (
-                <Text
-                  key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                  className="text-sm text-foreground-muted"
-                >
-                  {link.label}
-                </Text>
-              ),
-            )}
-          </View>
-        ))}
+              <Text className="text-xs text-foreground-muted">
+                {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
+              </Text>
+              <Text
+                selectable
+                className={
+                  entry.role === "system"
+                    ? "text-xs text-foreground-muted"
+                    : "text-base text-foreground"
+                }
+              >
+                {segments === null
+                  ? entry.text
+                  : segments.map((segment, index) =>
+                      segment.kind === "text" ? (
+                        segment.text
+                      ) : (
+                        <Text
+                          // oxlint-disable-next-line react/no-array-index-key -- segments of one immutable message
+                          key={index}
+                          accessibilityRole="link"
+                          className="text-accent"
+                          onPress={() =>
+                            segment.kind === "url"
+                              ? void tryOpenExternalUrl(segment.href, "markdown-link")
+                              : openThread(segment.threadId)
+                          }
+                        >
+                          {segment.text}
+                        </Text>
+                      ),
+                    )}
+              </Text>
+              {entry.links
+                .filter(
+                  (link) =>
+                    segments === null || (link.threadId !== null && !inline.has(link.threadId)),
+                )
+                .map((link) =>
+                  link.threadId ? (
+                    <Pressable
+                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                      accessibilityRole="link"
+                      onPress={() => openThread(link.threadId!)}
+                      className="py-2"
+                    >
+                      <Text className="text-accent">{link.label}</Text>
+                    </Pressable>
+                  ) : (
+                    <Text
+                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                      className="text-sm text-foreground-muted"
+                    >
+                      {link.label}
+                    </Text>
+                  ),
+                )}
+            </View>
+          );
+        })}
         {(state.transcript ?? []).length === 0 ? (
           <Text className="text-sm text-foreground-muted">
             Ask what needs attention, send a message to a thread, or start research.

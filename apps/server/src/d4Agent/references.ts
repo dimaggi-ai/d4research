@@ -46,22 +46,29 @@ export const referenceContext = (
     ? "Global"
     : (config.projectContexts[reference.projectId] ?? "Global");
 
+// Server-authored system text keeps its own labels and keeps validated thread links inline as
+// [[thread:ID|label]], so clients can place them; model replies are reduced to server titles.
 export function validateReplyReferences(
   text: string,
   references: ReadonlyArray<AgentReference>,
   context: D4BrainContext,
   config: D4AgentSettings,
+  serverAuthored = false,
 ) {
   const links: Array<{ label: string; threadId: ThreadId | null; projectId: ProjectId | null }> =
     [];
   const rendered = text.replace(
     /\[\[(thread|project):([^|\]]+)(?:\|([^\]]+))?\]\]/g,
-    (_match, kind: string, id: string) => {
+    (_match, kind: string, id: string, alias: string | undefined) => {
       const target = references.find((entry) => entry.kind === kind && entry.id === id);
       const metadataAllowed =
         target !== undefined &&
         (context === "Global" || referenceContext(target, config) === context);
-      const title = metadataAllowed ? target.title : "Unavailable reference";
+      const title = metadataAllowed
+        ? serverAuthored && alias !== undefined
+          ? alias
+          : target.title
+        : "Unavailable reference";
       const allowed =
         target?.projectId != null && projectContentInScope(context, config, target.projectId);
       links.push({
@@ -69,7 +76,9 @@ export function validateReplyReferences(
         threadId: allowed ? target.threadId : null,
         projectId: allowed ? target.projectId : null,
       });
-      return title;
+      return serverAuthored && allowed && target.threadId !== null
+        ? `[[thread:${target.threadId}|${title.replace(/[[\]|]/g, "")}]]`
+        : title;
     },
   );
   return { text: rendered, links };

@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => ({
   stateQuery: vi.fn(),
   detail: null as D4AgentActionRecord | null,
   identityMissing: false,
+  identityPending: false,
   routeShellMissing: false,
   stateUnavailable: false,
   statePending: false,
@@ -211,7 +212,7 @@ vi.mock("../../state/query", () => ({
             ? mocks.state
             : null,
     refresh: mocks.refresh,
-    isPending: false,
+    isPending: atom === "identity" && mocks.identityPending,
     error: null,
   }),
 }));
@@ -363,6 +364,7 @@ beforeEach(() => {
   mocks.stateQuery.mockClear();
   mocks.detail = null;
   mocks.identityMissing = false;
+  mocks.identityPending = false;
   mocks.routeShellMissing = false;
   mocks.stateUnavailable = false;
   mocks.statePending = false;
@@ -1210,6 +1212,21 @@ it("keeps ordinary threads on the native surface without polling full agent stat
   expect(container.textContent).toContain("Ordinary thread transcript");
   expect(container.textContent).not.toContain("Message Nia");
   expect(mocks.stateQuery).toHaveBeenLastCalledWith(false);
+});
+
+it("opens ordinary threads while the agent identity request has not settled", async () => {
+  mocks.identityMissing = true;
+  mocks.identityPending = true;
+  mocks.routeProjectId = ProjectId.make("user-project");
+  await act(() =>
+    root.render(
+      <D4AgentRoute environmentId={environmentId} threadId={ThreadId.make("user-thread")}>
+        <p>Ordinary thread transcript</p>
+      </D4AgentRoute>,
+    ),
+  );
+  expect(container.textContent).toContain("Ordinary thread transcript");
+  expect(container.textContent).not.toContain("Loading Nia");
 });
 
 it("removes project-only actions when entering the dedicated agent chat", async () => {

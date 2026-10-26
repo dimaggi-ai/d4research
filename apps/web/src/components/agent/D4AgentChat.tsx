@@ -1,4 +1,5 @@
 import { observeResize } from "../../lib/observeResize";
+import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { useAssetUrl } from "../../assets/assetUrls";
 import { useEnvironmentQuery } from "../../state/query";
 import { useThreadShell } from "../../state/entities";
@@ -59,6 +60,12 @@ export function D4AgentRoute({
   const identity = useEnvironmentQuery(
     environmentId === null ? null : serverEnvironment.d4AgentIdentity({ environmentId, input: {} }),
   );
+  // A request interrupted by a server restart never settles on its own; refetch until it answers.
+  useLiveRefresh(identity.refresh, {
+    enabled: environmentId !== null && identity.data === null,
+    key: `d4-agent-identity:${environmentId}`,
+    intervalMs: 5_000,
+  });
   const shell = useThreadShell(
     environmentId !== null && threadId !== null ? { environmentId, threadId } : null,
   );
@@ -72,11 +79,9 @@ export function D4AgentRoute({
   const state = query.data;
   const isAgentRoute =
     isAgentProject || (threadId !== null && state?.chatThreadIds?.includes(threadId) === true);
-  if (
-    (environmentId !== null && identity.isPending && identity.data === null) ||
-    (isAgentProject && !state) ||
-    (resolveArchivedRoute && !state && query.error === null)
-  )
+  // Ordinary chats never wait on Nia's identity: when that request did not settle, every route
+  // stayed on this placeholder.
+  if ((isAgentProject && !state) || (resolveArchivedRoute && !state && query.error === null))
     return (
       <p role="status" className="p-4 text-sm text-muted-foreground">
         Loading Nia…

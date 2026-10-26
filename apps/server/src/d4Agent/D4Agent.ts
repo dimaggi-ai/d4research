@@ -2,6 +2,8 @@ import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as SessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as Pipelines from "./D4AgentPipelines.ts";
 import * as Lifecycle from "./D4AgentThreadLifecycle.ts";
+import * as Pc from "./PcCommand.ts";
+import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import {
   resolveAgentReference,
   referenceContext,
@@ -161,10 +163,30 @@ export class D4Agent extends Context.Service<
       D4AgentError
     >;
     readonly systemHealth: () => Effect.Effect<ReadonlyArray<D4AgentSystemCheck>, D4AgentError>;
+    readonly tasks: () => Effect.Effect<D4AgentTasks, D4AgentError>;
     readonly tick: Effect.Effect<void, D4AgentError>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("d4research/d4Agent/D4Agent") {}
+
+export interface D4AgentTasks {
+  readonly now: string;
+  readonly timeZone: string;
+  readonly reminders: ReadonlyArray<{
+    readonly id: string;
+    readonly text: string;
+    readonly at: string;
+  }>;
+  readonly scheduledTasks: ReadonlyArray<{
+    readonly taskId: string;
+    readonly title: string;
+    readonly projectId: string;
+    readonly schedule: unknown;
+    readonly enabled: boolean;
+    readonly nextRunAt: string | null;
+    readonly lastRunStatus: string;
+  }>;
+}
 
 export interface D4AgentEnvironment {
   readonly application: "d4research";
@@ -202,14 +224,22 @@ const threadError = (cause: unknown) => new D4AgentError({ reason: "thread", cau
 const AGENT_TITLE = "Nia";
 const LEGACY_AGENT_TITLE = "d4 Agent";
 const command = (id: string) => CommandId.make(`d4-agent:${id}`);
-const actionTarget = (action: D4AgentAction) =>
+const actionTarget = (action: D4AgentAction): string =>
   action.type === "switch-context"
     ? (action.threadId ?? action.projectId ?? "")
-    : "projectId" in action
-      ? action.projectId
-      : "context" in action
-        ? `${action.type}:${action.context}`
-        : action.threadId;
+    : action.type === "pc"
+      ? `pc:${action.command}`
+      : action.type === "remind"
+        ? `remind:${action.at}:${action.text}`
+        : action.type === "cancel-reminder"
+          ? `reminder:${action.reminderId}`
+          : action.type === "unschedule"
+            ? action.taskId
+            : "projectId" in action
+              ? action.projectId
+              : "context" in action
+                ? `${action.type}:${action.context}`
+                : action.threadId;
 export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
   action: D4AgentAction,
@@ -220,7 +250,10 @@ export const requiresActionApproval = (
   action.type === "send" ||
   action.type === "start" ||
   action.type === "research" ||
-  action.type === "pipeline";
+  action.type === "pipeline" ||
+  // Without a Tool Guard verdict nothing has screened a shell command or a recurring run.
+  action.type === "pc" ||
+  action.type === "schedule";
 
 // Per-session caches are keyed by thread id and must not outlive the session that filled them.
 export function retainOpenSessions(
@@ -231,6 +264,10 @@ export function retainOpenSessions(
   for (const cache of caches) for (const id of cache.keys()) if (!open.has(id)) cache.delete(id);
 }
 
+export const pcResultText = (result: Pc.PcCommandResult) =>
+  `${result.timedOut ? "Timed out after 60 s" : `Exit ${result.exitCode ?? "unknown"}`}${
+    result.output.trim() === "" ? "" : `\n${result.output.trimEnd()}`
+  }`;
 export function actionSummaries(
   actions: ReadonlyArray<D4AgentActionRecord>,
 ): ReadonlyArray<D4AgentActionSummary> {
@@ -245,11 +282,17 @@ export function actionSummaries(
       targetId: actionTarget(action),
       preview: ("text" in action
         ? action.text
-        : action.type === "switch-context"
-          ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
-          : action.type === "answer"
-            ? JSON.stringify(action.answers)
-            : ""
+        : action.type === "pc"
+          ? action.command
+          : action.type === "cancel-reminder"
+            ? action.reminderId
+            : action.type === "unschedule"
+              ? action.taskId
+              : action.type === "switch-context"
+                ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
+                : action.type === "answer"
+                  ? JSON.stringify(action.answers)
+                  : ""
       ).slice(0, 256),
       status,
       ...(guard === undefined ? {} : { guard }),
@@ -321,6 +364,10 @@ export const layer = Layer.effect(
         brainDiagnostic ?? { category: "unavailable" },
       );
     const cto = createCtoClient();
+    const pc = Option.getOrElse(yield* Effect.serviceOption(Pc.PcCommand), () =>
+      Pc.make({ useScope: false }),
+    );
+    const scheduledTasks = yield* Effect.serviceOption(ScheduledTasks.ScheduledTaskService);
     const guardGate = Option.getOrElse(
       yield* Effect.serviceOption(ToolGuard.ToolGuardGate),
       () => ToolGuard.proxyGate,
@@ -1423,6 +1470,9 @@ export const layer = Layer.effect(
                 record.sessionId === state.threadId),
           ),
         ),
+        reminders: (state.reminders ?? [])
+          .filter((entry) => entry.context === state.brainContext)
+          .toSorted((a, b) => a.at.localeCompare(b.at)),
         systemHealth: cachedHealth(
           state,
           yield* settingsService.getSettings.pipe(Effect.mapError(storageError)),
@@ -1479,6 +1529,45 @@ export const layer = Layer.effect(
       }
       if (action.type === "auto-archive")
         return yield* new D4AgentError({ reason: "action-unavailable" });
+      if (action.type === "pc") return;
+      if (action.type === "remind") {
+        const at = Date.parse(action.at);
+        const now = yield* Clock.currentTimeMillis;
+        if (!(at > now - 60_000 && at < now + 366 * 86_400_000))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        if ((state.reminders ?? []).length >= 100)
+          return yield* new D4AgentError({ reason: "busy" });
+        return;
+      }
+      if (action.type === "cancel-reminder") {
+        if (
+          !(state.reminders ?? []).some(
+            (entry) => entry.id === action.reminderId && entry.context === state.brainContext,
+          )
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        return;
+      }
+      if (action.type === "schedule") {
+        if (Option.isNone(scheduledTasks))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        if (
+          !projectActionInScope(state.brainContext, config, action.projectId) ||
+          action.projectId === state.projectId
+        )
+          return yield* new D4AgentError({ reason: "context" });
+        return;
+      }
+      if (action.type === "unschedule") {
+        if (
+          Option.isNone(scheduledTasks) ||
+          !(state.scheduledTasks ?? []).some(
+            (entry) => entry.taskId === action.taskId && entry.context === state.brainContext,
+          )
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        return;
+      }
       if (action.type === "pipeline" || action.type === "research") {
         yield* pipelines.prepare(action, state.brainContext);
         return;
@@ -1630,6 +1719,74 @@ export const layer = Layer.effect(
             ),
           );
         return;
+      }
+      if (action.type === "pc") {
+        const result = yield* pc.run(action.command, record.id);
+        return pcResultText(result);
+      }
+      if (action.type === "remind") {
+        yield* store.update((value) => ({
+          ...value,
+          reminders: [
+            ...(value.reminders ?? []).filter((entry) => entry.id !== record.id),
+            { id: record.id, context: state.brainContext, text: action.text, at: action.at },
+          ],
+        }));
+        return `Reminder ${record.id} set for ${action.at}.`;
+      }
+      if (action.type === "cancel-reminder") {
+        yield* store.update((value) => ({
+          ...value,
+          reminders: (value.reminders ?? []).filter((entry) => entry.id !== action.reminderId),
+        }));
+        return "Reminder cancelled.";
+      }
+      if (action.type === "schedule" || action.type === "unschedule") {
+        if (Option.isNone(scheduledTasks))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const scheduler = scheduledTasks.value;
+        const schedulerError = (cause: unknown) =>
+          new D4AgentError({ reason: "action-unavailable", cause });
+        if (action.type === "unschedule") {
+          yield* scheduler.delete({ id: action.taskId }).pipe(Effect.mapError(schedulerError));
+          yield* store.update((value) => ({
+            ...value,
+            scheduledTasks: (value.scheduledTasks ?? []).filter(
+              (entry) => entry.taskId !== action.taskId,
+            ),
+          }));
+          return "Scheduled task deleted.";
+        }
+        const reason = modelAvailability(
+          { ...config, modelSelection: action.modelSelection },
+          yield* providers.getProviders,
+        );
+        if (reason !== null) return yield* new D4AgentError({ reason });
+        const { task } = yield* scheduler
+          .upsert({
+            commandId: command(`schedule:${record.id}`),
+            title: action.title,
+            prompt: action.text,
+            enabled: true,
+            schedule: action.schedule,
+            projectId: action.projectId,
+            threadId: null,
+            workspaceStrategy: { type: "root" },
+            modelSelection: action.modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            createdBy: "agent",
+            creationSource: "server",
+          })
+          .pipe(Effect.mapError(schedulerError));
+        yield* store.update((value) => ({
+          ...value,
+          scheduledTasks: [
+            ...(value.scheduledTasks ?? []).filter((entry) => entry.taskId !== task.id),
+            { taskId: task.id, context: state.brainContext },
+          ],
+        }));
+        return `Scheduled task ${task.id}; next run ${task.nextRunAt ?? "not planned"}.`;
       }
       if (action.type === "memory-propose") {
         if (state.threadId === null) return yield* new D4AgentError({ reason: "context" });
@@ -1933,6 +2090,10 @@ export const layer = Layer.effect(
                       ? { project_id: guarded.projectId }
                       : {}),
                     ...("text" in guarded ? { text: guarded.text } : {}),
+                    ...(guarded.type === "pc" ? { text: guarded.command } : {}),
+                    ...(guarded.type === "schedule"
+                      ? { schedule_type: guarded.schedule.type }
+                      : {}),
                     ...(guarded.type === "answer"
                       ? { answers_text: Object.values(guarded.answers).flat().join("\n") }
                       : {}),
@@ -2071,11 +2232,87 @@ export const layer = Layer.effect(
                     },
                   }
                 : record;
-            yield* resolveRecord(edited);
+            const resolved = yield* resolveRecord(edited);
+            // An approved command ran after Nia's turn ended, so its output goes to the chat.
+            if (
+              resolved.action.type === "pc" &&
+              resolved.sessionId !== null &&
+              typeof resolved.result === "string"
+            )
+              yield* threads
+                .dispatch({
+                  type: "thread.system-message.record",
+                  commandId: command(`pc-result:${resolved.id}`),
+                  threadId: resolved.sessionId,
+                  messageId: MessageId.make(`d4-pc:${resolved.id}`),
+                  text: resolved.result,
+                  title: "Command result",
+                })
+                .pipe(Effect.mapError(threadError));
           }
           return yield* getState();
         }),
       );
+    // A reminder goes to its own context's session, so it never carries words into another context.
+    const fireReminders = Effect.gen(function* () {
+      const current = yield* store.get;
+      const now = yield* Clock.currentTimeMillis;
+      for (const reminder of (current.reminders ?? []).filter(
+        (entry) => Date.parse(entry.at) <= now,
+      )) {
+        const threadId =
+          reminder.context === current.brainContext
+            ? current.threadId
+            : ((current.sessions ?? []).find((entry) => entry.context === reminder.context)
+                ?.threadId ?? null);
+        if (threadId === null) continue;
+        yield* threads
+          .dispatch({
+            type: "thread.system-message.record",
+            commandId: command(`reminder:${reminder.id}`),
+            threadId,
+            messageId: MessageId.make(`d4-reminder:${reminder.id}`),
+            text: reminder.text,
+            title: "Reminder",
+          })
+          .pipe(Effect.mapError(threadError));
+        yield* store.update((value) => ({
+          ...value,
+          reminders: (value.reminders ?? []).filter((entry) => entry.id !== reminder.id),
+        }));
+      }
+    });
+    const tasks = Effect.fn("D4Agent.tasks")(function* () {
+      const { state, config } = yield* bound();
+      const own = new Set(
+        (state.scheduledTasks ?? [])
+          .filter((entry) => entry.context === state.brainContext)
+          .map((entry) => entry.taskId),
+      );
+      const listed = Option.isNone(scheduledTasks)
+        ? []
+        : (yield* scheduledTasks.value
+            .list()
+            .pipe(Effect.mapError(() => new D4AgentError({ reason: "action-unavailable" })))).tasks;
+      return {
+        now: DateTime.formatIso(yield* DateTime.now),
+        timeZone: config.quietHours?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        reminders: (state.reminders ?? [])
+          .filter((entry) => entry.context === state.brainContext)
+          .map(({ id, text, at }) => ({ id, text, at })),
+        scheduledTasks: listed
+          .filter((task) => own.has(task.id))
+          .map((task) => ({
+            taskId: task.id,
+            title: task.title,
+            projectId: task.projectId,
+            schedule: task.schedule,
+            enabled: task.enabled,
+            nextRunAt: task.nextRunAt,
+            lastRunStatus: task.lastRunStatus,
+          })),
+      } satisfies D4AgentTasks;
+    });
     const taskCursors = new Map<string, string>();
     const archiveCursors = new Map<string, string>();
     // Shells of tracked tasks only; null marks a tracked thread the projection no longer has.
@@ -2097,6 +2334,10 @@ export const layer = Layer.effect(
           Effect.catch(() => Effect.logWarning("Nia rotated message delivery will be retried")),
         );
         yield* maintainSessions();
+        if (config.enabled)
+          yield* fireReminders.pipe(
+            Effect.catch(() => Effect.logWarning("Nia reminder delivery will be retried")),
+          );
         const current = yield* store.get;
         const tracked = config.enabled ? (current.agentThreads ?? []) : [];
         if (tracked.length > 0) {
@@ -2572,6 +2813,7 @@ export const layer = Layer.effect(
         ),
       resolveAction,
       requestAction,
+      tasks,
       list: () => lock.withPermits(1)(list()),
       environment: () => lock.withPermits(1)(environment()),
       systemHealth: () => bound().pipe(Effect.andThen(systemHealth())),

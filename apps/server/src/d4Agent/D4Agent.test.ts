@@ -17,6 +17,7 @@ import {
   RunAttemptId,
   RunId,
   ProjectId,
+  ScheduledTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
@@ -50,6 +51,8 @@ import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
 import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
+import * as Pc from "./PcCommand.ts";
+import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
@@ -167,6 +170,14 @@ const fixture = (
     const eventRevision = yield* Ref.make(0);
     const request = yield* Ref.make<OrchestrationV2RuntimeRequest | undefined>(undefined);
     const dispatches = yield* Ref.make<ReadonlyArray<string>>([]);
+    const systemMessages = yield* Ref.make<
+      ReadonlyArray<{ threadId: string; title: string; text: string }>
+    >([]);
+    const pcCommands = yield* Ref.make<ReadonlyArray<string>>([]);
+    const scheduled = yield* Ref.make<
+      ReadonlyArray<Parameters<ScheduledTasks.ScheduledTaskService["Service"]["upsert"]>[0]>
+    >([]);
+    const unscheduled = yield* Ref.make<ReadonlyArray<string>>([]);
     const projection = yield* Ref.make<OrchestrationV2ThreadProjection>({
       thread: { ...target, lastVisitedAt: target.lastVisitedAt ?? null },
       runs: [],
@@ -294,6 +305,11 @@ const fixture = (
                 if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
                   return yield* Effect.fail({ reason: "fixture stop failure" } as never);
                 yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
+                if (cmd.type === "thread.system-message.record")
+                  yield* Ref.update(systemMessages, (all) => [
+                    ...all,
+                    { threadId: cmd.threadId, title: cmd.title ?? "", text: cmd.text },
+                  ]);
                 if (cmd.type === "thread.create") {
                   if (yield* Ref.get(failCreate))
                     return yield* Effect.fail({ reason: "fixture creation failure" } as never);
@@ -361,6 +377,27 @@ const fixture = (
               })
             : Layer.succeed(Projects.ProjectService, projectService),
           Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Ref.get(monitorUpdates) }),
+          Layer.succeed(Pc.PcCommand, {
+            run: (command) =>
+              Ref.update(pcCommands, (all) => [...all, command]).pipe(
+                Effect.as({ exitCode: 0, timedOut: false, output: "hi\n" }),
+              ),
+          }),
+          Layer.mock(ScheduledTasks.ScheduledTaskService)({
+            upsert: (input) =>
+              Ref.update(scheduled, (all) => [...all, input]).pipe(
+                Effect.as({
+                  task: {
+                    ...input,
+                    id: ScheduledTaskId.make("task-1"),
+                    nextRunAt: "1970-01-01T01:00:00.000Z",
+                  } as never,
+                }),
+              ),
+            list: () => Effect.succeed({ tasks: [] } as never),
+            delete: ({ id }) =>
+              Ref.update(unscheduled, (all) => [...all, id]).pipe(Effect.as({ id })),
+          }),
           Layer.succeed(ToolGuard.ToolGuardGate, {
             evaluate: (_url, envelope) =>
               Ref.update(guardCalls, (all) => [...all, envelope]).pipe(
@@ -396,6 +433,10 @@ const fixture = (
       checks,
       request,
       dispatches,
+      systemMessages,
+      pcCommands,
+      scheduled,
+      unscheduled,
       projection,
       catalog,
       reads,
@@ -3250,5 +3291,144 @@ it.effect("without Tool Guard, full-access threads stay out of reach", () =>
     assert.equal(result._tag, "Failure");
     if (result._tag === "Failure") assert.equal(result.failure.reason, "action-unavailable");
     assert.deepEqual(yield* Ref.get(f.guardCalls), []);
+  }),
+);
+
+it.effect("Tool Guard lets act run a pc command and returns its output", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({ type: "pc", command: "echo hi" });
+    assert.equal(record.status, "executed");
+    assert.equal(record.result, "Exit 0\nhi");
+    assert.deepEqual(yield* Ref.get(f.pcCommands), ["echo hi"]);
+    const [call] = yield* Ref.get(f.guardCalls);
+    assert.equal(call?.parameters.action_type, "pc");
+    assert.equal(call?.parameters.text, "echo hi");
+    // The tool result carries the output, so nothing is posted twice.
+    assert.deepEqual(yield* Ref.get(f.systemMessages), []);
+  }),
+);
+
+it.effect("Tool Guard denial keeps a pc command from running", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    yield* Ref.set(f.guardVerdict, { decision: "denied", rule: "nia-deny", reason: null });
+    const result = yield* Effect.result(
+      f.service.requestAction({ type: "pc", command: "rm -rf ~" }),
+    );
+    assert.equal(result._tag, "Failure");
+    assert.deepEqual(yield* Ref.get(f.pcCommands), []);
+  }),
+);
+
+it.effect("without Tool Guard a pc command waits for approval and posts its output", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const agentId = ThreadId.make("agent");
+    yield* Ref.update(f.state, (s) => ({ ...s, threadId: agentId, identityReady: true }));
+    const card = yield* f.service.requestAction({ type: "pc", command: "uptime" });
+    assert.equal(card.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.pcCommands), []);
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime"]);
+    assert.deepEqual(yield* Ref.get(f.systemMessages), [
+      { threadId: agentId, title: "Command result", text: "Exit 0\nhi" },
+    ]);
+  }),
+);
+
+it.effect("read-only refuses pc, reminders and schedules", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only");
+    for (const action of [
+      { type: "pc", command: "uptime" },
+      { type: "remind", text: "Stretch", at: "1970-01-01T00:05:00.000Z" },
+    ] as const) {
+      const result = yield* Effect.result(f.service.requestAction(action));
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") assert.equal(result.failure.reason, "read-only");
+    }
+    assert.deepEqual(yield* Ref.get(f.pcCommands), []);
+  }),
+);
+
+it.effect("a reminder is posted to its context's chat when due, once", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({
+      type: "remind",
+      text: "Call the dentist",
+      at: "1970-01-01T00:05:00.000Z",
+    });
+    assert.equal(record.status, "executed");
+    assert.deepEqual(
+      (yield* Ref.get(f.state)).reminders?.map((entry) => entry.text),
+      ["Call the dentist"],
+    );
+    assert.equal((yield* f.service.tasks()).reminders.length, 1);
+    yield* f.service.tick;
+    assert.deepEqual(yield* Ref.get(f.systemMessages), []);
+    yield* TestClock.adjust("5 minutes");
+    yield* f.service.tick;
+    yield* f.service.tick;
+    assert.deepEqual(yield* Ref.get(f.systemMessages), [
+      { threadId: ThreadId.make("agent"), title: "Reminder", text: "Call the dentist" },
+    ]);
+    assert.deepEqual((yield* Ref.get(f.state)).reminders, []);
+  }),
+);
+
+it.effect("a past or far-future reminder is refused and a cancelled one never fires", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    yield* TestClock.adjust("1 hour");
+    for (const at of ["1970-01-01T00:00:00.000Z", "1972-01-01T00:00:00.000Z"]) {
+      const result = yield* Effect.result(
+        f.service.requestAction({ type: "remind", text: "Late", at }),
+      );
+      assert.equal(result._tag, "Failure");
+    }
+    const record = yield* f.service.requestAction({
+      type: "remind",
+      text: "Stretch",
+      at: "1970-01-01T01:10:00.000Z",
+    });
+    yield* f.service.requestAction({ type: "cancel-reminder", reminderId: record.id });
+    yield* TestClock.adjust("20 minutes");
+    yield* f.service.tick;
+    assert.deepEqual(yield* Ref.get(f.systemMessages), []);
+  }),
+);
+
+it.effect("schedule creates an approval-required scheduled task Nia may later delete", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({
+      type: "schedule",
+      projectId: target.projectId,
+      title: "Morning CI check",
+      text: "Check CI and report failures",
+      modelSelection,
+      schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5] },
+    });
+    assert.equal(record.status, "executed");
+    const [input] = yield* Ref.get(f.scheduled);
+    assert.equal(input?.runtimeMode, "approval-required");
+    assert.equal(input?.createdBy, "agent");
+    assert.equal(input?.threadId, null);
+    assert.deepEqual(
+      (yield* Ref.get(f.state)).scheduledTasks?.map((entry) => entry.taskId),
+      ["task-1"],
+    );
+    const foreign = yield* Effect.result(
+      f.service.requestAction({ type: "unschedule", taskId: ScheduledTaskId.make("user-task") }),
+    );
+    assert.equal(foreign._tag, "Failure");
+    yield* f.service.requestAction({
+      type: "unschedule",
+      taskId: ScheduledTaskId.make("task-1"),
+    });
+    assert.deepEqual(yield* Ref.get(f.unscheduled), ["task-1"]);
+    assert.deepEqual((yield* Ref.get(f.state)).scheduledTasks, []);
   }),
 );

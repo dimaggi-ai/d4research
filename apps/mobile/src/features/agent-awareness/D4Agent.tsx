@@ -177,6 +177,7 @@ function D4AgentPanelContent({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
   const proposals = (state.memoryProposals ?? []).filter(
@@ -284,6 +285,16 @@ function D4AgentPanelContent({
               {startingSession ? "Starting session…" : "New session"}
             </Text>
           </Pressable>
+          {(state.reminders ?? []).length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showReminders }}
+              className="self-start rounded-full border border-border px-3 py-2"
+              onPress={() => setShowReminders(!showReminders)}
+            >
+              <Text className="text-sm text-accent">Reminders · {state.reminders?.length}</Text>
+            </Pressable>
+          ) : null}
           {state.actionLog.some((record) => record.status !== "pending") ? (
             <Pressable
               accessibilityRole="button"
@@ -295,6 +306,16 @@ function D4AgentPanelContent({
             </Pressable>
           ) : null}
         </View>
+        {showReminders
+          ? state.reminders?.map((reminder) => (
+              <Text key={reminder.id} className="text-sm text-foreground">
+                <Text className="text-foreground-muted">
+                  {new Date(reminder.at).toLocaleString()}
+                </Text>{" "}
+                {reminder.text}
+              </Text>
+            ))
+          : null}
         {showHistory
           ? state.actionLog
               .filter((record) => record.status !== "pending")

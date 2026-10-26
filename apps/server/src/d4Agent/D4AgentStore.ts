@@ -8,6 +8,7 @@ import {
   D4AgentTurnUsage,
   D4AgentSystemCheck,
   ProjectId,
+  ScheduledTaskId,
   ThreadId,
 } from "@d4research/contracts";
 import { randomUuidV4 } from "@d4research/provider-core/server/randomUuid";
@@ -71,6 +72,20 @@ export const StoredState = Schema.Struct({
     ),
   ),
   agentThreads: Schema.optionalKey(Schema.Array(StoredAgentThread)),
+  reminders: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        context: D4BrainContext,
+        text: Schema.String,
+        at: IsoDateTime,
+      }),
+    ),
+  ),
+  // Scheduled tasks Nia created; it may cancel only these.
+  scheduledTasks: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ taskId: ScheduledTaskId, context: D4BrainContext })),
+  ),
   taskScopes: Schema.optionalKey(Schema.Array(StoredTaskScope)),
   sessions: Schema.optionalKey(Schema.Array(StoredSession)),
   chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),

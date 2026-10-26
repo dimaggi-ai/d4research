@@ -273,6 +273,23 @@ function D4AgentPanelContent({
           sessions={state.openSessions ?? []}
           refresh={query.refresh}
         />
+        {(state.reminders ?? []).length > 0 ? (
+          <details className="relative">
+            <summary className="cursor-pointer text-muted-foreground">
+              Reminders · {state.reminders?.length}
+            </summary>
+            <ul className="absolute z-10 mt-1 max-h-[60dvh] w-[min(24rem,90vw)] space-y-1 overflow-y-auto rounded-md border bg-popover p-2 shadow-md">
+              {state.reminders?.map((reminder) => (
+                <li key={reminder.id}>
+                  <span className="text-muted-foreground">
+                    {new Date(reminder.at).toLocaleString()}
+                  </span>{" "}
+                  {reminder.text}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
         {state.actionLog.some((record) => record.status !== "pending") ? (
           <details className="relative">
             <summary className="cursor-pointer text-muted-foreground">History</summary>

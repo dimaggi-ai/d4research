@@ -38,7 +38,7 @@ const ScheduledTaskIntervalSchedule = Schema.Struct({
   description: "Run repeatedly after a fixed number of milliseconds.",
 });
 
-const ScheduledTaskFixedTimeSchedule = Schema.Struct({
+export const ScheduledTaskFixedTimeSchedule = Schema.Struct({
   type: Schema.Literal("fixed_time").annotate({
     description: "Select a fixed local wall-clock time.",
   }),

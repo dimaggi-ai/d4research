@@ -2,6 +2,7 @@ import * as D4Agent from "./d4Agent/D4Agent.ts";
 import * as D4AgentContext from "./d4Agent/D4AgentContext.ts";
 import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
 import * as D4AgentSystemProbe from "./d4Agent/SystemProbe.ts";
+import * as D4AgentPcCommand from "./d4Agent/PcCommand.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as HandoffMemory from "./handoffMemory.ts";
 import * as SecondBrainCapture from "./second-brain/SecondBrainCapture.ts";
@@ -601,7 +602,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   .pipe(
     Layer.provideMerge(SecondBrainCapture.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
     Layer.provideMerge(layerSecondBrain),
-    Layer.provideMerge(D4Agent.layer.pipe(Layer.provide(D4AgentSystemProbe.layer))),
+    Layer.provideMerge(
+      D4Agent.layer.pipe(
+        Layer.provide(D4AgentSystemProbe.layer),
+        Layer.provide(D4AgentPcCommand.layer),
+      ),
+    ),
     Layer.provideMerge(AgentMonitorReactor.layer),
     Layer.provideMerge(layerOrchestrationApplication),
     Layer.provideMerge(HandoffMemory.layer),

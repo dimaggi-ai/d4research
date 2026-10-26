@@ -90,10 +90,16 @@ export const D4AgentToolkit = Toolkit.make(
       "Read opt-in host checks: failed user units, disk utilization, and server availability.",
     success: Schema.Array(D4AgentSystemCheck),
   }).annotate(Tool.Readonly, true),
+  Tool.make("d4_agent_tasks", {
+    ...shared,
+    description:
+      "Read the current time and time zone, pending reminders in the bound context, and the scheduled tasks Nia created there.",
+    success: Schema.Unknown,
+  }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_action", {
     ...writable,
     description:
-      "Request a bounded d4 action. Send, start, research, pipeline and switch-context drafts always require user approval. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
+      "Request a bounded d4 action. pc runs one bash command on the user's desktop (DISPLAY :0) with a 60-second limit and returns its output; start GUI apps detached with `setsid -f APP >/dev/null 2>&1`. remind posts text into this chat at an ISO time; cancel-reminder removes one by id. schedule creates a recurring agent run (interval or fixed_time) in a mapped project; unschedule deletes one Nia created. Send, start, research, pipeline and switch-context drafts always require user approval. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only denies other actions. Ask requires approval. Act allows interrupt and user-input answers. Provider permission requests cannot be approved.",
     parameters: Schema.Struct({ action: D4AgentAction }),
     success: D4AgentActionRecord,
   }).annotate(Tool.Destructive, true),

@@ -4,10 +4,12 @@ import {
   IsoDateTime,
   NonNegativeInt,
   ProjectId,
+  ScheduledTaskId,
   ThreadId,
   RuntimeRequestId,
 } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { MIN_SCHEDULED_TASK_INTERVAL_MS, ScheduledTaskFixedTimeSchedule } from "./scheduledTask.ts";
 
 export const D4AgentPermissionMode = Schema.Literals(["read-only", "ask", "act"]);
 export const D4_BRAIN_CONTEXTS = ["Global", "Personal", "YB", "Dimaggi"] as const;
@@ -173,6 +175,37 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
     modelSelection: ModelSelection,
   }),
+  // One shell command on the host's desktop session; Tool Guard sees it as text.
+  Schema.Struct({
+    type: Schema.Literal("pc"),
+    command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+  }),
+  // A one-time note posted into Nia's chat at the given time.
+  Schema.Struct({
+    type: Schema.Literal("remind"),
+    text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)),
+    at: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("cancel-reminder"),
+    reminderId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  }),
+  // A recurring agent run in a project, stored as an ordinary scheduled task.
+  Schema.Struct({
+    type: Schema.Literal("schedule"),
+    projectId: ProjectId,
+    title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+    text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+    modelSelection: ModelSelection,
+    schedule: Schema.Union([
+      Schema.Struct({
+        type: Schema.Literal("interval"),
+        everyMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_SCHEDULED_TASK_INTERVAL_MS)),
+      }),
+      ScheduledTaskFixedTimeSchedule,
+    ]),
+  }),
+  Schema.Struct({ type: Schema.Literal("unschedule"), taskId: ScheduledTaskId }),
   // The agent names a thread or project; the server fills targetContext, title and originalText.
   Schema.Struct({
     type: Schema.Literal("switch-context"),
@@ -215,6 +248,11 @@ export const D4AgentActionSummary = Schema.Struct({
     "research",
     "auto-archive",
     "switch-context",
+    "pc",
+    "remind",
+    "cancel-reminder",
+    "schedule",
+    "unschedule",
   ]),
   targetId: Schema.String,
   preview: Schema.String.check(Schema.isMaxLength(256)),
@@ -280,6 +318,13 @@ export const D4AgentOpenSession = Schema.Struct({
   inputTokens: NonNegativeInt,
   contextWindow: Schema.NullOr(NonNegativeInt),
 });
+export const D4AgentReminder = Schema.Struct({
+  id: Schema.String,
+  context: D4BrainContext,
+  text: Schema.String,
+  at: IsoDateTime,
+});
+export type D4AgentReminder = typeof D4AgentReminder.Type;
 export const D4AgentState = Schema.Struct({
   transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
   chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
@@ -315,6 +360,7 @@ export const D4AgentState = Schema.Struct({
     ]),
   ),
   actionLog: Schema.Array(D4AgentActionSummary),
+  reminders: Schema.optionalKey(Schema.Array(D4AgentReminder)),
   systemHealth: Schema.Array(D4AgentSystemCheck),
   usage: Schema.Array(D4AgentTurnUsage),
 });

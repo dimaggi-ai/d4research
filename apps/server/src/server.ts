@@ -1,3 +1,5 @@
+import * as D4OverviewThreads from "./d4Agent/OverviewThreads.ts";
+import * as D4OverviewInbox from "./d4Agent/OverviewInbox.ts";
 import * as D4Agent from "./d4Agent/D4Agent.ts";
 import * as D4AgentContext from "./d4Agent/D4AgentContext.ts";
 import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
@@ -605,6 +607,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(
       D4Agent.layer.pipe(
         Layer.provide(D4AgentSystemProbe.layer),
+        Layer.provide(D4OverviewInbox.layer),
+        Layer.provide(D4OverviewThreads.layer),
         Layer.provide(D4AgentPcCommand.layer),
       ),
     ),

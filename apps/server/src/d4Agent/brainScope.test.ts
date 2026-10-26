@@ -42,3 +42,12 @@ it("remapping a pipeline between projects in one context invalidates that contex
   };
   assert.notEqual(contextScopeHash("YB", before), contextScopeHash("YB", after));
 });
+
+it("overview source remapping invalidates only the old and new owning contexts", () => {
+  const before = { ...settings, overviewSources: { mail: "Personal" as const } };
+  const after = { ...settings, overviewSources: { mail: "Dimaggi" as const } };
+  for (const context of ["Personal", "Dimaggi"] as const)
+    assert.notEqual(contextScopeHash(context, before), contextScopeHash(context, after));
+  for (const context of ["Global", "YB"] as const)
+    assert.equal(contextScopeHash(context, before), contextScopeHash(context, after));
+});

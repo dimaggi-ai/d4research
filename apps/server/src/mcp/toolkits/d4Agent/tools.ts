@@ -24,6 +24,26 @@ const writable = {
   dependencies: [...shared.dependencies, ThreadManagement.ThreadManagementService],
 };
 export const D4AgentToolkit = Toolkit.make(
+  Tool.make("d4_agent_overview", {
+    ...shared,
+    description:
+      "List overview items in the bound context. Include acknowledged and resolved items with includeClosed.",
+    parameters: Schema.Struct({ includeClosed: Schema.optionalKey(Schema.Boolean) }),
+    success: Schema.Unknown,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("d4_agent_overview_update", {
+    ...writable,
+    description:
+      "Acknowledge, snooze, or reopen one overview item in the bound context. Reopen clears acknowledgement or snooze. Use its key; minutes defaults to 60 for snooze.",
+    parameters: Schema.Struct({
+      key: Schema.String,
+      op: Schema.Literals(["ack", "snooze", "reopen"]),
+      minutes: Schema.optionalKey(
+        Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 525600 })),
+      ),
+    }),
+    success: Schema.Unknown,
+  }),
   Tool.make("d4_agent_resolve", {
     ...shared,
     description:
@@ -87,7 +107,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_system_health", {
     ...shared,
     description:
-      "Read opt-in host checks: failed user units, disk utilization, and server availability.",
+      "Read opt-in host checks: failed user and system units, disk utilization, OS updates, doctor results, and server availability.",
     success: Schema.Array(D4AgentSystemCheck),
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_tasks", {

@@ -1,3 +1,5 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as Stream from "effect/Stream";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
@@ -22,6 +24,10 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(EventSink.EventSinkV2)({
+        latestSequence: () => Effect.succeed(0),
+        stream: () => Stream.never,
+      }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
     );
@@ -65,6 +71,10 @@ it.effect("preserves a due run when a save only pads the scheduled hour", () =>
       NodeCrypto.layer,
       Scheduler.layer,
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(EventSink.EventSinkV2)({
+        latestSequence: () => Effect.succeed(0),
+        stream: () => Stream.never,
+      }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
     );

@@ -21,7 +21,12 @@ export const ownership = Effect.gen(function* () {
   return (threadId: ThreadId) =>
     Effect.gen(function* () {
       if (Option.isNone(store)) return false;
-      if ((yield* store.value.get).threadId === threadId) return true;
+      const state = yield* store.value.get;
+      if (
+        state.threadId === threadId ||
+        state.sessions?.some((session) => session.threadId === threadId)
+      )
+        return true;
       if (Option.isNone(sql)) return false;
       // A quarantined state file must not expose the old aggregate conversation.
       const matches = yield* sql.value<{ owned: number }>`

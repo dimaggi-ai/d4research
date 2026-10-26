@@ -1,3 +1,5 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as Stream from "effect/Stream";
 // @effect-diagnostics preferSchemaOverJson:off - These tests construct and inspect raw JSON wire fixtures independently of production codecs.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac.
 import * as NodeCrypto from "node:crypto";
@@ -81,6 +83,10 @@ const withService = <A, E>(
             Effect.andThen(options.gate ? Deferred.await(options.gate) : Effect.void),
             Effect.as({ threadId: "thread-1", resumed: false } as never),
           ),
+      }),
+      Layer.mock(EventSink.EventSinkV2)({
+        latestSequence: () => Effect.succeed(0),
+        stream: () => Stream.never,
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({

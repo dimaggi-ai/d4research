@@ -40,7 +40,16 @@ export const layer = Layer.effect(
       owns,
       prepare: Effect.fn("D4AgentContext.prepare")(
         function* (threadId, selection, providerSessionId) {
-          const state = yield* store.get;
+          const stored = yield* store.get;
+          const session = stored.sessions?.find((entry) => entry.threadId === threadId);
+          const state = session
+            ? {
+                ...stored,
+                threadId,
+                brainContext: session.context,
+                contextScopeHash: session.scopeHash,
+              }
+            : stored;
           if (state.threadId !== threadId) {
             if (yield* owns(threadId)) return yield* new D4AgentError({ reason: "thread" });
             return null;
@@ -75,13 +84,20 @@ export const layer = Layer.effect(
             )
               yield* store.update((value) => {
                 if (
-                  value.threadId !== threadId ||
-                  value.contextScopeHash !== state.contextScopeHash
+                  !(
+                    value.threadId === threadId && value.contextScopeHash === state.contextScopeHash
+                  ) &&
+                  !value.sessions?.some(
+                    (entry) =>
+                      entry.threadId === threadId &&
+                      entry.scopeHash === state.contextScopeHash &&
+                      entry.context === state.brainContext,
+                  )
                 )
                   throw new D4AgentError({ reason: "context" });
                 if (
                   value.bindings.some(
-                    (entry) => entry.threadId === threadId && entry.context !== value.brainContext,
+                    (entry) => entry.threadId === threadId && entry.context !== state.brainContext,
                   )
                 )
                   throw new D4AgentError({ reason: "context" });
@@ -97,7 +113,7 @@ export const layer = Layer.effect(
                     ...value.bindings,
                     ...(bound
                       ? []
-                      : [{ sessionId: providerSessionId, threadId, context: value.brainContext }]),
+                      : [{ sessionId: providerSessionId, threadId, context: state.brainContext }]),
                   ],
                 };
               });
@@ -141,7 +157,17 @@ export const layer = Layer.effect(
           `.pipe(Effect.mapError(() => new D4AgentError({ reason: "storage" })))
               : [];
           const current = yield* store.get;
-          if (current.threadId !== threadId || current.contextScopeHash !== state.contextScopeHash)
+          if (
+            !(
+              current.threadId === threadId && current.contextScopeHash === state.contextScopeHash
+            ) &&
+            !current.sessions?.some(
+              (entry) =>
+                entry.threadId === threadId &&
+                entry.scopeHash === state.contextScopeHash &&
+                entry.context === state.brainContext,
+            )
+          )
             return yield* new D4AgentError({ reason: "context" });
           const summary = state.sessions?.find(
             (session) => session.threadId === threadId && session.context === state.brainContext,

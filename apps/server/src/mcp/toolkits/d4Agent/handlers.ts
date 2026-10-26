@@ -22,12 +22,19 @@ const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4
         : yield* sessions.value.read(scope.thread.threadId);
     if (
       scope.thread === undefined ||
-      scope.thread.threadId !== state.threadId ||
+      !(
+        scope.thread.threadId === state.threadId ||
+        state.sessions?.some((entry) => entry.threadId === scope.thread!.threadId)
+      ) ||
       credential === undefined ||
       credential.providerSessionId !== scope.thread.providerSessionId ||
       credential.providerInstanceId !== scope.thread.providerInstanceId ||
       !state.bindings.some(
-        (entry) => entry.threadId === state.threadId && entry.context === state.brainContext,
+        (entry) =>
+          entry.threadId === scope.thread!.threadId &&
+          entry.context ===
+            (state.sessions?.find((session) => session.threadId === scope.thread!.threadId)
+              ?.context ?? state.brainContext),
       )
     )
       return yield* new D4AgentError({ reason: "context" });
@@ -37,6 +44,12 @@ const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4
     );
   }).pipe(Effect.mapError((error) => error.message));
 export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
+  d4_agent_overview: McpToolAccess.reads(({ includeClosed }) =>
+    call((service) => service.overview(includeClosed)),
+  ),
+  d4_agent_overview_update: McpToolAccess.writesWithCapability((input) =>
+    call((service) => service.updateOverview(input)),
+  ),
   d4_agent_resolve: McpToolAccess.reads(({ text }) =>
     call((service) => service.resolveReference(text)),
   ),

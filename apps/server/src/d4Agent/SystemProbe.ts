@@ -3,6 +3,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 import * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect FileSystem does not expose filesystem capacity (statfs).
 import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 import type { D4AgentSystemCheck } from "@d4research/contracts";
 import * as Clock from "effect/Clock";
 import * as Ref from "effect/Ref";
@@ -14,6 +15,20 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
 
+class DoctorReadError extends Schema.TaggedError<DoctorReadError>()("DoctorReadError", {
+  cause: Schema.Defect(),
+}) {}
+const isDoctorReadError = Schema.is(DoctorReadError);
+const DoctorRows = Schema.Array(
+  Schema.Struct({ status: Schema.Literals(["OK", "WARN", "FAIL", "INFO"]) }),
+);
+const DoctorSnapshot = Schema.Union([
+  DoctorRows,
+  Schema.Struct({ generatedAt: Schema.String, results: DoctorRows }),
+]);
+const decodeDoctorSnapshot = Schema.decodeUnknownEffect(Schema.fromJsonString(DoctorSnapshot));
+const updateCacheMs = 6 * 60 * 60 * 1000;
+const doctorStaleMs = 26 * 60 * 60 * 1000;
 const UnitRows = Schema.Array(Schema.Struct({ unit: Schema.String }));
 export function diskCheck(
   id: "root-disk" | "data-disk",
@@ -33,7 +48,15 @@ export function diskCheck(
   const status = percent >= threshold ? "attention" : "ok";
   return { notificationEligible: false, id, status, reportKey: `${id}:${status}`, value: percent };
 }
-export const probeIds = ["user-units", "root-disk", "data-disk", "server"] as const;
+export const probeIds = [
+  "user-units",
+  "system-units",
+  "root-disk",
+  "data-disk",
+  "server",
+  "os-updates",
+  "doctor",
+] as const;
 export const disabledChecks = (): ReadonlyArray<D4AgentSystemCheck> =>
   probeIds.map((id) => ({
     notificationEligible: false,
@@ -60,6 +83,7 @@ export const layer = Layer.effect(
       threshold: number;
       checks: ReadonlyArray<D4AgentSystemCheck>;
     } | null>(null);
+    const updateCache = yield* Ref.make<{ at: number; check: D4AgentSystemCheck } | null>(null);
     const unavailable = (id: D4AgentSystemCheck["id"]): D4AgentSystemCheck => ({
       notificationEligible: false,
       id,
@@ -67,32 +91,142 @@ export const layer = Layer.effect(
       reportKey: `${id}:unavailable`,
       value: null,
     });
-    const units = Effect.tryPromise({
-      try: (signal) =>
-        new Promise<string>((resolve, reject) => {
-          NodeChildProcess.execFile(
-            "systemctl",
-            ["--user", "list-units", "--failed", "--output=json", "--no-pager"],
-            { timeout: 3000, maxBuffer: 128 * 1024, signal },
-            (error, stdout) => (error ? reject(error) : resolve(stdout)),
-          );
+    const command = (executable: string, args: ReadonlyArray<string>, emptyExitCode?: number) =>
+      Effect.tryPromise({
+        try: (signal) =>
+          new Promise<string>((resolve, reject) => {
+            NodeChildProcess.execFile(
+              executable,
+              args,
+              { timeout: 3000, maxBuffer: 128 * 1024, signal },
+              (error, stdout) => {
+                if (error && (emptyExitCode === undefined || error.code !== emptyExitCode))
+                  reject(error);
+                else resolve(error ? "" : stdout);
+              },
+            );
+          }),
+        catch: () => undefined,
+      });
+    const units = (id: "user-units" | "system-units") =>
+      command("systemctl", [
+        ...(id === "user-units" ? ["--user"] : []),
+        "list-units",
+        "--failed",
+        "--output=json",
+        "--no-pager",
+      ]).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(UnitRows))),
+        Effect.map((rows): D4AgentSystemCheck => ({
+          notificationEligible: false,
+          id,
+          status: rows.length > 0 ? "attention" : "ok",
+          title: `${rows.length} failed ${id === "user-units" ? "user" : "system"} units`,
+          reportKey: `${id}:${sha256Hex(
+            rows
+              .map((row) => row.unit)
+              .sort()
+              .join("\n"),
+          )}`,
+          value: rows.length,
+        })),
+        Effect.catch(() =>
+          Effect.succeed({
+            ...unavailable(id),
+            title: `${id === "user-units" ? "User" : "System"} units unknown`,
+          }),
+        ),
+      );
+    const updates = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const previous = yield* Ref.get(updateCache);
+      if (previous !== null && now - previous.at < updateCacheMs) return previous.check;
+      const check = yield* command("checkupdates", [], 2).pipe(
+        Effect.map((output): D4AgentSystemCheck => {
+          const lines = output
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+          if (lines.some((line) => !/^\S+ \S+ -> \S+$/.test(line))) {
+            return { ...unavailable("os-updates"), title: "OS updates unknown" };
+          }
+          const packages = lines.map((line) => line.split(" ")[0]!);
+          const important = packages.some((name) => /^(linux|nvidia|systemd)(?:-|$)/.test(name));
+          return {
+            notificationEligible: false,
+            id: "os-updates",
+            status: important ? "attention" : packages.length > 0 ? "info" : "ok",
+            title: `${packages.length} OS updates pending`,
+            reportKey: `os-updates:${sha256Hex(lines.sort().join("\n"))}`,
+            value: packages.length,
+          };
         }),
-      catch: () => undefined,
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(UnitRows))),
-      Effect.map((rows): D4AgentSystemCheck => ({
+        Effect.catch(() =>
+          Effect.succeed({ ...unavailable("os-updates"), title: "OS updates unknown" }),
+        ),
+      );
+      yield* Ref.set(updateCache, { at: now, check });
+      return check;
+    });
+    const doctor = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const path = `${NodeOS.homedir()}/.local/state/system-doctor/latest.json`;
+      const loaded = yield* Effect.tryPromise({
+        try: async (signal) => {
+          const stat = await NodeFSP.stat(path);
+          if (stat.size > 256 * 1024) throw new Error("Snapshot exceeds size limit");
+          const content = await NodeFSP.readFile(path, { encoding: "utf8", signal });
+          if (Buffer.byteLength(content) > 256 * 1024)
+            throw new Error("Snapshot exceeds size limit");
+          return { content, modifiedAt: stat.mtimeMs };
+        },
+        catch: (cause) => new DoctorReadError({ cause }),
+      });
+      const snapshot = yield* decodeDoctorSnapshot(loaded.content);
+      const rows = "results" in snapshot ? snapshot.results : snapshot;
+      const generatedAt =
+        "results" in snapshot ? Date.parse(snapshot.generatedAt) : loaded.modifiedAt;
+      if (rows.length === 0 || !Number.isFinite(generatedAt) || generatedAt > now) {
+        return { ...unavailable("doctor"), title: "doctor results unknown" };
+      }
+      if (now - generatedAt > doctorStaleMs)
+        return {
+          notificationEligible: false,
+          id: "doctor",
+          status: "info",
+          reportKey: "doctor:stale",
+          value: null,
+          title: "doctor results stale",
+        } satisfies D4AgentSystemCheck;
+      const failures = rows.filter((row) => row.status === "FAIL").length;
+      const warnings = rows.filter((row) => row.status === "WARN").length;
+      return {
         notificationEligible: false,
-        id: "user-units",
-        status: rows.length > 0 ? "attention" : "ok",
-        reportKey: `user-units:${sha256Hex(
-          rows
-            .map((row) => row.unit)
-            .sort()
-            .join("\n"),
-        )}`,
-        value: rows.length,
-      })),
-      Effect.catch(() => Effect.succeed(unavailable("user-units"))),
+        id: "doctor",
+        status: failures > 0 ? "attention" : warnings > 0 ? "info" : "ok",
+        title: `doctor: ${failures} failures, ${warnings} warnings`,
+        reportKey: `doctor:${failures}:${warnings}`,
+        value: failures + warnings,
+      } satisfies D4AgentSystemCheck;
+    }).pipe(
+      Effect.timeout("3 seconds"),
+      Effect.catch((error) =>
+        Effect.succeed(
+          isDoctorReadError(error) &&
+            error.cause instanceof Error &&
+            "code" in error.cause &&
+            error.cause.code === "ENOENT"
+            ? ({
+                notificationEligible: false,
+                id: "doctor",
+                status: "info",
+                reportKey: "doctor:stale",
+                value: null,
+                title: "doctor results stale",
+              } satisfies D4AgentSystemCheck)
+            : { ...unavailable("doctor"), title: "doctor results unknown" },
+        ),
+      ),
     );
     const disk = (id: "root-disk" | "data-disk", location: string, threshold: number) =>
       Effect.tryPromise(() => NodeFSP.statfs(location)).pipe(
@@ -129,7 +263,10 @@ export const layer = Layer.effect(
               return previous.checks;
             const checks = yield* Effect.all(
               [
-                units,
+                units("user-units"),
+                units("system-units"),
+                updates,
+                doctor,
                 disk("root-disk", "/", threshold),
                 disk("data-disk", config.stateDir, threshold),
                 server,

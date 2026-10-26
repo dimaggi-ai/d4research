@@ -1,3 +1,5 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as Stream from "effect/Stream";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, expect, it } from "@effect/vitest";
 import {
@@ -87,6 +89,10 @@ it.effect.each(["on time", "after restart"])(
       const commands = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
       const receipts = yield* Queue.unbounded<"task" | "retry">();
       const layerDependencies = Layer.mergeAll(
+        Layer.mock(EventSink.EventSinkV2)({
+          latestSequence: () => Effect.succeed(0),
+          stream: () => Stream.never,
+        }),
         NodeCrypto.layer,
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({
           launch: () =>

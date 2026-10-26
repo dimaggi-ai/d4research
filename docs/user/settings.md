@@ -23,8 +23,8 @@ saving.
 
 ## Nia
 
-Nia is the environment's local assistant. Ask it about your threads and the host's health in
-one conversation.
+Nia is the environment's local system-overview agent. Ask about threads, scheduled work,
+system health, and highlights from configured local sources.
 
 In web or desktop Settings → General, select an environment and open **Nia**.
 On iPhone or iPad, use Settings → Nia and threads. Settings are shared
@@ -46,7 +46,7 @@ model is unavailable or the provider cannot enforce its tool restrictions. The
 monitor continues to use deterministic rules regardless of the chat model. The
 monitor does not read conversation content or take recovery actions.
 
-Nia keeps one visible conversation across context switches. Each model turn receives a compact status
+Nia shows the conversation for the selected context. Each model turn receives a compact status
 digest; conversation content is fetched through a read tool when needed. The Nia
 settings section shows recent provider-reported input, output, and cache
 token counts. Missing counts appear as unavailable. Cache use depends on the
@@ -137,15 +137,26 @@ change context or start a new session before it arrives, a preview stays in the
 action log. Disabling Nia or **CTO agents** cancels the request. Task execution, task changes,
 direction saves, and service operations are unavailable through these tools.
 
-**Heartbeat** is off by default. Choose 15, 30, or 60 minutes to let the selected
-model summarize changed attention items in the conversation. Quiet hours apply to
-these summaries and use the UTC offset saved when you enable quiet hours. Deterministic
-notifications are separate from heartbeat summaries.
+**Heartbeat** is off by default. Choose 15, 30, or 60 minutes to receive an **Overview**
+of new or changed items in each context's conversation. Each post shows up to five items.
+Nia then adds recommendations or takes actions permitted by your settings. Background
+turns cannot start work, send messages to other agents, change schedules, or ask the CTO.
+Money and security items receive recommendations only. Ask Nia to acknowledge, snooze,
+or reopen an overview item. Global shows only counts for other contexts' overview items.
 
-Enable **System probes** to check failed user services, disk usage, and server
-health. Choose the disk warning percentage. These checks run on the environment's
-host, including when agent chat is off. A check that the host cannot support shows
-**Not available**.
+Overview quiet hours default to 22:00–07:00 America/Los_Angeles and follow daylight saving
+time. Critical items can bypass the heartbeat interval, but still respect quiet hours.
+Configured quiet hours override this default. Device attention notifications remain separate.
+
+Local producers can provide mail highlights and other snapshots through the overview inbox.
+Each source needs an explicit context mapping in the environment's `overviewSources` setting;
+unmapped sources are ignored. Enabling heartbeat does not configure mail collection.
+
+Enable **System probes** to check failed user and system services, disk usage, pending OS
+updates, doctor results, and server health. Choose the disk warning percentage. These checks
+run on the environment's host, including when agent chat is off. Updates are checked at most
+once every six hours; Nia does not install them. Missing or failed probes report unknown status,
+and missing doctor results or results older than 26 hours are reported as stale.
 
 Enable **Attention notifications** and select the classes you want. On iPhone or
 iPad, the app first requests provisional notification permission where supported;

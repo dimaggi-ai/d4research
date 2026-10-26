@@ -49,6 +49,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The fake HTTP server records exactly which CTO endpoints the service requests.
 import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
+import * as Inbox from "./OverviewInbox.ts";
 import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
 import * as Pc from "./PcCommand.ts";
@@ -150,6 +151,9 @@ const fixture = (
         notificationEligible: false,
       },
     ]);
+    const inboxSnapshots = yield* Ref.make<ReadonlyArray<Inbox.OverviewSnapshot>>([]);
+    const failSystemMessage = yield* Ref.make(false);
+    const systemMessageIds = yield* Ref.make<ReadonlyArray<string>>([]);
     const monitorUpdates = yield* Ref.make<ReadonlyArray<AgentMonitorUpdate>>([]);
     const guardVerdict = yield* Ref.make<D4AgentGuardVerdict>({
       decision: "allowed",
@@ -243,6 +247,12 @@ const fixture = (
                 Effect.tap((value) => PubSub.publish(stateChanges, value)),
               ),
           }),
+          Layer.succeed(Inbox.OverviewInbox, {
+            read: () =>
+              Ref.get(inboxSnapshots).pipe(
+                Effect.map((snapshots) => ({ snapshots, diagnostics: [] })),
+              ),
+          }),
           Layer.succeed(Probe.SystemProbe, {
             check: () =>
               Ref.update(reads, (r) => ({ ...r, probes: r.probes + 1 })).pipe(
@@ -305,6 +315,13 @@ const fixture = (
                 if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
                   return yield* Effect.fail({ reason: "fixture stop failure" } as never);
                 yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
+                if (cmd.type === "thread.system-message.record") {
+                  yield* Ref.update(systemMessageIds, (ids) => [...ids, cmd.messageId]);
+                  if (yield* Ref.get(failSystemMessage))
+                    return yield* Effect.fail({
+                      reason: "fixture system message failure",
+                    } as never);
+                }
                 if (cmd.type === "thread.system-message.record")
                   yield* Ref.update(systemMessages, (all) => [
                     ...all,
@@ -384,6 +401,7 @@ const fixture = (
               ),
           }),
           Layer.mock(ScheduledTasks.ScheduledTaskService)({
+            completedRuns: () => Effect.succeed([]),
             upsert: (input) =>
               Ref.update(scheduled, (all) => [...all, input]).pipe(
                 Effect.as({
@@ -434,6 +452,9 @@ const fixture = (
       request,
       dispatches,
       systemMessages,
+      inboxSnapshots,
+      failSystemMessage,
+      systemMessageIds,
       pcCommands,
       scheduled,
       unscheduled,
@@ -1190,10 +1211,11 @@ it.effect("thread listing omits opaque report keys that heartbeats still track",
     assert.notInclude(JSON.stringify(listed), "dedupe:");
     yield* TestClock.adjust("16 minutes");
     yield* f.service.tick;
-    assert.deepEqual((yield* Ref.get(f.state)).heartbeatKeys, [reportKey]);
+    const overview = (yield* f.service.overview()).find((item) => item.source === "threads");
+    assert.equal(overview?.deliveredRevision, overview?.revision);
     const heartbeat = (yield* Ref.get(f.sends)).at(-1)?.text ?? "";
-    assert.include(heartbeat, "Heartbeat:");
-    assert.include(heartbeat, "pending_request");
+    assert.include(heartbeat, "Overview is already visible");
+    assert.include(heartbeat, "needs_user");
     assert.notInclude(heartbeat, "dedupe:");
     assert.notInclude(heartbeat, "reportKey");
   }),
@@ -2435,7 +2457,7 @@ it.effect("send original is bound to the active run rather than the latest queue
   }),
 );
 
-it.effect("heartbeat drafts discard spoofed originals and never borrow a prior user message", () =>
+it.effect("a persisted heartbeat run cannot send even with a spoofed original", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask");
     yield* f.send({ text: "Prior unrelated request" });
@@ -2449,19 +2471,17 @@ it.effect("heartbeat drafts discard spoofed originals and never borrow a prior u
         { id: messageId, text: "Heartbeat", createdBy: "system" },
       ] as unknown as typeof value.messages,
     }));
-    const card = yield* f.service.requestAction({
-      type: "send",
-      threadId: targetId,
-      text: "Heartbeat draft",
-      originalText: "Spoofed original",
-    });
-    assert.isTrue(card.action.type === "send" && card.action.originalText === undefined);
-    assert.equal(
-      (yield* Effect.result(
-        f.service.resolveAction({ actionId: card.id, decision: "approve", sendOriginal: true }),
-      ))._tag,
-      "Failure",
+    const result = yield* Effect.result(
+      f.service
+        .requestAction({
+          type: "send",
+          threadId: targetId,
+          text: "Heartbeat draft",
+          originalText: "Spoofed original",
+        })
+        .pipe(Effect.provideService(Access.ToolCaller, (yield* Ref.get(f.state)).threadId!)),
     );
+    assert.equal(result._tag, "Failure");
     assert.equal((yield* Ref.get(f.sends)).length, 1);
   }),
 );
@@ -3430,5 +3450,370 @@ it.effect("schedule creates an approval-required scheduled task Nia may later de
     });
     assert.deepEqual(yield* Ref.get(f.unscheduled), ["task-1"]);
     assert.deepEqual((yield* Ref.get(f.state)).scheduledTasks, []);
+  }),
+);
+
+const overviewFixture = Effect.gen(function* () {
+  yield* TestClock.setTime(Date.parse("2026-10-26T14:00:00Z"));
+  const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+    heartbeatMinutes: 15,
+    overviewSources: { mail: "Personal", health: "Global" },
+    toolGuardUrl: "http://127.0.0.1:9191",
+  });
+  yield* f.service.ensureThread();
+  return f;
+});
+const healthSnapshot = (title = "Disk needs attention"): Inbox.OverviewSnapshot => ({
+  source: "health",
+  context: "Global",
+  items: [{ key: "disk", severity: "attention", title }],
+});
+
+it.effect("Overview posts once across repeated ticks and posts a changed revision", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* f.service.tick;
+    yield* f.service.tick;
+    const first = (yield* Ref.get(f.systemMessages)).filter(
+      (message) => message.title === "Overview",
+    );
+    assert.equal(first.length, 1);
+    assert.include(first[0]!.text, "Disk needs attention");
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot("Disk capacity critical")]);
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    const changed = (yield* Ref.get(f.systemMessages)).filter(
+      (message) => message.title === "Overview",
+    );
+    assert.equal(changed.length, 2);
+    assert.include(changed[1]!.text, "Disk capacity critical");
+    assert.equal(new Set(yield* Ref.get(f.systemMessageIds)).size, 2);
+  }),
+);
+
+it.effect(
+  "Overview retries a failed dispatch with the same id and marks delivery only on success",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* overviewFixture;
+      yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+      yield* Ref.set(f.failSystemMessage, true);
+      yield* Effect.result(f.service.tick);
+      const failed = (yield* f.service.overview()).find((item) => item.key === "disk");
+      assert.isDefined(failed);
+      assert.isNull(failed!.deliveredRevision);
+      yield* Ref.set(f.failSystemMessage, false);
+      yield* f.service.tick;
+      const delivered = (yield* f.service.overview()).find((item) => item.key === "disk");
+      assert.equal(delivered!.deliveredRevision, delivered!.revision);
+      const ids = yield* Ref.get(f.systemMessageIds);
+      assert.equal(ids.length, 2);
+      assert.equal(ids[0], ids[1]);
+      assert.equal(
+        (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+        1,
+      );
+    }),
+);
+
+it.effect(
+  "Global Overview contains Personal counts only and its model input and getState omit private text",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* overviewFixture;
+      const globalThread = (yield* Ref.get(f.state)).threadId!;
+      yield* Ref.set(f.inboxSnapshots, [
+        {
+          source: "mail",
+          context: "Personal",
+          items: [
+            {
+              key: "private-mail",
+              severity: "attention",
+              title: "Private medical invoice",
+              body: "private body marker",
+            },
+          ],
+        },
+      ]);
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        transcript: [
+          {
+            id: "private",
+            role: "system" as const,
+            text: "private transcript marker",
+            context: "Personal" as const,
+            createdAt: "2026-10-26T14:00:00Z",
+            links: [],
+          },
+        ],
+      }));
+      yield* f.service.tick;
+      const messages = yield* Ref.get(f.systemMessages);
+      const global = messages.filter(
+        (message) => message.threadId === globalThread && message.title === "Overview",
+      );
+      assert.equal(global.length, 1);
+      assert.include(global[0]!.text, "Personal: 1 new items");
+      assert.include(global[0]!.text, "[[thread:");
+      assert.notInclude(global[0]!.text, "Private medical invoice");
+      assert.notInclude(global[0]!.text, "private body marker");
+      assert.isTrue(
+        messages.some(
+          (message) =>
+            message.threadId !== globalThread && message.text.includes("Private medical invoice"),
+        ),
+      );
+      const globalInputs = (yield* Ref.get(f.sends)).filter(
+        (send) => send.threadId === globalThread,
+      );
+      assert.notInclude(JSON.stringify(globalInputs), "Private medical invoice");
+      assert.notInclude(JSON.stringify(globalInputs), "private body marker");
+      const visible = JSON.stringify(yield* f.service.getState());
+      assert.notInclude(visible, "Private medical invoice");
+      assert.notInclude(visible, "private body marker");
+      assert.notInclude(visible, "private transcript marker");
+      assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
+    }),
+);
+
+it.effect("a first Overview snapshot emits only five items and persists the silent baseline", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [
+      {
+        ...healthSnapshot(),
+        items: Array.from({ length: 8 }, (_, index) => ({
+          key: `disk-${index}`,
+          severity: "info" as const,
+          title: `Disk ${index}`,
+        })),
+      },
+    ]);
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    const text = (yield* Ref.get(f.systemMessages)).find(
+      (message) => message.title === "Overview",
+    )!.text;
+    assert.equal(text.split("\n").filter((line) => line.startsWith("•")).length, 5);
+    const restarted = yield* f.restart;
+    yield* TestClock.adjust("15 minutes");
+    yield* restarted.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    assert.isTrue(
+      (yield* f.service.overview())
+        .filter((item) => item.source === "health")
+        .every((item) => item.deliveredRevision === item.revision),
+    );
+  }),
+);
+
+it.effect.each(["send", "start", "schedule"] as const)("a heartbeat rejects %s in code", (type) =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const action =
+      type === "send"
+        ? { type, threadId: targetId, text: "Do it" }
+        : type === "start"
+          ? { type, projectId: target.projectId, modelSelection, text: "Do it" }
+          : {
+              type,
+              projectId: target.projectId,
+              modelSelection,
+              title: "Work",
+              text: "Do it",
+              schedule: { type: "fixed_time" as const, timeOfDay: "09:00", weekdays: [1] },
+            };
+    const result = yield* Effect.result(
+      f.service
+        .requestAction(action)
+        .pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat")),
+    );
+    assert.equal(result._tag, "Failure");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    assert.deepEqual(yield* Ref.get(f.scheduled), []);
+  }),
+);
+
+it.effect("a heartbeat may create a reminder in act mode", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const result = yield* f.service
+      .requestAction({ type: "remind", text: "Check status", at: "1970-01-01T00:10:00Z" })
+      .pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat"));
+    assert.equal(result.status, "executed");
+    assert.equal((yield* Ref.get(f.state)).reminders?.[0]?.text, "Check status");
+  }),
+);
+
+it.effect(
+  "critical Overview waits through quiet hours and bypasses the interval after 07:00 PT",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* overviewFixture;
+      yield* TestClock.setTime(Date.parse("2026-10-26T13:59:00Z"));
+      yield* Ref.set(f.inboxSnapshots, [
+        {
+          ...healthSnapshot(),
+          items: [{ key: "critical", severity: "critical", title: "Disk full" }],
+        },
+      ]);
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        overviewHeartbeatAt: { Global: Date.parse("2026-10-26T13:58:00Z") },
+      }));
+      yield* f.service.tick;
+      assert.equal(
+        (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+        0,
+      );
+      yield* TestClock.adjust("1 minute");
+      yield* f.service.tick;
+      assert.equal(
+        (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+        1,
+      );
+    }),
+);
+
+it.effect("Overview ack, snooze, and reopen keep their context and control delivery", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* f.service.tick;
+    yield* f.service.updateOverview({ key: "disk", op: "ack" });
+    assert.equal(
+      (yield* f.service.overview(true)).find((item) => item.key === "disk")?.status,
+      "acknowledged",
+    );
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    yield* f.service.updateOverview({ key: "disk", op: "reopen" });
+    yield* f.service.updateOverview({ key: "disk", op: "snooze", minutes: 30 });
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    yield* f.service.updateOverview({ key: "disk", op: "reopen" });
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      2,
+    );
+    const item = (yield* f.service.overview(true)).find((item) => item.key === "disk");
+    assert.equal(item?.status, "open");
+    assert.isNull(item?.snoozedUntil);
+  }),
+);
+
+it.effect("a failed Overview judgement retries after restart without reposting the Overview", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* Ref.set(f.failSend, true);
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    assert.equal((yield* Ref.get(f.sends)).length, 0);
+    yield* Ref.set(f.failSend, false);
+    const restarted = yield* f.restart;
+    yield* restarted.tick;
+    assert.equal(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
+      1,
+    );
+    assert.equal((yield* Ref.get(f.sends)).length, 1);
+    assert.include((yield* Ref.get(f.sends))[0]!.text, "Overview is already visible");
+  }),
+);
+
+it.effect("background tools read and update only their bound overview context", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [
+      healthSnapshot(),
+      {
+        source: "mail",
+        context: "Personal",
+        items: [{ key: "private", severity: "info", title: "Private mail title" }],
+      },
+    ]);
+    yield* f.service.tick;
+    const state = yield* Ref.get(f.state);
+    const personal = state.sessions?.find((session) => session.context === "Personal");
+    assert.isDefined(personal);
+    const privateItems = yield* f.service
+      .overview()
+      .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId));
+    assert.deepEqual(
+      privateItems.map((item) => item.key),
+      ["private"],
+    );
+    const wrong = yield* Effect.result(
+      f.service
+        .updateOverview({ key: "disk", op: "ack" })
+        .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId)),
+    );
+    assert.equal(wrong._tag, "Failure");
+    yield* f.service
+      .updateOverview({ key: "private", op: "ack" })
+      .pipe(Effect.provideService(Access.ToolCaller, personal!.threadId));
+    assert.equal(
+      (yield* Ref.get(f.state)).overviewItems?.find((item) => item.key === "private")?.status,
+      "acknowledged",
+    );
+    assert.equal((yield* Ref.get(f.state)).brainContext, "Global");
+    assert.deepEqual(
+      (yield* f.service.overview()).map((item) => item.key),
+      ["disk"],
+    );
+  }),
+);
+
+it.effect(
+  "deterministic Overview remains visible while model judgement waits for its provider",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* overviewFixture;
+      yield* Ref.set(f.catalog, []);
+      yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+      yield* f.service.tick;
+      assert.lengthOf(
+        (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview"),
+        1,
+      );
+      assert.lengthOf((yield* Ref.get(f.state)).overviewJudgements ?? [], 1);
+      assert.isEmpty(yield* Ref.get(f.sends));
+      yield* Ref.set(f.catalog, [provider]);
+      yield* f.service.tick;
+      assert.lengthOf(yield* Ref.get(f.sends), 1);
+      assert.isEmpty((yield* Ref.get(f.state)).overviewJudgements ?? []);
+    }),
+);
+it.effect("internal overview collection waits for the next window even when no items arrive", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* f.service.tick;
+    const first = (yield* Ref.get(f.reads)).catalogs;
+    yield* f.service.tick;
+    assert.equal((yield* Ref.get(f.reads)).catalogs, first);
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.isAbove((yield* Ref.get(f.reads)).catalogs, first);
   }),
 );

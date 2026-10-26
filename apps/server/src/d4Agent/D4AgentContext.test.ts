@@ -29,38 +29,41 @@ const provider: ServerProvider = {
   skills: [],
   slashCommands: [],
 };
-const layer = Context.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      Layer.mock(Store.D4AgentStore)({
-        workspace: "/isolated",
-        get: Effect.succeed({
-          retiringThreadId: null,
-          brainContext: "Global",
-          contextChangedAt: null,
-          contextScopeHash: contextScopeHash("Global", DEFAULT_D4_AGENT_SETTINGS),
-          bindings: [],
-          identityReady: true,
-          automaticActions: [],
-          threadId: ownId,
-          projectId: null,
-          actions: [],
-          usage: [],
-          usageCursor: "",
-          heartbeatAt: 0,
-          heartbeatKeys: [],
-          systemEpisodes: [],
-          systemClaims: [],
+const testLayer = (state: Partial<Store.StoredState> = {}, config = DEFAULT_D4_AGENT_SETTINGS) =>
+  Context.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(Store.D4AgentStore)({
+          workspace: "/isolated",
+          get: Effect.succeed({
+            retiringThreadId: null,
+            brainContext: "Global",
+            contextChangedAt: null,
+            contextScopeHash: contextScopeHash("Global", DEFAULT_D4_AGENT_SETTINGS),
+            bindings: [],
+            identityReady: true,
+            automaticActions: [],
+            threadId: ownId,
+            projectId: null,
+            actions: [],
+            usage: [],
+            usageCursor: "",
+            heartbeatAt: 0,
+            heartbeatKeys: [],
+            systemEpisodes: [],
+            systemClaims: [],
+            ...state,
+          }),
         }),
-      }),
-      Layer.mock(Providers.ProviderRegistry)({ getProviders: Effect.succeed([provider]) }),
-      Settings.layerTest({
-        d4Agent: { ...DEFAULT_D4_AGENT_SETTINGS, enabled: true, modelSelection: model },
-      }),
-      Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
+        Layer.mock(Providers.ProviderRegistry)({ getProviders: Effect.succeed([provider]) }),
+        Settings.layerTest({
+          d4Agent: { ...config, enabled: true, modelSelection: model },
+        }),
+        Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Effect.succeed([]) }),
+      ),
     ),
-  ),
-);
+  );
+const layer = testLayer();
 it.effect(
   "normal threads keep their provider path while the owned thread receives only a compact digest",
   () =>
@@ -84,3 +87,51 @@ it.effect("the normal composer cannot switch the owned thread away from the sele
     if (result._tag === "Failure") assert.equal(result.failure.reason, "model-unavailable");
   }).pipe(Effect.provide(layer)),
 );
+
+it.effect(
+  "a background session receives its bound context without switching the visible session",
+  () => {
+    const personalId = ThreadId.make("personal-background");
+    const sessions = [
+      {
+        context: "Personal" as const,
+        threadId: personalId,
+        providerSessionId: null,
+        lastActivityAt: "2026-10-26T14:00:00Z",
+        inputTokens: 0,
+        contextWindow: null,
+        scopeHash: contextScopeHash("Personal", DEFAULT_D4_AGENT_SETTINGS),
+      },
+    ];
+    return Effect.gen(function* () {
+      const context = yield* Context.D4AgentContext;
+      assert.isTrue(yield* context.owns(personalId));
+      const prefix = yield* context.prepare(personalId, model);
+      assert.include(prefix ?? "", "Bound context: Personal");
+      assert.notInclude(prefix ?? "", "Bound context: Global");
+      assert.include((yield* context.prepare(ownId, model)) ?? "", "Bound context: Global");
+    }).pipe(Effect.provide(testLayer({ sessions })));
+  },
+);
+it.effect("source remapping rejects an old background session before model input", () => {
+  const personalId = ThreadId.make("personal-background");
+  const previous = { ...DEFAULT_D4_AGENT_SETTINGS, overviewSources: { mail: "Personal" as const } };
+  const next = { ...previous, overviewSources: { mail: "Dimaggi" as const } };
+  const sessions = [
+    {
+      context: "Personal" as const,
+      threadId: personalId,
+      providerSessionId: null,
+      lastActivityAt: "2026-10-26T14:00:00Z",
+      inputTokens: 0,
+      contextWindow: null,
+      scopeHash: contextScopeHash("Personal", previous),
+    },
+  ];
+  return Effect.gen(function* () {
+    const context = yield* Context.D4AgentContext;
+    const result = yield* Effect.result(context.prepare(personalId, model));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "context");
+  }).pipe(Effect.provide(testLayer({ sessions }, next)));
+});

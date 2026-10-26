@@ -243,6 +243,7 @@ function makeHarness(options: HarnessOptions = {}) {
   );
   return {
     layer: Layer.mergeAll(
+      layerOrchestrator,
       layerLaunch,
       layerRegistry,
       layerThreadManagement,
@@ -349,7 +350,7 @@ it.effect.each(
         creationSource: createdBy === "agent" ? "mcp" : "web",
       });
       const result = yield* tasks.runNow({ id: task.id });
-      assert.equal(result.task.lastRunStatus, "succeeded");
+      assert.equal(result.task.lastRunStatus, "running");
       const projectThreads = yield* threads.listProjectThreads({
         projectId,
         includeSubagents: false,

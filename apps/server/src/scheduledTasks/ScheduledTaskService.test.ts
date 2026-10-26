@@ -1,3 +1,5 @@
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as Stream from "effect/Stream";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as NodeUtil from "node:util";
 
@@ -196,6 +198,10 @@ it.effect(
                       Effect.andThen(Effect.die(new Error("test launch failure"))),
                     ),
                 }),
+                Layer.mock(EventSink.EventSinkV2)({
+                  latestSequence: () => Effect.succeed(0),
+                  stream: () => Stream.never,
+                }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
                 Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
@@ -290,6 +296,10 @@ it.effect(
                       Effect.andThen(Effect.die(new Error("test launch failure"))),
                     ),
                 }),
+                Layer.mock(EventSink.EventSinkV2)({
+                  latestSequence: () => Effect.succeed(0),
+                  stream: () => Stream.never,
+                }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
                 Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
@@ -338,6 +348,10 @@ it.effect("runs a bound task on its thread's current provider", () =>
             ScheduledTaskService.layer,
             Layer.mergeAll(
               Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+              Layer.mock(EventSink.EventSinkV2)({
+                latestSequence: () => Effect.succeed(0),
+                stream: () => Stream.never,
+              }),
               Layer.mock(ThreadManagementService.ThreadManagementService)({
                 sendToThread: (input) =>
                   Deferred.succeed(sent, input).pipe(

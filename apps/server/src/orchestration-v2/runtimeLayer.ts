@@ -296,6 +296,7 @@ const layerSecretRequestsProvided = SecretRequests.layer.pipe(
 const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
+      layerEventSinkProvided,
       layerThreadLaunchProvided,
       layerThreadManagementProvided,
       layerSecretRequestsProvided,

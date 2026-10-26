@@ -1,3 +1,4 @@
+import { OverviewItem } from "./overview.ts";
 import {
   D4AgentActionRecord,
   D4AgentTranscriptEntry,
@@ -54,6 +55,21 @@ export const StoredTaskScope = Schema.Struct({
   scopeHash: Schema.optionalKey(Schema.String),
 });
 export const StoredState = Schema.Struct({
+  overviewItems: Schema.optionalKey(Schema.Array(OverviewItem)),
+  overviewJudgements: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        context: D4BrainContext,
+        scopeHash: Schema.String,
+        messageId: Schema.String,
+        items: Schema.Array(OverviewItem),
+      }),
+    ),
+  ),
+  overviewSources: Schema.optionalKey(Schema.Array(Schema.String)),
+  overviewHeartbeatAt: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
+  overviewCtoCheckedAt: Schema.optionalKey(Schema.Number),
+  overviewCollectedAt: Schema.optionalKey(Schema.Number),
   pendingRetirements: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

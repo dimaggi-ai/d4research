@@ -37,6 +37,9 @@ export function contextScopeHash(context: D4BrainContext, settings: D4AgentSetti
     JSON.stringify([
       context,
       settings.brainVaultPath,
+      Object.entries(settings.overviewSources)
+        .filter(([, mapped]) => mapped === context)
+        .sort(([a], [b]) => a.localeCompare(b)),
       Object.entries(settings.projectContexts)
         .filter(([, mapped]) => context === "Global" || mapped === context)
         .map(([id]) => id)

@@ -78,6 +78,8 @@ import Migration0069 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 import Migration0070 from "./Migrations/063_DropUnusedV1Projections.ts";
 import Migration0074 from "./Migrations/074_RouteTelemetry.ts";
 
+import Migration0075 from "./Migrations/075_ScheduledTaskRunCorrelation.ts";
+
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
@@ -149,6 +151,7 @@ export const migrationEntries = [
   [72, "AgentMonitorDelivery", Migration0072],
   [73, "AgentMonitorEpisodes", Migration0073],
   [74, "RouteTelemetry", Migration0074],
+  [75, "ScheduledTaskRunCorrelation", Migration0075],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

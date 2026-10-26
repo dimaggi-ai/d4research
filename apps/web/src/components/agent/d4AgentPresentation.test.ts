@@ -1,4 +1,4 @@
-import { ProjectId } from "@d4research/contracts";
+import { ProjectId, type D4AgentSystemCheck } from "@d4research/contracts";
 import { expect, it } from "vite-plus/test";
 import {
   systemCheckLabel,
@@ -140,4 +140,70 @@ it("names Tool Guard verdicts that need the user's attention", () => {
   });
   expect(guardNotice({ decision: "unavailable", rule: null, reason: null })?.tone).toBe("warning");
   expect(guardNotice({ decision: "flagged", rule: null, reason: null })?.tone).toBe("info");
+});
+
+it("labels system services, OS updates, and doctor checks", () => {
+  const labels = {
+    "system-units": "System services",
+    "os-updates": "OS updates",
+    doctor: "Doctor",
+  } as const;
+  for (const id of ["system-units", "os-updates", "doctor"] as const) {
+    expect(
+      systemCheckLabel({
+        id,
+        status: "unavailable",
+        value: null,
+        reportKey: id,
+        notificationEligible: false,
+      }),
+    ).toBe(labels[id]);
+  }
+  expect(
+    systemCheckStatus({
+      id: "system-units",
+      status: "attention",
+      value: 2,
+      reportKey: "system",
+      notificationEligible: false,
+    }),
+  ).toBe("Needs attention · 2 failed services");
+});
+it("keeps informational checks distinct from healthy, unavailable, and disabled checks", () => {
+  for (const id of ["system-units", "os-updates", "doctor"] as const) {
+    const check: D4AgentSystemCheck = {
+      id,
+      status: "info",
+      title: "Current information",
+      value: 2,
+      reportKey: id,
+      notificationEligible: false,
+    };
+    expect(systemCheckStatus(check)).toBe("Current information");
+    expect(
+      systemCheckStatus({
+        id,
+        status: "info",
+        value: null,
+        reportKey: id,
+        notificationEligible: false,
+      }),
+    ).toBe("Information");
+    expect(systemCheckStatus({ ...check, status: "unavailable" })).toBe("Not available");
+    expect(systemCheckStatus({ ...check, status: "disabled" })).toBe("Off");
+  }
+});
+it("preserves OS update and doctor details alongside attention and healthy status", () => {
+  for (const id of ["os-updates", "doctor"] as const) {
+    const check: D4AgentSystemCheck = {
+      id,
+      status: "attention",
+      title: "Probe details",
+      value: 1,
+      reportKey: id,
+      notificationEligible: false,
+    };
+    expect(systemCheckStatus(check)).toBe("Needs attention · Probe details");
+    expect(systemCheckStatus({ ...check, status: "ok" })).toBe("Healthy · Probe details");
+  }
 });

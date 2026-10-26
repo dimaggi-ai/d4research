@@ -73,6 +73,9 @@ export const D4AgentSettings = Schema.Struct({
   projectContexts: Schema.Record(ProjectId, D4BrainContext).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  overviewSources: Schema.Record(Schema.String, D4BrainContext).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   ctoEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   ctoBaseUrl: Schema.String.check(Schema.isMaxLength(2048)).pipe(
     Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:9093")),
@@ -111,6 +114,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   embeddingBaseUrl: null,
   embeddingModel: null,
   projectContexts: {},
+  overviewSources: {},
   ctoEnabled: false,
   ctoBaseUrl: "http://127.0.0.1:9093",
   enabled: false,
@@ -268,8 +272,17 @@ export const D4AgentGetActionInput = Schema.Struct({
 export type D4AgentGetActionInput = typeof D4AgentGetActionInput.Type;
 export const D4AgentSystemCheck = Schema.Struct({
   notificationEligible: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  id: Schema.Literals(["user-units", "root-disk", "data-disk", "server"]),
-  status: Schema.Literals(["ok", "attention", "unavailable", "disabled"]),
+  id: Schema.Literals([
+    "user-units",
+    "system-units",
+    "os-updates",
+    "doctor",
+    "root-disk",
+    "data-disk",
+    "server",
+  ]),
+  title: Schema.optionalKey(Schema.String),
+  status: Schema.Literals(["ok", "info", "attention", "unavailable", "disabled"]),
   reportKey: Schema.String,
   value: Schema.NullOr(Schema.Number),
 });

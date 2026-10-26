@@ -15,6 +15,9 @@ import {
 export function systemCheckLabel(check: D4AgentSystemCheck): string {
   return {
     "user-units": "User services",
+    "system-units": "System services",
+    "os-updates": "OS updates",
+    doctor: "Doctor",
     "root-disk": "Root disk",
     "data-disk": "Data disk",
     server: "Server health",
@@ -23,11 +26,15 @@ export function systemCheckLabel(check: D4AgentSystemCheck): string {
 export function systemCheckStatus(check: D4AgentSystemCheck): string {
   if (check.status === "unavailable") return "Not available";
   if (check.status === "disabled") return "Off";
+  if (check.status === "info") return check.title ?? "Information";
   const status = check.status === "attention" ? "Needs attention" : "Healthy";
+  if ((check.id === "os-updates" || check.id === "doctor") && check.title)
+    return `${status} · ${check.title}`;
   if (check.value === null) return status;
   if (check.id === "root-disk" || check.id === "data-disk")
     return `${status} · ${check.value}% used`;
-  if (check.id === "user-units") return `${status} · ${check.value} failed services`;
+  if (check.id === "user-units" || check.id === "system-units")
+    return `${status} · ${check.value} failed services`;
   return status;
 }
 export function agentUnavailableMessage(reason: D4AgentState["unavailableReason"]): string {

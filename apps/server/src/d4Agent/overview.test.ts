@@ -65,6 +65,21 @@ describe("overview ingestion and delivery", () => {
     assert.isEmpty(pendingOverview(delivered(changed), "Global", now + 2000));
   });
 
+  it("does not re-report delivered content that its source re-keyed", () => {
+    const shown = delivered(initial([input("a", { title: "Invoice" })]));
+    const rekeyed = ingestOverview(
+      shown,
+      snapshot([input("mail:a", { title: "Invoice" }), input("mail:b", { title: "New" })]),
+      now + 1000,
+      true,
+    );
+    assert.deepEqual(
+      pendingOverview(rekeyed, "Global", now + 1000).map((item) => item.key),
+      ["mail:b"],
+    );
+    assert.equal(rekeyed.find((item) => item.key === "mail:a")?.firstSeenAt, now);
+  });
+
   it("refreshes lastSeenAt on every current snapshot without changing firstSeenAt or revision", () => {
     const first = initial([input("seen")]);
     const repeated = ingestOverview(first, snapshot([input("seen")]), now + 1000, true);

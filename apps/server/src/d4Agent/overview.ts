@@ -60,6 +60,18 @@ export function ingestOverview(
   initialized: boolean,
 ): ReadonlyArray<OverviewItem> {
   const old = new Map(previous.map((item) => [overviewIdentity(item), item]));
+  // A producer may re-key items it already sent (a new key format, say). Content the user was
+  // already shown from this source is not new, whatever its key.
+  const shown = new Map(
+    previous
+      .filter(
+        (item) =>
+          item.context === snapshot.context &&
+          item.source === snapshot.source &&
+          item.deliveredRevision === item.revision,
+      )
+      .map((item) => [item.revision, item]),
+  );
   const incoming = new Set(snapshot.items.map((item) => item.key));
   const next = previous
     .filter((item) => item.context !== snapshot.context || item.source !== snapshot.source)
@@ -77,6 +89,22 @@ export function ingestOverview(
         const existing = old.get(overviewIdentity({ ...snapshot, key: input.key }));
         const revision = overviewRevision(input);
         const changed = existing?.revision !== revision;
+        const seen = existing === undefined ? shown.get(revision) : undefined;
+        if (seen !== undefined)
+          return {
+            ...input,
+            context: snapshot.context,
+            source: snapshot.source,
+            revision,
+            firstSeenAt: seen.firstSeenAt,
+            lastSeenAt: now,
+            revisedAt: seen.revisedAt ?? seen.firstSeenAt,
+            deliveredRevision: revision,
+            deliveredAt: seen.deliveredAt,
+            status: seen.status,
+            snoozedUntil: seen.snoozedUntil,
+            resolvedAt: null,
+          };
         return {
           ...input,
           context: snapshot.context,

@@ -354,24 +354,6 @@ it("opens settings when agent chat is disabled", async () => {
   expect(mocks.resolve).not.toHaveBeenCalled();
 });
 
-it("hides cached attention reports after monitoring is disabled", async () => {
-  mocks.monitorEnabled = false;
-  mocks.threads = [
-    {
-      id: ThreadId.make("old-thread"),
-      projectId: ProjectId.make("old-project"),
-      title: "Old stuck report",
-      environmentId,
-      archivedAt: null,
-      deletedAt: null,
-      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
-    },
-  ];
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).not.toContain("Old stuck report");
-  expect(container.textContent).toContain("No threads need attention.");
-});
-
 it("waits for configuration before allowing the first pinned-entry click", async () => {
   mocks.configLoaded = false;
   await act(() => root.render(<D4AgentEntry environmentId={environmentId} label={null} />));
@@ -484,39 +466,19 @@ it("switches context through the destination command and navigates to the new se
     params: { environmentId, threadId: "new-agent-thread" },
   });
 });
-it("restricts attention to mapped work projects and marks the new session", async () => {
-  const ybProject = ProjectId.make("yb-project");
-  const otherProject = ProjectId.make("other-project");
-  mocks.projectContexts = { [ybProject]: "YB", [otherProject]: "Dimaggi" };
+it("keeps monitor reports and session banners out of the chat header", async () => {
   mocks.state = {
     ...mocks.state!,
     brainContext: "YB",
-    contextChangedAt: "2026-10-24T00:00:00.000Z",
+    modelAvailable: true,
     sessionChangeReason: "context",
+    ctoAskInFlight: true,
   };
   mocks.threads = [
     {
-      id: ThreadId.make("yb-thread"),
-      projectId: ybProject,
-      title: "YB attention",
-      environmentId,
-      archivedAt: null,
-      deletedAt: null,
-      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
-    },
-    {
-      id: ThreadId.make("other-thread"),
-      projectId: otherProject,
-      title: "Other attention",
-      environmentId,
-      archivedAt: null,
-      deletedAt: null,
-      source: { agentMonitor: { attentionRequired: true, classification: "wedged" } },
-    },
-    {
-      id: ThreadId.make("unmapped-thread"),
-      projectId: ProjectId.make("unmapped-project"),
-      title: "Unmapped attention",
+      id: ThreadId.make("stuck-thread"),
+      projectId: ProjectId.make("yb-project"),
+      title: "Stuck report",
       environmentId,
       archivedAt: null,
       deletedAt: null,
@@ -524,10 +486,10 @@ it("restricts attention to mapped work projects and marks the new session", asyn
     },
   ];
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("YB attention");
-  expect(container.textContent).not.toContain("Other attention");
-  expect(container.textContent).not.toContain("Unmapped attention");
-  expect(container.textContent).toContain("Context changed to YB. New session.");
+  expect(container.textContent).not.toContain("Stuck report");
+  expect(container.textContent).not.toContain("need attention");
+  expect(container.textContent).not.toContain("New session.");
+  expect(container.querySelector('[aria-label="Waiting for you"]')!.className).toContain("hidden");
 });
 it("shows the complete CTO request and persisted result when reviewed", async () => {
   mocks.state = {
@@ -577,18 +539,6 @@ it("starts a fresh session in the current context and navigates only after the t
     to: "/$environmentId/$threadId",
     params: { environmentId, threadId: "fresh-agent-thread" },
   });
-});
-it("shows a same-context session divider and an in-flight CTO request", async () => {
-  mocks.state = {
-    ...mocks.state!,
-    brainContext: "Dimaggi",
-    sessionChangeReason: "new-session",
-    ctoAskInFlight: true,
-  };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("New session.");
-  expect(container.textContent).not.toContain("Context changed to");
-  expect(container.textContent).toContain("CTO question in progress.");
 });
 it("reviews only current-context memory proposals and shows other-context counts", async () => {
   mocks.state = {

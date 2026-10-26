@@ -267,17 +267,28 @@ function D4AgentPanelContent({
           {startingSession ? "Starting session…" : "New session"}
         </Button>
         {switching ? <span role="status">Switching context…</span> : null}
-        {(state.openSessions ?? []).length > 0 ? (
+        <D4AgentSessions
+          environmentId={environmentId}
+          sessions={state.openSessions ?? []}
+          refresh={query.refresh}
+        />
+        {state.actionLog.some((record) => record.status !== "pending") ? (
           <details className="relative">
-            <summary className="cursor-pointer text-muted-foreground">
-              Sessions · {(state.openSessions ?? []).length}
-            </summary>
-            <div className="absolute z-10 mt-1 w-72 rounded-md border bg-popover p-2 shadow-md">
-              <D4AgentSessions
-                environmentId={environmentId}
-                sessions={state.openSessions ?? []}
-                refresh={query.refresh}
-              />
+            <summary className="cursor-pointer text-muted-foreground">History</summary>
+            <div className="absolute z-10 mt-1 max-h-[60dvh] w-[min(32rem,90vw)] overflow-y-auto rounded-md border bg-popover p-2 shadow-md">
+              {state.actionLog
+                .filter((record) => record.status !== "pending")
+                .slice(0, 20)
+                .map((record) => (
+                  <AgentActionRecord
+                    key={record.id}
+                    environmentId={environmentId}
+                    record={record}
+                    allowed={allowed}
+                    busy={busy !== null}
+                    onResolve={async () => undefined}
+                  />
+                ))}
             </div>
           </details>
         ) : null}
@@ -286,6 +297,7 @@ function D4AgentPanelContent({
         aria-label="Waiting for you"
         className={
           pendingActions + pendingProposals > 0 ||
+          proposals.some((proposal) => proposal.status !== "rejected") ||
           !state.modelAvailable ||
           actionError ||
           query.error
@@ -298,7 +310,7 @@ function D4AgentPanelContent({
             {agentUnavailableMessage(state.unavailableReason)}
           </p>
         ) : null}
-        {shownPendingProposals > 0 ? (
+        {proposals.some((proposal) => proposal.status !== "rejected") ? (
           <section aria-label="Memory proposals" className="space-y-2 py-2">
             <h2 className="font-medium">Memory proposals · {pendingProposals} pending</h2>
             {pendingProposals > shownPendingProposals ? (
@@ -307,7 +319,7 @@ function D4AgentPanelContent({
               </p>
             ) : null}
             {proposals
-              .filter((proposal) => proposal.status === "pending")
+              .filter((proposal) => proposal.status !== "rejected")
               .map((proposal) => (
                 <div key={proposal.id} className="space-y-2 rounded border p-2">
                   <p className="text-xs text-muted-foreground">

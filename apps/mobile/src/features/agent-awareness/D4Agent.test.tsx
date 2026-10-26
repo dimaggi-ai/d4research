@@ -543,7 +543,7 @@ it("keeps proposal content within the active context and supports approve and re
     });
   }
 });
-it("copies approved proposal text and shows same-context reset and CTO progress", async () => {
+it("copies approved proposal text without session banners in the header", async () => {
   mocks.state = {
     ...mocks.state!,
     brainContext: "Dimaggi",
@@ -560,9 +560,8 @@ it("copies approved proposal text and shows same-context reset and CTO progress"
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("New session.");
-  expect(container.textContent).not.toContain("Context changed to");
-  expect(container.textContent).toContain("CTO question in progress.");
+  expect(container.textContent).not.toContain("New session.");
+  expect(container.textContent).not.toContain("CTO question in progress.");
   const button = [...container.querySelectorAll("button")].find(
     (item) => item.textContent === "Copy text",
   )!;
@@ -625,8 +624,8 @@ it("refreshes an open CTO result after completion without collapsing its details
     result: "Asked, answer will be posted.",
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  const log = [...container.querySelectorAll("button")].find((item) =>
-    item.textContent?.startsWith("Action log ·"),
+  const log = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "History",
   )!;
   await act(async () => log.click());
   const review = [...container.querySelectorAll("button")].find(
@@ -989,7 +988,7 @@ it("restores an automatically archived thread only after Undo archive", async ()
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((item) => item.textContent?.startsWith("Action log"))!
+      .find((item) => item.textContent === "History")!
       .click(),
   );
   expect(mocks.undo).not.toHaveBeenCalled();

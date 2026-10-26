@@ -176,7 +176,7 @@ function D4AgentPanelContent({
   );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
   const proposals = (state.memoryProposals ?? []).filter(
@@ -284,32 +284,43 @@ function D4AgentPanelContent({
               {startingSession ? "Starting session…" : "New session"}
             </Text>
           </Pressable>
-          {(state.openSessions ?? []).length > 0 ? (
+          {state.actionLog.some((record) => record.status !== "pending") ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ expanded }}
+              accessibilityState={{ expanded: showHistory }}
               className="self-start rounded-full border border-border px-3 py-2"
-              onPress={() => setExpanded(!expanded)}
+              onPress={() => setShowHistory(!showHistory)}
             >
-              <Text className="text-sm text-accent">
-                Sessions · {(state.openSessions ?? []).length}
-              </Text>
+              <Text className="text-sm text-accent">History</Text>
             </Pressable>
           ) : null}
         </View>
-        {expanded ? (
-          <D4AgentSessions
-            environmentId={environmentId}
-            sessions={state.openSessions ?? []}
-            refresh={query.refresh}
-          />
-        ) : null}
+        {showHistory
+          ? state.actionLog
+              .filter((record) => record.status !== "pending")
+              .slice(0, 20)
+              .map((record) => (
+                <AgentActionRecord
+                  key={record.id}
+                  environmentId={environmentId}
+                  record={record}
+                  allowed={allowed}
+                  busy={busy}
+                  onResolve={async () => undefined}
+                />
+              ))
+          : null}
+        <D4AgentSessions
+          environmentId={environmentId}
+          sessions={state.openSessions ?? []}
+          refresh={query.refresh}
+        />
         {!state.modelAvailable ? (
           <Text className="text-sm text-foreground-muted">
             {agentUnavailableMessage(state.unavailableReason)}
           </Text>
         ) : null}
-        {shownPendingProposals > 0 ? (
+        {proposals.some((proposal) => proposal.status !== "rejected") ? (
           <View className="gap-2 py-2">
             <Text className="font-t3-semibold text-foreground">
               Memory proposals · {pendingProposals} pending
@@ -320,7 +331,7 @@ function D4AgentPanelContent({
               </Text>
             ) : null}
             {proposals
-              .filter((proposal) => proposal.status === "pending")
+              .filter((proposal) => proposal.status !== "rejected")
               .map((proposal) => (
                 <View key={proposal.id} className="gap-2 rounded border border-border p-2">
                   <Text className="text-xs text-foreground-muted">

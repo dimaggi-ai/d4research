@@ -92,7 +92,7 @@ export function guardNotice(
     case "unavailable":
       return { title: "Tool Guard did not answer, so this action waits for you.", tone: "warning" };
     case "flagged":
-      return { title: `Tool Guard flagged this action and let it run${rule}.`, tone: "info" };
+      return { title: `Tool Guard flagged this action${rule}.`, tone: "info" };
   }
 }
 

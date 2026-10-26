@@ -48,6 +48,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The fake HTTP server records exactly which CTO endpoints the service requests.
 import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
+import { DispatchModeLimit } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
@@ -158,6 +159,7 @@ const fixture = (
     const sends = yield* Ref.make<
       ReadonlyArray<Parameters<Threads.ThreadManagementService["Service"]["sendToThread"]>[0]>
     >([]);
+    const sendLimits = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
     const failStop = yield* Ref.make(false);
     const failCreate = yield* Ref.make(false);
     const failSend = yield* Ref.make(false);
@@ -283,6 +285,8 @@ const fixture = (
                 if (yield* Ref.get(failSend))
                   return yield* Effect.fail({ reason: "fixture send failure" } as never);
                 yield* Ref.update(sends, (all) => [...all, input]);
+                const limit = yield* DispatchModeLimit;
+                yield* Ref.update(sendLimits, (all) => [...all, limit?.runtimeMode]);
                 return {} as never;
               }),
             dispatch: (cmd) =>
@@ -408,6 +412,7 @@ const fixture = (
       monitorUpdates,
       guardVerdict,
       guardCalls,
+      sendLimits,
     };
   });
 
@@ -3179,6 +3184,8 @@ it.effect("Tool Guard lets act send to a full-access thread when no rule objects
     assert.equal(record.status, "executed");
     assert.equal(record.guard?.decision, "allowed");
     assert.equal((yield* Ref.get(f.sends)).length, 1);
+    // The orchestrator refuses a full-access target under an approval-required ceiling.
+    assert.deepEqual(yield* Ref.get(f.sendLimits), ["full-access"]);
     const [call] = yield* Ref.get(f.guardCalls);
     assert.equal(call?.envelope_id, record.id);
     assert.equal(call?.parameters.action_type, "send");

@@ -1824,8 +1824,10 @@ export const layer = Layer.effect(
     ) {
       const result = yield* Effect.result(
         execute(record).pipe(
+          // A guarded record was judged against its target's real mode, so it may reach
+          // full-access threads; the orchestrator still rechecks under the target lock.
           Effect.provideService(DispatchModeLimit, {
-            runtimeMode: "approval-required",
+            runtimeMode: record.guard === undefined ? "approval-required" : "full-access",
             interactionMode: "default",
           }),
         ),

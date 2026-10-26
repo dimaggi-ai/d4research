@@ -4,8 +4,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
-import { isLocalCtoHost } from "./cto/CtoClient.ts";
-
 // tg-proxy flattens parameters one level deep, so every value a policy matches must be a scalar.
 export type ToolGuardEnvelope = {
   readonly envelope_id: string;
@@ -37,6 +35,11 @@ const Response = Schema.Struct({
 const decodeResponse = Schema.decodeUnknownEffect(Response);
 
 // Any failure to get a verdict sends the action to a human instead of letting it run.
+// Loopback only: the envelope carries thread text, and an unauthenticated verdict from any other
+// host could approve actions.
+const isLoopback = (hostname: string) =>
+  hostname === "localhost" || hostname === "[::1]" || /^127(\.\d{1,3}){3}$/.test(hostname);
+
 const unavailable = (reason: string): D4AgentGuardVerdict => ({
   decision: "unavailable",
   rule: null,
@@ -46,8 +49,8 @@ const unavailable = (reason: string): D4AgentGuardVerdict => ({
 export const evaluateWithProxy = (url: string, envelope: ToolGuardEnvelope) =>
   Effect.gen(function* () {
     const base = yield* Effect.try({ try: () => new URL(url), catch: () => "invalid" as const });
-    if (base.protocol !== "http:" || !isLocalCtoHost(base.hostname))
-      return unavailable("Tool Guard URL must be a local http address.");
+    if (base.protocol !== "http:" || !isLoopback(base.hostname))
+      return unavailable("Tool Guard URL must be a loopback http address.");
     const client = yield* HttpClient.HttpClient;
     const response = yield* client.execute(
       HttpClientRequest.post(new URL("/evaluate", base).href).pipe(

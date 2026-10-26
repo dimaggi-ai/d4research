@@ -78,7 +78,13 @@ it.live(
   Effect.fnUntraced(function* () {
     const failing = yield* Effect.promise(() => fake(500, "{}"));
     const garbled = yield* Effect.promise(() => fake(200, '{"decision":"maybe"}'));
-    for (const url of [failing.url, garbled.url, "http://example.com:9191", "not a url"])
+    for (const url of [
+      failing.url,
+      garbled.url,
+      "http://example.com:9191",
+      "http://100.64.0.2:9191",
+      "not a url",
+    ])
       expect((yield* ToolGuard.evaluateWithProxy(url, envelope)).decision).toBe("unavailable");
   }),
 );

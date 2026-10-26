@@ -53,6 +53,7 @@ import { DesktopUpdateLaunchNotice } from "../components/sidebar/updateEverythin
 import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { SystemMonitorNotifications } from "../components/agent/SystemMonitorNotifications";
+import { NiaGuardNotifications } from "../components/agent/NiaGuardNotifications";
 import { ProjectSlotShortcuts } from "../components/ProjectSlotShortcuts";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
@@ -254,6 +255,7 @@ function RootRouteView() {
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
           <SystemMonitorNotifications />
+          <NiaGuardNotifications />
           <ReopenClosedViewShortcut />
           <ProjectSlotShortcuts />
           <ConfirmDialogHost />

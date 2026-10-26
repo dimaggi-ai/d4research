@@ -90,6 +90,10 @@ export const D4AgentSettings = Schema.Struct({
   diskWarningPercent: Schema.Int.check(Schema.isBetween({ minimum: 50, maximum: 99 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(90)),
   ),
+  // A local tg-proxy that judges each Nia action; null keeps the built-in approval rules.
+  toolGuardUrl: Schema.NullOr(Schema.String.check(Schema.isMaxLength(2048))).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
@@ -112,6 +116,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   quietHours: null,
   systemProbeEnabled: false,
   diskWarningPercent: 90,
+  toolGuardUrl: null,
 };
 
 export const D4AgentAction = Schema.Union([
@@ -177,12 +182,19 @@ export const D4AgentAction = Schema.Union([
   }),
 ]);
 export type D4AgentAction = typeof D4AgentAction.Type;
+export const D4AgentGuardVerdict = Schema.Struct({
+  decision: Schema.Literals(["allowed", "flagged", "escalated", "denied", "unavailable"]),
+  rule: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
+  reason: Schema.NullOr(Schema.String.check(Schema.isMaxLength(512))),
+});
+export type D4AgentGuardVerdict = typeof D4AgentGuardVerdict.Type;
 export const D4AgentActionRecord = Schema.Struct({
   context: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   sessionId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   result: Schema.optionalKey(Schema.Unknown),
   id: Schema.String,
   action: D4AgentAction,
+  guard: Schema.optionalKey(D4AgentGuardVerdict),
   status: Schema.Literals(["pending", "approved", "denied", "executed", "failed"]),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),
@@ -205,6 +217,7 @@ export const D4AgentActionSummary = Schema.Struct({
   targetId: Schema.String,
   preview: Schema.String.check(Schema.isMaxLength(256)),
   status: D4AgentActionRecord.fields.status,
+  guard: Schema.optionalKey(D4AgentGuardVerdict),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),
 });
@@ -346,6 +359,7 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "memory-unavailable",
     "cto-unreachable",
     "cto-response",
+    "guard-denied",
   ]),
   cause: Schema.optional(Schema.Defect()),
 }) {
@@ -356,6 +370,8 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     if (this.reason === "stale")
       return "Nia's context or session changed after you wrote this message. Check it, then send again.";
     if (this.reason === "client-outdated") return "Update this app to send messages to Nia.";
+    if (this.reason === "guard-denied")
+      return "Tool Guard blocked this action and the user can see it. Do not retry it in other words.";
     return `Nia: ${this.reason}.`;
   }
 }

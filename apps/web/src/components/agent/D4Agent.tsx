@@ -10,6 +10,7 @@ import {
   agentUnavailableMessage,
   projectBelongsToAgentContext,
   actionHeading,
+  guardNotice,
   agentActivityLabel,
   agentWatchLabel,
   niaPresence,
@@ -532,6 +533,7 @@ function AgentActionRecord({
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
   const heading = actionHeading(record);
+  const guard = guardNotice(record.guard);
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
     detail.data &&
@@ -546,6 +548,7 @@ function AgentActionRecord({
       {heading.detail ? (
         <p className="whitespace-pre-wrap break-words text-muted-foreground">{heading.detail}</p>
       ) : null}
+      {guard ? <p className="text-xs text-muted-foreground">{guard.title}</p> : null}
       {pendingSwitch ? null : (
         <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
           {reviewing ? "Hide action details" : "Review action"}

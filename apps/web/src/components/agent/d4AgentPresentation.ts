@@ -78,6 +78,24 @@ export function actionHeading(
     : { title: `${record.type} · ${record.targetId}`, detail: record.preview };
 }
 
+/** Tool Guard's verdict on an action, or null when no notice is due. */
+export function guardNotice(
+  guard: D4AgentActionSummary["guard"],
+): { title: string; tone: "warning" | "info" } | null {
+  if (guard === undefined || guard.decision === "allowed") return null;
+  const rule = guard.rule ? ` (${guard.rule})` : "";
+  switch (guard.decision) {
+    case "denied":
+      return { title: `Tool Guard blocked this action${rule}.`, tone: "warning" };
+    case "escalated":
+      return { title: `Tool Guard holds this action for you${rule}.`, tone: "warning" };
+    case "unavailable":
+      return { title: "Tool Guard did not answer, so this action waits for you.", tone: "warning" };
+    case "flagged":
+      return { title: `Tool Guard flagged this action and let it run${rule}.`, tone: "info" };
+  }
+}
+
 /** What Nia is doing now, from its own thread's run state. */
 export function agentActivityLabel(input: {
   runtime: ThreadRuntimeSummary | null;

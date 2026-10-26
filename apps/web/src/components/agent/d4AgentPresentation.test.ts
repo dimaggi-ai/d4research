@@ -7,6 +7,7 @@ import {
   projectBelongsToAgentContext,
   brainIndexStatus,
   actionHeading,
+  guardNotice,
   agentActivityLabel,
   agentWatchLabel,
 } from "./d4AgentPresentation";
@@ -128,4 +129,15 @@ it("says whether Nia checks threads on its own", () => {
     off: false,
   });
   expect(agentWatchLabel({ heartbeatMinutes: 15, monitorEnabled: false }).off).toBe(true);
+});
+
+it("names Tool Guard verdicts that need the user's attention", () => {
+  expect(guardNotice(undefined)).toBeNull();
+  expect(guardNotice({ decision: "allowed", rule: null, reason: null })).toBeNull();
+  expect(guardNotice({ decision: "denied", rule: "nia-deny-send", reason: null })).toEqual({
+    title: "Tool Guard blocked this action (nia-deny-send).",
+    tone: "warning",
+  });
+  expect(guardNotice({ decision: "unavailable", rule: null, reason: null })?.tone).toBe("warning");
+  expect(guardNotice({ decision: "flagged", rule: null, reason: null })?.tone).toBe("info");
 });

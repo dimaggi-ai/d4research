@@ -65,6 +65,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as D4AgentAccess from "./D4AgentAccess.ts";
 import * as D4AgentStore from "./D4AgentStore.ts";
 import * as SystemProbe from "./SystemProbe.ts";
+import * as ToolGuard from "./ToolGuardGate.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -238,7 +239,7 @@ export function actionSummaries(
     ...actions.filter((a) => a.status !== "pending").slice(-20),
   ]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map(({ id, action, status, createdAt, resolvedAt }) => ({
+    .map(({ id, action, guard, status, createdAt, resolvedAt }) => ({
       id,
       type: action.type,
       targetId: actionTarget(action),
@@ -251,6 +252,7 @@ export function actionSummaries(
             : ""
       ).slice(0, 256),
       status,
+      ...(guard === undefined ? {} : { guard }),
       createdAt,
       resolvedAt,
     }));
@@ -319,6 +321,10 @@ export const layer = Layer.effect(
         brainDiagnostic ?? { category: "unavailable" },
       );
     const cto = createCtoClient();
+    const guardGate = Option.getOrElse(
+      yield* Effect.serviceOption(ToolGuard.ToolGuardGate),
+      () => ToolGuard.proxyGate,
+    );
     const lock = yield* Semaphore.make(1);
     const healthLock = yield* Semaphore.make(1);
     const usageLock = yield* Semaphore.make(1);
@@ -1493,7 +1499,8 @@ export const layer = Layer.effect(
       if (
         target === null ||
         target.deletedAt !== null ||
-        target.runtimeMode !== "approval-required" ||
+        // Full-access threads run whatever they are told, so only a Tool Guard verdict may reach them.
+        (target.runtimeMode !== "approval-required" && config.toolGuardUrl === null) ||
         target.projectId === state.projectId ||
         !projectActionInScope(state.brainContext, config, target.projectId)
       )
@@ -1893,7 +1900,73 @@ export const layer = Layer.effect(
               : undefined;
           if (state.actions.filter((entry) => entry.status === "pending").length >= 50)
             return yield* new D4AgentError({ reason: "busy" });
-          const automatic = !requiresActionApproval(config.permissionMode, action);
+          const id = yield* randomUUID;
+          const guarded = action;
+          const guard =
+            config.toolGuardUrl === null
+              ? undefined
+              : yield* guardGate.evaluate(config.toolGuardUrl, {
+                  envelope_id: id,
+                  agent_id: "nia",
+                  session_id: state.threadId ?? "nia",
+                  org_id: "d4research",
+                  tool_name: "d4_agent_action",
+                  tool_group: "d4_agent",
+                  parameters: {
+                    action_type: guarded.type,
+                    permission_mode: config.permissionMode,
+                    context: state.brainContext,
+                    // Heartbeat turns have no user words, so what Nia starts there is its own idea.
+                    user_initiated: (yield* currentUserText) !== undefined,
+                    ...("threadId" in guarded && guarded.threadId !== undefined
+                      ? {
+                          thread_id: guarded.threadId,
+                          target_runtime_mode:
+                            (yield* threads
+                              .getThreadShell(guarded.threadId)
+                              .pipe(Effect.mapError(threadError)))?.runtimeMode ?? "unknown",
+                        }
+                      : {}),
+                    ...("projectId" in guarded && guarded.projectId !== undefined
+                      ? { project_id: guarded.projectId }
+                      : {}),
+                    ...("text" in guarded ? { text: guarded.text } : {}),
+                    ...(guarded.type === "answer"
+                      ? { answers_text: Object.values(guarded.answers).flat().join("\n") }
+                      : {}),
+                  },
+                });
+          if (guard?.decision === "denied") {
+            const resolvedAt = DateTime.formatIso(yield* DateTime.now);
+            const refused: D4AgentActionRecord = {
+              context: state.brainContext,
+              sessionId: state.threadId,
+              id,
+              action,
+              guard,
+              status: "denied",
+              createdAt: resolvedAt,
+              resolvedAt,
+            };
+            yield* store.update((value) => ({
+              ...value,
+              actions: [
+                ...value.actions.filter((entry) => entry.status === "pending"),
+                ...value.actions.filter((entry) => entry.status !== "pending").slice(-199),
+                refused,
+              ],
+            }));
+            return yield* new D4AgentError({ reason: "guard-denied" });
+          }
+          const held =
+            guard === undefined
+              ? requiresActionApproval(config.permissionMode, action)
+              : config.permissionMode !== "act" ||
+                // A context switch moves the user's words into another context, so it stays human-only.
+                action.type === "switch-context" ||
+                guard.decision === "escalated" ||
+                guard.decision === "unavailable";
+          const automatic = !held;
           const at = yield* Clock.currentTimeMillis;
           let automaticBudget: { scope: string; target: string; at: number } | undefined;
           if (automatic) {
@@ -1922,10 +1995,11 @@ export const layer = Layer.effect(
           const record: D4AgentActionRecord = {
             context: state.brainContext,
             sessionId: state.threadId,
-            id: yield* randomUUID,
+            id,
             action,
             ...(prepared === undefined ? {} : { result: prepared }),
-            status: requiresActionApproval(config.permissionMode, action) ? "pending" : "approved",
+            ...(guard === undefined ? {} : { guard }),
+            status: held ? "pending" : "approved",
             createdAt: DateTime.formatIso(yield* DateTime.now),
             resolvedAt: null,
           };

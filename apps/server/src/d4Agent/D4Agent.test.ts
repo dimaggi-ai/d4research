@@ -22,6 +22,7 @@ import {
   RuntimeRequestId,
   ThreadId,
   type AgentMonitorUpdate,
+  type D4AgentGuardVerdict,
   type D4AgentSettings,
   type D4AgentSystemCheck,
   type OrchestrationV2ThreadProjection,
@@ -47,6 +48,7 @@ import { sha256Hex } from "@d4research/shared/hash";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The fake HTTP server records exactly which CTO endpoints the service requests.
 import * as NodeHttp from "node:http";
 import * as Probe from "./SystemProbe.ts";
+import * as ToolGuard from "./ToolGuardGate.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
@@ -145,6 +147,12 @@ const fixture = (
       },
     ]);
     const monitorUpdates = yield* Ref.make<ReadonlyArray<AgentMonitorUpdate>>([]);
+    const guardVerdict = yield* Ref.make<D4AgentGuardVerdict>({
+      decision: "allowed",
+      rule: null,
+      reason: null,
+    });
+    const guardCalls = yield* Ref.make<ReadonlyArray<ToolGuard.ToolGuardEnvelope>>([]);
     const agentShell = yield* Ref.make<OrchestrationV2ThreadShell | null>(null);
     const shells = yield* Ref.make<ReadonlyArray<OrchestrationV2ThreadShell>>([target]);
     const sends = yield* Ref.make<
@@ -349,6 +357,12 @@ const fixture = (
               })
             : Layer.succeed(Projects.ProjectService, projectService),
           Layer.mock(Monitor.AgentMonitorReactor)({ snapshot: Ref.get(monitorUpdates) }),
+          Layer.succeed(ToolGuard.ToolGuardGate, {
+            evaluate: (_url, envelope) =>
+              Ref.update(guardCalls, (all) => [...all, envelope]).pipe(
+                Effect.andThen(Ref.get(guardVerdict)),
+              ),
+          }),
         ),
       ),
     );
@@ -392,6 +406,8 @@ const fixture = (
       relevantEvents,
       changedThreads,
       monitorUpdates,
+      guardVerdict,
+      guardCalls,
     };
   });
 
@@ -3134,3 +3150,98 @@ it("per-session caches drop every thread whose session closed", () => {
   assert.deepEqual([...display.keys()], ["open"]);
   assert.equal(usage.size, 0);
 });
+
+const guardedFixture = (mode: D4AgentSettings["permissionMode"] = "act") =>
+  Effect.gen(function* () {
+    const f = yield* fixture(mode, true, undefined, "/isolated/d4-agent", true, {
+      toolGuardUrl: "http://127.0.0.1:9191",
+    });
+    const agentId = ThreadId.make("agent");
+    yield* Ref.set(f.agentShell, { ...target, id: agentId, activeRunId: RunId.make("agent-run") });
+    yield* Ref.update(f.state, (s) => ({
+      ...s,
+      threadId: agentId,
+      projectId: ProjectId.make("agent-project"),
+      identityReady: true,
+    }));
+    yield* Ref.set(f.shells, [{ ...target, runtimeMode: "full-access" }]);
+    return f;
+  });
+
+it.effect("Tool Guard lets act send to a full-access thread when no rule objects", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Rebase on main",
+    });
+    assert.equal(record.status, "executed");
+    assert.equal(record.guard?.decision, "allowed");
+    assert.equal((yield* Ref.get(f.sends)).length, 1);
+    const [call] = yield* Ref.get(f.guardCalls);
+    assert.equal(call?.envelope_id, record.id);
+    assert.equal(call?.parameters.action_type, "send");
+    assert.equal(call?.parameters.target_runtime_mode, "full-access");
+    assert.equal(call?.parameters.text, "Rebase on main");
+  }),
+);
+
+it.effect("Tool Guard denial refuses the action and records why", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    yield* Ref.set(f.guardVerdict, {
+      decision: "denied",
+      rule: "nia-deny-dangerous-send",
+      reason: "Denied by: [nia-deny-dangerous-send]",
+    });
+    const result = yield* Effect.result(
+      f.service.requestAction({ type: "send", threadId: targetId, text: "sudo rm -rf /" }),
+    );
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "guard-denied");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    const [stored] = (yield* Ref.get(f.state)).actions;
+    assert.equal(stored?.status, "denied");
+    assert.equal(stored?.guard?.rule, "nia-deny-dangerous-send");
+    assert.deepEqual((yield* Ref.get(f.state)).automaticActions, []);
+  }),
+);
+
+it.effect("Tool Guard escalation or silence holds the action for the user", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    for (const decision of ["escalated", "unavailable"] as const) {
+      yield* Ref.set(f.guardVerdict, { decision, rule: null, reason: null });
+      const record = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
+      assert.equal(record.status, "pending");
+      assert.equal(record.guard?.decision, decision);
+    }
+    assert.deepEqual(yield* Ref.get(f.dispatches), []);
+    const [first] = (yield* Ref.get(f.state)).actions;
+    yield* f.service.resolveAction({ actionId: first!.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.dispatches), ["interrupt"]);
+  }),
+);
+
+it.effect("ask mode holds even actions Tool Guard allows", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture("ask");
+    const record = yield* f.service.requestAction({ type: "interrupt", threadId: targetId });
+    assert.equal(record.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.dispatches), []);
+  }),
+);
+
+it.effect("without Tool Guard, full-access threads stay out of reach", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    yield* Ref.set(f.shells, [{ ...target, runtimeMode: "full-access" }]);
+    const result = yield* Effect.result(
+      f.service.requestAction({ type: "interrupt", threadId: targetId }),
+    );
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") assert.equal(result.failure.reason, "action-unavailable");
+    assert.deepEqual(yield* Ref.get(f.guardCalls), []);
+  }),
+);

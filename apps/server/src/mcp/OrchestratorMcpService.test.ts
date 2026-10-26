@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
   EnvironmentId,
+  GitCommandError,
   NodeId,
   type OrchestrationV2ThreadShell,
   type ScheduledTask,
@@ -18,6 +19,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import {
@@ -2136,6 +2138,79 @@ describe("OrchestratorMcpService provider resolution", () => {
         assert.equal(updated.scheduledTaskId, bound.id);
         assert.equal(updated.webhookUrl, undefined);
       }),
+    );
+
+    it.effect(
+      "runs an unbound task in the project root when the project is not a Git checkout",
+      () =>
+        Effect.gen(function* () {
+          const bound = task({ threadId: boundThreadId });
+          const unbind = (isGit: boolean) =>
+            Effect.gen(function* () {
+              const saved = yield* Ref.make<ScheduledTask["workspaceStrategy"] | null>(null);
+              const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+                Effect.provide(
+                  OrchestratorMcpService.layer.pipe(
+                    Layer.provide(
+                      Layer.mergeAll(
+                        NodeServices.layer,
+                        Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+                        Layer.mock(GitVcsDriver.GitVcsDriver)({
+                          resolveCommit: (input) =>
+                            isGit
+                              ? Effect.succeed({ commitSha: "abc123" } as never)
+                              : Effect.fail(
+                                  new GitCommandError({
+                                    operation: "resolveCommit",
+                                    command: "git rev-parse",
+                                    cwd: input.cwd,
+                                    detail: "not a git repository",
+                                  }),
+                                ),
+                        }),
+                        Layer.mock(ThreadManagementService.ThreadManagementService)({
+                          getThreadShell: (threadId) =>
+                            Effect.succeed(
+                              liveThreadShell(threadId, { runtimeMode: "approval-required" }),
+                            ),
+                        }),
+                        ServerSettings.layerTest(),
+                        Layer.mock(ProviderRegistry.ProviderRegistry)({
+                          getProviders: Effect.succeed([]),
+                        }),
+                        Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                          list: () => Effect.succeed([]),
+                        }),
+                        Layer.mock(ProjectService.ProjectService)({
+                          getById: () =>
+                            Effect.succeed(Option.some({ workspaceRoot: "/home/user" } as never)),
+                        }),
+                        Layer.mock(SecretRequests.SecretRequests)({}),
+                        Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                          list: () => Effect.succeed({ tasks: [bound] }),
+                          upsert: (input) =>
+                            Ref.set(saved, input.workspaceStrategy).pipe(
+                              Effect.as({ task: bound }),
+                            ),
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+              yield* mcp.updateScheduledTask(supervisedClient, {
+                scheduledTaskId: bound.id,
+                bindToCurrentThread: false,
+              });
+              return yield* Ref.get(saved);
+            });
+          assert.deepEqual(yield* unbind(false), { type: "root" });
+          assert.deepEqual(yield* unbind(true), {
+            type: "worktree",
+            baseRef: "main",
+            startFromOrigin: true,
+          });
+        }),
     );
   });
 

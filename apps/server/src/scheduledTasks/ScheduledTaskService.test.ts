@@ -3,7 +3,8 @@ import * as NodeUtil from "node:util";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
-import { ScheduledTaskError } from "@d4research/contracts";
+import { ScheduledTaskError, ScheduledTaskId } from "@d4research/contracts";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -320,4 +321,41 @@ it.effect(
         }),
       );
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("runs a bound task on its thread's current provider", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const now = "2026-09-09T12:00:00.000Z";
+    yield* insertRow(sql, { id: "bound", next: null, enabled: 1, status: "never" }, now);
+    yield* sql`UPDATE scheduled_tasks SET thread_id = 'thread:bound' WHERE task_id = 'bound'`;
+    yield* TestClock.setTime(Date.parse(now));
+    const sent = yield* Deferred.make<ThreadManagementService.ThreadManagementSendInput>();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const context = yield* Layer.build(
+          Layer.provideMerge(
+            ScheduledTaskService.layer,
+            Layer.mergeAll(
+              Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+              Layer.mock(ThreadManagementService.ThreadManagementService)({
+                sendToThread: (input) =>
+                  Deferred.succeed(sent, input).pipe(
+                    Effect.andThen(Effect.die(new Error("stop after capture"))),
+                  ),
+              }),
+              Layer.mock(SecretRequests.SecretRequests)({}),
+              NodeCrypto.layer,
+              Scheduler.layer,
+            ),
+          ),
+        );
+        const service = Context.get(context, ScheduledTaskService.ScheduledTaskService);
+        yield* service.runNow({ id: ScheduledTaskId.make("bound") });
+        const input = yield* Deferred.await(sent);
+        assert.equal(input.threadId, "thread:bound");
+        assert.equal(input.modelSelection, undefined);
+      }),
+    );
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

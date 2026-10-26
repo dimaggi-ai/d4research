@@ -769,7 +769,9 @@ export const layer = Layer.effect(
                   scheduledTaskId: active.id,
                   text: prompt,
                   attachments: [],
-                  modelSelection: active.modelSelection,
+                  // A bound run joins the thread on its current provider. Sending
+                  // the task's saved model would hand the whole thread off to
+                  // another provider, which fails for long threads.
                   mode: "queue",
                   createdBy: active.createdBy,
                   creationSource: active.creationSource,

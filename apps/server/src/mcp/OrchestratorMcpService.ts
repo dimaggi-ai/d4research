@@ -250,14 +250,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function scheduledTaskWorkspaceStrategy(
-  boundToThread: boolean,
-): ScheduledTask["workspaceStrategy"] {
-  return boundToThread
-    ? { type: "root" }
-    : { type: "worktree", baseRef: "main", startFromOrigin: true };
-}
-
 function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): OrchestratorMcpScheduledTask {
   return {
     scheduledTaskId: task.id,
@@ -918,6 +910,23 @@ const make = Effect.gen(function* () {
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+
+  // Unbound runs get their own worktree, which needs a Git checkout. A project
+  // outside Git can only run in its root folder.
+  const scheduledTaskWorkspaceStrategy = (
+    boundToThread: boolean,
+    workspaceRoot: string,
+  ): Effect.Effect<ScheduledTask["workspaceStrategy"]> =>
+    boundToThread
+      ? Effect.succeed({ type: "root" })
+      : gitDriver.resolveCommit({ cwd: workspaceRoot, revision: "HEAD" }).pipe(
+          Effect.as<ScheduledTask["workspaceStrategy"]>({
+            type: "worktree",
+            baseRef: "main",
+            startFromOrigin: true,
+          }),
+          Effect.orElseSucceed((): ScheduledTask["workspaceStrategy"] => ({ type: "root" })),
+        );
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1656,7 +1665,10 @@ const make = Effect.gen(function* () {
           schedule: input.schedule,
           projectId,
           threadId: bindToCurrentThread && parent !== undefined ? parent.thread.id : null,
-          workspaceStrategy: scheduledTaskWorkspaceStrategy(bindToCurrentThread),
+          workspaceStrategy: yield* scheduledTaskWorkspaceStrategy(
+            bindToCurrentThread,
+            project.workspaceRoot,
+          ),
           modelSelection,
           runtimeMode: limits.runtimeMode,
           interactionMode: limits.interactionMode,
@@ -1729,7 +1741,10 @@ const make = Effect.gen(function* () {
         const workspaceStrategy =
           input.bindToCurrentThread === undefined
             ? existing.workspaceStrategy
-            : scheduledTaskWorkspaceStrategy(input.bindToCurrentThread);
+            : yield* scheduledTaskWorkspaceStrategy(
+                input.bindToCurrentThread,
+                (yield* requireProject(existing.projectId)).workspaceRoot,
+              );
         const upsertInput: ScheduledTaskUpsertInput = {
           id: existing.id,
           title: input.title ?? existing.title,

@@ -9,6 +9,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { D4AgentEntry, D4AgentHomeHeader, D4AgentPanel } from "./D4Agent";
+import { D4AgentSessions } from "./D4AgentSessions";
 import * as Cause from "effect/Cause";
 import {
   D4AgentError,
@@ -728,7 +729,7 @@ it("keeps one visible transcript across isolated context routes and hides provid
   expect(container.textContent).not.toContain("Private YB provider history");
 });
 
-it("shows session usage and closes only the selected context after an explicit click", async () => {
+it("keeps open sessions out of the chat panel", async () => {
   mocks.state = {
     ...mocks.state!,
     openSessions: [
@@ -743,6 +744,29 @@ it("shows session usage and closes only the selected context after an explicit c
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("New session");
+  expect(container.textContent).not.toContain("Open sessions");
+});
+
+it("settings show session usage and close only the selected context after an explicit click", async () => {
+  await act(() =>
+    root.render(
+      <D4AgentSessions
+        environmentId={environmentId}
+        sessions={[
+          {
+            context: "YB",
+            threadId,
+            providerSessionId: "native-yb",
+            lastActivityAt: "2026-10-24T12:00:00.000Z",
+            inputTokens: 1234,
+            contextWindow: 200000,
+          },
+        ]}
+        refresh={mocks.refresh}
+      />,
+    ),
+  );
   expect(container.textContent).toContain("Open sessions · 1/4");
   expect(mocks.closeSession).not.toHaveBeenCalled();
   await act(async () =>

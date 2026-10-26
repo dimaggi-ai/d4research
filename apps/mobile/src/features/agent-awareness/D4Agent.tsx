@@ -1,4 +1,3 @@
-import { D4AgentSessions } from "./D4AgentSessions";
 import * as Clipboard from "expo-clipboard";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
@@ -334,11 +333,6 @@ function D4AgentPanelContent({
                 />
               ))
           : null}
-        <D4AgentSessions
-          environmentId={environmentId}
-          sessions={state.openSessions ?? []}
-          refresh={query.refresh}
-        />
         {!state.modelAvailable ? (
           <Text className="text-sm text-foreground-muted">
             {agentUnavailableMessage(state.unavailableReason)}

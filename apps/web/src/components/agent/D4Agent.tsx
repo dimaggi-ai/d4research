@@ -1,4 +1,3 @@
-import { D4AgentSessions } from "./D4AgentSessions";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
 import { environmentThreadShells } from "../../state/threads";
@@ -270,11 +269,6 @@ function D4AgentPanelContent({
           {startingSession ? "Starting session…" : "New session"}
         </Button>
         {switching ? <span role="status">Switching context…</span> : null}
-        <D4AgentSessions
-          environmentId={environmentId}
-          sessions={state.openSessions ?? []}
-          refresh={query.refresh}
-        />
         {(state.reminders ?? []).length > 0 ? (
           <details className="relative">
             <summary className="cursor-pointer text-muted-foreground">

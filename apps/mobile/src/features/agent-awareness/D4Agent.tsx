@@ -5,13 +5,7 @@ import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/serv
 import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useD4AgentState } from "./useD4AgentState";
-import {
-  systemCheckLabel,
-  systemCheckStatus,
-  agentUnavailableMessage,
-  projectBelongsToAgentContext,
-  actionHeading,
-} from "./d4AgentPresentation";
+import { agentUnavailableMessage, actionHeading } from "./d4AgentPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import {
@@ -22,13 +16,8 @@ import {
 } from "@d4research/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { Pressable, View, ScrollView, Modal, TextInput } from "react-native";
-import {
-  agentMonitorLabel,
-  monitorAttentionThreads,
-  AGENT_MONITOR_LIST_LIMIT,
-} from "@d4research/client-runtime/state/agent-monitor";
 import { AppText as Text } from "../../components/ui/AppText";
-import { useThreadShells, useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -165,7 +154,6 @@ function D4AgentPanelContent({
   threadId: ThreadId;
 }) {
   const query = useD4AgentState(environmentId);
-  const config = useEnvironmentServerConfig(environmentId);
   const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
   const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
   const canStartSession = useAtomValue(
@@ -181,13 +169,11 @@ function D4AgentPanelContent({
   );
   const [choosingContext, setChoosingContext] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const threads = useThreadShells();
   const linkTo = useLinkTo();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
     serverEnvironment.resolveD4AgentAction.permissionAtom(environmentId),
   );
-  const monitorEnabled = config?.settings.agentMonitor.enabled === true;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -200,21 +186,6 @@ function D4AgentPanelContent({
     (proposal) => proposal.status === "pending",
   ).length;
   const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
-  const attention = monitorEnabled
-    ? monitorAttentionThreads(
-        threads.filter(
-          (thread) =>
-            thread.environmentId === environmentId &&
-            thread.archivedAt === null &&
-            thread.deletedAt === null &&
-            projectBelongsToAgentContext(
-              thread.projectId,
-              state.brainContext,
-              config?.settings.d4Agent.projectContexts ?? {},
-            ),
-        ),
-      )
-    : [];
   return (
     <View className="max-h-64 border-b border-border bg-surface">
       <Modal
@@ -271,107 +242,74 @@ function D4AgentPanelContent({
           </Pressable>
         </View>
       </Modal>
-      <ScrollView contentContainerClassName="gap-2 px-4 py-3">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Agent context"
-          accessibilityState={{ disabled: !canSwitch || switching || startingSession }}
-          disabled={!canSwitch || switching || startingSession}
-          className="self-start rounded-full border border-border px-3 py-2"
-          onPress={() => setChoosingContext(true)}
-        >
-          <Text className="text-sm text-accent">
-            {switching ? "Switching context…" : `Context · ${state.brainContext}`}
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !canStartSession || switching || startingSession }}
-          disabled={!canStartSession || switching || startingSession}
-          className="self-start rounded-full border border-border px-3 py-2"
-          onPress={async () => {
-            setStartingSession(true);
-            setActionError(null);
-            await newSession({ environmentId, input: {} })
-              .then(async (result) => {
-                if (
-                  result._tag === "Failure" ||
-                  !(await waitForAgentThread(environmentId, result.value.threadId))
-                )
-                  setActionError("Could not start a new session.");
-                else
-                  linkTo(
-                    `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
-                  );
-              })
-              .catch(() => setActionError("Could not start a new session."))
-              .finally(() => setStartingSession(false));
-          }}
-        >
-          <Text className="text-sm text-accent">
-            {startingSession ? "Starting session…" : "New session"}
-          </Text>
-        </Pressable>
-        <D4AgentSessions
-          environmentId={environmentId}
-          sessions={state.openSessions ?? []}
-          refresh={query.refresh}
-        />
-        {state.sessionChangeReason ? (
-          <Text
-            accessibilityRole="text"
-            className="border-b border-border pb-2 text-xs text-foreground-muted"
+      <ScrollView contentContainerClassName="gap-2 px-4 py-2">
+        <View className="flex-row flex-wrap items-center gap-2">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Agent context"
+            accessibilityState={{ disabled: !canSwitch || switching || startingSession }}
+            disabled={!canSwitch || switching || startingSession}
+            className="self-start rounded-full border border-border px-3 py-2"
+            onPress={() => setChoosingContext(true)}
           >
-            {state.sessionChangeReason === "resumed"
-              ? `Resumed ${state.brainContext} session.`
-              : state.sessionChangeReason === "size"
-                ? "Session size budget reached. New session."
-                : state.sessionChangeReason === "new-session"
-                  ? "New session."
-                  : `Context changed to ${state.brainContext}. New session.`}
-          </Text>
-        ) : null}
-        <View className="flex-row items-center justify-between">
-          <Text className="font-t3-semibold text-foreground">
-            Needs attention · {attention.length}
-          </Text>
-          <Pressable accessibilityRole="button" onPress={query.refresh}>
-            <Text className="text-accent">Refresh</Text>
+            <Text className="text-sm text-accent">
+              {switching ? "Switching context…" : `Context · ${state.brainContext}`}
+            </Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canStartSession || switching || startingSession }}
+            disabled={!canStartSession || switching || startingSession}
+            className="self-start rounded-full border border-border px-3 py-2"
+            onPress={async () => {
+              setStartingSession(true);
+              setActionError(null);
+              await newSession({ environmentId, input: {} })
+                .then(async (result) => {
+                  if (
+                    result._tag === "Failure" ||
+                    !(await waitForAgentThread(environmentId, result.value.threadId))
+                  )
+                    setActionError("Could not start a new session.");
+                  else
+                    linkTo(
+                      `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
+                    );
+                })
+                .catch(() => setActionError("Could not start a new session."))
+                .finally(() => setStartingSession(false));
+            }}
+          >
+            <Text className="text-sm text-accent">
+              {startingSession ? "Starting session…" : "New session"}
+            </Text>
+          </Pressable>
+          {(state.openSessions ?? []).length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded }}
+              className="self-start rounded-full border border-border px-3 py-2"
+              onPress={() => setExpanded(!expanded)}
+            >
+              <Text className="text-sm text-accent">
+                Sessions · {(state.openSessions ?? []).length}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
+        {expanded ? (
+          <D4AgentSessions
+            environmentId={environmentId}
+            sessions={state.openSessions ?? []}
+            refresh={query.refresh}
+          />
+        ) : null}
         {!state.modelAvailable ? (
           <Text className="text-sm text-foreground-muted">
             {agentUnavailableMessage(state.unavailableReason)}
           </Text>
         ) : null}
-        {attention.length === 0 ? (
-          <Text className="text-sm text-foreground-muted">No threads need attention.</Text>
-        ) : (
-          attention.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
-            <Pressable
-              key={thread.id}
-              accessibilityRole="button"
-              onPress={() =>
-                linkTo(
-                  `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(thread.id)}`,
-                )
-              }
-            >
-              <Text className="text-sm text-accent">
-                {thread.title} · {agentMonitorLabel(thread.source.agentMonitor!)}
-              </Text>
-            </Pressable>
-          ))
-        )}
-        {state.systemHealth.map((check) => (
-          <Text key={check.id} className="text-sm text-foreground-muted">
-            {systemCheckLabel(check)}: {systemCheckStatus(check)}
-          </Text>
-        ))}
-        {state.ctoAskInFlight ? (
-          <Text className="text-sm text-foreground-muted">CTO question in progress.</Text>
-        ) : null}
-        {proposals.length > 0 ? (
+        {shownPendingProposals > 0 ? (
           <View className="gap-2 py-2">
             <Text className="font-t3-semibold text-foreground">
               Memory proposals · {pendingProposals} pending
@@ -381,59 +319,61 @@ function D4AgentPanelContent({
                 Showing the oldest {shownPendingProposals}. Review them to see the rest.
               </Text>
             ) : null}
-            {proposals.map((proposal) => (
-              <View key={proposal.id} className="gap-2 rounded border border-border p-2">
-                <Text className="text-xs text-foreground-muted">
-                  {proposal.context} · {proposal.createdAt ?? "Creation time unavailable"} ·{" "}
-                  {proposal.status}
-                </Text>
-                <Text selectable className="text-sm text-foreground">
-                  {proposal.text}
-                </Text>
-                {proposal.status === "pending" ? (
-                  <View className="flex-row gap-4">
-                    {[true, false].map((approve) => (
-                      <Pressable
-                        key={String(approve)}
-                        accessibilityRole="button"
-                        accessibilityState={{ disabled: !canResolveProposal || busy }}
-                        disabled={!canResolveProposal || busy}
-                        onPress={async () => {
-                          setBusy(true);
-                          setActionError(null);
-                          await resolveProposal({
-                            environmentId,
-                            input: { proposalId: proposal.id, approve },
-                          })
-                            .then((result) => {
-                              if (result._tag === "Failure")
-                                setActionError("Could not review this memory proposal.");
-                              query.refresh();
+            {proposals
+              .filter((proposal) => proposal.status === "pending")
+              .map((proposal) => (
+                <View key={proposal.id} className="gap-2 rounded border border-border p-2">
+                  <Text className="text-xs text-foreground-muted">
+                    {proposal.context} · {proposal.createdAt ?? "Creation time unavailable"} ·{" "}
+                    {proposal.status}
+                  </Text>
+                  <Text selectable className="text-sm text-foreground">
+                    {proposal.text}
+                  </Text>
+                  {proposal.status === "pending" ? (
+                    <View className="flex-row gap-4">
+                      {[true, false].map((approve) => (
+                        <Pressable
+                          key={String(approve)}
+                          accessibilityRole="button"
+                          accessibilityState={{ disabled: !canResolveProposal || busy }}
+                          disabled={!canResolveProposal || busy}
+                          onPress={async () => {
+                            setBusy(true);
+                            setActionError(null);
+                            await resolveProposal({
+                              environmentId,
+                              input: { proposalId: proposal.id, approve },
                             })
-                            .catch(() => setActionError("Could not review this memory proposal."))
-                            .finally(() => setBusy(false));
-                        }}
-                      >
-                        <Text className="text-accent">{approve ? "Approve" : "Reject"}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : proposal.status === "approved" ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      void Clipboard.setStringAsync(proposal.text).catch(() =>
-                        setActionError(
-                          "Could not copy this memory proposal. Select the text to copy it.",
-                        ),
-                      );
-                    }}
-                  >
-                    <Text className="text-accent">Copy text</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ))}
+                              .then((result) => {
+                                if (result._tag === "Failure")
+                                  setActionError("Could not review this memory proposal.");
+                                query.refresh();
+                              })
+                              .catch(() => setActionError("Could not review this memory proposal."))
+                              .finally(() => setBusy(false));
+                          }}
+                        >
+                          <Text className="text-accent">{approve ? "Approve" : "Reject"}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : proposal.status === "approved" ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        void Clipboard.setStringAsync(proposal.text).catch(() =>
+                          setActionError(
+                            "Could not copy this memory proposal. Select the text to copy it.",
+                          ),
+                        );
+                      }}
+                    >
+                      <Text className="text-accent">Copy text</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
           </View>
         ) : null}
         {(state.otherContextProposalCounts ?? []).map(({ context, count }) => (
@@ -466,32 +406,6 @@ function D4AgentPanelContent({
               }}
             />
           ))}
-        {state.actionLog.length > 0 ? (
-          <>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded }}
-              onPress={() => setExpanded(!expanded)}
-            >
-              <Text className="text-sm text-accent">Action log · {state.actionLog.length}</Text>
-            </Pressable>
-            {expanded
-              ? state.actionLog
-                  .filter((record) => record.status !== "pending")
-                  .slice(0, 20)
-                  .map((record) => (
-                    <AgentActionRecord
-                      key={record.id}
-                      environmentId={environmentId}
-                      record={record}
-                      allowed={allowed}
-                      busy={busy}
-                      onResolve={async () => undefined}
-                    />
-                  ))
-              : null}
-          </>
-        ) : null}
         {query.error ? <Text accessibilityRole="alert">{query.error}</Text> : null}
         {actionError ? <Text accessibilityRole="alert">{actionError}</Text> : null}
       </ScrollView>

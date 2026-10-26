@@ -5,10 +5,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
-  systemCheckLabel,
-  systemCheckStatus,
   agentUnavailableMessage,
-  projectBelongsToAgentContext,
   actionHeading,
   guardNotice,
   agentActivityLabel,
@@ -23,21 +20,15 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import {
-  agentMonitorLabel,
-  monitorAttentionThreads,
-  AGENT_MONITOR_LIST_LIMIT,
-} from "@d4research/client-runtime/state/agent-monitor";
 import { useEnvironments } from "../../state/environments";
-import { useThreadShell, useThreadShells } from "../../state/entities";
+import { useThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { Button } from "../ui/button";
 import { useSidebarVisibility } from "../ui/sidebar";
-import { useIsMobile } from "../../hooks/useMediaQuery";
 
 function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   return Effect.runPromise(
@@ -178,7 +169,6 @@ function D4AgentPanelContent({
   threadId: ThreadId;
 }) {
   const query = useD4AgentState(environmentId);
-  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
   const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
   const canStartSession = useAtomValue(
@@ -194,17 +184,12 @@ function D4AgentPanelContent({
   );
   const navigate = useNavigate();
   const [switching, setSwitching] = useState(false);
-  const threads = useThreadShells();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
     serverEnvironment.resolveD4AgentAction.permissionAtom(environmentId),
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const isMobile = useIsMobile();
-  // On a phone the open panel would cover most of the chat, so it starts as one summary line.
-  const [expanded, setExpanded] = useState<boolean | null>(null);
-  const monitorEnabled = config?.settings.agentMonitor.enabled === true;
   const state = query.data;
   if (!state || state.threadId !== threadId) return null;
   const proposals = (state.memoryProposals ?? []).filter(
@@ -214,154 +199,106 @@ function D4AgentPanelContent({
     (proposal) => proposal.status === "pending",
   ).length;
   const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
-  const attention = monitorEnabled
-    ? monitorAttentionThreads(
-        threads.filter(
-          (thread) =>
-            thread.environmentId === environmentId &&
-            thread.archivedAt === null &&
-            thread.deletedAt === null &&
-            projectBelongsToAgentContext(
-              thread.projectId,
-              state.brainContext,
-              config?.settings.d4Agent.projectContexts ?? {},
-            ),
-        ),
-      )
-    : [];
   const pendingActions = state.actionLog.filter((record) => record.status === "pending").length;
   return (
-    <details
-      open={expanded ?? !isMobile}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-      className="shrink-0 border-b bg-muted/20 text-sm"
-    >
-      <summary className="cursor-pointer px-4 py-2 text-muted-foreground">
-        Status · {state.brainContext} · {attention.length} need attention
-        {pendingActions > 0 ? ` · ${pendingActions} to approve` : ""}
-        {pendingProposals > 0 ? ` · ${pendingProposals} memory` : ""}
-      </summary>
-      <section
-        aria-label="Nia attention"
-        className="max-h-[40dvh] overflow-y-auto px-4 pb-3 md:max-h-64"
-      >
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <label className="text-muted-foreground" htmlFor="d4-agent-context">
-            Context
-          </label>
-          <select
-            id="d4-agent-context"
-            aria-label="Agent context"
-            className="rounded-full border border-input bg-background px-3 py-1 text-sm focus-visible:outline focus-visible:outline-ring"
-            value={state.brainContext}
-            disabled={!canSwitch || switching || startingSession}
-            onChange={async (event) => {
-              const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
-              if (!context || context === state.brainContext) return;
-              setSwitching(true);
-              setActionError(null);
-              await switchContext({ environmentId, input: { context } })
-                .then(async (result) => {
-                  if (
-                    result._tag === "Failure" ||
-                    !(await waitForAgentThread(environmentId, result.value.threadId))
-                  )
-                    setActionError("Could not switch context.");
-                  else
-                    await navigate({
-                      to: "/$environmentId/$threadId",
-                      params: { environmentId, threadId: result.value.threadId },
-                    });
-                })
-                .catch(() => setActionError("Could not switch context."))
-                .finally(() => setSwitching(false));
-            }}
-          >
-            {D4_BRAIN_CONTEXTS.map((context) => (
-              <option key={context} value={context}>
-                {context}
-              </option>
-            ))}
-          </select>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canStartSession || switching || startingSession}
-            onClick={async () => {
-              setStartingSession(true);
-              setActionError(null);
-              await newSession({ environmentId, input: {} })
-                .then(async (result) => {
-                  if (
-                    result._tag === "Failure" ||
-                    !(await waitForAgentThread(environmentId, result.value.threadId))
-                  )
-                    setActionError("Could not start a new session.");
-                  else
-                    await navigate({
-                      to: "/$environmentId/$threadId",
-                      params: { environmentId, threadId: result.value.threadId },
-                    });
-                })
-                .catch(() => setActionError("Could not start a new session."))
-                .finally(() => setStartingSession(false));
-            }}
-          >
-            {startingSession ? "Starting session…" : "New session"}
-          </Button>
-          {switching ? <span role="status">Switching context…</span> : null}
-        </div>
-        <D4AgentSessions
-          environmentId={environmentId}
-          sessions={state.openSessions ?? []}
-          refresh={query.refresh}
-        />
-        {state.sessionChangeReason ? (
-          <p role="status" className="mb-2 border-b pb-2 text-xs text-muted-foreground">
-            {state.sessionChangeReason === "resumed"
-              ? `Resumed ${state.brainContext} session.`
-              : state.sessionChangeReason === "size"
-                ? "Session size budget reached. New session."
-                : state.sessionChangeReason === "new-session"
-                  ? "New session."
-                  : `Context changed to ${state.brainContext}. New session.`}
-          </p>
+    <div className="shrink-0 border-b text-sm">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-1.5">
+        <label className="sr-only" htmlFor="d4-agent-context">
+          Context
+        </label>
+        <select
+          id="d4-agent-context"
+          aria-label="Agent context"
+          className="rounded-full border border-input bg-background px-3 py-1 text-sm focus-visible:outline focus-visible:outline-ring"
+          value={state.brainContext}
+          disabled={!canSwitch || switching || startingSession}
+          onChange={async (event) => {
+            const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
+            if (!context || context === state.brainContext) return;
+            setSwitching(true);
+            setActionError(null);
+            await switchContext({ environmentId, input: { context } })
+              .then(async (result) => {
+                if (
+                  result._tag === "Failure" ||
+                  !(await waitForAgentThread(environmentId, result.value.threadId))
+                )
+                  setActionError("Could not switch context.");
+                else
+                  await navigate({
+                    to: "/$environmentId/$threadId",
+                    params: { environmentId, threadId: result.value.threadId },
+                  });
+              })
+              .catch(() => setActionError("Could not switch context."))
+              .finally(() => setSwitching(false));
+          }}
+        >
+          {D4_BRAIN_CONTEXTS.map((context) => (
+            <option key={context} value={context}>
+              {context}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canStartSession || switching || startingSession}
+          onClick={async () => {
+            setStartingSession(true);
+            setActionError(null);
+            await newSession({ environmentId, input: {} })
+              .then(async (result) => {
+                if (
+                  result._tag === "Failure" ||
+                  !(await waitForAgentThread(environmentId, result.value.threadId))
+                )
+                  setActionError("Could not start a new session.");
+                else
+                  await navigate({
+                    to: "/$environmentId/$threadId",
+                    params: { environmentId, threadId: result.value.threadId },
+                  });
+              })
+              .catch(() => setActionError("Could not start a new session."))
+              .finally(() => setStartingSession(false));
+          }}
+        >
+          {startingSession ? "Starting session…" : "New session"}
+        </Button>
+        {switching ? <span role="status">Switching context…</span> : null}
+        {(state.openSessions ?? []).length > 0 ? (
+          <details className="relative">
+            <summary className="cursor-pointer text-muted-foreground">
+              Sessions · {(state.openSessions ?? []).length}
+            </summary>
+            <div className="absolute z-10 mt-1 w-72 rounded-md border bg-popover p-2 shadow-md">
+              <D4AgentSessions
+                environmentId={environmentId}
+                sessions={state.openSessions ?? []}
+                refresh={query.refresh}
+              />
+            </div>
+          </details>
         ) : null}
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-medium">Needs attention · {attention.length}</h2>
-          <Button size="sm" variant="ghost" disabled={query.isPending} onClick={query.refresh}>
-            Refresh
-          </Button>
-        </div>
+      </div>
+      <section
+        aria-label="Waiting for you"
+        className={
+          pendingActions + pendingProposals > 0 ||
+          !state.modelAvailable ||
+          actionError ||
+          query.error
+            ? "max-h-[40dvh] overflow-y-auto px-4 pb-3 md:max-h-64"
+            : "hidden"
+        }
+      >
         {!state.modelAvailable ? (
           <p role="status" className="py-1 text-muted-foreground">
             {agentUnavailableMessage(state.unavailableReason)}
           </p>
         ) : null}
-        {attention.length === 0 ? (
-          <p className="text-muted-foreground">No threads need attention.</p>
-        ) : (
-          attention.slice(0, AGENT_MONITOR_LIST_LIMIT).map((thread) => (
-            <Link
-              key={thread.id}
-              to="/$environmentId/$threadId"
-              params={{ environmentId, threadId: thread.id }}
-              className="flex justify-between gap-3 rounded px-2 py-1 hover:bg-muted focus-visible:outline focus-visible:outline-ring"
-            >
-              <span className="truncate">{thread.title}</span>
-              <span className="shrink-0 text-muted-foreground">
-                {agentMonitorLabel(thread.source.agentMonitor!)}
-              </span>
-            </Link>
-          ))
-        )}
-        {state.systemHealth.map((check) => (
-          <p key={check.id} className="py-1 text-muted-foreground">
-            {systemCheckLabel(check)}: {systemCheckStatus(check)}
-          </p>
-        ))}
-        {state.ctoAskInFlight ? <p role="status">CTO question in progress.</p> : null}
-        {proposals.length > 0 ? (
+        {shownPendingProposals > 0 ? (
           <section aria-label="Memory proposals" className="space-y-2 py-2">
             <h2 className="font-medium">Memory proposals · {pendingProposals} pending</h2>
             {pendingProposals > shownPendingProposals ? (
@@ -369,65 +306,67 @@ function D4AgentPanelContent({
                 Showing the oldest {shownPendingProposals}. Review them to see the rest.
               </p>
             ) : null}
-            {proposals.map((proposal) => (
-              <div key={proposal.id} className="space-y-2 rounded border p-2">
-                <p className="text-xs text-muted-foreground">
-                  {proposal.context} ·{" "}
-                  {proposal.createdAt === null ? (
-                    "Creation time unavailable"
-                  ) : (
-                    <time dateTime={proposal.createdAt}>{proposal.createdAt}</time>
-                  )}{" "}
-                  · {proposal.status}
-                </p>
-                <p className="whitespace-pre-wrap break-words select-text">{proposal.text}</p>
-                {proposal.status === "pending" ? (
-                  <div className="flex gap-2">
-                    {[true, false].map((approve) => (
-                      <Button
-                        key={String(approve)}
-                        size="sm"
-                        variant={approve ? "outline" : "ghost"}
-                        disabled={!canResolveProposal || busy !== null}
-                        onClick={async () => {
-                          setBusy(proposal.id);
-                          setActionError(null);
-                          await resolveProposal({
-                            environmentId,
-                            input: { proposalId: proposal.id, approve },
-                          })
-                            .then((result) => {
-                              if (result._tag === "Failure")
-                                setActionError("Could not review this memory proposal.");
-                              query.refresh();
+            {proposals
+              .filter((proposal) => proposal.status === "pending")
+              .map((proposal) => (
+                <div key={proposal.id} className="space-y-2 rounded border p-2">
+                  <p className="text-xs text-muted-foreground">
+                    {proposal.context} ·{" "}
+                    {proposal.createdAt === null ? (
+                      "Creation time unavailable"
+                    ) : (
+                      <time dateTime={proposal.createdAt}>{proposal.createdAt}</time>
+                    )}{" "}
+                    · {proposal.status}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words select-text">{proposal.text}</p>
+                  {proposal.status === "pending" ? (
+                    <div className="flex gap-2">
+                      {[true, false].map((approve) => (
+                        <Button
+                          key={String(approve)}
+                          size="sm"
+                          variant={approve ? "outline" : "ghost"}
+                          disabled={!canResolveProposal || busy !== null}
+                          onClick={async () => {
+                            setBusy(proposal.id);
+                            setActionError(null);
+                            await resolveProposal({
+                              environmentId,
+                              input: { proposalId: proposal.id, approve },
                             })
-                            .catch(() => setActionError("Could not review this memory proposal."))
-                            .finally(() => setBusy(null));
-                        }}
-                      >
-                        {approve ? "Approve" : "Reject"}
-                      </Button>
-                    ))}
-                  </div>
-                ) : proposal.status === "approved" ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(proposal.text);
-                      } catch {
-                        setActionError(
-                          "Could not copy this memory proposal. Select the text to copy it.",
-                        );
-                      }
-                    }}
-                  >
-                    Copy text
-                  </Button>
-                ) : null}
-              </div>
-            ))}
+                              .then((result) => {
+                                if (result._tag === "Failure")
+                                  setActionError("Could not review this memory proposal.");
+                                query.refresh();
+                              })
+                              .catch(() => setActionError("Could not review this memory proposal."))
+                              .finally(() => setBusy(null));
+                          }}
+                        >
+                          {approve ? "Approve" : "Reject"}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : proposal.status === "approved" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(proposal.text);
+                        } catch {
+                          setActionError(
+                            "Could not copy this memory proposal. Select the text to copy it.",
+                          );
+                        }
+                      }}
+                    >
+                      Copy text
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
           </section>
         ) : null}
         {(state.otherContextProposalCounts ?? []).map(({ context, count }) => (
@@ -460,28 +399,10 @@ function D4AgentPanelContent({
               }}
             />
           ))}
-        {state.actionLog.length > 0 ? (
-          <details className="pt-2">
-            <summary className="cursor-pointer">Action log · {state.actionLog.length}</summary>
-            {state.actionLog
-              .filter((record) => record.status !== "pending")
-              .slice(0, 20)
-              .map((record) => (
-                <AgentActionRecord
-                  key={record.id}
-                  environmentId={environmentId}
-                  record={record}
-                  allowed={allowed}
-                  busy={busy !== null}
-                  onResolve={async () => undefined}
-                />
-              ))}
-          </details>
-        ) : null}
         {actionError ? <p role="alert">{actionError}</p> : null}
         {query.error ? <p role="alert">{query.error}</p> : null}
       </section>
-    </details>
+    </div>
   );
 }
 

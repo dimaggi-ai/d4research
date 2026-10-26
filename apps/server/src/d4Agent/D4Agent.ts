@@ -49,6 +49,7 @@ import {
   type D4AgentSystemHealthState,
   type D4AgentClaimSystemAttentionInput,
   D4AgentAction,
+  type D4AgentActionNote,
   type D4AgentActionRecord,
   type D4AgentResolveActionInput,
   type D4AgentSendInput,
@@ -151,6 +152,7 @@ export class D4Agent extends Context.Service<
     ) => Effect.Effect<D4AgentState, D4AgentError>;
     readonly requestAction: (
       action: D4AgentAction,
+      note?: D4AgentActionNote,
     ) => Effect.Effect<D4AgentActionRecord, D4AgentError>;
     readonly list: () => Effect.Effect<
       {
@@ -293,7 +295,7 @@ export function actionSummaries(
     ...actions.filter((a) => a.status !== "pending").slice(-20),
   ]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map(({ id, action, guard, status, createdAt, resolvedAt }) => ({
+    .map(({ id, action, note, guard, status, createdAt, resolvedAt }) => ({
       id,
       type: action.type,
       // Approved launches create this thread, so the card can link to it.
@@ -316,6 +318,7 @@ export function actionSummaries(
                   ? JSON.stringify(action.answers)
                   : ""
       ).slice(0, 256),
+      ...(note === undefined ? {} : { note }),
       status,
       ...(guard === undefined ? {} : { guard }),
       createdAt,
@@ -2186,7 +2189,7 @@ export const layer = Layer.effect(
       if (result._tag === "Failure") return yield* Effect.fail(result.failure);
       return resolved;
     });
-    const requestAction = (action: D4AgentAction) =>
+    const requestAction = (action: D4AgentAction, note?: D4AgentActionNote) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
           const config = yield* settings;
@@ -2358,6 +2361,7 @@ export const layer = Layer.effect(
             sessionId: state.threadId,
             id,
             action,
+            ...(note === undefined ? {} : { note }),
             ...(prepared === undefined ? {} : { result: prepared }),
             ...(guard === undefined ? {} : { guard }),
             status: held ? "pending" : "approved",

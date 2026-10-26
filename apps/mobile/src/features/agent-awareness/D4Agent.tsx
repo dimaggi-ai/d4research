@@ -6,6 +6,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { useD4AgentState } from "./useD4AgentState";
 import {
   agentUnavailableMessage,
+  actionFullText,
   actionHeading,
   approveLabel,
   launchTag,
@@ -372,11 +373,11 @@ function AgentActionRecord({
   const project = useProject(
     tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
   );
-  // A pending switch or launch shows what it will send up front, so it can be approved in place.
-  const pendingSwitch =
-    (record.type === "switch-context" || tag !== null) && record.status === "pending";
+  // A pending card shows the full action up front, so it can be approved in place.
+  const pending = record.status === "pending";
+  const open = reviewing || pending;
   const detail = useEnvironmentQuery(
-    reviewing || pendingSwitch
+    open
       ? serverEnvironment.d4AgentAction({ environmentId, input: { actionId: record.id } })
       : null,
   );
@@ -396,6 +397,7 @@ function AgentActionRecord({
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
   const heading = actionHeading(record, project?.title);
+  const fullText = detail.data ? actionFullText(detail.data.action) : null;
   const createdThreadId = record.threadId;
   const finalText = editedText ?? sendAction?.text ?? "";
   const launchAction =
@@ -415,10 +417,24 @@ function AgentActionRecord({
           {record.createdAt} · {heading.title} · {record.status}
         </Text>
       </View>
-      {heading.detail ? (
-        <Text className="text-sm text-foreground-muted">{heading.detail}</Text>
+      {record.note ? (
+        <View className="gap-1">
+          <Text selectable className="text-sm text-foreground">
+            <Text className="text-foreground-muted">Why · </Text>
+            {record.note.why}
+          </Text>
+          <Text selectable className="text-sm text-foreground">
+            <Text className="text-foreground-muted">Effect · </Text>
+            {record.note.effect}
+          </Text>
+        </View>
       ) : null}
-      {pendingSwitch ? null : (
+      {heading.detail && !(open && (sendAction || launchAction)) ? (
+        <Text selectable className="text-sm text-foreground-muted">
+          {(pending ? fullText : null) ?? heading.detail}
+        </Text>
+      ) : null}
+      {pending ? null : (
         <Pressable accessibilityRole="button" onPress={() => setReviewing(!reviewing)}>
           <Text className="text-accent">{reviewing ? "Hide action details" : "Review action"}</Text>
         </Pressable>
@@ -441,7 +457,7 @@ function AgentActionRecord({
           {detail.data.result}
         </Text>
       ) : null}
-      {(reviewing || pendingSwitch) && launchAction ? (
+      {open && launchAction ? (
         <View className="gap-2 rounded border border-border p-3">
           <Text className="text-xs text-foreground-muted">
             Target project · {project?.title ?? launchAction.projectId}
@@ -460,7 +476,7 @@ function AgentActionRecord({
           </Text>
         </View>
       ) : null}
-      {(reviewing || pendingSwitch) && switchAction ? (
+      {open && switchAction ? (
         <View className="gap-2 rounded border border-border p-3">
           <Text className="text-xs text-foreground-muted">
             {switchAction.originalText
@@ -474,7 +490,7 @@ function AgentActionRecord({
           ) : null}
         </View>
       ) : null}
-      {reviewing && sendAction ? (
+      {open && sendAction ? (
         <View className="gap-2 rounded border border-border p-3">
           {sendAction.originalText !== undefined ? (
             <>

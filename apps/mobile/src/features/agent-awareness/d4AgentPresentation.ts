@@ -1,4 +1,5 @@
 import type {
+  D4AgentAction,
   D4AgentActionSummary,
   D4AgentState,
   D4AgentSystemCheck,
@@ -69,6 +70,14 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
     disabled: "Off",
   }[index.status];
   return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;
+}
+
+/** The untruncated text a pending card shows, where the summary preview is capped. */
+export function actionFullText(action: D4AgentAction): string | null {
+  if ("text" in action) return action.text;
+  if (action.type === "pc") return action.command;
+  if (action.type === "answer") return JSON.stringify(action.answers);
+  return null;
 }
 
 // Context switches carry a readable server-filled preview; launches name their project; other

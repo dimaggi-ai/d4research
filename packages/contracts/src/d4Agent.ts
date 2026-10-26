@@ -228,12 +228,19 @@ export const D4AgentGuardVerdict = Schema.Struct({
   reason: Schema.NullOr(Schema.String.check(Schema.isMaxLength(512))),
 });
 export type D4AgentGuardVerdict = typeof D4AgentGuardVerdict.Type;
+// Nia's one-line reason for an action and what it will change, shown on the approval card.
+export const D4AgentActionNote = Schema.Struct({
+  why: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(300)),
+  effect: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(300)),
+});
+export type D4AgentActionNote = typeof D4AgentActionNote.Type;
 export const D4AgentActionRecord = Schema.Struct({
   context: D4BrainContext.pipe(Schema.withDecodingDefault(Effect.succeed("Global"))),
   sessionId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   result: Schema.optionalKey(Schema.Unknown),
   id: Schema.String,
   action: D4AgentAction,
+  note: Schema.optionalKey(D4AgentActionNote),
   guard: Schema.optionalKey(D4AgentGuardVerdict),
   status: Schema.Literals(["pending", "approved", "denied", "executed", "failed"]),
   createdAt: IsoDateTime,
@@ -262,6 +269,7 @@ export const D4AgentActionSummary = Schema.Struct({
   targetId: Schema.String,
   threadId: Schema.optionalKey(ThreadId),
   preview: Schema.String.check(Schema.isMaxLength(256)),
+  note: Schema.optionalKey(D4AgentActionNote),
   status: D4AgentActionRecord.fields.status,
   guard: Schema.optionalKey(D4AgentGuardVerdict),
   createdAt: IsoDateTime,

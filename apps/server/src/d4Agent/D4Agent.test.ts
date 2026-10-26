@@ -689,6 +689,19 @@ it.effect("ask persists a pending action and executes only once after user appro
   }),
 );
 
+it.effect("a pending card carries Nia's why and effect lines", () =>
+  Effect.gen(function* () {
+    const { service } = yield* fixture("ask");
+    const note = {
+      why: "The System thread asked for a restart after the config change.",
+      effect: "Runs systemctl --user restart caddy-auth.service on the desktop.",
+    };
+    const action = yield* service.requestAction({ type: "interrupt", threadId: targetId }, note);
+    assert.deepEqual(action.note, note);
+    assert.deepEqual((yield* service.getState()).actionLog[0]?.note, note);
+  }),
+);
+
 it.effect("act still requires approval for arbitrary send instructions", () =>
   Effect.gen(function* () {
     const { service, dispatches } = yield* fixture("act");

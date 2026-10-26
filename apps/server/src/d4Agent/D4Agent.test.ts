@@ -1443,7 +1443,9 @@ it.effect(
   "automatic actions serialize, enforce turn and target budgets, and survive service restart",
   () =>
     Effect.gen(function* () {
-      const { service, state, agentShell, dispatches } = yield* fixture("act");
+      const { service, state, agentShell } = yield* fixture("act");
+      const remind = { type: "remind", text: "Stretch", at: "1970-01-01T03:00:00.000Z" } as const;
+      const reminders = Effect.map(Ref.get(state), (s) => s.reminders?.length ?? 0);
       const agentId = ThreadId.make("agent");
       const runId = RunId.make("agent-run");
       yield* Ref.set(agentShell, { ...target, id: agentId, activeRunId: runId });
@@ -1454,45 +1456,33 @@ it.effect(
         identityReady: true,
       }));
       const results = yield* Effect.all(
-        Array.from({ length: 5 }, () =>
-          Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })),
-        ),
+        Array.from({ length: 5 }, () => Effect.result(service.requestAction(remind))),
         { concurrency: "unbounded" },
       );
       assert.equal(results.filter((r) => r._tag === "Success").length, 1);
-      assert.equal((yield* Ref.get(dispatches)).length, 1);
+      assert.equal(yield* reminders, 1);
       assert.equal((yield* Ref.get(state)).automaticActions.length, 1);
       const restarted = yield* fixture("act");
       yield* Ref.set(restarted.state, yield* Ref.get(state));
       yield* Ref.set(restarted.agentShell, yield* Ref.get(agentShell));
+      assert.equal((yield* Effect.result(restarted.service.requestAction(remind)))._tag, "Failure");
       assert.equal(
-        (yield* Effect.result(
-          restarted.service.requestAction({ type: "interrupt", threadId: targetId }),
-        ))._tag,
-        "Failure",
+        (yield* Ref.get(restarted.state)).automaticActions.length,
+        (yield* Ref.get(state)).automaticActions.length,
       );
-      assert.deepEqual(yield* Ref.get(restarted.dispatches), []);
       yield* Ref.update(agentShell, (s) =>
         s === null ? null : { ...s, activeRunId: RunId.make("another-run") },
       );
-      assert.equal(
-        (yield* Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })))
-          ._tag,
-        "Failure",
-      );
+      assert.equal((yield* Effect.result(service.requestAction(remind)))._tag, "Failure");
       yield* TestClock.adjust("10 minutes");
-      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* service.requestAction(remind);
       yield* TestClock.adjust("10 minutes");
-      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* service.requestAction(remind);
       yield* TestClock.adjust("10 minutes");
-      yield* service.requestAction({ type: "interrupt", threadId: targetId });
+      yield* service.requestAction(remind);
       yield* TestClock.adjust("10 minutes");
-      assert.equal(
-        (yield* Effect.result(service.requestAction({ type: "interrupt", threadId: targetId })))
-          ._tag,
-        "Failure",
-      );
-      assert.equal((yield* Ref.get(dispatches)).length, 4);
+      assert.equal((yield* Effect.result(service.requestAction(remind)))._tag, "Failure");
+      assert.equal(yield* reminders, 4);
     }),
 );
 
@@ -3329,25 +3319,29 @@ const guardedFixture = (mode: D4AgentSettings["permissionMode"] = "act") =>
     return f;
   });
 
-it.effect("Tool Guard lets act send to a full-access thread when no rule objects", () =>
-  Effect.gen(function* () {
-    const f = yield* guardedFixture();
-    const record = yield* f.service.requestAction({
-      type: "send",
-      threadId: targetId,
-      text: "Rebase on main",
-    });
-    assert.equal(record.status, "executed");
-    assert.equal(record.guard?.decision, "allowed");
-    assert.equal((yield* Ref.get(f.sends)).length, 1);
-    // The orchestrator refuses a full-access target under an approval-required ceiling.
-    assert.deepEqual(yield* Ref.get(f.sendLimits), ["full-access"]);
-    const [call] = yield* Ref.get(f.guardCalls);
-    assert.equal(call?.envelope_id, record.id);
-    assert.equal(call?.parameters.action_type, "send");
-    assert.equal(call?.parameters.target_runtime_mode, "full-access");
-    assert.equal(call?.parameters.text, "Rebase on main");
-  }),
+it.effect(
+  "a send Tool Guard allows still waits for the user, then reaches a full-access thread",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* guardedFixture();
+      const record = yield* f.service.requestAction({
+        type: "send",
+        threadId: targetId,
+        text: "Rebase on main",
+      });
+      assert.equal(record.status, "pending");
+      assert.equal(record.guard?.decision, "allowed");
+      assert.deepEqual(yield* Ref.get(f.sends), []);
+      yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+      assert.equal((yield* Ref.get(f.sends)).length, 1);
+      // The orchestrator refuses a full-access target under an approval-required ceiling.
+      assert.deepEqual(yield* Ref.get(f.sendLimits), ["full-access"]);
+      const [call] = yield* Ref.get(f.guardCalls);
+      assert.equal(call?.envelope_id, record.id);
+      assert.equal(call?.parameters.action_type, "send");
+      assert.equal(call?.parameters.target_runtime_mode, "full-access");
+      assert.equal(call?.parameters.text, "Rebase on main");
+    }),
 );
 
 it.effect("Tool Guard denial refuses the action and records why", () =>
@@ -3409,18 +3403,36 @@ it.effect("without Tool Guard, full-access threads stay out of reach", () =>
   }),
 );
 
-it.effect("Tool Guard lets act run a pc command and returns its output", () =>
+it.effect("a pc command Tool Guard allows still waits for the user", () =>
   Effect.gen(function* () {
     const f = yield* guardedFixture();
     const record = yield* f.service.requestAction({ type: "pc", command: "echo hi" });
-    assert.equal(record.status, "executed");
-    assert.equal(record.result, "Exit 0\nhi");
-    assert.deepEqual(yield* Ref.get(f.pcCommands), ["echo hi"]);
+    assert.equal(record.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.pcCommands), []);
     const [call] = yield* Ref.get(f.guardCalls);
     assert.equal(call?.parameters.action_type, "pc");
     assert.equal(call?.parameters.text, "echo hi");
-    // The tool result carries the output, so nothing is posted twice.
-    assert.deepEqual(yield* Ref.get(f.systemMessages), []);
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.pcCommands), ["echo hi"]);
+  }),
+);
+
+it.effect("an approved start links the thread it created", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Fix the flaky login test\nIt fails on CI only.",
+      modelSelection,
+    });
+    assert.equal(record.status, "pending");
+    assert.equal((yield* f.service.getState()).actionLog[0]?.threadId, undefined);
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.equal(
+      (yield* f.service.getState()).actionLog[0]?.threadId,
+      ThreadId.make(`d4-action:${record.id}`),
+    );
   }),
 );
 
@@ -3526,7 +3538,8 @@ it.effect("schedule creates an approval-required scheduled task Nia may later de
       modelSelection,
       schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5] },
     });
-    assert.equal(record.status, "executed");
+    assert.equal(record.status, "pending");
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
     const [input] = yield* Ref.get(f.scheduled);
     assert.equal(input?.runtimeMode, "approval-required");
     assert.equal(input?.createdBy, "agent");
@@ -3539,10 +3552,12 @@ it.effect("schedule creates an approval-required scheduled task Nia may later de
       f.service.requestAction({ type: "unschedule", taskId: ScheduledTaskId.make("user-task") }),
     );
     assert.equal(foreign._tag, "Failure");
-    yield* f.service.requestAction({
+    const unschedule = yield* f.service.requestAction({
       type: "unschedule",
       taskId: ScheduledTaskId.make("task-1"),
     });
+    assert.deepEqual(yield* Ref.get(f.unscheduled), []);
+    yield* f.service.resolveAction({ actionId: unschedule.id, decision: "approve" });
     assert.deepEqual(yield* Ref.get(f.unscheduled), ["task-1"]);
     assert.deepEqual((yield* Ref.get(f.state)).scheduledTasks, []);
   }),

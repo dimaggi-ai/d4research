@@ -260,6 +260,7 @@ export const D4AgentActionSummary = Schema.Struct({
     "unschedule",
   ]),
   targetId: Schema.String,
+  threadId: Schema.optionalKey(ThreadId),
   preview: Schema.String.check(Schema.isMaxLength(256)),
   status: D4AgentActionRecord.fields.status,
   guard: Schema.optionalKey(D4AgentGuardVerdict),

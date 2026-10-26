@@ -209,8 +209,15 @@ describe("d4 Agent policies", () => {
         text: "push",
       }),
     );
-    assert.isFalse(
+    assert.isTrue(
       requiresActionApproval("act", { type: "interrupt", threadId: ThreadId.make("target") }),
+    );
+    assert.isFalse(
+      requiresActionApproval("act", {
+        type: "remind",
+        text: "Stretch",
+        at: "1970-01-01T01:00:00Z",
+      }),
     );
     assert.isTrue(
       requiresActionApproval("ask", { type: "interrupt", threadId: ThreadId.make("target") }),

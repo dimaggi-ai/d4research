@@ -259,15 +259,18 @@ export const requiresActionApproval = (
   action: D4AgentAction,
 ) =>
   mode === "ask" ||
-  // A context switch moves the user's words into another context's session, so only a human may approve it.
+  // Critical actions start, steer or stop work, or run on the host. The user approves each one,
+  // whatever Tool Guard says; a verdict can only add a hold.
   action.type === "switch-context" ||
   action.type === "send" ||
   action.type === "start" ||
   action.type === "research" ||
   action.type === "pipeline" ||
-  // Without a Tool Guard verdict nothing has screened a shell command or a recurring run.
+  action.type === "interrupt" ||
+  action.type === "answer" ||
   action.type === "pc" ||
-  action.type === "schedule";
+  action.type === "schedule" ||
+  action.type === "unschedule";
 
 // Per-session caches are keyed by thread id and must not outlive the session that filled them.
 export function retainOpenSessions(
@@ -293,6 +296,11 @@ export function actionSummaries(
     .map(({ id, action, guard, status, createdAt, resolvedAt }) => ({
       id,
       type: action.type,
+      // Approved launches create this thread, so the card can link to it.
+      ...(status === "executed" &&
+      (action.type === "start" || action.type === "research" || action.type === "pipeline")
+        ? { threadId: ThreadId.make(`d4-action:${id}`) }
+        : {}),
       targetId: actionTarget(action),
       preview: ("text" in action
         ? action.text
@@ -1844,7 +1852,7 @@ export const layer = Layer.effect(
             commandId: command(`action-create:${record.id}`),
             threadId: targetId,
             projectId: action.projectId,
-            title: "Nia task",
+            title: action.text.trim().split("\n")[0]!.slice(0, 80) || "Nia task",
             modelSelection: action.modelSelection,
             runtimeMode: "approval-required",
             interactionMode: "default",
@@ -2296,13 +2304,11 @@ export const layer = Layer.effect(
           const held =
             // Research Nia proposes on its own stays a card until the user clicks it.
             (background && (action.type === "research" || action.type === "pipeline")) ||
-            (guard === undefined
-              ? requiresActionApproval(config.permissionMode, action)
-              : config.permissionMode !== "act" ||
-                // A context switch moves the user's words into another context, so it stays human-only.
-                action.type === "switch-context" ||
+            requiresActionApproval(config.permissionMode, action) ||
+            (guard !== undefined &&
+              (config.permissionMode !== "act" ||
                 guard.decision === "escalated" ||
-                guard.decision === "unavailable");
+                guard.decision === "unavailable"));
           const automatic = !held;
           const at = yield* Clock.currentTimeMillis;
           let automaticBudget: { scope: string; target: string; at: number } | undefined;

@@ -161,17 +161,30 @@ export function D4AgentChat({
           return (
             <View
               key={entry.id}
-              className={entry.role === "system" ? "gap-2 border-y border-border py-2" : "gap-2"}
+              // Same row shapes as the thread feed: user bubble on the right, assistant text
+              // unboxed, server posts as a quiet card.
+              accessibilityLabel={
+                entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context
+              }
+              className={
+                entry.role === "user"
+                  ? "max-w-[85%] gap-2 self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5"
+                  : entry.role === "assistant"
+                    ? "gap-2"
+                    : "gap-2 rounded-xl border border-border px-3 py-2"
+              }
             >
-              <Text className="text-xs text-foreground-muted">
-                {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
-              </Text>
+              {entry.role === "system" ? (
+                <Text className="text-xs text-foreground-muted">{entry.context}</Text>
+              ) : null}
               <Text
                 selectable
                 className={
                   entry.role === "system"
-                    ? "text-xs text-foreground-muted"
-                    : "text-base text-foreground"
+                    ? "text-sm text-foreground"
+                    : entry.role === "user"
+                      ? "text-base text-user-bubble-foreground"
+                      : "text-base text-foreground"
                 }
               >
                 {segments === null

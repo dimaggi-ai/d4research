@@ -124,30 +124,70 @@ export function D4AgentChat({
         }}
         role="log"
         aria-label="Agent conversation"
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto scrollbar-gutter-both px-4 py-6"
+        className="chat-composer-lane min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both py-6"
       >
-        {(state.transcript ?? []).map((entry) => {
-          const segments =
-            entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
-          // System text already shows every label; only links it could not place are repeated below.
-          const inline = new Set(
-            segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
-          );
-          return (
-            <article
-              key={entry.id}
-              className={
-                entry.role === "system"
-                  ? "border-y py-2 text-xs text-muted-foreground"
-                  : "mx-auto max-w-3xl space-y-2"
-              }
-            >
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {entry.role === "assistant" ? <NiaAvatar className="size-4" /> : null}
-                {entry.role === "user" ? "You" : entry.role === "assistant" ? "Nia" : entry.context}
-              </p>
-              {entry.role === "assistant" ? (
-                // Nia quotes other threads, so their HTML is shown as text, never rendered.
+        <div className="chat-content-lane">
+          {(state.transcript ?? []).map((entry) => {
+            const segments =
+              entry.role === "system" ? niaSystemTextSegments(entry.text, entry.links) : null;
+            // System text already shows every label; only links it could not place are repeated below.
+            const inline = new Set(
+              segments?.flatMap((segment) => (segment.kind === "thread" ? [segment.threadId] : [])),
+            );
+            const extras = (
+              <>
+                {entry.attachments?.length ? (
+                  <ul className="mt-2 flex flex-wrap gap-2 text-sm">
+                    {entry.attachments.map((attachment) => (
+                      <li
+                        key={attachment.id}
+                        className="max-w-full truncate rounded-lg border border-border/80 bg-background/70 px-2 py-1"
+                      >
+                        {attachment.name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {entry.links
+                  .filter(
+                    (link) =>
+                      segments === null || (link.threadId !== null && !inline.has(link.threadId)),
+                  )
+                  .map((link) =>
+                    link.threadId ? (
+                      <Link
+                        key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                        to="/$environmentId/$threadId"
+                        params={{ environmentId, threadId: link.threadId }}
+                        className="mr-3 inline-block text-sm text-primary underline underline-offset-2"
+                      >
+                        {link.label}
+                      </Link>
+                    ) : (
+                      <span
+                        key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
+                        className="mr-3 text-sm text-muted-foreground"
+                      >
+                        {link.label}
+                      </span>
+                    ),
+                  )}
+              </>
+            );
+            // Same row shapes as the thread timeline: user bubble on the right, assistant text
+            // unboxed, server posts as a quiet card.
+            return entry.role === "user" ? (
+              <article key={entry.id} className="flex flex-col items-end pb-4">
+                <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+                  <h3 className="sr-only select-none">You</h3>
+                  <p className="whitespace-pre-wrap break-words select-text">{entry.text}</p>
+                  {extras}
+                </div>
+              </article>
+            ) : entry.role === "assistant" ? (
+              <article key={entry.id} className="min-w-0 px-1 py-0.5 pb-4">
+                <h3 className="sr-only select-none">Nia</h3>
+                {/* Nia quotes other threads, so their HTML is shown as text, never rendered. */}
                 <ChatMarkdown
                   text={entry.text}
                   cwd={undefined}
@@ -155,100 +195,77 @@ export function D4AgentChat({
                   lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
                   parseRawHtml={false}
                 />
-              ) : (
-                <p className="whitespace-pre-wrap break-words select-text">
-                  {segments === null ? (
-                    entry.text
-                  ) : (
-                    <SystemText environmentId={environmentId} segments={segments} />
-                  )}
-                </p>
-              )}
-              {entry.attachments?.length ? (
-                <ul className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-                  {entry.attachments.map((attachment) => (
-                    <li
-                      key={attachment.id}
-                      className="max-w-full truncate rounded-lg border px-2 py-1"
-                    >
-                      {attachment.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {entry.links
-                .filter(
-                  (link) =>
-                    segments === null || (link.threadId !== null && !inline.has(link.threadId)),
-                )
-                .map((link) =>
-                  link.threadId ? (
-                    <Link
-                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                      to="/$environmentId/$threadId"
-                      params={{ environmentId, threadId: link.threadId }}
-                      className="mr-3 inline-block text-sm text-primary underline underline-offset-2"
-                    >
-                      {link.label}
-                    </Link>
-                  ) : (
-                    <span
-                      key={`${link.label}:${link.threadId ?? link.projectId ?? "label"}`}
-                      className="mr-3 text-sm text-muted-foreground"
-                    >
-                      {link.label}
-                    </span>
-                  ),
-                )}
-            </article>
-          );
-        })}
-        {(state.transcript ?? []).length === 0 ? (
-          <p className="mx-auto max-w-3xl text-sm text-muted-foreground">
-            Ask what needs attention, send a message to a thread, or start research.
-          </p>
-        ) : null}
-      </div>
-      <div
-        role="status"
-        aria-label="Nia activity"
-        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t px-4 pt-2 text-xs"
-      >
-        <span
-          className={cn(
-            "flex items-center gap-1.5",
-            activity.tone === "working" && "font-medium text-foreground",
-            activity.tone === "error" && "text-destructive",
-            activity.tone === "idle" && "text-muted-foreground",
-          )}
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "size-2 shrink-0 rounded-full",
-              activity.tone === "working" && "bg-primary",
-              activity.tone === "error" && "bg-destructive",
-              activity.tone === "idle" && "bg-muted-foreground/50",
-            )}
-          />
-          {activity.text}
-        </span>
-        <span className="text-muted-foreground">
-          {watch.text}{" "}
-          {watch.off ? (
-            <Link to="/settings/general" className="text-primary underline underline-offset-2">
-              Turn on
-            </Link>
+                {extras}
+              </article>
+            ) : (
+              <article key={entry.id} className="pb-4">
+                <div className="rounded-xl border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                  <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+                    {entry.context}
+                  </h3>
+                  <p className="whitespace-pre-wrap break-words select-text">
+                    {segments === null ? (
+                      entry.text
+                    ) : (
+                      <SystemText environmentId={environmentId} segments={segments} />
+                    )}
+                  </p>
+                  {extras}
+                </div>
+              </article>
+            );
+          })}
+          {(state.transcript ?? []).length === 0 ? (
+            <p className="px-1 text-sm text-muted-foreground">
+              Ask what needs attention, send a message to a thread, or start research.
+            </p>
           ) : null}
-        </span>
+        </div>
       </div>
-      <D4AgentComposer
-        key={environmentId}
-        environmentId={environmentId}
-        state={state}
-        active={activity.tone === "working"}
-        refresh={refresh}
-      />
+      <div className="chat-composer-lane shrink-0">
+        <div className="mx-auto w-full max-w-(--chat-content-max-width)">
+          <div
+            role="status"
+            aria-label="Nia activity"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-2 text-xs"
+          >
+            <span
+              className={cn(
+                "flex items-center gap-1.5",
+                activity.tone === "working" && "font-medium text-foreground",
+                activity.tone === "error" && "text-destructive",
+                activity.tone === "idle" && "text-muted-foreground",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  activity.tone === "working" && "bg-primary",
+                  activity.tone === "error" && "bg-destructive",
+                  activity.tone === "idle" && "bg-muted-foreground/50",
+                )}
+              />
+              {activity.text}
+            </span>
+            <span className="text-muted-foreground">
+              {watch.text}{" "}
+              {watch.off ? (
+                <Link to="/settings/general" className="text-primary underline underline-offset-2">
+                  Turn on
+                </Link>
+              ) : null}
+            </span>
+          </div>
+          <D4AgentComposer
+            key={environmentId}
+            environmentId={environmentId}
+            state={state}
+            active={activity.tone === "working"}
+            refresh={refresh}
+          />
+        </div>
+      </div>
     </section>
   );
 }

@@ -312,7 +312,7 @@ export function D4AgentComposer({
     (text.trim().length > 0 || attachments.length > 0);
   return (
     <form
-      className="relative shrink-0 p-4 pt-2"
+      className="relative shrink-0 pt-2 pb-3 sm:pb-4"
       onSubmit={(event) => {
         event.preventDefault();
         void submit();

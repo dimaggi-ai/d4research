@@ -611,22 +611,6 @@ it("loads full details for a completed automatic action only when reviewed", asy
   ).toBe(false);
 });
 
-it("switches context through the destination command and navigates to the new session", async () => {
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  const selector = container.querySelector<HTMLSelectElement>(
-    "select[aria-label='Agent context']",
-  )!;
-  expect(selector.value).toBe("Global");
-  await act(async () => {
-    selector.value = "YB";
-    selector.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(mocks.switchContext).toHaveBeenCalledWith({ environmentId, input: { context: "YB" } });
-  expect(mocks.navigate).toHaveBeenCalledWith({
-    to: "/$environmentId/$threadId",
-    params: { environmentId, threadId: "new-agent-thread" },
-  });
-});
 it("keeps monitor reports and session banners out of the chat header", async () => {
   mocks.state = {
     ...mocks.state!,
@@ -687,20 +671,6 @@ it("shows the complete CTO request and persisted result when reviewed", async ()
   expect(container.textContent).toContain("Persisted CTO answer");
 });
 
-it("starts a fresh session in the current context and navigates only after the thread is available", async () => {
-  mocks.state = { ...mocks.state!, brainContext: "YB" };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  const button = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "New session",
-  )!;
-  await act(async () => button.click());
-  expect(mocks.newSession).toHaveBeenCalledWith({ environmentId, input: {} });
-  expect(mocks.switchContext).not.toHaveBeenCalled();
-  expect(mocks.navigate).toHaveBeenCalledWith({
-    to: "/$environmentId/$threadId",
-    params: { environmentId, threadId: "fresh-agent-thread" },
-  });
-});
 it("reviews only current-context memory proposals and shows other-context counts", async () => {
   mocks.state = {
     ...mocks.state!,
@@ -785,14 +755,13 @@ it("requires operate permission for session reset and proposal review", async ()
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  for (const label of ["New session", "Approve", "Reject"]) {
+  for (const label of ["Approve", "Reject"]) {
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === label || item.getAttribute("aria-label") === label,
     )!;
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
   }
-  expect(mocks.newSession).not.toHaveBeenCalled();
   expect(mocks.resolveProposal).not.toHaveBeenCalled();
 });
 
@@ -931,8 +900,9 @@ it("keeps open sessions out of the chat panel", async () => {
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("New session");
+  expect(container.textContent).not.toContain("New session");
   expect(container.textContent).not.toContain("Open sessions");
+  expect(container.querySelector("select[aria-label='Agent context']")).toBeNull();
 });
 
 it("settings show session usage and close only the selected context after an explicit click", async () => {

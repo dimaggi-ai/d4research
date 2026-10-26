@@ -84,13 +84,11 @@ threads cannot be referenced. An unmapped project uses **Global**. The picker sh
 visible in the selected context. If explicit references are ambiguous, Nia asks which
 target you mean. If a request in Global needs to send to, answer, or start work in a thread
 or project of a work context, Nia can propose a context switch. The approval card shows the request it will resend in that context; nothing
-switches until you approve. Above the conversation, you can also select **Global**, **Personal**, **YB**,
-or **Dimaggi**; **Global** shows all target metadata.
+switches until you approve. To change context yourself, ask Nia to switch to **Global**,
+**Personal**, **YB**, or **Dimaggi**; **Global** shows all target metadata.
 
 Nia keeps at most one open session per context and resumes it when you return.
-Dividers show each switch in the same conversation. **New session** closes the current
-session and starts a fresh one. The open-sessions panel shows activity times and recorded
-input tokens, with a **Close** control for each session. Idle sessions close after 2 hours
+Dividers show each switch in the same conversation. Idle sessions close after 2 hours
 by default; choose 30 minutes, 2 hours, 8 hours, or Never in Settings. The default size budget is
 60% of the model's reported context window. At that limit, the old session produces a short
 summary for its replacement in the same context. If a summary fails or the scope changes,

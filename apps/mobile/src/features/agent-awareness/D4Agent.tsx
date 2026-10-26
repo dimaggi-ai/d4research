@@ -14,14 +14,13 @@ import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import {
-  D4_BRAIN_CONTEXTS,
   ProjectId,
   type D4AgentActionSummary,
   type EnvironmentId,
   type ThreadId,
 } from "@d4research/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import { Pressable, View, ScrollView, Modal, TextInput } from "react-native";
+import { Pressable, View, ScrollView, TextInput } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useEnvironmentServerConfig, useProject } from "../../state/entities";
 import { useEnvironmentConnectionState } from "../../state/environments";
@@ -163,22 +162,10 @@ function D4AgentPanelContent({
   threadId: ThreadId;
 }) {
   const query = useD4AgentState(environmentId);
-  const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
-  const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
-  const canStartSession = useAtomValue(
-    serverEnvironment.newD4AgentSession.permissionAtom(environmentId),
-  );
   const resolveProposal = useAtomCommand(serverEnvironment.resolveD4AgentMemoryProposal);
   const canResolveProposal = useAtomValue(
     serverEnvironment.resolveD4AgentMemoryProposal.permissionAtom(environmentId),
   );
-  const [startingSession, setStartingSession] = useState(false);
-  const canSwitch = useAtomValue(
-    serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
-  );
-  const [choosingContext, setChoosingContext] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const linkTo = useLinkTo();
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
     serverEnvironment.resolveD4AgentAction.permissionAtom(environmentId),
@@ -198,102 +185,8 @@ function D4AgentPanelContent({
   const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
   return (
     <View className="max-h-64 border-b border-border bg-surface">
-      <Modal
-        visible={choosingContext}
-        transparent
-        animationType="none"
-        onRequestClose={() => setChoosingContext(false)}
-      >
-        <View className="flex-1 justify-center bg-background px-6">
-          <Text className="mb-3 text-lg font-t3-semibold text-foreground">Agent context</Text>
-          {D4_BRAIN_CONTEXTS.map((context) => (
-            <Pressable
-              key={context}
-              accessibilityRole="radio"
-              accessibilityState={{
-                checked: context === state.brainContext,
-                disabled: switching || startingSession || !canSwitch,
-              }}
-              disabled={switching || startingSession || !canSwitch}
-              className="rounded-xl bg-surface px-4 py-4"
-              onPress={async () => {
-                setChoosingContext(false);
-                if (context === state.brainContext) return;
-                setSwitching(true);
-                setActionError(null);
-                await switchContext({ environmentId, input: { context } })
-                  .then(async (result) => {
-                    if (
-                      result._tag === "Failure" ||
-                      !(await waitForAgentThread(environmentId, result.value.threadId))
-                    )
-                      setActionError("Could not switch context.");
-                    else
-                      linkTo(
-                        `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
-                      );
-                  })
-                  .catch(() => setActionError("Could not switch context."))
-                  .finally(() => setSwitching(false));
-              }}
-            >
-              <Text className="text-base text-foreground">
-                {context}
-                {context === state.brainContext ? " ✓" : ""}
-              </Text>
-            </Pressable>
-          ))}
-          <Pressable
-            accessibilityRole="button"
-            className="p-4"
-            onPress={() => setChoosingContext(false)}
-          >
-            <Text className="text-accent">Cancel</Text>
-          </Pressable>
-        </View>
-      </Modal>
       <ScrollView contentContainerClassName="gap-2 px-4 py-2">
         <View className="flex-row flex-wrap items-center gap-2">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Agent context"
-            accessibilityState={{ disabled: !canSwitch || switching || startingSession }}
-            disabled={!canSwitch || switching || startingSession}
-            className="self-start rounded-full border border-border px-3 py-2"
-            onPress={() => setChoosingContext(true)}
-          >
-            <Text className="text-sm text-accent">
-              {switching ? "Switching context…" : `Context · ${state.brainContext}`}
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !canStartSession || switching || startingSession }}
-            disabled={!canStartSession || switching || startingSession}
-            className="self-start rounded-full border border-border px-3 py-2"
-            onPress={async () => {
-              setStartingSession(true);
-              setActionError(null);
-              await newSession({ environmentId, input: {} })
-                .then(async (result) => {
-                  if (
-                    result._tag === "Failure" ||
-                    !(await waitForAgentThread(environmentId, result.value.threadId))
-                  )
-                    setActionError("Could not start a new session.");
-                  else
-                    linkTo(
-                      `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(result.value.threadId)}`,
-                    );
-                })
-                .catch(() => setActionError("Could not start a new session."))
-                .finally(() => setStartingSession(false));
-            }}
-          >
-            <Text className="text-sm text-accent">
-              {startingSession ? "Starting session…" : "New session"}
-            </Text>
-          </Pressable>
           {(state.reminders ?? []).length > 0 ? (
             <Pressable
               accessibilityRole="button"

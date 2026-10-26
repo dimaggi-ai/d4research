@@ -519,17 +519,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("starts a same-context session and opens the new thread", async () => {
-  mocks.state = { ...mocks.state!, brainContext: "YB" };
-  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  const button = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "New session",
-  )!;
-  await act(async () => button.click());
-  expect(mocks.newSession).toHaveBeenCalledWith({ environmentId, input: {} });
-  expect(mocks.switchContext).not.toHaveBeenCalled();
-  expect(mocks.navigate).toHaveBeenCalledWith(`/threads/${environmentId}/fresh-agent-thread`);
-});
 it("keeps proposal content within the active context and supports approve and reject", async () => {
   mocks.state = {
     ...mocks.state!,
@@ -615,14 +604,13 @@ it("prevents session reset and proposal review without operate permission", asyn
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  for (const label of ["New session", "Approve", "Reject"]) {
+  for (const label of ["Approve", "Reject"]) {
     const button = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === label,
     )!;
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
   }
-  expect(mocks.newSession).not.toHaveBeenCalled();
   expect(mocks.resolveProposal).not.toHaveBeenCalled();
 });
 
@@ -769,7 +757,7 @@ it("keeps open sessions out of the chat panel", async () => {
     ],
   };
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
-  expect(container.textContent).toContain("New session");
+  expect(container.textContent).not.toContain("New session");
   expect(container.textContent).not.toContain("Open sessions");
 });
 

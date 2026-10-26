@@ -17,7 +17,6 @@ import { NiaAvatar } from "./NiaAvatar";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import {
-  D4_BRAIN_CONTEXTS,
   ProjectId,
   type D4AgentActionSummary,
   type EnvironmentId,
@@ -151,11 +150,7 @@ export function D4AgentEntry({
     </div>
   );
 }
-type AgentPanelLayout = (parts: {
-  controls: ReactNode;
-  approvals: ReactNode;
-  details: ReactNode;
-}) => ReactNode;
+type AgentPanelLayout = (parts: { approvals: ReactNode; details: ReactNode }) => ReactNode;
 
 export function D4AgentPanel({
   environmentId,
@@ -197,21 +192,10 @@ function D4AgentPanelContent({
   available: boolean;
 }) {
   const query = useD4AgentState(environmentId);
-  const switchContext = useAtomCommand(serverEnvironment.switchD4AgentContext);
-  const newSession = useAtomCommand(serverEnvironment.newD4AgentSession);
-  const canStartSession = useAtomValue(
-    serverEnvironment.newD4AgentSession.permissionAtom(environmentId),
-  );
   const resolveProposal = useAtomCommand(serverEnvironment.resolveD4AgentMemoryProposal);
   const canResolveProposal = useAtomValue(
     serverEnvironment.resolveD4AgentMemoryProposal.permissionAtom(environmentId),
   );
-  const [startingSession, setStartingSession] = useState(false);
-  const canSwitch = useAtomValue(
-    serverEnvironment.switchD4AgentContext.permissionAtom(environmentId),
-  );
-  const navigate = useNavigate();
-  const [switching, setSwitching] = useState(false);
   const resolve = useAtomCommand(serverEnvironment.resolveD4AgentAction);
   const allowed = useAtomValue(
     serverEnvironment.resolveD4AgentAction.permissionAtom(environmentId),
@@ -220,7 +204,7 @@ function D4AgentPanelContent({
   const [actionError, setActionError] = useState<string | null>(null);
   const state = query.data;
   if (!available || !state || state.threadId !== threadId)
-    return render ? render({ controls: null, approvals: null, details: null }) : null;
+    return render ? render({ approvals: null, details: null }) : null;
   const proposals = (state.memoryProposals ?? []).filter(
     (proposal) => proposal.context === state.brainContext,
   );
@@ -229,79 +213,8 @@ function D4AgentPanelContent({
   ).length;
   const pendingProposals = Math.max(state.memoryProposalCount ?? 0, shownPendingProposals);
   const pendingActions = state.actionLog.filter((record) => record.status === "pending").length;
-  const controls = (
-    <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-      <label className="sr-only" htmlFor="d4-agent-context">
-        Context
-      </label>
-      <select
-        id="d4-agent-context"
-        aria-label="Agent context"
-        className="rounded-full border border-input bg-background px-3 py-1 text-sm focus-visible:outline focus-visible:outline-ring"
-        value={state.brainContext}
-        disabled={!canSwitch || switching || startingSession}
-        onChange={async (event) => {
-          const context = D4_BRAIN_CONTEXTS.find((value) => value === event.target.value);
-          if (!context || context === state.brainContext) return;
-          setSwitching(true);
-          setActionError(null);
-          await switchContext({ environmentId, input: { context } })
-            .then(async (result) => {
-              if (
-                result._tag === "Failure" ||
-                !(await waitForAgentThread(environmentId, result.value.threadId))
-              )
-                setActionError("Could not switch context.");
-              else
-                await navigate({
-                  to: "/$environmentId/$threadId",
-                  params: { environmentId, threadId: result.value.threadId },
-                });
-            })
-            .catch(() => setActionError("Could not switch context."))
-            .finally(() => setSwitching(false));
-        }}
-      >
-        {D4_BRAIN_CONTEXTS.map((context) => (
-          <option key={context} value={context}>
-            {context}
-          </option>
-        ))}
-      </select>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={!canStartSession || switching || startingSession}
-        onClick={async () => {
-          setStartingSession(true);
-          setActionError(null);
-          await newSession({ environmentId, input: {} })
-            .then(async (result) => {
-              if (
-                result._tag === "Failure" ||
-                !(await waitForAgentThread(environmentId, result.value.threadId))
-              )
-                setActionError("Could not start a new session.");
-              else
-                await navigate({
-                  to: "/$environmentId/$threadId",
-                  params: { environmentId, threadId: result.value.threadId },
-                });
-            })
-            .catch(() => setActionError("Could not start a new session."))
-            .finally(() => setStartingSession(false));
-        }}
-      >
-        {startingSession ? "Starting session…" : "New session"}
-      </Button>
-      {switching ? <span role="status">Switching context…</span> : null}
-    </div>
-  );
   const details = (
     <div className="flex flex-wrap items-center gap-3 py-2 text-xs">
-      <Link to="/settings/general" className="text-muted-foreground hover:underline">
-        Settings
-      </Link>
       {(state.reminders ?? []).length > 0 ? (
         <details className="relative">
           <summary className="cursor-pointer text-muted-foreground">
@@ -463,10 +376,9 @@ function D4AgentPanelContent({
     </section>
   ) : null;
   return render ? (
-    render({ controls, approvals, details })
+    render({ approvals, details })
   ) : (
     <div className="shrink-0 border-b text-sm">
-      {controls}
       {approvals}
       {details}
     </div>

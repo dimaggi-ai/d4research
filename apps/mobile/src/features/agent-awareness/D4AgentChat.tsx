@@ -185,12 +185,6 @@ export function D4AgentChat({
     >
       <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
         <Text className="text-lg font-t3-semibold text-foreground">Nia</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => linkTo("/settings/thread-preferences")}
-        >
-          <Text className="text-accent">Settings</Text>
-        </Pressable>
       </View>
       {state.threadId ? (
         <D4AgentPanel environmentId={environmentId} threadId={state.threadId} />

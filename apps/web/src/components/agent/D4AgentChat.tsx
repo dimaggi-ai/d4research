@@ -128,7 +128,7 @@ export function D4AgentChat({
     <D4AgentPanel
       environmentId={environmentId}
       threadId={state.threadId}
-      render={({ controls, approvals, details }) => (
+      render={({ approvals, details }) => (
         <section
           aria-label="Nia chat"
           className="flex h-full min-h-0 min-w-0 flex-col overflow-x-hidden bg-background"
@@ -151,7 +151,6 @@ export function D4AgentChat({
                 <WorkspaceBreadcrumbText>Nia</WorkspaceBreadcrumbText>
               </WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
-            {controls}
           </header>
           <div data-chat-canvas className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             <div

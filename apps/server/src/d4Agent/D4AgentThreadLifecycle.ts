@@ -67,6 +67,10 @@ const make = Effect.gen(function* () {
       shell.deletedAt !== null ||
       shell.archivedAt !== null ||
       shell.pinnedAt != null ||
+      // A pull request is ongoing work the user reviews from the thread.
+      shell.linkedPullRequest != null ||
+      shell.branchPullRequest != null ||
+      (shell.pullRequests?.length ?? 0) > 0 ||
       shell.activeRunId !== null ||
       shell.pendingRuntimeRequest !== null ||
       (shell.pendingBackgroundTasks?.length ?? 0) > 0 ||

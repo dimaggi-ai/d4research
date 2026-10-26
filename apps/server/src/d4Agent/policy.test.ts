@@ -15,6 +15,9 @@ import {
   isAllowedAgentMcpRequest,
   isQuietHour,
   modelAvailability,
+  taskRuntimeMode,
+  taskTitle,
+  taskWorkspace,
   usageAttributes,
 } from "./policy.ts";
 import { diskCheck } from "./SystemProbe.ts";
@@ -239,5 +242,42 @@ describe("d4 Agent policies", () => {
     assert.equal(diskCheck("root-disk", 100, 10, 90).status, "attention");
     assert.equal(diskCheck("data-disk", 100, 11, 90).status, "ok");
     assert.equal(diskCheck("data-disk", 0, 0, 90).status, "unavailable");
+  });
+});
+
+describe("Nia task launch", () => {
+  it("titles a task from its brief without the label, final period or overflow", () => {
+    assert.equal(
+      taskTitle("Task: reduce approval friction in Nia's action cards (d4research).\nMore."),
+      "reduce approval friction in Nia's action cards (d4research)",
+    );
+    assert.equal(taskTitle("  \n"), "Nia task");
+    const long = taskTitle(`Fix ${"very ".repeat(20)}long title`);
+    assert.isAtMost(long.length, 60);
+    assert.isTrue(long.endsWith("…"));
+  });
+
+  it("gives guarded tasks the provider's sandboxed autonomy and unguarded ones approval", () => {
+    assert.equal(taskRuntimeMode(false, undefined), "approval-required");
+    assert.equal(taskRuntimeMode(true, undefined), "auto");
+    assert.equal(
+      taskRuntimeMode(true, {
+        supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
+      }),
+      "auto-accept-edits",
+    );
+    assert.equal(
+      taskRuntimeMode(true, { supportedRuntimeModes: ["approval-required", "full-access"] }),
+      "approval-required",
+    );
+  });
+
+  it("uses a fresh worktree only for projects with a configured base ref", () => {
+    const projectId = "p" as Parameters<typeof taskWorkspace>[1];
+    assert.deepEqual(taskWorkspace({ projectWorktreeBaseRefs: {} }, projectId), { type: "root" });
+    assert.deepEqual(
+      taskWorkspace({ projectWorktreeBaseRefs: { [projectId]: "release" } }, projectId),
+      { type: "worktree", baseRef: "release", startFromOrigin: false },
+    );
   });
 });

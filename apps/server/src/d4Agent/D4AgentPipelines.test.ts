@@ -11,6 +11,7 @@ import { vi } from "vite-plus/test";
 import * as Pipelines from "./D4AgentPipelines.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 
 const yb = ProjectId.make("yb");
 const dimaggi = ProjectId.make("dimaggi");
@@ -35,6 +36,7 @@ const initial: ServerSettings = {
   },
   dev: { ...DEFAULT_SERVER_SETTINGS.dev, scenarios: [scenario("dimaggi")] },
 };
+const root = { runtimeMode: "approval-required", workspace: { type: "root" } } as const;
 const fixture = () => {
   let settings = initial;
   const dispatch = vi.fn(
@@ -44,7 +46,11 @@ const fixture = () => {
     (_input: Parameters<Threads.ThreadManagementService["Service"]["sendToThread"]>[0]) =>
       Effect.void,
   );
+  const launch = vi.fn((_input: ThreadLaunch.ThreadLaunchInput) => Effect.void);
   const services = Layer.mergeAll(
+    Layer.succeed(ThreadLaunch.ThreadLaunchService, {
+      launch,
+    } as unknown as ThreadLaunch.ThreadLaunchService["Service"]),
     Layer.succeed(Settings.ServerSettingsService, {
       getSettings: Effect.sync(() => settings),
     } as unknown as Settings.ServerSettingsService["Service"]),
@@ -55,6 +61,7 @@ const fixture = () => {
   );
   return {
     dispatch,
+    launch,
     sendToThread,
     update: (next: ServerSettings) => {
       settings = next;
@@ -105,7 +112,7 @@ it.effect(
         assert.equal(f.sendToThread.mock.calls.length, 0);
         assert.equal(prepared.pipelinePrompt, "Research yb");
         assert.deepEqual(prepared.promptFiles, [{ name: "guide.md", content: "yb" }]);
-        yield* service.execute({ actionId: "approved", context: "YB", prepared });
+        yield* service.execute({ actionId: "approved", context: "YB", prepared, ...root });
         assert.equal(f.dispatch.mock.calls.length, 1);
         assert.equal(f.sendToThread.mock.calls.length, 1);
         assert.deepInclude(f.dispatch.mock.calls[0]?.[0], {
@@ -121,6 +128,42 @@ it.effect(
         });
       }).pipe(Effect.provide(f.layer));
     }),
+);
+
+it.effect("a pipeline with a worktree workspace launches through the workspace service", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    yield* Effect.gen(function* () {
+      const service = yield* Pipelines.D4AgentPipelines;
+      const prepared = yield* service.prepare(
+        {
+          type: "research",
+          pipelineId: "research:yb",
+          projectId: yb,
+          text: "Task",
+          modelSelection,
+        },
+        "YB",
+      );
+      const workspace = { type: "worktree", baseRef: "release", startFromOrigin: false } as const;
+      yield* service.execute({
+        actionId: "isolated",
+        context: "YB",
+        prepared,
+        runtimeMode: "auto",
+        workspace,
+      });
+      assert.equal(f.dispatch.mock.calls.length, 0);
+      assert.equal(f.sendToThread.mock.calls.length, 0);
+      assert.deepInclude(f.launch.mock.calls[0]?.[0], {
+        projectId: yb,
+        runtimeMode: "auto",
+        workspaceStrategy: workspace,
+        createdBy: "agent",
+      });
+      assert.equal(f.launch.mock.calls[0]?.[0].initialMessage?.text, "!research:yb\n\nTask");
+    }).pipe(Effect.provide(f.layer));
+  }),
 );
 
 it.effect("refuses pipeline edits and context remapping after approval preparation", () =>
@@ -146,8 +189,9 @@ it.effect("refuses pipeline edits and context remapping after approval preparati
         },
       });
       assert.equal(
-        (yield* Effect.result(service.execute({ actionId: "changed", context: "YB", prepared })))
-          ._tag,
+        (yield* Effect.result(
+          service.execute({ actionId: "changed", context: "YB", prepared, ...root }),
+        ))._tag,
         "Failure",
       );
       f.update({
@@ -155,8 +199,9 @@ it.effect("refuses pipeline edits and context remapping after approval preparati
         d4Agent: { ...initial.d4Agent, projectContexts: { [yb]: "Dimaggi" } },
       });
       assert.equal(
-        (yield* Effect.result(service.execute({ actionId: "remapped", context: "YB", prepared })))
-          ._tag,
+        (yield* Effect.result(
+          service.execute({ actionId: "remapped", context: "YB", prepared, ...root }),
+        ))._tag,
         "Failure",
       );
       assert.equal(f.sendToThread.mock.calls.length, 0);

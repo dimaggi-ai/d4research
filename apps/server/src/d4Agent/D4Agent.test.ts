@@ -60,6 +60,7 @@ import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "../provider/ProviderRegistry.ts";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as Projections from "../orchestration-v2/ProjectionStore.ts";
 import * as Projects from "../project/ProjectService.ts";
 import * as Monitor from "../orchestration-v2/AgentMonitorReactor.ts";
@@ -188,6 +189,10 @@ const fixture = (
     const sendLimits = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
     const failStop = yield* Ref.make(false);
     const failCreate = yield* Ref.make(false);
+    const creates = yield* Ref.make<
+      ReadonlyArray<{ readonly title: string; readonly runtimeMode: string }>
+    >([]);
+    const launches = yield* Ref.make<ReadonlyArray<ThreadLaunch.ThreadLaunchInput>>([]);
     const failSend = yield* Ref.make(false);
     const failSnapshot = yield* Ref.make(false);
     const eventRevision = yield* Ref.make(0);
@@ -355,6 +360,10 @@ const fixture = (
                 if (cmd.type === "thread.create") {
                   if (yield* Ref.get(failCreate))
                     return yield* Effect.fail({ reason: "fixture creation failure" } as never);
+                  yield* Ref.update(creates, (all) => [
+                    ...all,
+                    { title: cmd.title, runtimeMode: cmd.runtimeMode },
+                  ]);
                   yield* Ref.update(shells, (all) => [
                     ...all,
                     { ...target, id: cmd.threadId, projectId: cmd.projectId },
@@ -441,6 +450,19 @@ const fixture = (
             delete: ({ id }) =>
               Ref.update(unscheduled, (all) => [...all, id]).pipe(Effect.as({ id })),
           }),
+          Layer.mock(ThreadLaunch.ThreadLaunchService)({
+            checkWorktreeBase: () => Effect.void,
+            launch: (input) =>
+              Ref.update(launches, (all) => [...all, input]).pipe(
+                Effect.andThen(
+                  Ref.update(shells, (all) => [
+                    ...all,
+                    { ...target, id: input.threadId!, projectId: input.projectId },
+                  ]),
+                ),
+                Effect.as({ threadId: input.threadId!, projection: {} as never, resumed: false }),
+              ),
+          }),
           Layer.succeed(ToolGuard.ToolGuardGate, {
             evaluate: (_url, envelope) =>
               Ref.update(guardCalls, (all) => [...all, envelope]).pipe(
@@ -496,6 +518,8 @@ const fixture = (
       sends,
       failStop,
       failCreate,
+      creates,
+      launches,
       failSend,
       failSnapshot,
       eventRevision,
@@ -2331,6 +2355,7 @@ it.effect("reports an agent-started completion, logs the delayed archive and und
   Effect.gen(function* () {
     const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
       sessionIdleMinutes: null,
+      agentThreadArchiveHours: 24,
     });
     yield* f.service.ensureThread();
     const threadId = ThreadId.make("d4-action:completed");
@@ -2401,6 +2426,99 @@ it.effect("reports an agent-started completion, logs the delayed archive and und
     yield* f.service.undoArchive({ actionId: "archive:completed" });
     assert.isNull((yield* Ref.get(f.shells)).find((thread) => thread.id === threadId)!.archivedAt);
     assert.isTrue((yield* Ref.get(f.state)).agentThreads![0]!.undoDisabled);
+  }),
+);
+
+const finishedTask = (
+  status: string,
+  options: {
+    readonly tracked?: boolean;
+    readonly shell?: Partial<OrchestrationV2ThreadShell>;
+  } = {},
+) =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      sessionIdleMinutes: null,
+    });
+    yield* f.service.ensureThread();
+    const threadId = ThreadId.make("d4-action:small");
+    const runId = RunId.make("small-run");
+    const task = {
+      ...target,
+      id: threadId,
+      title: "Rename the label",
+      createdBy: "agent" as const,
+      latestRunId: runId,
+      ...options.shell,
+    };
+    yield* Ref.update(f.shells, (all) => [...all, task]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      thread: { ...task, lastVisitedAt: task.lastVisitedAt ?? null },
+      runs: [{ id: runId, status, completedAt: now }] as unknown as typeof value.runs,
+    }));
+    if (options.tracked !== false)
+      yield* Ref.update(f.state, (value) => ({
+        ...value,
+        agentThreads: [
+          {
+            threadId,
+            projectId: target.projectId,
+            context: "Global" as const,
+            actionId: "small",
+            reportedAt: null,
+            archivedAt: null,
+            undoDisabled: false,
+          },
+        ],
+      }));
+    yield* f.service.tick;
+    const archivedAt = (yield* Ref.get(f.shells)).find(
+      (entry) => entry.id === threadId,
+    )!.archivedAt;
+    return { f, threadId, archivedAt };
+  });
+
+it.effect("a completed Nia task archives on success and leaves one chat line with its link", () =>
+  Effect.gen(function* () {
+    const { f, threadId, archivedAt } = yield* finishedTask("completed");
+    assert.isNotNull(archivedAt);
+    const lines = ((yield* Ref.get(f.state)).transcript ?? []).filter((line) =>
+      line.links.some((link) => link.threadId === threadId),
+    );
+    assert.deepEqual(
+      lines.map((line) => line.text),
+      ["Completed and archived: Rename the label."],
+    );
+    assert.equal((yield* f.service.getState()).actionLog[0]?.type, "auto-archive");
+  }),
+);
+
+it.effect.each(["failed", "interrupted", "cancelled"])("a %s Nia task is not archived", (status) =>
+  Effect.gen(function* () {
+    const { f, archivedAt } = yield* finishedTask(status);
+    assert.isNull(archivedAt);
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.archive");
+  }),
+);
+
+it.effect.each([
+  ["a pending question", { pendingRuntimeRequest: { id: "question" } as never }],
+  ["a user reply", { latestUserAuthoredMessageAt: now }],
+  ["a linked pull request", { pullRequests: [{ url: "https://example.test/pr/1" }] as never }],
+] as const)("a completed Nia task with %s is not archived", ([_label, shell]) =>
+  Effect.gen(function* () {
+    const { f, archivedAt } = yield* finishedTask("completed", { shell });
+    assert.isNull(archivedAt);
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.archive");
+  }),
+);
+
+it.effect("a completed thread Nia did not launch is not archived", () =>
+  Effect.gen(function* () {
+    const { f, archivedAt } = yield* finishedTask("completed", { tracked: false });
+    assert.isNull(archivedAt);
+    assert.notInclude(yield* Ref.get(f.dispatches), "thread.archive");
   }),
 );
 
@@ -3037,7 +3155,9 @@ it("the store keeps every active task and only the newest settled ones", () => {
 
 it.effect("a failed completion projection read retries the same unchanged task", () =>
   Effect.gen(function* () {
-    const f = yield* fixture("ask");
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      agentThreadArchiveHours: null,
+    });
     yield* f.service.ensureThread();
     yield* f.service.tick;
     const task = {
@@ -3078,7 +3198,9 @@ it.effect("a failed completion projection read retries the same unchanged task",
 
 it.effect("task cursors are dropped with their record, also when no task is left", () =>
   Effect.gen(function* () {
-    const f = yield* fixture("ask");
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      agentThreadArchiveHours: null,
+    });
     yield* f.service.ensureThread();
     yield* f.service.tick;
     const task = {
@@ -3436,6 +3558,71 @@ it.effect("an approved start links the thread it created", () =>
     const posted = state.transcript?.at(-1);
     assert.equal(posted?.text, "New thread: Fix the flaky login test");
     assert.equal(posted?.links[0]?.threadId, ThreadId.make(`d4-action:${record.id}`));
+  }),
+);
+
+it.effect("a guarded start gets a short title and auto mode, judged by Tool Guard", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const record = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Task: reduce approval friction in Nia's action cards (d4research).\nDetails.",
+      modelSelection,
+    });
+    const call = (yield* Ref.get(f.guardCalls)).at(-1);
+    assert.equal(call?.parameters.target_runtime_mode, "auto");
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.creates), [
+      { title: "reduce approval friction in Nia's action cards (d4research)", runtimeMode: "auto" },
+    ]);
+  }),
+);
+
+it.effect("an unguarded start keeps per-step approval", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    const record = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Task",
+      modelSelection,
+    });
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.equal((yield* Ref.get(f.creates))[0]?.runtimeMode, "approval-required");
+  }),
+);
+
+it.effect("a start for a project with a base ref launches in a fresh worktree", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      projectWorktreeBaseRefs: { [target.projectId]: "release" },
+    });
+    yield* f.service.ensureThread();
+    const record = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Fix the card",
+      modelSelection,
+    });
+    yield* f.service.resolveAction({ actionId: record.id, decision: "approve" });
+    assert.deepEqual(
+      (yield* Ref.get(f.creates)).filter((entry) => entry.title !== "Nia"),
+      [],
+    );
+    const [launch] = yield* Ref.get(f.launches);
+    assert.deepInclude(launch, {
+      threadId: ThreadId.make(`d4-action:${record.id}`),
+      title: "Fix the card",
+      runtimeMode: "approval-required",
+      workspaceStrategy: { type: "worktree", baseRef: "release", startFromOrigin: false },
+    });
+    assert.equal(launch?.initialMessage?.text, "Fix the card");
+    assert.equal(
+      (yield* Ref.get(f.state)).agentThreads?.[0]?.threadId,
+      ThreadId.make(`d4-action:${record.id}`),
+    );
   }),
 );
 

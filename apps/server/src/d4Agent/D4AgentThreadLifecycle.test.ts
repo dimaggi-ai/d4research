@@ -139,6 +139,9 @@ it.effect.each([
   ["active run", { activeRunId: runId }],
   ["pending request", { pendingRuntimeRequest: { id: "request" } }],
   ["pending work", { pendingBackgroundTasks: [{ id: "pending" }] }],
+  ["linked pull request", { linkedPullRequest: { number: 1 } }],
+  ["branch pull request", { branchPullRequest: { number: 1 } }],
+  ["registered pull request", { pullRequests: [{ url: "https://example.test/pr/1" }] }],
 ] as const)("never archives %s threads", ([_label, patch]) =>
   Effect.gen(function* () {
     const f = fixture(patch as Partial<OrchestrationV2ThreadShell>);
@@ -160,6 +163,10 @@ it.effect(
         { messages: [{ role: "user", createdBy: "user" }] },
         { runs: [{ id: runId, status: "completed", completedAt: DateTime.makeUnsafe(1000) }] },
         { runs: [{ id: runId, status: "failed", completedAt: DateTime.makeUnsafe(0) }] },
+        { runs: [{ id: runId, status: "interrupted", completedAt: DateTime.makeUnsafe(0) }] },
+        { runs: [{ id: runId, status: "cancelled", completedAt: DateTime.makeUnsafe(0) }] },
+        { runtimeRequests: [{ status: "pending", kind: "user_input" }] },
+        { runtimeRequests: [{ status: "pending", kind: "approval" }] },
         {
           runs: [
             ...projection.runs,
@@ -174,4 +181,14 @@ it.effect(
         }).pipe(Effect.provide(f.layer));
       }
     }),
+);
+
+it.effect("with no delay, a reported completion archives at once", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    yield* Effect.gen(function* () {
+      assert.isTrue(yield* (yield* Lifecycle.D4AgentThreadLifecycle).archive(record, 0));
+      assert.equal(f.dispatch.mock.calls[0]?.[0].type, "thread.archive");
+    }).pipe(Effect.provide(f.layer));
+  }),
 );

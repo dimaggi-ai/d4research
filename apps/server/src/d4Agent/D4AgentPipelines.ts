@@ -7,10 +7,13 @@ import {
   type ModelSelection,
   type ProjectId,
   type ResearchPromptFile,
+  type RuntimeMode,
 } from "@d4research/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as Catalog from "./PipelineCatalog.ts";
 import { projectActionInScope } from "./brainScope.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -53,6 +56,8 @@ export class D4AgentPipelines extends Context.Service<
       readonly actionId: string;
       readonly context: D4BrainContext;
       readonly prepared: PreparedPipeline;
+      readonly runtimeMode: RuntimeMode;
+      readonly workspace: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
       readonly onCreated?: (threadId: ThreadId) => Effect.Effect<void, D4AgentError>;
     }) => Effect.Effect<ThreadId, D4AgentError>;
   }
@@ -65,6 +70,7 @@ const make = Effect.gen(function* () {
   const catalog = yield* Catalog.PipelineCatalog;
   const settings = yield* ServerSettingsService;
   const threads = yield* Threads.ThreadManagementService;
+  const threadLaunch = yield* Effect.serviceOption(ThreadLaunch.ThreadLaunchService);
   const list = Effect.fn("D4AgentPipelines.list")(function* (context: D4BrainContext) {
     const config = (yield* settings.getSettings.pipe(Effect.mapError(unavailable))).d4Agent;
     const entries = yield* catalog.list().pipe(Effect.mapError(unavailable));
@@ -120,6 +126,8 @@ const make = Effect.gen(function* () {
     readonly actionId: string;
     readonly context: D4BrainContext;
     readonly prepared: PreparedPipeline;
+    readonly runtimeMode: RuntimeMode;
+    readonly workspace: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
     readonly onCreated?: (threadId: ThreadId) => Effect.Effect<void, D4AgentError>;
   }) {
     const prepared = input.prepared;
@@ -130,6 +138,30 @@ const make = Effect.gen(function* () {
     )
       return yield* unavailable();
     const threadId = ThreadId.make(`d4-action:${input.actionId}`);
+    if (input.workspace.type !== "root") {
+      if (Option.isNone(threadLaunch)) return yield* unavailable();
+      if (input.onCreated) yield* input.onCreated(threadId);
+      yield* threadLaunch.value
+        .launch({
+          commandId: CommandId.make(`d4-action-create:${input.actionId}`),
+          threadId,
+          projectId: prepared.projectId,
+          title: pipeline.name,
+          modelSelection: prepared.modelSelection,
+          runtimeMode: input.runtimeMode,
+          interactionMode: "default",
+          workspaceStrategy: input.workspace,
+          initialMessage: {
+            messageId: MessageId.make(`d4-action:${input.actionId}`),
+            text: prepared.text,
+            attachments: [],
+          },
+          createdBy: "agent",
+          creationSource: "server",
+        })
+        .pipe(Effect.mapError(unavailable));
+      return threadId;
+    }
     yield* threads
       .dispatch({
         type: "thread.create",
@@ -138,7 +170,7 @@ const make = Effect.gen(function* () {
         projectId: prepared.projectId,
         title: pipeline.name,
         modelSelection: prepared.modelSelection,
-        runtimeMode: "approval-required",
+        runtimeMode: input.runtimeMode,
         interactionMode: "default",
         branch: null,
         worktreePath: null,

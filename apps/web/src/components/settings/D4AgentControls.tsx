@@ -327,7 +327,7 @@ export function D4AgentControls({
       />
       <SettingsRow
         title="Agent thread auto-archive"
-        description="Archive completed agent-started threads after they have been reported. Replies and pins prevent archiving."
+        description="Archive completed agent-started threads once reported, or 24 hours later. Replies, pins, pending questions, and linked pull requests prevent archiving."
         control={
           <select
             aria-label="Agent thread auto-archive"
@@ -335,10 +335,14 @@ export function D4AgentControls({
             disabled={disabled}
             value={agent.agentThreadArchiveHours ?? "off"}
             onChange={(event) =>
-              void writeAgent({ agentThreadArchiveHours: event.target.value === "24" ? 24 : null })
+              void writeAgent({
+                agentThreadArchiveHours:
+                  event.target.value === "24" ? 24 : event.target.value === "0" ? 0 : null,
+              })
             }
           >
             <option value="off">Off</option>
+            <option value="0">On success</option>
             <option value="24">24 hours</option>
           </select>
         }

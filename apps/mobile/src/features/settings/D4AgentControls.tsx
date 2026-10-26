@@ -300,15 +300,18 @@ export function D4AgentControls({
         disabled={disabled}
         options={[
           { id: "off", label: "Off" },
+          { id: "0", label: "On success" },
           { id: "24", label: "24 hours" },
         ]}
         onChange={(selected) =>
-          void writeAgent({ agentThreadArchiveHours: selected === "24" ? 24 : null })
+          void writeAgent({
+            agentThreadArchiveHours: selected === "24" ? 24 : selected === "0" ? 0 : null,
+          })
         }
       />
       <Text className="px-4 pb-3 text-sm text-foreground-muted">
-        Archive completed agent-started threads after they have been reported. Replies and pins
-        prevent archiving.
+        Archive completed agent-started threads once reported, or 24 hours later. Replies, pins,
+        pending questions, and linked pull requests prevent archiving.
       </Text>
       <AgentChoiceRow
         icon="clock"

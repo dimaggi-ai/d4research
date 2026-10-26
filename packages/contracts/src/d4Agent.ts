@@ -54,9 +54,15 @@ export const D4AgentSettings = Schema.Struct({
   sessionBudgetPercent: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 90 })).pipe(
     Schema.withDecodingDefault(Effect.succeed(60)),
   ),
-  agentThreadArchiveHours: Schema.NullOr(Schema.Literal(24)).pipe(
-    Schema.withDecodingDefault(Effect.succeed(24)),
+  // 0 archives a completed task as soon as it is reported.
+  agentThreadArchiveHours: Schema.NullOr(Schema.Literals([0, 24])).pipe(
+    Schema.withDecodingDefault(Effect.succeed(0)),
   ),
+  // Base ref for a fresh worktree per Nia task, for projects whose root checkout lacks the code.
+  projectWorktreeBaseRefs: Schema.Record(
+    ProjectId,
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   pipelineProjects: Schema.Record(Schema.String, ProjectId).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -107,7 +113,8 @@ export type D4AgentSettings = typeof D4AgentSettings.Type;
 export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   sessionIdleMinutes: 120,
   sessionBudgetPercent: 60,
-  agentThreadArchiveHours: 24,
+  agentThreadArchiveHours: 0,
+  projectWorktreeBaseRefs: {},
   pipelineProjects: {},
   brainVaultPath: "",
   memoryEnabled: false,

@@ -100,10 +100,15 @@ Nia in the same conversation. Review the final prompt, project, pipeline, and mo
 before approving. To send a message to another thread, ask Nia to rewrite it for
 that thread. The approval card lets you edit and send the draft or send your original text.
 
-Completed threads started by Nia are reported in the conversation, then archived
-after 24 hours by default. You can turn this off in Settings. A user reply or pin prevents
-automatic archiving; user-started threads are never archived automatically. Use **Undo
-archive** in the action log to restore an archived thread.
+When Tool Guard reviews Nia's actions, a thread Nia starts runs in **Auto** mode, where the
+provider sandboxes or reviews each step. Without Tool Guard, each step waits for your approval
+in that thread.
+
+By default (**On success**), Nia archives a thread it started as soon as it reports the thread
+completed, and keeps one line in the conversation with a link to the archived thread. In
+Settings, choose **24 hours** to archive later, or **Off**. A user reply, pin, pending
+question, or linked pull request prevents automatic archiving; user-started threads are never
+archived automatically. Use **Undo archive** in the action log to restore an archived thread.
 
 Enable **Brain memory** in the Nia settings and set **Brain vault path** to the
 vault on the environment's host. Memory reads only files approved by that

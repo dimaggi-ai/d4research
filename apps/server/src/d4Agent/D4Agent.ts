@@ -86,8 +86,12 @@ import {
   contentFreeDigest,
   modelAvailability,
   modelFacingReport,
+  taskRuntimeMode,
+  taskTitle,
+  taskWorkspace,
   usageAttributes,
 } from "./policy.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 
 export class D4Agent extends Context.Service<
   D4Agent,
@@ -394,6 +398,7 @@ export const layer = Layer.effect(
       Pc.make({ useScope: false }),
     );
     const scheduledTasks = yield* Effect.serviceOption(ScheduledTasks.ScheduledTaskService);
+    const threadLaunch = yield* Effect.serviceOption(ThreadLaunch.ThreadLaunchService);
     const guardGate = Option.getOrElse(
       yield* Effect.serviceOption(ToolGuard.ToolGuardGate),
       () => ToolGuard.proxyGate,
@@ -1780,12 +1785,25 @@ export const layer = Layer.effect(
         );
       }
       if (action.type === "pipeline" || action.type === "research" || action.type === "start") {
+        const providerList = yield* providers.getProviders;
         const reason = modelAvailability(
           { ...config, modelSelection: action.modelSelection },
-          yield* providers.getProviders,
+          providerList,
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const targetId = ThreadId.make(`d4-action:${record.id}`);
+        const runtimeMode = taskRuntimeMode(
+          record.guard !== undefined,
+          providerList.find((entry) => entry.instanceId === action.modelSelection.instanceId),
+        );
+        const workspace = taskWorkspace(config, action.projectId);
+        if (workspace.type !== "root") {
+          if (Option.isNone(threadLaunch))
+            return yield* new D4AgentError({ reason: "action-unavailable" });
+          yield* threadLaunch.value
+            .checkWorktreeBase({ projectId: action.projectId, workspaceStrategy: workspace })
+            .pipe(Effect.mapError(threadError));
+        }
         // Only active tasks count; settled ones are retired by the store bound.
         if ((state.agentThreads ?? []).filter((entry) => entry.settledAt == null).length >= 1000)
           return yield* new D4AgentError({ reason: "busy" });
@@ -1828,6 +1846,8 @@ export const layer = Layer.effect(
               actionId: record.id,
               context: state.brainContext,
               prepared,
+              runtimeMode,
+              workspace,
               onCreated: () => register.pipe(Effect.asVoid),
             })
             .pipe(
@@ -1836,15 +1856,44 @@ export const layer = Layer.effect(
               ),
             );
         }
+        const revoke = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          effect.pipe(
+            Effect.tapError(() =>
+              store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
+            ),
+          );
+        if (workspace.type !== "root" && Option.isSome(threadLaunch)) {
+          yield* register;
+          yield* threadLaunch.value
+            .launch({
+              commandId: command(`action-create:${record.id}`),
+              threadId: targetId,
+              projectId: action.projectId,
+              title: taskTitle(action.text),
+              modelSelection: action.modelSelection,
+              runtimeMode,
+              interactionMode: "default",
+              workspaceStrategy: workspace,
+              initialMessage: {
+                messageId: MessageId.make(`d4-action:${record.id}`),
+                text: action.text,
+                attachments: [],
+              },
+              createdBy: "agent",
+              creationSource: "server",
+            })
+            .pipe(Effect.mapError(threadError), revoke);
+          return;
+        }
         yield* threads
           .dispatch({
             type: "thread.create",
             commandId: command(`action-create:${record.id}`),
             threadId: targetId,
             projectId: action.projectId,
-            title: action.text.trim().split("\n")[0]!.slice(0, 80) || "Nia task",
+            title: taskTitle(action.text),
             modelSelection: action.modelSelection,
-            runtimeMode: "approval-required",
+            runtimeMode,
             interactionMode: "default",
             branch: null,
             worktreePath: null,
@@ -1865,12 +1914,7 @@ export const layer = Layer.effect(
             createdBy: "agent",
             creationSource: "server",
           })
-          .pipe(
-            Effect.mapError(threadError),
-            Effect.tapError(() =>
-              store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
-            ),
-          );
+          .pipe(Effect.mapError(threadError), revoke);
         return;
       }
       if (action.type === "pc") {
@@ -2156,7 +2200,7 @@ export const layer = Layer.effect(
       const created =
         result._tag === "Success" &&
         (action.type === "start" || action.type === "research" || action.type === "pipeline")
-          ? action.text.trim().split("\n")[0]!.slice(0, 80) || "Nia task"
+          ? taskTitle(action.text)
           : null;
       yield* store.update((value) => ({
         ...value,
@@ -2286,6 +2330,20 @@ export const layer = Layer.effect(
                       : {}),
                     ...("projectId" in guarded && guarded.projectId !== undefined
                       ? { project_id: guarded.projectId }
+                      : {}),
+                    // The mode the new task will run in, so the policy can hold it.
+                    ...(guarded.type === "start" ||
+                    guarded.type === "pipeline" ||
+                    guarded.type === "research"
+                      ? {
+                          target_runtime_mode: taskRuntimeMode(
+                            true,
+                            (yield* providers.getProviders).find(
+                              (entry) => entry.instanceId === guarded.modelSelection.instanceId,
+                            ),
+                          ),
+                          workspace: taskWorkspace(config, guarded.projectId).type,
+                        }
                       : {}),
                     ...("text" in guarded ? { text: guarded.text } : {}),
                     ...(guarded.type === "pc" ? { text: guarded.command } : {}),
@@ -2932,6 +2990,7 @@ export const layer = Layer.effect(
             (shell.pendingBackgroundTasks?.length ?? 0) === 0;
           if (isSettled !== (entry.settledAt != null)) settled.set(entry.threadId, isSettled);
           const cursor = `${DateTime.formatIso(shell.updatedAt)}:${shell.latestRunId}:${shell.activeRunId}`;
+          let reportedAt = entry.reportedAt;
           if (!entry.undoDisabled && taskCursors.get(entry.threadId) !== cursor) {
             if (
               shell?.latestRunId != null &&
@@ -2975,30 +3034,48 @@ export const layer = Layer.effect(
                     record.threadId === entry.threadId ? { ...record, reportedAt: at } : record,
                   ),
                 }));
+                reportedAt = at;
               }
             }
           }
           taskCursors.set(entry.threadId, cursor);
           const archiveDue =
-            entry.reportedAt !== null &&
+            reportedAt !== null &&
             config.agentThreadArchiveHours !== null &&
             (yield* Clock.currentTimeMillis) >=
-              Date.parse(entry.reportedAt) + config.agentThreadArchiveHours * 3_600_000;
-          const archiveCursor = `${cursor}:${entry.reportedAt}:${config.agentThreadArchiveHours}`;
+              Date.parse(reportedAt) + config.agentThreadArchiveHours * 3_600_000;
+          const archiveCursor = `${cursor}:${reportedAt}:${config.agentThreadArchiveHours}`;
           if (
             archiveDue &&
             !entry.undoDisabled &&
             archiveCursors.get(entry.threadId) !== archiveCursor
           ) {
             const archived = yield* lifecycle
-              .archive(entry, config.agentThreadArchiveHours)
+              .archive({ ...entry, reportedAt }, config.agentThreadArchiveHours)
               .pipe(Effect.result);
             if (archived._tag === "Failure") continue;
             archiveCursors.set(entry.threadId, archiveCursor);
             if (!archived.success) continue;
             const at = DateTime.formatIso(yield* DateTime.now);
+            const reportId = `report:${entry.actionId}:${shell.latestRunId}`;
+            const archivedLine = {
+              id: `archived:${entry.actionId}`,
+              role: "system" as const,
+              text: `Archived: ${shell.title}.`,
+              context: entry.context,
+              createdAt: at,
+              links: [{ label: shell.title, threadId: entry.threadId, projectId: entry.projectId }],
+            };
             yield* store.update((value) => ({
               ...value,
+              // One line per task: the completion report becomes the archive notice.
+              transcript: (value.transcript ?? []).some((line) => line.id === reportId)
+                ? (value.transcript ?? []).map((line) =>
+                    line.id === reportId
+                      ? { ...line, text: `Completed and archived: ${shell.title}.` }
+                      : line,
+                  )
+                : [...(value.transcript ?? []), archivedLine].slice(-200),
               agentThreads: (value.agentThreads ?? []).filter(
                 (record) => record.threadId !== entry.threadId,
               ),

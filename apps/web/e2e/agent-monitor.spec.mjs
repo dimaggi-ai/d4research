@@ -125,7 +125,7 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   await projectSearch.press("Escape");
   for (const name of ["Initialize Git", "Add project script", "Open in Files"])
     NodeAssert.equal(await chat.getByRole("button", { name, exact: true }).count(), 0);
-  for (const name of ["Nia model", "Attach files", "Start voice conversation", "Send"])
+  for (const name of ["Nia model", "Attach files", "Start voice conversation", "Submit message"])
     await chat.getByRole("button", { name, exact: true }).waitFor();
   const composerPicker = chat.getByRole("button", { name: "Nia model", exact: true });
   const previousModelLabel = await composerPicker.innerText();

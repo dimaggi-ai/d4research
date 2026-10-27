@@ -6,6 +6,7 @@ import { useD4AgentState } from "./useD4AgentState";
 import {
   agentUnavailableMessage,
   actionFullText,
+  actionTargetThread,
   actionHeading,
   approveLabel,
   guardNotice,
@@ -218,7 +219,7 @@ function D4AgentPanelContent({
     <div className="flex flex-wrap items-center gap-3 py-2 text-xs">
       {(state.reminders ?? []).length > 0 ? (
         <details className="relative">
-          <summary className="cursor-pointer text-muted-foreground">
+          <summary className="cursor-pointer rounded-full border border-border/60 bg-background px-2.5 py-1 text-muted-foreground shadow-sm hover:border-border hover:text-foreground">
             Reminders · {state.reminders?.length}
           </summary>
           <ul className="absolute bottom-full z-30 mb-1 max-h-[40dvh] w-[min(24rem,90vw)] space-y-1 overflow-y-auto rounded-md border bg-popover p-2 shadow-md">
@@ -235,8 +236,10 @@ function D4AgentPanelContent({
       ) : null}
       {state.actionLog.some((record) => record.status !== "pending") ? (
         <details className="relative">
-          <summary className="cursor-pointer text-muted-foreground">History</summary>
-          <div className="absolute bottom-full z-30 mb-1 max-h-[40dvh] w-[min(32rem,90vw)] overflow-y-auto rounded-md border bg-popover p-2 shadow-md">
+          <summary className="cursor-pointer rounded-full border border-border/60 bg-background px-2.5 py-1 text-muted-foreground shadow-sm hover:border-border hover:text-foreground">
+            History
+          </summary>
+          <div className="absolute bottom-full z-30 mb-1 max-h-[40dvh] w-[min(32rem,90vw)] overflow-y-auto rounded-md border bg-popover px-3 py-1 shadow-md divide-y divide-border/60">
             {state.actionLog
               .filter((record) => record.status !== "pending")
               .slice(0, 20)
@@ -347,31 +350,33 @@ function D4AgentPanelContent({
           Pending memory proposals · {context}: {count}
         </p>
       ))}
-      {state.actionLog
-        .filter((record) => record.status === "pending")
-        .map((record) => (
-          <AgentActionRecord
-            key={record.id}
-            environmentId={environmentId}
-            record={record}
-            allowed={allowed}
-            busy={busy !== null}
-            onResolve={async (decision, options) => {
-              setBusy(record.id);
-              setActionError(null);
-              await resolve({
-                environmentId,
-                input: { actionId: record.id, decision, ...options },
-              })
-                .then((result) => {
-                  if (result._tag === "Failure") setActionError("Could not resolve this action.");
-                  query.refresh();
+      <div className="divide-y divide-border/60">
+        {state.actionLog
+          .filter((record) => record.status === "pending")
+          .map((record) => (
+            <AgentActionRecord
+              key={record.id}
+              environmentId={environmentId}
+              record={record}
+              allowed={allowed}
+              busy={busy !== null}
+              onResolve={async (decision, options) => {
+                setBusy(record.id);
+                setActionError(null);
+                await resolve({
+                  environmentId,
+                  input: { actionId: record.id, decision, ...options },
                 })
-                .catch(() => setActionError("Could not resolve this action."))
-                .finally(() => setBusy(null));
-            }}
-          />
-        ))}
+                  .then((result) => {
+                    if (result._tag === "Failure") setActionError("Could not resolve this action.");
+                    query.refresh();
+                  })
+                  .catch(() => setActionError("Could not resolve this action."))
+                  .finally(() => setBusy(null));
+              }}
+            />
+          ))}
+      </div>
       {actionError ? <p role="alert">{actionError}</p> : null}
       {query.error ? <p role="alert">{query.error}</p> : null}
     </section>
@@ -415,6 +420,12 @@ function AgentActionRecord({
   const project = useProject(
     tag === null ? null : scopeProjectRef(environmentId, ProjectId.make(record.targetId)),
   );
+  const targetThreadId = actionTargetThread(record);
+  const targetThread = useThreadShell(
+    targetThreadId === null ? null : { environmentId, threadId: targetThreadId },
+  );
+  // Launch cards link the thread they created; thread actions link the thread they act on.
+  const linkedThreadId = record.threadId ?? (targetThread ? targetThreadId : null);
   // A pending card shows the full action up front, so it can be approved in place.
   const pending = record.status === "pending";
   const open = reviewing || pending;
@@ -438,7 +449,7 @@ function AgentActionRecord({
     allowed && !busy && detail.data?.id === record.id && detail.data.status === "pending";
   const sendAction = detail.data?.action.type === "send" ? detail.data.action : null;
   const switchAction = detail.data?.action.type === "switch-context" ? detail.data.action : null;
-  const heading = actionHeading(record, project?.title);
+  const heading = actionHeading(record, project?.title, targetThread?.title);
   const fullText = detail.data ? actionFullText(detail.data.action) : null;
   const guard = guardNotice(record.guard);
   const finalText = editedText ?? sendAction?.text ?? "";
@@ -559,14 +570,19 @@ function AgentActionRecord({
         </div>
       ) : null}
       {detail.error ? <p role="alert">{detail.error}</p> : null}
-      {record.threadId ? (
-        <Link
-          to="/$environmentId/$threadId"
-          params={{ environmentId, threadId: record.threadId }}
-          className="inline-block text-sm text-primary underline underline-offset-2"
+      {linkedThreadId ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          render={
+            <Link
+              to="/$environmentId/$threadId"
+              params={{ environmentId, threadId: linkedThreadId }}
+            />
+          }
         >
           Open thread
-        </Link>
+        </Button>
       ) : null}
       {record.type === "auto-archive" && record.status === "executed" ? (
         <Button

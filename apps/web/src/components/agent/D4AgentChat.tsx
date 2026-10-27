@@ -129,6 +129,23 @@ export function D4AgentChat({
     return observeResize(node, () => setComposerInset(node.getBoundingClientRect().height));
   }, []);
   const followConversation = useRef(true);
+  const content = useRef<HTMLDivElement>(null);
+  // A width change or late-rendering markdown reflows the transcript without changing it; a
+  // reader at the end stays there.
+  useLayoutEffect(() => {
+    const node = conversation.current;
+    const lane = content.current;
+    if (!node || !lane) return;
+    const keepEnd = () => {
+      if (followConversation.current) node.scrollTop = node.scrollHeight;
+    };
+    const stopLane = observeResize(lane, keepEnd);
+    const stopNode = observeResize(node, keepEnd);
+    return () => {
+      stopLane();
+      stopNode();
+    };
+  }, []);
   useEffect(() => {
     if (!state.transcript?.length || composerInset === 0) return;
     const node = conversation.current;
@@ -175,7 +192,7 @@ export function D4AgentChat({
               aria-label="Agent conversation"
               className="messages-timeline-scroll scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain topbar-scroll-fade [overflow-anchor:none]"
             >
-              <div className="chat-content-lane flex min-h-full flex-col">
+              <div ref={content} className="chat-content-lane flex min-h-full flex-col">
                 <div aria-hidden className="h-3 shrink-0 sm:h-4" />
                 {transcript.map((entry) => {
                   const segments =

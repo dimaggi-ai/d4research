@@ -369,9 +369,7 @@ export function D4AgentComposer({
         ) : null}
         {banner ? (
           <ComposerBanner.Attachment>
-            <ComposerBanner.Root>
-              <ComposerBanner.Body>{banner}</ComposerBanner.Body>
-            </ComposerBanner.Root>
+            <ComposerBanner.Root>{banner}</ComposerBanner.Root>
           </ComposerBanner.Attachment>
         ) : null}
         {preparing ? (

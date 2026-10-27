@@ -7,6 +7,7 @@ import {
   projectBelongsToAgentContext,
   brainIndexStatus,
   actionHeading,
+  actionTargetThread,
   guardNotice,
   agentActivityLabel,
   agentWatchLabel,
@@ -99,6 +100,24 @@ it("headlines a context switch with its target instead of the raw id", () => {
     title: "send · thread-1",
     detail: "Draft",
   });
+});
+
+it("names a thread action's thread and does not repeat a command in its heading", () => {
+  expect(
+    actionHeading({ type: "send", targetId: "thread-1", preview: "Draft" }, undefined, "Fix CI"),
+  ).toEqual({ title: "send · Fix CI", detail: "Draft" });
+  expect(
+    actionHeading({ type: "pc", targetId: "pc:df -h", preview: "df -h" }, undefined, "ignored"),
+  ).toEqual({ title: "Host command", detail: "df -h" });
+  expect(
+    actionHeading({
+      type: "remind",
+      targetId: "remind:2026-10-27T15:00:00Z:Stand up",
+      preview: "Stand up",
+    }),
+  ).toEqual({ title: "Reminder", detail: "Stand up" });
+  expect(actionTargetThread({ type: "auto-archive", targetId: "thread-2" })).toBe("thread-2");
+  expect(actionTargetThread({ type: "start", targetId: "project-1" })).toBeNull();
 });
 
 it("says when Nia is working, failed, or idle", () => {

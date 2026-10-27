@@ -7,6 +7,7 @@ import type {
   ProjectId,
   D4AgentSettings,
 } from "@d4research/contracts";
+import { ThreadId } from "@d4research/contracts";
 import {
   threadRuntimeIsActive,
   type ThreadRunSummary,
@@ -77,16 +78,36 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
   return `${status} · ${index.files} files · Last rebuild: ${index.lastRebuild ?? "Not available"}`;
 }
 
-// Context switches carry a readable server-filled preview; launches name their project; other
-// actions show their raw target.
+/** The thread an action acts on, so its card can name and open it. */
+export function actionTargetThread(
+  record: Pick<D4AgentActionSummary, "type" | "targetId">,
+): ThreadId | null {
+  return record.type === "send" ||
+    record.type === "interrupt" ||
+    record.type === "answer" ||
+    record.type === "auto-archive"
+    ? ThreadId.make(record.targetId)
+    : null;
+}
+
+// Context switches carry a readable server-filled preview; launches name their project; thread
+// actions name their thread. Host commands and reminders already show their text as the detail,
+// so their target, which repeats it, is not shown.
 export function actionHeading(
   record: Pick<D4AgentActionSummary, "type" | "targetId" | "preview">,
   projectTitle?: string,
+  threadTitle?: string,
 ): { title: string; detail: string } {
   if (record.type === "switch-context") return { title: record.preview, detail: "" };
   if (launchTag(record.type) !== null)
     return { title: projectTitle ?? record.targetId, detail: record.preview };
-  return { title: `${record.type} · ${record.targetId}`, detail: record.preview };
+  if (record.type === "pc") return { title: "Host command", detail: record.preview };
+  if (record.type === "remind") return { title: "Reminder", detail: record.preview };
+  if (record.type === "cancel-reminder") return { title: "Cancel reminder", detail: "" };
+  return {
+    title: `${record.type} · ${(actionTargetThread(record) && threadTitle) || record.targetId}`,
+    detail: record.preview,
+  };
 }
 
 /** The untruncated text a pending card shows, where the summary preview is capped. */

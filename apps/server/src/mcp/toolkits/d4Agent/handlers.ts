@@ -44,8 +44,8 @@ const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4
     );
   }).pipe(Effect.mapError((error) => error.message));
 export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
-  d4_agent_overview: McpToolAccess.reads(({ includeClosed }) =>
-    call((service) => service.overview(includeClosed)),
+  d4_agent_overview: McpToolAccess.reads(({ includeClosed, source }) =>
+    call((service) => service.overview(includeClosed, source)),
   ),
   d4_agent_overview_update: McpToolAccess.writesWithCapability((input) =>
     call((service) => service.updateOverview(input)),

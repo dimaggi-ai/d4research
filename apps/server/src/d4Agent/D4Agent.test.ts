@@ -3830,6 +3830,26 @@ it.effect(
     }),
 );
 
+it.effect("Overview lists only the requested source", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.inboxSnapshots, [
+      healthSnapshot(),
+      {
+        source: "mail",
+        context: "Global",
+        items: [{ key: "mail-1", severity: "info", title: "Receipt" }],
+      },
+    ]);
+    yield* f.service.tick;
+    assert.deepEqual(
+      (yield* f.service.overview(false, "health")).map((item) => item.key),
+      ["disk"],
+    );
+    assert.deepEqual(yield* f.service.overview(false, "intel"), []);
+  }),
+);
+
 it.effect(
   "Global Overview carries Personal titles once, while model input and getState omit bodies",
   () =>

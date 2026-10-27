@@ -28,8 +28,11 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_overview", {
     ...shared,
     description:
-      "List overview items in the bound context. Include acknowledged and resolved items with includeClosed.",
-    parameters: Schema.Struct({ includeClosed: Schema.optionalKey(Schema.Boolean) }),
+      "List overview items in the bound context. Include acknowledged and resolved items with includeClosed. Pass source (mail, intel, threads, scheduled, system, cto) to list only that source; the full list can be too large to read.",
+    parameters: Schema.Struct({
+      includeClosed: Schema.optionalKey(Schema.Boolean),
+      source: Schema.optionalKey(Schema.String),
+    }),
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_overview_update", {

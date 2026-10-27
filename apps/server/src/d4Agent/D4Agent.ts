@@ -99,6 +99,7 @@ export class D4Agent extends Context.Service<
   {
     readonly overview: (
       includeClosed?: boolean,
+      source?: string,
     ) => Effect.Effect<ReadonlyArray<Overview.OverviewItem>, D4AgentError>;
     readonly updateOverview: (input: {
       key: string;
@@ -2573,12 +2574,16 @@ export const layer = Layer.effect(
           })),
       } satisfies D4AgentTasks;
     });
-    const overview = Effect.fn("D4Agent.overview")(function* (includeClosed = false) {
+    const overview = Effect.fn("D4Agent.overview")(function* (
+      includeClosed = false,
+      source?: string,
+    ) {
       const { state, config } = yield* bound();
       return Overview.sortOverview(
         (state.overviewItems ?? [])
           .filter(
             (item) =>
+              (source === undefined || item.source === source) &&
               (["threads", "scheduled", "system", "cto"].includes(item.source) ||
                 config.overviewSources[item.source] === item.context) &&
               Overview.overviewVisible(item, state.brainContext) &&

@@ -14,6 +14,13 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Agent from "../../../d4Agent/D4Agent.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+const IsoTime = Schema.String.check(
+  Schema.makeFilter(
+    (value) =>
+      Number.isFinite(Date.parse(value)) ||
+      "Expected an ISO time such as 2026-10-27T00:00:00-07:00.",
+  ),
+);
 const shared = {
   failure: Schema.String,
   failureMode: "return" as const,
@@ -28,17 +35,24 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_overview", {
     ...shared,
     description:
-      "List overview items in the bound context. Include acknowledged and resolved items with includeClosed. Pass source (mail, intel, threads, scheduled, system, cto) to list only that source; the full list can be too large to read.",
+      "List overview items in the bound context, most severe and newest first, one page at a time. Filters combine: source (mail, intel, threads, scheduled, system, cto, or evolution-<context>), context (Global only), severity, researchIdeas (only items whose recommendation says Propose !research:<pipeline>), since and until (ISO times with offset, matched against changedAt). includeClosed adds acknowledged and resolved items. A page holds limit items (default 20, at most 50); when nextOffset is not null, pass it as offset for the next page. total counts every matching item.",
     parameters: Schema.Struct({
       includeClosed: Schema.optionalKey(Schema.Boolean),
       source: Schema.optionalKey(Schema.String),
+      context: Schema.optionalKey(D4BrainContext),
+      severity: Schema.optionalKey(Schema.Literals(["info", "attention", "critical"])),
+      researchIdeas: Schema.optionalKey(Schema.Boolean),
+      since: Schema.optionalKey(IsoTime),
+      until: Schema.optionalKey(IsoTime),
+      limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+      offset: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
     }),
     success: Schema.Unknown,
   }).annotate(Tool.Readonly, true),
   Tool.make("d4_agent_overview_update", {
     ...writable,
     description:
-      "Acknowledge, snooze, or reopen one overview item in the bound context. Reopen clears acknowledgement or snooze. Use its key; minutes defaults to 60 for snooze.",
+      "Acknowledge, snooze, or reopen one overview item in the bound context. Reopen clears acknowledgement or snooze. Use its key; minutes defaults to 60 for snooze. Returns the updated item.",
     parameters: Schema.Struct({
       key: Schema.String,
       op: Schema.Literals(["ack", "snooze", "reopen"]),
@@ -123,7 +137,7 @@ export const D4AgentToolkit = Toolkit.make(
   Tool.make("d4_agent_action", {
     ...writable,
     description:
-      "Request a bounded d4 action. Send, start, research, pipeline, interrupt, answer, pc, schedule, unschedule and switch-context are critical: each returns a pending card and runs only after the user approves it, even when Tool Guard allows it. Never say a pending action ran. pc runs one bash command on the user's desktop (DISPLAY :0) with a 60-second limit; its output is posted to the chat after approval; start GUI apps detached with `setsid -f APP >/dev/null 2>&1`. remind posts text into this chat at an ISO time; cancel-reminder removes one by id. schedule creates a recurring agent run (interval or fixed_time) in a mapped project; unschedule deletes one Nia created. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only allows only send, start, research, pipeline and switch-context drafts. Remind, cancel-reminder, memory-propose and cto-ask run without approval in Act. Provider permission requests cannot be approved. why is one line on why the action is needed now; effect is one line on exactly what it will change (target, command or service). Both appear on the approval card.",
+      "Request a bounded d4 action. Send, start, research, pipeline, interrupt, archive, answer, pc, schedule, unschedule and switch-context are critical: each returns a pending card and runs only after the user approves it, even when Tool Guard allows it. Never say a pending action ran. archive takes the threadId of any idle thread in the bound context's projects; use it when the user asks to settle, close, wrap up or archive a thread. auto-archive applies only to finished threads Nia started. pc runs one bash command on the user's desktop (DISPLAY :0) with a 60-second limit; its output is posted to the chat after approval; start GUI apps detached with `setsid -f APP >/dev/null 2>&1`. remind posts text into this chat at an ISO time; cancel-reminder removes one by id. schedule creates a recurring agent run (interval or fixed_time) in a mapped project; unschedule deletes one Nia created. switch-context takes one threadId or projectId in another context and is available only from Global; on approval the server switches context and replays the user's request there. Read-only allows only send, start, research, pipeline and switch-context drafts. Remind, cancel-reminder, memory-propose and cto-ask run without approval in Act. Provider permission requests cannot be approved. why is one line on why the action is needed now; effect is one line on exactly what it will change (target, command or service). Both appear on the approval card.",
     parameters: Schema.Struct({
       action: D4AgentAction,
       why: D4AgentActionNote.fields.why,

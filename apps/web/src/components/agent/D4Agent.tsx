@@ -267,7 +267,7 @@ function D4AgentPanelContent({
   const approvals = hasApprovals ? (
     <section
       aria-label="Waiting for you"
-      className="max-h-[40dvh] overflow-y-auto px-4 py-3 text-sm md:max-h-64"
+      className="max-h-[50dvh] overflow-y-auto px-4 py-3 text-sm"
     >
       {!state.modelAvailable ? (
         <p role="status" className="py-1 text-muted-foreground">
@@ -482,6 +482,41 @@ function AgentActionRecord({
           </div>
         </dl>
       ) : null}
+      {pending ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
+            onClick={() =>
+              void onResolve(
+                "approve",
+                sendAction && editedText !== null ? { editedText } : undefined,
+              )
+            }
+          >
+            {approveLabel(record.type)}
+          </Button>
+          {sendAction?.originalText ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canApprove}
+              onClick={() => void onResolve("approve", { sendOriginal: true })}
+            >
+              Send original
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!allowed || busy}
+            onClick={() => void onResolve("deny")}
+          >
+            Deny
+          </Button>
+        </div>
+      ) : null}
       {heading.detail && !(open && (sendAction || launchAction)) ? (
         <p className="whitespace-pre-wrap break-words text-muted-foreground">
           {(pending ? fullText : null) ?? heading.detail}
@@ -584,7 +619,8 @@ function AgentActionRecord({
           Open thread
         </Button>
       ) : null}
-      {record.type === "auto-archive" && record.status === "executed" ? (
+      {(record.type === "auto-archive" || record.type === "archive") &&
+      record.status === "executed" ? (
         <Button
           size="sm"
           variant="outline"
@@ -606,41 +642,6 @@ function AgentActionRecord({
         </Button>
       ) : null}
       {undoError ? <p role="alert">Could not restore this thread.</p> : null}
-      {record.status === "pending" ? (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
-            onClick={() =>
-              void onResolve(
-                "approve",
-                sendAction && editedText !== null ? { editedText } : undefined,
-              )
-            }
-          >
-            {approveLabel(record.type)}
-          </Button>
-          {sendAction?.originalText ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canApprove}
-              onClick={() => void onResolve("approve", { sendOriginal: true })}
-            >
-              Send original
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!allowed || busy}
-            onClick={() => void onResolve("deny")}
-          >
-            Deny
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -2,14 +2,17 @@ import { assert, describe, it } from "@effect/vitest";
 import { DEFAULT_D4_AGENT_SETTINGS } from "@d4research/contracts";
 import {
   ingestOverview,
+  matchesOverviewFilter,
   overviewDue,
   overviewIdentity,
   overviewMessageId,
   overviewMetadata,
+  overviewPage,
   overviewRevision,
   overviewText,
   OVERVIEW_POST_LIMIT,
   pendingOverview,
+  sortOverview,
   updateOverview,
   type OverviewInput,
   type OverviewItem,
@@ -380,4 +383,90 @@ it("repeated snapshots preserve arrival ordering while refreshing lastSeenAt", (
     ["newer", "older"],
   );
   assert.equal(repeated.find((item) => item.key === "older")?.lastSeenAt, now + 2000);
+});
+
+describe("filtered overview reads", () => {
+  const intel = ingestOverview(
+    [],
+    snapshot(
+      [
+        input("idea-today", {
+          title: "DuckDB extension",
+          body: "Idea body",
+          recommendation: "Propose !research:yb-feature",
+          observedAt: now,
+        }),
+        input("radar-today", { recommendation: "Read: radar", observedAt: now }),
+        input("idea-old", { recommendation: "Propose !research:default", observedAt: now - day }),
+      ],
+      { source: "intel" },
+    ),
+    now,
+    true,
+  );
+  const items = ingestOverview(
+    intel,
+    snapshot([input("disk", { severity: "critical" })], { source: "system" }),
+    now,
+    true,
+  );
+
+  it("combines source, research-idea and date filters", () => {
+    const filter = { source: "intel", researchIdeas: true, since: now - 60_000 };
+    assert.deepEqual(
+      items.filter((item) => matchesOverviewFilter(item, filter)).map((item) => item.key),
+      ["idea-today"],
+    );
+    assert.deepEqual(
+      items
+        .filter((item) => matchesOverviewFilter(item, { until: now - 60_000 }))
+        .map((item) => item.key),
+      ["idea-old"],
+    );
+    assert.deepEqual(
+      items
+        .filter((item) => matchesOverviewFilter(item, { severity: "critical", context: "Global" }))
+        .map((item) => item.key),
+      ["disk"],
+    );
+  });
+
+  it("hides acknowledged items unless closed items are requested", () => {
+    const acked = updateOverview(items, "Global", "disk", "ack", now);
+    assert.isFalse(acked.some((item) => item.key === "disk" && matchesOverviewFilter(item, {})));
+    assert.isTrue(
+      acked.some(
+        (item) => item.key === "disk" && matchesOverviewFilter(item, { includeClosed: true }),
+      ),
+    );
+  });
+
+  it("pages in sorted order and strips delivery bookkeeping", () => {
+    const sorted = sortOverview(items);
+    const first = overviewPage(sorted, 0, 3);
+    assert.equal(first.total, 4);
+    assert.equal(first.nextOffset, 3);
+    assert.deepEqual(
+      first.items.map((item) => item.key),
+      sorted.slice(0, 3).map((item) => item.key),
+    );
+    const last = overviewPage(sorted, first.nextOffset ?? 0, 3);
+    assert.deepEqual(
+      last.items.map((item) => item.key),
+      [sorted[3]!.key],
+    );
+    assert.isNull(last.nextOffset);
+    const idea = overviewPage(sorted).items.find((item) => item.key === "idea-today");
+    assert.deepEqual(idea, {
+      key: "idea-today",
+      context: "Global",
+      source: "intel",
+      severity: "info",
+      status: "open",
+      title: "DuckDB extension",
+      body: "Idea body",
+      recommendation: "Propose !research:yb-feature",
+      changedAt: "2026-10-26T19:00:00.000Z",
+    });
+  });
 });

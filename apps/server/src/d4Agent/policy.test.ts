@@ -233,6 +233,9 @@ describe("d4 Agent policies", () => {
     assert.isTrue(
       requiresActionApproval("act", { type: "interrupt", threadId: ThreadId.make("target") }),
     );
+    assert.isTrue(
+      requiresActionApproval("act", { type: "archive", threadId: ThreadId.make("target") }),
+    );
     assert.isFalse(
       requiresActionApproval("act", {
         type: "remind",

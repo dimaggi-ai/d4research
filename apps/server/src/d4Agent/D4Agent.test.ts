@@ -726,6 +726,46 @@ it.effect("a pending card carries Nia's why and effect lines", () =>
   }),
 );
 
+it.effect("act holds a requested archive for one approval and Undo archive restores it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    // Archiving starts no work, so a full-access thread the user started is a valid target.
+    yield* Ref.update(f.shells, (all) =>
+      all.map((thread) =>
+        thread.id === targetId ? { ...thread, runtimeMode: "full-access" as const } : thread,
+      ),
+    );
+    const archiveCommands = Ref.get(f.dispatches).pipe(
+      Effect.map((all) => all.filter((type) => type.endsWith("archive"))),
+    );
+    const action = yield* f.service.requestAction({ type: "archive", threadId: targetId });
+    assert.equal(action.status, "pending");
+    assert.deepEqual(yield* archiveCommands, []);
+    yield* f.service.resolveAction({ actionId: action.id, decision: "approve" });
+    assert.deepEqual(yield* archiveCommands, ["thread.archive"]);
+    assert.notEqual((yield* Ref.get(f.shells)).find((t) => t.id === targetId)?.archivedAt, null);
+    yield* f.service.undoArchive({ actionId: action.id });
+    assert.deepEqual(yield* archiveCommands, ["thread.archive", "thread.unarchive"]);
+    assert.equal((yield* Ref.get(f.shells)).find((t) => t.id === targetId)?.archivedAt, null);
+  }),
+);
+
+it.effect("archive refuses a thread that is still running", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    yield* Ref.update(f.shells, (all) =>
+      all.map((thread) =>
+        thread.id === targetId ? { ...thread, activeRunId: RunId.make("busy-run") } : thread,
+      ),
+    );
+    const result = yield* Effect.result(
+      f.service.requestAction({ type: "archive", threadId: targetId }),
+    );
+    assert.equal(result._tag, "Failure");
+    assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+  }),
+);
+
 it.effect("act still requires approval for arbitrary send instructions", () =>
   Effect.gen(function* () {
     const { service, dispatches } = yield* fixture("act");
@@ -3911,10 +3951,10 @@ it.effect("Overview lists only the requested source", () =>
     ]);
     yield* f.service.tick;
     assert.deepEqual(
-      (yield* f.service.overview(false, "health")).map((item) => item.key),
+      (yield* f.service.overview({ source: "health" })).map((item) => item.key),
       ["disk"],
     );
-    assert.deepEqual(yield* f.service.overview(false, "intel"), []);
+    assert.deepEqual(yield* f.service.overview({ source: "intel" }), []);
   }),
 );
 
@@ -4167,7 +4207,8 @@ it.effect("Overview ack, snooze, and reopen keep their context and control deliv
     yield* f.service.tick;
     yield* f.service.updateOverview({ key: "disk", op: "ack" });
     assert.equal(
-      (yield* f.service.overview(true)).find((item) => item.key === "disk")?.status,
+      (yield* f.service.overview({ includeClosed: true })).find((item) => item.key === "disk")
+        ?.status,
       "acknowledged",
     );
     yield* TestClock.adjust("15 minutes");
@@ -4189,7 +4230,9 @@ it.effect("Overview ack, snooze, and reopen keep their context and control deliv
       (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview").length,
       2,
     );
-    const item = (yield* f.service.overview(true)).find((item) => item.key === "disk");
+    const item = (yield* f.service.overview({ includeClosed: true })).find(
+      (item) => item.key === "disk",
+    );
     assert.equal(item?.status, "open");
     assert.isNull(item?.snoozedUntil);
   }),

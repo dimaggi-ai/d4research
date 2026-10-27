@@ -168,6 +168,8 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
   }),
   Schema.Struct({ type: Schema.Literal("interrupt"), threadId: ThreadId }),
+  // The user asked to archive this thread; auto-archive is only for threads Nia started.
+  Schema.Struct({ type: Schema.Literal("archive"), threadId: ThreadId }),
   Schema.Struct({
     type: Schema.Literal("answer"),
     threadId: ThreadId,
@@ -259,6 +261,7 @@ export const D4AgentActionSummary = Schema.Struct({
   type: Schema.Literals([
     "send",
     "interrupt",
+    "archive",
     "answer",
     "start",
     "memory-propose",

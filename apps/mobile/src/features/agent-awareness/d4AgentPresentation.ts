@@ -106,11 +106,13 @@ export function launchTag(type: D4AgentActionSummary["type"]): string | null {
 export function approveLabel(type: D4AgentActionSummary["type"]): string {
   return type === "send"
     ? "Send"
-    : type === "switch-context"
-      ? "Switch"
-      : launchTag(type) !== null
-        ? "Create thread"
-        : "Approve";
+    : type === "archive"
+      ? "Archive"
+      : type === "switch-context"
+        ? "Switch"
+        : launchTag(type) !== null
+          ? "Create thread"
+          : "Approve";
 }
 
 // Older transcripts carry session bookkeeping posts; they are not messages for the user.

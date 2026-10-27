@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Agent from "../../../d4Agent/D4Agent.ts";
 import * as AgentStore from "../../../d4Agent/D4AgentStore.ts";
 import * as AgentAccess from "../../../d4Agent/D4AgentAccess.ts";
+import * as Overview from "../../../d4Agent/overview.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { D4AgentToolkit } from "./tools.ts";
@@ -44,11 +45,32 @@ const call = <A>(run: (service: Agent.D4Agent["Service"]) => Effect.Effect<A, D4
     );
   }).pipe(Effect.mapError((error) => error.message));
 export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
-  d4_agent_overview: McpToolAccess.reads(({ includeClosed, source }) =>
-    call((service) => service.overview(includeClosed, source)),
+  d4_agent_overview: McpToolAccess.reads(({ since, until, limit, offset, ...filter }) =>
+    call((service) =>
+      service
+        .overview({
+          ...filter,
+          ...(since === undefined ? {} : { since: Date.parse(since) }),
+          ...(until === undefined ? {} : { until: Date.parse(until) }),
+        })
+        .pipe(Effect.map((items) => Overview.overviewPage(items, offset, limit))),
+    ),
   ),
   d4_agent_overview_update: McpToolAccess.writesWithCapability((input) =>
-    call((service) => service.updateOverview(input)),
+    call((service) =>
+      service
+        .updateOverview(input)
+        .pipe(
+          Effect.map(
+            (items) =>
+              Overview.overviewPage(
+                items.filter(
+                  (item) => item.key === input.key || Overview.overviewIdentity(item) === input.key,
+                ),
+              ).items,
+          ),
+        ),
+    ),
   ),
   d4_agent_resolve: McpToolAccess.reads(({ text }) =>
     call((service) => service.resolveReference(text)),

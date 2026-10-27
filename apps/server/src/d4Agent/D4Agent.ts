@@ -98,8 +98,7 @@ export class D4Agent extends Context.Service<
   D4Agent,
   {
     readonly overview: (
-      includeClosed?: boolean,
-      source?: string,
+      filter?: Overview.OverviewFilter,
     ) => Effect.Effect<ReadonlyArray<Overview.OverviewItem>, D4AgentError>;
     readonly updateOverview: (input: {
       key: string;
@@ -274,6 +273,7 @@ export const requiresActionApproval = (
   action.type === "research" ||
   action.type === "pipeline" ||
   action.type === "interrupt" ||
+  action.type === "archive" ||
   action.type === "answer" ||
   action.type === "pc" ||
   action.type === "schedule" ||
@@ -1731,6 +1731,22 @@ export const layer = Layer.effect(
       }
       if (action.threadId === state.threadId)
         return yield* new D4AgentError({ reason: "action-unavailable" });
+      if (action.type === "archive") {
+        // Archiving starts no work, so unlike a send it may reach a full-access thread.
+        const target = yield* threads
+          .getThreadShell(action.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (
+          target === null ||
+          target.deletedAt !== null ||
+          target.archivedAt !== null ||
+          target.activeRunId !== null ||
+          target.projectId === state.projectId ||
+          !projectActionInScope(state.brainContext, config, target.projectId)
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        return;
+      }
       const target = yield* threads
         .getThreadShell(action.threadId)
         .pipe(Effect.mapError(threadError));
@@ -2139,6 +2155,14 @@ export const layer = Layer.effect(
         ctoAsk = { id: record.id, fiber };
         return "Asked, answer will be posted.";
       }
+      if (action.type === "archive")
+        return yield* threads
+          .dispatch({
+            type: "thread.archive",
+            commandId: command(`action:${record.id}`),
+            threadId: action.threadId,
+          })
+          .pipe(Effect.mapError(threadError), Effect.asVoid);
       {
         const target = yield* threads
           .getThreadShell(action.threadId)
@@ -2578,19 +2602,17 @@ export const layer = Layer.effect(
       } satisfies D4AgentTasks;
     });
     const overview = Effect.fn("D4Agent.overview")(function* (
-      includeClosed = false,
-      source?: string,
+      filter: Overview.OverviewFilter = {},
     ) {
       const { state, config } = yield* bound();
       return Overview.sortOverview(
         (state.overviewItems ?? [])
           .filter(
             (item) =>
-              (source === undefined || item.source === source) &&
               (["threads", "scheduled", "system", "cto"].includes(item.source) ||
                 config.overviewSources[item.source] === item.context) &&
               Overview.overviewVisible(item, state.brainContext) &&
-              (includeClosed || (item.resolvedAt === null && item.status !== "acknowledged")),
+              Overview.matchesOverviewFilter(item, filter),
           )
           .map((item) => Overview.overviewMetadata(item, state.brainContext)),
       );
@@ -2615,7 +2637,7 @@ export const layer = Layer.effect(
           );
           if (changed === items) return yield* new D4AgentError({ reason: "action-unavailable" });
           yield* store.update((value) => ({ ...value, overviewItems: changed }));
-          return yield* overview(true);
+          return yield* overview({ includeClosed: true });
         }),
       );
     const collectOverview = Effect.fn("D4Agent.collectOverview")(function* (
@@ -3235,6 +3257,35 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const state = yield* store.get;
+            const requested = state.actions.find(
+              (entry) =>
+                entry.id === actionId &&
+                entry.context === state.brainContext &&
+                entry.status === "executed" &&
+                entry.action.type === "archive",
+            );
+            if (requested?.action.type === "archive") {
+              const shell = yield* threads
+                .getThreadShell(requested.action.threadId)
+                .pipe(Effect.mapError(threadError));
+              if (shell === null || shell.deletedAt !== null)
+                return yield* new D4AgentError({ reason: "action-unavailable" });
+              if (shell.archivedAt !== null)
+                yield* threads
+                  .dispatch({
+                    type: "thread.unarchive",
+                    commandId: command(`archive-undo:${actionId}`),
+                    threadId: requested.action.threadId,
+                  })
+                  .pipe(Effect.mapError(threadError));
+              yield* store.update((value) => ({
+                ...value,
+                actions: value.actions.map((record) =>
+                  record.id === actionId ? { ...record, status: "denied" as const } : record,
+                ),
+              }));
+              return yield* getState();
+            }
             const record = state.actions.find(
               (entry) =>
                 entry.id === actionId &&

@@ -1,5 +1,6 @@
 import { D4BrainContext, type D4AgentSettings } from "@d4research/contracts";
 import { sha256Hex } from "@d4research/shared/hash";
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { heartbeatWindowOpen, isQuietHour } from "./policy.ts";
 
@@ -52,6 +53,61 @@ export const sortOverview = (items: ReadonlyArray<OverviewItem>) =>
       (b.revisedAt ?? b.firstSeenAt) - (a.revisedAt ?? a.firstSeenAt) ||
       overviewIdentity(a).localeCompare(overviewIdentity(b)),
   );
+
+// Research ideas are the overview items an intel or evolution producer marks for a research run.
+export const isResearchIdea = (item: Pick<OverviewItem, "recommendation">) =>
+  item.recommendation?.includes("Propose !research:") === true;
+export type OverviewFilter = {
+  readonly includeClosed?: boolean;
+  readonly source?: string;
+  readonly context?: D4BrainContext;
+  readonly severity?: OverviewItem["severity"];
+  readonly researchIdeas?: boolean;
+  /** Inclusive lower bound on the time the item last changed, in epoch milliseconds. */
+  readonly since?: number;
+  /** Exclusive upper bound on the same time. */
+  readonly until?: number;
+};
+export const overviewChangedAt = (item: OverviewItem) => item.revisedAt ?? item.firstSeenAt;
+export const matchesOverviewFilter = (item: OverviewItem, filter: OverviewFilter) =>
+  (filter.includeClosed === true || (item.resolvedAt === null && item.status !== "acknowledged")) &&
+  (filter.source === undefined || item.source === filter.source) &&
+  (filter.context === undefined || item.context === filter.context) &&
+  (filter.severity === undefined || item.severity === filter.severity) &&
+  (filter.researchIdeas !== true || isResearchIdea(item)) &&
+  (filter.since === undefined || overviewChangedAt(item) >= filter.since) &&
+  (filter.until === undefined || overviewChangedAt(item) < filter.until);
+export const OVERVIEW_PAGE_LIMIT = 20;
+// The full list outgrows what a model harness reads in one tool result, so models get pages of
+// items without the server's delivery bookkeeping (revision hashes, delivery marks).
+export function overviewPage(
+  items: ReadonlyArray<OverviewItem>,
+  offset = 0,
+  limit = OVERVIEW_PAGE_LIMIT,
+) {
+  const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
+  const page = items.slice(offset, offset + limit).map((item) => ({
+    key: item.key,
+    context: item.context,
+    source: item.source,
+    severity: item.severity,
+    status: item.status,
+    title: item.title,
+    ...(item.body === undefined ? {} : { body: item.body }),
+    ...(item.recommendation === undefined ? {} : { recommendation: item.recommendation }),
+    ...(item.ref === undefined ? {} : { ref: item.ref }),
+    changedAt: iso(overviewChangedAt(item)),
+    ...(item.snoozedUntil === null ? {} : { snoozedUntil: iso(item.snoozedUntil) }),
+    ...(item.resolvedAt === null ? {} : { resolvedAt: iso(item.resolvedAt) }),
+  }));
+  const next = offset + page.length;
+  return {
+    total: items.length,
+    offset,
+    nextOffset: next < items.length ? next : null,
+    items: page,
+  };
+}
 
 export function ingestOverview(
   previous: ReadonlyArray<OverviewItem>,

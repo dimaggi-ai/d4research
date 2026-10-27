@@ -467,6 +467,113 @@ it("shows the full message, why and effect, and a live Send without a review ste
   });
   expect(mocks.refresh).toHaveBeenCalledOnce();
 });
+it("keeps the decision buttons in view above a long task description", async () => {
+  const longPrompt = Array.from({ length: 120 }, (_, line) => `Step ${line + 1} of the task.`).join(
+    "\n",
+  );
+  mocks.detail = {
+    context: "Global",
+    sessionId: threadId,
+    id: "long-research",
+    action: {
+      type: "research",
+      projectId: ProjectId.make("project"),
+      pipelineId: "default",
+      text: longPrompt,
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "chosen" },
+    },
+    note: {
+      why: "The service crashed after the config change.",
+      effect: "Restarts caddy-auth.service on the desktop.",
+    },
+    status: "pending",
+    createdAt: "2026-10-27T12:00:00.000Z",
+    resolvedAt: null,
+  };
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "long-research",
+        type: "research",
+        targetId: "project",
+        preview: longPrompt.slice(0, 256),
+        note: mocks.detail.note!,
+        status: "pending",
+        createdAt: "2026-10-27T12:00:00.000Z",
+        resolvedAt: null,
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  const banner = container.querySelector<HTMLElement>('section[aria-label="Waiting for you"]')!;
+  // Browser tests load no Tailwind, so cap the banner the way its max-h class does on a phone.
+  Object.assign(banner.style, { maxHeight: "320px", overflowY: "auto" });
+  const buttons = [...banner.querySelectorAll("button")];
+  const approve = buttons.find((button) => button.textContent === "Create thread")!;
+  const deny = buttons.find((button) => button.textContent === "Deny")!;
+  expect(banner.textContent).toContain("Step 120 of the task.");
+  expect(banner.textContent).toContain("Restarts caddy-auth.service on the desktop.");
+  expect(banner.scrollHeight).toBeGreaterThan(banner.clientHeight);
+  expect(banner.scrollTop).toBe(0);
+  for (const button of [approve, deny])
+    expect(button.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      banner.getBoundingClientRect().bottom,
+    );
+  expect(approve.disabled).toBe(false);
+});
+it("archives a thread from one card and restores it with Undo archive", async () => {
+  const createdAt = "2026-10-27T12:00:00.000Z";
+  mocks.detail = {
+    context: "Global",
+    sessionId: threadId,
+    id: "archive-1",
+    action: { type: "archive", threadId: ThreadId.make("target-thread") },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "archive-1",
+        type: "archive",
+        targetId: "target-thread",
+        preview: "",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Archive")!
+      .click(),
+  );
+  expect(mocks.resolve).toHaveBeenCalledWith({
+    environmentId,
+    input: { actionId: "archive-1", decision: "approve" },
+  });
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [{ ...mocks.state!.actionLog[0]!, status: "executed", resolvedAt: createdAt }],
+  };
+  await act(() =>
+    root.render(<D4AgentPanel key="archived" environmentId={environmentId} threadId={threadId} />),
+  );
+  await act(async () =>
+    container.querySelector<HTMLDetailsElement>("details")!.setAttribute("open", ""),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Undo archive")!
+      .click(),
+  );
+  expect(mocks.undo).toHaveBeenCalledWith({ environmentId, input: { actionId: "archive-1" } });
+});
 it("keeps action approval unavailable for a client without operate permission", async () => {
   mocks.allowed = false;
   mocks.state = {

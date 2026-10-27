@@ -429,6 +429,39 @@ function AgentActionRecord({
           </Text>
         </View>
       ) : null}
+      {record.status === "pending" ? (
+        <View className="flex-row gap-4">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canApprove }}
+            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
+            onPress={() =>
+              void onResolve(
+                "approve",
+                sendAction && editedText !== null ? { editedText } : undefined,
+              )
+            }
+          >
+            <Text className="text-accent">{approveLabel(record.type)}</Text>
+          </Pressable>
+          {sendAction?.originalText ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!canApprove}
+              onPress={() => void onResolve("approve", { sendOriginal: true })}
+            >
+              <Text className="text-accent">Send original</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            disabled={!allowed || busy}
+            onPress={() => void onResolve("deny")}
+          >
+            <Text className="text-accent">Deny</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {heading.detail && !(open && (sendAction || launchAction)) ? (
         <Text selectable className="text-sm text-foreground-muted">
           {(pending ? fullText : null) ?? heading.detail}
@@ -526,7 +559,8 @@ function AgentActionRecord({
         </View>
       ) : null}
       {detail.error ? <Text accessibilityRole="alert">{detail.error}</Text> : null}
-      {record.type === "auto-archive" && record.status === "executed" ? (
+      {(record.type === "auto-archive" || record.type === "archive") &&
+      record.status === "executed" ? (
         <Pressable
           accessibilityRole="button"
           disabled={!canUndoArchive || undoing}
@@ -558,39 +592,6 @@ function AgentActionRecord({
         >
           <Text className="text-accent">Open thread</Text>
         </Pressable>
-      ) : null}
-      {record.status === "pending" ? (
-        <View className="flex-row gap-4">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !canApprove }}
-            disabled={!canApprove || (sendAction !== null && !finalText.trim())}
-            onPress={() =>
-              void onResolve(
-                "approve",
-                sendAction && editedText !== null ? { editedText } : undefined,
-              )
-            }
-          >
-            <Text className="text-accent">{approveLabel(record.type)}</Text>
-          </Pressable>
-          {sendAction?.originalText ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={!canApprove}
-              onPress={() => void onResolve("approve", { sendOriginal: true })}
-            >
-              <Text className="text-accent">Send original</Text>
-            </Pressable>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            disabled={!allowed || busy}
-            onPress={() => void onResolve("deny")}
-          >
-            <Text className="text-accent">Deny</Text>
-          </Pressable>
-        </View>
       ) : null}
     </View>
   );

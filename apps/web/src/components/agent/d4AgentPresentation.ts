@@ -85,6 +85,7 @@ export function actionTargetThread(
   return record.type === "send" ||
     record.type === "interrupt" ||
     record.type === "answer" ||
+    record.type === "archive" ||
     record.type === "auto-archive"
     ? ThreadId.make(record.targetId)
     : null;
@@ -132,11 +133,13 @@ export function launchTag(type: D4AgentActionSummary["type"]): string | null {
 export function approveLabel(type: D4AgentActionSummary["type"]): string {
   return type === "send"
     ? "Send"
-    : type === "switch-context"
-      ? "Switch"
-      : launchTag(type) !== null
-        ? "Create thread"
-        : "Approve";
+    : type === "archive"
+      ? "Archive"
+      : type === "switch-context"
+        ? "Switch"
+        : launchTag(type) !== null
+          ? "Create thread"
+          : "Approve";
 }
 
 /** Tool Guard's verdict on an action, or null when no notice is due. */

@@ -110,7 +110,10 @@ By default (**On success**), Nia archives a thread it started as soon as it repo
 completed, and keeps one line in the conversation with a link to the archived thread. In
 Settings, choose **24 hours** to archive later, or **Off**. A user reply, pin, pending
 question, or linked pull request prevents automatic archiving; user-started threads are never
-archived automatically. Use **Undo archive** in the action log to restore an archived thread.
+archived automatically. To archive a thread now, ask Nia to archive it; "settle" and "close"
+work too. Nia drafts an approval card for that thread and archives it once you approve. Any
+idle thread in the context qualifies, including threads you started. Use **Undo archive** in
+the action log to restore an archived thread.
 
 Enable **Brain memory** in the Nia settings and set **Brain vault path** to the
 vault on the environment's host. Memory reads only files approved by that

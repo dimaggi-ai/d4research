@@ -168,6 +168,11 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
   }),
   Schema.Struct({ type: Schema.Literal("interrupt"), threadId: ThreadId }),
+  // Thread lifecycle changes on any thread in scope, including ones Nia did not start.
+  Schema.Struct({ type: Schema.Literal("settle"), threadId: ThreadId }),
+  Schema.Struct({ type: Schema.Literal("unsettle"), threadId: ThreadId }),
+  Schema.Struct({ type: Schema.Literal("snooze"), threadId: ThreadId, until: IsoDateTime }),
+  Schema.Struct({ type: Schema.Literal("unsnooze"), threadId: ThreadId }),
   Schema.Struct({
     type: Schema.Literal("answer"),
     threadId: ThreadId,
@@ -259,6 +264,10 @@ export const D4AgentActionSummary = Schema.Struct({
   type: Schema.Literals([
     "send",
     "interrupt",
+    "settle",
+    "unsettle",
+    "snooze",
+    "unsnooze",
     "answer",
     "start",
     "memory-propose",

@@ -368,7 +368,8 @@ function D4AgentPanelContent({
                   input: { actionId: record.id, decision, ...options },
                 })
                   .then((result) => {
-                    if (result._tag === "Failure") setActionError("Could not resolve this action.");
+                    if (result._tag === "Failure")
+                      setActionError("This action failed. History shows why.");
                     query.refresh();
                   })
                   .catch(() => setActionError("Could not resolve this action."))
@@ -523,6 +524,7 @@ function AgentActionRecord({
         </p>
       ) : null}
       {guard ? <p className="text-xs text-muted-foreground">{guard.title}</p> : null}
+      {record.failure ? <p className="break-words">Failed · {record.failure}</p> : null}
       {pending ? null : (
         <Button size="sm" variant="ghost" onClick={() => setReviewing(!reviewing)}>
           {reviewing ? "Hide action details" : "Review action"}

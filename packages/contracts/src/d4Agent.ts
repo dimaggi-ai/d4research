@@ -170,6 +170,11 @@ export const D4AgentAction = Schema.Union([
   Schema.Struct({ type: Schema.Literal("interrupt"), threadId: ThreadId }),
   // The user asked to archive this thread; auto-archive is only for threads Nia started.
   Schema.Struct({ type: Schema.Literal("archive"), threadId: ThreadId }),
+  // Thread lifecycle changes on any thread in scope, including ones Nia did not start.
+  Schema.Struct({ type: Schema.Literal("settle"), threadId: ThreadId }),
+  Schema.Struct({ type: Schema.Literal("unsettle"), threadId: ThreadId }),
+  Schema.Struct({ type: Schema.Literal("snooze"), threadId: ThreadId, until: IsoDateTime }),
+  Schema.Struct({ type: Schema.Literal("unsnooze"), threadId: ThreadId }),
   Schema.Struct({
     type: Schema.Literal("answer"),
     threadId: ThreadId,
@@ -251,6 +256,8 @@ export const D4AgentActionRecord = Schema.Struct({
   action: D4AgentAction,
   note: Schema.optionalKey(D4AgentActionNote),
   guard: Schema.optionalKey(D4AgentGuardVerdict),
+  // Why an approved action failed, in words the user can act on.
+  failure: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
   status: Schema.Literals(["pending", "approved", "denied", "executed", "failed"]),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),
@@ -262,6 +269,10 @@ export const D4AgentActionSummary = Schema.Struct({
     "send",
     "interrupt",
     "archive",
+    "settle",
+    "unsettle",
+    "snooze",
+    "unsnooze",
     "answer",
     "start",
     "memory-propose",
@@ -281,6 +292,7 @@ export const D4AgentActionSummary = Schema.Struct({
   preview: Schema.String.check(Schema.isMaxLength(256)),
   note: Schema.optionalKey(D4AgentActionNote),
   status: D4AgentActionRecord.fields.status,
+  failure: D4AgentActionRecord.fields.failure,
   guard: Schema.optionalKey(D4AgentGuardVerdict),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),

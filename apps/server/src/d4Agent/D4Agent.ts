@@ -241,6 +241,15 @@ const validateAction = Schema.decodeUnknownEffect(D4AgentAction);
 const encodeDigest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const storageError = (cause: unknown) => new D4AgentError({ reason: "storage", cause });
 const threadError = (cause: unknown) => new D4AgentError({ reason: "thread", cause });
+const failureText = (error: D4AgentError) =>
+  (error.reason === "thread"
+    ? error.cause instanceof Error
+      ? error.cause.message
+      : "The thread service rejected this action; open the thread to check its state."
+    : error.reason === "action-unavailable"
+      ? "The target is no longer available to Nia: it was deleted, moved out of scope or is busy."
+      : error.message
+  ).slice(0, 300);
 const AGENT_TITLE = "Nia";
 const LEGACY_AGENT_TITLE = "d4 Agent";
 const command = (id: string) => CommandId.make(`d4-agent:${id}`);
@@ -260,6 +269,15 @@ const actionTarget = (action: D4AgentAction): string =>
               : "context" in action
                 ? `${action.type}:${action.context}`
                 : action.threadId;
+type LifecycleAction = Extract<
+  D4AgentAction,
+  { type: "settle" | "unsettle" | "snooze" | "unsnooze" }
+>;
+const isLifecycleAction = (action: D4AgentAction): action is LifecycleAction =>
+  action.type === "settle" ||
+  action.type === "unsettle" ||
+  action.type === "snooze" ||
+  action.type === "unsnooze";
 export const requiresActionApproval = (
   mode: D4AgentSettings["permissionMode"],
   action: D4AgentAction,
@@ -274,6 +292,7 @@ export const requiresActionApproval = (
   action.type === "pipeline" ||
   action.type === "interrupt" ||
   action.type === "archive" ||
+  isLifecycleAction(action) ||
   action.type === "answer" ||
   action.type === "pc" ||
   action.type === "schedule" ||
@@ -300,7 +319,7 @@ export function actionSummaries(
     ...actions.filter((a) => a.status !== "pending").slice(-20),
   ]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map(({ id, action, note, guard, status, createdAt, resolvedAt }) => ({
+    .map(({ id, action, note, guard, failure, status, createdAt, resolvedAt }) => ({
       id,
       type: action.type,
       // Approved launches create this thread, so the card can link to it.
@@ -321,10 +340,13 @@ export function actionSummaries(
                 ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
                 : action.type === "answer"
                   ? JSON.stringify(action.answers)
-                  : ""
+                  : action.type === "snooze"
+                    ? `Until ${action.until}`
+                    : ""
       ).slice(0, 256),
       ...(note === undefined ? {} : { note }),
       status,
+      ...(failure === undefined ? {} : { failure }),
       ...(guard === undefined ? {} : { guard }),
       createdAt,
       resolvedAt,
@@ -1753,8 +1775,11 @@ export const layer = Layer.effect(
       if (
         target === null ||
         target.deletedAt !== null ||
-        // Full-access threads run whatever they are told, so only a Tool Guard verdict may reach them.
-        (target.runtimeMode !== "approval-required" && config.toolGuardUrl === null) ||
+        // Full-access threads run whatever they are told, so only a Tool Guard verdict may reach
+        // them. Lifecycle changes tell the thread nothing, so its mode does not matter.
+        (!isLifecycleAction(action) &&
+          target.runtimeMode !== "approval-required" &&
+          config.toolGuardUrl === null) ||
         target.projectId === state.projectId ||
         !projectActionInScope(state.brainContext, config, target.projectId)
       )
@@ -1766,6 +1791,38 @@ export const layer = Layer.effect(
         if (request === undefined || request.kind !== "user_input" || request.status !== "pending")
           return yield* new D4AgentError({ reason: "request-not-answerable" });
       }
+      if (action.type === "snooze") {
+        const until = Date.parse(action.until);
+        const now = yield* Clock.currentTimeMillis;
+        if (!(until > now && until < now + 366 * 86_400_000))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+      }
+    });
+    const lifecycleChange = Effect.fn("D4Agent.lifecycleChange")(function* (
+      action: LifecycleAction,
+      recordId: string,
+    ) {
+      const commandId = command(`action:${recordId}`);
+      const { threadId } = action;
+      const change =
+        action.type === "settle"
+          ? threads.settleThread({ commandId, threadId, byOwnAgent: false })
+          : threads.dispatch(
+              action.type === "snooze"
+                ? { type: "thread.snooze", commandId, threadId, snoozedUntil: action.until }
+                : { type: `thread.${action.type}`, commandId, threadId, reason: "user" },
+            );
+      // These commands start no work, so the target's runtime mode is no limit for them.
+      yield* change.pipe(
+        Effect.provideService(DispatchModeLimit, undefined),
+        Effect.mapError(threadError),
+      );
+      return {
+        settle: "Settled.",
+        unsettle: "Unsettled.",
+        snooze: `Snoozed until ${action.type === "snooze" ? action.until : ""}.`,
+        unsnooze: "Unsnoozed.",
+      }[action.type];
     });
     const execute = Effect.fn("D4Agent.execute")(function* (record: D4AgentActionRecord) {
       yield* validateTarget(record.action);
@@ -2168,6 +2225,16 @@ export const layer = Layer.effect(
           .getThreadShell(action.threadId)
           .pipe(Effect.mapError(threadError));
         if (target === null) return yield* new D4AgentError({ reason: "action-unavailable" });
+        if (isLifecycleAction(action)) return yield* lifecycleChange(action, record.id);
+        // Approving a send to an archived thread means the user wants that thread back.
+        if (action.type === "send" && target.archivedAt !== null)
+          yield* threads
+            .dispatch({
+              type: "thread.unarchive",
+              commandId: command(`action-unarchive:${record.id}`),
+              threadId: action.threadId,
+            })
+            .pipe(Effect.mapError(threadError));
         if (action.type === "send")
           yield* threads
             .sendToThread({
@@ -2225,6 +2292,7 @@ export const layer = Layer.effect(
         ...(result._tag === "Success" && result.success !== undefined
           ? { result: result.success }
           : {}),
+        ...(result._tag === "Failure" ? { failure: failureText(result.failure) } : {}),
       };
       const action = record.action;
       // The new thread appears in the chat where its card was approved, with a link to open it.

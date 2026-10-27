@@ -417,6 +417,11 @@ function AgentActionRecord({
           {record.createdAt} · {heading.title} · {record.status}
         </Text>
       </View>
+      {record.failure ? (
+        <Text selectable className="text-sm text-foreground">
+          Failed · {record.failure}
+        </Text>
+      ) : null}
       {record.note ? (
         <View className="gap-1">
           <Text selectable className="text-sm text-foreground">

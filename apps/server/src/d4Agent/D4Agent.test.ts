@@ -198,6 +198,7 @@ const fixture = (
     const eventRevision = yield* Ref.make(0);
     const request = yield* Ref.make<OrchestrationV2RuntimeRequest | undefined>(undefined);
     const dispatches = yield* Ref.make<ReadonlyArray<string>>([]);
+    const lifecycleLimits = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
     const systemMessages = yield* Ref.make<
       ReadonlyArray<{ threadId: string; title: string; text: string }>
     >([]);
@@ -335,6 +336,10 @@ const fixture = (
               Effect.gen(function* () {
                 if (yield* Ref.get(failSend))
                   return yield* Effect.fail({ reason: "fixture send failure" } as never);
+                if ((yield* Ref.get(shells)).some((t) => t.id === input.threadId && t.archivedAt))
+                  return yield* new Threads.ThreadManagementThreadArchivedError({
+                    threadId: input.threadId,
+                  });
                 yield* Ref.update(sends, (all) => [...all, input]);
                 const limit = yield* DispatchModeLimit;
                 yield* Ref.update(sendLimits, (all) => [...all, limit?.runtimeMode]);
@@ -345,6 +350,14 @@ const fixture = (
                 if (cmd.type === "thread.stop" && (yield* Ref.get(failStop)))
                   return yield* Effect.fail({ reason: "fixture stop failure" } as never);
                 yield* Ref.update(dispatches, (value) => [...value, cmd.type]);
+                if (
+                  cmd.type === "thread.unsettle" ||
+                  cmd.type === "thread.snooze" ||
+                  cmd.type === "thread.unsnooze"
+                ) {
+                  const limit = yield* DispatchModeLimit;
+                  yield* Ref.update(lifecycleLimits, (all) => [...all, limit?.runtimeMode]);
+                }
                 if (cmd.type === "thread.system-message.record") {
                   yield* Ref.update(systemMessageIds, (ids) => [...ids, cmd.messageId]);
                   if (yield* Ref.get(failSystemMessage))
@@ -389,6 +402,14 @@ const fixture = (
                   );
                 }
                 return { sequence: 1, duplicate: false, storedEvents: [] };
+              }),
+            settleThread: (input) =>
+              Effect.gen(function* () {
+                assert.isFalse(input.byOwnAgent);
+                yield* Ref.update(dispatches, (value) => [...value, "thread.settle"]);
+                const limit = yield* DispatchModeLimit;
+                yield* Ref.update(lifecycleLimits, (all) => [...all, limit?.runtimeMode]);
+                return { sequence: 1 };
               }),
             interruptThread: () =>
               Ref.update(dispatches, (value) => [...value, "interrupt"]).pipe(
@@ -501,6 +522,7 @@ const fixture = (
       checks,
       request,
       dispatches,
+      lifecycleLimits,
       systemMessages,
       inboxSnapshots,
       completedThreadRuns,
@@ -778,6 +800,126 @@ it.effect("act still requires approval for arbitrary send instructions", () =>
     yield* service.resolveAction({ actionId: action.id, decision: "deny" });
     assert.deepEqual(yield* Ref.get(dispatches), []);
   }),
+);
+
+const nativeId = ThreadId.make("native-failed");
+const native: OrchestrationV2ThreadShell = {
+  ...target,
+  id: nativeId,
+  title: "Failed native run",
+  createdBy: "user",
+  creationSource: "web",
+  lineage: { parentThreadId: null, rootThreadId: nativeId, relationshipToParent: null },
+};
+
+it.effect("Global resolves a thread the user started and sends to it after approval", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    yield* Ref.set(f.shells, [target, native]);
+    assert.include(
+      JSON.stringify(yield* f.service.resolveReference(`retry [[thread:${nativeId}]]`)),
+      `"kind":"resolved"`,
+    );
+    const card = yield* f.service.requestAction({
+      type: "send",
+      threadId: nativeId,
+      text: "Retry the failed step.",
+    });
+    assert.equal(card.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    const [sent] = yield* Ref.get(f.sends);
+    assert.equal(sent?.threadId, nativeId);
+    assert.equal(sent?.text, "Retry the failed step.");
+  }),
+);
+
+it.effect("a work context cannot resolve or act on a native thread outside its projects", () =>
+  Effect.gen(function* () {
+    const dimaggi = ProjectId.make("dimaggi");
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [dimaggi]: "Dimaggi" },
+    });
+    yield* Ref.set(f.shells, [target, native]);
+    yield* f.service.switchContext({ context: "Dimaggi" });
+    assert.include(
+      JSON.stringify(yield* f.service.resolveReference(`[[thread:${nativeId}]]`)),
+      `"kind":"none"`,
+    );
+    for (const action of [
+      { type: "send", threadId: nativeId, text: "Retry" },
+      { type: "settle", threadId: nativeId },
+    ] as const) {
+      const result = yield* Effect.result(f.service.requestAction(action));
+      assert.equal(result._tag === "Failure" && result.failure.reason, "action-unavailable");
+    }
+    assert.deepEqual(
+      (yield* Ref.get(f.state)).actions.filter((entry) => entry.context === "Dimaggi"),
+      [],
+    );
+  }),
+);
+
+it.effect.each([
+  [{ type: "settle", threadId: nativeId }, "thread.settle", "Settled."],
+  [{ type: "unsettle", threadId: nativeId }, "thread.unsettle", "Unsettled."],
+  [
+    { type: "snooze", threadId: nativeId, until: "1970-01-02T00:00:00.000Z" },
+    "thread.snooze",
+    "Snoozed until 1970-01-02T00:00:00.000Z.",
+  ],
+  [{ type: "unsnooze", threadId: nativeId }, "thread.unsnooze", "Unsnoozed."],
+] as const)("%s waits for approval, then changes the native thread", ([action, type, result]) =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    // Lifecycle changes start no work, so a full-access thread without Tool Guard is in reach.
+    yield* Ref.set(f.shells, [target, { ...native, runtimeMode: "full-access" }]);
+    const card = yield* f.service.requestAction(action, {
+      why: "The run failed and the user moved on.",
+      effect: `Applies ${action.type} to Failed native run.`,
+    });
+    assert.equal(card.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.dispatches), []);
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.dispatches), [type]);
+    assert.deepEqual(yield* Ref.get(f.lifecycleLimits), [undefined]);
+    const record = (yield* Ref.get(f.state)).actions.find((entry) => entry.id === card.id);
+    assert.equal(record?.status, "executed");
+    assert.equal(record?.result, result);
+  }),
+);
+
+it.effect(
+  "lifecycle actions are refused in read-only, without a user turn, and for bad times",
+  () =>
+    Effect.gen(function* () {
+      const readOnly = yield* fixture("read-only");
+      yield* Ref.set(readOnly.shells, [target, native]);
+      const denied = yield* Effect.result(
+        readOnly.service.requestAction({ type: "settle", threadId: nativeId }),
+      );
+      assert.equal(denied._tag === "Failure" && denied.failure.reason, "read-only");
+
+      const f = yield* fixture("act");
+      yield* Ref.set(f.shells, [target, native]);
+      const background = yield* Effect.result(
+        f.service
+          .requestAction({ type: "settle", threadId: nativeId })
+          .pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat")),
+      );
+      assert.equal(
+        background._tag === "Failure" && background.failure.reason,
+        "action-unavailable",
+      );
+      for (const until of ["1969-12-31T00:00:00.000Z", "1972-01-01T00:00:00.000Z"]) {
+        const result = yield* Effect.result(
+          f.service.requestAction({ type: "snooze", threadId: nativeId, until }),
+        );
+        assert.equal(result._tag === "Failure" && result.failure.reason, "action-unavailable");
+      }
+      assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+      assert.deepEqual(yield* Ref.get(f.dispatches), []);
+    }),
 );
 
 const switchRequest = "Add local DeepSeek to the CTO d4 provider list";
@@ -2612,6 +2754,46 @@ it.effect("a completed Nia task archives on success and leaves one chat line wit
       ["Completed and archived: Rename the label."],
     );
     assert.equal((yield* f.service.getState()).actionLog[0]?.type, "auto-archive");
+  }),
+);
+
+it.effect(
+  "an approved send to an auto-archived Nia task unarchives it and delivers the message",
+  () =>
+    Effect.gen(function* () {
+      const { f, threadId, archivedAt } = yield* finishedTask("completed");
+      assert.isNotNull(archivedAt);
+      const action = yield* f.service.requestAction({
+        type: "send",
+        threadId,
+        text: "Also update the docs.",
+      });
+      yield* f.service.resolveAction({ actionId: action.id, decision: "approve" });
+      assert.isNull((yield* Ref.get(f.shells)).find((entry) => entry.id === threadId)!.archivedAt);
+      assert.include(yield* Ref.get(f.dispatches), "thread.unarchive");
+      assert.deepEqual(
+        (yield* Ref.get(f.sends)).map((send) => [send.threadId, send.text]),
+        [[threadId, "Also update the docs."]],
+      );
+      const record = (yield* f.service.getState()).actionLog.find(
+        (entry) => entry.id === action.id,
+      );
+      assert.equal(record?.status, "executed");
+    }),
+);
+
+it.effect("a send that still fails tells the user why", () =>
+  Effect.gen(function* () {
+    const { f, threadId } = yield* finishedTask("completed");
+    yield* Ref.set(f.failSend, true);
+    const action = yield* f.service.requestAction({ type: "send", threadId, text: "Retry." });
+    yield* Effect.result(f.service.resolveAction({ actionId: action.id, decision: "approve" }));
+    const record = (yield* f.service.getState()).actionLog.find((entry) => entry.id === action.id);
+    assert.equal(record?.status, "failed");
+    assert.equal(
+      record?.failure,
+      "The thread service rejected this action; open the thread to check its state.",
+    );
   }),
 );
 

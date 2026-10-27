@@ -67,6 +67,18 @@ export const StoredState = Schema.Struct({
       }),
     ),
   ),
+  taskFollowups: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        context: D4BrainContext,
+        scopeHash: Schema.String,
+        threadId: ThreadId,
+        title: Schema.String,
+        result: Schema.String,
+      }),
+    ),
+  ),
   overviewSources: Schema.optionalKey(Schema.Array(Schema.String)),
   overviewHeartbeatAt: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
   overviewCtoCheckedAt: Schema.optionalKey(Schema.Number),

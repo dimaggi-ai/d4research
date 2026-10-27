@@ -2364,6 +2364,74 @@ it.effect("pipeline discovery supplies the configured model and only scoped proj
   }),
 );
 
+it.effect("a finished task shows its answer and Nia follows up on it once", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+      sessionIdleMinutes: null,
+      heartbeatMinutes: 15,
+      agentThreadArchiveHours: 24,
+    });
+    yield* f.service.ensureThread();
+    const threadId = ThreadId.make("d4-action:answered");
+    const runId = RunId.make("answered");
+    const answeredThread = {
+      ...target,
+      id: threadId,
+      createdBy: "agent" as const,
+      latestRunId: runId,
+    };
+    yield* Ref.update(f.shells, (all) => [...all, answeredThread]);
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      thread: { ...answeredThread, lastVisitedAt: answeredThread.lastVisitedAt ?? null },
+      runs: [{ id: runId, status: "completed", completedAt: now }] as unknown as typeof value.runs,
+      messages: [
+        {
+          id: "answer",
+          role: "assistant",
+          runId,
+          text: "Cheapest: $499 at Costco.",
+          createdAt: now,
+        },
+      ] as unknown as typeof value.messages,
+    }));
+    yield* Ref.update(f.state, (value) => ({
+      ...value,
+      agentThreads: [
+        {
+          threadId,
+          projectId: target.projectId,
+          context: "Global" as const,
+          actionId: "answered",
+          reportedAt: null,
+          archivedAt: null,
+          undoDisabled: false,
+        },
+      ],
+    }));
+    yield* f.service.tick;
+    const line = (yield* Ref.get(f.state)).transcript!.find((entry) =>
+      entry.text.startsWith("Completed: Private."),
+    );
+    assert.equal(line?.text, "Completed: Private.\nCheapest: $499 at Costco.");
+    yield* TestClock.adjust("1 hour");
+    yield* f.service.tick;
+    const followups = (yield* Ref.get(f.sends)).filter((input) =>
+      input.text.includes("A task thread you started has finished"),
+    );
+    assert.equal(followups.length, 1);
+    assert.include(followups[0]!.text, "Cheapest: $499 at Costco.");
+    assert.deepEqual((yield* Ref.get(f.state)).taskFollowups, []);
+    yield* f.service.tick;
+    assert.equal(
+      (yield* Ref.get(f.sends)).filter((input) =>
+        input.text.includes("A task thread you started has finished"),
+      ).length,
+      1,
+    );
+  }),
+);
+
 it.effect("reports an agent-started completion, logs the delayed archive and undoes it", () =>
   Effect.gen(function* () {
     const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {

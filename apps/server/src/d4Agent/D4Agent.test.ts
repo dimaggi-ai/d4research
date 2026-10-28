@@ -310,6 +310,7 @@ const fixture = (
             getProviders: Ref.get(catalog),
           }),
           Layer.mock(Threads.ThreadManagementService)({
+            getThreadRecords: () => Ref.get(projection),
             getThreadShell: (id) =>
               Ref.update(reads, (r) => ({ ...r, shells: r.shells + 1 })).pipe(
                 Effect.andThen(Ref.get(agentShell)),
@@ -5314,4 +5315,35 @@ it.effect("CTO refusals say why and what to do instead", () =>
     assert.equal(off._tag, "Failure");
     if (off._tag === "Failure") assert.include(off.failure.message, "disabled in Nia settings");
   }),
+);
+
+it.effect("a restarted Nia service recovers its unanswered user request on the next tick", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      userMessages: [
+        { threadId: identity.threadId, messageId: "pending-request", text: "fixture request" },
+      ],
+    }));
+    yield* Ref.update(f.projection, (projection) => ({
+      ...projection,
+      thread: { ...projection.thread, id: identity.threadId },
+      runs: [
+        {
+          id: RunId.make("cancelled-request"),
+          userMessageId: MessageId.make("pending-request"),
+          status: "cancelled",
+          providerInstanceId: projection.thread.providerInstanceId,
+          modelSelection,
+          completedAt: DateTime.makeUnsafe(0),
+        } as (typeof projection.runs)[number],
+      ],
+    }));
+    yield* TestClock.adjust("1 minute");
+    const restarted = yield* f.restart;
+    yield* restarted.tick;
+    assert.include(yield* Ref.get(f.dispatches), "message.dispatch");
+  }).pipe(Effect.scoped),
 );

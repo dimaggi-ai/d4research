@@ -1,3 +1,4 @@
+import * as NiaRequestRecovery from "./NiaRequestRecovery.ts";
 import * as OverviewThreads from "./OverviewThreads.ts";
 import * as Overview from "./overview.ts";
 import * as OverviewInbox from "./OverviewInbox.ts";
@@ -3250,6 +3251,20 @@ export const layer = Layer.effect(
         yield* finishRotation().pipe(
           Effect.catch(() => Effect.logWarning("Nia rotated message delivery will be retried")),
         );
+        if (config.enabled) {
+          const recoveryState = yield* store.get;
+          for (const session of recoveryState.sessions ?? []) {
+            if (session.scopeHash !== contextScopeHash(session.context, config)) continue;
+            const pending = recoveryState.userMessages?.findLast(
+              (message) => message.threadId === session.threadId,
+            );
+            if (pending)
+              yield* NiaRequestRecovery.recover(session.threadId, pending.messageId).pipe(
+                Effect.provideService(ThreadManagement.ThreadManagementService, threads),
+                Effect.catch(() => Effect.logWarning("Nia request recovery will be retried")),
+              );
+          }
+        }
         yield* maintainSessions();
         if (config.enabled)
           yield* fireReminders.pipe(

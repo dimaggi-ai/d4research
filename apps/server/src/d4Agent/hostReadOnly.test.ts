@@ -2,6 +2,13 @@ import { assert, describe, it } from "@effect/vitest";
 import { classifyHostReadOnly } from "./hostReadOnly.ts";
 
 const allowed = [
+  "cat ~/.local/state/schedule-watch/state.json",
+  "cat $HOME/.local/state/nia-inbox/schedule-watch.json",
+  "head -c 2000 ~/.local/state/home-backup/status",
+  "cat /var/lib/system-doctor/selftest.json",
+  "systemctl show daily-selftest.service -p ExecMainStatus",
+  "systemctl list-timers --all --no-pager",
+  "systemctl is-active cronie.service",
   "cat ~/tools/d4-agent-lane/DEPLOY-RESULT-r37.txt",
   "tail -n 40 /home/dmitriis/tools/d4-agent-lane/DEPLOY-RESULT-r39.txt",
   "head -c 2000 /var/lib/system-doctor/status.json",
@@ -22,6 +29,11 @@ const allowed = [
 ];
 
 const refused: ReadonlyArray<[string, RegExp]> = [
+  ["cat ~/.local/state/schedule-watch/../secret.json", /outside the readable paths/],
+  ["cat ~/.local/state/schedule-watch/pushed/host.json", /outside the readable paths/],
+  ["cat ~/.local/state/nia-inbox/evolution-global.json", /outside the readable paths/],
+  ["systemctl restart daily-selftest.service", /not in the read-only allowlist/],
+  ["systemctl show daily-selftest.service --value --root=/tmp", /not in the read-only allowlist/],
   ["env touch /tmp/nia-read-host", /not in the read-only allowlist/],
   ["printenv", /not in the read-only allowlist/],
   ["uptime | awk 'BEGIN {system(\"id\")}'", /pipeline|not in the read-only allowlist/],

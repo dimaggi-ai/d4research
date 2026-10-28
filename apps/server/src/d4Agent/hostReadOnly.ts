@@ -56,11 +56,23 @@ const tokenize = (command: string): ReadonlyArray<string> | null => {
 const contentPathAllowed = (path: string) => {
   if (path.includes("..")) return false;
   const home = NodeOS.homedir();
+  const homePath = path.startsWith("~/")
+    ? path.slice(2)
+    : path.startsWith("$HOME/")
+      ? path.slice(6)
+      : path.startsWith(`${home}/`)
+        ? path.slice(home.length + 1)
+        : null;
   const deploy = /\/tools\/d4-agent-lane\/DEPLOY-RESULT-[A-Za-z0-9._-]+\.txt$/;
   return (
     ((path.startsWith("~/") || path.startsWith("$HOME/") || path.startsWith(`${home}/`)) &&
       deploy.test(path)) ||
     path === "/var/lib/system-doctor/status.json" ||
+    path === "/var/lib/system-doctor/selftest.json" ||
+    (homePath !== null &&
+      (/^\.local\/state\/schedule-watch\/[A-Za-z0-9_-]+\.json$/.test(homePath) ||
+        homePath === ".local/state/nia-inbox/schedule-watch.json" ||
+        homePath === ".local/state/home-backup/status")) ||
     path === "/etc/os-release" ||
     /^\/proc\/(loadavg|meminfo|uptime|version)$/.test(path)
   );
@@ -85,8 +97,10 @@ const contentReaderAllowed = (tokens: ReadonlyArray<string>) => {
 };
 
 const systemctlAllowed = (tokens: ReadonlyArray<string>) => {
-  if (tokens[0] !== "systemctl" || tokens[1] !== "--user") return false;
-  const rest = tokens.slice(2);
+  if (tokens[0] !== "systemctl") return false;
+  const userManager = tokens[1] === "--user";
+  const rest = tokens.slice(userManager ? 2 : 1);
+  if (!userManager && !["show", "list-timers", "is-active"].includes(rest[0] ?? "")) return false;
   if (rest.length === 0) return false;
   if (rest[0] === "--failed")
     return rest.slice(1).every((arg) => arg === "--no-pager" || arg === "--plain");

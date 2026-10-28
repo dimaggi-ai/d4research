@@ -5065,7 +5065,7 @@ it.effect("resolving an approved send twice delivers the message once", () =>
 it.effect("distinct research proposals in one project keep separate approval cards", () =>
   Effect.gen(function* () {
     const f = yield* guardedFixture();
-    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" };
     yield* f.service.ensureThread();
     yield* f.settings.updateSettings({
       research: {

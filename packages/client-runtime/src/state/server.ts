@@ -1071,6 +1071,11 @@ export function createServerEnvironmentAtoms<R, E>(
           registry.refresh(d4AgentIdentity({ environmentId, input: {} }));
         }),
     }),
+    resumePipelineRun: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:resume-pipeline-run",
+      tag: WS_METHODS.pipelineResumeRun,
+      concurrency: { mode: "singleFlight", key: ({ input }) => String(input.threadId) },
+    }),
     resolveD4AgentMemoryProposal: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:resolve-d4-agent-memory-proposal",
       tag: WS_METHODS.d4AgentResolveMemoryProposal,

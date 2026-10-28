@@ -69,6 +69,7 @@ describe("command permissions", () => {
     WS_METHODS.d4AgentResolveMemoryProposal,
     WS_METHODS.d4AgentSendMessage,
     WS_METHODS.d4AgentResolveAction,
+    WS_METHODS.pipelineResumeRun,
   ])("rechecks destination operate permission for d4 Agent %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {

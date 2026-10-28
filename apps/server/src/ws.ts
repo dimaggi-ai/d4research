@@ -1,6 +1,8 @@
 import * as D4AgentAccess from "./d4Agent/D4AgentAccess.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as D4Agent from "./d4Agent/D4Agent.ts";
+import * as D4AgentStore from "./d4Agent/D4AgentStore.ts";
+import { resumePipelineRun } from "./orchestration-v2/PipelineRunResume.ts";
 import * as SecondBrain from "./second-brain/SecondBrainService.ts";
 import { OrchestrationDispatchCommandError } from "@d4research/contracts";
 import * as Crypto from "effect/Crypto";
@@ -1137,6 +1139,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 const CoreWsRpcGroup = ServerWsRpcGroup.omit(
   WS_METHODS.d4AgentCloseSession,
   WS_METHODS.d4AgentUndoArchive,
+  WS_METHODS.pipelineResumeRun,
 );
 
 // Keep the large handler map below the compiler's recursive instantiation limit.
@@ -1146,6 +1149,19 @@ const layerAgentSessionRpc = Layer.mergeAll(
   ),
   ServerWsRpcGroup.toLayerHandler(WS_METHODS.d4AgentUndoArchive, (input) =>
     D4Agent.D4Agent.pipe(Effect.flatMap((agent) => agent.undoArchive(input))),
+  ),
+  ServerWsRpcGroup.toLayerHandler(WS_METHODS.pipelineResumeRun, (input) =>
+    Effect.serviceOption(D4AgentStore.D4AgentStore).pipe(
+      Effect.flatMap((store) =>
+        resumePipelineRun({
+          threadId: input.threadId,
+          createdBy: "user",
+          creationSource: "web",
+          store: Option.getOrUndefined(store),
+        }),
+      ),
+      Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
+    ),
   ),
 );
 

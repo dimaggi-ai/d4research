@@ -171,6 +171,7 @@ import {
 import { resolveProjectSettings } from "@d4research/shared/projectSettings";
 import { sourceControlRepositorySelector } from "@d4research/shared/sourceControl";
 import { truncate } from "@d4research/shared/String";
+import { pendingPipelineResume } from "@d4research/shared/pipelineRunResume";
 import { resolveThreadReferenceCopyTarget } from "@d4research/shared/threadReference";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@d4research/shared/terminalLabels";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@d4research/shared/chatList";
@@ -645,6 +646,7 @@ import {
   deriveResearchDelegations,
   ResearchProgressBanner,
 } from "./chat/ResearchProgressBanner";
+import { PipelineResumeBanner } from "./chat/PipelineResumeBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { SystemPanel } from "./SystemPanel";
@@ -3265,6 +3267,10 @@ function ChatViewContent(props: ChatViewProps) {
     conversationProviderStatus !== null &&
     conversationProviderStatus.supportsConversationRollback !== false;
   const phase = derivePhase(activeRuntime);
+  const pipelineResume =
+    serverProjection === null
+      ? null
+      : pendingPipelineResume({ runs: serverProjection.runs, messages: serverProjection.messages });
   const serverThreadId = serverThread?.id;
   const serverThreadEnvironmentId = serverThread?.environmentId;
   const setThreadError = makeThreadErrorSetter({
@@ -9715,6 +9721,15 @@ function ChatViewContent(props: ChatViewProps) {
                             steps={researchBannerSteps}
                             isRunning
                             contextTokens={activeContextWindow?.usedTokens ?? null}
+                          />
+                        ) : null}
+                        {pipelineResume !== null &&
+                        activeThreadId !== null &&
+                        phase !== "running" ? (
+                          <PipelineResumeBanner
+                            environmentId={environmentId}
+                            threadId={activeThreadId}
+                            interruption={pipelineResume.interruption}
                           />
                         ) : null}
                         {activeThreadId !== null && visibleAudioArtifacts.length > 0 ? (

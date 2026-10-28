@@ -5,6 +5,7 @@ import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import {
   canStartProviderTurn,
   type CanonicalRequestType,
@@ -37,7 +38,23 @@ import {
   resolveResearchDirective,
 } from "@d4research/shared/researchPipeline";
 import { ResearchDelegationBudget } from "./budget.ts";
-import { ResearchDelegateError, type ResearchDelegateInput, ResearchToolkit } from "./tools.ts";
+import {
+  budgetRunId,
+  type DelegationOutcome,
+  inheritedBudget,
+  readResearchLedger,
+  readRunArtifact,
+  recordDelegationOutcome,
+  researchRunDirectory,
+} from "./runArtifacts.ts";
+import { resumeContextFor } from "@d4research/shared/pipelineRunResume";
+import {
+  ResearchArtifactReadError,
+  type ResearchArtifactReadInput,
+  ResearchDelegateError,
+  type ResearchDelegateInput,
+  ResearchToolkit,
+} from "./tools.ts";
 
 /** Keeps a failure reason readable in a tool result without dumping a stack. */
 const CAUSE_DETAIL_MAX_CHARS = 400;
@@ -426,45 +443,25 @@ export interface BoundedDelegationRequest {
   readonly step: string;
   readonly visit: number;
   readonly pollDelay?: Effect.Effect<void>;
+  /**
+   * The orchestration run making this call. Names the run chain a resumed
+   * turn inherits budget from; absent when the turn is unknown.
+   */
+  readonly orchestratorRunId?: string;
+  /**
+   * Pipeline delegations persist every outcome under `research-runs/`.
+   * Inline `!provider:model` turns are one-off answers already in the
+   * transcript and opt out, so code repositories do not collect them.
+   */
+  readonly recordArtifacts?: boolean;
 }
 
 export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
-    const parsedTarget = input.parsedTarget;
     const targetLabel = input.substituted
       ? `${input.resolvedTarget} (labeled fallback for ${input.requestedTarget})`
       : input.resolvedTarget;
-
-    // The delegate must never be this thread's own session — that is the
-    // recursive-delegation door the product contract keeps shut.
     const nowMs = yield* Clock.currentTimeMillis;
-    const budget = yield* ResearchDelegationBudget;
-    const charge = yield* budget.charge({
-      runId: input.runId,
-      step: input.step,
-      target: input.resolvedTarget,
-    });
-    if (!charge.ok) {
-      return yield* new ResearchDelegateError({
-        detail: charge.reason ?? "Delegation budget exhausted.",
-        budgetExhausted: true,
-        failureKind: "budget",
-      });
-    }
-
-    const promptFile = yield* input.resolvePromptFile;
-
-    const registry = yield* ProviderAdapterRegistryV2;
-    const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
-    const adapter = yield* registry.get(instanceId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ResearchDelegateError({
-            detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
-          }),
-      ),
-    );
 
     // Run the delegate in the orchestrator thread's workspace, not the
     // server process dir. Without this the CLI inherits the server's cwd
@@ -474,6 +471,7 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
     // resolvable workspace yet.
     const projections = yield* ProjectionStoreV2;
     const projects = yield* ProjectStoreV2;
+    const path = yield* Path.Path;
     const orchestrator = yield* projections
       .getThread(input.orchestratorThreadId)
       .pipe(Effect.orElseSucceed(() => null));
@@ -486,6 +484,125 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
     const delegateCwd =
       orchestrator?.worktreePath ??
       (Option.isSome(project) ? project.value.workspaceRoot : undefined);
+    // Artifacts sit beside the files pipelines already write under the
+    // project root, so a worktree cleanup cannot delete a run's record.
+    const artifactRoot = Option.isSome(project) ? project.value.workspaceRoot : delegateCwd;
+    const runDirectory =
+      input.recordArtifacts === false || artifactRoot === undefined
+        ? null
+        : researchRunDirectory(path, artifactRoot, input.orchestratorThreadId);
+
+    const record = (result: DelegationOutcome["result"]) =>
+      Effect.gen(function* () {
+        if (runDirectory === null) return;
+        const completedAtMs = yield* Clock.currentTimeMillis;
+        yield* recordDelegationOutcome({
+          runDirectory,
+          outcome: {
+            runId: input.runId,
+            step: input.step,
+            visit: input.visit,
+            requestedTarget: input.requestedTarget,
+            resolvedTarget: input.resolvedTarget,
+            substituted: input.substituted,
+            durationMs: Math.max(0, completedAtMs - nowMs),
+            completedAtMs,
+            result,
+          },
+        });
+      });
+
+    // A resumed run continues the interrupted one, so it starts from that
+    // run's spend. Best-effort: an unreadable ledger only loses the carry-over.
+    const orchestratorRunId = input.orchestratorRunId;
+    const inherited =
+      runDirectory === null || orchestratorRunId === undefined
+        ? undefined
+        : yield* Effect.gen(function* () {
+            const records = yield* projections.getThreadRecords(input.orchestratorThreadId, [
+              "runs",
+              "messages",
+            ]);
+            const resume = resumeContextFor({
+              runs: records.runs,
+              messages: records.messages,
+              currentRunId: orchestratorRunId,
+            });
+            if (resume === null) return undefined;
+            const entries = yield* readResearchLedger(runDirectory);
+            return inheritedBudget(
+              entries,
+              new Set(resume.chain.map((run) => budgetRunId(input.orchestratorThreadId, run.id))),
+            );
+          }).pipe(Effect.orElseSucceed(() => undefined));
+
+    // The delegate must never be this thread's own session — that is the
+    // recursive-delegation door the product contract keeps shut.
+    const budget = yield* ResearchDelegationBudget;
+    const charge = yield* budget.charge({
+      runId: input.runId,
+      step: input.step,
+      target: input.resolvedTarget,
+      ...(inherited === undefined ? {} : { inherited }),
+    });
+    if (!charge.ok) {
+      const detail = charge.reason ?? "Delegation budget exhausted.";
+      yield* record({ ok: false, detail, failureKind: "budget" });
+      return yield* new ResearchDelegateError({
+        detail,
+        budgetExhausted: true,
+        failureKind: "budget",
+      });
+    }
+
+    const text = yield* delegate(input, { nowMs, delegateCwd, memoProject, targetLabel }).pipe(
+      Effect.tapError((error) =>
+        record({ ok: false, detail: error.detail, failureKind: error.failureKind ?? "error" }),
+      ),
+    );
+    const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
+    yield* record({ ok: true, text, truncated });
+    const completedMs = yield* Clock.currentTimeMillis;
+    return {
+      requestedTarget: input.requestedTarget,
+      resolvedTarget: input.resolvedTarget,
+      substituted: input.substituted,
+      target: input.resolvedTarget,
+      step: input.step,
+      visit: input.visit,
+      remainingBudget: charge.remaining,
+      durationMs: Math.max(0, completedMs - nowMs),
+      truncated,
+      text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
+    };
+  });
+
+/** Runs one already-charged delegation and returns the delegate's full answer. */
+const delegate = (
+  input: BoundedDelegationRequest,
+  context: {
+    readonly nowMs: number;
+    readonly delegateCwd: string | undefined;
+    readonly memoProject: string | null;
+    readonly targetLabel: string;
+  },
+) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const parsedTarget = input.parsedTarget;
+    const { nowMs, delegateCwd, memoProject, targetLabel } = context;
+    const promptFile = yield* input.resolvePromptFile;
+
+    const registry = yield* ProviderAdapterRegistryV2;
+    const instanceId = ProviderInstanceId.make(parsedTarget.instanceId);
+    const adapter = yield* registry.get(instanceId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ResearchDelegateError({
+            detail: `Provider "${parsedTarget.instanceId}" unavailable: ${cause.message}`,
+          }),
+      ),
+    );
 
     // Shared context rides along as-is — no summarization between what one
     // model learned and what the next one reads. Best-effort: a memory
@@ -579,21 +696,7 @@ export const runBoundedDelegation = (input: BoundedDelegationRequest) =>
         failureKind: "empty",
       });
     }
-
-    const truncated = text.length > DELEGATE_MAX_OUTPUT_CHARS;
-    const completedMs = yield* Clock.currentTimeMillis;
-    return {
-      requestedTarget: input.requestedTarget,
-      resolvedTarget: input.resolvedTarget,
-      substituted: input.substituted,
-      target: input.resolvedTarget,
-      step: input.step,
-      visit: input.visit,
-      remainingBudget: charge.remaining,
-      durationMs: Math.max(0, completedMs - nowMs),
-      truncated,
-      text: truncated ? text.slice(0, DELEGATE_MAX_OUTPUT_CHARS) : text,
-    };
+    return text;
   });
 
 export const makeResearchDelegateHandler =
@@ -721,11 +824,51 @@ export const makeResearchDelegateHandler =
         step: input.step,
         visit: input.visit,
         ...(options?.pollDelay === undefined ? {} : { pollDelay: options.pollDelay }),
+        ...(invocation.thread.turnId == null
+          ? {}
+          : { orchestratorRunId: String(invocation.thread.turnId) }),
       });
     });
 
+export const researchArtifactReadHandler = (input: ResearchArtifactReadInput) =>
+  Effect.gen(function* () {
+    const invocationScope = yield* McpInvocationContext.McpInvocationContext;
+    const invocation = yield* McpInvocationContext.requireThreadScope(
+      invocationScope,
+      "research_artifact_read",
+    ).pipe(Effect.mapError((cause) => new ResearchArtifactReadError({ detail: cause.message })));
+    const threadId = invocation.thread.threadId;
+    const projections = yield* ProjectionStoreV2;
+    const projects = yield* ProjectStoreV2;
+    const path = yield* Path.Path;
+    const thread = yield* projections.getThread(threadId).pipe(Effect.orElseSucceed(() => null));
+    const project = thread
+      ? yield* projects.getShell(thread.projectId).pipe(Effect.orElseSucceed(() => Option.none()))
+      : Option.none();
+    const root = Option.isSome(project) ? project.value.workspaceRoot : thread?.worktreePath;
+    if (root === undefined || root === null) {
+      return yield* new ResearchArtifactReadError({
+        detail: "This thread has no workspace, so it has no saved step artifacts.",
+      });
+    }
+    const result = yield* readRunArtifact({
+      runDirectory: researchRunDirectory(path, root, threadId),
+      artifact: input.artifact,
+      offset: input.offset ?? 0,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ResearchArtifactReadError({ detail: `Could not read artifact: ${cause.message}` }),
+      ),
+    );
+    if (!result.ok) return yield* new ResearchArtifactReadError({ detail: result.detail });
+    const { ok: _ok, ...output } = result;
+    return output;
+  });
+
 const handlers = {
   research_delegate: makeResearchDelegateHandler(),
+  research_artifact_read: researchArtifactReadHandler,
 } satisfies Parameters<typeof ResearchToolkit.toLayer>[0];
 
 export const ResearchToolkitHandlersLive = ResearchToolkit.toLayer(handlers);

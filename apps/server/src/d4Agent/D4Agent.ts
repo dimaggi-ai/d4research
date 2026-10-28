@@ -72,6 +72,7 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as D4AgentAccess from "./D4AgentAccess.ts";
+import { resumePipelineRun } from "../orchestration-v2/PipelineRunResume.ts";
 import * as D4AgentStore from "./D4AgentStore.ts";
 import * as SystemProbe from "./SystemProbe.ts";
 import * as ToolGuard from "./ToolGuardGate.ts";
@@ -291,6 +292,7 @@ export const requiresActionApproval = (
   action.type === "research" ||
   action.type === "pipeline" ||
   action.type === "interrupt" ||
+  action.type === "resume" ||
   action.type === "archive" ||
   isLifecycleAction(action) ||
   action.type === "answer" ||
@@ -2226,6 +2228,24 @@ export const layer = Layer.effect(
           .pipe(Effect.mapError(threadError));
         if (target === null) return yield* new D4AgentError({ reason: "action-unavailable" });
         if (isLifecycleAction(action)) return yield* lifecycleChange(action, record.id);
+        if (action.type === "resume") {
+          const resumed = yield* resumePipelineRun({
+            threadId: action.threadId,
+            createdBy: "agent",
+            creationSource: "server",
+            store,
+          }).pipe(
+            Effect.provideService(ThreadManagement.ThreadManagementService, threads),
+            Effect.provideService(ProjectionStore.ProjectionStoreV2, projections),
+            Effect.provideService(ServerSettings.ServerSettingsService, settingsService),
+            Effect.mapError(
+              (error) => new D4AgentError({ reason: "thread", cause: new Error(error.detail) }),
+            ),
+          );
+          return resumed.repinnedPipeline
+            ? "Resumed under the current pipeline."
+            : "Resumed from the next incomplete step.";
+        }
         // Approving a send to an archived thread means the user wants that thread back.
         if (action.type === "send" && target.archivedAt !== null)
           yield* threads

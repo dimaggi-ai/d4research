@@ -1,4 +1,4 @@
-import { makeTaskScopeValidator } from "../d4Agent/D4AgentTaskScope.ts";
+import { describeTaskScopeRefusal, makeTaskScopeEvaluator } from "../d4Agent/D4AgentTaskScope.ts";
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import { selectAppProviderHistory } from "./appProviderHistory.ts";
 import { extractTrailingProviderHandoffContext } from "@d4research/shared/providerHandoffPrompt";
@@ -20,6 +20,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import { compressHandoffContextLocal } from "../handoffCompression.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { InlineDelegationRunner } from "../mcp/toolkits/research/inlineDelegation.ts";
+import { buildResumeNote } from "../mcp/toolkits/research/runArtifacts.ts";
 import { OrchestrationEventStore } from "../persistence/OrchestrationEventStore.ts";
 import { expandProviderDevMessage, expandProviderResearchMessage } from "./PipelineMessage.ts";
 import { tryRunInlineResearchTurn } from "./InlineResearchTurn.ts";
@@ -157,7 +158,7 @@ export const layer: Layer.Layer<
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const providerRegistry = yield* ProviderRegistry;
     const d4AgentContext = yield* Effect.serviceOption(D4AgentContext.D4AgentContext);
-    const validateAgentTaskScope = yield* makeTaskScopeValidator;
+    const currentTaskScopeStatus = yield* makeTaskScopeEvaluator;
     const researchServices = yield* Effect.context<
       InlineDelegationRunner | OrchestrationEventStore
     >();
@@ -420,17 +421,37 @@ export const layer: Layer.Layer<
         },
       );
       const settings = yield* serverSettings.getSettings;
-      const taskScope = yield* validateAgentTaskScope(
+      // A refused scope is a final answer, not a transient fault. Throwing here
+      // made the effect worker retry, give up, and leave the run `starting`
+      // forever; settling it failed tells the caller why at once.
+      const taskScope = yield* currentTaskScopeStatus(
         projection.thread.id,
         settings.d4Agent,
-        undefined,
         settings,
-      ).pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId, cause })));
-      if (taskScope !== null && taskScope.projectId !== projection.thread.projectId)
-        return yield* new ProviderTurnStartError({
-          runId,
-          cause: "Context operation refused; inspect the selected scope configuration.",
+      );
+      const scopeRefusal =
+        taskScope === null
+          ? null
+          : taskScope.status !== "ok"
+            ? describeTaskScopeRefusal(taskScope)
+            : taskScope.record.projectId !== projection.thread.projectId
+              ? "This task belongs to a different project than its thread, so it cannot start."
+              : null;
+      if (scopeRefusal !== null) {
+        yield* settleRunBeforeStart({
+          signal: "task-scope-refused",
+          status: "failed",
+          now: yield* DateTime.now,
+          providerInstanceId: run.providerInstanceId,
+          itemProviderThreadId: providerThread.id,
+          item: {
+            type: "error",
+            title: "Task scope refused",
+            failure: makeProviderFailure({ message: scopeRefusal }),
+          },
         });
+        return;
+      }
       const providers = yield* providerRegistry.getProviders;
       const nextOrdinal =
         Math.max(
@@ -1235,10 +1256,36 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      // A pipeline run cut short by a restart, a stop, or a failure is
+      // continued by the next plain message; the server ledger tells the
+      // orchestrator what already ran so it does not delegate it again.
+      const resumeNote =
+        d4AgentPrefix !== null
+          ? ""
+          : yield* Effect.gen(function* () {
+              const project = yield* projects.getById(projection.thread.projectId).pipe(
+                Effect.map(Option.getOrUndefined),
+                Effect.orElseSucceed(() => undefined),
+              );
+              return yield* buildResumeNote({
+                threadId: projection.thread.id,
+                currentRunId: run.id,
+                runs: projection.runs,
+                messages: projection.messages,
+                workspaceRoot: project?.workspaceRoot,
+              });
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+            );
+      const restartNote = [
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+        resumeNote,
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );

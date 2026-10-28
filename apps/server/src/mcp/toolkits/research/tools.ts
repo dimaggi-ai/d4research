@@ -1,6 +1,7 @@
 import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -52,6 +53,7 @@ const dependencies = [
   ServerConfig.ServerConfig,
   ResearchDelegationBudget,
   Path.Path,
+  FileSystem.FileSystem,
   HttpClient.HttpClient,
   Crypto.Crypto,
 ];
@@ -135,4 +137,48 @@ const ResearchDelegateTool = Tool.make("research_delegate", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false);
 
-export const ResearchToolkit = Toolkit.make(ResearchDelegateTool);
+export class ResearchArtifactReadError extends Schema.TaggedError<ResearchArtifactReadError>()(
+  "ResearchArtifactReadError",
+  { detail: Schema.String },
+) {}
+
+export const ResearchArtifactReadInput = Schema.Struct({
+  artifact: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(300)).pipe(
+    Schema.annotate({
+      description:
+        'Artifact path exactly as the RESUME block or ledger lists it, e.g. "steps/003-step2-v1-claudeagent-claude-fable-5.md", or "ledger.jsonl".',
+    }),
+  ),
+  offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).pipe(
+    Schema.withDecodingDefault(Effect.succeed(0)),
+    Schema.annotate({ description: "Character offset to start reading from." }),
+  ),
+});
+export type ResearchArtifactReadInput = typeof ResearchArtifactReadInput.Type;
+
+export const ResearchArtifactReadOutput = Schema.Struct({
+  artifact: Schema.String,
+  path: Schema.String,
+  offset: Schema.Int,
+  totalChars: Schema.Int,
+  /** Offset of the next unread chunk, or null when this chunk ends the file. */
+  nextOffset: Schema.NullOr(Schema.Int),
+  text: Schema.String,
+});
+export type ResearchArtifactReadOutput = typeof ResearchArtifactReadOutput.Type;
+
+const ResearchArtifactReadTool = Tool.make("research_artifact_read", {
+  description:
+    "Read a step artifact the server saved for this thread's pipeline run, such as a completed delegation's full answer. Read-only and limited to this thread's own run directory. Use it to resume a run without repeating completed delegations.",
+  parameters: ResearchArtifactReadInput,
+  success: ResearchArtifactReadOutput,
+  failure: ResearchArtifactReadError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Read research step artifact")
+  .annotate(Tool.OpenWorld, false)
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+export const ResearchToolkit = Toolkit.make(ResearchDelegateTool, ResearchArtifactReadTool);

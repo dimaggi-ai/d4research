@@ -168,6 +168,8 @@ export const D4AgentAction = Schema.Union([
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
   }),
   Schema.Struct({ type: Schema.Literal("interrupt"), threadId: ThreadId }),
+  // Continues a pipeline run that a restart, a stop or a failure cut short.
+  Schema.Struct({ type: Schema.Literal("resume"), threadId: ThreadId }),
   // The user asked to archive this thread; auto-archive is only for threads Nia started.
   Schema.Struct({ type: Schema.Literal("archive"), threadId: ThreadId }),
   // Thread lifecycle changes on any thread in scope, including ones Nia did not start.
@@ -268,6 +270,7 @@ export const D4AgentActionSummary = Schema.Struct({
   type: Schema.Literals([
     "send",
     "interrupt",
+    "resume",
     "archive",
     "settle",
     "unsettle",

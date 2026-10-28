@@ -84,6 +84,7 @@ export function actionTargetThread(
 ): ThreadId | null {
   return record.type === "send" ||
     record.type === "interrupt" ||
+    record.type === "resume" ||
     record.type === "answer" ||
     record.type === "archive" ||
     record.type === "auto-archive"

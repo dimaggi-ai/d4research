@@ -351,6 +351,10 @@
       "types": "./src/researchPipeline.ts",
       "import": "./src/researchPipeline.ts"
     },
+    "./pipelineRunResume": {
+      "types": "./src/pipelineRunResume.ts",
+      "import": "./src/pipelineRunResume.ts"
+    },
     "./enabledSkillsContext": {
       "types": "./src/enabledSkillsContext.ts",
       "import": "./src/enabledSkillsContext.ts"

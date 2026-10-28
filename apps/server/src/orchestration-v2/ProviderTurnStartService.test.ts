@@ -286,6 +286,7 @@ function makeLocalCommandHarness(input: {
   readonly text: string;
   readonly scopedTask?: boolean;
   readonly taskProjectId?: ProjectId;
+  readonly taskScopeMissing?: boolean;
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
@@ -709,7 +710,7 @@ function makeLocalCommandHarness(input: {
             get: Effect.succeed({
               agentThreads: [
                 {
-                  threadId,
+                  threadId: input.taskScopeMissing ? ThreadId.make("d4-action:other") : threadId,
                   projectId: input.taskProjectId ?? projection.thread.projectId,
                   context: "Global",
                   actionId: identity,
@@ -1444,9 +1445,35 @@ effectIt.effect("agent-started task refuses a project move before starting its p
       scopedTask: true,
       taskProjectId: ProjectId.make("original-project"),
     });
-    const result = yield* Effect.result(harness.start);
-    expect(result._tag).toBe("Failure");
+    yield* harness.start;
     expect(harness.nativeStart).not.toHaveBeenCalled();
     expect(harness.buildTurnContext).not.toHaveBeenCalled();
+    // A refusal settles the run, so a resume never hangs at `starting`.
+    const projection = harness.projection();
+    expect(projection.runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
+    expect(projection.turnItems).toMatchObject([
+      {
+        type: "error",
+        title: "Task scope refused",
+        failure: { message: expect.stringContaining("different project") },
+      },
+    ]);
+  }),
+);
+
+effectIt.effect("agent-started task with no approved scope fails fast with a reason", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "continue",
+      allowNative: true,
+      scopedTask: true,
+      taskScopeMissing: true,
+    });
+    yield* harness.start;
+    expect(harness.nativeStart).not.toHaveBeenCalled();
+    expect(harness.projection().runs.at(-1)).toMatchObject({ status: "failed" });
+    expect(harness.projection().turnItems).toMatchObject([
+      { type: "error", failure: { message: expect.stringContaining("no approved scope") } },
+    ]);
   }),
 );

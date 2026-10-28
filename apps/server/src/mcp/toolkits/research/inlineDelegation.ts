@@ -2,6 +2,7 @@ import * as SecondBrainService from "../../../second-brain/SecondBrainService.ts
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { HttpClient } from "effect/http";
@@ -97,6 +98,7 @@ export class InlineDelegationRunner extends Context.Service<
       const context = yield* Effect.context<
         | SecondBrainService.SecondBrainService
         | Crypto.Crypto
+        | FileSystem.FileSystem
         | HttpClient.HttpClient
         | Path.Path
         | ProjectionStoreV2

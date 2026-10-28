@@ -149,6 +149,7 @@ export const tryRunInlineResearchTurn = Effect.fn("tryRunInlineResearchTurn")(fu
       resolvePromptFile: Effect.succeed(null),
       shareMemoContext: input.shareMemoContext,
       step: "inline",
+      recordArtifacts: false,
       visit: 1,
     });
   });

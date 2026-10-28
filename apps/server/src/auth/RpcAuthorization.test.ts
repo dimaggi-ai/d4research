@@ -52,6 +52,7 @@ describe("RPC authorization scopes", () => {
       WS_METHODS.d4AgentEnsureThread,
       WS_METHODS.d4AgentSendMessage,
       WS_METHODS.d4AgentResolveAction,
+      WS_METHODS.pipelineResumeRun,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
     }

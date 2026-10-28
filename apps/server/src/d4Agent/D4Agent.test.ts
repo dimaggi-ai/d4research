@@ -343,7 +343,10 @@ const fixture = (
                 yield* Ref.update(sends, (all) => [...all, input]);
                 const limit = yield* DispatchModeLimit;
                 yield* Ref.update(sendLimits, (all) => [...all, limit?.runtimeMode]);
-                return { message: { attachments: input.attachments } } as never;
+                return {
+                  message: { attachments: input.attachments },
+                  run: { id: `run-${String(input.commandId)}` },
+                } as never;
               }),
             dispatch: (cmd) =>
               Effect.gen(function* () {
@@ -417,6 +420,10 @@ const fixture = (
               ),
           }),
           Layer.mock(Projections.ProjectionStoreV2)({
+            getThreadRecords: () =>
+              Ref.get(projection).pipe(
+                Effect.map((value) => ({ runs: value.runs, messages: value.messages }) as never),
+              ),
             getRunMessage: (_threadId, runId) =>
               Ref.get(projection).pipe(
                 Effect.map((value) => {
@@ -769,6 +776,34 @@ it.effect("act holds a requested archive for one approval and Undo archive resto
     yield* f.service.undoArchive({ actionId: action.id });
     assert.deepEqual(yield* archiveCommands, ["thread.archive", "thread.unarchive"]);
     assert.equal((yield* Ref.get(f.shells)).find((t) => t.id === targetId)?.archivedAt, null);
+  }),
+);
+
+it.effect("resume waits for approval, then continues the interrupted pipeline run", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    yield* Ref.update(f.projection, (value) => ({
+      ...value,
+      runs: [
+        {
+          id: RunId.make("cut-run"),
+          ordinal: 1,
+          status: "cancelled",
+          startedAt: "2026-10-27T16:00:00Z",
+          userMessageId: "cut-message",
+        },
+      ] as unknown as typeof value.runs,
+      messages: [
+        { id: "cut-message", role: "user", text: "!research:default Audit the router" },
+      ] as unknown as typeof value.messages,
+    }));
+    const action = yield* f.service.requestAction({ type: "resume", threadId: targetId });
+    assert.equal(action.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    yield* f.service.resolveAction({ actionId: action.id, decision: "approve" });
+    const sent = (yield* Ref.get(f.sends)).at(-1);
+    assert.equal(sent?.threadId, targetId);
+    assert.equal(String(sent?.commandId), "pipeline-resume:cut-run");
   }),
 );
 

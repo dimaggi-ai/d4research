@@ -10,7 +10,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Store from "./D4AgentStore.ts";
 import { taskScopeHash } from "./brainScope.ts";
-import { isAllowedTaskMcpRequest, validateAgentTaskScope } from "./D4AgentTaskScope.ts";
+import {
+  describeTaskScopeRefusal,
+  evaluateTaskScope,
+  isAllowedTaskMcpRequest,
+  repinTaskPipeline,
+  validateAgentTaskScope,
+} from "./D4AgentTaskScope.ts";
 
 const projectId = ProjectId.make("yb");
 const threadId = ThreadId.make("d4-action:task");
@@ -150,6 +156,7 @@ it("task MCP policy permits its own tools and refuses unscoped retrieval and cro
   });
   for (const name of [
     "research_delegate",
+    "research_artifact_read",
     "pipeline_list",
     "pipeline_get",
     "t3_worktree_status",
@@ -229,3 +236,41 @@ it.effect(
       }).pipe(Effect.provide(dependencies));
     }),
 );
+
+it("an edited pipeline is recoverable only by re-pinning; other drift stays refused", () => {
+  const state = { agentThreads: [record], taskScopes: [record] } as unknown as Store.StoredState;
+  const edited = {
+    ...pipelines,
+    research: { ...pipelines.research, scenarios: [{ ...scenario, pipelinePrompt: "Edited" }] },
+  };
+  const status = evaluateTaskScope(state, threadId, settings, undefined, edited);
+  assert.equal(status.status, "pipeline-changed");
+  if (status.status !== "pipeline-changed") return;
+  assert.match(describeTaskScopeRefusal(status), /Use Resume/);
+
+  const repinned = repinTaskPipeline(state, threadId, status.currentPipelineHash);
+  assert.equal(evaluateTaskScope(repinned, threadId, settings, undefined, edited).status, "ok");
+  assert.equal(
+    repinned.taskScopes?.find((entry) => entry.threadId === threadId)?.pipelineHash,
+    status.currentPipelineHash,
+  );
+
+  assert.equal(
+    evaluateTaskScope(
+      state,
+      threadId,
+      { ...settings, projectContexts: { [projectId]: "Dimaggi" } },
+      undefined,
+      edited,
+    ).status,
+    "scope-changed",
+  );
+  assert.equal(
+    evaluateTaskScope(state, threadId, settings, undefined, {
+      ...pipelines,
+      research: { ...pipelines.research, scenarios: [] },
+    }).status,
+    "pipeline-unavailable",
+  );
+  assert.equal(evaluateTaskScope(undefined, threadId, settings).status, "missing");
+});

@@ -14,6 +14,11 @@ import {
   D4AgentClaimSystemAttentionInput,
 } from "./d4Agent.ts";
 import {
+  PipelineRunResumeError,
+  PipelineRunResumeInput,
+  PipelineRunResumeResult,
+} from "./pipelineRunResume.ts";
+import {
   BrainStatus,
   BrainProposalSummary,
   BrainProposal,
@@ -518,6 +523,7 @@ export const WS_METHODS = {
   d4AgentNewSession: "d4Agent.newSession",
   d4AgentCloseSession: "d4Agent.closeSession",
   d4AgentUndoArchive: "d4Agent.undoArchive",
+  pipelineResumeRun: "pipeline.resumeRun",
   d4AgentResolveMemoryProposal: "d4Agent.resolveMemoryProposal",
   d4AgentGetIdentity: "d4Agent.getIdentity",
   d4AgentGetAction: "d4Agent.getAction",
@@ -861,6 +867,11 @@ const WsD4AgentUndoArchiveRpc = Rpc.make(WS_METHODS.d4AgentUndoArchive, {
   payload: D4AgentGetActionInput,
   success: D4AgentState,
   error: Schema.Union([D4AgentError, EnvironmentAuthorizationError]),
+});
+const WsPipelineResumeRunRpc = Rpc.make(WS_METHODS.pipelineResumeRun, {
+  payload: PipelineRunResumeInput,
+  success: PipelineRunResumeResult,
+  error: Schema.Union([PipelineRunResumeError, EnvironmentAuthorizationError]),
 });
 const WsD4AgentNewSessionRpc = Rpc.make(WS_METHODS.d4AgentNewSession, {
   payload: Schema.Struct({}),
@@ -2060,6 +2071,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsD4AgentNewSessionRpc,
   WsD4AgentCloseSessionRpc,
   WsD4AgentUndoArchiveRpc,
+  WsPipelineResumeRunRpc,
   WsD4AgentResolveMemoryProposalRpc,
   WsD4AgentGetIdentityRpc,
   WsD4AgentGetActionRpc,

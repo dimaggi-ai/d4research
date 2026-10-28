@@ -114,6 +114,24 @@ done, and the full list when expanded. Delegations appear in the thread as ordin
 their step and visit numbers, so a cycling pipeline is visible — and provably terminated — rather
 than a mystery.
 
+### Interrupted runs
+
+The server saves the full answer of every delegation, and the reason for every failed one, under
+`research-runs/<thread>/steps/` in the project root. `research-runs/<thread>/ledger.jsonl` lists
+them in order. This record survives a restart, a stop, or a failed run.
+
+On web and desktop, a pipeline thread whose last run did not finish shows **Resume** above the
+composer. Resume starts a turn that receives the ledger and continues from the next incomplete
+step. The orchestrator reads saved answers back instead of delegating those steps again. Any other
+message you send in that thread continues the run the same way, which is also how to resume from
+mobile. Delegations made before the interruption still count against the run's budget.
+
+d4research does not resume a run by itself after a restart, because a resumed run spends budget.
+You can also ask Nia to resume a thread; Nia asks for your approval first.
+
+If the pipeline of a Nia-started task changed after you approved the task, a plain message cannot
+continue it and the turn fails with the reason. Use Resume to continue under the current pipeline.
+
 ## Inline delegation
 
 A pipeline is not required to ask another model one question. Open a message with

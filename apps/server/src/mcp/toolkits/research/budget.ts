@@ -45,6 +45,14 @@ export class ResearchDelegationBudget extends Context.Service<
       readonly runId: string;
       readonly step: string;
       readonly target: string;
+      /**
+       * Spend carried over from the interrupted runs this run resumes. Read
+       * only when the run is first charged, so a resume cannot reset a ceiling.
+       */
+      readonly inherited?: {
+        readonly total: number;
+        readonly perStepTarget: ReadonlyMap<string, number>;
+      };
     }) => Effect.Effect<ResearchBudgetCharge>;
   }
 >()("d4research/mcp/toolkits/research/budget/ResearchDelegationBudget") {}
@@ -54,15 +62,17 @@ export const ResearchDelegationBudgetLive = Layer.effect(
   Effect.gen(function* () {
     const state = yield* Ref.make(new Map<string, RunBudgetState>());
     return {
-      charge: ({ runId, step, target }) =>
+      charge: ({ runId, step, target, inherited }) =>
         Effect.gen(function* () {
           const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
           return yield* Ref.modify(
             state,
             (byRun): readonly [ResearchBudgetCharge, Map<string, RunBudgetState>] => {
               const previous = byRun.get(runId);
-              const total = previous?.total ?? 0;
-              const perStepTarget = new Map(previous?.perStepTarget ?? []);
+              const total = previous?.total ?? inherited?.total ?? 0;
+              const perStepTarget = new Map(
+                previous?.perStepTarget ?? inherited?.perStepTarget ?? [],
+              );
               const stepKey = `${step}→${target}`;
               const visits = perStepTarget.get(stepKey) ?? 0;
 

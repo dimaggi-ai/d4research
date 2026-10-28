@@ -57,6 +57,16 @@ export const StoredTaskScope = Schema.Struct({
 });
 export const StoredState = Schema.Struct({
   overviewItems: Schema.optionalKey(Schema.Array(OverviewItem)),
+  // Overview identity -> when the model last judged it and at which severity.
+  overviewJudged: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        at: Schema.Number,
+        severity: Schema.Literals(["info", "attention", "critical"]),
+      }),
+    ),
+  ),
   overviewJudgements: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

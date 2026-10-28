@@ -259,8 +259,25 @@ describe("d4 Agent policies", () => {
     assert.isFalse(
       isAllowedAgentMcpRequest([{ method: "tools/call", params: { name: "d4_agent_action" } }]),
     );
-    for (const name of ["d4_agent_list", "d4_agent_environment"])
+    for (const name of ["d4_agent_list", "d4_agent_environment", "d4_agent_read_host"])
       assert.isTrue(isAllowedAgentMcpRequest({ method: "tools/call", params: { name } }));
+  });
+  it("memory and CTO reads accept a missing context and refuse an unknown one", () => {
+    const tools = D4AgentToolkit.tools;
+    for (const schema of [
+      tools.d4_agent_memory_search.parametersSchema,
+      tools.d4_agent_memory_read.parametersSchema,
+      tools.d4_agent_cto_status.parametersSchema,
+      tools.d4_agent_cto_brief.parametersSchema,
+    ]) {
+      const decode = Schema.decodeUnknownExit(schema);
+      assert.isTrue(Exit.isSuccess(decode({ query: "x", path: "a.md" })));
+      assert.isTrue(Exit.isSuccess(decode({ context: "Dimaggi", query: "x", path: "a.md" })));
+      assert.isTrue(Exit.isFailure(decode({ context: "Work", query: "x", path: "a.md" })));
+    }
+    const read = Schema.decodeUnknownExit(tools.d4_agent_read_host.parametersSchema);
+    assert.isTrue(Exit.isSuccess(read({ command: "uptime" })));
+    assert.isTrue(Exit.isFailure(read({ command: "" })));
   });
   it("disk checks use available blocks and explicit unavailable states", () => {
     assert.equal(diskCheck("root-disk", 100, 10, 90).status, "attention");

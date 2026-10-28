@@ -260,6 +260,8 @@ export const D4AgentActionRecord = Schema.Struct({
   guard: Schema.optionalKey(D4AgentGuardVerdict),
   // Why an approved action failed, in words the user can act on.
   failure: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
+  // Set when Nia replaced this pending card with a newer one for the same target.
+  supersededBy: Schema.optionalKey(Schema.String),
   status: Schema.Literals(["pending", "approved", "denied", "executed", "failed"]),
   createdAt: IsoDateTime,
   resolvedAt: Schema.NullOr(IsoDateTime),
@@ -465,17 +467,20 @@ export class D4AgentError extends Schema.TaggedError<D4AgentError>()("D4AgentErr
     "guard-denied",
   ]),
   cause: Schema.optional(Schema.Defect()),
+  // One sentence the model can repeat: what was refused and what to do instead.
+  detail: Schema.optional(Schema.String),
 }) {
   override get message(): string {
+    const suffix = this.detail === undefined ? "" : ` ${this.detail}`;
     if (this.reason === "context")
-      return "Context operation refused; inspect the selected scope configuration.";
+      return `Context operation refused; inspect the selected scope configuration.${suffix}`;
     if (this.reason === "cto-unreachable") return "CTO server unreachable";
     if (this.reason === "stale")
       return "Nia's context or session changed after you wrote this message. Check it, then send again.";
     if (this.reason === "client-outdated") return "Update this app to send messages to Nia.";
     if (this.reason === "guard-denied")
       return "Tool Guard blocked this action and the user can see it. Do not retry it in other words.";
-    return `Nia: ${this.reason}.`;
+    return `Nia: ${this.reason}.${suffix}`;
   }
 }
 

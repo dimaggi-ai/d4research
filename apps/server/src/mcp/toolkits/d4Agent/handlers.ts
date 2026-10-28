@@ -87,6 +87,9 @@ export const layer = McpToolAccess.toLayer(D4AgentToolkit, {
   d4_agent_read_tail: McpToolAccess.reads(({ threadId, limit }) =>
     call((service) => service.readTail(threadId, limit ?? 10)),
   ),
+  d4_agent_read_host: McpToolAccess.reads(({ command }) =>
+    call((service) => service.readHost(command)),
+  ),
   d4_agent_system_health: McpToolAccess.reads(() => call((service) => service.systemHealth())),
   d4_agent_tasks: McpToolAccess.reads(() => call((service) => service.tasks())),
   // The d4 service owns the approval gate and rechecks it when approval is resolved.

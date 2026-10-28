@@ -53,13 +53,15 @@ it.effect("includes exactly five minutes and longer, excluding shorter or unknow
     assert.deepEqual(completed[0], {
       threadId: ThreadId.make("boundary"),
       runId: "boundary",
+      ordinal: 1,
+      status: "completed",
       completedAt: iso(now),
     });
   }).pipe(Effect.provide(layer)),
 );
 
 it.effect(
-  "includes only completed runs, excluding failed, interrupted, cancelled, and active runs",
+  "includes completed, interrupted and cancelled runs, excluding failed and active runs",
   () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(now);
@@ -75,10 +77,11 @@ it.effect(
       }
       yield* insert({ id: "no-completion", completedAt: null });
       const completed = yield* (yield* OverviewThreads.OverviewThreads).readCompleted();
-      assert.deepEqual(
-        completed.map((row) => row.runId),
-        ["completed"],
-      );
+      assert.deepEqual(completed.map((row) => [row.runId, row.status]).sort(), [
+        ["cancelled", "cancelled"],
+        ["completed", "completed"],
+        ["interrupted", "interrupted"],
+      ]);
     }).pipe(Effect.provide(layer)),
 );
 
@@ -164,6 +167,25 @@ it.effect("scheduled completions are reported only by the scheduled source", () 
     assert.deepEqual(
       completed.map((run) => run.runId),
       ["ordinary"],
+    );
+  }).pipe(Effect.provide(layer)),
+);
+
+it.effect("reports cancelled and interrupted runs with their status, regardless of duration", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(now);
+    yield* insert({ id: "cut", status: "cancelled", startedAt: now - 20_000, ordinal: 3 });
+    yield* insert({ id: "halted", status: "interrupted", startedAt: now - 1_000, ordinal: 2 });
+    yield* insert({ id: "never-started", status: "cancelled", startedAt: null });
+    yield* insert({ id: "broken", status: "failed", startedAt: now - 20_000 });
+    yield* insert({ id: "quick", status: "completed", startedAt: now - 20_000 });
+    const runs = yield* (yield* OverviewThreads.OverviewThreads).readCompleted();
+    assert.deepEqual(
+      runs.map((row) => [row.runId, row.status, row.ordinal]),
+      [
+        ["cut", "cancelled", 3],
+        ["halted", "interrupted", 2],
+      ],
     );
   }).pipe(Effect.provide(layer)),
 );

@@ -46,6 +46,7 @@ export const cleanOverviewText = (text: string, limit = 200) =>
     .replace(/\[\[|\]\]/g, "")
     .slice(0, limit);
 const order = { critical: 0, attention: 1, info: 2 };
+export const severityRank = (severity: OverviewItem["severity"]) => order[severity];
 export const sortOverview = (items: ReadonlyArray<OverviewItem>) =>
   items.toSorted(
     (a, b) =>

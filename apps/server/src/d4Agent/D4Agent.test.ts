@@ -44,6 +44,7 @@ import * as Stream from "effect/Stream";
 import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 import * as Agent from "./D4Agent.ts";
+import { OsReleasePath } from "./hostFacts.ts";
 import * as Store from "./D4AgentStore.ts";
 import { contextScopeHash } from "./brainScope.ts";
 import * as Access from "./D4AgentAccess.ts";
@@ -166,9 +167,7 @@ const fixture = (
       },
     ]);
     const inboxSnapshots = yield* Ref.make<ReadonlyArray<Inbox.OverviewSnapshot>>([]);
-    const completedThreadRuns = yield* Ref.make<
-      ReadonlyArray<{ threadId: ThreadId; runId: string; completedAt: string }>
-    >([]);
+    const completedThreadRuns = yield* Ref.make<ReadonlyArray<OverviewThreads.TerminalRun>>([]);
     const scheduledRuns = yield* Ref.make<
       Effect.Success<ReturnType<ScheduledTasks.ScheduledTaskService["Service"]["completedRuns"]>>
     >([]);
@@ -3837,8 +3836,11 @@ it.effect("Tool Guard escalation or silence holds the action for the user", () =
       assert.equal(record.guard?.decision, decision);
     }
     assert.deepEqual(yield* Ref.get(f.dispatches), []);
-    const [first] = (yield* Ref.get(f.state)).actions;
-    yield* f.service.resolveAction({ actionId: first!.id, decision: "approve" });
+    // The second interrupt card for the same thread replaces the first one.
+    const [first, second] = (yield* Ref.get(f.state)).actions;
+    assert.equal(first?.status, "denied");
+    assert.equal(first?.supersededBy, second?.id);
+    yield* f.service.resolveAction({ actionId: second!.id, decision: "approve" });
     assert.deepEqual(yield* Ref.get(f.dispatches), ["interrupt"]);
   }),
 );
@@ -4248,8 +4250,20 @@ it.effect("Global Overview shows one linked line per work thread and per schedul
     yield* f.service.ensureThread();
     const globalThread = (yield* Ref.get(f.state)).threadId!;
     yield* Ref.set(f.completedThreadRuns, [
-      { threadId: targetId, runId: "run-2", completedAt: "2026-10-26T13:50:00.000Z" },
-      { threadId: targetId, runId: "run-1", completedAt: "2026-10-26T13:00:00.000Z" },
+      {
+        threadId: targetId,
+        runId: "run-2",
+        ordinal: 2,
+        status: "completed",
+        completedAt: "2026-10-26T13:50:00.000Z",
+      },
+      {
+        threadId: targetId,
+        runId: "run-1",
+        ordinal: 1,
+        status: "completed",
+        completedAt: "2026-10-26T13:00:00.000Z",
+      },
     ]);
     yield* Ref.set(f.scheduledRuns, [
       {
@@ -4793,4 +4807,420 @@ it.effect(
       );
       assert.isNull((yield* Ref.get(f.state)).rotation);
     }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+const heartbeat = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat"));
+
+it.effect(
+  "read_tail reports the latest run's status and outcome, including on archived threads",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("act");
+      yield* Ref.update(f.shells, (all) =>
+        all.map((thread) => (thread.id === targetId ? { ...thread, archivedAt: now } : thread)),
+      );
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [
+          {
+            id: RunId.make("run-b"),
+            ordinal: 2,
+            status: "cancelled",
+            requestedAt: "2026-10-27T16:00:00.000Z",
+            startedAt: "2026-10-27T16:00:01.000Z",
+            completedAt: "2026-10-27T16:05:00.000Z",
+          },
+          {
+            id: RunId.make("run-a"),
+            ordinal: 1,
+            status: "completed",
+            requestedAt: "2026-10-27T15:00:00.000Z",
+            startedAt: "2026-10-27T15:00:01.000Z",
+            completedAt: "2026-10-27T15:10:00.000Z",
+          },
+        ] as unknown as typeof value.runs,
+        messages: [
+          {
+            id: "m1",
+            runId: "run-a",
+            role: "user",
+            text: "Audit",
+            createdAt: "2026-10-27T15:00:00.000Z",
+          },
+          {
+            id: "m2",
+            runId: "run-a",
+            role: "assistant",
+            text: "Done: report written.",
+            createdAt: "2026-10-27T15:10:00.000Z",
+          },
+          {
+            id: "m3",
+            runId: "run-b",
+            role: "user",
+            text: "!research:default Deeper",
+            createdAt: "2026-10-27T16:00:00.000Z",
+          },
+          {
+            id: "m4",
+            runId: "run-b",
+            role: "assistant",
+            text: "Step 2 of 5 running",
+            createdAt: "2026-10-27T16:04:00.000Z",
+          },
+        ] as unknown as typeof value.messages,
+      }));
+      const tail = yield* f.service.readTail(targetId, 10);
+      assert.isTrue(tail.archived);
+      assert.deepEqual(tail.latestRun, {
+        ordinal: 2,
+        status: "cancelled",
+        requestedAt: "2026-10-27T16:00:00.000Z",
+        startedAt: "2026-10-27T16:00:01.000Z",
+        completedAt: "2026-10-27T16:05:00.000Z",
+        outcome: "Step 2 of 5 running",
+      });
+      assert.deepEqual(
+        tail.messages.map((message) => [message.runOrdinal, message.createdAt]),
+        [
+          [1, "2026-10-27T15:00:00.000Z"],
+          [1, "2026-10-27T15:10:00.000Z"],
+          [2, "2026-10-27T16:00:00.000Z"],
+          [2, "2026-10-27T16:04:00.000Z"],
+        ],
+      );
+    }),
+);
+
+it.effect("read_tail refusals name the thread and the bound context", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [ProjectId.make("dimaggi")]: "Dimaggi" },
+    });
+    yield* f.service.switchContext({ context: "Dimaggi" });
+    const result = yield* Effect.result(f.service.readTail(targetId, 10));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") {
+      assert.equal(result.failure.reason, "context");
+      assert.include(result.failure.message, `Thread ${targetId}`);
+      assert.include(result.failure.message, "Dimaggi context");
+    }
+  }),
+);
+
+it.effect(
+  "resolve finds a thread by exact id, with or without the d4-action prefix, even archived",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("act");
+      const actionId = ThreadId.make("d4-action:abc-123");
+      yield* Ref.set(f.shells, [
+        target,
+        { ...target, id: actionId, title: "Nia task", archivedAt: now },
+      ]);
+      for (const text of [
+        "abc-123",
+        "d4-action:abc-123",
+        "[[thread:d4-action:abc-123|Nia task]]",
+      ]) {
+        const result = JSON.stringify(yield* f.service.resolveReference(text));
+        assert.include(result, `"kind":"resolved"`, text);
+        assert.include(result, `"threadId":"${actionId}"`, text);
+      }
+      assert.include(
+        JSON.stringify(yield* f.service.resolveReference("no-such-id")),
+        `"kind":"none"`,
+      );
+    }),
+);
+
+it.effect("an exact id outside the bound context's projects still resolves to nothing", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [ProjectId.make("dimaggi")]: "Dimaggi" },
+    });
+    yield* Ref.set(f.shells, [target, { ...target, id: ThreadId.make("d4-action:abc-123") }]);
+    yield* f.service.switchContext({ context: "Dimaggi" });
+    for (const text of ["abc-123", String(targetId)])
+      assert.include(JSON.stringify(yield* f.service.resolveReference(text)), `"kind":"none"`);
+  }),
+);
+
+it.effect(
+  "a heartbeat turn drafts resume for approval and names the control for other actions",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("act");
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [
+          {
+            id: RunId.make("cut-run"),
+            ordinal: 1,
+            status: "cancelled",
+            startedAt: "2026-10-27T16:00:00Z",
+            userMessageId: "cut-message",
+          },
+        ] as unknown as typeof value.runs,
+        messages: [
+          { id: "cut-message", role: "user", text: "!research:default Audit the router" },
+        ] as unknown as typeof value.messages,
+      }));
+      const card = yield* heartbeat(
+        f.service.requestAction({ type: "resume", threadId: targetId }),
+      );
+      assert.equal(card.status, "pending");
+      assert.deepEqual(yield* Ref.get(f.sends), []);
+      const refused = yield* Effect.result(
+        heartbeat(f.service.requestAction({ type: "settle", threadId: targetId })),
+      );
+      assert.equal(refused._tag, "Failure");
+      if (refused._tag === "Failure") {
+        assert.equal(refused.failure.reason, "action-unavailable");
+        assert.include(refused.failure.message, "Background turns cannot draft settle");
+        assert.include(refused.failure.message, "name the control");
+      }
+    }),
+);
+
+it.effect("a newer pending card for the same target supersedes the older one", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    const first = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "First draft",
+    });
+    const other = yield* f.service.requestAction({ type: "settle", threadId: targetId });
+    const second = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Second draft",
+    });
+    const byId = new Map((yield* Ref.get(f.state)).actions.map((entry) => [entry.id, entry]));
+    assert.equal(byId.get(first.id)?.status, "denied");
+    assert.equal(byId.get(first.id)?.supersededBy, second.id);
+    assert.equal(byId.get(other.id)?.status, "pending");
+    assert.equal(byId.get(second.id)?.status, "pending");
+    yield* Effect.result(f.service.resolveAction({ actionId: first.id, decision: "approve" }));
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+    yield* f.service.resolveAction({ actionId: second.id, decision: "approve" });
+    assert.deepEqual(
+      (yield* Ref.get(f.sends)).map((sent) => sent.text),
+      ["Second draft"],
+    );
+  }),
+);
+
+it.effect("a pending card nobody answered expires after 24 hours", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act");
+    yield* f.service.ensureThread();
+    const stale = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Stale draft",
+    });
+    const fresh = yield* f.service.requestAction({ type: "settle", threadId: targetId });
+    const age = (id: string, hours: number) =>
+      Ref.update(f.state, (state) => ({
+        ...state,
+        actions: state.actions.map((entry) =>
+          entry.id === id
+            ? { ...entry, createdAt: DateTime.formatIso(DateTime.makeUnsafe(-hours * 3_600_000)) }
+            : entry,
+        ),
+      }));
+    yield* age(stale.id, 25);
+    yield* age(fresh.id, 23);
+    yield* f.service.tick;
+    const byId = new Map((yield* Ref.get(f.state)).actions.map((entry) => [entry.id, entry]));
+    assert.equal(byId.get(fresh.id)?.status, "pending");
+    assert.equal(byId.get(stale.id)?.status, "denied");
+    assert.equal(byId.get(stale.id)?.supersededBy, "expired");
+    assert.equal(byId.get(stale.id)?.resolvedAt, "1970-01-01T00:00:00.000Z");
+    yield* Effect.result(f.service.resolveAction({ actionId: stale.id, decision: "approve" }));
+    assert.deepEqual(yield* Ref.get(f.sends), []);
+  }),
+);
+
+it.effect("the heartbeat judges an Overview item once per day unless it got worse", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    const judgements = () =>
+      Ref.get(f.sends).pipe(
+        Effect.map(
+          (all) =>
+            all.filter((sent) => String(sent.commandId).includes("overview-heartbeat:")).length,
+        ),
+      );
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot()]);
+    yield* f.service.tick;
+    assert.equal(yield* judgements(), 1);
+    yield* Ref.set(f.inboxSnapshots, [healthSnapshot("Disk still needs attention")]);
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.lengthOf(
+      (yield* Ref.get(f.systemMessages)).filter((message) => message.title === "Overview"),
+      2,
+    );
+    assert.equal(yield* judgements(), 1);
+    yield* Ref.set(f.inboxSnapshots, [
+      { ...healthSnapshot(), items: [{ key: "disk", severity: "critical", title: "Disk full" }] },
+    ]);
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.equal(yield* judgements(), 2);
+    yield* Ref.set(f.inboxSnapshots, [
+      {
+        ...healthSnapshot(),
+        items: [{ key: "disk", severity: "critical", title: "Disk is full" }],
+      },
+    ]);
+    yield* TestClock.adjust("15 minutes");
+    yield* f.service.tick;
+    assert.equal(yield* judgements(), 2);
+    yield* Ref.set(f.inboxSnapshots, [
+      {
+        ...healthSnapshot(),
+        items: [{ key: "disk", severity: "critical", title: "Disk full again" }],
+      },
+    ]);
+    yield* TestClock.adjust("24 hours");
+    yield* f.service.tick;
+    assert.equal(yield* judgements(), 3);
+  }),
+);
+
+it.effect("a cancelled run shows as interrupted work in the Overview, never as completed", () =>
+  Effect.gen(function* () {
+    const f = yield* overviewFixture;
+    yield* Ref.set(f.completedThreadRuns, [
+      {
+        threadId: targetId,
+        runId: "run-7",
+        ordinal: 7,
+        status: "cancelled",
+        completedAt: "2026-10-26T13:50:00.000Z",
+      },
+      {
+        threadId: targetId,
+        runId: "run-6",
+        ordinal: 6,
+        status: "completed",
+        completedAt: "2026-10-26T13:00:00.000Z",
+      },
+    ]);
+    yield* f.service.tick;
+    const text = (yield* Ref.get(f.systemMessages)).find(
+      (message) => message.title === "Overview",
+    )!.text;
+    assert.include(text, "Private: run cancelled");
+    assert.notInclude(text, "Completed: Private");
+    const item = (yield* f.service.overview()).find(
+      (entry) => entry.key === `interrupted:${targetId}`,
+    );
+    assert.equal(item?.severity, "attention");
+    assert.include(item?.body, "run-7 (ordinal 7) ended cancelled");
+  }),
+);
+
+it.effect("environment reports the host OS and package manager from os-release", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-os-release-" });
+      const path = `${directory}/os-release`;
+      yield* fs.writeFileString(
+        path,
+        'NAME="CachyOS Linux"\nPRETTY_NAME="CachyOS"\nID=cachyos\nID_LIKE=arch\n',
+      );
+      const f = yield* fixture("act");
+      const env = yield* f.service.environment().pipe(Effect.provideService(OsReleasePath, path));
+      assert.equal(env.host?.os, "CachyOS");
+      assert.equal(env.host?.packageManager, "pacman");
+      assert.isString(env.host?.kernel);
+      const missing = yield* f.service
+        .environment()
+        .pipe(Effect.provideService(OsReleasePath, `${directory}/absent`));
+      assert.isNull(missing.host);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "read_host runs an allowlisted command without a card and refuses writes with a reason",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* guardedFixture();
+      const read = yield* f.service.readHost("uptime; df -h /");
+      assert.deepEqual(read, {
+        command: "uptime; df -h /",
+        exitCode: 0,
+        timedOut: false,
+        output: "hi\n",
+      });
+      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime; df -h /"]);
+      assert.deepEqual((yield* Ref.get(f.state)).actions, []);
+      const [call] = yield* Ref.get(f.guardCalls);
+      assert.equal(call?.parameters.action_type, "read-host");
+      assert.equal(call?.parameters.text, "uptime; df -h /");
+      const refused = yield* Effect.result(
+        f.service.readHost("systemctl --user restart tg-nia-proxy.service"),
+      );
+      assert.equal(refused._tag, "Failure");
+      if (refused._tag === "Failure") {
+        assert.equal(refused.failure.reason, "action-unavailable");
+        assert.include(refused.failure.message, "Not a read-only command");
+        assert.include(refused.failure.message, "pc action");
+      }
+      yield* Ref.set(f.guardVerdict, {
+        decision: "denied",
+        rule: "nia-deny-secrets-or-injection",
+        reason: "Denied by: [nia-deny-secrets-or-injection]",
+      });
+      const denied = yield* Effect.result(f.service.readHost("uptime"));
+      assert.equal(denied._tag === "Failure" && denied.failure.reason, "guard-denied");
+      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime; df -h /"]);
+    }),
+);
+
+it.effect("read_host is off while the system probe is disabled", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      systemProbeEnabled: false,
+    });
+    const result = yield* Effect.result(f.service.readHost("uptime"));
+    assert.equal(result._tag, "Failure");
+    if (result._tag === "Failure") {
+      assert.equal(result.failure.reason, "action-unavailable");
+      assert.include(result.failure.message, "system probe");
+    }
+    assert.deepEqual(yield* Ref.get(f.pcCommands), []);
+  }),
+);
+
+it.effect("CTO refusals say why and what to do instead", () =>
+  Effect.gen(function* () {
+    const enabled = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      ctoEnabled: true,
+      ctoBaseUrl: "http://127.0.0.1:9",
+    });
+    yield* enabled.service.ensureThread();
+    const scoped = yield* Effect.result(
+      enabled.service.ctoRead({ context: "Global", operation: "brief" }),
+    );
+    assert.equal(scoped._tag, "Failure");
+    if (scoped._tag === "Failure") {
+      assert.include(scoped.failure.message, "only in the Dimaggi context");
+      assert.include(scoped.failure.message, "bound to Global");
+      assert.include(scoped.failure.message, "switch-context");
+    }
+    const disabled = yield* fixture("act");
+    yield* disabled.service.ensureThread();
+    const off = yield* Effect.result(disabled.service.ctoRead({ operation: "brief" }));
+    assert.equal(off._tag, "Failure");
+    if (off._tag === "Failure") assert.include(off.failure.message, "disabled in Nia settings");
+  }),
 );

@@ -3703,6 +3703,21 @@ it.effect.each(["create", "send"] as const)(
             createdAt: now,
           },
         ] as unknown as typeof value.messages,
+        turnItems: [
+          {
+            id: "error-run-b",
+            runId: "run-b",
+            type: "error",
+            status: "failed",
+            updatedAt: "2026-10-27T16:05:00.000Z",
+            failure: {
+              class: "validation_error",
+              message: "Pipeline research:default changed after approval. Use Resume.",
+              code: null,
+              retryable: false,
+            },
+          },
+        ] as unknown as typeof value.turnItems,
       }));
       yield* Ref.set(failure === "create" ? f.failCreate : f.failSend, true);
       yield* f.service.tick;
@@ -4870,6 +4885,21 @@ it.effect(
             createdAt: "2026-10-27T16:04:00.000Z",
           },
         ] as unknown as typeof value.messages,
+        turnItems: [
+          {
+            id: "error-run-b",
+            runId: "run-b",
+            type: "error",
+            status: "failed",
+            updatedAt: "2026-10-27T16:05:00.000Z",
+            failure: {
+              class: "validation_error",
+              message: "Pipeline research:default changed after approval. Use Resume.",
+              code: null,
+              retryable: false,
+            },
+          },
+        ] as unknown as typeof value.turnItems,
       }));
       const tail = yield* f.service.readTail(targetId, 10);
       assert.isTrue(tail.archived);
@@ -4879,7 +4909,7 @@ it.effect(
         requestedAt: "2026-10-27T16:00:00.000Z",
         startedAt: "2026-10-27T16:00:01.000Z",
         completedAt: "2026-10-27T16:05:00.000Z",
-        outcome: "Step 2 of 5 running",
+        outcome: "Pipeline research:default changed after approval. Use Resume.",
       });
       assert.deepEqual(
         tail.messages.map((message) => [message.runOrdinal, message.createdAt]),
@@ -5010,6 +5040,63 @@ it.effect("a newer pending card for the same target supersedes the older one", (
       (yield* Ref.get(f.sends)).map((sent) => sent.text),
       ["Second draft"],
     );
+  }),
+);
+
+it.effect("resolving an approved send twice delivers the message once", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    yield* f.service.ensureThread();
+    const card = yield* f.service.requestAction({
+      type: "send",
+      threadId: targetId,
+      text: "Resume the run",
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    yield* Effect.result(f.service.resolveAction({ actionId: card.id, decision: "approve" }));
+    const resumeSends = (yield* Ref.get(f.sends)).filter((sent) => sent.text === "Resume the run");
+    assert.deepEqual(
+      resumeSends.map((sent) => sent.text),
+      ["Resume the run"],
+    );
+  }),
+);
+
+it.effect("distinct research proposals in one project keep separate approval cards", () =>
+  Effect.gen(function* () {
+    const f = yield* guardedFixture();
+    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    yield* f.service.ensureThread();
+    yield* f.settings.updateSettings({
+      research: {
+        upsertScenario: {
+          name: "fixture-research",
+          pipelinePrompt: "Use approved sources and report results.",
+          promptFiles: [],
+        },
+      },
+    });
+    const first = yield* heartbeat(
+      f.service.requestAction({
+        type: "research",
+        projectId: target.projectId,
+        pipelineId: "research:fixture-research",
+        text: "Research idea one",
+        modelSelection,
+      }),
+    );
+    const second = yield* heartbeat(
+      f.service.requestAction({
+        type: "research",
+        projectId: target.projectId,
+        pipelineId: "research:fixture-research",
+        text: "Research idea two",
+        modelSelection,
+      }),
+    );
+    const byId = new Map((yield* Ref.get(f.state)).actions.map((entry) => [entry.id, entry]));
+    assert.equal(byId.get(first.id)?.status, "pending");
+    assert.equal(byId.get(second.id)?.status, "pending");
   }),
 );
 
@@ -5154,18 +5241,18 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* guardedFixture();
-      const read = yield* f.service.readHost("uptime; df -h /");
+      const read = yield* f.service.readHost("uptime");
       assert.deepEqual(read, {
-        command: "uptime; df -h /",
+        command: "uptime",
         exitCode: 0,
         timedOut: false,
         output: "hi\n",
       });
-      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime; df -h /"]);
+      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime"]);
       assert.deepEqual((yield* Ref.get(f.state)).actions, []);
       const [call] = yield* Ref.get(f.guardCalls);
       assert.equal(call?.parameters.action_type, "read-host");
-      assert.equal(call?.parameters.text, "uptime; df -h /");
+      assert.equal(call?.parameters.text, "uptime");
       const refused = yield* Effect.result(
         f.service.readHost("systemctl --user restart tg-nia-proxy.service"),
       );
@@ -5175,6 +5262,10 @@ it.effect(
         assert.include(refused.failure.message, "Not a read-only command");
         assert.include(refused.failure.message, "pc action");
       }
+      const separated = yield* Effect.result(f.service.readHost("uptime; df -h /"));
+      assert.equal(separated._tag, "Failure");
+      if (separated._tag === "Failure")
+        assert.include(separated.failure.message, "pipelines, substitutions");
       yield* Ref.set(f.guardVerdict, {
         decision: "denied",
         rule: "nia-deny-secrets-or-injection",
@@ -5182,7 +5273,7 @@ it.effect(
       });
       const denied = yield* Effect.result(f.service.readHost("uptime"));
       assert.equal(denied._tag === "Failure" && denied.failure.reason, "guard-denied");
-      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime; df -h /"]);
+      assert.deepEqual(yield* Ref.get(f.pcCommands), ["uptime"]);
     }),
 );
 

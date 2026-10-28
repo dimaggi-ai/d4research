@@ -30,7 +30,7 @@ export interface ThreadLivenessResult {
   readonly reportKey: string;
 }
 
-export const THREAD_LIVENESS_SLOW_AFTER_MS = 120_000;
+export const THREAD_LIVENESS_SLOW_AFTER_MS = 300_000;
 export const THREAD_LIVENESS_STALE_AFTER_MS = 600_000;
 
 export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLivenessResult {
@@ -48,7 +48,9 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
       input.pendingRequestId ?? null,
       classification,
       reason,
-      classification === "suspected_stuck" ? (input.lastProgressAt ?? null) : null,
+      classification === "suspected_stuck" || reason === "progress_stale"
+        ? (input.lastProgressAt ?? null)
+        : null,
       input.episodeId ?? null,
     ]),
   });
@@ -79,6 +81,13 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
   const live = input.runStatus === "running" || input.runStatus === "starting";
   if (live && input.providerState === "error") return result("wedged", "provider_error", true);
   if (live && input.providerState === "absent") return result("wedged", "provider_absent", true);
+  if (
+    live &&
+    input.providerState === "running" &&
+    input.leaseExpired &&
+    input.leaseRenewalSupported
+  )
+    return result("suspected_stuck", "progress_stale", true);
 
   // Lease expiry is not a heartbeat failure until the provider supports renewal.
   // Time alone also cannot prove a failed provider, including after host sleep.
@@ -97,9 +106,11 @@ export function classifyThreadLiveness(input: ThreadLivenessEvidence): ThreadLiv
     return result("working", "observation_unavailable");
   }
   const elapsed = input.now - progressAt;
-  if (elapsed >= (input.staleAfterMs ?? THREAD_LIVENESS_STALE_AFTER_MS)) {
-    return result("suspected_stuck", "progress_stale", true);
-  }
+  // Silence alone is not failure evidence. A provider can emit no events during a long tool,
+  // build or test. Keep it visible as slow, but require explicit provider or lease evidence before
+  // asking the user to intervene.
+  if (elapsed >= (input.staleAfterMs ?? THREAD_LIVENESS_STALE_AFTER_MS))
+    return result("slow", "progress_stale");
   if (elapsed >= THREAD_LIVENESS_SLOW_AFTER_MS) return result("slow", "progress_delayed");
   return result("working", "recent_progress");
 }

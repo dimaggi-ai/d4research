@@ -2631,7 +2631,7 @@ export const layer = Layer.effect(
           const reservation = automaticBudget;
           // A new draft for the same target replaces Nia's older pending card for it.
           const superseded = new Set(
-            held
+            held && !["start", "research", "pipeline", "schedule"].includes(action.type)
               ? state.actions
                   .filter(
                     (entry) =>
@@ -2643,9 +2643,8 @@ export const layer = Layer.effect(
                   .map((entry) => entry.id)
               : [],
           );
-          yield* store.update((value) => ({
-            ...value,
-            actions: value.actions.map((entry) =>
+          yield* store.update((value) => {
+            const actions = value.actions.map((entry) =>
               superseded.has(entry.id)
                 ? {
                     ...entry,
@@ -2654,25 +2653,25 @@ export const layer = Layer.effect(
                     resolvedAt: record.createdAt,
                   }
                 : entry,
-            ),
-          }));
-          yield* store.update((value) => ({
-            ...value,
-            automaticActions:
-              reservation === undefined
-                ? value.automaticActions
-                : [
-                    ...value.automaticActions.filter(
-                      (entry) => entry.scope === reservation.scope || at - entry.at < 600_000,
-                    ),
-                    reservation,
-                  ],
-            actions: [
-              ...value.actions.filter((entry) => entry.status === "pending"),
-              ...value.actions.filter((entry) => entry.status !== "pending").slice(-199),
-              record,
-            ],
-          }));
+            );
+            return {
+              ...value,
+              automaticActions:
+                reservation === undefined
+                  ? value.automaticActions
+                  : [
+                      ...value.automaticActions.filter(
+                        (entry) => entry.scope === reservation.scope || at - entry.at < 600_000,
+                      ),
+                      reservation,
+                    ],
+              actions: [
+                ...actions.filter((entry) => entry.status === "pending"),
+                ...actions.filter((entry) => entry.status !== "pending").slice(-199),
+                record,
+              ],
+            };
+          });
           return record.status === "pending" ? record : yield* resolveRecord(record);
         }),
       );
@@ -3815,6 +3814,13 @@ export const layer = Layer.effect(
             const latest = runs.at(-1);
             const ordinals = new Map(runs.map((run) => [run.id, run.ordinal]));
             const messages = snapshot.projection.messages;
+            const latestFailure = snapshot.projection.turnItems.findLast(
+              (item) =>
+                latest !== undefined &&
+                item.runId === latest.id &&
+                item.type === "error" &&
+                item.status === "failed",
+            );
             return {
               threadId,
               title: thread.title.slice(0, 256),
@@ -3829,12 +3835,14 @@ export const layer = Layer.effect(
                       startedAt: isoOrNull(latest.startedAt),
                       completedAt: isoOrNull(latest.completedAt),
                       outcome:
-                        messages
-                          .filter(
-                            (message) => message.runId === latest.id && message.role !== "user",
-                          )
-                          .at(-1)
-                          ?.text.slice(0, 600) ?? null,
+                        latestFailure?.type === "error"
+                          ? latestFailure.failure.message.slice(0, 600)
+                          : (messages
+                              .filter(
+                                (message) => message.runId === latest.id && message.role !== "user",
+                              )
+                              .at(-1)
+                              ?.text.slice(0, 600) ?? null),
                     },
               messages: messages.slice(-Math.min(20, Math.max(1, limit))).map((message) => ({
                 role: message.role,

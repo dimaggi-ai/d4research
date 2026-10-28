@@ -17,22 +17,26 @@ const classify = (overrides: Partial<ThreadLivenessEvidence> = {}) =>
   classifyThreadLiveness({ ...baseline, ...overrides });
 
 describe("classifyThreadLiveness", () => {
-  it("makes suspected stale progress actionable while slow work stays quiet", () => {
+  it("keeps stale progress quiet because a long tool or test can emit no progress", () => {
     expect(classify().classification).toBe("working");
     expect(classify({ now: 1_120_000 })).toMatchObject({
-      classification: "slow",
+      classification: "working",
       attentionRequired: false,
     });
     expect(classify({ now: 1_600_000 })).toMatchObject({
-      classification: "suspected_stuck",
-      attentionRequired: true,
+      classification: "slow",
+      attentionRequired: false,
+    });
+    expect(classify({ now: 3_700_000 })).toMatchObject({
+      classification: "slow",
+      attentionRequired: false,
     });
   });
 
   it("does not infer failure from host sleep or a forward wall clock jump", () => {
     expect(classify({ now: baseline.now + 86_400_000, leaseExpired: true })).toMatchObject({
-      classification: "suspected_stuck",
-      attentionRequired: true,
+      classification: "slow",
+      attentionRequired: false,
     });
   });
 
@@ -70,9 +74,10 @@ describe("classifyThreadLiveness", () => {
       classify({ providerState: "unknown", now: 99_000_000, leaseExpired: true }),
     ).toMatchObject({ classification: "working", attentionRequired: false });
     expect(classify({ leaseExpired: true }).classification).toBe("working");
-    expect(classify({ leaseExpired: true, leaseRenewalSupported: true }).classification).toBe(
-      "working",
-    );
+    expect(classify({ leaseExpired: true, leaseRenewalSupported: true })).toMatchObject({
+      classification: "suspected_stuck",
+      attentionRequired: true,
+    });
   });
 
   it("keeps long tools and background work out of timers", () => {
@@ -152,7 +157,7 @@ describe("classifyThreadLiveness", () => {
   it("deduplicates unchanged reports independently of observation time", () => {
     expect(classify().reportKey).toBe(classify({ now: baseline.now + 10_000 }).reportKey);
     expect(classify().reportKey).not.toBe(classify({ attemptId: "attempt-2" }).reportKey);
-    expect(classify().reportKey).not.toBe(classify({ now: 1_120_000 }).reportKey);
+    expect(classify().reportKey).not.toBe(classify({ now: 1_300_000 }).reportKey);
     expect(classify({ pendingRequestId: "request-1" }).reportKey).not.toBe(
       classify({ pendingRequestId: "request-2" }).reportKey,
     );
@@ -187,7 +192,13 @@ it("separates provider reasons, changed progress, and explicit episodes without 
 
 it("uses the configured stale threshold", () => {
   expect(classify({ now: 1_600_000, staleAfterMs: 900_000 }).classification).toBe("slow");
-  expect(classify({ now: 1_900_000, staleAfterMs: 900_000 }).classification).toBe(
-    "suspected_stuck",
-  );
+  expect(classify({ now: 1_900_000, staleAfterMs: 900_000 }).classification).toBe("slow");
+  expect(
+    classify({
+      now: 1_900_000,
+      staleAfterMs: 900_000,
+      leaseExpired: true,
+      leaseRenewalSupported: true,
+    }),
+  ).toMatchObject({ classification: "suspected_stuck", attentionRequired: true });
 });

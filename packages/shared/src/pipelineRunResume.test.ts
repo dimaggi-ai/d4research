@@ -72,6 +72,15 @@ describe("pendingPipelineResume", () => {
       }),
     ).toBeNull();
   });
+
+  it("does not connect an interrupted ordinary run to an older completed pipeline", () => {
+    expect(
+      pendingPipelineResume({
+        runs: [run("r1", 1, "completed"), run("r2", 2, "cancelled")],
+        messages: [trigger, message("r2", "ordinary follow-up")],
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("resumeContextFor", () => {

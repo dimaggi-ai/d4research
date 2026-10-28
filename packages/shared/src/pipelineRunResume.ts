@@ -77,9 +77,9 @@ const chainBefore = (
   }
   const latest = chain[0];
   if (latest === undefined) return null;
-  const startedPipeline = runs.some((run) => {
+  const startedPipeline = chain.some((run) => {
     const text = userTexts.get(run.userMessageId);
-    return run.ordinal < beforeOrdinal && text !== undefined && isPipelineTriggerText(text);
+    return text !== undefined && isPipelineTriggerText(text);
   });
   return startedPipeline ? { chain, interruption: interruptionOf(latest) } : null;
 };

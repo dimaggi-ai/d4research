@@ -42,6 +42,8 @@ const make = Effect.gen(function* () {
           completed_at AS completedAt
         FROM orchestration_v2_projection_runs AS completed
         WHERE status IN ('completed', 'cancelled', 'interrupted')
+          AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runs AS later
+            WHERE later.thread_id = completed.thread_id AND later.ordinal > completed.ordinal)
           AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_messages AS message
             WHERE message.run_id = completed.run_id
               AND json_extract(message.payload_json, '$.scheduledTaskId') IS NOT NULL)

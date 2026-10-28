@@ -107,7 +107,7 @@ it.effect(
     }).pipe(Effect.provide(layer)),
 );
 
-it.effect("a newer active run does not hide earlier completed runs in the same thread", () =>
+it.effect("returns no historical result when the same thread has a newer active run", () =>
   Effect.gen(function* () {
     yield* TestClock.setTime(now);
     yield* insert({
@@ -133,12 +133,29 @@ it.effect("a newer active run does not hide earlier completed runs in the same t
     });
     const service = yield* OverviewThreads.OverviewThreads;
     const completed = yield* service.readCompleted();
-    assert.deepEqual(
-      completed.map((row) => row.runId),
-      ["finished-second", "finished-first"],
-    );
-    assert.isTrue(completed.every((row) => row.threadId === ThreadId.make("shared")));
+    assert.deepEqual(completed, []);
     assert.deepEqual(yield* service.readCompleted(), completed);
+  }).pipe(Effect.provide(layer)),
+);
+
+it.effect("returns only the newest run when a short completion follows a cancellation", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(now);
+    yield* insert({
+      id: "cancelled-first",
+      threadId: "shared",
+      ordinal: 1,
+      status: "cancelled",
+      completedAt: now - 60_000,
+    });
+    yield* insert({
+      id: "quick-success",
+      threadId: "shared",
+      ordinal: 2,
+      status: "completed",
+      startedAt: now - 20_000,
+    });
+    assert.deepEqual(yield* (yield* OverviewThreads.OverviewThreads).readCompleted(), []);
   }).pipe(Effect.provide(layer)),
 );
 

@@ -1,104 +1,33 @@
-/**
- * Decides whether one bash command only reads the host. Nia may run such a command without an
- * approval card; everything else stays a `pc` action the user clicks. The classifier is an
- * allowlist: an unknown command, a write redirection, a substitution, or a content read outside the
- * allowed paths refuses with a reason the model can repeat to the user.
- */
+import * as NodeOS from "node:os";
+
 export type HostReadOnlyVerdict =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: string };
 
 const COMMAND_LIMIT = 2000;
-
-// Content readers may open only these paths: deploy results, pipeline run artifacts, probes.
-const CONTENT_PATHS: ReadonlyArray<RegExp> = [
-  /^(~|\$HOME|\/home\/[^/]+)\/tools\/d4-agent-lane\/DEPLOY-RESULT-[A-Za-z0-9._-]+\.txt$/,
-  /^(~|\$HOME|\/)[^\s]*\/research-runs\/[^\s]+$/,
-  /^\/var\/lib\/system-doctor\/status\.json$/,
-  /^\/etc\/os-release$/,
-  /^\/proc\/(loadavg|meminfo|uptime|version)$/,
-];
-const CONTENT_READERS = new Set(["cat", "head", "tail", "bat"]);
-// Filters take their input from the previous pipe segment; a path argument would read a file.
-const FILTERS = new Set([
-  "grep",
-  "rg",
-  "awk",
-  "sed",
-  "jq",
-  "sort",
-  "uniq",
-  "cut",
-  "tr",
-  "column",
-  "wc",
-  "head",
-  "tail",
-  "tac",
-  "nl",
-]);
-const FREE_COMMANDS = new Set([
-  "uptime",
-  "free",
-  "df",
-  "du",
-  "ps",
-  "date",
-  "hostname",
-  "uname",
-  "whoami",
-  "id",
-  "nproc",
-  "lscpu",
-  "lsblk",
-  "nvidia-smi",
-  "ss",
-  "checkupdates",
-  "echo",
-  "printf",
-  "true",
-  "ls",
-  "stat",
-  "file",
-  "wc",
-  "sensors",
-  "last",
-  "who",
-  "w",
-  "env",
-  "printenv",
-]);
+const CONTENT_READERS = new Set(["cat", "head", "tail"]);
 const SYSTEMCTL_VERBS = new Set([
   "status",
   "list-units",
   "list-timers",
-  "list-unit-files",
   "is-active",
   "is-failed",
   "is-enabled",
   "show",
-  "cat",
 ]);
-const GIT_VERBS = new Set([
-  "status",
-  "log",
-  "diff",
-  "show",
-  "rev-parse",
-  "describe",
-  "ls-files",
-  "shortlog",
-  "blame",
-]);
+const SAFE_UNITS = /^[A-Za-z0-9@_.:-]+$/;
+const SAFE_PROPERTY = /^[A-Za-z][A-Za-z0-9]+$/;
+const SAFE_COUNT = /^[1-9][0-9]{0,3}$/;
+const SAFE_DISK_PATHS = new Set(["/", "/tmp", "/data"]);
 
 const refuse = (reason: string): HostReadOnlyVerdict => ({ ok: false, reason });
 
-const tokenize = (segment: string): ReadonlyArray<string> | null => {
+const tokenize = (command: string): ReadonlyArray<string> | null => {
   const tokens: string[] = [];
   let current = "";
   let quote: '"' | "'" | null = null;
   let has = false;
-  for (const char of segment) {
+  for (const char of command) {
     if (quote !== null) {
       if (char === quote) quote = null;
       else current += char;
@@ -124,151 +53,149 @@ const tokenize = (segment: string): ReadonlyArray<string> | null => {
   return tokens;
 };
 
-const looksLikePath = (token: string) => /^(~|\$|\/|\.\.?\/)/.test(token) || token.includes("/");
-// Flags such as -n 40 or -A 3 take a bare number; a number is never a file to protect.
-const isNumber = (token: string) => /^\d+[kKmMgG]?$/.test(token);
+const contentPathAllowed = (path: string) => {
+  if (path.includes("..")) return false;
+  const home = NodeOS.homedir();
+  const deploy = /\/tools\/d4-agent-lane\/DEPLOY-RESULT-[A-Za-z0-9._-]+\.txt$/;
+  return (
+    ((path.startsWith("~/") || path.startsWith("$HOME/") || path.startsWith(`${home}/`)) &&
+      deploy.test(path)) ||
+    path === "/var/lib/system-doctor/status.json" ||
+    path === "/etc/os-release" ||
+    /^\/proc\/(loadavg|meminfo|uptime|version)$/.test(path)
+  );
+};
 
-const contentPathAllowed = (path: string) =>
-  !path.includes("..") && CONTENT_PATHS.some((pattern) => pattern.test(path));
-
-const checkSegment = (segment: string, first: boolean): HostReadOnlyVerdict => {
-  const tokens = tokenize(segment);
-  if (tokens === null) return refuse("unbalanced quotes");
+const contentReaderAllowed = (tokens: ReadonlyArray<string>) => {
   const [name, ...args] = tokens;
-  if (name === undefined) return refuse("empty command");
-  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(name))
-    return refuse("environment assignments are not allowed");
-  const base = name.includes("/") ? name.slice(name.lastIndexOf("/") + 1) : name;
-  if (base !== name) return refuse(`call ${base} by name, not by path`);
-  const flags = args.filter((arg) => arg.startsWith("-"));
-  const words = args.filter((arg) => !arg.startsWith("-") && !isNumber(arg));
-  if (CONTENT_READERS.has(base)) {
-    if (base === "tail" && flags.some((flag) => /^(-[a-zA-Z]*[fF]|--follow)/.test(flag)))
-      return refuse("tail -f never ends");
-    if (words.length === 0) {
-      if (first) return refuse(`${base} needs a file from the allowed list`);
-      return { ok: true };
+  if (!CONTENT_READERS.has(name ?? "")) return false;
+  let path: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-n" || arg === "-c") {
+      const count = args[index + 1];
+      if (count === undefined || !SAFE_COUNT.test(count)) return false;
+      index += 1;
+      continue;
     }
-    const outside = words.find((path) => !contentPathAllowed(path));
-    if (outside !== undefined)
-      return refuse(
-        `${outside} is outside the readable paths (DEPLOY-RESULT files, research-runs artifacts, system-doctor status)`,
-      );
-    return { ok: true };
+    if (arg.startsWith("-") || path !== undefined) return false;
+    path = arg;
   }
-  if (base === "systemctl") {
-    if (!flags.includes("--user")) return refuse("systemctl needs --user");
-    const verb = words[0] ?? (flags.includes("--failed") ? "list-units" : undefined);
-    if (verb === undefined || !SYSTEMCTL_VERBS.has(verb))
-      return refuse(
-        `systemctl ${verb ?? ""} changes units; only status, list-units, is-active, show`,
-      );
-    return { ok: true };
-  }
-  if (base === "journalctl") {
-    if (!flags.includes("--user")) return refuse("journalctl needs --user");
-    const blocked = flags.find((flag) =>
-      /^(-[a-zA-Z]*f|--follow|--vacuum|--rotate|--flush|--sync|--relinquish|--setup-keys)/.test(
-        flag,
-      ),
+  return path !== undefined && contentPathAllowed(path);
+};
+
+const systemctlAllowed = (tokens: ReadonlyArray<string>) => {
+  if (tokens[0] !== "systemctl" || tokens[1] !== "--user") return false;
+  const rest = tokens.slice(2);
+  if (rest.length === 0) return false;
+  if (rest[0] === "--failed")
+    return rest.slice(1).every((arg) => arg === "--no-pager" || arg === "--plain");
+  const verb = rest[0]!;
+  if (!SYSTEMCTL_VERBS.has(verb)) return false;
+  const args = rest.slice(1);
+  if (verb === "list-units" || verb === "list-timers")
+    return args.every(
+      (arg) =>
+        arg === "--no-pager" ||
+        arg === "--all" ||
+        arg === "--plain" ||
+        /^--(type|state)=[A-Za-z0-9,_.:-]+$/.test(arg),
     );
-    if (blocked !== undefined) return refuse(`journalctl ${blocked} is not a read`);
-    return { ok: true };
+  const unit = args[0];
+  if (unit === undefined || !SAFE_UNITS.test(unit)) return false;
+  if (verb !== "show") return args.slice(1).every((arg) => arg === "--no-pager");
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "--no-pager") continue;
+    if (arg !== "-p" && arg !== "--property") return false;
+    const property = args[index + 1];
+    if (property === undefined || !SAFE_PROPERTY.test(property)) return false;
+    index += 1;
   }
-  if (base === "git") {
-    // `git -C <dir> <verb>`: the directory after -C is not the subcommand.
-    let verb: string | undefined;
-    for (let index = 0; index < args.length; index += 1) {
-      const arg = args[index]!;
-      if (arg === "-C") {
-        index += 1;
-        continue;
-      }
-      if (!arg.startsWith("-")) {
-        verb = arg;
-        break;
-      }
+  return true;
+};
+
+const journalAllowed = (tokens: ReadonlyArray<string>) => {
+  if (tokens[0] !== "journalctl" || tokens[1] !== "--user") return false;
+  let unit: string | undefined;
+  let count: string | undefined;
+  for (let index = 2; index < tokens.length; index += 1) {
+    const arg = tokens[index]!;
+    if (arg === "--no-pager" || arg === "-b") continue;
+    if (arg === "-u") {
+      unit = tokens[++index];
+      continue;
     }
-    if (verb === undefined) return refuse("git needs a read-only subcommand");
-    if (GIT_VERBS.has(verb)) return { ok: true };
-    if (
-      verb === "branch" ||
-      verb === "tag" ||
-      verb === "remote" ||
-      verb === "stash" ||
-      verb === "worktree"
-    ) {
-      const rest = words.slice(words.indexOf(verb) + 1);
-      const changing = flags.some((flag) =>
-        /^-[dDmMuf]|^--(delete|move|force|set-upstream|unset-upstream|edit-description)/.test(flag),
+    if (arg === "-n") {
+      count = tokens[++index];
+      continue;
+    }
+    return false;
+  }
+  return (
+    unit !== undefined && SAFE_UNITS.test(unit) && count !== undefined && SAFE_COUNT.test(count)
+  );
+};
+
+const simpleCommandAllowed = (tokens: ReadonlyArray<string>) => {
+  const command = tokens.join(" ");
+  if (
+    new Set([
+      "uptime",
+      "free",
+      "free -h",
+      "date",
+      "date -u",
+      "uname",
+      "uname -a",
+      "nproc",
+      "lscpu",
+      "lsblk",
+      "ss -H -ltnp",
+      "checkupdates",
+      "pacman -Q",
+      "pacman -Qu",
+      "ps aux",
+      "ps aux --sort=-%cpu",
+    ]).has(command)
+  )
+    return true;
+  if (tokens[0] === "df" && tokens[1] === "-h")
+    return tokens.length > 2 && tokens.slice(2).every((path) => SAFE_DISK_PATHS.has(path));
+  if (tokens[0] === "du" && tokens[1] === "-sh")
+    return tokens.length > 2 && tokens.slice(2).every((path) => SAFE_DISK_PATHS.has(path));
+  if (tokens[0] === "nvidia-smi")
+    return tokens
+      .slice(1)
+      .every((arg) =>
+        /^(--query-gpu=[A-Za-z0-9,._-]+|--format=(csv|csv,noheader|csv,nounits))$/.test(arg),
       );
-      if (changing) return refuse(`git ${verb} with that flag changes the repository`);
-      if (verb === "stash" || verb === "worktree")
-        return rest[0] === "list"
-          ? { ok: true }
-          : refuse(`git ${verb} ${rest[0] ?? ""} changes the repository`);
-      return rest.length === 0 || rest[0] === "-v"
-        ? { ok: true }
-        : refuse(`git ${verb} with arguments changes the repository`);
-    }
-    return refuse(`git ${verb} is not a read`);
-  }
-  if (base === "pacman") {
-    return flags.length > 0 && flags.every((flag) => /^-Q|^--query/.test(flag))
-      ? { ok: true }
-      : refuse("pacman allows only -Q queries");
-  }
-  if (base === "docker" || base === "podman") {
-    const verb = words[0];
-    if (verb === "ps" || verb === "images") return { ok: true };
-    if (verb === "logs" && !flags.some((flag) => /^(-[a-zA-Z]*f|--follow)/.test(flag)))
-      return { ok: true };
-    return refuse(`${base} ${verb ?? ""} is not a read`);
-  }
-  if (FILTERS.has(base)) {
-    if (first) return refuse(`${base} reads files; pipe allowed output into it instead`);
-    if (base === "sed" && flags.some((flag) => /^-[a-zA-Z]*i|^--in-place/.test(flag)))
-      return refuse("sed -i edits files");
-    const path = words.find(looksLikePath);
-    if (path !== undefined) return refuse(`${base} ${path} would read a file`);
-    return { ok: true };
-  }
-  if (FREE_COMMANDS.has(base)) {
-    if (base === "ls" || base === "du" || base === "stat" || base === "file") {
-      const secret = words.find((word) =>
-        /\.(ssh|gnupg|aws|password-store)\b|secrets?\b|\.netrc/.test(word),
-      );
-      if (secret !== undefined) return refuse(`${secret} holds secrets`);
-    }
-    return { ok: true };
-  }
-  return refuse(`${base} is not in the read-only allowlist`);
+  return false;
 };
 
 export function classifyHostReadOnly(command: string): HostReadOnlyVerdict {
   const trimmed = command.trim();
   if (trimmed === "") return refuse("empty command");
   if (trimmed.length > COMMAND_LIMIT) return refuse("command too long");
-  if (/[\p{Cc}]/u.test(trimmed.replace(/\n/g, ""))) return refuse("control characters");
-  if (/`|\$\(|<\(|>\(/.test(trimmed)) return refuse("command substitution is not allowed");
-  // Only discarding redirections stay; anything else writes or reads a file.
-  const stripped = trimmed.replace(
-    /(\s|^)(2>\/dev\/null|2>&1|>\/dev\/null|&>\/dev\/null|1>\/dev\/null)(?=\s|$)/g,
-    "$1",
-  );
-  if (/[<>]/.test(stripped)) return refuse("redirection to a file is not allowed");
-  const segments = stripped.split(/\|\||&&|\||;|\n/);
-  if (/&/.test(stripped.replace(/\|\||&&/g, ""))) return refuse("background jobs are not allowed");
-  for (const [index, segment] of segments.entries()) {
-    if (segment.trim() === "") {
-      if (index === segments.length - 1) continue;
-      return refuse("empty pipeline segment");
-    }
-    const verdict = checkSegment(
-      segment,
-      index === 0 || !/\|/.test(stripped) ? index === 0 : false,
-    );
-    if (!verdict.ok) return verdict;
+  if (/[\p{Cc}]/u.test(trimmed)) return refuse("control characters are not allowed");
+  if (/`|\$\(|[|;&<>]/.test(trimmed))
+    return refuse("pipelines, substitutions, separators and redirections are not allowed");
+  const tokens = tokenize(trimmed);
+  if (tokens === null) return refuse("unbalanced quotes");
+  const name = tokens[0];
+  if (name === undefined) return refuse("empty command");
+  if (name.includes("/")) return refuse("call commands by name, not by path");
+  if (
+    contentReaderAllowed(tokens) ||
+    systemctlAllowed(tokens) ||
+    journalAllowed(tokens) ||
+    simpleCommandAllowed(tokens)
+  )
+    return { ok: true };
+  if (CONTENT_READERS.has(name)) {
+    if (tokens.some((token) => token === "-f" || token === "-F"))
+      return refuse("-f never ends; drop it");
+    return refuse("the file is outside the readable paths");
   }
-  return { ok: true };
+  return refuse(`${name} is not in the read-only allowlist`);
 }

@@ -27,6 +27,11 @@ import {
 } from "./runArtifacts.ts";
 
 const platform = HostProcess.Platform.defaultValue();
+// Merged-/usr distributions ship /bin as a root-owned link in the root directory.
+const rootOwnedBin = await NodeFSP.lstat("/bin").then(
+  (stat) => platform === "linux" && stat.isSymbolicLink() && stat.uid === 0,
+  () => false,
+);
 let root: string;
 beforeEach(async () => {
   root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "d4-notes-safety-"));
@@ -109,6 +114,14 @@ describe("research artifact file boundaries", () => {
     );
     expect(await NodeFSP.readdir(real)).toEqual(["note.md"]);
   });
+
+  it.skipIf(!rootOwnedBin)(
+    "follows root-owned system symlinks such as /bin -> usr/bin",
+    async () => {
+      for (const target of ["linux", "darwin"] as const)
+        expect(await safeDirectory("/bin", false, target)).toBe("/bin");
+    },
+  );
 
   it("refuses symlink ancestors hidden by a parent traversal component", async () => {
     const scope = NodePath.join(root, "scope");

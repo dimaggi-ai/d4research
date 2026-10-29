@@ -24,9 +24,18 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("ServerSettings response streaming", () => {
-  it("keeps Nia manager and task models independently unset by default", () => {
+  it("defaults the Nia manager to Claude Sonnet 5.5 and leaves the task model unset", () => {
     const d4Agent = decodeServerSettings({}).d4Agent;
-    expect(d4Agent.modelSelection).toBeNull();
+    expect(d4Agent.modelSelection).toEqual({
+      instanceId: "claudeAgent",
+      model: "claude-sonnet-5-5",
+    });
+    expect(decodeServerSettings({ d4Agent: {} }).d4Agent.modelSelection?.model).toBe(
+      "claude-sonnet-5-5",
+    );
+    expect(
+      decodeServerSettings({ d4Agent: { modelSelection: null } }).d4Agent.modelSelection,
+    ).toBeNull();
     expect(d4Agent.taskModelSelection).toBeNull();
   });
 

@@ -4,15 +4,36 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 
+const MAX_SYSTEM_SYMLINKS = 40;
+
+// Root-owned links in a directory only root can rename, such as /tmp -> /private/tmp on
+// macOS or /home -> /var/home on Fedora Atomic, cannot be swapped by the agent's user.
+// Following them is safe; any other symlink is refused. Windows reports uid 0 for every
+// file, so it never qualifies.
+function systemSymlink(parent: NodeFS.Stats, link: NodeFS.Stats, platform: NodeJS.Platform) {
+  return (
+    platform !== "win32" &&
+    link.isSymbolicLink() &&
+    link.uid === 0 &&
+    parent.uid === 0 &&
+    ((parent.mode & 0o002) === 0 || (parent.mode & 0o1000) !== 0)
+  );
+}
+
 // Linux supports descriptor-relative traversal through procfs. Retain a directory
 // handle while operating so a concurrent parent rename/symlink swap cannot redirect I/O.
-async function anchorDirectory(directory: string, create = false) {
+async function anchorDirectory(
+  directory: string,
+  create = false,
+  hops = 0,
+): Promise<NodeFSP.FileHandle> {
   if (directory.split(NodePath.sep).includes(".."))
     throw new Error("Artifact paths cannot contain parent traversal.");
   if (!NodePath.isAbsolute(directory)) throw new Error("Notes folder must be an absolute path.");
+  const parts = directory.split("/").filter(Boolean);
   let handle = await NodeFSP.open("/", NodeFS.constants.O_RDONLY | NodeFS.constants.O_DIRECTORY);
   try {
-    for (const part of directory.split("/").filter(Boolean)) {
+    for (const [index, part] of parts.entries()) {
       const child = `/proc/self/fd/${handle.fd}/${part}`;
       if (create)
         await NodeFSP.mkdir(child, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
@@ -21,17 +42,27 @@ async function anchorDirectory(directory: string, create = false) {
       const next = await NodeFSP.open(
         child,
         NodeFS.constants.O_RDONLY | NodeFS.constants.O_DIRECTORY | NodeFS.constants.O_NOFOLLOW,
-      ).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOTDIR" || error.code === "ELOOP")
-          throw new Error("Artifact folder paths cannot contain symlinks.");
-        throw error;
+      ).catch(async (error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOTDIR" && error.code !== "ELOOP") throw error;
+        if (
+          hops < MAX_SYSTEM_SYMLINKS &&
+          systemSymlink(await handle.stat(), await NodeFSP.lstat(child), "linux")
+        )
+          return NodePath.resolve(
+            `/${parts.slice(0, index).join("/")}`,
+            await NodeFSP.readlink(child),
+            ...parts.slice(index + 1),
+          );
+        throw new Error("Artifact folder paths cannot contain symlinks.");
       });
       await handle.close();
+      // The rewritten path is walked again from the root, so every component is rechecked.
+      if (typeof next === "string") return await anchorDirectory(next, create, hops + 1);
       handle = next;
     }
     return handle;
   } catch (error) {
-    await handle.close();
+    await handle.close().catch(() => undefined);
     throw error;
   }
 }
@@ -65,18 +96,37 @@ export async function safeDirectory(
     await handle.close();
     return resolved;
   }
-  let current = NodePath.parse(resolved).root;
-  for (const part of resolved.slice(current.length).split(NodePath.sep).filter(Boolean)) {
-    current = NodePath.join(current, part);
-    if (create)
-      await NodeFSP.mkdir(current, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") throw error;
-      });
-    const stat = await NodeFSP.lstat(current);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
+  let walked = resolved;
+  for (let hops = 0; ; hops += 1) {
+    const root = NodePath.parse(walked).root;
+    const parts = walked.slice(root.length).split(NodePath.sep).filter(Boolean);
+    let current = root;
+    let rewritten: string | null = null;
+    for (const [index, part] of parts.entries()) {
+      const parent = current;
+      current = NodePath.join(current, part);
+      if (create)
+        await NodeFSP.mkdir(current, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+        });
+      const stat = await NodeFSP.lstat(current);
+      if (stat.isDirectory()) continue;
+      if (
+        hops < MAX_SYSTEM_SYMLINKS &&
+        systemSymlink(await NodeFSP.lstat(parent), stat, platform)
+      ) {
+        rewritten = NodePath.resolve(
+          parent,
+          await NodeFSP.readlink(current),
+          ...parts.slice(index + 1),
+        );
+        break;
+      }
       throw new Error("Artifact folder paths cannot contain symlinks.");
+    }
+    if (rewritten === null) return resolved;
+    walked = rewritten;
   }
-  return resolved;
 }
 
 export async function safeRead(file: string, platform: NodeJS.Platform): Promise<string> {

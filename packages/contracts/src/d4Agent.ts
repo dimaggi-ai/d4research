@@ -10,6 +10,7 @@ import {
 } from "./baseSchemas.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 import { MIN_SCHEDULED_TASK_INTERVAL_MS, ScheduledTaskFixedTimeSchedule } from "./scheduledTask.ts";
 
 export const D4AgentPermissionMode = Schema.Literals(["read-only", "ask", "act"]);
@@ -18,6 +19,11 @@ export const D4BrainContext = Schema.Literals(D4_BRAIN_CONTEXTS);
 export type D4BrainContext = typeof D4BrainContext.Type;
 // Only these adapters enforce the d4 Agent's MCP tool allowlist and read-only sandbox.
 export const D4_AGENT_PROVIDER_DRIVERS: ReadonlyArray<string> = ["codex", "claudeAgent"];
+// A fresh install has no local model, so Nia starts on the bundled Claude instance.
+export const DEFAULT_D4_AGENT_MODEL_SELECTION = {
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  model: "claude-sonnet-5-5",
+} satisfies ModelSelection;
 export const supportsD4AgentDriver = (driver: string): boolean =>
   D4_AGENT_PROVIDER_DRIVERS.includes(driver);
 export const D4AgentSwitchContextInput = Schema.Struct({ context: D4BrainContext });
@@ -89,7 +95,7 @@ export const D4AgentSettings = Schema.Struct({
   ),
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   modelSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_D4_AGENT_MODEL_SELECTION)),
   ),
   // The exact provider instance and model used for new Nia-created work.
   // Null is intentional: the manager model must never become an implicit worker fallback.
@@ -131,7 +137,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   ctoEnabled: false,
   ctoBaseUrl: "http://127.0.0.1:9093",
   enabled: false,
-  modelSelection: null,
+  modelSelection: DEFAULT_D4_AGENT_MODEL_SELECTION,
   taskModelSelection: null,
   permissionMode: "read-only",
   heartbeatMinutes: null,

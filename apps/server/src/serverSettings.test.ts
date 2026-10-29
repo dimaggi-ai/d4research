@@ -1336,10 +1336,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.equal(DEFAULT_SERVER_SETTINGS.d4Agent.brainVaultPath, "");
         const service = yield* ServerSettingsModule.ServerSettingsService;
         const value = yield* service.getSettings;
-        assert.equal(
-          value.d4Agent.brainVaultPath,
-          process.env.D4_AGENT_BRAIN_VAULT_PATH || "/home/dmitriis/Documents/Shared26/Second Brain",
-        );
+        assert.equal(value.d4Agent.brainVaultPath, process.env.D4_AGENT_BRAIN_VAULT_PATH || "");
         yield* service.updateSettings({
           d4Agent: { ...value.d4Agent, brainVaultPath: "/synthetic/configured-vault" },
         });

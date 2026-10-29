@@ -851,9 +851,7 @@ const make = Effect.gen(function* () {
         d4Agent: {
           ...materialized.d4Agent,
           brainVaultPath:
-            materialized.d4Agent.brainVaultPath ||
-            process.env.D4_AGENT_BRAIN_VAULT_PATH ||
-            "/home/dmitriis/Documents/Shared26/Second Brain",
+            materialized.d4Agent.brainVaultPath || process.env.D4_AGENT_BRAIN_VAULT_PATH || "",
         },
       };
     });

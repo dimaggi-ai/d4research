@@ -1,3 +1,5 @@
+import { d4ActionFailureMessage } from "@d4research/client-runtime/d4-agent-action-feedback";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Clipboard from "expo-clipboard";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
@@ -28,6 +30,25 @@ import { useEnvironmentConnectionState } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
+import { formatScheduledTaskInterval } from "../settings/scheduledTaskPresentation";
+
+function actionScheduleLabel(
+  schedule:
+    | { readonly type: "interval"; readonly everyMs: number }
+    | {
+        readonly type: "fixed_time";
+        readonly timeOfDay: string;
+        readonly weekdays?: ReadonlyArray<number>;
+      },
+): string {
+  if (schedule.type === "interval") return formatScheduledTaskInterval(schedule.everyMs);
+  const days = schedule.weekdays?.length
+    ? schedule.weekdays
+        .map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day])
+        .join(", ")
+    : "Daily";
+  return `${days} at ${schedule.timeOfDay} (server time)`;
+}
 
 function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   return Effect.runPromise(
@@ -173,6 +194,12 @@ function D4AgentPanelContent({
   );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const resolving = useRef(false);
+  const [decisionState, setDecisionState] = useState<{
+    id: string;
+    message: string;
+    error: boolean;
+  } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const state = query.data;
@@ -320,24 +347,53 @@ function D4AgentPanelContent({
               record={record}
               allowed={allowed}
               busy={busy}
+              onRefresh={query.refresh}
+              feedback={decisionState?.id === record.id ? decisionState : null}
               onResolve={async (decision, options) => {
+                if (resolving.current) return;
+                resolving.current = true;
                 setBusy(true);
-                setActionError(null);
-                await resolve({
-                  environmentId,
-                  input: { actionId: record.id, decision, ...options },
-                })
-                  .then((result) => {
-                    if (result._tag === "Failure") setActionError("Could not resolve this action.");
-                    query.refresh();
-                  })
-                  .catch(() => setActionError("Could not resolve this action."))
-                  .finally(() => setBusy(false));
+                setDecisionState({
+                  id: record.id,
+                  message: decision === "approve" ? "Approving…" : "Denying…",
+                  error: false,
+                });
+                try {
+                  const result = await resolve({
+                    environmentId,
+                    input: { actionId: record.id, decision, ...options },
+                  });
+                  setDecisionState(
+                    result._tag === "Failure"
+                      ? {
+                          id: record.id,
+                          message: d4ActionFailureMessage(squashAtomCommandFailure(result)),
+                          error: true,
+                        }
+                      : null,
+                  );
+                } catch {
+                  setDecisionState({
+                    id: record.id,
+                    message: d4ActionFailureMessage(null),
+                    error: true,
+                  });
+                } finally {
+                  resolving.current = false;
+                  setBusy(false);
+                  query.refresh();
+                }
               }}
             />
           ))}
         {query.error ? <Text accessibilityRole="alert">{query.error}</Text> : null}
         {actionError ? <Text accessibilityRole="alert">{actionError}</Text> : null}
+        {decisionState?.error &&
+        !state.actionLog.some(
+          (record) => record.id === decisionState.id && record.status === "pending",
+        ) ? (
+          <Text accessibilityRole="alert">{decisionState.message}</Text>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -349,11 +405,15 @@ function AgentActionRecord({
   allowed,
   busy,
   onResolve,
+  feedback,
+  onRefresh,
 }: {
   environmentId: EnvironmentId;
   record: D4AgentActionSummary;
   allowed: boolean;
   busy: boolean;
+  onRefresh?: () => void;
+  feedback?: { message: string; error: boolean } | null;
   onResolve: (
     decision: "approve" | "deny",
     options?: { editedText?: string; sendOriginal?: boolean },
@@ -404,7 +464,9 @@ function AgentActionRecord({
     detail.data &&
     (detail.data.action.type === "research" ||
       detail.data.action.type === "pipeline" ||
-      detail.data.action.type === "start")
+      detail.data.action.type === "start" ||
+      detail.data.action.type === "schedule" ||
+      detail.data.action.type === "prepare-routine")
       ? detail.data.action
       : null;
   return (
@@ -467,6 +529,40 @@ function AgentActionRecord({
           </Pressable>
         </View>
       ) : null}
+      {feedback ? (
+        <Text accessibilityRole={feedback.error ? "alert" : "text"}>{feedback.message}</Text>
+      ) : null}
+      {record.status === "pending" && !allowed ? (
+        <Text accessibilityRole="alert">This connection cannot approve or deny actions.</Text>
+      ) : null}
+      {record.status === "pending" &&
+      allowed &&
+      !detail.data &&
+      detail.isPending &&
+      !detail.error ? (
+        <Text accessibilityRole="text">Loading action details…</Text>
+      ) : null}
+      {record.status === "pending" && detail.data && detail.data.status !== "pending" ? (
+        <Text accessibilityRole="text">This action is no longer pending. Refresh its status.</Text>
+      ) : null}
+      {record.status === "pending" && !detail.data && detail.isSuccess ? (
+        <Text>This action is no longer pending or available. Refresh its status.</Text>
+      ) : null}
+      {record.status === "pending" &&
+      (feedback?.error ||
+        detail.error ||
+        (detail.isSuccess && (!detail.data || detail.data.status !== "pending"))) ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={() => {
+            detail.refresh();
+            onRefresh?.();
+          }}
+        >
+          <Text>Refresh status</Text>
+        </Pressable>
+      ) : null}
       {heading.detail && !(open && (sendAction || launchAction)) ? (
         <Text selectable className="text-sm text-foreground-muted">
           {(pending ? fullText : null) ?? heading.detail}
@@ -500,7 +596,7 @@ function AgentActionRecord({
           <Text className="text-xs text-foreground-muted">
             Target project · {project?.title ?? launchAction.projectId}
           </Text>
-          {launchAction.type !== "start" ? (
+          {"pipelineId" in launchAction && launchAction.pipelineId ? (
             <Text className="text-xs text-foreground-muted">
               Pipeline · {launchAction.pipelineId}
             </Text>
@@ -508,6 +604,16 @@ function AgentActionRecord({
           <Text className="text-xs text-foreground-muted">
             Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
           </Text>
+          {launchAction.modelSelection.options?.map((option) => (
+            <Text key={option.id} className="text-xs text-foreground-muted">
+              Task model option · {option.id}: {String(option.value)}
+            </Text>
+          ))}
+          {"schedule" in launchAction ? (
+            <Text className="text-xs text-foreground-muted">
+              Schedule · {actionScheduleLabel(launchAction.schedule)}
+            </Text>
+          ) : null}
           <Text className="text-xs text-foreground-muted">Final prompt</Text>
           <Text selectable className="text-sm text-foreground">
             {launchAction.text}

@@ -5,13 +5,16 @@ import type {
   ModelSelection,
   ProjectId,
   RuntimeMode,
+  ServerProvider,
   ServerConfig as T3ServerConfig,
 } from "@d4research/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@d4research/contracts";
 import { resolveProjectProviderInstanceEnabled } from "@d4research/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
 } from "@d4research/shared/model";
+import { resolveProviderInstanceDisplayName } from "@d4research/client-runtime/state/provider-instance-display";
 
 export type ModelOption = {
   readonly key: string;
@@ -46,14 +49,14 @@ export type ProviderGroup = {
 
 function providerDisplayLabel(provider: {
   readonly displayName?: string | undefined;
-  readonly driver: string;
-  readonly instanceId: string;
+  readonly driver: ServerProvider["driver"] | string;
+  readonly instanceId: ModelSelection["instanceId"] | string;
 }): string {
-  if (provider.displayName) return provider.displayName;
-  if (provider.driver === "codex") return "Codex";
-  if (provider.driver === "claudeAgent") return "Claude";
-  if (provider.driver === "pi") return "Pi";
-  return provider.instanceId;
+  return resolveProviderInstanceDisplayName({
+    ...provider,
+    driver: ProviderDriverKind.make(provider.driver),
+    instanceId: ProviderInstanceId.make(provider.instanceId),
+  });
 }
 
 function isProviderEnabledForProject(

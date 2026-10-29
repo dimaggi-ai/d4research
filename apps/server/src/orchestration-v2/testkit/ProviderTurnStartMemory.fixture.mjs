@@ -8,12 +8,13 @@ const owned = mode.startsWith("owned");
 const withHandoff = mode.startsWith("handoff") || mode === "owned-handoff";
 const require = NodeModule.createRequire(root + "/apps/server/package.json");
 const load = (name) => import(NodeURL.pathToFileURL(require.resolve("effect/" + name)));
-const [Effect, Layer, FileSystem, Path, Option] = await Promise.all([
+const [Effect, Layer, FileSystem, Path, Option, Stream] = await Promise.all([
   load("Effect"),
   load("Layer"),
   load("FileSystem"),
   load("Path"),
   load("Option"),
+  load("Stream"),
 ]);
 const app = (file) => import(NodeURL.pathToFileURL(root + "/apps/server/src/" + file + ".ts"));
 const providerCore = (file) =>
@@ -60,6 +61,7 @@ const checkpoints = [];
 const count = Number(process.argv[4] ?? 4);
 const bytes = Number(process.argv[5] ?? 32768);
 const session = {
+  events: Stream.empty,
   driver: "codex",
   providerSession: { id: "session", driver: "codex", capabilities: { context: {} } },
   resumeThread: ({ providerThread }) => Effect.succeed(providerThread),

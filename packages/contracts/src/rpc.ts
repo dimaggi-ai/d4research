@@ -1,3 +1,10 @@
+import {
+  NotesError,
+  NotesListInput,
+  NotesListResult,
+  NotesReadInput,
+  NotesReadResult,
+} from "./notes.ts";
 import { AgentMonitorError } from "./agentMonitor.ts";
 import {
   D4AgentError,
@@ -524,6 +531,8 @@ export const WS_METHODS = {
   d4AgentCloseSession: "d4Agent.closeSession",
   d4AgentUndoArchive: "d4Agent.undoArchive",
   pipelineResumeRun: "pipeline.resumeRun",
+  notesList: "notes.list",
+  notesRead: "notes.read",
   d4AgentResolveMemoryProposal: "d4Agent.resolveMemoryProposal",
   d4AgentGetIdentity: "d4Agent.getIdentity",
   d4AgentGetAction: "d4Agent.getAction",
@@ -1934,6 +1943,17 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
   stream: true,
 });
 
+const WsNotesListRpc = Rpc.make(WS_METHODS.notesList, {
+  payload: NotesListInput,
+  success: NotesListResult,
+  error: Schema.Union([NotesError, EnvironmentAuthorizationError]),
+});
+const WsNotesReadRpc = Rpc.make(WS_METHODS.notesRead, {
+  payload: NotesReadInput,
+  success: NotesReadResult,
+  error: Schema.Union([NotesError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2030,6 +2050,8 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  WsNotesListRpc,
+  WsNotesReadRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

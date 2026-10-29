@@ -691,6 +691,138 @@ describe("handoff delivery", () => {
 });
 
 describe("handoff delivery modes", () => {
+  it.effect("recovers a legacy summary-only handoff without retaining its oversized wrapper", () =>
+    Effect.gen(function* () {
+      const { history: _history, ...legacy } = handoff;
+      let calls = 0;
+      const result = yield* deliverContextHandoffs({
+        handoffs: [{ ...legacy, summaryText: "Legacy constraint. ".repeat(2000) }],
+        providerThread,
+        budget: 8_000,
+        mode: "direct",
+        alreadyDeliveredItemIds: new Set(),
+        compact: (transcript) =>
+          Effect.sync(() => {
+            calls++;
+            assert.include(transcript, "Legacy constraint.");
+            return "Preserve the legacy constraint.";
+          }),
+        persist: () => Effect.void,
+      });
+      assert.equal(calls, 1);
+      assert.include(result.context, "Preserve the legacy constraint.");
+      assert.isBelow(historyCost([], result.context), 8_000);
+    }),
+  );
+
+  it.effect("allows explicit native compaction despite zero smart handoff allowance", () =>
+    Effect.gen(function* () {
+      let writes = 0;
+      let injections = 0;
+      const result = yield* deliverContextHandoffs({
+        handoffs: [handoff],
+        providerThread,
+        budget: 0,
+        mode: "smart",
+        deferInline: true,
+        alreadyDeliveredItemIds: new Set(),
+        compact: () => Effect.die("must defer history"),
+        inject: () =>
+          Effect.sync(() => {
+            injections++;
+            return true;
+          }),
+        persist: () =>
+          Effect.sync(() => {
+            writes++;
+          }),
+      });
+      yield* result.delivered;
+      assert.equal(result.context, "");
+      assert.equal(writes, 0);
+      assert.equal(injections, 0);
+    }),
+  );
+
+  it.effect(
+    "rejects a compactor output that still exceeds the budget without delivery or another try",
+    () =>
+      Effect.gen(function* () {
+        let compactions = 0;
+        let writes = 0;
+        const result = yield* deliverContextHandoffs({
+          handoffs: [
+            {
+              ...handoff,
+              history: {
+                ...handoff.history!,
+                messages: [message("large", "user", "x".repeat(30_000))],
+              },
+            },
+          ],
+          providerThread,
+          budget: 8_000,
+          mode: "direct",
+          alreadyDeliveredItemIds: new Set(),
+          compact: () =>
+            Effect.sync(() => {
+              compactions++;
+              return "x".repeat(30_000);
+            }),
+          persist: () =>
+            Effect.sync(() => {
+              writes++;
+            }),
+        }).pipe(Effect.result);
+        assert.equal(result._tag, "Failure");
+        assert.equal(compactions, 1);
+        assert.equal(writes, 0);
+      }),
+  );
+
+  it.effect("compacts an oversized direct handoff once before any delivery", () =>
+    Effect.gen(function* () {
+      let compactions = 0;
+      let injections = 0;
+      let writes = 0;
+      const result = yield* deliverContextHandoffs({
+        handoffs: [
+          {
+            ...handoff,
+            history: {
+              ...handoff.history!,
+              messages: [message("large", "user", "x".repeat(30_000))],
+            },
+          },
+        ],
+        providerThread,
+        budget: 8_000,
+        mode: "direct",
+        alreadyDeliveredItemIds: new Set(),
+        compact: () =>
+          Effect.sync(() => {
+            assert.equal(writes, 0);
+            assert.equal(injections, 0);
+            compactions++;
+            return "Preserved task and constraints.";
+          }),
+        inject: () =>
+          Effect.sync(() => {
+            injections++;
+            return false;
+          }),
+        persist: () =>
+          Effect.sync(() => {
+            writes++;
+          }),
+      });
+      yield* result.delivered;
+      assert.equal(compactions, 1);
+      assert.equal(injections, 1);
+      assert.include(result.context, "Preserved task and constraints.");
+    }),
+  );
+
   it.effect("direct transfers oversized individual messages intact without calling a judge", () =>
     Effect.gen(function* () {
       const text = "  exact technical text\n" + "x".repeat(20_000);

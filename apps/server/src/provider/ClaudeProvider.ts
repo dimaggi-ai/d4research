@@ -435,11 +435,38 @@ export function claudeUsesLocalOllama(environment: NodeJS.ProcessEnv): boolean {
   return port === OLLAMA_DEFAULT_PORT || environment.ANTHROPIC_AUTH_TOKEN === "ollama";
 }
 
+const CLAUDE_DEFAULT_MODEL_ENV_KEYS = [
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+] as const;
+
+/** Exact model identities exposed by a loopback Anthropic-compatible gateway. */
+export function claudeLocalModelOverrides(environment: NodeJS.ProcessEnv): ReadonlyArray<string> {
+  const raw = environment.ANTHROPIC_BASE_URL?.trim();
+  if (!raw) return [];
+  try {
+    const url = new URL(raw);
+    if (!LOCAL_HOSTNAMES.has(url.hostname.toLowerCase())) return [];
+  } catch {
+    return [];
+  }
+  return [
+    ...new Set(
+      CLAUDE_DEFAULT_MODEL_ENV_KEYS.map((key) => environment[key]?.trim()).filter(
+        (model): model is string => Boolean(model),
+      ),
+    ),
+  ];
+}
+
 export function getBuiltInClaudeModelsForEnvironment(
   environment: NodeJS.ProcessEnv,
   version: string | null,
 ): ReadonlyArray<ServerProviderModel> {
-  return claudeUsesLocalOllama(environment) ? [] : getBuiltInClaudeModelsForVersion(version);
+  return claudeUsesLocalOllama(environment) || claudeLocalModelOverrides(environment).length > 0
+    ? []
+    : getBuiltInClaudeModelsForVersion(version);
 }
 
 const OLLAMA_HTTP_DISCOVERY_TIMEOUT_MS = 3_000;
@@ -985,9 +1012,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const usesLocalOllama = claudeUsesLocalOllama(resolvedEnvironment);
+  const localModelOverrides = claudeLocalModelOverrides(resolvedEnvironment);
+  const usesLocalModelGateway = usesLocalOllama || localModelOverrides.length > 0;
   const allModels = providerModelsFromSettings(
-    usesLocalOllama ? [] : modelCatalog.models.map((entry) => entry.model),
-    claudeSettings.customModels,
+    usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
+    [...claudeSettings.customModels, ...localModelOverrides],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
 
@@ -1013,8 +1042,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const ollamaDiscovery = yield* discoverLocalOllamaModels(resolvedEnvironment);
   const discoveredOllamaModels = ollamaDiscovery.models;
   const modelsWithDiscovery = providerModelsFromSettings(
-    usesLocalOllama ? [] : modelCatalog.models.map((entry) => entry.model),
-    [...claudeSettings.customModels, ...discoveredOllamaModels],
+    usesLocalModelGateway ? [] : modelCatalog.models.map((entry) => entry.model),
+    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
 
@@ -1091,14 +1120,14 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   // Claude models. Do not offer the normal Claude aliases against that endpoint:
   // each would fail as an unknown Ollama model. Locally copied aliases are still
   // included via `ollama list` below.
-  const builtInModels = usesLocalOllama
+  const builtInModels = usesLocalModelGateway
     ? []
     : resolveClaudeModelsForVersion(modelCatalog, parsedVersion);
   // Reuse the discovery performed above rather than shelling out to `ollama`
   // a second time for the same snapshot.
   const models = providerModelsFromSettings(
     builtInModels,
-    [...claudeSettings.customModels, ...discoveredOllamaModels],
+    [...claudeSettings.customModels, ...localModelOverrides, ...discoveredOllamaModels],
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const updateRequiredModels = resolveClaudeUpdateRequiredModels(modelCatalog, parsedVersion);
@@ -1235,12 +1264,16 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 export const makePendingClaudeProvider = (
   claudeSettings: ClaudeSettings,
   modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
     const checkedAt = yield* nowIso;
+    const localModelOverrides = claudeLocalModelOverrides(environment);
     const models = providerModelsFromSettings(
-      modelCatalog.models.map((entry) => entry.model),
-      claudeSettings.customModels,
+      claudeUsesLocalOllama(environment) || localModelOverrides.length > 0
+        ? []
+        : modelCatalog.models.map((entry) => entry.model),
+      [...claudeSettings.customModels, ...localModelOverrides],
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );
 

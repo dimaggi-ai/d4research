@@ -14,6 +14,7 @@ import {
   D4AgentError,
   type D4AgentState,
   type EnvironmentId,
+  type ModelSelection,
   type ThreadId,
 } from "@d4research/contracts";
 import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
@@ -21,14 +22,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useLinkTo } from "@react-navigation/native";
 import * as Schema from "effect/Schema";
 import { useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from "react-native";
 import { resolveNativeMarkdownTypography } from "../../lib/appearancePreferences";
 import { flattenThemeColor } from "../../lib/mobileTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -46,8 +40,45 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { D4AgentPanel } from "./D4Agent";
 import { useD4AgentState } from "./useD4AgentState";
+import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
+import { ModelRow } from "../threads/ThreadSettingsRows";
+import { AppBar } from "../../components/ui/AppBar";
+import { ComposerEditor } from "../../components/ComposerEditor";
+import {
+  ComposerActionButton,
+  ComposerInlineControl,
+  ComposerToolbarRow,
+  ComposerToolbarScroller,
+} from "../../components/ComposerToolbar";
+import { ComposerSurface } from "../threads/ThreadComposer";
 
 const isD4AgentError = Schema.is(D4AgentError);
+
+function taskFailureMessage(
+  failure: unknown,
+  providers: NonNullable<ReturnType<typeof useEnvironmentServerConfig>>["providers"],
+  selection: ModelSelection | null,
+) {
+  if (!isD4AgentError(failure)) return "Could not send this message. Your draft is preserved.";
+  if (failure.reason === "provider-unavailable") {
+    const provider = providers.find((entry) => entry.instanceId === selection?.instanceId);
+    const quotaExhausted =
+      provider?.usageLimits?.windows.some(
+        (window) =>
+          window.usedPercent >= 100 &&
+          (window.resetsAt === undefined || Date.parse(window.resetsAt) > Date.now()),
+      ) === true;
+    return quotaExhausted
+      ? "The selected task provider is out of quota. Choose another task model or try again after the quota resets. Your draft is preserved."
+      : "The selected task provider is unavailable or not authenticated. Check the provider connection or choose another task model. Your draft is preserved.";
+  }
+  if (failure.detail) return `${failure.detail} Your draft is preserved.`;
+  if (failure.reason === "model-unavailable")
+    return "The selected task model is unavailable. Choose another task model. Your draft is preserved.";
+  if (failure.reason === "option-unavailable")
+    return "The selected task model options are unavailable. Choose valid options or another task model. Your draft is preserved.";
+  return "Could not send this message. Your draft is preserved.";
+}
 
 function useNiaMarkdownStyles() {
   const { appearance } = useAppearancePreferences();
@@ -163,6 +194,11 @@ export function D4AgentChat({
   const allowed = useAtomValue(serverEnvironment.sendD4AgentMessage.permissionAtom(environmentId));
   const linkTo = useLinkTo();
   const [text, setText] = useState("");
+  // undefined follows the saved default; null explicitly means manager-only conversation.
+  const [taskSelectionOverride, setTaskSelectionOverride] = useState<
+    ModelSelection | null | undefined
+  >(undefined);
+  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
   const [origin, setOrigin] = useState<AgentDraftOrigin | null>(null);
   if (!text.trim() && origin !== null) setOrigin(null);
   const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
@@ -177,17 +213,56 @@ export function D4AgentChat({
     query: agentMentionQuery(text),
   });
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<"failed" | "stale" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const taskSelection =
+    taskSelectionOverride === undefined
+      ? (config?.settings.d4Agent.taskModelSelection ?? null)
+      : taskSelectionOverride;
+  const taskGroups = groupByProvider(buildModelOptions(config, taskSelection, undefined, null));
   const conversation = useRef<ComponentRef<typeof ScrollView>>(null);
   const followConversation = useRef(true);
+  const submit = async () => {
+    if (sending || !enabled || !allowed || !text.trim() || moved) return;
+    const submitted = text;
+    const target = origin ?? agentDraftOrigin(state);
+    setSending(true);
+    setError(null);
+    try {
+      const result = await send({
+        environmentId,
+        input: {
+          text: submitted.trim(),
+          taskModelSelection: taskSelection,
+          expectedContext: target.context,
+          expectedThreadId: target.threadId,
+        },
+      });
+      if (result._tag === "Failure") {
+        const failure = squashAtomCommandFailure(result);
+        const stale = isD4AgentError(failure) && failure.reason === "stale";
+        setError(
+          stale
+            ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
+            : taskFailureMessage(failure, config?.providers ?? [], taskSelection),
+        );
+        // The resend must carry the current context and session, not the ones that went stale.
+        if (stale) refresh();
+      } else {
+        setText((current) => (current === submitted ? "" : current));
+        setTaskSelectionOverride(undefined);
+        refresh();
+      }
+    } catch {
+      setError("Could not send this message. Your draft is preserved.");
+    }
+    setSending(false);
+  };
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       className="flex-1 bg-background"
     >
-      <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-        <Text className="text-lg font-t3-semibold text-foreground">Nia</Text>
-      </View>
+      <AppBar title="Nia" />
       {state.threadId ? (
         <D4AgentPanel environmentId={environmentId} threadId={state.threadId} />
       ) : null}
@@ -298,7 +373,7 @@ export function D4AgentChat({
           </Text>
         ) : null}
       </ScrollView>
-      <View className="gap-2 border-t border-border p-4">
+      <View className="gap-2 px-4 pb-4 pt-2">
         {agentMentionQuery(text) !== null && enabled && allowed ? (
           <ScrollView
             accessibilityLabel="Mention a thread, project, or pipeline"
@@ -324,58 +399,57 @@ export function D4AgentChat({
             ) : null}
           </ScrollView>
         ) : null}
-        <TextInput
-          accessibilityLabel="Message Nia"
-          multiline
-          value={text}
-          maxLength={16000}
-          editable={enabled && allowed && !sending}
-          onChangeText={(value) => {
-            setText(value);
-            if (value.trim()) bindDraft();
-          }}
-          className="min-h-20 rounded-xl border border-border p-3 text-foreground"
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{
-            disabled: !enabled || !allowed || sending || !text.trim() || moved !== null,
-          }}
-          disabled={!enabled || !allowed || sending || !text.trim() || moved !== null}
-          className="self-end px-4 py-3"
-          onPress={async () => {
-            if (sending || !enabled || !allowed || !text.trim() || moved) return;
-            const submitted = text;
-            const target = origin ?? agentDraftOrigin(state);
-            setSending(true);
-            setError(null);
-            try {
-              const result = await send({
-                environmentId,
-                input: {
-                  text: submitted.trim(),
-                  expectedContext: target.context,
-                  expectedThreadId: target.threadId,
-                },
-              });
-              if (result._tag === "Failure") {
-                const failure = squashAtomCommandFailure(result);
-                const stale = isD4AgentError(failure) && failure.reason === "stale";
-                setError(stale ? "stale" : "failed");
-                // The resend must carry the current context and session, not the ones that went stale.
-                if (stale) refresh();
-              } else {
-                setText((current) => (current === submitted ? "" : current));
-                refresh();
-              }
-            } catch {
-              setError("failed");
-            }
-            setSending(false);
-          }}
+        <ComposerSurface
+          animateLayout={false}
+          style={{ borderRadius: 26, minHeight: 112, overflow: "hidden", paddingTop: 10 }}
         >
-          <Text className="text-accent">{sending ? "Sending…" : "Send"}</Text>
-        </Pressable>
+          <View className="min-h-16 px-3">
+            <ComposerEditor
+              placeholder="Message Nia"
+              multiline
+              value={text}
+              editable={enabled && allowed && !sending}
+              onChangeText={(value) => {
+                const bounded = value.slice(0, 16000);
+                setText(bounded);
+                if (bounded.trim()) bindDraft();
+              }}
+              onSubmit={() => void submit()}
+            />
+          </View>
+          <ComposerToolbarRow paddingBottom={4} paddingTop={2}>
+            <ComposerToolbarScroller>
+              <ComposerInlineControl
+                accessibilityLabel="Nia task model"
+                disabled={sending}
+                emphasized
+                icon="brain"
+                label={
+                  taskSelection
+                    ? `${taskSelection.instanceId} · ${taskSelection.model}`
+                    : "No task model"
+                }
+                onPress={() => setTaskPickerOpen(true)}
+              />
+              <ComposerInlineControl
+                disabled={sending || taskSelection === null}
+                label="No task model"
+                onPress={() => {
+                  setTaskSelectionOverride(null);
+                  bindDraft();
+                }}
+                showChevron={false}
+              />
+            </ComposerToolbarScroller>
+            <ComposerActionButton
+              accessibilityLabel={sending ? "Sending" : "Send"}
+              disabled={!enabled || !allowed || sending || !text.trim() || moved !== null}
+              icon="arrow.up"
+              onPress={() => void submit()}
+              variant="primary"
+            />
+          </ComposerToolbarRow>
+        </ComposerSurface>
         {moved ? (
           <View className="gap-2">
             <Text accessibilityRole="alert" className="text-sm text-foreground">
@@ -395,12 +469,67 @@ export function D4AgentChat({
         ) : null}
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
-            {error === "stale"
-              ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
-              : "Could not send this message. Your draft is preserved."}
+            {error}
           </Text>
         ) : null}
       </View>
+      <Modal
+        visible={taskPickerOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setTaskPickerOpen(false)}
+      >
+        <View className="flex-1 bg-background pt-6">
+          <View className="flex-row items-center justify-between px-5 pb-4">
+            <Text className="text-lg font-t3-semibold text-foreground">Task model</Text>
+            <Pressable
+              accessibilityRole="button"
+              className="p-2"
+              onPress={() => setTaskPickerOpen(false)}
+            >
+              <Text className="text-base text-accent">Done</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerClassName="gap-4 pb-10">
+            <Pressable
+              accessibilityRole="button"
+              className="px-5 py-3"
+              onPress={() => {
+                setTaskSelectionOverride(null);
+                setTaskPickerOpen(false);
+                bindDraft();
+              }}
+            >
+              <Text className="text-foreground">No task model</Text>
+            </Pressable>
+            {taskGroups.map((group) => (
+              <View key={group.providerKey} className="gap-2">
+                <Text className="px-5 text-sm text-foreground-muted">{group.providerLabel}</Text>
+                {group.models.map((option, index) => (
+                  <ModelRow
+                    key={option.key}
+                    option={option}
+                    selected={
+                      option.selection.instanceId === taskSelection?.instanceId &&
+                      option.selection.model === taskSelection.model
+                    }
+                    onPress={() => {
+                      setTaskSelectionOverride(option.selection);
+                      setTaskPickerOpen(false);
+                      bindDraft();
+                    }}
+                    isFavorite={false}
+                    favoritesLoaded={false}
+                    onToggleFavorite={() => {}}
+                    isFirst={index === 0}
+                    isLast={index === group.models.length - 1}
+                  />
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

@@ -1415,3 +1415,16 @@ it("replaces monitor sessions without carrying model options across providers", 
     }).agentMonitor.modelSelection,
   ).toBeNull();
 });
+
+describe("research notes folder patch", () => {
+  it("sets and clears the folder while preserving scenarios", () => {
+    const configured = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      research: { notesFolder: "/notes/research" },
+    });
+    expect(configured.research.notesFolder).toBe("/notes/research");
+    expect(configured.research.scenarios).toEqual(DEFAULT_SERVER_SETTINGS.research.scenarios);
+    const cleared = applyServerSettingsPatch(configured, { research: { notesFolder: "" } });
+    expect(cleared.research.notesFolder).toBe("");
+    expect(cleared.research.scenarios).toEqual(configured.research.scenarios);
+  });
+});

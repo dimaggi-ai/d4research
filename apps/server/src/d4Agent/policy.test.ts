@@ -11,12 +11,14 @@ import {
   type ServerProvider,
 } from "@d4research/contracts";
 import {
+  D4_AGENT_PREFIX,
   contentFreeDigest,
   compactDigest,
   heartbeatDue,
   isAllowedAgentMcpRequest,
   isQuietHour,
   modelAvailability,
+  taskModelAvailability,
   taskRuntimeMode,
   taskTitle,
   taskWorkspace,
@@ -54,6 +56,11 @@ const settings: D4AgentSettings = {
   ...DEFAULT_D4_AGENT_SETTINGS,
   enabled: true,
   modelSelection: {
+    instanceId: provider.instanceId,
+    model: "chosen",
+    options: [{ id: "effort", value: "low" }],
+  },
+  taskModelSelection: {
     instanceId: provider.instanceId,
     model: "chosen",
     options: [{ id: "effort", value: "low" }],
@@ -102,6 +109,44 @@ describe("d4 Agent policies", () => {
     );
     assert.equal(
       modelAvailability(settings, [{ ...provider, auth: { status: "unauthenticated" } }]),
+      "provider-unavailable",
+    );
+  });
+  it("keeps worker defaults separate and rejects unavailable auth or reported exhaustion", () => {
+    assert.equal(
+      taskModelAvailability(settings, [provider], Date.parse("2026-10-28T12:00:00Z")),
+      null,
+    );
+    assert.equal(
+      taskModelAvailability({ ...settings, taskModelSelection: null }, [provider], 0),
+      "model-not-selected",
+    );
+    assert.equal(
+      taskModelAvailability(settings, [{ ...provider, auth: { status: "unauthenticated" } }], 0),
+      "provider-unavailable",
+    );
+    assert.equal(
+      taskModelAvailability(
+        settings,
+        [
+          {
+            ...provider,
+            usageLimits: {
+              checkedAt: "2026-10-28T11:59:00Z",
+              windows: [
+                {
+                  id: "session",
+                  label: "Session",
+                  kind: "session",
+                  usedPercent: 100,
+                  resetsAt: "2026-10-28T13:00:00Z",
+                },
+              ],
+            },
+          },
+        ],
+        Date.parse("2026-10-28T12:00:00Z"),
+      ),
       "provider-unavailable",
     );
   });
@@ -321,4 +366,26 @@ describe("Nia task launch", () => {
       { type: "worktree", baseRef: "release", startFromOrigin: false },
     );
   });
+});
+
+it("Nia instructions require resource-based choices while preserving user control and approval boundaries", () => {
+  assert.include(
+    D4_AGENT_PREFIX,
+    "Call d4_agent_environment before recommending a provider or model",
+  );
+  assert.include(D4_AGENT_PREFIX, "including custom models");
+  assert.include(
+    D4_AGENT_PREFIX,
+    "model quality, speed, cost and context capacity are unknown unless verified",
+  );
+  assert.include(D4_AGENT_PREFIX, "Exclude disabled, unauthenticated or unavailable providers");
+  assert.include(D4_AGENT_PREFIX, "Exclude the failing provider/model");
+  assert.include(D4_AGENT_PREFIX, "avoid retrying work while its required resource is unavailable");
+  assert.include(D4_AGENT_PREFIX, "Disclose unknown quota");
+  assert.include(D4_AGENT_PREFIX, "If no suitable alternative is verified");
+  assert.include(D4_AGENT_PREFIX, "Ask the user to choose");
+  assert.include(D4_AGENT_PREFIX, "Never approve provider permissions");
+  assert.include(D4_AGENT_PREFIX, "Never push, publish, deploy, post externally");
+  assert.notInclude(D4_AGENT_PREFIX, "For cancelled or interrupted pipeline runs, draft resume");
+  assert.notMatch(D4_AGENT_PREFIX, /switch to (Claude|Codex|Grok|Ollama)/i);
 });

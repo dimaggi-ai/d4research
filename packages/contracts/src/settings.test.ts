@@ -24,6 +24,12 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
 describe("ServerSettings response streaming", () => {
+  it("keeps Nia manager and task models independently unset by default", () => {
+    const d4Agent = decodeServerSettings({}).d4Agent;
+    expect(d4Agent.modelSelection).toBeNull();
+    expect(d4Agent.taskModelSelection).toBeNull();
+  });
+
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");
   });
@@ -1516,4 +1522,18 @@ it("accepts empty or loopback Meko configuration and rejects credential values a
   expect(() =>
     decodeServerSettingsPatch({ handoff: { meko: { tokenEnv: "not-a-variable" } } }),
   ).toThrow();
+});
+
+describe("research notes folder", () => {
+  it("defaults to disabled without an environment-specific path", () => {
+    expect(decodeServerSettings({}).research.notesFolder).toBe("");
+  });
+  it("accepts setting and clearing the environment-local folder", () => {
+    expect(decodeServerSettingsPatch({ research: { notesFolder: "/notes/research" } })).toEqual({
+      research: { notesFolder: "/notes/research" },
+    });
+    expect(decodeServerSettingsPatch({ research: { notesFolder: "" } })).toEqual({
+      research: { notesFolder: "" },
+    });
+  });
 });

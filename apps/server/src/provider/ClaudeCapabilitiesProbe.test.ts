@@ -23,6 +23,7 @@ import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
   getBuiltInClaudeModelsForEnvironment,
+  claudeLocalModelOverrides,
   claudeUsesLocalOllama,
   isLegacyClaudeModel,
   mapClaudeUsage,
@@ -66,6 +67,27 @@ it("discovers locally installed Ollama models only for the local Ollama endpoint
     [],
   );
   assert.ok(getBuiltInClaudeModelsForEnvironment({}, "2.1.0").length > 0);
+});
+
+it("exposes loopback Claude model overrides without inherited Claude labels", () => {
+  const environment = {
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:8094",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3.8-flash-next-iq3_s",
+    ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3.8-flash-next-iq3_s",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.8-max",
+  };
+  assert.deepStrictEqual(claudeLocalModelOverrides(environment), [
+    "qwen3.8-flash-next-iq3_s",
+    "qwen3.8-max",
+  ]);
+  assert.deepStrictEqual(getBuiltInClaudeModelsForEnvironment(environment, "2.1.0"), []);
+  assert.deepStrictEqual(
+    claudeLocalModelOverrides({
+      ...environment,
+      ANTHROPIC_BASE_URL: "https://api.anthropic.com",
+    }),
+    [],
+  );
 });
 
 it("keeps Ollama `:cloud` tags when parsing either discovery source", () => {

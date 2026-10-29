@@ -52,7 +52,7 @@ function EnvironmentMonitorSettings({
   const linkTo = useLinkTo();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [picker, setPicker] = useState<"manager" | "task" | null>(null);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState("Checking notification permission…");
   useEffect(() => {
@@ -94,6 +94,9 @@ function EnvironmentMonitorSettings({
     buildModelOptions(config, agent.modelSelection, undefined, null).filter((option) =>
       supportsD4AgentDriver(option.providerDriver),
     ),
+  );
+  const taskGroups = groupByProvider(
+    buildModelOptions(config, agent.taskModelSelection, undefined, null),
   );
   const monitored = threads.filter(
     (thread) =>
@@ -185,7 +188,7 @@ function EnvironmentMonitorSettings({
               : "Choose model"
           }
           disabled={!allowed || saving}
-          onPress={() => setPickerOpen(true)}
+          onPress={() => setPicker("manager")}
         />
         {agent.modelSelection ? (
           <SettingsRow
@@ -193,6 +196,25 @@ function EnvironmentMonitorSettings({
             label="Clear agent model"
             disabled={!allowed || saving}
             onPress={() => void writeAgent({ modelSelection: null })}
+          />
+        ) : null}
+        <SettingsRow
+          icon="hammer"
+          label="Task model"
+          value={
+            agent.taskModelSelection
+              ? `${agent.taskModelSelection.instanceId} · ${agent.taskModelSelection.model}`
+              : "Choose model"
+          }
+          disabled={!allowed || saving}
+          onPress={() => setPicker("task")}
+        />
+        {agent.taskModelSelection ? (
+          <SettingsRow
+            icon="xmark"
+            label="Clear task model"
+            disabled={!allowed || saving}
+            onPress={() => void writeAgent({ taskModelSelection: null })}
           />
         ) : null}
         <SettingsSwitchRow
@@ -268,24 +290,22 @@ function EnvironmentMonitorSettings({
         </SettingsSection>
       ) : null}
       <Modal
-        visible={pickerOpen}
+        visible={picker !== null}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setPickerOpen(false)}
+        onRequestClose={() => setPicker(null)}
       >
         <View className="flex-1 bg-background pt-6">
           <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-lg font-t3-semibold text-foreground">Nia model</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPickerOpen(false)}
-              className="p-2"
-            >
+            <Text className="text-lg font-t3-semibold text-foreground">
+              {picker === "task" ? "Task model" : "Nia model"}
+            </Text>
+            <Pressable accessibilityRole="button" onPress={() => setPicker(null)} className="p-2">
               <Text className="text-base text-accent">Done</Text>
             </Pressable>
           </View>
           <ScreenScrollView contentContainerClassName="gap-4 pb-10">
-            {groups.map((group) => (
+            {(picker === "task" ? taskGroups : groups).map((group) => (
               <View key={group.providerKey} className="gap-2">
                 <Text className="px-5 text-sm text-foreground-muted">{group.providerLabel}</Text>
                 {group.models.map((option, index) => (
@@ -293,12 +313,22 @@ function EnvironmentMonitorSettings({
                     key={option.key}
                     option={option}
                     selected={
-                      option.selection.instanceId === agent.modelSelection?.instanceId &&
-                      option.selection.model === agent.modelSelection.model
+                      option.selection.instanceId ===
+                        (picker === "task"
+                          ? agent.taskModelSelection?.instanceId
+                          : agent.modelSelection?.instanceId) &&
+                      option.selection.model ===
+                        (picker === "task"
+                          ? agent.taskModelSelection?.model
+                          : agent.modelSelection?.model)
                     }
                     onPress={() => {
-                      void writeAgent({ modelSelection: option.selection });
-                      setPickerOpen(false);
+                      void writeAgent(
+                        picker === "task"
+                          ? { taskModelSelection: option.selection }
+                          : { modelSelection: option.selection },
+                      );
+                      setPicker(null);
                     }}
                     isFavorite={false}
                     favoritesLoaded={false}
@@ -309,7 +339,7 @@ function EnvironmentMonitorSettings({
                 ))}
               </View>
             ))}
-            {groups.length === 0 ? (
+            {(picker === "task" ? taskGroups : groups).length === 0 ? (
               <Text className="p-5 text-sm text-foreground-muted">No providers available.</Text>
             ) : null}
           </ScreenScrollView>

@@ -1,3 +1,5 @@
+import { NotesError } from "@d4research/contracts";
+import { listThreadNotes, readThreadNote } from "./mcp/toolkits/research/notes.ts";
 import * as D4AgentAccess from "./d4Agent/D4AgentAccess.ts";
 import * as AgentMonitorReactor from "./orchestration-v2/AgentMonitorReactor.ts";
 import * as D4Agent from "./d4Agent/D4Agent.ts";
@@ -1140,6 +1142,8 @@ const CoreWsRpcGroup = ServerWsRpcGroup.omit(
   WS_METHODS.d4AgentCloseSession,
   WS_METHODS.d4AgentUndoArchive,
   WS_METHODS.pipelineResumeRun,
+  WS_METHODS.notesList,
+  WS_METHODS.notesRead,
 );
 
 // Keep the large handler map below the compiler's recursive instantiation limit.
@@ -1161,6 +1165,19 @@ const layerAgentSessionRpc = Layer.mergeAll(
         }),
       ),
       Effect.provideService(D4AgentAccess.DispatchOrigin, "authenticated-user"),
+    ),
+  ),
+);
+
+const layerNotesRpc = Layer.mergeAll(
+  ServerWsRpcGroup.toLayerHandler(WS_METHODS.notesList, (input) =>
+    listThreadNotes(input.threadId).pipe(
+      Effect.mapError((cause) => new NotesError({ message: cause.message })),
+    ),
+  ),
+  ServerWsRpcGroup.toLayerHandler(WS_METHODS.notesRead, (input) =>
+    readThreadNote(input).pipe(
+      Effect.mapError((cause) => new NotesError({ message: cause.message })),
     ),
   ),
 );
@@ -3113,7 +3130,7 @@ const layerWsRpc = (
       });
       return handlers;
     }),
-  ).pipe(Layer.merge(layerAgentSessionRpc));
+  ).pipe(Layer.merge(layerAgentSessionRpc), Layer.merge(layerNotesRpc));
 
 // RpcServer's default sends a socket-level Defect frame instead, and the client
 // ends every pending request on the socket with it.

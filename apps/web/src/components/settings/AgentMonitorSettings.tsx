@@ -68,16 +68,25 @@ function AgentMonitorForm() {
     );
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const agent = settings.d4Agent;
-  const selection = agent.modelSelection ?? resolveAppModelSelectionState(settings, providers);
+  const fallbackSelection = resolveAppModelSelectionState(settings, providers);
+  const selection = agent.modelSelection ?? fallbackSelection;
+  const taskSelection = agent.taskModelSelection ?? fallbackSelection;
   // Text-only providers cannot enforce the agent's tool allowlist, so they are not offered.
-  const entries = sortProviderInstanceEntries(
+  const allEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-  ).filter((entry) => supportsD4AgentDriver(entry.driverKind));
+  );
+  const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
     providers,
     selection.instanceId,
     selection.model,
+  );
+  const taskModelOptions = getCustomModelOptionsByInstance(
+    settings,
+    providers,
+    taskSelection.instanceId,
+    taskSelection.model,
   );
   const monitored = threads.filter(
     (thread) =>
@@ -116,6 +125,8 @@ function AgentMonitorForm() {
       .finally(() => setSaving(false));
   };
   const saveModel = (modelSelection: ModelSelection | null) => void writeAgent({ modelSelection });
+  const saveTaskModel = (taskModelSelection: ModelSelection | null) =>
+    void writeAgent({ taskModelSelection });
   return (
     <SettingsSection title="Nia" id="agent-monitor">
       {saveError ? (
@@ -173,6 +184,39 @@ function AgentMonitorForm() {
                 variant="ghost"
                 disabled={!allowed || saving}
                 onClick={() => saveModel(null)}
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+      <SettingsRow
+        title="Task model"
+        description="Default provider and model for new tasks. Nia never substitutes its manager model."
+        control={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProviderModelPicker
+              environmentId={environmentId}
+              activeInstanceId={taskSelection.instanceId}
+              model={taskSelection.model}
+              lockedProvider={null}
+              instanceEntries={allEntries}
+              modelOptionsByInstance={taskModelOptions}
+              triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              triggerAriaLabel="Nia task model"
+              {...(agent.taskModelSelection ? {} : { triggerLabel: "Choose model" })}
+              disabled={!allowed || saving}
+              onInstanceModelChange={(instanceId, model) =>
+                saveTaskModel(createModelSelection(instanceId, model))
+              }
+            />
+            {agent.taskModelSelection ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!allowed || saving}
+                onClick={() => saveTaskModel(null)}
               >
                 Clear
               </Button>

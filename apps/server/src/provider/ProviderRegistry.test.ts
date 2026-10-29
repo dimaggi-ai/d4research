@@ -794,6 +794,55 @@ it.layer(
       );
     });
 
+    it("replaces stale Claude aliases with a healthy local gateway catalog", () => {
+      const previousProvider = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        driver: ProviderDriverKind.make("claudeAgent"),
+        status: "ready",
+        enabled: true,
+        installed: true,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-10-28T12:00:00.000Z",
+        version: "2.1.0",
+        models: [
+          { slug: "claude-opus-5", name: "Claude Opus 5", isCustom: false, capabilities: null },
+          {
+            slug: "claude-sonnet-5",
+            name: "Claude Sonnet 5",
+            isCustom: false,
+            capabilities: null,
+          },
+        ],
+        slashCommands: [],
+        skills: [],
+      } as const satisfies ServerProvider;
+      const gatewayProvider = {
+        ...previousProvider,
+        auth: { status: "unknown" as const },
+        checkedAt: "2026-10-28T12:01:00.000Z",
+        models: [
+          {
+            slug: "qwen3.8-flash-next-iq3_s",
+            name: "Qwen 3.8 Flash Next IQ3 S",
+            isCustom: true,
+            capabilities: null,
+          },
+        ],
+      } satisfies ServerProvider;
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(previousProvider, gatewayProvider).models,
+        gatewayProvider.models,
+      );
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(gatewayProvider, {
+          ...gatewayProvider,
+          status: "error",
+          models: [],
+        }).models,
+        gatewayProvider.models,
+      );
+    });
+
     it("does not bring back models the installed CLI is too old to run", () => {
       const pendingProvider = {
         instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -3121,6 +3170,42 @@ it.layer(
             if (joined === "auth status")
               return {
                 stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                stderr: "",
+                code: 0,
+              };
+            throw new Error(`Unexpected args: ${joined}`);
+          }),
+        ),
+      ),
+    );
+
+    it.effect("publishes exact loopback gateway overrides without Claude aliases", () =>
+      Effect.gen(function* () {
+        const status = yield* checkClaudeProviderStatus(
+          defaultClaudeSettings,
+          claudeCapabilities(),
+          {
+            ANTHROPIC_BASE_URL: "http://127.0.0.1:8094",
+            ANTHROPIC_AUTH_TOKEN: "local-token",
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3.8-flash-next-iq3_s",
+            ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3.8-flash-next-iq3_s",
+            ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.8-max",
+          },
+        );
+        assert.strictEqual(status.status, "ready");
+        assert.deepStrictEqual(
+          status.models.map((model) => model.slug),
+          ["qwen3.8-flash-next-iq3_s", "qwen3.8-max"],
+        );
+        assert.isFalse(status.models.some((model) => model.name.includes("Claude")));
+      }).pipe(
+        Effect.provide(
+          layerMockSpawner((args) => {
+            const joined = args.join(" ");
+            if (joined === "--version") return { stdout: "2.1.0\n", stderr: "", code: 0 };
+            if (joined === "auth status")
+              return {
+                stdout: '{"loggedIn":true,"authMethod":"api_key"}\n',
                 stderr: "",
                 code: 0,
               };

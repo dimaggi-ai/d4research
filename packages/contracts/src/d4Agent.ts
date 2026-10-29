@@ -91,6 +91,11 @@ export const D4AgentSettings = Schema.Struct({
   modelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  // The exact provider instance and model used for new Nia-created work.
+  // Null is intentional: the manager model must never become an implicit worker fallback.
+  taskModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   permissionMode: D4AgentPermissionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("read-only")),
   ),
@@ -127,6 +132,7 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   ctoBaseUrl: "http://127.0.0.1:9093",
   enabled: false,
   modelSelection: null,
+  taskModelSelection: null,
   permissionMode: "read-only",
   heartbeatMinutes: null,
   quietHours: null,
@@ -135,7 +141,61 @@ export const DEFAULT_D4_AGENT_SETTINGS: D4AgentSettings = {
   toolGuardUrl: null,
 };
 
+export const D4RoutineDraft = Schema.Struct({
+  pipelineId: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  ),
+  projectId: ProjectId,
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+  text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000)),
+  modelSelection: ModelSelection,
+  schedule: Schema.Union([
+    Schema.Struct({
+      type: Schema.Literal("interval"),
+      everyMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_SCHEDULED_TASK_INTERVAL_MS)),
+    }),
+    ScheduledTaskFixedTimeSchedule,
+  ]),
+});
+export const D4RoutineReadiness = Schema.Struct({
+  summary: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)),
+  checks: Schema.Array(
+    Schema.Struct({
+      label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+      passed: Schema.Boolean,
+      evidence: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)),
+    }),
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  limitations: Schema.Array(Schema.String.check(Schema.isMaxLength(1000))).check(
+    Schema.isMaxLength(20),
+  ),
+});
+export const D4AgentRoutine = Schema.Struct({
+  id: Schema.String,
+  context: D4BrainContext,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  taskId: Schema.NullOr(ScheduledTaskId),
+  status: Schema.Literals(["preparing", "ready", "activated", "failed"]),
+  failure: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
+  draft: D4RoutineDraft,
+  readiness: Schema.NullOr(D4RoutineReadiness),
+  createdAt: IsoDateTime,
+});
+export type D4AgentRoutine = typeof D4AgentRoutine.Type;
+
 export const D4AgentAction = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("prepare-routine"), ...D4RoutineDraft.fields }),
+  Schema.Struct({
+    type: Schema.Literal("activate-routine"),
+    routineId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+    readiness: D4RoutineReadiness,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("set-schedule-enabled"),
+    taskId: ScheduledTaskId,
+    enabled: Schema.Boolean,
+  }),
   Schema.Struct({ type: Schema.Literal("auto-archive"), threadId: ThreadId }),
   Schema.Struct({
     type: Schema.Literal("pipeline"),
@@ -291,6 +351,9 @@ export const D4AgentActionSummary = Schema.Struct({
     "cancel-reminder",
     "schedule",
     "unschedule",
+    "prepare-routine",
+    "activate-routine",
+    "set-schedule-enabled",
   ]),
   targetId: Schema.String,
   threadId: Schema.optionalKey(ThreadId),
@@ -376,7 +439,38 @@ export const D4AgentReminder = Schema.Struct({
   at: IsoDateTime,
 });
 export type D4AgentReminder = typeof D4AgentReminder.Type;
+const HostRoutineTimestamp = Schema.String.check(
+  Schema.isMaxLength(64),
+  Schema.makeFilter(
+    (value) =>
+      /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+      Number.isFinite(Date.parse(value)),
+  ),
+);
+export const D4HostRoutine = Schema.Struct({
+  id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  context: D4BrainContext,
+  source: Schema.Literals(["systemd", "cron"]),
+  schedule: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  timeZone: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  enabled: Schema.NullOr(Schema.Boolean),
+  nextRunAt: Schema.NullOr(HostRoutineTimestamp),
+  lastRunAt: Schema.NullOr(HostRoutineTimestamp),
+  lastRunStatus: Schema.String.check(Schema.isMaxLength(200)),
+  observedAt: HostRoutineTimestamp,
+  capability: Schema.Literal("read-only"),
+});
+export type D4HostRoutine = typeof D4HostRoutine.Type;
+export const D4HostRoutinesState = Schema.Struct({
+  status: Schema.Literals(["available", "not-configured", "unavailable"]),
+  routines: Schema.Array(D4HostRoutine).check(Schema.isMaxLength(100)),
+});
+export type D4HostRoutinesState = typeof D4HostRoutinesState.Type;
+
 export const D4AgentState = Schema.Struct({
+  hostRoutines: Schema.optionalKey(D4HostRoutinesState),
+  routines: Schema.optionalKey(Schema.Array(D4AgentRoutine)),
   transcript: Schema.optionalKey(Schema.Array(D4AgentTranscriptEntry)),
   chatThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
   openSessions: Schema.optionalKey(Schema.Array(D4AgentOpenSession)),
@@ -425,6 +519,9 @@ export type D4AgentIdentity = typeof D4AgentIdentity.Type;
 export const D4AgentSendInput = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(16000)),
   attachments: Schema.optionalKey(Schema.Array(ChatAttachment)),
+  // Request-local worker intent. The server snapshots it with the user message so a later
+  // settings change cannot rewrite the worker on a pending proposal.
+  taskModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   // The context and session the user wrote the message for. The server rejects the send as
   // "stale" when either one changed in the meantime. Both are required; they decode as optional

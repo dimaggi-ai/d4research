@@ -30,6 +30,10 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("requires filesystem read permission for research notes", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.notesList)).toBe(AuthFilesystemReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.notesRead)).toBe(AuthFilesystemReadScope);
+  });
   it("context switching requires orchestration operate scope", () => {
     for (const method of [
       WS_METHODS.d4AgentNewSession,
@@ -591,3 +595,61 @@ it.effect(
       expect(actions).toBe(0);
     }).pipe(Effect.scoped),
 );
+
+describe("notes read authorization", () => {
+  const group = WsRpcGroup.omit(
+    ...[...WsRpcGroup.requests.keys()].filter(
+      (
+        tag,
+      ): tag is Exclude<
+        keyof typeof RPC_REQUIRED_SCOPES,
+        typeof WS_METHODS.notesList | typeof WS_METHODS.notesRead
+      > => tag !== WS_METHODS.notesList && tag !== WS_METHODS.notesRead,
+    ),
+  );
+  it.effect.each([
+    { scopes: [AuthOrchestrationReadScope], allowed: false },
+    { scopes: [AuthFilesystemReadScope], allowed: true },
+  ])("checks filesystem access before reading artifacts ($allowed)", ({ scopes, allowed }) =>
+    Effect.gen(function* () {
+      const handled: string[] = [];
+      const client = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayerHandler(WS_METHODS.notesList, () =>
+              Effect.sync(() => {
+                handled.push("list");
+                return { folder: "", folderStatus: "disabled" as const, entries: [], error: null };
+              }),
+            ),
+            group.toLayerHandler(WS_METHODS.notesRead, () =>
+              Effect.sync(() => {
+                handled.push("read");
+                return { artifact: "note.md", text: "Note", totalChars: 4, nextOffset: null };
+              }),
+            ),
+            RpcAuthorization.layer(scopes),
+          ),
+        ),
+      );
+      const threadId = ThreadId.make("notes-thread");
+      if (allowed) {
+        yield* client[WS_METHODS.notesList]({ threadId });
+        yield* client[WS_METHODS.notesRead]({ threadId, artifact: "note.md", offset: 0 });
+        expect(handled).toEqual(["list", "read"]);
+      } else {
+        for (const result of [
+          yield* client[WS_METHODS.notesList]({ threadId }).pipe(Effect.flip),
+          yield* client[WS_METHODS.notesRead]({ threadId, artifact: "note.md", offset: 0 }).pipe(
+            Effect.flip,
+          ),
+        ])
+          expect(result).toMatchObject({
+            _tag: "EnvironmentAuthorizationError",
+            requiredPermission: AuthFilesystemReadScope,
+          });
+        expect(handled).toEqual([]);
+      }
+    }).pipe(Effect.scoped),
+  );
+});

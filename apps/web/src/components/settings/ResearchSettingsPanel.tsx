@@ -1,14 +1,23 @@
+import { AuthSettingsWriteScope } from "@d4research/contracts";
+import { useEnvironmentScope } from "../../state/session";
+import { useSettingsScope } from "./SettingsScopeContext";
+import { DraftInput } from "../ui/draft-input";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef, useState } from "react";
 import { EyeIcon, PaperclipIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import type { ResearchPromptFile, ResearchScenario } from "@d4research/contracts";
+import type { EnvironmentId, ResearchPromptFile, ResearchScenario } from "@d4research/contracts";
 import {
   RESEARCH_PIPELINE_PROMPT_MAX_CHARS,
   RESEARCH_PROMPT_FILE_MAX_COUNT,
   RESEARCH_SCENARIO_MAX_COUNT,
   RESEARCH_SCENARIO_NAME_REGEX,
 } from "@d4research/contracts";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import {
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+  usePrimarySettings,
+  useUpdatePrimarySettings,
+} from "../../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -149,6 +158,7 @@ export function ResearchSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <NotesFolderSettings />
       <SettingsSection {...searchableSetting("research-pipeline")}>
         <SettingsRow
           {...searchableSetting("research-scenario")}
@@ -447,5 +457,42 @@ export function ResearchSettingsPanel() {
         </DialogContent>
       </Dialog>
     </SettingsPageContainer>
+  );
+}
+
+function NotesFolderSettings() {
+  const { target } = useSettingsScope();
+  return (
+    <SettingsSection title="Notes">
+      {target ? (
+        <NotesFolderRow key={target.environmentId} environmentId={target.environmentId} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Select a connected environment to set its Notes folder.
+        </p>
+      )}
+    </SettingsSection>
+  );
+}
+
+function NotesFolderRow({ environmentId }: { environmentId: EnvironmentId }) {
+  const folder = useEnvironmentSettings(environmentId).research.notesFolder;
+  const update = useUpdateEnvironmentSettings(environmentId);
+  const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  return (
+    <SettingsRow
+      {...searchableSetting("research-notes-folder")}
+      description="Folder on this environment for exported research notes. Leave empty to use D4RESEARCH_NOTES_DIR when set; if the variable is not set, export is disabled. Existing artifacts remain in their workspace."
+    >
+      <div className="mt-3 max-w-2xl pb-1">
+        <DraftInput
+          value={folder}
+          onCommit={(notesFolder) => update({ research: { notesFolder } })}
+          disabled={!canWrite}
+          aria-label="Notes folder"
+          placeholder="Absolute folder path"
+        />
+      </div>
+    </SettingsRow>
   );
 }

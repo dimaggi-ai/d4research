@@ -44,6 +44,16 @@ describe("supportsSharedSettingsSync", () => {
 });
 
 describe("splitSharedServerPatch", () => {
+  it("keeps the research notes folder on its destination environment", () => {
+    const patch = { research: { notesFolder: "/notes/research" } };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: {}, localPatch: patch });
+    expect(
+      pickSharedServerSettings({
+        ...DEFAULT_SERVER_SETTINGS,
+        research: { ...DEFAULT_SERVER_SETTINGS.research, notesFolder: "/notes/research" },
+      }),
+    ).not.toHaveProperty("research");
+  });
   it("keeps project overrides local: project ids belong to one environment", () => {
     const patch = {
       projectSettingsOverrides: { [ProjectId.make("project")]: { defaultAutoPull: true } },

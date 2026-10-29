@@ -82,10 +82,12 @@ it.effect.each(
       Effect.gen(function* () {
         const service = Context.get(yield* build, ScheduledTaskService.ScheduledTaskService);
         const task = (yield* service.upsert(input)).task;
+        assert.equal((yield* service.list()).tasks[0]?.lastRunThreadId, null);
         const dispatched = (yield* service.runNow({ id: task.id })).task;
         assert.equal(dispatched.lastRunStatus, "running");
         assert.equal(dispatched.runCount, 0);
         assert.equal((yield* service.list()).tasks[0]?.lastRunStatus, "running");
+        assert.equal((yield* service.list()).tasks[0]?.lastRunThreadId, "thread:scheduled");
         const overlap = yield* Effect.result(service.runNow({ id: task.id }));
         assert.equal(overlap._tag, "Failure");
         if (recovery === "queued-restart" || recovery === "unattached-restart") {

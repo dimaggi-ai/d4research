@@ -78,9 +78,19 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
       budget: input.mode === "direct" ? Number.MAX_SAFE_INTEGER : budget,
     });
     let smartCompacted = false;
-    if (input.mode === "smart" && input.compact && messages.length > 0) {
-      const maxCharacters = Math.floor((budget - historyCost([], fullCoverage) - 1_024) / 8);
-      if (maxCharacters <= 0) return yield* new ContextHandoffBudgetError();
+    if (
+      input.compact &&
+      (messages.length > 0 || oldContext !== "") &&
+      (input.mode === "smart" ||
+        (input.mode === "direct" && historyCost(selected.messages, selected.context) > budget))
+    ) {
+      const maxCharacters = Math.floor((budget - historyCost([], coverage) - 1_024) / 8);
+      if (maxCharacters <= 0) {
+        if (input.deferInline) return { context: "", delivered: Effect.void, unsent: Effect.void };
+        return yield* new ContextHandoffBudgetError();
+      }
+      if (input.mode === "direct")
+        yield* Effect.logInfo("handoff.budget.recovery", { strategy: "smart", budget });
       const originalTaskIndex = messages.findIndex((entry) => entry.role === "user");
       const transcript = messages
         .map(
@@ -92,11 +102,14 @@ export const deliverContextHandoffs = Effect.fn("orchestrationV2.deliverContextH
             }: ${message.text}`,
         )
         .join("\n\n");
-      const summary = yield* input.compact(transcript, maxCharacters);
+      const summary = yield* input.compact(
+        [oldContext, transcript].filter(Boolean).join("\n\n"),
+        maxCharacters,
+      );
       smartCompacted = true;
       selected = {
         messages: [],
-        context: `${fullCoverage}\nSmart compaction of ${messages.length} historical items:\n${summary}`,
+        context: `${coverage}\nSmart compaction of ${messages.length} historical items:\n${summary}`,
         omittedItems: messages.length,
         omittedItemIds: messages.map((message) => message.itemId),
       };

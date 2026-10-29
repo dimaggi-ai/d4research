@@ -164,6 +164,7 @@ import {
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
+import { ComposerFooter } from "./ComposerFooter";
 import {
   ComposerBannerStack,
   type ComposerBannerStackContent,
@@ -7489,8 +7490,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             />
 
             {isComposerCollapsedMobile || isComposerApprovalState ? null : (
-              <div
-                data-chat-composer-footer="true"
+              <ComposerFooter.Root
                 data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
                 className={cn(
                   "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
@@ -7503,26 +7503,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (showInlineRestingControls ? "bottom-[calc(2rem+1px)]" : "bottom-px"),
                 )}
               >
-                <div
+                <ComposerFooter.Controls
                   ref={attachExpandedComposerControls}
-                  data-chat-composer-controls="left"
-                  data-chat-composer-footer-controls="true"
                   className={cn(
                     "relative -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                     isComposerResting && "hidden",
                   )}
                 >
                   {composerControlsCollapsed ? null : composerControls}
-                </div>
+                </ComposerFooter.Controls>
 
-                <div
+                <ComposerFooter.Actions
                   ref={setRestingActionsElement}
-                  data-chat-composer-actions="right"
                   data-chat-composer-transition-actions="true"
                   data-chat-composer-primary-actions-compact={
                     isComposerPrimaryActionsCompact ? "true" : "false"
                   }
-                  className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
                   {showComposerAttachAction ? (
                     <>
@@ -7620,8 +7616,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       ? { onCompactContext: compactThreadContextStable }
                       : {})}
                   />
-                </div>
-              </div>
+                </ComposerFooter.Actions>
+              </ComposerFooter.Root>
             )}
             {showInlineRestingControls ? (
               <div className="h-8">

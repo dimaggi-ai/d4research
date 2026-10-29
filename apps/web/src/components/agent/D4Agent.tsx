@@ -1,3 +1,5 @@
+import { d4ActionFailureMessage } from "@d4research/client-runtime/d4-agent-action-feedback";
+import { squashAtomCommandFailure } from "@d4research/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { waitForD4AgentThreadShell } from "@d4research/client-runtime/state/server";
 import { environmentThreadShells } from "../../state/threads";
@@ -16,6 +18,7 @@ import {
   niaPresence,
 } from "./d4AgentPresentation";
 import { NiaAvatar } from "./NiaAvatar";
+import { routineScheduleLabel } from "./niaRoutines.logic";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@d4research/client-runtime/environment";
 import {
@@ -33,7 +36,12 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { useSidebarVisibility } from "../ui/sidebar";
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebarVisibility,
+} from "../ui/sidebar";
 
 function waitForAgentThread(environmentId: EnvironmentId, threadId: ThreadId) {
   return Effect.runPromise(
@@ -50,7 +58,7 @@ export function D4AgentEntries({ children }: { children?: ReactNode }) {
   if (!visible) return children;
   return (
     <>
-      <div className="space-y-1 px-2 pb-2">
+      <SidebarMenu>
         {environments.map((environment) => (
           <D4AgentEntry
             key={environment.environmentId}
@@ -58,7 +66,7 @@ export function D4AgentEntries({ children }: { children?: ReactNode }) {
             label={environments.length > 1 ? environment.label : null}
           />
         ))}
-      </div>
+      </SidebarMenu>
       {children}
     </>
   );
@@ -95,11 +103,9 @@ export function D4AgentEntry({
       )
     : undefined;
   return (
-    <div className="rounded-lg border border-primary/25 bg-primary/5">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start"
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        tooltip="Nia"
         disabled={
           !config ||
           opening ||
@@ -142,14 +148,14 @@ export function D4AgentEntry({
         }}
       >
         <NiaAvatar presence={presence} className="size-5" />
-        {`Nia${label ? ` · ${label}` : ""}`}
-      </Button>
+        <span>{`Nia${label ? ` · ${label}` : ""}`}</span>
+      </SidebarMenuButton>
       {error ? (
         <p role="alert" className="px-2 text-xs text-destructive">
           Could not open Nia. Check that it is enabled with an available model in Settings.
         </p>
       ) : null}
-    </div>
+    </SidebarMenuItem>
   );
 }
 type AgentPanelLayout = (parts: { approvals: ReactNode; details: ReactNode }) => ReactNode;
@@ -204,6 +210,12 @@ function D4AgentPanelContent({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const resolving = useRef(false);
+  const [decisionState, setDecisionState] = useState<{
+    id: string;
+    message: string;
+    error: boolean;
+  } | null>(null);
   const state = query.data;
   if (!available || !state || state.threadId !== threadId)
     return render ? render({ approvals: null, details: null }) : null;
@@ -263,6 +275,7 @@ function D4AgentPanelContent({
     proposals.some((proposal) => proposal.status !== "rejected") ||
     !state.modelAvailable ||
     actionError ||
+    decisionState?.error ||
     query.error;
   const approvals = hasApprovals ? (
     <section
@@ -360,25 +373,53 @@ function D4AgentPanelContent({
               record={record}
               allowed={allowed}
               busy={busy !== null}
+              onRefresh={query.refresh}
+              feedback={decisionState?.id === record.id ? decisionState : null}
               onResolve={async (decision, options) => {
+                if (resolving.current) return;
+                resolving.current = true;
                 setBusy(record.id);
-                setActionError(null);
-                await resolve({
-                  environmentId,
-                  input: { actionId: record.id, decision, ...options },
-                })
-                  .then((result) => {
-                    if (result._tag === "Failure")
-                      setActionError("This action failed. History shows why.");
-                    query.refresh();
-                  })
-                  .catch(() => setActionError("Could not resolve this action."))
-                  .finally(() => setBusy(null));
+                setDecisionState({
+                  id: record.id,
+                  message: decision === "approve" ? "Approving…" : "Denying…",
+                  error: false,
+                });
+                try {
+                  const result = await resolve({
+                    environmentId,
+                    input: { actionId: record.id, decision, ...options },
+                  });
+                  setDecisionState(
+                    result._tag === "Failure"
+                      ? {
+                          id: record.id,
+                          message: d4ActionFailureMessage(squashAtomCommandFailure(result)),
+                          error: true,
+                        }
+                      : null,
+                  );
+                } catch {
+                  setDecisionState({
+                    id: record.id,
+                    message: d4ActionFailureMessage(null),
+                    error: true,
+                  });
+                } finally {
+                  resolving.current = false;
+                  setBusy(null);
+                  query.refresh();
+                }
               }}
             />
           ))}
       </div>
       {actionError ? <p role="alert">{actionError}</p> : null}
+      {decisionState?.error &&
+      !state.actionLog.some(
+        (record) => record.id === decisionState.id && record.status === "pending",
+      ) ? (
+        <p role="alert">{decisionState.message}</p>
+      ) : null}
       {query.error ? <p role="alert">{query.error}</p> : null}
     </section>
   ) : null;
@@ -398,11 +439,15 @@ function AgentActionRecord({
   allowed,
   busy,
   onResolve,
+  feedback,
+  onRefresh,
 }: {
   environmentId: EnvironmentId;
   record: D4AgentActionSummary;
   allowed: boolean;
   busy: boolean;
+  onRefresh?: () => void;
+  feedback?: { message: string; error: boolean } | null;
   onResolve: (
     decision: "approve" | "deny",
     options?: { editedText?: string; sendOriginal?: boolean },
@@ -458,7 +503,9 @@ function AgentActionRecord({
     detail.data &&
     (detail.data.action.type === "research" ||
       detail.data.action.type === "pipeline" ||
-      detail.data.action.type === "start")
+      detail.data.action.type === "start" ||
+      detail.data.action.type === "schedule" ||
+      detail.data.action.type === "prepare-routine")
       ? detail.data.action
       : null;
   return (
@@ -518,6 +565,35 @@ function AgentActionRecord({
           </Button>
         </div>
       ) : null}
+      {feedback ? <p role={feedback.error ? "alert" : "status"}>{feedback.message}</p> : null}
+      {pending && !allowed ? (
+        <p role="alert">This connection cannot approve or deny actions.</p>
+      ) : null}
+      {pending && allowed && !detail.data && detail.isPending && !detail.error ? (
+        <p role="status">Loading action details…</p>
+      ) : null}
+      {pending && detail.data && detail.data.status !== "pending" ? (
+        <p role="status">This action is no longer pending. Refresh its status.</p>
+      ) : null}
+      {pending && !detail.data && detail.isSuccess ? (
+        <p role="status">This action is no longer pending or available. Refresh its status.</p>
+      ) : null}
+      {pending &&
+      (feedback?.error ||
+        detail.error ||
+        (detail.isSuccess && (!detail.data || detail.data.status !== "pending"))) ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            detail.refresh();
+            onRefresh?.();
+          }}
+        >
+          Refresh status
+        </Button>
+      ) : null}
       {heading.detail && !(open && (sendAction || launchAction)) ? (
         <p className="whitespace-pre-wrap break-words text-muted-foreground">
           {(pending ? fullText : null) ?? heading.detail}
@@ -553,12 +629,22 @@ function AgentActionRecord({
           <p className="text-xs text-muted-foreground">
             Target project · {project?.title ?? launchAction.projectId}
           </p>
-          {launchAction.type !== "start" ? (
+          {"pipelineId" in launchAction && launchAction.pipelineId ? (
             <p className="text-xs text-muted-foreground">Pipeline · {launchAction.pipelineId}</p>
           ) : null}
           <p className="text-xs text-muted-foreground">
             Model · {launchAction.modelSelection.instanceId} / {launchAction.modelSelection.model}
           </p>
+          {launchAction.modelSelection.options?.map((option) => (
+            <p key={option.id} className="text-xs text-muted-foreground">
+              Task model option · {option.id}: {String(option.value)}
+            </p>
+          ))}
+          {"schedule" in launchAction ? (
+            <p className="text-xs text-muted-foreground">
+              Schedule · {routineScheduleLabel(launchAction.schedule)}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">Final prompt</p>
           <p className="whitespace-pre-wrap break-words">{launchAction.text}</p>
         </div>

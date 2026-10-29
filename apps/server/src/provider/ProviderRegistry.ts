@@ -159,6 +159,11 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
       provider.auth.status === "authenticated"
     );
   }
+  if (provider.driver === ProviderDriverKind.make("claudeAgent")) {
+    // A healthy Claude snapshot has the authoritative catalog for its configured endpoint.
+    // This is required when a local Anthropic-compatible gateway replaces Claude aliases.
+    return !(provider.installed && provider.status === "ready");
+  }
   const isAntigravity = provider.driver === ProviderDriverKind.make("antigravity");
   const isCodex = provider.driver === ProviderDriverKind.make("codex");
   if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {
@@ -194,8 +199,11 @@ const mergeProviderModels = (
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
   const updateRequiredSlugs = new Set(provider.updateRequiredModels?.map((model) => model.slug));
+  const retainClaudeEndpointModels =
+    provider.driver === ProviderDriverKind.make("claudeAgent") && shouldRetainMissingModels;
   const retainablePreviousModels = previousModels.filter(
-    (model) => !model.isCustom && !updateRequiredSlugs.has(model.slug),
+    (model) =>
+      (retainClaudeEndpointModels || !model.isCustom) && !updateRequiredSlugs.has(model.slug),
   );
 
   if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {

@@ -1447,6 +1447,8 @@ export const STARTER_RESEARCH_SCENARIO: ResearchScenario = {
  * `bypassCompression`/`shareMemoContext` are global across scenarios.
  */
 export const ResearchSettings = Schema.Struct({
+  /** Environment-local export destination; empty uses the environment default. */
+  notesFolder: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   scenarios: Schema.Array(ResearchScenario)
     .check(Schema.isMaxLength(RESEARCH_SCENARIO_MAX_COUNT))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
@@ -2411,6 +2413,7 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   research: Schema.optionalKey(
     Schema.Struct({
+      notesFolder: Schema.optionalKey(TrimmedString),
       // Whole-array replacement for scenarios and prompt files: the lists are
       // small and ordered; per-index patches would risk half-merged edits.
       scenarios: Schema.optionalKey(

@@ -159,6 +159,7 @@ interface ScheduledTaskRow {
   readonly schedule_json: string;
   readonly project_id: string;
   readonly thread_id: string | null;
+  readonly last_run_thread_id?: string | null;
   readonly workspace_strategy_json: string;
   readonly model_selection_json: string;
   readonly runtime_mode: string;
@@ -317,6 +318,7 @@ const decodeRow = (row: ScheduledTaskRow, origin: WebhookOrigin | null = null) =
       updatedAt: row.updated_at,
       nextRunAt: row.next_run_at,
       lastRunAt: row.last_run_at,
+      lastRunThreadId: row.last_run_thread_id ?? null,
       lastRunStatus: row.last_run_status,
       lastRunError: row.last_run_error,
       runCount: row.run_count,
@@ -415,7 +417,9 @@ export const layer = Layer.effect(
         last_run_error,
         run_count,
         webhook_token,
-        webhook_secret
+        webhook_secret,
+        (SELECT thread_id FROM orchestration_v2_projection_messages
+         WHERE message_id = scheduled_tasks.last_run_message_id) AS last_run_thread_id
       FROM scheduled_tasks
       ORDER BY updated_at DESC, task_id ASC
     `;

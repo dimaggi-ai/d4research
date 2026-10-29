@@ -1092,6 +1092,10 @@ export function createServerEnvironmentAtoms<R, E>(
     resolveD4AgentAction: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:resolve-d4-agent-action",
       tag: WS_METHODS.d4AgentResolveAction,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.actionId}`,
+      },
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => registry.refresh(d4AgentState({ environmentId, input: {} }))),
     }),

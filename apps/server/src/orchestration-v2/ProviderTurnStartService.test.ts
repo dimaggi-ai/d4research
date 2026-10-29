@@ -33,6 +33,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import * as D4AgentContext from "../d4Agent/D4AgentContext.ts";
 import * as SecondBrain from "../second-brain/SecondBrainService.ts";
@@ -548,6 +549,7 @@ function makeLocalCommandHarness(input: {
     }),
   );
   const nativeSession = {
+    events: Stream.empty,
     driver: providerThread.driver,
     providerSession: {
       id: providerSessionId,
@@ -589,6 +591,7 @@ function makeLocalCommandHarness(input: {
               ? Effect.succeed(nativeSession as never)
               : input.failReadsAfterRunning === true
                 ? Effect.succeed({
+                    events: Stream.empty,
                     driver: providerThread.driver,
                     providerSession: {
                       id: providerSessionId,

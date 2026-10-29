@@ -3,9 +3,6 @@ import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { useAssetUrl } from "../../assets/assetUrls";
 import { useEnvironmentQuery } from "../../state/query";
 import { useThreadShell } from "../../state/entities";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
-import { isElectron } from "../../env";
-import { cn } from "../../lib/utils";
 import {
   type ChatAttachment,
   type D4AgentState,
@@ -14,7 +11,7 @@ import {
 } from "@d4research/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { serverEnvironment } from "../../state/server";
 import ChatMarkdown from "../ChatMarkdown";
 import { shouldPreserveAssistantLineBreaks } from "@d4research/shared/markdownPipeline";
@@ -40,12 +37,17 @@ import {
   WorkspaceBreadcrumbText,
 } from "../WorkspaceBreadcrumb";
 import {
+  AssistantMessageBody,
   CollapsibleUserMessageBody,
   UserMessageMeta,
   AssistantMessageMeta,
+  UserMessageBubble,
 } from "../chat/MessagePresentation";
 import { MessageCopyButton } from "../chat/MessageCopyButton";
-import { ChevronDownIcon } from "lucide-react";
+import { ChatCanvas } from "../chat/ChatCanvas";
+import { ChatScrollToEndButton } from "../chat/ChatScrollToEndButton";
+import { ChatWorkspaceHeader } from "../chat/ChatWorkspaceHeader";
+import { NiaRoutines } from "./NiaRoutines";
 import { D4AgentComposer } from "./D4AgentComposer";
 
 export function D4AgentRoute({
@@ -121,6 +123,11 @@ export function D4AgentChat({
   const transcript = (state.transcript ?? []).filter((entry) => !isSessionNotice(entry));
   const conversation = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
+  const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLElement | null>(null);
+  const registerComposer = useCallback((node: HTMLDivElement | null) => {
+    composer.current = node;
+    setComposerOverlayElement(node);
+  }, []);
   const [composerInset, setComposerInset] = useState(0);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
   useLayoutEffect(() => {
@@ -160,16 +167,7 @@ export function D4AgentChat({
           aria-label="Nia chat"
           className="flex h-full min-h-0 min-w-0 flex-col overflow-x-hidden bg-background"
         >
-          <header
-            data-chat-header
-            className={cn(
-              "relative flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center justify-between bg-background",
-              isElectron
-                ? "drag-region px-3 sm:px-5 wco:pr-(--workspace-native-controls-inset)"
-                : "pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
+          <ChatWorkspaceHeader className="justify-between">
             <WorkspaceBreadcrumb ariaLabel="Active thread">
               <WorkspaceBreadcrumbItem current>
                 <span className="mr-2">
@@ -178,8 +176,9 @@ export function D4AgentChat({
                 <WorkspaceBreadcrumbText>Nia</WorkspaceBreadcrumbText>
               </WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
-          </header>
-          <div data-chat-canvas className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <NiaRoutines environmentId={environmentId} state={state} />
+          </ChatWorkspaceHeader>
+          <ChatCanvas composerOverlayElement={composerOverlayElement}>
             <div
               ref={conversation}
               onScroll={(event) => {
@@ -245,7 +244,7 @@ export function D4AgentChat({
                   );
                   return entry.role === "user" ? (
                     <article key={entry.id} className="group flex flex-col items-end gap-1 pb-3">
-                      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+                      <UserMessageBubble>
                         <h3 className="sr-only select-none">You</h3>
                         {extras}
                         <CollapsibleUserMessageBody
@@ -254,7 +253,7 @@ export function D4AgentChat({
                           markdownCwd={undefined}
                           environmentId={environmentId}
                         />
-                      </div>
+                      </UserMessageBubble>
                       <UserMessageMeta
                         createdAt={entry.createdAt}
                         timestampFormat={settings.timestampFormat}
@@ -263,26 +262,32 @@ export function D4AgentChat({
                       </UserMessageMeta>
                     </article>
                   ) : entry.role === "assistant" ? (
-                    <article key={entry.id} className="group/assistant min-w-0 px-1 py-0.5 pb-4">
-                      <h3 className="sr-only select-none">Nia</h3>
-                      {/* Nia quotes other threads, so their HTML is shown as text, never rendered. */}
-                      <ChatMarkdown
-                        headingLevelOffset={3}
-                        text={entry.text}
-                        cwd={undefined}
-                        environmentId={environmentId}
-                        lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
-                        parseRawHtml={false}
-                      />
-                      {extras}
-                      <AssistantMessageMeta
-                        className="mt-1.5"
-                        message={{ text: entry.text, updatedAt: entry.createdAt, streaming: false }}
-                        timestampFormat={settings.timestampFormat}
-                        showCopyButton
-                        copyStreaming={false}
-                        alwaysVisible
-                      />
+                    <article key={entry.id} className="group/assistant min-w-0 pb-4">
+                      <AssistantMessageBody>
+                        <h3 className="sr-only select-none">Nia</h3>
+                        {/* Nia quotes other threads, so their HTML is shown as text, never rendered. */}
+                        <ChatMarkdown
+                          headingLevelOffset={3}
+                          text={entry.text}
+                          cwd={undefined}
+                          environmentId={environmentId}
+                          lineBreaks={shouldPreserveAssistantLineBreaks(entry.text)}
+                          parseRawHtml={false}
+                        />
+                        {extras}
+                        <AssistantMessageMeta
+                          className="mt-1.5"
+                          message={{
+                            text: entry.text,
+                            updatedAt: entry.createdAt,
+                            streaming: false,
+                          }}
+                          timestampFormat={settings.timestampFormat}
+                          showCopyButton
+                          copyStreaming={false}
+                          alwaysVisible
+                        />
+                      </AssistantMessageBody>
                     </article>
                   ) : (
                     <article key={entry.id} className="pb-4">
@@ -332,28 +337,19 @@ export function D4AgentChat({
               </div>
             </div>
             {showScrollToEnd ? (
-              <div
-                className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
-                style={{ bottom: composerInset + 4 }}
-              >
-                <button
-                  type="button"
-                  aria-label="Scroll to end"
-                  className="bg-background pointer-events-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground shadow-sm hover:border-border hover:text-foreground"
-                  onClick={() => {
-                    const node = conversation.current;
-                    if (node) node.scrollTop = node.scrollHeight;
-                    followConversation.current = true;
-                    setShowScrollToEnd(false);
-                  }}
-                >
-                  <ChevronDownIcon className="size-3.5" />
-                  Scroll to end
-                </button>
-              </div>
+              <ChatScrollToEndButton
+                bottom={composerInset + 4}
+                onClick={() => {
+                  const node = conversation.current;
+                  if (node) node.scrollTop = node.scrollHeight;
+                  followConversation.current = true;
+                  setShowScrollToEnd(false);
+                }}
+              />
             ) : null}
             <div
-              ref={composer}
+              ref={registerComposer}
+              data-chat-composer-overlay="true"
               className="chat-composer-lane pointer-events-none absolute inset-x-0 bottom-0 z-20 pb-3 sm:pb-4"
             >
               <div className="pointer-events-auto mx-auto w-full max-w-(--chat-content-max-width)">
@@ -368,7 +364,7 @@ export function D4AgentChat({
                 />
               </div>
             </div>
-          </div>
+          </ChatCanvas>
         </section>
       )}
     />

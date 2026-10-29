@@ -446,6 +446,10 @@
     "./d4-agent-references": {
       "types": "./src/d4AgentReferences.ts",
       "default": "./src/d4AgentReferences.ts"
+    },
+    "./d4-agent-action-feedback": {
+      "types": "./src/d4AgentActionFeedback.ts",
+      "default": "./src/d4AgentActionFeedback.ts"
     }
   },
   "scripts": {

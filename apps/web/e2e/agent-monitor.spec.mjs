@@ -154,9 +154,39 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
   }, previousModelLabel);
   await page.locator("[data-model-picker-content]").waitFor({ state: "hidden" });
   const composerModelLabel = await composerPicker.innerText();
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 820, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await chat.getByRole("textbox", { name: "Message Nia", exact: true }).waitFor();
+    const taskPicker = chat.getByRole("button", { name: "Nia task model", exact: true });
+    const taskPickerBounds = await taskPicker.boundingBox();
+    NodeAssert.ok(
+      taskPickerBounds &&
+        taskPickerBounds.x >= 0 &&
+        taskPickerBounds.x + taskPickerBounds.width <= width,
+    );
+    NodeAssert.ok(taskPickerBounds.width >= 128);
+    NodeAssert.ok((await taskPicker.innerText()).trim().length > 0);
+    if (width === 390) {
+      NodeAssert.equal((await taskPicker.innerText()).trim(), "Choose task model");
+      await page.screenshot({
+        path: NodePath.join(screenshotDir, "nia-composer-390-null-task.png"),
+      });
+    }
+    await taskPicker.click();
+    await page.locator("[data-model-picker-content]").waitFor();
+    if (width === 390) {
+      await page
+        .locator("[data-model-picker-content]")
+        .getByRole("option")
+        .and(page.locator(':not([aria-disabled="true"]):not([aria-expanded])'))
+        .first()
+        .click();
+      NodeAssert.notEqual((await taskPicker.innerText()).trim(), "Choose task model");
+      NodeAssert.ok((await taskPicker.innerText()).trim().length > 0);
+    } else {
+      await page.keyboard.press("Escape");
+    }
+    await page.locator("[data-model-picker-content]").waitFor({ state: "hidden" });
     const attachBounds = await chat
       .getByRole("button", { name: "Attach files", exact: true })
       .boundingBox();
@@ -164,6 +194,13 @@ export async function agentMonitorSettings({ page, app, screenshotDir }) {
       attachBounds && attachBounds.x >= 0 && attachBounds.x + attachBounds.width <= width,
     );
     await page.screenshot({ path: NodePath.join(screenshotDir, `nia-composer-${width}.png`) });
+    await chat.getByRole("button", { name: "Open routines", exact: true }).click();
+    const routines = page.getByRole("dialog").filter({ hasText: "Scheduled jobs" });
+    await routines.waitFor();
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: NodePath.join(screenshotDir, `nia-routines-${width}.png`) });
+    await routines.getByRole("button", { name: "Close", exact: true }).click();
+    await routines.waitFor({ state: "hidden" });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   console.log(

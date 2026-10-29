@@ -1,4 +1,5 @@
 import { agentMonitorSettings } from "./agent-monitor.spec.mjs";
+import { notesFlows } from "./notes.spec.mjs";
 import { handoffSettings } from "./handoff-settings.spec.mjs";
 import { createPairingUrl } from "./harness.mjs";
 import { branding, onboardingBranding } from "./branding.spec.mjs";
@@ -42,4 +43,5 @@ await runProductionBrowserSuite([
   { name: "single-reconnect-banner", run: reconnectBanner },
   { name: "sidebar-footer-surface", run: authenticated(sidebarFooterSurface) },
   { name: "onboarding-d4-branding", run: authenticated(onboardingBranding) },
+  { name: "notes-settings-and-artifacts", run: notesFlows },
 ]);

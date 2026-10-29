@@ -72,6 +72,7 @@ import {
   restoreHandoffHistory,
   latestNativeContextUsage,
 } from "@d4research/provider-core/server/handoffBudget";
+import { makeHandoffCompactionRecovery } from "./HandoffCompactionRecovery.ts";
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
 import * as ProviderAdapter from "@d4research/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@d4research/provider-core/server/IdAllocator";
@@ -1428,6 +1429,8 @@ export const layer: Layer.Layer<
               ),
             );
       const brainText = brainContext ? SecondBrainService.formatTurnContext(brainContext) : "";
+      const recovery = makeHandoffCompactionRecovery(session);
+      let recoveredNativeContext = false;
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1482,73 +1485,104 @@ export const layer: Layer.Layer<
                 .slice(0, 60_000),
             );
           }
-          const delivery = yield* deliverContextHandoffs({
-            handoffs: deliveryHandoffs,
-            mode: compression.mode,
-            compact: (transcript, maxCharacters) =>
-              compressHandoffContextLocal({
-                transcript,
-                task: userText,
-                model: compression.localModel,
-                judgeModel: compression.judgeModel || compression.localModel,
-                ...(compression.judgeBaseUrl ? { judgeBaseUrl: compression.judgeBaseUrl } : {}),
-                ...(compression.secondaryJudgeModel && compression.secondaryJudgeBaseUrl
-                  ? {
-                      secondaryJudge: {
-                        model: compression.secondaryJudgeModel,
-                        baseUrl: compression.secondaryJudgeBaseUrl,
-                      },
-                    }
-                  : {}),
-                maxInputCharacters: compression.maxInputCharacters,
-                maxOutputCharacters: Math.min(maxCharacters, compression.maxOutputCharacters),
-                customPrompt: compression.customPrompt,
-              }),
-            deferInline: compact,
-            providerThread: runningProviderThread,
-            budget: Effect.gen(function* () {
-              return handoffBudget({
-                tokenCap: compression.mode === "direct" ? Number.MAX_SAFE_INTEGER : tokenCap,
-                modelContextWindow,
-                userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
-                attachments: message.attachments,
-                providerThread: budgetProviderThread,
-                nativeContextEstimate:
-                  budgetProviderThread.contextUsage?.usedTokens === undefined
-                    ? yield* nativeContextEstimate
-                    : 0,
-              });
-            }),
-            alreadyDeliveredItemIds: deliveredItemIds,
-            ...(session.injectHistory === undefined
-              ? {}
-              : {
-                  inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
-                    session.injectHistory!({
-                      providerThread: runningProviderThread,
-                      ...history,
-                    }),
+          const deliver = () =>
+            deliverContextHandoffs({
+              handoffs: deliveryHandoffs,
+              mode: compression.mode,
+              compact: (transcript, maxCharacters) =>
+                compressHandoffContextLocal({
+                  transcript,
+                  task: userText,
+                  model: compression.localModel,
+                  judgeModel: compression.judgeModel || compression.localModel,
+                  ...(compression.judgeBaseUrl ? { judgeBaseUrl: compression.judgeBaseUrl } : {}),
+                  ...(compression.secondaryJudgeModel && compression.secondaryJudgeBaseUrl
+                    ? {
+                        secondaryJudge: {
+                          model: compression.secondaryJudgeModel,
+                          baseUrl: compression.secondaryJudgeBaseUrl,
+                        },
+                      }
+                    : {}),
+                  maxInputCharacters: compression.maxInputCharacters,
+                  maxOutputCharacters: Math.min(maxCharacters, compression.maxOutputCharacters),
+                  customPrompt: compression.customPrompt,
                 }),
-            persist: (handoff) =>
-              Effect.gen(function* () {
-                const updatedAt = yield* DateTime.now;
-                yield* eventSink.write({
-                  events: [
-                    {
-                      id: yield* idAllocator.allocate.event({
-                        threadId: projection.thread.id,
-                      }),
-                      type: "context-handoff.updated",
-                      threadId: projection.thread.id,
-                      runId: run.id,
-                      providerInstanceId: run.providerInstanceId,
-                      occurredAt: updatedAt,
-                      payload: { ...handoff, updatedAt },
-                    },
-                  ],
+              deferInline: compact,
+              providerThread: runningProviderThread,
+              budget: Effect.gen(function* () {
+                return handoffBudget({
+                  tokenCap: compression.mode === "direct" ? Number.MAX_SAFE_INTEGER : tokenCap,
+                  modelContextWindow,
+                  userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                  attachments: message.attachments,
+                  providerThread: budgetProviderThread,
+                  nativeContextEstimate:
+                    budgetProviderThread.contextUsage?.usedTokens === undefined
+                      ? yield* nativeContextEstimate
+                      : 0,
                 });
               }),
-          });
+              alreadyDeliveredItemIds: deliveredItemIds,
+              ...(session.injectHistory === undefined
+                ? {}
+                : {
+                    inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
+                      session.injectHistory!({
+                        providerThread: runningProviderThread,
+                        ...history,
+                      }),
+                  }),
+              persist: (handoff) =>
+                Effect.gen(function* () {
+                  const updatedAt = yield* DateTime.now;
+                  yield* eventSink.write({
+                    events: [
+                      {
+                        id: yield* idAllocator.allocate.event({
+                          threadId: projection.thread.id,
+                        }),
+                        type: "context-handoff.updated",
+                        threadId: projection.thread.id,
+                        runId: run.id,
+                        providerInstanceId: run.providerInstanceId,
+                        occurredAt: updatedAt,
+                        payload: { ...handoff, updatedAt },
+                      },
+                    ],
+                  });
+                }),
+            });
+          const delivery = yield* deliver().pipe(
+            Effect.catchTags({
+              ContextHandoffBudgetError: (error) =>
+                Effect.gen(function* () {
+                  if (
+                    compact ||
+                    d4AgentPrefix !== null ||
+                    scopedAgentTask ||
+                    !nativeThreadHasTurns ||
+                    handoffBudget({
+                      tokenCap,
+                      modelContextWindow,
+                      userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                      attachments: message.attachments,
+                      providerThread: { ...budgetProviderThread, contextUsage: null },
+                      nativeContextEstimate: 0,
+                    }) === 0 ||
+                    !(yield* isCurrentAttemptInStatus("running"))
+                  )
+                    return yield* error;
+                  budgetProviderThread.contextUsage = yield* recovery.compact(turnInput);
+                  recoveredNativeContext = true;
+                  if (!(yield* isCurrentAttemptInStatus("running")))
+                    return { context: "", delivered: Effect.void, unsent: Effect.void };
+                  // Delivery rejected before any persistence/injection. Retry only this phase;
+                  // never retry startTurn, whose acknowledgement can be ambiguous.
+                  return yield* deliver();
+                }),
+            }),
+          );
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           if (
             session.providerSession.capabilities.context.requiresAppHistory &&
@@ -1571,6 +1605,9 @@ export const layer: Layer.Layer<
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
+            ...(recoveredNativeContext
+              ? { providerTurnOrdinal: turnInput.providerTurnOrdinal + 1 }
+              : {}),
             message: {
               ...turnInput.message,
               text:
@@ -1634,7 +1671,7 @@ export const layer: Layer.Layer<
         brainText === "" &&
         !noteContinuation
           ? session
-          : makeDeliverySession(session, startWithHandoffs);
+          : makeDeliverySession(recovery.session, startWithHandoffs);
       const mcpSession = yield* mcpProviderSessions.read(message.threadId);
       if (mcpSession !== undefined) {
         yield* setActiveMcpTurn(mcpSession.providerSessionId, TurnId.make(run.id));

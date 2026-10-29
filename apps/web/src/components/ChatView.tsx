@@ -54,6 +54,8 @@ import { useScratchProject } from "../hooks/useScratchProject";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import { ChatWorkspaceHeader } from "./chat/ChatWorkspaceHeader";
+import { ChatScrollToEndButton } from "./chat/ChatScrollToEndButton";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@d4research/client-runtime/state/projects";
@@ -9418,21 +9420,9 @@ function ChatViewContent(props: ChatViewProps) {
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
-        <header
+        <ChatWorkspaceHeader
           ref={threadPanelPopoverAnchorRef}
-          data-chat-header
-          className={cn(
-            "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-            isElectron
-              ? cn(
-                  "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
-                  reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
-                    "wco:pr-(--workspace-native-controls-inset)",
-                )
-              : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
+          reserveNativeControlsInset={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
         >
           {isElectron && rightPanelControlsAtRoot ? (
             <span
@@ -9458,7 +9448,7 @@ function ChatViewContent(props: ChatViewProps) {
               ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
               : {})}
           />
-        </header>
+        </ChatWorkspaceHeader>
         {isServerThread ? (
           <D4AgentPanel environmentId={activeThread.environmentId} threadId={activeThread.id} />
         ) : null}
@@ -9643,22 +9633,12 @@ function ChatViewContent(props: ChatViewProps) {
                   : { historyControls: threadHistoryControls })}
               />
 
-              {showScrollToBottom && !isThreadFindActive && (
-                <div
-                  className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
-                  style={{ bottom: scrollToEndClearance + 4 }}
-                >
-                  <button
-                    type="button"
-                    aria-label="Scroll to end"
-                    onClick={() => scrollToEnd(true)}
-                    className="chat-composer-glass pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
-                  >
-                    <ChevronDownIcon className="size-3.5" />
-                    Scroll to end
-                  </button>
-                </div>
-              )}
+              {showScrollToBottom && !isThreadFindActive ? (
+                <ChatScrollToEndButton
+                  bottom={scrollToEndClearance + 4}
+                  onClick={() => scrollToEnd(true)}
+                />
+              ) : null}
             </div>
 
             <div

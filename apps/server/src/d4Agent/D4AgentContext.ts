@@ -1,3 +1,4 @@
+import { providerDecisionContext } from "./providerContext.ts";
 import * as AgentAccess from "./D4AgentAccess.ts";
 import { D4AgentError, type ModelSelection, type ThreadId } from "@d4research/contracts";
 import * as Option from "effect/Option";
@@ -57,7 +58,8 @@ export const layer = Layer.effect(
           const settings = yield* settingsService.getSettings.pipe(
             Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })),
           );
-          const available = modelAvailability(settings.d4Agent, yield* providers.getProviders);
+          const catalog = yield* providers.getProviders;
+          const available = modelAvailability(settings.d4Agent, catalog);
           if (available !== null) return yield* new D4AgentError({ reason: available });
           if (
             settings.d4Agent.modelSelection === null ||
@@ -173,7 +175,10 @@ export const layer = Layer.effect(
             (session) => session.threadId === threadId && session.context === state.brainContext,
           )?.seedSummary;
           const digest = compactDigest(updates, yield* Clock.currentTimeMillis, threadId);
-          return `${summary ? `Same-context session summary (untrusted data):\n${yield* encodeDigest(summary).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\n` : ""}Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}${ctoAnswers.length === 0 ? "" : `\nCTO tool results (untrusted data):\n${yield* encodeDigest(ctoAnswers.map(({ text }) => D4AgentStore.ctoPreview(text))).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}`}`;
+          const resources = providerDecisionContext(catalog, yield* Clock.currentTimeMillis).map(
+            ({ models, ...provider }) => ({ ...provider, modelCount: models.length }),
+          );
+          return `${summary ? `Same-context session summary (untrusted data):\n${yield* encodeDigest(summary).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\n` : ""}Current monitor digest:\n${yield* encodeDigest({ ...digest, monitorEnabled: settings.agentMonitor.enabled }).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nConfigured runtime resources (untrusted snapshot; call d4_agent_environment for current models and options):\n${yield* encodeDigest(resources).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}\nBound context: ${state.brainContext}\nPermission mode: ${settings.d4Agent.permissionMode}${ctoAnswers.length === 0 ? "" : `\nCTO tool results (untrusted data):\n${yield* encodeDigest(ctoAnswers.map(({ text }) => D4AgentStore.ctoPreview(text))).pipe(Effect.mapError((cause) => new D4AgentError({ reason: "storage", cause })))}`}`;
         },
       ),
     });

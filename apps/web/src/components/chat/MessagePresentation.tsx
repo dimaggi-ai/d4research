@@ -16,6 +16,35 @@ import {
 
 export const MESSAGE_HEADING_LEVEL = 3;
 
+export function UserMessageBubble({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function AssistantMessageBody({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("relative min-w-0 px-1 py-0.5", className)}>{children}</div>;
+}
+
 export function UserMessageMeta({
   createdAt,
   timestampFormat,

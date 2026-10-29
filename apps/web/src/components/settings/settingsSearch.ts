@@ -970,6 +970,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/research",
   },
   {
+    id: "research-notes-folder",
+    title: "Notes folder",
+    searchTerms: ["export", "artifacts", "research", "folder"],
+    to: "/settings/research",
+  },
+  {
     id: "research-scenario",
     title: "Research scenarios",
     to: "/settings/research",

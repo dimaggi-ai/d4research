@@ -41,6 +41,7 @@ export interface ScopedPipeline {
   readonly name: string;
   readonly active: boolean;
   readonly projectId: ProjectId | null;
+  readonly modelSelection: ModelSelection | null;
 }
 export class D4AgentPipelines extends Context.Service<
   D4AgentPipelines,
@@ -83,7 +84,16 @@ const make = Effect.gen(function* () {
           : !projectActionInScope(context, config, projectId)
       )
         return [];
-      return [{ pipelineId, kind: entry.kind, name: entry.name, active: entry.active, projectId }];
+      return [
+        {
+          pipelineId,
+          kind: entry.kind,
+          name: entry.name,
+          active: entry.active,
+          projectId,
+          modelSelection: config.taskModelSelection,
+        },
+      ];
     });
   });
   const definition = Effect.fn("D4AgentPipelines.definition")(function* (

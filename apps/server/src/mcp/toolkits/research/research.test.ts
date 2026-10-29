@@ -57,6 +57,7 @@ import {
   researchRunDirectory,
 } from "./runArtifacts.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import { ResearchDelegateError } from "./tools.ts";
 import * as ServerConfig from "../../../config.ts";
 import {
   ProjectionStoreV2,
@@ -472,10 +473,13 @@ describe("research delegate handler", () => {
           list: () => Effect.succeed([instanceId]),
         }),
       );
+      const notesWorkspace = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({
+        prefix: "notes-handler-",
+      });
       const orchestratorContext: ProjectionThreadCheckpointContext = {
         threadId: ThreadId.make("orchestrator-thread"),
         projectId: ProjectId.make("project"),
-        workspaceRoot: "/workspace/project",
+        workspaceRoot: notesWorkspace,
         worktreePath: "/workspace/project/.worktrees/task",
         checkpoints: [],
       };
@@ -541,7 +545,7 @@ describe("research delegate handler", () => {
               Option.some({
                 id: projectId,
                 title: "Project A",
-                workspaceRoot: "/workspace/project",
+                workspaceRoot: notesWorkspace,
                 defaultModelSelection: null,
                 scripts: [],
                 createdAt: "2026-08-08T00:00:00.000Z",
@@ -858,6 +862,7 @@ interface InlineDelegationHarnessOptions {
   };
   /** Makes every delegate turn fail instead of answering. */
   readonly failTurns?: boolean;
+  readonly failAfterOutput?: boolean;
 }
 
 const makeInlineDelegationHarness = Effect.fnUntraced(function* (
@@ -917,7 +922,7 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* (
                 threadId: sendInput.threadId,
                 createdAt: "2026-08-08T00:00:00Z",
                 type: "turn.completed",
-                payload: { state: "completed" },
+                payload: { state: options.failAfterOutput ? "failed" : "completed" },
               } as never),
             ),
             Effect.as({ threadId: sendInput.threadId, turnId: TurnId.make("delegate-turn") }),
@@ -975,7 +980,11 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* (
         Effect.succeed(
           options.workspaceRoot === undefined
             ? Option.none()
-            : Option.some({ title: "Project", workspaceRoot: options.workspaceRoot } as never),
+            : Option.some({
+                id: ProjectId.make("project"),
+                title: "Project",
+                workspaceRoot: options.workspaceRoot,
+              } as never),
         ),
     }),
     ResearchDelegationBudgetLive,
@@ -996,7 +1005,7 @@ const makeInlineDelegationHarness = Effect.fnUntraced(function* (
     client: undefined,
     requestNamespace: "provider-session",
   };
-  return { layer, invocation, sentAttachments };
+  return { layer, invocation, sentAttachments, turns };
 });
 
 describe("inline delegation shares the pipeline delegation budget", () => {
@@ -1097,7 +1106,10 @@ describe("inline delegation shares the pipeline delegation budget", () => {
 
   it("still burns budget when the model names a prompt file that does not exist", async () => {
     await Effect.gen(function* () {
-      const harness = yield* makeInlineDelegationHarness();
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "notes-prompt-error-" });
+      const harness = yield* makeInlineDelegationHarness({ workspaceRoot });
       // "Every research_delegate call burns budget" is the loop guard: a model
       // retrying an invalid argument must run out of budget, not retry free.
       const charged = yield* Effect.gen(function* () {
@@ -1125,6 +1137,10 @@ describe("inline delegation shares the pipeline delegation budget", () => {
       }).pipe(Effect.provide(harness.layer));
 
       expect(charged.rejected._tag).toBe("Failure");
+      const entries = yield* readResearchLedger(
+        researchRunDirectory(path, workspaceRoot, harness.invocation.thread.threadId),
+      );
+      expect(entries.some((entry) => entry.step === "2" && entry.outcome === "failure")).toBe(true);
       // Two calls, two charges — the rejected one included.
       expect(charged.accepted.remainingBudget).toBe(RESEARCH_DELEGATION_BUDGET_PER_TURN - 2);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
@@ -1197,18 +1213,19 @@ describe("server-side research step artifacts", () => {
 
       const ledger = yield* readResearchLedger(runDirectory);
       expect(ledger.map((entry) => [entry.seq, entry.step, entry.outcome])).toEqual([
-        [1, "1", "success"],
-        [2, "2", "failure"],
+        [1, "1", "failure"], // durable partial checkpoint before terminal success
+        [2, "1", "success"],
+        [3, "2", "failure"],
       ]);
-      expect(ledger[0]).toMatchObject({
+      expect(ledger[1]).toMatchObject({
         runId: "d4-action:audit:run-1",
         visit: 1,
         requestedTarget: "codex:gpt-5.6-sol",
         resolvedTarget: "codex:gpt-5.6-sol",
         substituted: false,
-        artifact: "steps/001-step1-v1-codex-gpt-5.6-sol.md",
+        artifact: "steps/002-step1-v1-codex-gpt-5.6-sol.md",
       });
-      expect(ledger[1]?.failureKind).toBe("error");
+      expect(ledger[2]?.failureKind).toBe("error");
       const artifact = yield* fs.readFileString(path.join(runDirectory, ledger[0]!.artifact));
       expect(artifact).toContain("delegate answer");
       expect(yield* fs.readDirectory(path.join(runDirectory, "steps"))).not.toContainEqual(
@@ -1287,7 +1304,7 @@ describe("server-side research step artifacts", () => {
       });
       expect(note).toContain("--- RESUME (server ledger, verbatim) ---");
       expect(note).toContain("was cancelled by a server restart");
-      expect(note).toContain("steps/001-step1-v1-codex-gpt-5.6-sol.md");
+      expect(note).toContain("steps/002-step1-v1-codex-gpt-5.6-sol.md");
       expect(note).toContain("research_artifact_read");
 
       const runDirectory = researchRunDirectory(
@@ -1297,7 +1314,7 @@ describe("server-side research step artifacts", () => {
       );
       const read = yield* readRunArtifact({
         runDirectory,
-        artifact: "steps/001-step1-v1-codex-gpt-5.6-sol.md",
+        artifact: "steps/002-step1-v1-codex-gpt-5.6-sol.md",
         offset: 0,
       });
       expect(read.ok && read.text).toContain("delegate answer");
@@ -1878,5 +1895,108 @@ describe("settleDelegateThread with a busy signal", () => {
     // maxAttempts spent → returns what exists; the handler's outer timeout and
     // empty/preamble rules take it from there.
     expect(text).toBe("stuck preamble");
+  });
+});
+
+describe("research Notes recovery", () => {
+  it("records and charges a missing prompt file when resuming a completed step", async () => {
+    await Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "notes-resume-prompt-" });
+      const before = yield* makeInlineDelegationHarness({ workspaceRoot });
+      yield* runBoundedDelegation(
+        pipelineDelegation({ step: "1", runId: "d4-action:audit:run-1" }),
+      ).pipe(Effect.provide(before.layer));
+      const after = yield* makeInlineDelegationHarness({
+        workspaceRoot,
+        records: interruptedRecords,
+      });
+      yield* Effect.gen(function* () {
+        const failed = yield* Effect.exit(
+          runBoundedDelegation({
+            ...pipelineDelegation({ step: "1", runId: "d4-action:audit:run-2" }),
+            orchestratorRunId: "run-2",
+            resolvePromptFile: Effect.fail(
+              new ResearchDelegateError({
+                detail: "Missing fixture prompt file",
+                failureKind: "error",
+              }),
+            ),
+          }),
+        );
+        expect(failed._tag).toBe("Failure");
+        const next = yield* runBoundedDelegation({
+          ...pipelineDelegation({ step: "2", runId: "d4-action:audit:run-2" }),
+          orchestratorRunId: "run-2",
+        });
+        expect(next.remainingBudget).toBe(RESEARCH_DELEGATION_BUDGET_PER_TURN - 3);
+      }).pipe(Effect.provide(after.layer));
+      const entries = yield* readResearchLedger(
+        researchRunDirectory(path, workspaceRoot, "d4-action:audit"),
+      );
+      expect(
+        entries.some(
+          (entry) =>
+            entry.runId === "d4-action:audit:run-2" &&
+            entry.step === "1" &&
+            entry.outcome === "failure",
+        ),
+      ).toBe(true);
+      expect(yield* Ref.get(after.turns)).toHaveLength(1);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+  });
+
+  it("preserves partial text on provider failure and reuses completed evidence on resume", async () => {
+    await Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "notes-recovery-" });
+      const first = yield* makeInlineDelegationHarness({ workspaceRoot });
+      yield* runBoundedDelegation(
+        pipelineDelegation({ step: "1", runId: "d4-action:audit:run-1" }),
+      ).pipe(Effect.provide(first.layer));
+      const failed = yield* makeInlineDelegationHarness({ workspaceRoot, failAfterOutput: true });
+      const exit = yield* Effect.exit(
+        runBoundedDelegation(
+          pipelineDelegation({ step: "2", runId: "d4-action:audit:run-1" }),
+        ).pipe(Effect.provide(failed.layer)),
+      );
+      expect(exit._tag).toBe("Failure");
+      const directory = researchRunDirectory(path, workspaceRoot, "d4-action:audit");
+      const entries = yield* readResearchLedger(directory);
+      const failure = entries.findLast(
+        (entry) => entry.step === "2" && entry.failureKind !== "partial",
+      )!;
+      const partial = yield* readRunArtifact({
+        runDirectory: directory,
+        artifact: failure.artifact,
+        offset: 0,
+      });
+      expect(partial.ok && partial.text).toContain("delegate answer");
+      expect(partial.ok && partial.text).toContain("Partial output");
+      const after = yield* makeInlineDelegationHarness({
+        workspaceRoot,
+        records: interruptedRecords,
+      });
+      const answer = yield* runBoundedDelegation({
+        ...pipelineDelegation({ step: "1", runId: "d4-action:audit:run-2" }),
+        orchestratorRunId: "run-2",
+      }).pipe(Effect.provide(after.layer));
+      expect(answer.text).toBe("delegate answer");
+      expect(yield* Ref.get(after.turns)).toHaveLength(0);
+      expect(yield* readResearchLedger(directory)).toHaveLength(entries.length);
+      yield* runBoundedDelegation({
+        ...pipelineDelegation({ step: "2", runId: "d4-action:audit:run-2" }),
+        orchestratorRunId: "run-2",
+      }).pipe(Effect.provide(after.layer));
+      expect(yield* Ref.get(after.turns)).toHaveLength(1);
+      yield* runBoundedDelegation({
+        ...pipelineDelegation({ step: "1", runId: "d4-action:audit:run-2" }),
+        prompt: "Revised instructions",
+        orchestratorRunId: "run-2",
+      }).pipe(Effect.provide(after.layer));
+      expect(yield* Ref.get(after.turns)).toHaveLength(2);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
   });
 });

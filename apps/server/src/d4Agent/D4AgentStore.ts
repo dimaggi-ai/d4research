@@ -2,10 +2,14 @@ import { OverviewItem } from "./overview.ts";
 import {
   ChatAttachment,
   D4AgentActionRecord,
+  D4AgentRoutine,
+  D4HostRoutine,
+  type D4HostRoutinesState,
   D4AgentTranscriptEntry,
   D4AgentOpenSession,
   D4BrainContext,
   IsoDateTime,
+  ModelSelection,
   D4AgentError,
   D4AgentTurnUsage,
   D4AgentSystemCheck,
@@ -56,6 +60,7 @@ export const StoredTaskScope = Schema.Struct({
   scopeHash: Schema.optionalKey(Schema.String),
 });
 export const StoredState = Schema.Struct({
+  routines: Schema.optionalKey(Schema.Array(D4AgentRoutine)),
   overviewItems: Schema.optionalKey(Schema.Array(OverviewItem)),
   // Overview identity -> when the model last judged it and at which severity.
   overviewJudged: Schema.optionalKey(
@@ -107,6 +112,9 @@ export const StoredState = Schema.Struct({
         threadId: ThreadId,
         messageId: Schema.String,
         text: Schema.String,
+        // Optional only for migration. Every newly accepted user request stores an explicit
+        // nullable snapshot so a later default cannot acquire or replace its worker intent.
+        taskModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
       }),
     ),
   ),
@@ -137,6 +145,7 @@ export const StoredState = Schema.Struct({
         messageId: Schema.String,
         pendingText: Schema.String,
         pendingAttachments: Schema.optionalKey(Schema.Array(ChatAttachment)),
+        pendingTaskModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
         pendingFollowUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
         requestedAt: IsoDateTime,
         heartbeat: Schema.optionalKey(Schema.Boolean),
@@ -297,10 +306,25 @@ export function boundStoredState(state: StoredState, now: number): StoredState {
   };
 }
 
+const decodeHostRoutines = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      routines: Schema.Array(D4HostRoutine).check(
+        Schema.isMaxLength(100),
+        Schema.makeFilter(
+          (entries) => new Set(entries.map((entry) => entry.id)).size === entries.length,
+        ),
+      ),
+    }),
+  ),
+);
+const HOST_ROUTINES_BYTE_LIMIT = 65_536;
+
 export class D4AgentStore extends Context.Service<
   D4AgentStore,
   {
     readonly workspace: string;
+    readonly readHostRoutines?: () => Effect.Effect<D4HostRoutinesState>;
     readonly get: Effect.Effect<StoredState>;
     readonly update: (
       change: (state: StoredState) => StoredState,
@@ -362,6 +386,46 @@ export const layer = Layer.effect(
     return D4AgentStore.of({
       workspace: path.join(directory, "workspace"),
       get: Ref.get(state),
+      readHostRoutines: () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const filePath = path.join(directory, "host-routines.json");
+            const before = yield* fs.stat(filePath);
+            if (before.type !== "File" || before.size > BigInt(HOST_ROUTINES_BYTE_LIMIT))
+              return { status: "unavailable" as const, routines: [] };
+            const file = yield* fs.open(filePath, { flag: "r", noFollow: true });
+            const info = yield* file.stat;
+            if (info.type !== "File" || info.size > BigInt(HOST_ROUTINES_BYTE_LIMIT))
+              return { status: "unavailable" as const, routines: [] };
+            // Read at most one byte beyond the limit even if the file grows after stat.
+            const bytes = new Uint8Array(HOST_ROUTINES_BYTE_LIMIT + 1);
+            let length = 0;
+            while (length < bytes.length) {
+              const count = Number(yield* file.read(bytes.subarray(length)));
+              if (count === 0) break;
+              length += count;
+            }
+            if (length > HOST_ROUTINES_BYTE_LIMIT)
+              return { status: "unavailable" as const, routines: [] };
+            const content = yield* Effect.try(() =>
+              new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)),
+            );
+            const decoded = yield* decodeHostRoutines(content);
+            return { status: "available" as const, routines: decoded.routines };
+          }),
+        ).pipe(
+          Effect.catch((cause) =>
+            Effect.succeed({
+              status:
+                "_tag" in cause &&
+                cause._tag === "PlatformError" &&
+                cause.reason._tag === "NotFound"
+                  ? ("not-configured" as const)
+                  : ("unavailable" as const),
+              routines: [],
+            }),
+          ),
+        ),
       update: (change) =>
         lock.withPermits(1)(
           Effect.gen(function* () {

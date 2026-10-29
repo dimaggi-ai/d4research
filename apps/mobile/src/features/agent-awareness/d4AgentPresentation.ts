@@ -74,6 +74,10 @@ export function brainIndexStatus(index: D4AgentState["brainIndexes"][number]): s
 
 /** The untruncated text a pending card shows, where the summary preview is capped. */
 export function actionFullText(action: D4AgentAction): string | null {
+  if (action.type === "activate-routine")
+    return `${action.readiness.summary}\n\n${action.readiness.checks.map((check) => `${check.passed ? "Passed" : "Failed"}: ${check.label} (${check.evidence})`).join("\n")}\n\nLimitations: ${action.readiness.limitations.join("; ") || "None reported"}`;
+  if (action.type === "set-schedule-enabled")
+    return `${action.enabled ? "Enable" : "Disable"} scheduled task ${action.taskId}`;
   if ("text" in action) return action.text;
   if (action.type === "pc") return action.command;
   if (action.type === "answer") return JSON.stringify(action.answers);
@@ -94,25 +98,29 @@ export function actionHeading(
 
 /** The tag of an action that creates a thread, or null for every other action. */
 export function launchTag(type: D4AgentActionSummary["type"]): string | null {
-  return type === "start"
-    ? "New thread"
-    : type === "research"
-      ? "Research"
-      : type === "pipeline"
-        ? "Pipeline"
-        : null;
+  return type === "prepare-routine"
+    ? "Prepare routine"
+    : type === "start"
+      ? "New thread"
+      : type === "research"
+        ? "Research"
+        : type === "pipeline"
+          ? "Pipeline"
+          : null;
 }
 
 export function approveLabel(type: D4AgentActionSummary["type"]): string {
-  return type === "send"
-    ? "Send"
-    : type === "archive"
-      ? "Archive"
-      : type === "switch-context"
-        ? "Switch"
-        : launchTag(type) !== null
-          ? "Create thread"
-          : "Approve";
+  return type === "activate-routine"
+    ? "Activate routine"
+    : type === "send"
+      ? "Send"
+      : type === "archive"
+        ? "Archive"
+        : type === "switch-context"
+          ? "Switch"
+          : launchTag(type) !== null
+            ? "Create thread"
+            : "Approve";
 }
 
 // Older transcripts carry session bookkeeping posts; they are not messages for the user.

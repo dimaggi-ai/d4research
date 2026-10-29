@@ -1,3 +1,4 @@
+import { buildServerProvider } from "@d4research/provider-core/server/snapshotProbe";
 import * as ApplicationEvents from "../persistence/OrchestrationEventStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -27,7 +28,9 @@ import {
   type AgentMonitorUpdate,
   type D4AgentGuardVerdict,
   type D4AgentSettings,
+  type D4HostRoutinesState,
   type D4AgentSystemCheck,
+  type ModelSelection,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2RuntimeRequest,
@@ -44,6 +47,7 @@ import * as Stream from "effect/Stream";
 import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 import * as Agent from "./D4Agent.ts";
+import { evaluateTaskScope, isAllowedTaskMcpRequest } from "./D4AgentTaskScope.ts";
 import { OsReleasePath } from "./hostFacts.ts";
 import * as Store from "./D4AgentStore.ts";
 import { contextScopeHash } from "./brainScope.ts";
@@ -157,6 +161,10 @@ const fixture = (
       systemEpisodes: [],
       systemClaims: [],
     });
+    const hostSnapshot = yield* Ref.make<D4HostRoutinesState>({
+      status: "not-configured",
+      routines: [],
+    });
     const checks = yield* Ref.make<ReadonlyArray<D4AgentSystemCheck>>([
       {
         id: "root-disk",
@@ -191,6 +199,7 @@ const fixture = (
     const creates = yield* Ref.make<
       ReadonlyArray<{ readonly title: string; readonly runtimeMode: string }>
     >([]);
+    const createModels = yield* Ref.make<ReadonlyArray<ModelSelection>>([]);
     const launches = yield* Ref.make<ReadonlyArray<ThreadLaunch.ThreadLaunchInput>>([]);
     const failSend = yield* Ref.make(false);
     const failSnapshot = yield* Ref.make(false);
@@ -205,6 +214,10 @@ const fixture = (
     const scheduled = yield* Ref.make<
       ReadonlyArray<Parameters<ScheduledTasks.ScheduledTaskService["Service"]["upsert"]>[0]>
     >([]);
+    const listedSchedules = yield* Ref.make<
+      Effect.Success<ReturnType<ScheduledTasks.ScheduledTaskService["Service"]["list"]>>["tasks"]
+    >([]);
+    const enabledSchedules = yield* Ref.make<ReadonlyArray<{ id: string; enabled: boolean }>>([]);
     const unscheduled = yield* Ref.make<ReadonlyArray<string>>([]);
     const projection = yield* Ref.make<OrchestrationV2ThreadProjection>({
       thread: { ...target, lastVisitedAt: target.lastVisitedAt ?? null },
@@ -245,6 +258,7 @@ const fixture = (
         ...DEFAULT_D4_AGENT_SETTINGS,
         enabled: true,
         modelSelection,
+        taskModelSelection: modelSelection,
         permissionMode: mode,
         systemProbeEnabled: true,
         ...overrides,
@@ -266,6 +280,7 @@ const fixture = (
             Store.D4AgentStore,
             store ?? {
               workspace,
+              readHostRoutines: () => Ref.get(hostSnapshot),
               get: Ref.get(state),
               update: (f) =>
                 Ref.update(reads, (r) => ({ ...r, updates: r.updates + 1 })).pipe(
@@ -380,6 +395,7 @@ const fixture = (
                     ...all,
                     { title: cmd.title, runtimeMode: cmd.runtimeMode },
                   ]);
+                  yield* Ref.update(createModels, (all) => [...all, cmd.modelSelection]);
                   yield* Ref.update(shells, (all) => [
                     ...all,
                     { ...target, id: cmd.threadId, projectId: cmd.projectId },
@@ -474,7 +490,11 @@ const fixture = (
                   } as never,
                 }),
               ),
-            list: () => Effect.succeed({ tasks: [] } as never),
+            list: () => Ref.get(listedSchedules).pipe(Effect.map((tasks) => ({ tasks }))),
+            setEnabled: (input) =>
+              Ref.update(enabledSchedules, (all) => [...all, input]).pipe(
+                Effect.as({ task: { id: input.id, enabled: input.enabled } as never }),
+              ),
             delete: ({ id }) =>
               Ref.update(unscheduled, (all) => [...all, id]).pipe(Effect.as({ id })),
           }),
@@ -527,6 +547,7 @@ const fixture = (
       stateChanges,
       settings,
       checks,
+      hostSnapshot,
       request,
       dispatches,
       lifecycleLimits,
@@ -539,6 +560,8 @@ const fixture = (
       pcCommands,
       scheduled,
       unscheduled,
+      listedSchedules,
+      enabledSchedules,
       projection,
       catalog,
       reads,
@@ -548,6 +571,7 @@ const fixture = (
       failStop,
       failCreate,
       creates,
+      createModels,
       launches,
       failSend,
       failSnapshot,
@@ -1585,23 +1609,32 @@ it.effect(
         })),
         [
           {
-            instanceId: "codex",
-            driver: "codex",
+            instanceId: ProviderInstanceId.make("codex"),
+            driver: ProviderDriverKind.make("codex"),
             available: true,
             canRunD4Agent: true,
-            models: [{ slug: "chosen", name: "Chosen" }],
+            models: [{ slug: "chosen", name: "Chosen", isCustom: false, capabilities: null }],
           },
           {
-            instanceId: "deepseek",
-            driver: "deepseek",
+            instanceId: ProviderInstanceId.make("deepseek"),
+            driver: ProviderDriverKind.make("deepseek"),
             available: true,
             canRunD4Agent: false,
-            models: [{ slug: "deepseek-local", name: "DeepSeek local" }],
+            models: [
+              {
+                slug: "deepseek-local",
+                name: "DeepSeek local",
+                isCustom: false,
+                capabilities: null,
+              },
+            ],
           },
         ],
       );
       assert.deepEqual(global.d4Agent, {
         modelSelection,
+        taskModelSelection: modelSelection,
+        defaultTaskModelSelection: modelSelection,
         permissionMode: "ask",
         unavailableReason: null,
       });
@@ -3659,6 +3692,32 @@ it.effect("send original keeps the pending user text after a size rotation", () 
   }),
 );
 
+it.effect("rotation preserves an explicit null task snapshot across a later default change", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("ask");
+    yield* f.service.ensureThread();
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      sessions: (state.sessions ?? []).map((entry) => ({
+        ...entry,
+        inputTokens: 80,
+        contextWindow: 100,
+      })),
+    }));
+    yield* f.send({ text: "Explain without creating work", taskModelSelection: null });
+    const before = (yield* Ref.get(f.state)).rotation!;
+    assert.isTrue(Object.hasOwn(before, "pendingTaskModelSelection"));
+    assert.isNull(before.pendingTaskModelSelection);
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        taskModelSelection: modelSelection,
+      },
+    });
+    assert.isNull((yield* Ref.get(f.state)).rotation?.pendingTaskModelSelection);
+  }),
+);
+
 it.effect.each(["create", "send"] as const)(
   "a rotated message survives a failed %s and a restart, then is delivered once",
   (failure) =>
@@ -5063,10 +5122,430 @@ it.effect("resolving an approved send twice delivers the message once", () =>
   }),
 );
 
+it.effect("a request-local worker survives default changes before proposal and approval", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only");
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.set(f.agentShell, {
+      ...target,
+      id: identity.threadId,
+      projectId: identity.projectId,
+      activeRunId: RunId.make("active-worker-request"),
+    });
+    yield* Ref.update(f.state, (state) => ({
+      ...state,
+      userMessages: [
+        {
+          threadId: identity.threadId,
+          messageId: "request-with-worker",
+          text: "Create the task",
+          taskModelSelection: modelSelection,
+        },
+        {
+          threadId: identity.threadId,
+          messageId: "queued-later-request",
+          text: "Queued after the active request",
+          taskModelSelection: managerSelection,
+        },
+      ],
+    }));
+    yield* Ref.update(f.projection, (projection) => ({
+      ...projection,
+      runs: [
+        { id: RunId.make("active-worker-request"), userMessageId: "request-with-worker" },
+      ] as unknown as typeof projection.runs,
+      messages: [
+        { id: "request-with-worker", text: "Create the task", createdBy: "user" },
+      ] as unknown as typeof projection.messages,
+    }));
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        taskModelSelection: { instanceId: modelSelection.instanceId, model: "later-default" },
+      },
+    });
+    const activeEnvironment = yield* f.service.environment();
+    assert.deepEqual(activeEnvironment.d4Agent.taskModelSelection, modelSelection);
+    assert.equal(activeEnvironment.d4Agent.defaultTaskModelSelection?.model, "later-default");
+    const activePipelines = yield* f.service.listPipelines();
+    assert.deepEqual(activePipelines.modelSelection, modelSelection);
+    assert.equal(activePipelines.defaultModelSelection?.model, "later-default");
+    const card = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Create the task",
+      modelSelection,
+    });
+    assert.equal(card.action.type, "start");
+    if (card.action.type === "start") assert.deepEqual(card.action.modelSelection, modelSelection);
+    yield* f.settings.updateSettings({
+      d4Agent: {
+        ...(yield* f.settings.getSettings).d4Agent,
+        taskModelSelection: null,
+      },
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    const resolved = (yield* Ref.get(f.state)).actions.find((entry) => entry.id === card.id)!;
+    assert.equal(resolved.status, "executed");
+    assert.equal(resolved.action.type, "start");
+    if (resolved.action.type === "start")
+      assert.deepEqual(resolved.action.modelSelection, modelSelection);
+  }),
+);
+
+it.effect("an explicit null request never adopts a later task default", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: null,
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
+    const identity = yield* f.send({ text: "Explain only", taskModelSelection: null });
+    const accepted = (yield* Ref.get(f.sends)).at(-1)!;
+    yield* Ref.set(f.agentShell, {
+      ...target,
+      id: identity.threadId,
+      projectId: identity.projectId,
+      activeRunId: RunId.make("null-worker-run"),
+    });
+    yield* Ref.update(f.projection, (projection) => ({
+      ...projection,
+      runs: [
+        { id: RunId.make("null-worker-run"), userMessageId: String(accepted.messageId) },
+      ] as unknown as typeof projection.runs,
+      messages: [
+        { id: accepted.messageId, text: "Explain only", createdBy: "user" },
+      ] as unknown as typeof projection.messages,
+    }));
+    yield* f.settings.updateSettings({
+      d4Agent: { ...(yield* f.settings.getSettings).d4Agent, taskModelSelection: modelSelection },
+    });
+    assert.isNull((yield* f.service.environment()).d4Agent.taskModelSelection);
+    assert.isNull((yield* f.service.listPipelines()).modelSelection);
+    const proposal = yield* Effect.result(
+      f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Must not start",
+        modelSelection,
+      }),
+    );
+    assert.equal(proposal._tag, "Failure");
+  }),
+);
+
+it.effect("an evicted active request snapshot fails closed instead of adopting the default", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const identity = yield* f.service.ensureThread();
+    yield* Ref.set(f.agentShell, {
+      ...target,
+      id: identity.threadId,
+      projectId: identity.projectId,
+      activeRunId: RunId.make("evicted-worker-run"),
+    });
+    yield* Ref.update(f.projection, (projection) => ({
+      ...projection,
+      runs: [
+        { id: RunId.make("evicted-worker-run"), userMessageId: "evicted-worker-message" },
+      ] as unknown as typeof projection.runs,
+      messages: [
+        { id: "evicted-worker-message", text: "Create work", createdBy: "user" },
+      ] as unknown as typeof projection.messages,
+    }));
+    assert.isNull((yield* f.service.environment()).d4Agent.taskModelSelection);
+    assert.isNull((yield* f.service.listPipelines()).modelSelection);
+    const proposal = yield* Effect.result(
+      f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Must not start",
+        modelSelection,
+      }),
+    );
+    assert.equal(proposal._tag, "Failure");
+  }),
+);
+
+it.effect(
+  "an explicit steer rebinds the active request to the new worker only after delivery",
+  () =>
+    Effect.gen(function* () {
+      const steeredSelection = {
+        instanceId: modelSelection.instanceId,
+        model: "steered-worker",
+      };
+      const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+        modelSelection: managerSelection,
+        taskModelSelection: modelSelection,
+      });
+      yield* Ref.set(f.catalog, [
+        managerProvider,
+        {
+          ...provider,
+          models: [
+            ...provider.models,
+            {
+              slug: steeredSelection.model,
+              name: "Steered worker",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+        },
+      ]);
+      const identity = yield* f.service.ensureThread();
+      yield* Ref.set(f.agentShell, {
+        ...target,
+        id: identity.threadId,
+        projectId: identity.projectId,
+        activeRunId: RunId.make("steered-worker-run"),
+      });
+      yield* Ref.update(f.state, (state) => ({
+        ...state,
+        userMessages: [
+          {
+            threadId: identity.threadId,
+            messageId: "initial-worker-request",
+            text: "Create the task",
+            taskModelSelection: modelSelection,
+          },
+        ],
+      }));
+      yield* Ref.update(f.projection, (projection) => ({
+        ...projection,
+        runs: [
+          { id: RunId.make("steered-worker-run"), userMessageId: "initial-worker-request" },
+        ] as unknown as typeof projection.runs,
+        messages: [
+          { id: "initial-worker-request", text: "Create the task", createdBy: "user" },
+        ] as unknown as typeof projection.messages,
+      }));
+
+      yield* f.send({
+        text: "Use the steered worker",
+        followUpBehavior: "steer",
+        taskModelSelection: steeredSelection,
+      });
+
+      assert.deepEqual(
+        (yield* f.service.environment()).d4Agent.taskModelSelection,
+        steeredSelection,
+      );
+      assert.deepEqual((yield* f.service.listPipelines()).modelSelection, steeredSelection);
+      const card = yield* f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Create the steered task",
+        modelSelection: steeredSelection,
+      });
+      assert.equal(card.action.type, "start");
+      if (card.action.type === "start")
+        assert.deepEqual(card.action.modelSelection, steeredSelection);
+      assert.deepEqual((yield* f.service.environment()).d4Agent.modelSelection, managerSelection);
+    }),
+);
+
+const managerSelection = {
+  instanceId: ProviderInstanceId.make("local-manager"),
+  model: "qwen3.8-flash-next-iq3_s",
+};
+const managerProvider: ServerProvider = {
+  ...provider,
+  instanceId: managerSelection.instanceId,
+  driver: ProviderDriverKind.make("claudeAgent"),
+  displayName: "Local manager",
+  models: [
+    {
+      slug: managerSelection.model,
+      name: "Qwen 3.8 Flash Next IQ3 S",
+      isCustom: true,
+      capabilities: null,
+    },
+  ],
+};
+
+it.effect("an unavailable default worker does not block the independent manager heartbeat", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: modelSelection,
+      heartbeatMinutes: 15,
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
+    yield* f.service.ensureThread();
+    yield* Ref.set(f.monitorUpdates, [
+      {
+        threadId: targetId,
+        revision: 1,
+        report: {
+          schemaVersion: 1,
+          runId: null,
+          attemptId: null,
+          classification: "needs_user",
+          reason: "pending_request",
+          attentionRequired: true,
+          notificationEligible: true,
+          reportKey: "worker-unavailable-heartbeat",
+          observedAt: "1970-01-01T00:00:00Z",
+          runStatus: null,
+          pendingRequestId: null,
+        },
+      },
+    ]);
+    yield* Ref.set(f.catalog, [
+      managerProvider,
+      { ...provider, auth: { status: "unauthenticated" } },
+    ]);
+    yield* TestClock.adjust("16 minutes");
+    yield* f.service.tick;
+    assert.include((yield* Ref.get(f.sends)).at(-1)?.text ?? "", "Overview is already visible");
+
+    const proposal = yield* Effect.result(
+      f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Must remain blocked",
+        modelSelection,
+      }),
+    );
+    assert.equal(proposal._tag, "Failure");
+    if (proposal._tag === "Failure") assert.equal(proposal.failure.reason, "provider-unavailable");
+    assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection]);
+  }),
+);
+
+it.effect("generic start dispatches the exact worker while Nia keeps its distinct manager", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: modelSelection,
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
+    yield* f.service.ensureThread();
+    const environment = yield* f.service.environment();
+    assert.deepEqual(environment.d4Agent.modelSelection, managerSelection);
+    assert.deepEqual(environment.d4Agent.taskModelSelection, modelSelection);
+    const listed = yield* f.service.listPipelines();
+    assert.deepEqual(listed.modelSelection, modelSelection);
+    assert.deepEqual(listed.defaultModelSelection, modelSelection);
+    const card = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Use the worker",
+      modelSelection,
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection, modelSelection]);
+    assert.deepEqual((yield* f.service.environment()).d4Agent.modelSelection, managerSelection);
+  }),
+);
+
+it.effect("routine preparation creates its visible thread with the exact worker", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: modelSelection,
+      projectContexts: { [target.projectId]: "Global" },
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
+    yield* f.service.ensureThread();
+    const card = yield* f.service.requestAction({
+      type: "prepare-routine",
+      projectId: target.projectId,
+      title: "Prepare exact worker",
+      text: "Run a bounded synthetic preparation.",
+      modelSelection,
+      schedule: { type: "interval", everyMs: 3600000 },
+    });
+    yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection, modelSelection]);
+    assert.deepEqual((yield* Ref.get(f.state)).routines?.[0]?.draft.modelSelection, modelSelection);
+  }),
+);
+
+it.effect("mismatched and newly unavailable workers never fall back to the manager", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+      modelSelection: managerSelection,
+      taskModelSelection: modelSelection,
+    });
+    yield* Ref.set(f.catalog, [managerProvider, provider]);
+    yield* f.service.ensureThread();
+    const mismatch = yield* Effect.result(
+      f.service.requestAction({
+        type: "start",
+        projectId: target.projectId,
+        text: "Wrong worker",
+        modelSelection: managerSelection,
+      }),
+    );
+    assert.equal(mismatch._tag, "Failure");
+    assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection]);
+    const card = yield* f.service.requestAction({
+      type: "start",
+      projectId: target.projectId,
+      text: "Exact worker",
+      modelSelection,
+    });
+    yield* Ref.set(f.catalog, [
+      managerProvider,
+      { ...provider, auth: { status: "unauthenticated" } },
+    ]);
+    assert.equal(
+      (yield* Effect.result(f.service.resolveAction({ actionId: card.id, decision: "approve" })))
+        ._tag,
+      "Failure",
+    );
+    assert.deepEqual(yield* Ref.get(f.createModels), [managerSelection]);
+    const persisted = (yield* Ref.get(f.state)).actions.find((entry) => entry.id === card.id)!;
+    assert.equal(persisted.status, "failed");
+    assert.equal(persisted.action.type, "start");
+    if (persisted.action.type === "start")
+      assert.deepEqual(persisted.action.modelSelection, modelSelection);
+  }),
+);
+
+it.effect.each(["auth", "quota"] as const)(
+  "an unavailable default worker (%s) refuses the send before storing the request",
+  (failureKind) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("read-only", true, undefined, "/isolated/d4-agent", true, {
+        modelSelection: managerSelection,
+        taskModelSelection: modelSelection,
+      });
+      yield* Ref.set(f.catalog, [
+        managerProvider,
+        {
+          ...provider,
+          ...(failureKind === "auth"
+            ? { auth: { status: "unauthenticated" as const } }
+            : {
+                usageLimits: {
+                  checkedAt: "1970-01-01T00:00:00.000Z",
+                  windows: [
+                    {
+                      id: "session",
+                      label: "Session",
+                      kind: "session" as const,
+                      usedPercent: 100,
+                      resetsAt: "1970-01-01T01:00:00.000Z",
+                    },
+                  ],
+                },
+              }),
+        },
+      ]);
+      const result = yield* Effect.result(f.send({ text: "Keep this draft" }));
+      assert.equal(result._tag, "Failure");
+      assert.deepEqual((yield* Ref.get(f.state)).userMessages ?? [], []);
+      assert.deepEqual(yield* Ref.get(f.sends), []);
+    }),
+);
+
 it.effect("distinct research proposals in one project keep separate approval cards", () =>
   Effect.gen(function* () {
     const f = yield* guardedFixture();
-    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" };
     yield* f.service.ensureThread();
     yield* f.settings.updateSettings({
       research: {
@@ -5317,6 +5796,69 @@ it.effect("CTO refusals say why and what to do instead", () =>
   }),
 );
 
+it.effect("environment reloads model, authentication and quota facts from the live catalog", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    yield* f.service.ensureThread();
+    const before = yield* f.service.environment();
+    assert.equal(before.providers[0]?.quota.state, "unknown");
+    yield* Ref.set(f.catalog, [
+      {
+        ...provider,
+        enabled: false,
+        auth: { status: "unauthenticated" },
+        models: [{ slug: "new-custom", name: "New custom", isCustom: true, capabilities: null }],
+        usageLimits: {
+          checkedAt: "2026-10-28T12:00:00Z",
+          windows: [{ id: "weekly", label: "Weekly", kind: "weekly", usedPercent: 100 }],
+        },
+      },
+    ]);
+    const after = yield* f.service.environment();
+    assert.equal(after.providers[0]?.available, false);
+    assert.equal(after.providers[0]?.authentication, "unauthenticated");
+    assert.equal(after.providers[0]?.quota.state, "reported-exhausted");
+    assert.equal(after.providers[0]?.models[0]?.slug, "new-custom");
+  }),
+);
+
+it.effect("environment omits private endpoint diagnostics from provider snapshots", () =>
+  Effect.gen(function* () {
+    const diagnostic = "https://user:fake-secret@example.invalid/private-project";
+    const snapshot: ServerProvider = {
+      ...provider,
+      ...buildServerProvider({
+        presentation: { displayName: "OpenCode" },
+        enabled: true,
+        checkedAt: provider.checkedAt,
+        models: provider.models,
+        probe: {
+          installed: true,
+          version: null,
+          status: "error",
+          auth: { status: "unknown" },
+          message: `Could not reach ${diagnostic}`,
+        },
+      }),
+      unavailableReason: `Connection failed: ${diagnostic}`,
+    };
+    assert.include(snapshot.readiness?.remediation ?? "", diagnostic);
+    const f = yield* fixture();
+    yield* f.service.ensureThread();
+    yield* Ref.set(f.catalog, [snapshot]);
+    const result = yield* f.service.environment();
+    const serialized = JSON.stringify(result);
+
+    assert.notInclude(serialized, "fake-secret");
+    assert.notInclude(serialized, "example.invalid");
+    assert.notInclude(serialized, "/private-project");
+    assert.notInclude(serialized, "remediation");
+    assert.equal(result.providers[0]?.available, false);
+    assert.equal(result.providers[0]?.readiness?.reachability, "failed");
+    assert.equal(result.providers[0]?.readiness?.checkedAt, provider.checkedAt);
+  }),
+);
+
 it.effect("a restarted Nia service recovers its unanswered user request on the next tick", () =>
   Effect.gen(function* () {
     const f = yield* fixture("act");
@@ -5346,4 +5888,389 @@ it.effect("a restarted Nia service recovers its unanswered user request on the n
     yield* restarted.tick;
     assert.include(yield* Ref.get(f.dispatches), "message.dispatch");
   }).pipe(Effect.scoped),
+);
+
+it.effect("mapped schedule reads omit prompts and pause user-owned tasks only after approval", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+      projectContexts: { [target.projectId]: "Personal", [ProjectId.make("other")]: "YB" },
+    });
+    yield* f.service.switchContext({ context: "Personal" });
+    const tasks = [
+      {
+        id: ScheduledTaskId.make("user-owned"),
+        projectId: target.projectId,
+        title: "Public data check",
+        prompt: "PRIVATE PROMPT",
+        enabled: true,
+        nextRunAt: null,
+        lastRunStatus: "idle",
+        schedule: { type: "interval", everyMs: 3600000 },
+      },
+      {
+        id: ScheduledTaskId.make("other-context"),
+        projectId: ProjectId.make("other"),
+        title: "Other",
+        prompt: "SIBLING SECRET",
+      },
+      {
+        id: ScheduledTaskId.make("unmapped"),
+        projectId: ProjectId.make("unmapped"),
+        title: "Unmapped",
+      },
+    ] as unknown as Effect.Success<
+      ReturnType<ScheduledTasks.ScheduledTaskService["Service"]["list"]>
+    >["tasks"];
+    yield* Ref.set(f.listedSchedules, tasks);
+    const result = yield* f.service.tasks();
+    assert.equal(result.scheduler.available, true);
+    assert.deepEqual(
+      result.scheduledTasks.map((entry) => entry.taskId),
+      ["user-owned"],
+    );
+    assert.notInclude(JSON.stringify(result), "PRIVATE PROMPT");
+    assert.notInclude(JSON.stringify(result), "SIBLING SECRET");
+    const action = yield* f.service.requestAction({
+      type: "set-schedule-enabled",
+      taskId: ScheduledTaskId.make("user-owned"),
+      enabled: false,
+    });
+    assert.equal(action.status, "pending");
+    assert.deepEqual(yield* Ref.get(f.enabledSchedules), []);
+    yield* f.service.resolveAction({ actionId: action.id, decision: "approve" });
+    assert.deepEqual(yield* Ref.get(f.enabledSchedules), [{ id: "user-owned", enabled: false }]);
+    assert.deepEqual(yield* Ref.get(f.unscheduled), []);
+    assert.equal(
+      (yield* Effect.result(
+        f.service.requestAction({
+          type: "set-schedule-enabled",
+          taskId: ScheduledTaskId.make("other-context"),
+          enabled: false,
+        }),
+      ))._tag,
+      "Failure",
+    );
+    const stale = yield* f.service.requestAction({
+      type: "set-schedule-enabled",
+      taskId: ScheduledTaskId.make("user-owned"),
+      enabled: true,
+    });
+    yield* Ref.set(f.listedSchedules, []);
+    assert.equal(
+      (yield* Effect.result(f.service.resolveAction({ actionId: stale.id, decision: "approve" })))
+        ._tag,
+      "Failure",
+    );
+    assert.lengthOf(yield* Ref.get(f.enabledSchedules), 1);
+  }),
+);
+
+it.effect(
+  "routine preparation persists a visible setup thread and activation requires reviewed completed readiness",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("act", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "Personal" },
+        projectWorktreeBaseRefs: { [target.projectId]: "main" },
+      });
+      const preparation = {
+        type: "prepare-routine" as const,
+        projectId: target.projectId,
+        title: "Watch public releases",
+        text: "Collect new releases and save a local report.",
+        modelSelection,
+        schedule: { type: "interval" as const, everyMs: 3600000 },
+      };
+      assert.equal(
+        (yield* Effect.result(
+          f.service
+            .requestAction(preparation)
+            .pipe(Effect.provideService(Access.DispatchOrigin, "internal-heartbeat")),
+        ))._tag,
+        "Failure",
+      );
+      const requested = yield* f.service.requestAction(preparation);
+      assert.equal(requested.status, "pending");
+      assert.equal((yield* f.service.requestAction(preparation)).id, requested.id);
+      assert.deepEqual(yield* Ref.get(f.creates), []);
+      yield* f.service.resolveAction({ actionId: requested.id, decision: "approve" });
+      const routine = (yield* Ref.get(f.state)).routines![0]!;
+      assert.equal(routine.status, "preparing");
+      assert.equal(routine.taskId, null);
+      assert.equal(routine.threadId, `d4-action:${requested.id}`);
+      assert.equal((yield* f.service.getState()).routines?.[0]?.id, routine.id);
+      assert.deepEqual(yield* Ref.get(f.scheduled), []);
+      assert.include((yield* Ref.get(f.sends)).at(-1)!.text, "Do not create or enable schedules");
+      assert.include((yield* Ref.get(f.sends)).at(-1)!.text, "no recursive delegation");
+      assert.isFalse(
+        (yield* Ref.get(f.state)).agentThreads?.some(
+          (entry) => entry.threadId === routine.threadId,
+        ) ?? false,
+      );
+      assert.isTrue(
+        (yield* Ref.get(f.state)).taskScopes?.some((entry) => entry.threadId === routine.threadId),
+      );
+      assert.equal(
+        (yield* Effect.result(
+          f.service.resolveAction({ actionId: requested.id, decision: "approve" }),
+        ))._tag,
+        "Failure",
+      );
+      assert.lengthOf(yield* Ref.get(f.creates), 1);
+      assert.deepEqual(yield* Ref.get(f.launches), []);
+      const activate = {
+        type: "activate-routine" as const,
+        routineId: routine.id,
+        readiness: {
+          summary: "Trial saved a report",
+          checks: [
+            {
+              label: "Sources, tools and local output trial",
+              passed: true,
+              evidence: "One synthetic public release saved to a local report",
+            },
+          ],
+          limitations: ["No external notification configured"],
+        },
+      };
+      assert.equal((yield* Effect.result(f.service.requestAction(activate)))._tag, "Failure");
+      const completed = {
+        ...target,
+        id: routine.threadId,
+        latestRunId: RunId.make("setup-completed"),
+      };
+      yield* Ref.set(f.agentShell, completed);
+      yield* Ref.update(f.shells, (all) =>
+        all.map((entry) => (entry.id === routine.threadId ? completed : entry)),
+      );
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [{ id: completed.latestRunId, status: "completed" }] as unknown as typeof value.runs,
+      }));
+      assert.equal(
+        (yield* Effect.result(
+          f.service.requestAction({
+            ...activate,
+            readiness: {
+              ...activate.readiness,
+              checks: [{ ...activate.readiness.checks[0]!, passed: false }],
+            },
+          }),
+        ))._tag,
+        "Failure",
+      );
+      let approved = yield* f.service.requestAction(activate);
+      assert.equal(approved.status, "pending");
+      assert.equal((yield* Ref.get(f.state)).routines?.[0]?.status, "ready");
+      assert.deepEqual(yield* Ref.get(f.scheduled), []);
+      const newer = { ...completed, latestRunId: RunId.make("newer-setup-completed") };
+      yield* Ref.set(f.agentShell, newer);
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [
+          ...value.runs,
+          { id: newer.latestRunId, status: "completed" },
+        ] as unknown as typeof value.runs,
+      }));
+      assert.equal(
+        (yield* Effect.result(
+          f.service.resolveAction({ actionId: approved.id, decision: "approve" }),
+        ))._tag,
+        "Failure",
+      );
+      assert.deepEqual(yield* Ref.get(f.scheduled), []);
+      approved = yield* f.service.requestAction(activate);
+      const restarted = yield* f.restart;
+      yield* restarted.resolveAction({ actionId: approved.id, decision: "approve" });
+      assert.lengthOf(yield* Ref.get(f.scheduled), 1);
+      assert.equal((yield* Ref.get(f.scheduled))[0]!.commandId, `d4-agent:routine:${routine.id}`);
+      assert.equal((yield* Ref.get(f.scheduled))[0]!.prompt, preparation.text);
+      assert.equal((yield* Ref.get(f.state)).routines?.[0]?.status, "activated");
+      assert.equal((yield* Effect.result(restarted.requestAction(activate)))._tag, "Failure");
+      assert.equal(
+        (yield* Effect.result(
+          restarted.resolveAction({ actionId: approved.id, decision: "approve" }),
+        ))._tag,
+        "Failure",
+      );
+      assert.lengthOf(yield* Ref.get(f.scheduled), 1);
+    }),
+);
+
+it.effect(
+  "failed routine preparation retains an inspectable recoverable thread without scheduling",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "Personal" },
+      });
+      const preparation = yield* f.service.requestAction({
+        type: "prepare-routine",
+        projectId: target.projectId,
+        title: "Local watch",
+        text: "Prepare local storage",
+        modelSelection,
+        schedule: { type: "interval", everyMs: 3600000 },
+      });
+      yield* Ref.set(f.failSend, true);
+      assert.equal(
+        (yield* Effect.result(
+          f.service.resolveAction({ actionId: preparation.id, decision: "approve" }),
+        ))._tag,
+        "Failure",
+      );
+      const stored = yield* Ref.get(f.state);
+      assert.equal(stored.routines?.[0]?.status, "failed");
+      assert.isString(stored.routines?.[0]?.failure);
+      assert.equal(stored.taskScopes?.[0]?.threadId, stored.routines?.[0]?.threadId);
+      assert.deepEqual(yield* Ref.get(f.scheduled), []);
+    }),
+);
+
+it.effect(
+  "host routine metadata respects the bound context and cannot become an app mutation target",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("ask");
+      const routine = {
+        id: "host-only",
+        title: "Local check",
+        context: "Personal" as const,
+        source: "cron" as const,
+        schedule: "daily",
+        timeZone: "UTC",
+        enabled: null,
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: "unknown",
+        observedAt: "2026-10-28T10:00:00Z",
+        capability: "read-only" as const,
+      };
+      yield* Ref.set(f.hostSnapshot, {
+        status: "available",
+        routines: [routine, { ...routine, id: "sibling-host", context: "YB" }],
+      });
+      assert.lengthOf((yield* f.service.tasks()).hostRoutines.routines, 2);
+      yield* f.service.switchContext({ context: "Personal" });
+      assert.deepEqual(
+        (yield* f.service.tasks()).hostRoutines.routines.map((entry) => entry.id),
+        ["host-only"],
+      );
+      assert.deepEqual(
+        (yield* f.service.getState()).hostRoutines?.routines.map((entry) => entry.id),
+        ["host-only"],
+      );
+      assert.equal(
+        (yield* Effect.result(
+          f.service.requestAction({
+            type: "set-schedule-enabled",
+            taskId: ScheduledTaskId.make("host-only"),
+            enabled: false,
+          }),
+        ))._tag,
+        "Failure",
+      );
+      yield* Ref.set(f.hostSnapshot, { status: "unavailable", routines: [] });
+      assert.equal((yield* f.service.tasks()).hostRoutines.status, "unavailable");
+      assert.deepEqual(yield* Ref.get(f.enabledSchedules), []);
+    }),
+);
+
+it.effect(
+  "routine preparation binds bounded research delegation to the approved pipeline fingerprint",
+  () =>
+    Effect.gen(function* () {
+      const pipelineId = "research:routine-setup";
+      const f = yield* fixture("ask", true, undefined, "/isolated/d4-agent", true, {
+        projectContexts: { [target.projectId]: "Personal" },
+        pipelineProjects: { [pipelineId]: target.projectId },
+      });
+      const scenario = {
+        name: "routine-setup",
+        pipelinePrompt:
+          "Use two bounded coding agents to check sources and local storage. Keep results visible.",
+        promptFiles: [],
+      };
+      yield* f.settings.updateSettings({ research: { upsertScenario: scenario } });
+      const preparation = {
+        type: "prepare-routine" as const,
+        projectId: target.projectId,
+        title: "Routine with research",
+        text: "Check public releases with local output",
+        pipelineId,
+        modelSelection,
+        schedule: { type: "interval" as const, everyMs: 3600000 },
+      };
+      const stale = yield* f.service.requestAction(preparation);
+      yield* f.settings.updateSettings({
+        research: { upsertScenario: { ...scenario, pipelinePrompt: "Changed instructions" } },
+      });
+      assert.equal(
+        (yield* Effect.result(f.service.resolveAction({ actionId: stale.id, decision: "approve" })))
+          ._tag,
+        "Failure",
+      );
+      assert.deepEqual(yield* Ref.get(f.creates), []);
+      const card = yield* f.service.requestAction(preparation);
+      yield* f.service.resolveAction({ actionId: card.id, decision: "approve" });
+      const stored = yield* Ref.get(f.state);
+      const threadId = stored.routines![0]!.threadId;
+      const config = yield* f.settings.getSettings;
+      assert.equal(stored.taskScopes?.[0]?.pipelineId, pipelineId);
+      assert.isString(stored.taskScopes?.[0]?.pipelineHash);
+      assert.isTrue(
+        (yield* Ref.get(f.sends)).at(-1)!.text.startsWith("!research:routine-setup\n\n"),
+      );
+      assert.equal(
+        evaluateTaskScope(stored, threadId, config.d4Agent, pipelineId, config).status,
+        "ok",
+      );
+      assert.equal(
+        evaluateTaskScope(stored, threadId, config.d4Agent, "research:unapproved", config).status,
+        "scope-changed",
+      );
+      assert.isTrue(
+        isAllowedTaskMcpRequest(
+          { method: "tools/call", params: { name: "research_delegate" } },
+          threadId,
+        ),
+      );
+      for (const name of ["delegate_task", "scheduled_task_upsert", "d4_agent_action"]) {
+        assert.isFalse(
+          isAllowedTaskMcpRequest({ method: "tools/call", params: { name } }, threadId),
+        );
+      }
+      const completed = {
+        ...target,
+        id: threadId,
+        latestRunId: RunId.make("research-setup-completed"),
+      };
+      yield* Ref.set(f.agentShell, completed);
+      yield* Ref.update(f.projection, (value) => ({
+        ...value,
+        runs: [{ id: completed.latestRunId, status: "completed" }] as unknown as typeof value.runs,
+      }));
+      const activation = yield* f.service.requestAction({
+        type: "activate-routine",
+        routineId: card.id,
+        readiness: {
+          summary: "Source and storage trial completed",
+          checks: [{ label: "Trial", passed: true, evidence: "Synthetic local result verified" }],
+          limitations: [],
+        },
+      });
+      yield* f.service.resolveAction({ actionId: activation.id, decision: "approve" });
+      assert.equal(
+        (yield* Ref.get(f.scheduled))[0]!.prompt,
+        "!research:routine-setup\n\nCheck public releases with local output",
+      );
+      yield* f.settings.updateSettings({
+        research: { upsertScenario: { ...scenario, pipelinePrompt: "Changed again" } },
+      });
+      const changed = yield* f.settings.getSettings;
+      assert.equal(
+        evaluateTaskScope(stored, threadId, changed.d4Agent, pipelineId, changed).status,
+        "pipeline-changed",
+      );
+    }),
 );

@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => ({
   nativeRoute: vi.fn(),
   providers: [] as ServerProvider[],
   modelSelection: null as ModelSelection | null,
+  taskModelSelection: null as ModelSelection | null,
   updateSettings: vi.fn(async () => ({ _tag: "Success" })),
   running: false,
   allowed: true,
@@ -151,6 +152,7 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
                 ...DEFAULT_SERVER_SETTINGS.d4Agent,
                 enabled: mocks.enabled,
                 modelSelection: mocks.modelSelection,
+                taskModelSelection: mocks.taskModelSelection,
                 projectContexts: mocks.projectContexts,
               },
               agentMonitor: { enabled: mocks.monitorEnabled },
@@ -213,6 +215,7 @@ vi.mock("../../state/query", () => ({
             : null,
     refresh: mocks.refresh,
     isPending: atom === "identity" && mocks.identityPending,
+    isSuccess: true,
     error: null,
   }),
 }));
@@ -261,11 +264,34 @@ vi.mock("./useD4AgentState", async () => {
 vi.mock("../ui/sidebar", () => ({
   useSidebarVisibility: () => true,
   SidebarInset: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SidebarMenu: ({ children }: { children: React.ReactNode }) => <ul>{children}</ul>,
+  SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
+  SidebarMenuButton: ({ children, ...props }: React.ComponentProps<"button">) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 vi.mock("../ChatView", () => ({ default: () => <button>Initialize Git</button> }));
 vi.mock("../ChatMarkdown", () => ({
   MarkdownCodeBlockFrame: vi.fn(),
   default: ({ text }: { text: string }) => <div className="chat-markdown">{text}</div>,
+}));
+vi.mock("../chat/ProviderModelPicker", () => ({
+  ProviderModelPicker: ({
+    triggerAriaLabel,
+    onInstanceModelChange,
+  }: {
+    triggerAriaLabel?: string;
+    onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  }) => (
+    <button
+      aria-label={triggerAriaLabel}
+      onClick={() =>
+        onInstanceModelChange(ProviderInstanceId.make("worker-explicit"), "worker-model")
+      }
+    >
+      {triggerAriaLabel}
+    </button>
+  ),
 }));
 vi.mock("../ChatView.logic", () => ({
   resolveDraftPromotionNavigationTarget: () => null,
@@ -274,6 +300,7 @@ vi.mock("../ChatView.logic", () => ({
 vi.mock("../chat/draftHeroTransition", () => ({
   waitForDraftHeroTransition: async () => undefined,
 }));
+vi.mock("./NiaRoutines", () => ({ NiaRoutines: () => null }));
 vi.mock("../../composerDraftStore", async () => ({
   composerFileNeedsReattach: vi.fn(),
   DraftId: (await import("effect/Schema")).String.pipe(
@@ -317,6 +344,7 @@ vi.mock("@tanstack/react-router", () => ({
     </a>
   ),
   useNavigate: () => mocks.navigate,
+  useLocation: () => ({ pathname: "/test-environment" }),
   useParams: () => ({}),
 }));
 function niaEditor() {
@@ -371,6 +399,7 @@ beforeEach(() => {
   mocks.nativeRoute.mockClear();
   mocks.providers = [];
   mocks.modelSelection = null;
+  mocks.taskModelSelection = null;
   mocks.updateSettings.mockClear();
   mocks.running = false;
   mocks.allowed = true;
@@ -1147,6 +1176,7 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
     input: {
       attachments: [],
       followUpBehavior: "queue",
+      taskModelSelection: null,
       text: "Research the question",
       expectedContext: mocks.state!.brainContext,
       expectedThreadId: mocks.state!.threadId,
@@ -1154,6 +1184,55 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
   });
   expect(niaDraftText()).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+it("sends the exact request-local worker without changing Nia's manager model", async () => {
+  const manager = {
+    instanceId: ProviderInstanceId.make("manager-instance"),
+    model: "manager-model",
+  };
+  mocks.modelSelection = manager;
+  mocks.providers = [
+    {
+      instanceId: manager.instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-28T00:00:00.000Z",
+      models: [{ slug: manager.model, name: "Manager", isCustom: false, capabilities: null }],
+      skills: [],
+      slashCommands: [],
+    },
+  ];
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Nia task model"]')!.click(),
+  );
+  await act(async () => writeNiaDraft("Use the selected worker"));
+  await act(async () => niaSubmit().click());
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      attachments: [],
+      followUpBehavior: "queue",
+      taskModelSelection: {
+        instanceId: ProviderInstanceId.make("worker-explicit"),
+        model: "worker-model",
+      },
+      text: "Use the selected worker",
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+    },
+  });
+  expect(mocks.updateSettings).not.toHaveBeenCalled();
+  expect(mocks.modelSelection).toEqual(manager);
 });
 
 it("sends the human-edited rewrite only after explicit Send", async () => {
@@ -1249,6 +1328,7 @@ it.each(["research", "pipeline"] as const)(
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex-instance"),
           model: "gpt-test",
+          options: [{ id: "reasoningEffort", value: "high" }],
         },
       },
       status: "pending",
@@ -1264,6 +1344,7 @@ it.each(["research", "pipeline"] as const)(
     expect(container.textContent).toContain("Target project · Research lab");
     expect(container.textContent).toContain("Pipeline · research:focused");
     expect(container.textContent).toContain("Model · codex-instance / gpt-test");
+    expect(container.textContent).toContain("Task model option · reasoningEffort: high");
     expect(container.textContent).toContain("Detailed approved research prompt");
     expect(mocks.resolve).not.toHaveBeenCalled();
     await act(async () =>
@@ -1277,6 +1358,69 @@ it.each(["research", "pipeline"] as const)(
     });
   },
 );
+
+it("shows the immutable worker options and schedule before approval and in history", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  const summary = {
+    id: "scheduled-launch",
+    type: "schedule" as const,
+    targetId: "target-project",
+    preview: "Run the saved task",
+    createdAt,
+  };
+  mocks.taskModelSelection = {
+    instanceId: ProviderInstanceId.make("different-manager"),
+    model: "changed-after-proposal",
+    options: [{ id: "reasoningEffort", value: "low" }],
+  };
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [{ ...summary, status: "pending", resolvedAt: null }],
+  };
+  mocks.detail = {
+    id: summary.id,
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "schedule",
+      projectId: ProjectId.make("target-project"),
+      title: "Morning check",
+      text: "Inspect the queue and report blockers.",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("worker-at-proposal"),
+        model: "worker-model",
+        options: [
+          { id: "reasoningEffort", value: "high" },
+          { id: "sandbox", value: true },
+        ],
+      },
+      schedule: { type: "fixed_time", timeOfDay: "09:30", weekdays: [1, 3] },
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("Model · worker-at-proposal / worker-model");
+  expect(container.textContent).toContain("Task model option · reasoningEffort: high");
+  expect(container.textContent).toContain("Task model option · sandbox: true");
+  expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
+  expect(container.textContent).not.toContain("changed-after-proposal");
+
+  mocks.state = {
+    ...mocks.state,
+    actionLog: [{ ...summary, status: "executed", resolvedAt: createdAt }],
+  };
+  mocks.detail = { ...mocks.detail, status: "executed", resolvedAt: createdAt };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  expect(container.textContent).toContain("Task model option · reasoningEffort: high");
+  expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
+});
 
 it("restores an automatically archived thread only after Undo archive", async () => {
   const createdAt = "2026-10-24T12:00:00.000Z";
@@ -1504,6 +1648,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
     input: {
       attachments: [],
       followUpBehavior: "queue",
+      taskModelSelection: null,
       text: "[[thread:stable-target]]",
       expectedContext: "YB",
       expectedThreadId: mocks.state!.threadId,
@@ -1536,6 +1681,7 @@ it("keeps the draft and says why when another client changed Nia's context first
     input: {
       attachments: [],
       followUpBehavior: "queue",
+      taskModelSelection: null,
       text: "Global-only draft",
       expectedContext: "Global",
       expectedThreadId: threadId,
@@ -1577,6 +1723,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
     input: {
       attachments: [],
       followUpBehavior: "queue",
+      taskModelSelection: null,
       text: "Global-only draft",
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
@@ -1710,6 +1857,7 @@ it("keeps an attachment-only draft bound to its context and sends it only after 
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
       followUpBehavior: "queue",
+      taskModelSelection: null,
       attachments: [
         {
           type: "file",
@@ -1742,6 +1890,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
       expectedContext: "Global",
       expectedThreadId: threadId,
       followUpBehavior: "queue",
+      taskModelSelection: null,
     },
   });
   await write("Steer this");
@@ -1758,6 +1907,7 @@ it("sends the selected active-turn queue and steer behavior and preserves reject
       expectedContext: "Global",
       expectedThreadId: threadId,
       followUpBehavior: "steer",
+      taskModelSelection: null,
     },
   });
   const upload = container.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -1881,6 +2031,7 @@ it("asks before creating a thread and then links the thread it created", async (
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(container.textContent).toContain("New thread");
   expect(container.textContent).toContain("Web app");
+  expect(container.textContent).toContain("codex-instance / gpt-test");
   expect(container.textContent).not.toContain("Open thread");
   await act(async () =>
     [...container.querySelectorAll("button")]
@@ -1912,3 +2063,174 @@ it("asks before creating a thread and then links the thread it created", async (
   );
   expect(link?.getAttribute("href")).toBe(`/${environmentId}/d4-action:start-1`);
 });
+
+it.each(["approve", "deny"] as const)(
+  "shows pending %s feedback on the host action card",
+  async (decision) => {
+    const createdAt = new Date().toISOString();
+    mocks.detail = {
+      id: "synthetic-pc",
+      context: "Global",
+      sessionId: threadId,
+      action: { type: "pc", command: "printf synthetic-approval" },
+      status: "pending",
+      createdAt,
+      resolvedAt: null,
+    };
+    mocks.state = {
+      ...mocks.state!,
+      actionLog: [
+        {
+          id: "synthetic-pc",
+          type: "pc",
+          targetId: "host",
+          preview: "printf synthetic-approval",
+          status: "pending",
+          createdAt,
+          resolvedAt: null,
+        },
+      ],
+    };
+    let finish!: (value: { _tag: string; value: { threadId: ThreadId } }) => void;
+    mocks.resolve.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(() =>
+      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
+    );
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === (decision === "approve" ? "Approve" : "Deny"),
+    )!;
+    await act(() => button.click());
+    try {
+      expect(mocks.resolve).toHaveBeenCalledOnce();
+      expect(container.textContent).toContain(decision === "approve" ? "Approving…" : "Denying…");
+      expect(button.disabled).toBe(true);
+      await act(() => button.click());
+      expect(mocks.resolve).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => finish({ _tag: "Success", value: { threadId } }));
+    }
+  },
+);
+
+it("keeps permission failures beside the pending host command", async () => {
+  const createdAt = new Date().toISOString();
+  mocks.detail = {
+    id: "synthetic-pc",
+    context: "Global",
+    sessionId: threadId,
+    action: { type: "pc", command: "printf synthetic-approval" },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "synthetic-pc",
+        type: "pc",
+        targetId: "host",
+        preview: "printf synthetic-approval",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  mocks.resolve.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(new D4AgentError({ reason: "read-only" })),
+  } as never);
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  const approve = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Approve",
+  )!;
+  await act(async () => approve.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("current permissions");
+  expect(container.textContent).not.toContain("History shows why");
+  expect(
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Deny")!.disabled,
+  ).toBe(false);
+});
+
+it("distinguishes unavailable action details from loading", async () => {
+  const createdAt = new Date().toISOString();
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [
+      {
+        id: "synthetic-stale",
+        type: "pc",
+        targetId: "host",
+        preview: "printf synthetic-approval",
+        status: "pending",
+        createdAt,
+        resolvedAt: null,
+      },
+    ],
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("no longer pending or available");
+  expect(container.textContent).not.toContain("Loading action details");
+  const refresh = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Refresh status",
+  )!;
+  await act(() => refresh.click());
+  expect(mocks.refresh).toHaveBeenCalled();
+  expect(mocks.resolve).not.toHaveBeenCalled();
+});
+
+it.each(["transport", "stale"])(
+  "handles a %s host action without claiming execution",
+  async (mode) => {
+    const createdAt = new Date().toISOString();
+    mocks.detail = {
+      id: "synthetic-pc",
+      context: "Global",
+      sessionId: threadId,
+      action: { type: "pc", command: "printf synthetic-approval" },
+      status: mode === "stale" ? "denied" : "pending",
+      createdAt,
+      resolvedAt: null,
+    };
+    mocks.state = {
+      ...mocks.state!,
+      actionLog: [
+        {
+          id: "synthetic-pc",
+          type: "pc",
+          targetId: "host",
+          preview: "printf synthetic-approval",
+          status: "pending",
+          createdAt,
+          resolvedAt: null,
+        },
+      ],
+    };
+    await act(() =>
+      root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />),
+    );
+    const approve = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Approve",
+    )!;
+    if (mode === "stale") {
+      expect(approve.disabled).toBe(true);
+      expect(container.textContent).toContain("no longer pending");
+      expect(mocks.resolve).not.toHaveBeenCalled();
+    } else {
+      mocks.resolve.mockRejectedValueOnce(new Error("Synthetic disconnect"));
+      await act(async () => approve.click());
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Could not confirm the result",
+      );
+      expect(approve.disabled).toBe(false);
+      expect(mocks.refresh).toHaveBeenCalled();
+      expect(mocks.resolve).toHaveBeenCalledOnce();
+    }
+  },
+);

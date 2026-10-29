@@ -1,3 +1,4 @@
+import { ThreadNotesButton } from "./ThreadNotes";
 import type { ChangeRequestStateLike } from "@d4research/client-runtime/state/thread-settled";
 import {
   AuthOrchestrationOperateScope,
@@ -280,6 +281,13 @@ export const ChatHeader = memo(function ChatHeader({
       )}
       onContextMenu={handleHeaderContextMenu}
     >
+      {isServerThread ? (
+        <ThreadNotesButton
+          key={`${activeThreadEnvironmentId}:${activeThreadId}`}
+          environmentId={activeThreadEnvironmentId}
+          threadId={activeThreadId}
+        />
+      ) : null}
       <WorkspaceBreadcrumb
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"

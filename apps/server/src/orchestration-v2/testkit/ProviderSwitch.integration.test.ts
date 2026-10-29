@@ -108,6 +108,7 @@ function makeTestAdapter(input: {
   readonly nativeThreadGeneration?: Ref.Ref<number>;
   readonly failResume?: boolean;
   readonly failResumeOnce?: Ref.Ref<boolean>;
+  readonly compactedContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly initialContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
   readonly canReuseContextUsage?: ProviderAdapter.ProviderAdapterV2SessionRuntime["canReuseContextUsage"];
@@ -263,7 +264,7 @@ function makeTestAdapter(input: {
               }
               const eventTime = yield* DateTime.now;
               const providerTurnId = ProviderTurnId.make(
-                `provider-turn:${input.driver}:${turnInput.threadId}:${turnInput.runOrdinal}`,
+                `provider-turn:${input.driver}:${turnInput.threadId}:${turnInput.runOrdinal}${turnInput.attemptId.endsWith(":handoff-compaction") ? ":compact" : ""}`,
               );
               const terminalStatus = input.failedRunOrdinals?.has(turnInput.runOrdinal)
                 ? "failed"
@@ -342,7 +343,9 @@ function makeTestAdapter(input: {
                   threadDisposition: "reusable",
                 },
               ];
-              const reportedUsage = input.tokenUsageByRunOrdinal?.[turnInput.runOrdinal];
+              const reportedUsage = turnInput.attemptId.endsWith(":handoff-compaction")
+                ? input.compactedContextUsage
+                : input.tokenUsageByRunOrdinal?.[turnInput.runOrdinal];
               const turnEvent = providerEvents[0];
               if (reportedUsage && turnEvent?.type === "provider_turn.updated") {
                 yield* PubSub.publish(events, {
@@ -393,6 +396,139 @@ const waitForIdle = Effect.fn("ProviderSwitchTest.waitForIdle")(function* (
 });
 
 describe("orchestration v2 provider switching", () => {
+  it.live.each(["recovered", "still-full", "unmeasured"] as const)(
+    "automatically compacts a full native target with outcome %s",
+    (outcome) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace("handoff-native-recovery");
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const injectedHistory = yield* Ref.make<ReadonlyArray<unknown>>([]);
+          const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+            makeTestAdapter({
+              instanceId: CODEX_MODEL_SELECTION.instanceId,
+              driver: CODEX_DRIVER,
+              capabilities: CodexProviderCapabilitiesV2,
+              modelSelection: CODEX_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+              injectedHistory,
+              tokenUsageByRunOrdinal: { 1: { usedTokens: 120_000, maxTokens: 128_000 } },
+              ...(outcome === "unmeasured"
+                ? {}
+                : {
+                    compactedContextUsage: {
+                      usedTokens: outcome === "still-full" ? 120_000 : 2_000,
+                      maxTokens: 128_000,
+                    },
+                  }),
+            }),
+            makeTestAdapter({
+              instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+              driver: CLAUDE_DRIVER,
+              capabilities: ClaudeProviderCapabilitiesV2,
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+            }),
+          ]);
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make("recovery:create"),
+              threadId,
+              projectId,
+              title: "Recovery",
+              modelSelection: CODEX_MODEL_SELECTION,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: cwd,
+            });
+            for (const [index, modelSelection] of [
+              CODEX_MODEL_SELECTION,
+              CLAUDE_MODEL_SELECTION,
+              CODEX_MODEL_SELECTION,
+            ].entries()) {
+              const completed = yield* orchestrator.streamStoredEvents.pipe(
+                Stream.filter(
+                  (e) =>
+                    e.event.type === "run.updated" &&
+                    e.event.payload.ordinal === index + 1 &&
+                    ["completed", "failed"].includes(e.event.payload.status),
+                ),
+                Stream.runHead,
+                Effect.forkScoped,
+              );
+              yield* orchestrator.dispatch({
+                type: "message.dispatch",
+                createdBy: "user",
+                creationSource: "web",
+                commandId: CommandId.make(`recovery:${index}`),
+                threadId,
+                messageId: MessageId.make(`recovery:${index}`),
+                text:
+                  index === 2
+                    ? "Original pending request: preserve this exactly."
+                    : `Message ${index}`,
+                attachments: [],
+                modelSelection,
+                dispatchMode: { type: "start_immediately" },
+              });
+              yield* worker.drain();
+              yield* Fiber.join(completed);
+            }
+            const projection = yield* orchestrator.getThreadProjection(threadId);
+            assert.deepEqual(
+              projection.runs.map((r) => r.status),
+              ["completed", "completed", outcome === "recovered" ? "completed" : "failed"],
+            );
+            assert.equal(
+              projection.turnItems.some((item) => item.type === "error"),
+              outcome !== "recovered",
+            );
+            assert.lengthOf(projection.attempts, 3);
+            const turns = yield* Ref.get(capturedTurns);
+            assert.lengthOf(turns, outcome === "recovered" ? 4 : 3);
+            assert.equal(turns[2]?.text, "/compact");
+            assert.equal(
+              turns[3]?.text,
+              outcome === "recovered"
+                ? "Original pending request: preserve this exactly."
+                : undefined,
+            );
+            assert.lengthOf(
+              turns.filter((t) => t.text.includes("Original pending request")),
+              outcome === "recovered" ? 1 : 0,
+            );
+            assert.equal((yield* Ref.get(injectedHistory)).length > 0, outcome === "recovered");
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: "handoff-native-recovery",
+                  runtimePolicyOverride: {
+                    cwd,
+                    approvalPolicy: "never",
+                    sandboxPolicy: {
+                      type: "readOnly",
+                      access: { type: "fullAccess" },
+                      networkAccess: false,
+                    },
+                  },
+                },
+                layerRegistry,
+              ),
+            ),
+          );
+        }),
+      ),
+  );
+
   it.live.each([
     "compact-native",
     "compact-fallback",

@@ -65,6 +65,8 @@ import { ComposerControl, ComposerControlIcon } from "../chat/ComposerControl";
 import { ComposerImageThumbnail } from "../chat/ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "../chat/ComposerPrimaryActions";
 import { ComposerSurface } from "../chat/ComposerSurface";
+import { ComposerFooter } from "../chat/ComposerFooter";
+import { d4AgentTaskFailureMessage } from "./d4AgentTaskFeedback";
 import type { ComposerDraftContextRecords } from "../composerContextPresentation";
 
 type DraftAttachment = ComposerImageAttachment | ComposerFileAttachment;
@@ -95,6 +97,10 @@ export function D4AgentComposer({
   const projects = useProjects();
   const threads = useThreadShells();
   const [text, setText] = useState("");
+  // undefined follows the saved default; null explicitly means manager-only conversation.
+  const [taskSelectionOverride, setTaskSelectionOverride] = useState<
+    ModelSelection | null | undefined
+  >(undefined);
   const [cursor, setCursor] = useState(0);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const focusAfterMention = useRef(false);
@@ -124,18 +130,32 @@ export function D4AgentComposer({
   const bindDraft = () => setOrigin((current) => current ?? agentDraftOrigin(state));
   const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const settings = useMergedSettings(config?.settings ?? DEFAULT_SERVER_SETTINGS);
-  const selection = settings
-    ? (settings.d4Agent.modelSelection ?? resolveAppModelSelectionState(settings, providers))
-    : null;
-  const entries = settings
+  const fallbackSelection = settings ? resolveAppModelSelectionState(settings, providers) : null;
+  const selection = settings ? (settings.d4Agent.modelSelection ?? fallbackSelection) : null;
+  const taskSelection =
+    taskSelectionOverride === undefined
+      ? (settings?.d4Agent.taskModelSelection ?? null)
+      : taskSelectionOverride;
+  const taskPickerSelection = taskSelection ?? fallbackSelection;
+  const allEntries = settings
     ? sortProviderInstanceEntries(
         applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-      ).filter((entry) => supportsD4AgentDriver(entry.driverKind))
+      )
     : [];
+  const entries = allEntries.filter((entry) => supportsD4AgentDriver(entry.driverKind));
   const entry = entries.find((candidate) => candidate.instanceId === selection?.instanceId);
   const modelOptions =
     settings && selection
       ? getCustomModelOptionsByInstance(settings, providers, selection.instanceId, selection.model)
+      : new Map();
+  const taskModelOptions =
+    settings && taskPickerSelection
+      ? getCustomModelOptionsByInstance(
+          settings,
+          providers,
+          taskPickerSelection.instanceId,
+          taskPickerSelection.model,
+        )
       : new Map();
   const capability = {
     attachmentUploadsCapabilityKnown: config !== null,
@@ -290,6 +310,7 @@ export function D4AgentComposer({
         input: {
           text: submitted.trim(),
           attachments: uploaded,
+          taskModelSelection: taskSelection,
           followUpBehavior,
           expectedContext: target.context,
           expectedThreadId: target.threadId,
@@ -301,11 +322,17 @@ export function D4AgentComposer({
         setError(
           stale
             ? "Not sent: Nia's context or session changed after you wrote this. Your draft is preserved. Check it, then send again."
-            : "Could not send this message. Your draft is preserved.",
+            : d4AgentTaskFailureMessage({
+                failure,
+                preserved: "Your draft is preserved.",
+                providers,
+                selection: taskSelection,
+              }),
         );
         if (stale) refresh();
       } else {
         setText((current) => (current === submitted || voiceText !== undefined ? "" : current));
+        setTaskSelectionOverride(undefined);
         const ids = new Set(submittedAttachments.map((attachment) => attachment.id));
         draftAttachments.current = draftAttachments.current.filter(
           (attachment) => !ids.has(attachment.id),
@@ -551,14 +578,8 @@ export function D4AgentComposer({
                 }}
               />
             </div>
-            <div
-              data-chat-composer-footer="true"
-              className="flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4"
-            >
-              <div
-                data-chat-composer-controls="left"
-                className="relative -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
+            <ComposerFooter.Root>
+              <ComposerFooter.Controls>
                 {selection ? (
                   <ProviderModelPicker
                     environmentId={environmentId}
@@ -597,11 +618,38 @@ export function D4AgentComposer({
                     disabled={!canConfigure || saving || sending}
                   />
                 ) : null}
-              </div>
-              <div
-                data-chat-composer-actions="right"
-                className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
-              >
+                {taskPickerSelection ? (
+                  <ProviderModelPicker
+                    environmentId={environmentId}
+                    activeInstanceId={taskPickerSelection.instanceId}
+                    model={taskPickerSelection.model}
+                    lockedProvider={null}
+                    instanceEntries={allEntries}
+                    modelOptionsByInstance={taskModelOptions}
+                    triggerAriaLabel="Nia task model"
+                    triggerClassName="min-w-32 shrink-0"
+                    {...(taskSelection ? {} : { triggerLabel: "Choose task model" })}
+                    disabled={sending}
+                    onInstanceModelChange={(instanceId, model) => {
+                      setTaskSelectionOverride(createModelSelection(instanceId, model));
+                      bindDraft();
+                    }}
+                  />
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={taskSelection === null ? "secondary" : "ghost"}
+                  disabled={sending}
+                  onClick={() => {
+                    setTaskSelectionOverride(null);
+                    bindDraft();
+                  }}
+                >
+                  No task model
+                </Button>
+              </ComposerFooter.Controls>
+              <ComposerFooter.Actions>
                 <input
                   ref={fileInput}
                   type="file"
@@ -671,8 +719,8 @@ export function D4AgentComposer({
                   onInterrupt={noop}
                   onImplementPlanInNewThread={noop}
                 />
-              </div>
-            </div>
+              </ComposerFooter.Actions>
+            </ComposerFooter.Root>
           </ComposerSurface.Main>
         </ComposerSurface.Host>
       </form>

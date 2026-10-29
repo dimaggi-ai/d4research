@@ -301,3 +301,84 @@ it("send decoding accepts older clients and attachment-only input but rejects an
   );
   assert.isTrue(Option.isNone(decode({ text: "", attachments: [] })));
 });
+
+it.effect(
+  "host routine metadata is bounded, validated, read-only and distinct from an unavailable snapshot",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "d4-host-routines-" });
+        const stateDirectory = `${directory}/userdata/d4-agent`;
+        const file = `${stateDirectory}/host-routines.json`;
+        const store = yield* Store.D4AgentStore.pipe(
+          Effect.provide(
+            Store.layer.pipe(Layer.provide(Config.layerTest(process.cwd(), directory))),
+          ),
+        );
+        assert.deepEqual(yield* store.readHostRoutines!(), {
+          status: "not-configured",
+          routines: [],
+        });
+        yield* fs.makeDirectory(stateDirectory, { recursive: true });
+        const routine = {
+          id: "host-public-check",
+          title: "Public source check",
+          context: "Personal",
+          source: "systemd",
+          schedule: "daily 09:00",
+          timeZone: "UTC",
+          enabled: true,
+          nextRunAt: null,
+          lastRunAt: null,
+          lastRunStatus: "unknown",
+          observedAt: "2026-10-28T10:00:00Z",
+          capability: "read-only",
+        } as const;
+        yield* fs.writeFileString(
+          file,
+          JSON.stringify({
+            routines: [
+              {
+                ...routine,
+                command: "PRIVATE COMMAND",
+                prompt: "PRIVATE PROMPT",
+                path: "/private/example",
+              },
+            ],
+          }),
+        );
+        const loaded = yield* store.readHostRoutines!();
+        assert.equal(loaded.status, "available");
+        assert.deepEqual(loaded.routines, [routine]);
+        assert.notInclude(JSON.stringify(loaded), "PRIVATE");
+        for (const content of [
+          "{invalid",
+          JSON.stringify({ routines: [{ ...routine, capability: "write" }] }),
+          JSON.stringify({ routines: [{ ...routine, observedAt: "not-a-date" }] }),
+          JSON.stringify({ routines: [routine, routine] }),
+          JSON.stringify({
+            routines: Array.from({ length: 101 }, (_, index) => ({
+              ...routine,
+              id: `routine-${index}`,
+            })),
+          }),
+          " ".repeat(65537),
+        ]) {
+          yield* fs.writeFileString(file, content);
+          assert.deepEqual(yield* store.readHostRoutines!(), {
+            status: "unavailable",
+            routines: [],
+          });
+          assert.equal(yield* fs.readFileString(file), content);
+        }
+        yield* fs.writeFileString(file, JSON.stringify({ routines: [] }));
+        assert.deepEqual(yield* store.readHostRoutines!(), { status: "available", routines: [] });
+        const otherFile = `${stateDirectory}/other.json`;
+        yield* fs.rename(file, otherFile);
+        yield* fs.symlink(otherFile, file);
+        assert.deepEqual(yield* store.readHostRoutines!(), { status: "unavailable", routines: [] });
+        assert.equal(yield* fs.readFileString(otherFile), JSON.stringify({ routines: [] }));
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);

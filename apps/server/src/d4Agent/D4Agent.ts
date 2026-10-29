@@ -1,4 +1,5 @@
 import * as NiaRequestRecovery from "./NiaRequestRecovery.ts";
+import { providerDecisionContext } from "./providerContext.ts";
 import * as OverviewThreads from "./OverviewThreads.ts";
 import * as Overview from "./overview.ts";
 import * as OverviewInbox from "./OverviewInbox.ts";
@@ -30,10 +31,8 @@ import { sha256Hex } from "@d4research/shared/hash";
 import { randomUuidV4 as randomUUID } from "@d4research/provider-core/server/randomUuid";
 import {
   type ChatAttachment,
-  canStartProviderTurn,
   CommandId,
   D4_BRAIN_CONTEXTS,
-  supportsD4AgentDriver,
   D4AgentError,
   D4BrainContext,
   type D4AgentSwitchContextInput,
@@ -56,6 +55,7 @@ import {
   type D4AgentSendInput,
   type D4AgentSettings,
   type D4AgentState,
+  type D4HostRoutinesState,
   type D4AgentSystemCheck,
   type D4AgentEnsureThreadResult,
 } from "@d4research/contracts";
@@ -92,6 +92,8 @@ import {
   contentFreeDigest,
   modelAvailability,
   modelFacingReport,
+  selectionsEqual,
+  taskModelAvailability,
   taskRuntimeMode,
   taskTitle,
   taskWorkspace,
@@ -119,7 +121,8 @@ export class D4Agent extends Context.Service<
     readonly listPipelines: () => Effect.Effect<
       {
         readonly pipelines: ReadonlyArray<Pipelines.ScopedPipeline>;
-        readonly modelSelection: ModelSelection;
+        readonly modelSelection: ModelSelection | null;
+        readonly defaultModelSelection: ModelSelection | null;
         readonly projects: ReadonlyArray<{ readonly projectId: ProjectId; readonly title: string }>;
       },
       D4AgentError
@@ -193,6 +196,7 @@ export class D4Agent extends Context.Service<
 >()("d4research/d4Agent/D4Agent") {}
 
 export interface D4AgentTasks {
+  readonly hostRoutines: D4HostRoutinesState;
   readonly now: string;
   readonly timeZone: string;
   readonly reminders: ReadonlyArray<{
@@ -200,6 +204,11 @@ export interface D4AgentTasks {
     readonly text: string;
     readonly at: string;
   }>;
+  readonly scheduler: {
+    readonly available: boolean;
+    readonly canSetEnabled: boolean;
+    readonly canPrepareRoutine: boolean;
+  };
   readonly scheduledTasks: ReadonlyArray<{
     readonly taskId: string;
     readonly title: string;
@@ -252,19 +261,11 @@ export interface D4AgentEnvironment {
       readonly title: string;
     }> | null;
   }>;
-  readonly providers: ReadonlyArray<{
-    readonly instanceId: string;
-    readonly driver: string;
-    readonly displayName: string | null;
-    readonly enabled: boolean;
-    readonly status: string;
-    readonly available: boolean;
-    readonly unavailableReason: string | null;
-    readonly canRunD4Agent: boolean;
-    readonly models: ReadonlyArray<{ readonly slug: string; readonly name: string }>;
-  }>;
+  readonly providers: ReturnType<typeof providerDecisionContext>;
   readonly d4Agent: {
     readonly modelSelection: ModelSelection | null;
+    readonly taskModelSelection: ModelSelection | null;
+    readonly defaultTaskModelSelection: ModelSelection | null;
     readonly permissionMode: D4AgentSettings["permissionMode"];
     readonly unavailableReason: D4AgentState["unavailableReason"];
   };
@@ -295,13 +296,15 @@ const actionTarget = (action: D4AgentAction): string =>
         ? `remind:${action.at}:${action.text}`
         : action.type === "cancel-reminder"
           ? `reminder:${action.reminderId}`
-          : action.type === "unschedule"
-            ? action.taskId
-            : "projectId" in action
-              ? action.projectId
-              : "context" in action
-                ? `${action.type}:${action.context}`
-                : action.threadId;
+          : action.type === "activate-routine"
+            ? action.routineId
+            : action.type === "unschedule" || action.type === "set-schedule-enabled"
+              ? action.taskId
+              : "projectId" in action
+                ? action.projectId
+                : "context" in action
+                  ? `${action.type}:${action.context}`
+                  : action.threadId;
 type LifecycleAction = Extract<
   D4AgentAction,
   { type: "settle" | "unsettle" | "snooze" | "unsnooze" }
@@ -330,6 +333,9 @@ export const requiresActionApproval = (
   action.type === "answer" ||
   action.type === "pc" ||
   action.type === "schedule" ||
+  action.type === "prepare-routine" ||
+  action.type === "activate-routine" ||
+  action.type === "set-schedule-enabled" ||
   action.type === "unschedule";
 
 // Per-session caches are keyed by thread id and must not outlive the session that filled them.
@@ -362,25 +368,32 @@ export function actionSummaries(
       type: action.type,
       // Approved launches create this thread, so the card can link to it.
       ...(status === "executed" &&
-      (action.type === "start" || action.type === "research" || action.type === "pipeline")
+      (action.type === "start" ||
+        action.type === "research" ||
+        action.type === "pipeline" ||
+        action.type === "prepare-routine")
         ? { threadId: ThreadId.make(`d4-action:${id}`) }
         : {}),
       targetId: actionTarget(action),
-      preview: ("text" in action
-        ? action.text
-        : action.type === "pc"
-          ? action.command
-          : action.type === "cancel-reminder"
-            ? action.reminderId
-            : action.type === "unschedule"
-              ? action.taskId
-              : action.type === "switch-context"
-                ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
-                : action.type === "answer"
-                  ? JSON.stringify(action.answers)
-                  : action.type === "snooze"
-                    ? `Until ${action.until}`
-                    : ""
+      preview: (action.type === "set-schedule-enabled"
+        ? `${action.enabled ? "Enable" : "Disable"} scheduled task ${action.taskId}`
+        : action.type === "activate-routine"
+          ? action.readiness.summary
+          : "text" in action
+            ? action.text
+            : action.type === "pc"
+              ? action.command
+              : action.type === "cancel-reminder"
+                ? action.reminderId
+                : action.type === "unschedule"
+                  ? action.taskId
+                  : action.type === "switch-context"
+                    ? `Switch to ${action.targetContext ?? "?"}: ${action.title ?? actionTarget(action)}`
+                    : action.type === "answer"
+                      ? JSON.stringify(action.answers)
+                      : action.type === "snooze"
+                        ? `Until ${action.until}`
+                        : ""
       ).slice(0, 256),
       ...(note === undefined ? {} : { note }),
       status,
@@ -495,6 +508,34 @@ export const layer = Layer.effect(
         brainContext: session.context,
         contextScopeHash: session.scopeHash,
       };
+    });
+    const activeUserMessage = Effect.fn("D4Agent.activeUserMessage")(function* (
+      state: D4AgentStore.StoredState,
+    ) {
+      const shell =
+        state.threadId === null
+          ? null
+          : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
+      if (shell?.activeRunId != null) {
+        const message = yield* projections
+          .getRunMessage(shell.id, shell.activeRunId)
+          .pipe(Effect.mapError(threadError));
+        if (message?.createdBy !== "user") return undefined;
+        const stored = state.userMessages?.find((entry) => entry.messageId === String(message.id));
+        return {
+          text: message.text,
+          taskModelSelection: stored?.taskModelSelection,
+          snapshotFound: stored !== undefined && Object.hasOwn(stored, "taskModelSelection"),
+        };
+      }
+      if ((yield* D4AgentAccess.ToolCaller) !== undefined) return undefined;
+      const stored = state.userMessages?.findLast((entry) => entry.threadId === state.threadId);
+      return stored === undefined
+        ? undefined
+        : {
+            ...stored,
+            snapshotFound: Object.hasOwn(stored, "taskModelSelection"),
+          };
     });
     const bound = Effect.fn("D4Agent.bound")(function* (context?: D4BrainContext) {
       const state = yield* scopedState;
@@ -1084,7 +1125,39 @@ export const layer = Layer.effect(
           if ((yield* store.get).brainContext !== context) yield* rotate(context);
         }
       }
+      const sendConfig = yield* settings;
+      const taskModelSelection =
+        input.taskModelSelection === undefined
+          ? sendConfig.taskModelSelection
+          : input.taskModelSelection;
+      if (!heartbeat && taskModelSelection !== null) {
+        const unavailable = taskModelAvailability(
+          { ...sendConfig, taskModelSelection },
+          yield* providers.getProviders,
+          yield* Clock.currentTimeMillis,
+          false,
+        );
+        if (unavailable !== null) return yield* new D4AgentError({ reason: unavailable });
+      }
       const identity = yield* ensure(context);
+      const steeredRequest =
+        !heartbeat && input.followUpBehavior === "steer" && input.taskModelSelection !== undefined
+          ? yield* threads.getThreadShell(identity.threadId).pipe(
+              Effect.mapError(threadError),
+              Effect.flatMap((shell) =>
+                shell?.activeRunId == null
+                  ? Effect.succeed(undefined)
+                  : projections
+                      .getRunMessage(shell.id, shell.activeRunId)
+                      .pipe(Effect.mapError(threadError)),
+              ),
+              Effect.map((message) =>
+                message?.createdBy === "user"
+                  ? { messageId: String(message.id), text: message.text }
+                  : undefined,
+              ),
+            )
+          : undefined;
       const modelSelection = yield* selected;
       const at = DateTime.formatIso(yield* DateTime.now);
       yield* store.update((value) => ({
@@ -1095,7 +1168,7 @@ export const layer = Layer.effect(
       }));
       const current = yield* store.get;
       const session = current.sessions?.find((entry) => entry.threadId === identity.threadId);
-      const budget = (yield* settings).sessionBudgetPercent;
+      const budget = sendConfig.sessionBudgetPercent;
       if (
         !heartbeat &&
         !resumedAfterRotation &&
@@ -1103,7 +1176,7 @@ export const layer = Layer.effect(
         session?.contextWindow != null &&
         session.inputTokens >= (session.contextWindow * budget) / 100
       ) {
-        yield* beginRotation(input.text, heartbeat, id, input);
+        yield* beginRotation(input.text, heartbeat, id, { ...input, taskModelSelection });
         return identity;
       }
       if (!heartbeat)
@@ -1115,6 +1188,7 @@ export const layer = Layer.effect(
               threadId: identity.threadId,
               messageId: `d4-agent:${id}`,
               text: input.text,
+              taskModelSelection,
             },
           ].slice(-200),
         }));
@@ -1134,6 +1208,21 @@ export const layer = Layer.effect(
         Effect.provideService(ServerConfig.ServerConfig, serverConfig),
         Effect.mapError(threadError),
       );
+      if (steeredRequest !== undefined)
+        yield* store.update((value) => ({
+          ...value,
+          userMessages: [
+            ...(value.userMessages ?? []).filter(
+              (entry) => entry.messageId !== steeredRequest.messageId,
+            ),
+            {
+              threadId: identity.threadId,
+              messageId: steeredRequest.messageId,
+              text: steeredRequest.text,
+              taskModelSelection: input.taskModelSelection!,
+            },
+          ].slice(-200),
+        }));
       if (!heartbeat)
         yield* appendDisplay(input.text, "user", `d4-agent:${id}`, delivered.message.attachments);
       if (!heartbeat && resumedAfterRotation)
@@ -1192,6 +1281,13 @@ export const layer = Layer.effect(
         (project) => project.id !== state.projectId,
       );
       const osRelease = yield* fileSystem.readFileString(yield* OsReleasePath).pipe(Effect.option);
+      const activeMessage = yield* activeUserMessage(state);
+      const activeTaskModelSelection =
+        activeMessage === undefined
+          ? config.taskModelSelection
+          : activeMessage.snapshotFound
+            ? (activeMessage.taskModelSelection ?? null)
+            : null;
       return {
         application: "d4research",
         boundContext: state.brainContext,
@@ -1210,23 +1306,11 @@ export const layer = Layer.effect(
                   .map((project) => ({ projectId: project.id, title: project.title.slice(0, 256) }))
               : null,
         })),
-        providers: catalog.map((provider) => ({
-          instanceId: provider.instanceId,
-          driver: provider.driver,
-          displayName: provider.displayName ?? null,
-          enabled: provider.enabled,
-          status: provider.status,
-          available: canStartProviderTurn(provider),
-          unavailableReason: provider.unavailableReason ?? null,
-          canRunD4Agent: supportsD4AgentDriver(provider.driver),
-          models: provider.models
-            .filter(
-              (model) => !provider.updateRequiredModels?.some((entry) => entry.slug === model.slug),
-            )
-            .map((model) => ({ slug: model.slug, name: model.name })),
-        })),
+        providers: providerDecisionContext(catalog, yield* Clock.currentTimeMillis),
         d4Agent: {
           modelSelection: config.modelSelection,
+          taskModelSelection: activeTaskModelSelection,
+          defaultTaskModelSelection: config.taskModelSelection,
           permissionMode: config.permissionMode,
           unavailableReason: modelAvailability(config, catalog),
         },
@@ -1504,6 +1588,9 @@ export const layer = Layer.effect(
             ...(pendingInput?.followUpBehavior === undefined
               ? {}
               : { pendingFollowUpBehavior: pendingInput.followUpBehavior }),
+            ...(pendingInput?.taskModelSelection === undefined
+              ? {}
+              : { pendingTaskModelSelection: pendingInput.taskModelSelection }),
             requestedAt: at,
             heartbeat,
             deliveryId: pendingId,
@@ -1545,6 +1632,9 @@ export const layer = Layer.effect(
           {
             text: rotation.pendingText,
             attachments: rotation.pendingAttachments ?? [],
+            ...(rotation.pendingTaskModelSelection === undefined
+              ? {}
+              : { taskModelSelection: rotation.pendingTaskModelSelection }),
             followUpBehavior: rotation.pendingFollowUpBehavior ?? "queue",
           },
           rotation.heartbeat ?? false,
@@ -1620,6 +1710,18 @@ export const layer = Layer.effect(
         ...value,
         rotation: value.rotation?.messageId === decided.messageId ? null : (value.rotation ?? null),
       }));
+    });
+    const hostRoutines = Effect.fn("D4Agent.hostRoutines")(function* (context: D4BrainContext) {
+      const snapshot: D4HostRoutinesState =
+        store.readHostRoutines === undefined
+          ? { status: "not-configured", routines: [] }
+          : yield* store.readHostRoutines();
+      return {
+        ...snapshot,
+        routines: snapshot.routines.filter(
+          (entry) => context === "Global" || entry.context === context,
+        ),
+      };
     });
     const getState = Effect.fn("D4Agent.getState")(function* () {
       yield* captureDisplay();
@@ -1716,6 +1818,12 @@ export const layer = Layer.effect(
                 record.sessionId === state.threadId),
           ),
         ),
+        hostRoutines: yield* hostRoutines(state.brainContext),
+        routines: (state.routines ?? []).filter(
+          (entry) =>
+            entry.context === state.brainContext &&
+            projectActionInScope(state.brainContext, config, entry.projectId),
+        ),
         reminders: (state.reminders ?? [])
           .filter((entry) => entry.context === state.brainContext)
           .toSorted((a, b) => a.at.localeCompare(b.at)),
@@ -1755,6 +1863,23 @@ export const layer = Layer.effect(
       if (projectId === state.projectId || targetContext === "Global")
         return yield* new D4AgentError({ reason: "action-unavailable" });
       return { targetContext, title: title.slice(0, 256) };
+    });
+    const prepareRoutinePipeline = Effect.fn("D4Agent.prepareRoutinePipeline")(function* (
+      draft: Extract<D4AgentAction, { type: "prepare-routine" }>,
+      context: D4BrainContext,
+      text = draft.text,
+    ) {
+      if (draft.pipelineId === undefined) return undefined;
+      return yield* pipelines.prepare(
+        {
+          type: "research",
+          projectId: draft.projectId,
+          pipelineId: draft.pipelineId,
+          modelSelection: draft.modelSelection,
+          text,
+        },
+        context,
+      );
     });
     const validateTarget = Effect.fn("D4Agent.validateTarget")(function* (action: D4AgentAction) {
       if (action.type === "switch-context") {
@@ -1801,12 +1926,81 @@ export const layer = Layer.effect(
           return yield* new D4AgentError({ reason: "action-unavailable" });
         return;
       }
-      if (action.type === "schedule") {
+      if (action.type === "set-schedule-enabled") {
+        if (Option.isNone(scheduledTasks))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const task = (yield* scheduledTasks.value
+          .list()
+          .pipe(Effect.mapError(storageError))).tasks.find((entry) => entry.id === action.taskId);
+        if (
+          task === undefined ||
+          task.projectId === state.projectId ||
+          config.projectContexts[task.projectId] === undefined ||
+          !projectActionInScope(state.brainContext, config, task.projectId)
+        )
+          return yield* new D4AgentError({ reason: "context" });
+        return;
+      }
+      if (action.type === "activate-routine") {
+        const routine = state.routines?.find(
+          (entry) => entry.id === action.routineId && entry.context === state.brainContext,
+        );
+        if (
+          Option.isNone(scheduledTasks) ||
+          routine === undefined ||
+          routine.status === "activated" ||
+          config.projectContexts[routine.projectId] === undefined ||
+          state.taskScopes?.find((entry) => entry.threadId === routine.threadId)?.scopeHash !==
+            taskScopeHash(
+              state.brainContext,
+              config,
+              routine.projectId,
+              routine.draft.pipelineId,
+            ) ||
+          !projectActionInScope(state.brainContext, config, routine.projectId) ||
+          !action.readiness.checks.every((check) => check.passed)
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const prepared = yield* prepareRoutinePipeline(
+          { ...routine.draft, type: "prepare-routine" },
+          state.brainContext,
+        );
+        if (
+          prepared !== undefined &&
+          prepared.scenarioHash !==
+            state.taskScopes?.find((entry) => entry.threadId === routine.threadId)?.pipelineHash
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const shell = yield* threads
+          .getThreadShell(routine.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (
+          shell === null ||
+          shell.projectId !== routine.projectId ||
+          shell.deletedAt !== null ||
+          shell.activeRunId !== null ||
+          shell.latestRunId === null ||
+          shell.pendingRuntimeRequest !== null ||
+          (shell.pendingBackgroundTasks?.length ?? 0) > 0
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const projection = yield* threads
+          .getThreadRecords(routine.threadId, ["runs"])
+          .pipe(Effect.mapError(threadError));
+        if (projection.runs.find((run) => run.id === shell.latestRunId)?.status !== "completed")
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        return;
+      }
+      if (action.type === "schedule" || action.type === "prepare-routine") {
+        if (action.type === "prepare-routine")
+          yield* prepareRoutinePipeline(action, state.brainContext);
         if (Option.isNone(scheduledTasks))
           return yield* new D4AgentError({ reason: "action-unavailable" });
         if (
           !projectActionInScope(state.brainContext, config, action.projectId) ||
-          action.projectId === state.projectId
+          action.projectId === state.projectId ||
+          (action.type === "prepare-routine" &&
+            config.projectContexts[action.projectId] === undefined)
         )
           return yield* new D4AgentError({ reason: "context" });
         return;
@@ -1909,6 +2103,7 @@ export const layer = Layer.effect(
     const execute = Effect.fn("D4Agent.execute")(function* (record: D4AgentActionRecord) {
       yield* validateTarget(record.action);
       const action = record.action;
+      let preparationText: string | undefined;
       const { state, config } = yield* bound();
       if (
         record.context !== state.brainContext ||
@@ -1946,19 +2141,47 @@ export const layer = Layer.effect(
           Effect.asVoid,
         );
       }
-      if (action.type === "pipeline" || action.type === "research" || action.type === "start") {
+      if (action.type === "prepare-routine") {
+        const { type: _type, ...draft } = action;
+        if (
+          !(state.routines ?? []).some((entry) => entry.id === record.id) &&
+          (state.routines ?? []).length >= 100
+        )
+          return yield* new D4AgentError({ reason: "busy" });
+        preparationText = `Prepare this recurring routine in this visible thread. Do not create or enable schedules. Inspect available provider/model and tool capabilities before planning. Use the approved Research pipeline and research_delegate for bounded independent research/setup roles only when a pipeline is bound below, with no recursive delegation. Report unavailable capabilities and never claim an agent ran without evidence. Keep progress, blockers and evidence visible here. Verify sources, required authentication, tools, output storage, notification destination, runtime permissions and one bounded trial. Do not send external notifications during the trial without explicit permission. Finish with readiness checks (label, passed, evidence), limitations, and the exact proposed recurring instructions for user review. Stop if required access is unavailable.\n\nApproved research pipeline: ${draft.pipelineId ?? "None (app research delegation is unavailable for this preparation; report this limitation)"}\nRequested routine: ${draft.title}\nCadence: ${yield* encodeDigest(draft.schedule).pipe(Effect.mapError(storageError))}\nInstructions:\n${draft.text}`;
+        const prepared = yield* prepareRoutinePipeline(action, state.brainContext, preparationText);
+        if (prepared !== undefined) {
+          if (
+            (record.result as Pipelines.PreparedPipeline | undefined)?.scenarioHash !==
+            prepared.scenarioHash
+          )
+            return yield* new D4AgentError({ reason: "action-unavailable" });
+          preparationText = prepared.text;
+        }
+      }
+      if (
+        action.type === "pipeline" ||
+        action.type === "research" ||
+        action.type === "start" ||
+        action.type === "prepare-routine"
+      ) {
         const providerList = yield* providers.getProviders;
-        const reason = modelAvailability(
-          { ...config, modelSelection: action.modelSelection },
+        const reason = taskModelAvailability(
+          { ...config, taskModelSelection: action.modelSelection },
           providerList,
+          yield* Clock.currentTimeMillis,
+          action.type !== "prepare-routine",
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const targetId = ThreadId.make(`d4-action:${record.id}`);
         const runtimeMode = taskRuntimeMode(
-          record.guard !== undefined,
+          action.type !== "prepare-routine" && record.guard !== undefined,
           providerList.find((entry) => entry.instanceId === action.modelSelection.instanceId),
         );
-        const workspace = taskWorkspace(config, action.projectId);
+        const workspace =
+          action.type === "prepare-routine"
+            ? { type: "root" as const }
+            : taskWorkspace(config, action.projectId);
         if (workspace.type !== "root") {
           if (Option.isNone(threadLaunch))
             return yield* new D4AgentError({ reason: "action-unavailable" });
@@ -1970,6 +2193,47 @@ export const layer = Layer.effect(
         if ((state.agentThreads ?? []).filter((entry) => entry.settledAt == null).length >= 1000)
           return yield* new D4AgentError({ reason: "busy" });
         const register = Effect.gen(function* () {
+          if (action.type === "prepare-routine") {
+            const { type: _type, ...draft } = action;
+            yield* store.update((value) => ({
+              ...value,
+              routines: [
+                ...(value.routines ?? []).filter((entry) => entry.id !== record.id),
+                {
+                  id: record.id,
+                  context: record.context,
+                  projectId: action.projectId,
+                  threadId: targetId,
+                  taskId: null,
+                  status: "preparing" as const,
+                  draft,
+                  readiness: null,
+                  createdAt: record.createdAt,
+                },
+              ],
+              taskScopes: [
+                ...(value.taskScopes ?? []).filter((entry) => entry.threadId !== targetId),
+                {
+                  threadId: targetId,
+                  projectId: action.projectId,
+                  context: state.brainContext,
+                  scopeHash: taskScopeHash(
+                    state.brainContext,
+                    config,
+                    action.projectId,
+                    action.pipelineId,
+                  ),
+                  ...(action.pipelineId === undefined
+                    ? {}
+                    : {
+                        pipelineId: action.pipelineId,
+                        pipelineHash: (record.result as Pipelines.PreparedPipeline).scenarioHash,
+                      }),
+                },
+              ],
+            }));
+            return;
+          }
           yield* store.update((value) => ({
             ...value,
             agentThreads: [
@@ -1998,7 +2262,7 @@ export const layer = Layer.effect(
             ],
           }));
         });
-        if (action.type !== "start") {
+        if (action.type === "pipeline" || action.type === "research") {
           const prepared = yield* pipelines.prepare(action, state.brainContext);
           const approved = record.result as Pipelines.PreparedPipeline | undefined;
           if (approved?.scenarioHash !== prepared.scenarioHash)
@@ -2019,11 +2283,13 @@ export const layer = Layer.effect(
             );
         }
         const revoke = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-          effect.pipe(
-            Effect.tapError(() =>
-              store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
-            ),
-          );
+          action.type === "prepare-routine"
+            ? effect
+            : effect.pipe(
+                Effect.tapError(() =>
+                  store.update((value) => D4AgentStore.revokeTasks(value, new Set([targetId]))),
+                ),
+              );
         if (workspace.type !== "root" && Option.isSome(threadLaunch)) {
           yield* register;
           yield* threadLaunch.value
@@ -2031,14 +2297,14 @@ export const layer = Layer.effect(
               commandId: command(`action-create:${record.id}`),
               threadId: targetId,
               projectId: action.projectId,
-              title: taskTitle(action.text),
+              title: taskTitle(action.type === "prepare-routine" ? action.title : action.text),
               modelSelection: action.modelSelection,
               runtimeMode,
               interactionMode: "default",
               workspaceStrategy: workspace,
               initialMessage: {
                 messageId: MessageId.make(`d4-action:${record.id}`),
-                text: action.text,
+                text: preparationText ?? action.text,
                 attachments: [],
               },
               createdBy: "agent",
@@ -2053,7 +2319,7 @@ export const layer = Layer.effect(
             commandId: command(`action-create:${record.id}`),
             threadId: targetId,
             projectId: action.projectId,
-            title: taskTitle(action.text),
+            title: taskTitle(action.type === "prepare-routine" ? action.title : action.text),
             modelSelection: action.modelSelection,
             runtimeMode,
             interactionMode: "default",
@@ -2070,7 +2336,7 @@ export const layer = Layer.effect(
             threadId: targetId,
             commandId: command(`action:${record.id}`),
             messageId: MessageId.make(`d4-action:${record.id}`),
-            text: action.text,
+            text: preparationText ?? action.text,
             attachments: [],
             mode: "queue",
             createdBy: "agent",
@@ -2100,6 +2366,70 @@ export const layer = Layer.effect(
         }));
         return "Reminder cancelled.";
       }
+      if (action.type === "set-schedule-enabled") {
+        if (Option.isNone(scheduledTasks))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const { task } = yield* scheduledTasks.value
+          .setEnabled({ id: action.taskId, enabled: action.enabled })
+          .pipe(Effect.mapError(storageError));
+        return { taskId: task.id, enabled: task.enabled };
+      }
+      if (action.type === "activate-routine") {
+        if (Option.isNone(scheduledTasks))
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const routine = state.routines!.find((entry) => entry.id === action.routineId)!;
+        const reviewed = record.result as { preparationRunId?: string } | undefined;
+        const latest = yield* threads
+          .getThreadShell(routine.threadId)
+          .pipe(Effect.mapError(threadError));
+        if (
+          reviewed?.preparationRunId === undefined ||
+          latest?.latestRunId !== reviewed.preparationRunId
+        )
+          return yield* new D4AgentError({ reason: "action-unavailable" });
+        const reason = taskModelAvailability(
+          { ...config, taskModelSelection: routine.draft.modelSelection },
+          yield* providers.getProviders,
+          yield* Clock.currentTimeMillis,
+          false,
+        );
+        if (reason !== null) return yield* new D4AgentError({ reason });
+        const prepared = yield* prepareRoutinePipeline(
+          { ...routine.draft, type: "prepare-routine" },
+          state.brainContext,
+        );
+        const { task } = yield* scheduledTasks.value
+          .upsert({
+            commandId: command(`routine:${routine.id}`),
+            title: routine.draft.title,
+            prompt: prepared?.text ?? routine.draft.text,
+            enabled: true,
+            schedule: routine.draft.schedule,
+            projectId: routine.projectId,
+            threadId: null,
+            workspaceStrategy: { type: "root" },
+            modelSelection: routine.draft.modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            createdBy: "agent",
+            creationSource: "server",
+          })
+          .pipe(Effect.mapError(storageError));
+        const readiness = action.readiness;
+        yield* store.update((value) => ({
+          ...value,
+          routines: (value.routines ?? []).map((entry) =>
+            entry.id === routine.id
+              ? { ...entry, taskId: task.id, status: "activated" as const, readiness }
+              : entry,
+          ),
+          scheduledTasks: [
+            ...(value.scheduledTasks ?? []).filter((entry) => entry.taskId !== task.id),
+            { taskId: task.id, context: record.context },
+          ],
+        }));
+        return { routineId: routine.id, taskId: task.id, enabled: task.enabled };
+      }
       if (action.type === "schedule" || action.type === "unschedule") {
         if (Option.isNone(scheduledTasks))
           return yield* new D4AgentError({ reason: "action-unavailable" });
@@ -2116,9 +2446,10 @@ export const layer = Layer.effect(
           }));
           return "Scheduled task deleted.";
         }
-        const reason = modelAvailability(
-          { ...config, modelSelection: action.modelSelection },
+        const reason = taskModelAvailability(
+          { ...config, taskModelSelection: action.modelSelection },
           yield* providers.getProviders,
+          yield* Clock.currentTimeMillis,
         );
         if (reason !== null) return yield* new D4AgentError({ reason });
         const { task } = yield* scheduler
@@ -2398,12 +2729,24 @@ export const layer = Layer.effect(
       // The new thread appears in the chat where its card was approved, with a link to open it.
       const created =
         result._tag === "Success" &&
-        (action.type === "start" || action.type === "research" || action.type === "pipeline")
+        (action.type === "start" ||
+          action.type === "research" ||
+          action.type === "pipeline" ||
+          action.type === "prepare-routine")
           ? taskTitle(action.text)
           : null;
       yield* store.update((value) => ({
         ...value,
         actions: value.actions.map((entry) => (entry.id === record.id ? resolved : entry)),
+        ...(result._tag === "Failure" && record.action.type === "prepare-routine"
+          ? {
+              routines: (value.routines ?? []).map((entry) =>
+                entry.id === record.id
+                  ? { ...entry, status: "failed" as const, failure: failureText(result.failure) }
+                  : entry,
+              ),
+            }
+          : {}),
         ...(created === null
           ? {}
           : {
@@ -2436,7 +2779,14 @@ export const layer = Layer.effect(
           if (!config.enabled) return yield* new D4AgentError({ reason: "disabled" });
           if (
             config.permissionMode === "read-only" &&
-            !["send", "start", "pipeline", "research", "switch-context"].includes(action.type)
+            ![
+              "send",
+              "start",
+              "pipeline",
+              "research",
+              "prepare-routine",
+              "switch-context",
+            ].includes(action.type)
           )
             return yield* new D4AgentError({ reason: "read-only" });
           yield* validateAction(action).pipe(
@@ -2444,21 +2794,48 @@ export const layer = Layer.effect(
           );
           yield* validateTarget(action);
           const state = yield* scopedState;
-          // The user's words of the turn that led to this draft, never text the agent wrote.
-          const currentUserText = Effect.gen(function* () {
-            const shell =
-              state.threadId === null
-                ? null
-                : yield* threads.getThreadShell(state.threadId).pipe(Effect.mapError(threadError));
-            if (shell?.activeRunId != null) {
-              const message = yield* projections
-                .getRunMessage(shell.id, shell.activeRunId)
-                .pipe(Effect.mapError(threadError));
-              return message?.createdBy === "user" ? message.text : undefined;
-            }
-            if ((yield* D4AgentAccess.ToolCaller) !== undefined) return undefined;
-            return state.userMessages?.findLast((entry) => entry.threadId === state.threadId)?.text;
-          });
+          // The user's turn carries an immutable worker intent as well as text. This snapshot,
+          // not a later settings read, binds a proposal created after another client changes defaults.
+          const currentUserMessage = activeUserMessage(state);
+          const currentUserText = currentUserMessage.pipe(Effect.map((message) => message?.text));
+          if (
+            action.type === "start" ||
+            action.type === "research" ||
+            action.type === "pipeline" ||
+            action.type === "schedule" ||
+            action.type === "prepare-routine"
+          ) {
+            const requestMessage = yield* currentUserMessage;
+            if (requestMessage !== undefined && !requestMessage.snapshotFound)
+              return yield* new D4AgentError({
+                reason: "action-unavailable",
+                detail:
+                  "The active request has no saved worker selection. Keep the draft and send it again before asking Nia to create an approval.",
+              });
+            const selectedWorker =
+              requestMessage === undefined
+                ? config.taskModelSelection
+                : (requestMessage.taskModelSelection ?? null);
+            if (selectedWorker === null)
+              return yield* new D4AgentError({
+                reason: "model-not-selected",
+                detail: "Choose a task model before Nia drafts new work.",
+              });
+            if (!selectionsEqual(action.modelSelection, selectedWorker))
+              return yield* new D4AgentError({
+                reason: "action-unavailable",
+                detail:
+                  "The proposed worker does not match the model selected for this request. Keep the draft and ask Nia to create a new approval with the selected worker.",
+              });
+            const catalog = yield* providers.getProviders;
+            const unavailable = taskModelAvailability(
+              { ...config, taskModelSelection: selectedWorker },
+              catalog,
+              yield* Clock.currentTimeMillis,
+              action.type !== "prepare-routine",
+            );
+            if (unavailable !== null) return yield* new D4AgentError({ reason: unavailable });
+          }
           const background =
             (yield* D4AgentAccess.DispatchOrigin) === "internal-heartbeat" ||
             ((yield* D4AgentAccess.ToolCaller) !== undefined &&
@@ -2480,6 +2857,20 @@ export const layer = Layer.effect(
               reason: "action-unavailable",
               detail: `Background turns cannot draft ${action.type}. Say so in one line and name the control the user can click in the thread instead.`,
             });
+          if (action.type === "prepare-routine") {
+            const fingerprint = yield* encodeDigest(action).pipe(Effect.mapError(storageError));
+            for (const existing of state.actions) {
+              if (
+                existing.status === "pending" &&
+                existing.context === state.brainContext &&
+                existing.sessionId === state.threadId &&
+                existing.action.type === "prepare-routine" &&
+                (yield* encodeDigest(existing.action).pipe(Effect.mapError(storageError))) ===
+                  fingerprint
+              )
+                return existing;
+            }
+          }
           if (action.type === "send") {
             const originalText = yield* currentUserText;
             const { originalText: _untrustedOriginal, ...draft } = action;
@@ -2498,10 +2889,23 @@ export const layer = Layer.effect(
               ...(originalText === "" ? {} : { originalText }),
             };
           }
+          const activationRoutineId =
+            action.type === "activate-routine" ? action.routineId : undefined;
           const prepared =
             action.type === "pipeline" || action.type === "research"
               ? yield* pipelines.prepare(action, state.brainContext)
-              : undefined;
+              : action.type === "prepare-routine"
+                ? yield* prepareRoutinePipeline(action, state.brainContext)
+                : action.type === "activate-routine"
+                  ? {
+                      preparationRunId: (yield* threads
+                        .getThreadShell(
+                          state.routines!.find((entry) => entry.id === activationRoutineId)!
+                            .threadId,
+                        )
+                        .pipe(Effect.mapError(threadError)))?.latestRunId,
+                    }
+                  : undefined;
           if (state.actions.filter((entry) => entry.status === "pending").length >= 50)
             return yield* new D4AgentError({ reason: "busy" });
           const id = yield* randomUUID;
@@ -2632,7 +3036,10 @@ export const layer = Layer.effect(
           const reservation = automaticBudget;
           // A new draft for the same target replaces Nia's older pending card for it.
           const superseded = new Set(
-            held && !["start", "research", "pipeline", "schedule"].includes(action.type)
+            held &&
+              !["start", "research", "pipeline", "schedule", "prepare-routine"].includes(
+                action.type,
+              )
               ? state.actions
                   .filter(
                     (entry) =>
@@ -2673,6 +3080,17 @@ export const layer = Layer.effect(
               ],
             };
           });
+          if (action.type === "activate-routine") {
+            const activation = action;
+            yield* store.update((value) => ({
+              ...value,
+              routines: (value.routines ?? []).map((entry) =>
+                entry.id === activation.routineId
+                  ? { ...entry, status: "ready" as const, readiness: activation.readiness }
+                  : entry,
+              ),
+            }));
+          }
           return record.status === "pending" ? record : yield* resolveRecord(record);
         }),
       );
@@ -2696,9 +3114,14 @@ export const layer = Layer.effect(
             if (
               !config.enabled ||
               (config.permissionMode === "read-only" &&
-                !["send", "start", "pipeline", "research", "switch-context"].includes(
-                  record.action.type,
-                ))
+                ![
+                  "send",
+                  "start",
+                  "pipeline",
+                  "research",
+                  "prepare-routine",
+                  "switch-context",
+                ].includes(record.action.type))
             )
               return yield* new D4AgentError({ reason: "read-only" });
             const action = record.action;
@@ -2773,24 +3196,30 @@ export const layer = Layer.effect(
     });
     const tasks = Effect.fn("D4Agent.tasks")(function* () {
       const { state, config } = yield* bound();
-      const own = new Set(
-        (state.scheduledTasks ?? [])
-          .filter((entry) => entry.context === state.brainContext)
-          .map((entry) => entry.taskId),
-      );
       const listed = Option.isNone(scheduledTasks)
         ? []
         : (yield* scheduledTasks.value
             .list()
             .pipe(Effect.mapError(() => new D4AgentError({ reason: "action-unavailable" })))).tasks;
       return {
+        hostRoutines: yield* hostRoutines(state.brainContext),
+        scheduler: {
+          available: Option.isSome(scheduledTasks),
+          canSetEnabled: Option.isSome(scheduledTasks) && config.permissionMode !== "read-only",
+          canPrepareRoutine: Option.isSome(scheduledTasks),
+        },
         now: DateTime.formatIso(yield* DateTime.now),
-        timeZone: config.quietHours?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         reminders: (state.reminders ?? [])
           .filter((entry) => entry.context === state.brainContext)
           .map(({ id, text, at }) => ({ id, text, at })),
         scheduledTasks: listed
-          .filter((task) => own.has(task.id))
+          .filter(
+            (task) =>
+              task.projectId !== state.projectId &&
+              config.projectContexts[task.projectId] !== undefined &&
+              projectActionInScope(state.brainContext, config, task.projectId),
+          )
           .map((task) => ({
             taskId: task.id,
             title: task.title,
@@ -3594,12 +4023,23 @@ export const layer = Layer.effect(
         lock.withPermits(1)(
           Effect.gen(function* () {
             const { state, config } = yield* bound();
+            const requestMessage = yield* activeUserMessage(state);
+            const requestWorker =
+              requestMessage === undefined
+                ? config.taskModelSelection
+                : requestMessage.snapshotFound
+                  ? (requestMessage.taskModelSelection ?? null)
+                  : null;
             const availableProjects = yield* projects
               .listShells()
               .pipe(Effect.mapError(threadError));
             return {
-              pipelines: yield* pipelines.list(state.brainContext),
-              modelSelection: yield* selected,
+              pipelines: (yield* pipelines.list(state.brainContext)).map((pipeline) => ({
+                ...pipeline,
+                modelSelection: requestWorker,
+              })),
+              modelSelection: requestWorker,
+              defaultModelSelection: config.taskModelSelection,
               projects: availableProjects
                 .filter(
                   (project) =>

@@ -182,6 +182,7 @@ export const ScheduledTask = Schema.Struct({
   updatedAt: IsoDateTime,
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunAt: Schema.NullOr(IsoDateTime),
+  lastRunThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   lastRunStatus: ScheduledTaskRunStatus,
   lastRunError: Schema.NullOr(Schema.String),
   runCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

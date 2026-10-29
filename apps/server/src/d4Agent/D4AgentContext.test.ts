@@ -1,3 +1,4 @@
+import { buildServerProvider } from "@d4research/provider-core/server/snapshotProbe";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_D4_AGENT_SETTINGS,
@@ -8,6 +9,7 @@ import {
 } from "@d4research/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Context from "./D4AgentContext.ts";
 import * as Store from "./D4AgentStore.ts";
 import { contextScopeHash } from "./brainScope.ts";
@@ -29,7 +31,11 @@ const provider: ServerProvider = {
   skills: [],
   slashCommands: [],
 };
-const testLayer = (state: Partial<Store.StoredState> = {}, config = DEFAULT_D4_AGENT_SETTINGS) =>
+const testLayer = (
+  state: Partial<Store.StoredState> = {},
+  config = DEFAULT_D4_AGENT_SETTINGS,
+  catalog = Effect.succeed<ReadonlyArray<ServerProvider>>([provider]),
+) =>
   Context.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -55,7 +61,7 @@ const testLayer = (state: Partial<Store.StoredState> = {}, config = DEFAULT_D4_A
             ...state,
           }),
         }),
-        Layer.mock(Providers.ProviderRegistry)({ getProviders: Effect.succeed([provider]) }),
+        Layer.mock(Providers.ProviderRegistry)({ getProviders: catalog }),
         Settings.layerTest({
           d4Agent: { ...config, enabled: true, modelSelection: model },
         }),
@@ -135,3 +141,81 @@ it.effect("source remapping rejects an old background session before model input
     if (result._tag === "Failure") assert.equal(result.failure.reason, "context");
   }).pipe(Effect.provide(testLayer({ sessions }, next)));
 });
+
+it.effect(
+  "each owned turn receives current resource facts without account secrets or model catalog bloat",
+  () =>
+    Effect.gen(function* () {
+      const catalog = yield* Ref.make<ReadonlyArray<ServerProvider>>([provider]);
+      yield* Effect.gen(function* () {
+        const context = yield* Context.D4AgentContext;
+        const before = yield* context.prepare(ownId, model);
+        assert.notInclude(before ?? "", '"instanceId":"local-custom"');
+        yield* Ref.update(catalog, (entries) => [
+          ...entries,
+          {
+            ...provider,
+            instanceId: ProviderInstanceId.make("local-custom"),
+            enabled: false,
+            auth: { status: "unknown" as const, email: "private-account" },
+            models: [
+              { slug: "unlisted-custom-model", name: "Custom", isCustom: true, capabilities: null },
+            ],
+          },
+        ]);
+        const after = yield* context.prepare(ownId, model);
+        assert.include(after ?? "", '"instanceId":"local-custom"');
+        assert.include(after ?? "", '"authentication":"unknown"');
+        assert.include(after ?? "", '"available":false');
+        assert.include(after ?? "", '"state":"unknown"');
+        assert.include(after ?? "", '"modelCount":1');
+        assert.notInclude(after ?? "", "private-account");
+        assert.notInclude(after ?? "", "unlisted-custom-model");
+        assert.equal(yield* context.prepare(ThreadId.make("ordinary"), model), null);
+      }).pipe(Effect.provide(testLayer({}, DEFAULT_D4_AGENT_SETTINGS, Ref.get(catalog))));
+    }),
+);
+
+it.effect("owned turns omit private endpoint diagnostics from provider snapshots", () =>
+  Effect.gen(function* () {
+    const diagnostic = "https://user:fake-secret@example.invalid/private-project";
+    const snapshot: ServerProvider = {
+      ...provider,
+      ...buildServerProvider({
+        presentation: { displayName: "OpenCode" },
+        enabled: true,
+        checkedAt: provider.checkedAt,
+        models: provider.models,
+        probe: {
+          installed: true,
+          version: null,
+          status: "error",
+          auth: { status: "unknown" },
+          message: `Could not reach ${diagnostic}`,
+        },
+      }),
+      instanceId: ProviderInstanceId.make("private-endpoint"),
+      driver: ProviderDriverKind.make("opencode"),
+      unavailableReason: `Connection failed: ${diagnostic}`,
+    };
+    assert.include(snapshot.readiness?.remediation ?? "", diagnostic);
+    yield* Effect.gen(function* () {
+      const context = yield* Context.D4AgentContext;
+      for (let turn = 0; turn < 2; turn++) {
+        const serialized = (yield* context.prepare(ownId, model)) ?? "";
+
+        assert.notInclude(serialized, "fake-secret");
+        assert.notInclude(serialized, "example.invalid");
+        assert.notInclude(serialized, "/private-project");
+        assert.notInclude(serialized, "remediation");
+        assert.include(serialized, '"available":false');
+        assert.include(serialized, '"reachability":"failed"');
+        assert.include(serialized, provider.checkedAt);
+      }
+    }).pipe(
+      Effect.provide(
+        testLayer({}, DEFAULT_D4_AGENT_SETTINGS, Effect.succeed([provider, snapshot])),
+      ),
+    );
+  }),
+);

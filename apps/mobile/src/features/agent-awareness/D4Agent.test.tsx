@@ -13,13 +13,17 @@ import { D4AgentSessions } from "./D4AgentSessions";
 import * as Cause from "effect/Cause";
 import {
   D4AgentError,
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ThreadId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   type D4AgentSettings,
   type D4AgentActionRecord,
   type D4AgentState,
+  type ModelSelection,
+  type ServerProvider,
 } from "@d4research/contracts";
 
 const mocks = vi.hoisted(() => ({
@@ -60,6 +64,8 @@ const mocks = vi.hoisted(() => ({
   configLoaded: true,
   connectionPhase: "connected",
   monitorEnabled: true,
+  taskModelSelection: null as ModelSelection | null,
+  providers: [] as ServerProvider[],
   threads: [] as Array<{
     id: ThreadId;
     projectId: ProjectId;
@@ -102,9 +108,19 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
         ? mocks.configLoaded
           ? {
               settings: {
-                d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
+                ...DEFAULT_SERVER_SETTINGS,
+                providerInstances: {
+                  "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+                },
+                d4Agent: {
+                  ...DEFAULT_SERVER_SETTINGS.d4Agent,
+                  enabled: mocks.enabled,
+                  projectContexts: mocks.projectContexts,
+                  taskModelSelection: mocks.taskModelSelection,
+                },
                 agentMonitor: { enabled: mocks.monitorEnabled },
               },
+              providers: mocks.providers,
             }
           : null
         : mocks.allowed,
@@ -174,9 +190,19 @@ vi.mock("../../state/entities", () => ({
   useThreadShells: () => mocks.threads,
   useEnvironmentServerConfig: () => ({
     settings: {
-      d4Agent: { enabled: mocks.enabled, projectContexts: mocks.projectContexts },
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        "native-worker": { driver: ProviderDriverKind.make("codex"), enabled: true },
+      },
+      d4Agent: {
+        ...DEFAULT_SERVER_SETTINGS.d4Agent,
+        enabled: mocks.enabled,
+        projectContexts: mocks.projectContexts,
+        taskModelSelection: mocks.taskModelSelection,
+      },
       agentMonitor: { enabled: mocks.monitorEnabled },
     },
+    providers: mocks.providers,
   }),
 }));
 vi.mock("./useD4AgentState", () => ({
@@ -216,6 +242,64 @@ vi.mock("../../native/SelectableMarkdownText", () => ({
 }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("../../components/ComposerEditor", () => ({
+  ComposerEditor: ({
+    value,
+    onChangeText,
+    placeholder,
+    editable = true,
+  }: {
+    value: string;
+    onChangeText: (text: string) => void;
+    placeholder: string;
+    editable?: boolean;
+  }) => (
+    <textarea
+      aria-label={placeholder}
+      disabled={!editable}
+      value={value}
+      onChange={(event) => onChangeText(event.target.value)}
+    />
+  ),
+}));
+vi.mock("../../components/ComposerToolbar", () => ({
+  ComposerInlineControl: ({
+    disabled,
+    label,
+    onPress,
+  }: {
+    disabled?: boolean;
+    label: string;
+    onPress?: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+  ComposerToolbarRow: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ComposerToolbarScroller: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ComposerActionButton: ({
+    accessibilityLabel,
+    disabled,
+    onPress,
+  }: {
+    accessibilityLabel: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {accessibilityLabel}
+    </button>
+  ),
+}));
+vi.mock("../threads/ThreadComposer", () => ({
+  COMPOSER_COLLAPSED_CHROME: 0,
+  COMPOSER_EXPANDED_CHROME: 0,
+  COMPOSER_LAYOUT_TRANSITION: undefined,
+  COMPOSER_TRANSITION_DURATION_MS: 0,
+  ComposerSurface: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ThreadComposer: () => null,
 }));
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
@@ -353,7 +437,9 @@ vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: vi.fn() 
 vi.mock("../../lib/commandMetadata", () => ({ makeTurnCommandMetadata: vi.fn() }));
 vi.mock("../../lib/projectThreadStartTurn", () => ({ buildProjectThreadStartTurnInput: vi.fn() }));
 vi.mock("../threads/use-worktree-setup", () => ({ useWorktreeSetup: vi.fn() }));
-vi.mock("../../components/ui/AppBar", () => ({ AppBar: vi.fn() }));
+vi.mock("../../components/ui/AppBar", () => ({
+  AppBar: ({ title }: { title: string }) => <div>{title}</div>,
+}));
 vi.mock("../../state/workspace", () => ({
   useConnectionsReady: () => {
     mocks.nativeRoute();
@@ -491,6 +577,8 @@ beforeEach(() => {
   mocks.enabled = true;
   mocks.configLoaded = true;
   mocks.monitorEnabled = true;
+  mocks.taskModelSelection = null;
+  mocks.providers = [];
   mocks.threads = [];
   mocks.navigate.mockClear();
   mocks.state = {
@@ -876,12 +964,76 @@ it("sends an agent draft only on explicit submit and preserves the single-chat r
     environmentId,
     input: {
       text: "Research the question",
+      taskModelSelection: null,
       expectedContext: mocks.state!.brainContext,
       expectedThreadId: mocks.state!.threadId,
     },
   });
   expect(input.value).toBe("");
   expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+it("sends the exact request-local worker selected in native chat", async () => {
+  const worker = {
+    instanceId: ProviderInstanceId.make("native-worker"),
+    model: "alternate-worker",
+  };
+  mocks.providers = [
+    {
+      instanceId: worker.instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-28T00:00:00.000Z",
+      models: [
+        {
+          slug: worker.model,
+          name: "Alternate worker",
+          isCustom: false,
+          capabilities: null,
+        },
+      ],
+      skills: [],
+      slashCommands: [],
+    },
+  ];
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const press = (label: string) =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
+  await act(async () => press("No task model").click());
+  expect(document.body.textContent).toContain("Alternate worker");
+  const workerLabel = [...document.querySelectorAll<HTMLElement>("*")]
+    .reverse()
+    .find((item) => item.textContent === "Alternate worker")!;
+  await act(async () => workerLabel.closest<HTMLElement>("button, [role='radio']")!.click());
+  const input = container.querySelector(
+    'textarea[aria-label="Message Nia"]',
+  ) as HTMLTextAreaElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Use alternate worker",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => press("Send").click());
+  expect(mocks.send).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      text: "Use alternate worker",
+      taskModelSelection: worker,
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+    },
+  });
 });
 
 it("sends the human-edited rewrite only after explicit Send", async () => {
@@ -972,6 +1124,7 @@ it.each(["research", "pipeline"] as const)(
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex-instance"),
           model: "gpt-test",
+          options: [{ id: "reasoningEffort", value: "high" }],
         },
       },
       status: "pending",
@@ -987,6 +1140,7 @@ it.each(["research", "pipeline"] as const)(
     expect(container.textContent).toContain("Target project · Research lab");
     expect(container.textContent).toContain("Pipeline · research:focused");
     expect(container.textContent).toContain("Model · codex-instance / gpt-test");
+    expect(container.textContent).toContain("Task model option · reasoningEffort: high");
     expect(container.textContent).toContain("Detailed approved research prompt");
     expect(mocks.resolve).not.toHaveBeenCalled();
     await act(async () =>
@@ -1000,6 +1154,74 @@ it.each(["research", "pipeline"] as const)(
     });
   },
 );
+
+it("shows the immutable worker options and schedule before approval and in history", async () => {
+  const createdAt = "2026-10-24T12:00:00.000Z";
+  const summary = {
+    id: "scheduled-launch",
+    type: "schedule" as const,
+    targetId: "target-project",
+    preview: "Run the saved task",
+    createdAt,
+  };
+  mocks.taskModelSelection = {
+    instanceId: ProviderInstanceId.make("different-manager"),
+    model: "changed-after-proposal",
+    options: [{ id: "reasoningEffort", value: "low" }],
+  };
+  mocks.state = {
+    ...mocks.state!,
+    actionLog: [{ ...summary, status: "pending", resolvedAt: null }],
+  };
+  mocks.detail = {
+    id: summary.id,
+    context: "Global",
+    sessionId: threadId,
+    action: {
+      type: "schedule",
+      projectId: ProjectId.make("target-project"),
+      title: "Morning check",
+      text: "Inspect the queue and report blockers.",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("worker-at-proposal"),
+        model: "worker-model",
+        options: [
+          { id: "reasoningEffort", value: "high" },
+          { id: "sandbox", value: true },
+        ],
+      },
+      schedule: { type: "fixed_time", timeOfDay: "09:30", weekdays: [1, 3] },
+    },
+    status: "pending",
+    createdAt,
+    resolvedAt: null,
+  };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  expect(container.textContent).toContain("Model · worker-at-proposal / worker-model");
+  expect(container.textContent).toContain("Task model option · reasoningEffort: high");
+  expect(container.textContent).toContain("Task model option · sandbox: true");
+  expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
+  expect(container.textContent).not.toContain("changed-after-proposal");
+
+  mocks.state = {
+    ...mocks.state,
+    actionLog: [{ ...summary, status: "executed", resolvedAt: createdAt }],
+  };
+  mocks.detail = { ...mocks.detail, status: "executed", resolvedAt: createdAt };
+  await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "History")!
+      .click(),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Review action")!
+      .click(),
+  );
+  expect(container.textContent).toContain("Task model option · reasoningEffort: high");
+  expect(container.textContent).toContain("Schedule · Mon, Wed at 09:30 (server time)");
+});
 
 it("restores an automatically archived thread only after Undo archive", async () => {
   const createdAt = "2026-10-24T12:00:00.000Z";
@@ -1254,6 +1476,7 @@ it("inserts a scoped stable mention and sends its id after the target is renamed
     environmentId,
     input: {
       text: "[[thread:stable-target]]",
+      taskModelSelection: null,
       expectedContext: "YB",
       expectedThreadId: mocks.state!.threadId,
     },
@@ -1285,11 +1508,75 @@ it("keeps the draft and says why when another client changed Nia's context first
   );
   expect(mocks.send).toHaveBeenCalledWith({
     environmentId,
-    input: { text: "Global-only draft", expectedContext: "Global", expectedThreadId: threadId },
+    input: {
+      text: "Global-only draft",
+      taskModelSelection: null,
+      expectedContext: "Global",
+      expectedThreadId: threadId,
+    },
   });
   expect(input.value).toBe("Global-only draft");
   expect(container.textContent).toContain("Nia's context or session changed");
   expect(mocks.refresh).toHaveBeenCalledOnce();
+});
+
+it("keeps a failed draft and distinguishes exhausted worker quota", async () => {
+  const worker = {
+    instanceId: ProviderInstanceId.make("native-worker"),
+    model: "worker-model",
+  };
+  mocks.taskModelSelection = worker;
+  mocks.providers = [
+    {
+      instanceId: worker.instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-28T00:00:00.000Z",
+      models: [{ slug: worker.model, name: "Worker", isCustom: false, capabilities: null }],
+      skills: [],
+      slashCommands: [],
+      usageLimits: {
+        checkedAt: "2026-10-28T00:00:00.000Z",
+        windows: [
+          {
+            id: "session",
+            kind: "session",
+            label: "Session",
+            usedPercent: 100,
+            resetsAt: "2099-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    },
+  ];
+  mocks.send.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(new D4AgentError({ reason: "provider-unavailable" })),
+  } as never);
+  await act(() =>
+    root.render(
+      <D4AgentChat environmentId={environmentId} state={mocks.state!} refresh={mocks.refresh} />,
+    ),
+  );
+  const input = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Nia"]')!;
+  await act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      "Keep this draft",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Send")!.click(),
+  );
+  expect(input.value).toBe("Keep this draft");
+  expect(container.textContent).toContain("out of quota");
+  expect(container.textContent).not.toContain("not authenticated");
 });
 
 it("keeps a draft bound to its context until the user reassigns it", async () => {
@@ -1326,6 +1613,7 @@ it("keeps a draft bound to its context until the user reassigns it", async () =>
     environmentId,
     input: {
       text: "Global-only draft",
+      taskModelSelection: null,
       expectedContext: "Dimaggi",
       expectedThreadId: "dimaggi-session",
     },
@@ -1448,6 +1736,7 @@ it("asks before creating a thread and then links the thread it created", async (
   await act(() => root.render(<D4AgentPanel environmentId={environmentId} threadId={threadId} />));
   expect(container.textContent).toContain("New thread");
   expect(container.textContent).toContain("Web app");
+  expect(container.textContent).toContain("codex-instance / gpt-test");
   expect(container.textContent).not.toContain("Open thread");
   await act(async () =>
     [...container.querySelectorAll("button")]

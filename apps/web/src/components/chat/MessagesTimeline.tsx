@@ -1,7 +1,9 @@
 import {
+  AssistantMessageBody,
   AssistantMessageMeta,
   CollapsibleUserMessageBody,
   MESSAGE_HEADING_LEVEL,
+  UserMessageBubble,
   UserMessageMeta,
 } from "./MessagePresentation";
 import { readTimelinePosition } from "./timelineScrollAnchoring";
@@ -2331,7 +2333,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />
       ) : null}
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+      <UserMessageBubble>
         <MessageAuthorHeading>You</MessageAuthorHeading>
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[210px] grid-cols-2 gap-2">
@@ -2503,7 +2505,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             threadRef={ctx.threadRef ?? undefined}
           />
         </div>
-      </div>
+      </UserMessageBubble>
       {row.projectedItem &&
       row.projectedItem.item.status !== "completed" &&
       row.projectedItem.item.status !== "pending" &&
@@ -2768,7 +2770,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
+      <AssistantMessageBody>
         {row.delegate ? (
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
             <span
@@ -2821,7 +2823,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             copyStreaming={row.assistantCopyStreaming}
           />
         ) : null}
-      </div>
+      </AssistantMessageBody>
     </>
   );
 }

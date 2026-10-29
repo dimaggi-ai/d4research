@@ -62,6 +62,12 @@ const refused: ReadonlyArray<[string, RegExp]> = [
   ["git branch -D main", /not in the read-only allowlist/],
   ["sed -i s/a/b/ f", /not in the read-only allowlist/],
   ["uptime | tee ~/x", /pipelines, substitutions/],
+  ["cat ~/x${IFS}/etc/hostname${IFS}/tools/d4-agent-lane/DEPLOY-RESULT-a.txt", /shell expansion/],
+  ["cat ~/tools/d4-agent-lane/DEPLOY-RESULT-*.txt", /shell expansion/],
+  [
+    "cat $HOME/x${IFS}/etc/hostname${IFS}/tools/d4-agent-lane/DEPLOY-RESULT-a.txt",
+    /shell expansion/,
+  ],
   ["grep secret ~/.config/x", /not in the read-only allowlist/],
   ["uptime | grep -r x /etc", /pipelines/],
   ["FOO=1 uptime", /not in the read-only allowlist/],

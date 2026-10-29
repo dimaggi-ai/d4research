@@ -194,6 +194,11 @@ export function classifyHostReadOnly(command: string): HostReadOnlyVerdict {
   if (/[\p{Cc}]/u.test(trimmed)) return refuse("control characters are not allowed");
   if (/`|\$\(|[|;&<>]/.test(trimmed))
     return refuse("pipelines, substitutions, separators and redirections are not allowed");
+  // The command runs through bash, so expansion characters would let a path that
+  // ends in an allowed file smuggle extra arguments (for example ${IFS}).
+  // A leading $HOME/ is the one expansion allowed; it is equivalent to ~/.
+  if (/[$*?{}[\]\\]/.test(trimmed.replace(/(^|\s)(["']?)\$HOME(?=\/)/g, "$1$2~")))
+    return refuse("shell expansion characters ($ * ? { } [ ] \\) are not allowed");
   const tokens = tokenize(trimmed);
   if (tokens === null) return refuse("unbalanced quotes");
   const name = tokens[0];

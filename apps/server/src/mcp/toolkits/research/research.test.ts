@@ -1496,6 +1496,18 @@ describe("resolveAuthoredPipelineFallbackTargets", () => {
   });
 });
 
+describe("ResearchDelegateError", () => {
+  it("exposes the detail as the error message the MCP layer renders", () => {
+    const error = new ResearchDelegateError({
+      detail: 'Fallback target "codex:x" is not labeled FALLBACK in the dev pipeline scenario.',
+      failureKind: "authorization",
+    });
+
+    expect(error.message).toBe(error.detail);
+    expect(error.message.length).toBeGreaterThan(0);
+  });
+});
+
 describe("extractAssistantText", () => {
   it("returns the codex agentMessage, not the echoed prompt or reasoning", () => {
     // Shape codex app-server thread/read returns: the echoed prompt and

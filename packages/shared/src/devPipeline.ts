@@ -457,7 +457,7 @@ export function expandDevPipelinePrompt(
     "1. TRACE — Keep one plan entry per pipeline step. Begin every status with `[step N | visit K]`.",
     `2. DELEGATE — Call \`research_delegate\` with the resolved target, \`pipelineKind: "dev"\`, \`scenario: "${scenario.name}"\`, and current \`step\` and \`visit\`. Never simulate a delegate.`,
     targetPolicy === "labeled-fallback"
-      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass the step's explicitly authored FALLBACK directive in `fallbackTargets`. The tool identifies requested and resolved targets; always name the actual model that ran."
+      ? "3. TARGET POLICY — Labeled fallback is enabled. Pass `fallbackTargets` only when the step's pipeline text has a line labeled FALLBACK, copying that directive exactly. When no FALLBACK line exists, omit `fallbackTargets`; an invented fallback is rejected before the primary target runs. The tool identifies requested and resolved targets; always name the actual model that ran."
       : "3. TARGET POLICY — Exact targets only. Do not pass or invent fallbacks; report an unavailable target as FAILED.",
     `4. BUDGET — The server enforces ${RESEARCH_DELEGATION_BUDGET_PER_TURN} calls per run and ${RESEARCH_STEP_VISIT_LIMIT} visits per step-target.`,
     "5. HONESTY — A delegate that timed out, refused, returned empty, or answered with intent only is reported as FAILED. Never invent its answer.",

@@ -39,7 +39,14 @@ export class ResearchDelegateError extends Schema.TaggedError<ResearchDelegateEr
     budgetExhausted: Schema.optional(Schema.Boolean),
     failureKind: Schema.optional(ResearchDelegateFailureKind),
   },
-) {}
+) {
+  // The MCP layer renders a declared tool failure through error.message. Without
+  // this, every refusal (unauthorized fallback, budget, timeout) reaches the
+  // orchestrator as an empty error and is reported as an opaque failure.
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 const dependencies = [
   SecondBrainService.SecondBrainService,

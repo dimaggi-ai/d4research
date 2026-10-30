@@ -180,6 +180,23 @@ const withService = <A, E>(
   Effect.gen(function* () {
     const launches = yield* Queue.unbounded<LaunchInput>();
     const secretsByRef = new Map<string, string>();
+    const projectionSql = yield* SqlClient.SqlClient;
+    // Each started thread run finishes at once, so the service records its completion
+    // through the same projection reconciliation it uses for real provider runs.
+    const projectCompletedRun = (input: LaunchInput) =>
+      Effect.gen(function* () {
+        const runId = `run:${input.commandId}`;
+        const [ordinal] = yield* projectionSql<{ next: number }>`
+          SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM orchestration_v2_projection_runs`;
+        yield* projectionSql`INSERT OR IGNORE INTO orchestration_v2_projection_runs
+          (run_id, thread_id, ordinal, provider, status, requested_at, completed_at, payload_json)
+          VALUES (${runId}, 'thread-1', ${ordinal!.next}, 'codex', 'completed',
+            '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z', '{}')`;
+        yield* projectionSql`INSERT OR IGNORE INTO orchestration_v2_projection_messages
+          (message_id, thread_id, run_id, role, streaming, created_at, updated_at, payload_json)
+          VALUES (${input.initialMessage!.messageId}, 'thread-1', ${runId}, 'user', 0,
+            '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z', '{}')`;
+      }).pipe(Effect.orDie);
     const layerDependencies = Layer.mergeAll(
       options.frameGate === undefined && options.onFrame === undefined
         ? NodePlatformCrypto.layer
@@ -229,6 +246,7 @@ const withService = <A, E>(
                     throw new Error("injected start failure");
                 }),
               ),
+              Effect.andThen(projectCompletedRun(input)),
               Effect.as({ threadId: "thread-1", resumed: false } as never),
             );
           }),

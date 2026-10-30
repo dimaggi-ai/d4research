@@ -719,10 +719,20 @@ export const layer = Layer.effect(
             const row = rows[0];
             if (row === undefined)
               return yield* taskError("Schedule task not found.", { taskId: id });
-            yield* sql`
+            // A webhook retry reuses its delivery's message id. Only a start that failed may run
+            // again; a run that started already keeps its row and refuses a second dispatch.
+            const reserved = yield* sql`
           INSERT INTO scheduled_task_runs (message_id, task_id, task_created_at, project_id, title, started_at, status)
           VALUES (${messageId}, ${id}, ${row.created_at}, ${row.project_id}, ${row.title}, ${startedAtIso}, 'running')
+          ON CONFLICT (message_id) DO UPDATE SET
+            task_id = excluded.task_id, task_created_at = excluded.task_created_at,
+            project_id = excluded.project_id, title = excluded.title,
+            started_at = excluded.started_at, status = 'running', completed_at = NULL
+          WHERE scheduled_task_runs.status = 'failed'
+          RETURNING message_id
         `;
+            if (reserved.length === 0)
+              return yield* taskError("This schedule task run already started.", { taskId: id });
           }),
         )
         .pipe(
